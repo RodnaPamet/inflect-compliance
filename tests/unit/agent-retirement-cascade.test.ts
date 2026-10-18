@@ -14,6 +14,8 @@
  *   • the open ownership transfer is closed whatever its deadline: CANCELLED by
  *     the retiring actor while live, stamped EXPIRED with no actor once lapsed;
  *   • a list of ids SHORT of its write's count says so (`idsTruncated`);
+ *   • the evidence effect (#3700) reaches only the agent's artefacts of the
+ *     periods still OPEN, withdraws them `AGENT_RETIRED` and deletes none;
  *   • an effect that changed nothing writes no row of its own, and the summary
  *     carries every figure — including the evidence basis — exactly once.
  */
@@ -32,14 +34,29 @@ import { makeRequestContext } from '../helpers/make-context';
 const mockLogEvent = logEvent as jest.MockedFunction<typeof logEvent>;
 const ctx = makeRequestContext('ADMIN', { tenantId: 'tenant-1', userId: 'retirer-1' });
 
+type ArtefactRow = { id: string; evidenceId: string; kind: string; periodStart: Date; sourceDigest: string };
+
 function makeDb(
     opts: {
         transfer?: { id: string; toOwnerUserId: string; expiresAt: Date } | null;
         keyIds?: string[];
         keysRevoked?: number;
+        openArtefacts?: ArtefactRow[];
     } = {},
 ) {
     return {
+        agenticEvidenceArtefact: {
+            findMany: jest.fn(async () => opts.openArtefacts ?? []),
+            update: jest.fn(async () => ({})),
+            updateMany: jest.fn(),
+            delete: jest.fn(),
+            deleteMany: jest.fn(),
+        },
+        evidence: {
+            update: jest.fn(async () => ({})),
+            delete: jest.fn(),
+            deleteMany: jest.fn(),
+        },
         tenantApiKey: {
             findMany: jest.fn(async () => (opts.keyIds ?? ['key-1', 'key-2']).map((id) => ({ id }))),
             count: jest.fn(async () => 1),
@@ -115,6 +132,59 @@ describe('applyRetirementCascadeInTx — the predicates', () => {
         expect(effects.ownershipTransfer).toBeNull();
     });
 
+    it('withdraws only the agent\'s per-agent artefacts of the periods still open, AGENT_RETIRED, and deletes none', async () => {
+        const now = new Date('2026-10-18T12:00:00.000Z');
+        const open: ArtefactRow[] = [
+            { id: 'art-1', evidenceId: 'ev-1', kind: 'AGENT_ACTION_RECEIPTS_PER_AGENT', periodStart: new Date('2026-10-01T00:00:00.000Z'), sourceDigest: 'd1' },
+            { id: 'art-2', evidenceId: 'ev-2', kind: 'AI_DECISION_RECORDS_PER_AGENT', periodStart: new Date('2026-10-01T00:00:00.000Z'), sourceDigest: 'd2' },
+        ];
+        const db = makeDb({ openArtefacts: open });
+        const effects = await applyRetirementCascadeInTx(db, ctx, 'agent-1', now);
+
+        // The read IS the scope: this tenant, this agent, CURRENT, and a period
+        // that ends after the retirement — so a closed month is never read, and
+        // a tenant-wide row (agentId NULL) can never match.
+        expect(db.agenticEvidenceArtefact.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId: 'tenant-1', agentId: 'agent-1', status: 'CURRENT', periodEnd: { gt: now } },
+            }),
+        );
+        for (const row of open) {
+            expect(db.agenticEvidenceArtefact.update).toHaveBeenCalledWith({
+                where: { id: row.id },
+                data: { status: 'WITHDRAWN', withdrawnAt: now, withdrawnReason: 'AGENT_RETIRED' },
+            });
+            expect(db.evidence.update).toHaveBeenCalledWith({
+                where: { id: row.evidenceId },
+                data: { content: expect.stringContaining('AGENT_RETIRED'), isArchived: true },
+            });
+        }
+        // Withdrawn, never deleted — and never through a bulk write that could
+        // reach past the rows read.
+        expect(db.agenticEvidenceArtefact.delete).not.toHaveBeenCalled();
+        expect(db.agenticEvidenceArtefact.deleteMany).not.toHaveBeenCalled();
+        expect(db.agenticEvidenceArtefact.updateMany).not.toHaveBeenCalled();
+        expect(db.evidence.delete).not.toHaveBeenCalled();
+        expect(db.evidence.deleteMany).not.toHaveBeenCalled();
+        expect(effects.evidenceArtefacts).toEqual({
+            count: 2,
+            ids: ['art-1', 'art-2'],
+            idsTruncated: false,
+            deferredToSweep: false,
+        });
+
+        await writeRetirementAuditRows(db, ctx, { id: 'agent-1', status: 'ACTIVE' }, effects);
+        const row = mockLogEvent.mock.calls.find(([, , p]) => p.action === 'AGENT_RETIREMENT_EVIDENCE_WITHDRAWN');
+        expect(row?.[2].detailsJson).toMatchObject({
+            artefactIds: ['art-1', 'art-2'],
+            count: 2,
+            reason: 'agent_retired',
+            toStatus: 'WITHDRAWN',
+        });
+        const cascade = (mockLogEvent.mock.calls[0][2].detailsJson as { cascade: Record<string, unknown> }).cascade;
+        expect(cascade).toMatchObject({ evidenceArtefactsWithdrawn: 2, evidenceBasis: 'PER_AGENT_OPEN_PERIODS' });
+    });
+
     it('a key list SHORT of the revocation count is flagged, though under the cap', async () => {
         // The list and the write are two statements. A list holding fewer ids
         // than rows revoked must say so — `count > cap` alone would read false.
@@ -147,7 +217,7 @@ describe('writeRetirementAuditRows — one row per effect that changed something
             policyCardFrozenAtVersion: null,
             ownershipTransferCancelled: 'transfer-1',
             evidenceArtefactsWithdrawn: 0,
-            evidenceBasis: 'POPULATION_LEVEL_ONLY',
+            evidenceBasis: 'PER_AGENT_OPEN_PERIODS',
         });
         const transferRow = mockLogEvent.mock.calls[3][2].detailsJson as Record<string, unknown>;
         expect(transferRow).toMatchObject({ transferId: 'transfer-1', targetUserId: 'owner-2', reason: 'agent_retired' });
@@ -159,6 +229,8 @@ describe('writeRetirementAuditRows — one row per effect that changed something
         await writeRetirementAuditRows(db, ctx, { id: 'agent-1', status: 'ACTIVE' }, effects);
         const actions = mockLogEvent.mock.calls.map(([, , p]) => p.action);
         expect(actions).not.toContain('AGENT_RETIREMENT_OWNERSHIP_TRANSFER_CANCELLED');
+        // Nothing open to withdraw, so no evidence row — its zero is on the summary.
+        expect(actions).not.toContain('AGENT_RETIREMENT_EVIDENCE_WITHDRAWN');
         expect(actions).toContain('AGENT_RETIRED');
         const cascade = (mockLogEvent.mock.calls[0][2].detailsJson as { cascade: Record<string, unknown> }).cascade;
         expect(cascade.ownershipTransferCancelled).toBeNull();

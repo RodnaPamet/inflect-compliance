@@ -95,11 +95,11 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'user content. Encrypting it would hide the operator-facing half of a refusal from the ' +
         'surface that exists to show it.',
     'AgenticEvidenceArtefact.withdrawnReason':
-        'One of three codes — CONTROL_REMOVED, SOURCE_UNVERIFIABLE or ' +
-        'OBLIGATION_UNMAPPED — pinned by a DB CHECK and by the ' +
+        'One of four codes — CONTROL_REMOVED, SOURCE_UNVERIFIABLE, ' +
+        'OBLIGATION_UNMAPPED or AGENT_RETIRED — pinned by a DB CHECK and by the ' +
         'ArtefactWithdrawalReason union. Caught by the *Reason name heuristic, ' +
         'but it is a closed vocabulary rather than anyone\'s words: there is no ' +
-        'tenant content in it, and encrypting a three-value enum would defeat ' +
+        'tenant content in it, and encrypting a four-value enum would defeat ' +
         'the equality read the withdrawal sweep makes while protecting nothing. ' +
         'The free text on this path is Evidence.content, which is sanitised at ' +
         'the usecase layer for the reasons in agentic-evidence-emission.ts.',

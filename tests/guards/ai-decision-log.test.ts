@@ -23,7 +23,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // READS as masked. Migrations therefore go through `readSql`, which lexes
 // `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
 // Which extension flows through which helper was re-derived in this file.
-import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
@@ -148,8 +148,11 @@ describe('immutability — append-only core record', () => {
 });
 
 describe('feedback + indexes', () => {
-    const schema = read('prisma/schema/automation.prisma');
-    const model = schema.slice(schema.indexOf('model AiDecisionLog'), schema.indexOf('model AiDecisionLog') + 2000);
+    // BOUND to the model's own braces, not a magic 2000-character window: the
+    // window slid off the indexes the day a documented column (#3700's
+    // `agentId`) made the model longer, and a window that reached the NEXT
+    // model would have kept passing on that model's indexes.
+    const model = braceBlockAfter(readRaw('prisma/schema/automation.prisma'), 'model AiDecisionLog\\b');
 
     it('humanOutcome transitions PENDING → terminal via recordDecisionOutcome', () => {
         const mod = read('src/app-layer/ai/decision-log/index.ts');

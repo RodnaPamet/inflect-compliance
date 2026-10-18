@@ -67,6 +67,26 @@
  * condition 8: this is the widest surface a scan's data could reach).
  * Identifiers, levels, counts and completeness only. The harness level is
  * REPORTED here and gates nothing — the ladder is report-only.
+ *
+ * ── THE PER-AGENT KINDS (#3700) ────────────────────────────────────────────
+ *
+ * Every artefact above describes the WHOLE tenant's month, so none belongs to
+ * one agent and retiring an agent could withdraw none of them without
+ * retracting true evidence about every other one. The two per-agent kinds are
+ * the same evidence, cut to one agent: the receipts and the decision records
+ * ATTRIBUTED to it, on the same obligations, in the same month. They add rows;
+ * they change no tenant-wide row, digest or body, and their own digest is bound
+ * to the agent so two agents with the same (say, empty) population never share
+ * one.
+ *
+ * Attribution is a server-side binding, never a claim the record makes about
+ * itself. A receipt belongs to the agent its SUBMITTING credential is bound to
+ * (`AgentActionReceipt.mcpKeyId` → `TenantApiKey.agentId`) — not to pipelock's
+ * `agent_id`, which lives in the mediator's namespace, falls back to a run
+ * nonce, and on an unverified receipt is whatever the sender typed. A decision
+ * belongs to the agent `AiDecisionLog.agentId` names, stamped from the writing
+ * request's `ctx.agentId` and immutable by trigger. A record with neither is
+ * counted only in the tenant-wide artefact, and the per-agent body says so.
  */
 import { createHash } from 'crypto';
 
@@ -90,27 +110,57 @@ export const ARTEFACT_KIND_HARNESS_SCANS = 'AGENT_HARNESS_SCANS';
  * receipts/decisions pass.
  */
 export const ARTEFACT_KIND_PASSPORTS = 'INTEGRATION_PASSPORTS';
+/**
+ * One agent's attributed receipts for the month (#3700) — the per-agent cut of
+ * `AGENT_ACTION_RECEIPTS`, on the same obligations. The only kinds that carry an
+ * `agentId`, and the only ones a retirement withdraws.
+ */
+export const ARTEFACT_KIND_RECEIPTS_PER_AGENT = 'AGENT_ACTION_RECEIPTS_PER_AGENT';
+/** One agent's attributed decision records for the month (#3700) — the per-agent cut of `AI_DECISION_RECORDS`. */
+export const ARTEFACT_KIND_DECISIONS_PER_AGENT = 'AI_DECISION_RECORDS_PER_AGENT';
+
+export type PerAgentArtefactKind =
+    | typeof ARTEFACT_KIND_RECEIPTS_PER_AGENT
+    | typeof ARTEFACT_KIND_DECISIONS_PER_AGENT;
 
 export type AgenticArtefactKind =
     | typeof ARTEFACT_KIND_RECEIPTS
     | typeof ARTEFACT_KIND_DECISIONS
     | typeof ARTEFACT_KIND_HARNESS_SCANS
-    | typeof ARTEFACT_KIND_PASSPORTS;
+    | typeof ARTEFACT_KIND_PASSPORTS
+    | PerAgentArtefactKind;
 
 /**
  * Every kind, in emission order. Mirrors the DB CHECK on `kind`
  * (`AgenticEvidenceArtefact_kind_known`), which migration 20261018001000 widened
- * to the fourth: a kind added here and not there is refused at insert, and the
- * integration suite pins that every kind listed here is one the CHECK accepts;
- * a kind removed here while rows of it exist is one the withdrawal sweep stops
- * judging.
+ * to the fourth and 20261018140000 (#3700) to the two per-agent kinds: a kind
+ * added here and not there is refused at insert, and the integration suite pins
+ * that every kind listed here is one the CHECK accepts; a kind removed here
+ * while rows of it exist is one the withdrawal sweep stops judging.
  */
 export const AGENTIC_ARTEFACT_KINDS: readonly AgenticArtefactKind[] = [
     ARTEFACT_KIND_RECEIPTS,
     ARTEFACT_KIND_DECISIONS,
     ARTEFACT_KIND_HARNESS_SCANS,
     ARTEFACT_KIND_PASSPORTS,
+    ARTEFACT_KIND_RECEIPTS_PER_AGENT,
+    ARTEFACT_KIND_DECISIONS_PER_AGENT,
 ];
+
+/**
+ * The kinds whose rows name an agent. Mirrors the DB CHECK
+ * `AgenticEvidenceArtefact_agent_scope`, which makes a per-agent kind without an
+ * `agentId` — and a tenant-wide kind with one — unrepresentable.
+ */
+export const PER_AGENT_ARTEFACT_KINDS: readonly PerAgentArtefactKind[] = [
+    ARTEFACT_KIND_RECEIPTS_PER_AGENT,
+    ARTEFACT_KIND_DECISIONS_PER_AGENT,
+];
+
+/** Whether a stored `kind` is one of the per-agent kinds. `kind` is TEXT, so the argument is a string. */
+export function isPerAgentKind(kind: string): kind is PerAgentArtefactKind {
+    return PER_AGENT_ARTEFACT_KINDS.some((k) => k === kind);
+}
 
 export type ArtefactWithdrawalReason =
     | 'CONTROL_REMOVED'
@@ -123,7 +173,28 @@ export type ArtefactWithdrawalReason =
      * facts and an assessor reading the notice needs to know which: the control
      * is gone, versus the control is still there and no longer claims this.
      */
-    | 'OBLIGATION_UNMAPPED';
+    | 'OBLIGATION_UNMAPPED'
+    /**
+     * The agent a per-agent artefact is about was retired while the artefact's
+     * period was still open (#3700). A per-agent kind only — a DB CHECK refuses
+     * it on a tenant-wide row — and TERMINAL: retirement is, so nothing returns
+     * such a row to CURRENT. A closed period's artefact is never withdrawn for
+     * it: a true record of what the agent did stays true.
+     */
+    | 'AGENT_RETIRED';
+
+/**
+ * Every withdrawal reason. Mirrors the DB CHECK
+ * `AgenticEvidenceArtefact_withdrawn_reason_known`, which is DROP + ADD in each
+ * migration that widens it; the unit suite pins that the newest one lists
+ * exactly these.
+ */
+export const ARTEFACT_WITHDRAWAL_REASONS: readonly ArtefactWithdrawalReason[] = [
+    'CONTROL_REMOVED',
+    'SOURCE_UNVERIFIABLE',
+    'OBLIGATION_UNMAPPED',
+    'AGENT_RETIRED',
+];
 
 // ── Which control does an artefact attach to ────────────────────────────────
 
@@ -205,6 +276,49 @@ export const EVIDENCE_TARGETS: readonly EvidenceTarget[] = [
             'record: one row per invocation, automatically generated over the ' +
             'lifetime of the system. The artefact is the periodic attestation that ' +
             'the records exist and how many there are.',
+    },
+    // ── Per agent (#3700) ──────────────────────────────────────────────────
+    //
+    // The same four obligations as the tenant-wide receipts and decisions, so a
+    // tenant's per-agent artefacts land on exactly the controls its tenant-wide
+    // ones do, and an obligation unmapped from one is unmapped from both.
+    {
+        kind: ARTEFACT_KIND_RECEIPTS_PER_AGENT,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI02',
+        reason:
+            'Tool Misuse and Exploitation, for one agent. The receipts its credentials ' +
+            'submitted in the period, with the verdict breakdown — the answer to "was every ' +
+            'tool call THIS agent made mediated", which the tenant-wide count cannot give.',
+    },
+    {
+        kind: ARTEFACT_KIND_RECEIPTS_PER_AGENT,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI04',
+        reason:
+            'Agentic Supply Chain Vulnerabilities, for one agent. How many of the actions its ' +
+            'credentials submitted ran under an attested tool definition and how many under ' +
+            'an unattested one.',
+    },
+    {
+        kind: ARTEFACT_KIND_DECISIONS_PER_AGENT,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI09',
+        reason:
+            'Human-Agent Trust Exploitation, for one agent. The human-oversight outcomes of the ' +
+            'decisions recorded for it — the accept-without-change rate of one principal.',
+    },
+    {
+        kind: ARTEFACT_KIND_DECISIONS_PER_AGENT,
+        familyUrn: EU_AI_ACT_LIBRARY_URN,
+        legacyKeys: ['EU-AI-ACT'],
+        requirementCode: 'Art.12',
+        reason:
+            'EU AI Act Article 12 — record-keeping, for one agent. The periodic attestation ' +
+            'that the decision records attributed to it exist and how many there are.',
     },
     {
         kind: ARTEFACT_KIND_HARNESS_SCANS,
@@ -417,6 +531,33 @@ export function sourcePopulationDigest(
     const payload = canonicalJson({
         kind,
         periodStart: periodStart.toISOString(),
+        facts: facts.map((f) => canonicalJson({ ...f })).sort(),
+    });
+    return createHash('sha256').update(payload, 'utf8').digest('hex');
+}
+
+/**
+ * The digest of ONE agent's cut of a population (#3700).
+ *
+ * A function of its own rather than an optional argument to
+ * `sourcePopulationDigest`, so the tenant-wide digest cannot change by
+ * construction: its payload is built where it always was, from the same three
+ * members. This one adds the agent — two agents with the same (say, empty)
+ * population would otherwise digest alike — and whether the population read
+ * stopped at its bound, which the body states and so the digest must cover.
+ */
+export function perAgentPopulationDigest(
+    kind: PerAgentArtefactKind,
+    periodStart: Date,
+    agentId: string,
+    facts: readonly (ReceiptFact | DecisionFact)[],
+    bounded: boolean,
+): string {
+    const payload = canonicalJson({
+        kind,
+        periodStart: periodStart.toISOString(),
+        agentId,
+        bounded,
         facts: facts.map((f) => canonicalJson({ ...f })).sort(),
     });
     return createHash('sha256').update(payload, 'utf8').digest('hex');
@@ -702,6 +843,72 @@ export function buildDecisionArtefact(
     };
 }
 
+// ── Per agent (#3700) ───────────────────────────────────────────────────────
+
+/** The lines that make a tenant-wide body one agent's, before the counts. */
+function perAgentPreamble(agentId: string, records: string, bounded: boolean): string[] {
+    const lines = [
+        `Agent: ${agentId} (agent register id)`,
+        `Attribution: ${records} No other record is counted here; every record of the tenant, ` +
+            'attributed or not, is counted in the tenant-wide artefact for the same period and control.',
+    ];
+    if (bounded) {
+        lines.push(
+            'BOUNDED: the tenant\'s records for the period exceed what the emitter reads, so this ' +
+                'agent\'s count covers the records that were read, not the whole period.',
+        );
+    }
+    lines.push('');
+    return lines;
+}
+
+/**
+ * One agent's receipts for the period. The body is the tenant-wide builder's,
+ * over this agent's facts, under a preamble naming the agent and the
+ * attribution — so a per-agent artefact and the tenant-wide one cannot describe
+ * a receipt differently.
+ */
+export function buildAgentReceiptArtefact(
+    period: ArtefactPeriod,
+    agentId: string,
+    facts: readonly ReceiptFact[],
+    digest: string,
+    bounded: boolean,
+): ArtefactBody {
+    const body = buildReceiptArtefact(period, facts, digest);
+    const preamble = perAgentPreamble(
+        agentId,
+        'the receipts submitted with an API key bound to this agent in the register. The ' +
+            'receipt\'s own agent field is the mediator\'s identifier and is not used.',
+        bounded,
+    );
+    return {
+        title: `Agent action receipts — agent ${agentId} — ${period.label}`,
+        content: [...preamble, body.content].join('\n'),
+    };
+}
+
+/** One agent's decision records for the period — see `buildAgentReceiptArtefact`. */
+export function buildAgentDecisionArtefact(
+    period: ArtefactPeriod,
+    agentId: string,
+    facts: readonly DecisionFact[],
+    digest: string,
+    bounded: boolean,
+): ArtefactBody {
+    const body = buildDecisionArtefact(period, facts, digest);
+    const preamble = perAgentPreamble(
+        agentId,
+        'the decision records written by a request speaking for this agent, through an API ' +
+            'key bound to it. Records written before attribution existed (#3700) are unattributed.',
+        bounded,
+    );
+    return {
+        title: `AI decision records (EU AI Act Art 12) — agent ${agentId} — ${period.label}`,
+        content: [...preamble, body.content].join('\n'),
+    };
+}
+
 // ── Harness scans (#3687) ───────────────────────────────────────────────────
 
 export type HarnessArtefactCompleteness = 'COMPLETE' | 'INCOMPLETE' | 'NO_SCAN';
@@ -963,6 +1170,8 @@ export function buildWithdrawalNotice(
     reason: ArtefactWithdrawalReason,
     at: Date,
     supersededDigest: string,
+    /** A per-agent artefact's agent, named in the notice; omitted (and the notice unchanged) for a tenant-wide one. */
+    agentId: string | null = null,
 ): string {
     const because =
         reason === 'CONTROL_REMOVED'
@@ -974,6 +1183,13 @@ export function buildWithdrawalNotice(
               'requirement link was removed or the framework was uninstalled — so nothing ' +
               're-computes this artefact. It is retained because it was true when written ' +
               'and may already be cited.'
+            : reason === 'AGENT_RETIRED'
+            ? 'The agent this artefact is about was retired while the period was still open. ' +
+              'Retirement ends its per-agent evidence for the open period: nothing re-computes ' +
+              'this artefact, and counts that stopped moving would otherwise stand as if the ' +
+              'agent were still a live principal. Its artefacts for closed periods are kept, ' +
+              'because a true record of what the agent did stays true; its records remain ' +
+              'counted in the tenant-wide artefact for this period.'
             : 'One or more of the records this artefact counted can no longer be verified, ' +
               'so the counts below it are no longer supportable. The artefact is retained ' +
               'because deleting evidence on the discovery of a problem is the shape of the ' +
@@ -983,6 +1199,7 @@ export function buildWithdrawalNotice(
         '',
         because,
         '',
+        ...(agentId === null ? [] : [`Agent: ${agentId}`]),
         `Period: ${period.label}`,
         `Superseded population digest: ${supersededDigest}`,
         '',

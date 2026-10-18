@@ -1032,10 +1032,11 @@ function assertCanRetireAgent(ctx: RequestContext) {
  *   • its open ownership transfer, if any, closed — CANCELLED while live (a
  *     retired agent can never be completed into), EXPIRED once lapsed
  *     (`agent-ownership-transfer.ts`);
- *   • no evidence artefact withdrawn, because none is attributable to one agent;
- *     the summary row records that basis rather than skipping the effect. That
- *     is the owner's decision (2026-10-18); per-agent evidence a retirement can
- *     withdraw is #3700 (`RETIREMENT_EVIDENCE_BASIS`).
+ *   • its PER-AGENT evidence artefacts of the periods still open withdrawn,
+ *     reason `AGENT_RETIRED` (#3700, the owner's decision of 2026-10-18 to add
+ *     evidence a retirement can withdraw). Tenant-wide artefacts describe every
+ *     agent and are never touched; closed periods keep their evidence; nothing
+ *     is deleted (`RETIREMENT_EVIDENCE_BASIS`).
  *
  * ## The order is load-bearing
  *

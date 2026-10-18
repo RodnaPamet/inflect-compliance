@@ -29,7 +29,12 @@
  *                 attributed to the retiring actor, while live (a retired agent
  *                 can never be completed into); stamped EXPIRED with no actor once
  *                 lapsed. See `closeOpenForAgent`
- *   evidence      nothing written; see `RETIREMENT_EVIDENCE_BASIS`
+ *   evidence      the agent's PER-AGENT `AgenticEvidenceArtefact`s of the periods
+ *                 still open moved to WITHDRAWN `AGENT_RETIRED`, their Evidence
+ *                 archived with a notice (#3700). Tenant-wide artefacts and closed
+ *                 periods are untouched; nothing is deleted. Written by
+ *                 `withdrawRetiredAgentEvidenceInTx`, the emitter's own file,
+ *                 which stays the only writer of the table
  *
  * ## One key, by construction
  *
@@ -53,6 +58,7 @@ import type { AgentStatus } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 import {
     boundedIds,
+    RETIREMENT_ARTEFACT_ID_CAP,
     RETIREMENT_KEY_ID_CAP,
     RETIREMENT_PROPOSAL_ID_CAP,
     summariseRetirementCascade,
@@ -66,6 +72,7 @@ import { AgentPolicyCardRepository } from '../repositories/AgentPolicyCardReposi
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
 import type { RequestContext } from '../types';
 import { revokeScannerKeysForAgentInTx } from './agent-harness-scanner-keys';
+import { withdrawRetiredAgentEvidenceInTx } from './agentic-evidence-emission';
 
 /**
  * Apply every effect of retirement, in one transaction the caller holds, and
@@ -147,6 +154,13 @@ export async function applyRetirementCascadeInTx(
         now,
     );
 
+    // ── Per-agent evidence of the open periods: withdrawn ────────────
+    // Last, after the status write like every other effect: an emitter write
+    // for this agent locks the agent row before it touches an artefact, so it
+    // either committed before the status UPDATE — and its row is withdrawn
+    // here — or it waits for this commit and is refused.
+    const evidence = await withdrawRetiredAgentEvidenceInTx(db, ctx, agentId, now);
+
     return {
         apiKeys: {
             count: revokedKeys.count,
@@ -174,6 +188,11 @@ export async function applyRetirementCascadeInTx(
         ownershipTransfer: transfer
             ? { transferId: transfer.id, toOwnerUserId: transfer.toOwnerUserId }
             : null,
+        evidenceArtefacts: {
+            count: evidence.count,
+            ...boundedIds(evidence.ids, evidence.count, RETIREMENT_ARTEFACT_ID_CAP),
+            deferredToSweep: evidence.deferredToSweep,
+        },
     };
 }
 
@@ -218,7 +237,8 @@ export async function writeRetirementAuditRows(
                 `Retired registered agent ${agent.id}: ${cascade.apiKeysRevoked} API key(s) and ` +
                 `${cascade.scannerKeysRevoked} scanner key(s) revoked, ` +
                 `${cascade.toolGrantsDropped} tool grant(s) dropped, ` +
-                `${cascade.proposalsExpired} pending proposal(s) expired`,
+                `${cascade.proposalsExpired} pending proposal(s) expired, ` +
+                `${cascade.evidenceArtefactsWithdrawn} open-period evidence artefact(s) withdrawn`,
             after: { status: 'RETIRED' },
             cascade: {
                 apiKeysRevoked: cascade.apiKeysRevoked,
@@ -228,8 +248,9 @@ export async function writeRetirementAuditRows(
                 proposalsExpired: cascade.proposalsExpired,
                 policyCardFrozenAtVersion: cascade.policyCardFrozenAtVersion,
                 ownershipTransferCancelled: cascade.ownershipTransferCancelled,
-                // Answered, not skipped. No artefact is attributable to one
-                // agent, so none is withdrawn — see `RETIREMENT_EVIDENCE_BASIS`.
+                // The agent's per-agent artefacts of the open periods; never a
+                // tenant-wide one, never a closed period — see
+                // `RETIREMENT_EVIDENCE_BASIS`.
                 evidenceArtefactsWithdrawn: cascade.evidenceArtefactsWithdrawn,
                 evidenceBasis: cascade.evidenceBasis,
             },
@@ -342,6 +363,29 @@ export async function writeRetirementAuditRows(
                 targetUserId: effects.ownershipTransfer.toOwnerUserId,
                 fromStatus: 'PENDING',
                 toStatus: 'CANCELLED',
+            },
+        });
+    }
+
+    if (effects.evidenceArtefacts.count > 0) {
+        await logEvent(db, ctx, {
+            action: 'AGENT_RETIREMENT_EVIDENCE_WITHDRAWN',
+            entityType: 'RegisteredAgent',
+            entityId: agent.id,
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'AgenticEvidenceArtefact',
+                operation: 'update',
+                reason: 'agent_retired',
+                fromStatus: 'CURRENT',
+                toStatus: 'WITHDRAWN',
+                summary:
+                    `Withdrew ${effects.evidenceArtefacts.count} open-period per-agent evidence ` +
+                    `artefact(s) of retired agent ${agent.id}`,
+                artefactIds: effects.evidenceArtefacts.ids,
+                count: effects.evidenceArtefacts.count,
+                idsTruncated: effects.evidenceArtefacts.idsTruncated,
+                deferredToSweep: effects.evidenceArtefacts.deferredToSweep,
             },
         });
     }

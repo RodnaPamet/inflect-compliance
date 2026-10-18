@@ -72,6 +72,31 @@
  * tenant would collect a monthly "no scan received" artefact for a scanner it
  * cannot run; after it, a month with no scan IS the finding — and so, per
  * scanner, is a scanner that held a trusted key in the month and sent nothing.
+ *
+ * ── PER-AGENT ARTEFACTS (#3700): THE ONES A RETIREMENT WITHDRAWS ──────────
+ *
+ * The same month's receipts and decision records, cut to each agent they are
+ * attributed to, on the same controls. They are cut from the SAME read the
+ * tenant-wide artefact renders — one population, partitioned in memory — so an
+ * agent's counts are a subset of the tenant's by construction, and the
+ * tenant-wide row's facts, digest and body are built exactly as before.
+ *
+ * An agent gets a per-agent artefact of a kind in a month when at least one of
+ * its records of that kind falls in it: the sources are append-only and a key's
+ * agent binding is write-once, so within a period that set only grows, and a
+ * zero for every agent in the register would put register-size rows on every
+ * target control each month that say nothing the tenant-wide zero does not.
+ *
+ * A RETIRED agent gets none, ever, and the refusal is held in three places,
+ * because the plan and the writes are separate transactions and a retirement
+ * can commit between them: the plan skips retired agents; each per-agent write
+ * takes FOR SHARE on the agent row FIRST and refuses a retired one (the same
+ * lock the retirement migration's triggers take, so the write and the
+ * retirement serialise); and a trigger refuses any CURRENT write for a retired
+ * agent. A row withdrawn `AGENT_RETIRED` is terminal — the update branch that
+ * revives a withdrawn artefact whose basis holds again never revives it.
+ * `withdrawRetiredAgentEvidenceInTx` is retirement's half; the withdrawal sweep
+ * asks the same question on every tick, for any period still open.
  */
 import { Prisma } from '@prisma/client';
 import { internal } from '@/lib/errors/types';
@@ -79,16 +104,22 @@ import { internal } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { log } from '@/lib/observability';
 import { assertCanWrite } from '@/app-layer/policies/common';
+import { RegisteredAgentRepository } from '@/app-layer/repositories/RegisteredAgentRepository';
+import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '@/app-layer/events/audit';
 import {
     AGENTIC_ARTEFACT_KINDS,
     ARTEFACT_KIND_DECISIONS,
+    ARTEFACT_KIND_DECISIONS_PER_AGENT,
     ARTEFACT_KIND_HARNESS_SCANS,
     ARTEFACT_KIND_PASSPORTS,
     ARTEFACT_KIND_RECEIPTS,
+    ARTEFACT_KIND_RECEIPTS_PER_AGENT,
     EVIDENCE_TARGETS,
     HARNESS_SCANNER_CAP,
+    buildAgentDecisionArtefact,
+    buildAgentReceiptArtefact,
     buildDecisionArtefact,
     buildHarnessScanArtefact,
     buildReceiptArtefact,
@@ -97,6 +128,7 @@ import {
     harnessDigestFacts,
     harnessStatusCorrection,
     monthlyPeriod,
+    perAgentPopulationDigest,
     periodForKind,
     sourcePopulationDigest,
     type AgenticArtefactKind,
@@ -138,6 +170,15 @@ const CLOSED_ARTEFACT_CAP = 500;
 const LATE_SCAN_CAP = 1_000;
 /** Approved-but-incomplete harness artefacts one tick puts back. */
 const UNSAFE_APPROVAL_CAP = 500;
+/** Agents one tenant's month is cut into per-agent artefacts for. Past it: loud, and the first by id. */
+const PER_AGENT_CAP = 500;
+/**
+ * Open-period per-agent artefacts one retirement withdraws in its transaction.
+ * The population is kinds x target controls x one open month — tens at most —
+ * so this is never reached in practice; if it were, the rest are withdrawn by
+ * the next sweep (`withdrawalReasonFor`) and the audit row says so.
+ */
+const RETIREMENT_ARTEFACT_CAP = 500;
 
 // ── Result shape ────────────────────────────────────────────────────────────
 
@@ -150,6 +191,8 @@ export interface EmittedArtefact {
     /** Nullable for the same reason `TargetControl.code` is — see there. */
     readonly controlCode: string | null;
     readonly kind: AgenticArtefactKind;
+    /** The agent a per-agent artefact is about; `null` for every tenant-wide kind. */
+    readonly agentId: string | null;
     readonly periodLabel: string;
     readonly recordCount: number;
     readonly outcome: EmissionOutcome;
@@ -170,6 +213,13 @@ export interface EmissionReport {
      */
     readonly anyTargetInstalled: boolean;
     readonly artefacts: readonly EmittedArtefact[];
+    /**
+     * Per-agent artefacts planned and then NOT written, because the agent was
+     * retired (or left the register) between the plan and the write. Counted,
+     * not dropped: a retirement racing the tick is ordinary, and it is the
+     * refusal working.
+     */
+    readonly perAgentRefused: number;
 }
 
 // ── Target resolution ───────────────────────────────────────────────────────
@@ -421,14 +471,48 @@ function safeLabel(value: string | null | undefined): string {
     return clean.length > LABEL_MAX ? `${clean.slice(0, LABEL_MAX - 1)}…` : clean;
 }
 
-async function loadReceiptFacts(
+/**
+ * One month's records of one kind: the tenant's population, and the same facts
+ * cut by the agent each is attributed to.
+ *
+ * `facts` is EXACTLY what the tenant-wide artefact has always rendered — the
+ * same columns, the same order, the same first `POPULATION_CAP` rows — so the
+ * tenant-wide digest and body are unchanged by attribution existing. The
+ * attribution column is read beside the facts and never put INTO one: a fact
+ * is the complete set of fields an artefact may render, and a key id or agent
+ * id added to it would move every tenant-wide digest.
+ */
+interface AttributedPopulation<F> {
+    readonly facts: F[];
+    /** Facts by agent id. A fact attributed to no agent is in no entry. */
+    readonly byAgent: ReadonlyMap<string, F[]>;
+    /** The period holds more records than the read takes (one past the cap is read to know). */
+    readonly bounded: boolean;
+}
+
+const EMPTY_POPULATION: AttributedPopulation<never> = { facts: [], byAgent: new Map(), bounded: false };
+
+function groupByAgent<F>(facts: readonly F[], agentOf: (index: number) => string | null | undefined): Map<string, F[]> {
+    const out = new Map<string, F[]>();
+    facts.forEach((fact, i) => {
+        const agentId = agentOf(i);
+        if (!agentId) return;
+        const list = out.get(agentId);
+        if (list) list.push(fact);
+        else out.set(agentId, [fact]);
+    });
+    return out;
+}
+
+async function loadReceiptPopulation(
     db: PrismaTx,
     ctx: RequestContext,
     period: ArtefactPeriod,
-): Promise<ReceiptFact[]> {
-    // Only the columns an artefact may render — see `ReceiptFact`. `scannedSummary`
-    // and `signature` are not selected, so they cannot reach a body builder even
-    // by accident.
+): Promise<AttributedPopulation<ReceiptFact>> {
+    // Only the columns an artefact may render — see `ReceiptFact` — plus the
+    // submitting credential, which attributes the receipt and is never rendered.
+    // `scannedSummary` and `signature` are not selected, so they cannot reach a
+    // body builder even by accident.
     const rows = await db.agentActionReceipt.findMany({
         where: {
             tenantId: ctx.tenantId,
@@ -441,25 +525,54 @@ async function loadReceiptFacts(
             verified: true,
             auditLogId: true,
             toolProvenance: true,
+            mcpKeyId: true,
         },
         orderBy: { occurredAt: 'asc' },
-        take: POPULATION_CAP,
+        take: POPULATION_CAP + 1,
     });
+    const read = rows.slice(0, POPULATION_CAP);
     // Sanitised and bounded HERE, at the seam between a foreign string and an
     // artefact body — not at render time, which would leave the stored row
-    // dangerous to the PDF export and the share link.
-    return rows.map((r) => ({
-        ...r,
+    // dangerous to the PDF export and the share link. Built member by member so
+    // `mcpKeyId` cannot ride into a fact.
+    const facts: ReceiptFact[] = read.map((r) => ({
+        id: r.id,
         toolName: safeLabel(r.toolName),
         decisionVerdict: safeLabel(r.decisionVerdict),
+        verified: r.verified,
+        auditLogId: r.auditLogId,
+        toolProvenance: r.toolProvenance,
     }));
+
+    // A receipt is the agent's whose credential SUBMITTED it — our binding, on
+    // our key row, written once (no usecase re-binds a key). Never pipelock's
+    // `agent_id`: the mediator's namespace, a run nonce at worst, and on an
+    // unverified receipt whatever the sender chose. One read for every key the
+    // month's receipts name, never one per receipt.
+    const keyIds = [...new Set(read.map((r) => r.mcpKeyId).filter((k): k is string => k !== null))];
+    const keys = keyIds.length === 0
+        ? []
+        : await db.tenantApiKey.findMany({
+              where: { tenantId: ctx.tenantId, id: { in: keyIds }, agentId: { not: null } },
+              select: { id: true, agentId: true },
+              take: keyIds.length,
+          });
+    const agentOfKey = new Map(keys.map((k) => [k.id, k.agentId]));
+    return {
+        facts,
+        byAgent: groupByAgent(facts, (i) => {
+            const keyId = read[i].mcpKeyId;
+            return keyId === null ? null : agentOfKey.get(keyId);
+        }),
+        bounded: rows.length > POPULATION_CAP,
+    };
 }
 
-async function loadDecisionFacts(
+async function loadDecisionPopulation(
     db: PrismaTx,
     ctx: RequestContext,
     period: ArtefactPeriod,
-): Promise<DecisionFact[]> {
+): Promise<AttributedPopulation<DecisionFact>> {
     const rows = await db.aiDecisionLog.findMany({
         where: {
             tenantId: ctx.tenantId,
@@ -471,16 +584,26 @@ async function loadDecisionFacts(
             provider: true,
             guardVerdict: true,
             humanOutcome: true,
+            // Stamped at insert from the writing request's agent, immutable by
+            // trigger. Read for attribution only — never a fact.
+            agentId: true,
         },
         orderBy: { createdAt: 'asc' },
-        take: POPULATION_CAP,
+        take: POPULATION_CAP + 1,
     });
-    return rows.map((r) => ({
-        ...r,
+    const read = rows.slice(0, POPULATION_CAP);
+    const facts: DecisionFact[] = read.map((r) => ({
+        id: r.id,
         feature: safeLabel(r.feature),
         provider: safeLabel(r.provider),
         guardVerdict: r.guardVerdict === null ? null : safeLabel(r.guardVerdict),
+        humanOutcome: r.humanOutcome,
     }));
+    return {
+        facts,
+        byAgent: groupByAgent(facts, (i) => read[i].agentId),
+        bounded: rows.length > POPULATION_CAP,
+    };
 }
 
 type MutableTallies = {
@@ -661,6 +784,11 @@ async function loadHarnessFacts(
 
 interface ArtefactPlan {
     readonly kind: AgenticArtefactKind;
+    /**
+     * The agent a per-agent artefact is about, `null` for a tenant-wide kind —
+     * the fifth member of the identity, and the DB CHECK pairs it with `kind`.
+     */
+    readonly agentId: string | null;
     readonly control: TargetControl;
     readonly period: ArtefactPeriod;
     readonly digest: string;
@@ -721,34 +849,86 @@ async function logEmitterStatusChange(
  *
  * `allowCreate: false` is the retry after a lost insert race: the row must now
  * exist, and a second vanishing is a bug rather than a race.
+ *
+ * For a TENANT-WIDE plan only, which is all the passport sweep writes: a
+ * per-agent plan goes through `writePlannedArtefactInTx`, which may refuse.
  */
 export async function writeArtefactInTx(
     db: PrismaTx,
     ctx: RequestContext,
     plan: ArtefactPlan,
     actorUserId: string | null,
-    { allowCreate = true }: { allowCreate?: boolean } = {},
+    options: { allowCreate?: boolean } = {},
 ): Promise<EmittedArtefact> {
-    const existing = await db.agenticEvidenceArtefact.findUnique({
+    if (plan.agentId !== null) {
+        throw internal('writeArtefactInTx writes tenant-wide artefacts; a per-agent plan may be refused');
+    }
+    const written = await writePlannedArtefactInTx(db, ctx, plan, actorUserId, options);
+    // Unreachable for a tenant-wide plan: the only refusal is a row withdrawn
+    // AGENT_RETIRED, which a CHECK makes unrepresentable without an agent.
+    if (written === null) throw internal('a tenant-wide artefact was refused as a retired agent\'s');
+    return written;
+}
+
+/**
+ * Write one planned artefact, or return `null` when it is REFUSED: the plan is
+ * one agent's and that agent is retired (or has left the register), or the row
+ * was withdrawn `AGENT_RETIRED` — which is terminal, because retirement is.
+ *
+ * ── THE AGENT ROW IS LOCKED FIRST ──────────────────────────────────────────
+ *
+ * The plan was read in an earlier transaction, so the agent may have been
+ * retired since. `FOR SHARE` on its row conflicts with retirement's status
+ * UPDATE: either this write holds the row first — retirement then waits for
+ * this commit, and its cascade withdraws what this wrote — or retirement does,
+ * and this waits, reads RETIRED and refuses. FIRST, before any Evidence row is
+ * touched, so the lock order is the one retirement takes (agent, then the
+ * artefact and its Evidence) and the two cannot deadlock. The trigger
+ * `agentic_evidence_artefact_refuses_retired_agent` takes the same lock and is
+ * the backstop for a writer that skips this.
+ */
+async function writePlannedArtefactInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    plan: ArtefactPlan,
+    actorUserId: string | null,
+    { allowCreate = true }: { allowCreate?: boolean } = {},
+): Promise<EmittedArtefact | null> {
+    if (plan.agentId !== null) {
+        const agent = await RegisteredAgentRepository.lockLifecycleStateForShare(db, ctx, plan.agentId);
+        if (agent === null || agent.status === 'RETIRED') return null;
+    }
+
+    // `findFirst`, not `findUnique`: the identity's fifth member is NULL on
+    // every tenant-wide row, which a compound unique input cannot name. The
+    // index is `NULLS NOT DISTINCT`, so this matches at most one row.
+    const existing = await db.agenticEvidenceArtefact.findFirst({
         where: {
-            tenantId_controlId_kind_periodStart: {
-                tenantId: ctx.tenantId,
-                controlId: plan.control.id,
-                kind: plan.kind,
-                periodStart: plan.period.start,
-            },
+            tenantId: ctx.tenantId,
+            controlId: plan.control.id,
+            kind: plan.kind,
+            periodStart: plan.period.start,
+            agentId: plan.agentId,
         },
         select: {
             id: true,
             evidenceId: true,
             sourceDigest: true,
             status: true,
+            withdrawnReason: true,
             plannedEvidenceStatus: true,
             // Through the relation, not a second Evidence read: the
             // status is the artefact's own row's, in the same query.
             evidence: { select: { status: true } },
         },
     });
+
+    // TERMINAL. The update branch below revives a withdrawn artefact whose
+    // basis holds again — right for a control whose removal was undone, and
+    // never right here: a retired agent is retired for good.
+    if (existing && existing.status === 'WITHDRAWN' && existing.withdrawnReason === 'AGENT_RETIRED') {
+        return null;
+    }
 
     if (existing) {
         // ONE-DIRECTIONAL: an incomplete month found APPROVED is put
@@ -782,6 +962,7 @@ export async function writeArtefactInTx(
                 controlId: plan.control.id,
                 controlCode: plan.control.code,
                 kind: plan.kind,
+                agentId: plan.agentId,
                 periodLabel: plan.period.label,
                 recordCount: plan.recordCount,
                 outcome: 'unchanged' as const,
@@ -828,6 +1009,7 @@ export async function writeArtefactInTx(
             controlId: plan.control.id,
             controlCode: plan.control.code,
             kind: plan.kind,
+            agentId: plan.agentId,
             periodLabel: plan.period.label,
             recordCount: plan.recordCount,
             outcome: 'updated' as const,
@@ -868,6 +1050,7 @@ export async function writeArtefactInTx(
             tenantId: ctx.tenantId,
             controlId: plan.control.id,
             kind: plan.kind,
+            agentId: plan.agentId,
             periodStart: plan.period.start,
             periodEnd: plan.period.end,
             evidenceId: evidence.id,
@@ -883,6 +1066,7 @@ export async function writeArtefactInTx(
         controlId: plan.control.id,
         controlCode: plan.control.code,
         kind: plan.kind,
+        agentId: plan.agentId,
         periodLabel: plan.period.label,
         recordCount: plan.recordCount,
         outcome: 'created' as const,
@@ -890,20 +1074,34 @@ export async function writeArtefactInTx(
 }
 
 /**
- * Write one artefact, creating or updating in place.
+ * Write one artefact, creating or updating in place — or `null` when a
+ * per-agent write is refused for a retired agent.
  *
  * Its own transaction, one per artefact, so a unique-index collision with a
  * concurrent tick rolls back ONLY that artefact's insert — including the
  * `Evidence` row it had just created, which would otherwise be left orphaned by
- * a failure the retry then papers over.
+ * a failure the retry then papers over. The same holds for the retirement
+ * trigger's refusal: the Evidence row created before the artefact insert was
+ * refused rolls back with it.
  */
 async function writeArtefact(
     ctx: RequestContext,
     plan: ArtefactPlan,
     actorUserId: string | null,
-): Promise<EmittedArtefact> {
-    const attempt = async (allowCreate: boolean): Promise<EmittedArtefact> =>
-        runInTenantContext(ctx, (db) => writeArtefactInTx(db, ctx, plan, actorUserId, { allowCreate }));
+): Promise<EmittedArtefact | null> {
+    const attempt = async (allowCreate: boolean): Promise<EmittedArtefact | null> => {
+        try {
+            return await runInTenantContext(ctx, (db) =>
+                writePlannedArtefactInTx(db, ctx, plan, actorUserId, { allowCreate }),
+            );
+        } catch (err) {
+            // The trigger's refusal, for a writer that got past the lock check
+            // (it cannot, today). Anything else is rethrown untouched — a broken
+            // database must not read as the control working.
+            if (plan.agentId !== null && isAgentRetiredDbRefusal(err)) return null;
+            throw err;
+        }
+    };
 
     try {
         return await attempt(true);
@@ -927,9 +1125,11 @@ function planFor(
     recordCount: number,
     body: ArtefactBody,
     evidenceStatus: HarnessPlannedStatus | null = null,
+    agentId: string | null = null,
 ): ArtefactPlan {
     return {
         kind,
+        agentId,
         control,
         period,
         digest,
@@ -1009,8 +1209,16 @@ export async function emitAgenticEvidence(
         const receiptTargets = wants(ARTEFACT_KIND_RECEIPTS) ? byKind.get(ARTEFACT_KIND_RECEIPTS) ?? [] : [];
         const decisionTargets = wants(ARTEFACT_KIND_DECISIONS) ? byKind.get(ARTEFACT_KIND_DECISIONS) ?? [] : [];
         const harnessTargets = wants(ARTEFACT_KIND_HARNESS_SCANS) ? byKind.get(ARTEFACT_KIND_HARNESS_SCANS) ?? [] : [];
-        const needReceipts = receiptTargets.length > 0;
-        const needDecisions = decisionTargets.length > 0;
+        const agentReceiptTargets = wants(ARTEFACT_KIND_RECEIPTS_PER_AGENT)
+            ? byKind.get(ARTEFACT_KIND_RECEIPTS_PER_AGENT) ?? []
+            : [];
+        const agentDecisionTargets = wants(ARTEFACT_KIND_DECISIONS_PER_AGENT)
+            ? byKind.get(ARTEFACT_KIND_DECISIONS_PER_AGENT) ?? []
+            : [];
+        // One read per kind serves both cuts — the per-agent artefacts are
+        // partitions of the tenant-wide population, never a second query of it.
+        const needReceipts = receiptTargets.length > 0 || agentReceiptTargets.length > 0;
+        const needDecisions = decisionTargets.length > 0 || agentDecisionTargets.length > 0;
         // Opted in once a scanner key has EVER been registered — revoked keys
         // count, because a tenant that stopped scanning is exactly the tenant
         // whose empty months must be reported, and key rows are never deleted.
@@ -1018,8 +1226,10 @@ export async function emitAgenticEvidence(
             harnessTargets.length > 0 &&
             (await db.agentHarnessScannerKey.count({ where: { tenantId: ctx.tenantId } })) > 0;
 
-        const receipts = needReceipts ? await loadReceiptFacts(db, ctx, period) : [];
-        const decisions = needDecisions ? await loadDecisionFacts(db, ctx, period) : [];
+        const receiptPopulation = needReceipts ? await loadReceiptPopulation(db, ctx, period) : EMPTY_POPULATION;
+        const decisionPopulation = needDecisions ? await loadDecisionPopulation(db, ctx, period) : EMPTY_POPULATION;
+        const receipts = receiptPopulation.facts;
+        const decisions = decisionPopulation.facts;
 
         const receiptDigest = sourcePopulationDigest(
             ARTEFACT_KIND_RECEIPTS,
@@ -1042,6 +1252,15 @@ export async function emitAgenticEvidence(
             plans.push(planFor(ARTEFACT_KIND_DECISIONS, control, period, decisionDigest, decisions.length, decisionBody));
         }
 
+        plans.push(
+            ...(await planPerAgentArtefacts(db, ctx, period, {
+                receipts: agentReceiptTargets.length > 0 ? receiptPopulation : EMPTY_POPULATION,
+                decisions: agentDecisionTargets.length > 0 ? decisionPopulation : EMPTY_POPULATION,
+                receiptTargets: agentReceiptTargets,
+                decisionTargets: agentDecisionTargets,
+            })),
+        );
+
         if (needHarness) {
             const harness = await loadHarnessFacts(db, ctx, period);
             // The bounds are digested with the scans, so a bound tripping (or
@@ -1055,6 +1274,7 @@ export async function emitAgenticEvidence(
             for (const control of harnessTargets) {
                 plans.push({
                     kind: ARTEFACT_KIND_HARNESS_SCANS,
+                    agentId: null,
                     control,
                     period,
                     digest: harnessDigest,
@@ -1077,8 +1297,11 @@ export async function emitAgenticEvidence(
     });
 
     const artefacts: EmittedArtefact[] = [];
+    let perAgentRefused = 0;
     for (const plan of prepared.plans) {
-        artefacts.push(await writeArtefact(ctx, plan, prepared.actorUserId));
+        const written = await writeArtefact(ctx, plan, prepared.actorUserId);
+        if (written === null) perAgentRefused += 1;
+        else artefacts.push(written);
     }
 
     if (artefacts.length > 0) {
@@ -1094,6 +1317,7 @@ export async function emitAgenticEvidence(
                     created: artefacts.filter((a) => a.outcome === 'created').length,
                     updated: artefacts.filter((a) => a.outcome === 'updated').length,
                     unchanged: artefacts.filter((a) => a.outcome === 'unchanged').length,
+                    perAgentRefused,
                 },
             }),
         );
@@ -1103,6 +1327,7 @@ export async function emitAgenticEvidence(
         tenantId: ctx.tenantId,
         period: period.label,
         artefacts: artefacts.length,
+        perAgentRefused,
     });
 
     return {
@@ -1110,7 +1335,89 @@ export async function emitAgenticEvidence(
         periodLabel: period.label,
         anyTargetInstalled: prepared.anyInstalled,
         artefacts,
+        perAgentRefused,
     };
+}
+
+/**
+ * The per-agent plans for one month (#3700): for every agent with at least one
+ * attributed record of a kind in the period, that agent's cut of the kind on
+ * each of its target controls.
+ *
+ * Only agents the register still holds and has not RETIRED. A retired agent's
+ * open-period artefacts were withdrawn by its retirement and its closed ones
+ * stand as written, so there is nothing to plan for it; an id the register does
+ * not hold (a decision stamped by a credential whose agent row is gone, or the
+ * kill-switch drill's synthetic agent) is counted in the tenant-wide artefact
+ * and nowhere else. One read for every candidate, never one per agent.
+ */
+async function planPerAgentArtefacts(
+    db: PrismaTx,
+    ctx: RequestContext,
+    period: ArtefactPeriod,
+    input: {
+        readonly receipts: AttributedPopulation<ReceiptFact>;
+        readonly decisions: AttributedPopulation<DecisionFact>;
+        readonly receiptTargets: readonly TargetControl[];
+        readonly decisionTargets: readonly TargetControl[];
+    },
+): Promise<ArtefactPlan[]> {
+    const candidates = [...new Set([...input.receipts.byAgent.keys(), ...input.decisions.byAgent.keys()])].sort();
+    if (candidates.length === 0) return [];
+
+    const live = await db.registeredAgent.findMany({
+        where: { tenantId: ctx.tenantId, id: { in: candidates }, deletedAt: null, status: { not: 'RETIRED' } },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: candidates.length,
+    });
+    if (live.length > PER_AGENT_CAP) {
+        // Loud and deterministic: the same agents are left out every tick, and
+        // their records are still counted in the tenant-wide artefact.
+        log('warn', 'Agentic evidence: more agents with records this month than one tenant is cut into', {
+            tenantId: ctx.tenantId,
+            period: period.label,
+            agents: live.length,
+            cap: PER_AGENT_CAP,
+        });
+    }
+
+    const plans: ArtefactPlan[] = [];
+    for (const { id: agentId } of live.slice(0, PER_AGENT_CAP)) {
+        const receipts = input.receipts.byAgent.get(agentId);
+        if (receipts && input.receiptTargets.length > 0) {
+            const digest = perAgentPopulationDigest(
+                ARTEFACT_KIND_RECEIPTS_PER_AGENT,
+                period.start,
+                agentId,
+                receipts,
+                input.receipts.bounded,
+            );
+            const body = buildAgentReceiptArtefact(period, agentId, receipts, digest, input.receipts.bounded);
+            for (const control of input.receiptTargets) {
+                plans.push(
+                    planFor(ARTEFACT_KIND_RECEIPTS_PER_AGENT, control, period, digest, receipts.length, body, null, agentId),
+                );
+            }
+        }
+        const decisions = input.decisions.byAgent.get(agentId);
+        if (decisions && input.decisionTargets.length > 0) {
+            const digest = perAgentPopulationDigest(
+                ARTEFACT_KIND_DECISIONS_PER_AGENT,
+                period.start,
+                agentId,
+                decisions,
+                input.decisions.bounded,
+            );
+            const body = buildAgentDecisionArtefact(period, agentId, decisions, digest, input.decisions.bounded);
+            for (const control of input.decisionTargets) {
+                plans.push(
+                    planFor(ARTEFACT_KIND_DECISIONS_PER_AGENT, control, period, digest, decisions.length, body, null, agentId),
+                );
+            }
+        }
+    }
+    return plans;
 }
 
 // ── Closed harness months ───────────────────────────────────────────────────
@@ -1330,6 +1637,14 @@ export interface WithdrawnArtefact {
  * which have since been found unverifiable. Re-emission fixes the ORDINARY case
  * (the counts recompute and the artefact keeps going), so withdrawal is reserved
  * for the case where the whole population is gone.
+ *
+ * `AGENT_RETIRED` (#3700) is the fourth: a per-agent artefact of a period still
+ * open whose agent is RETIRED. Retirement withdraws those in its own
+ * transaction (`withdrawRetiredAgentEvidenceInTx`); this asks the same question
+ * on every tick, so a retirement that ran on a build that did not know the
+ * per-agent kinds — the rollback window — or one whose open-period population
+ * exceeded what its transaction withdraws is still honoured while the period is
+ * open. A closed period is never withdrawn for it.
  */
 export async function withdrawStaleAgenticEvidence(
     ctx: RequestContext,
@@ -1337,6 +1652,7 @@ export async function withdrawStaleAgenticEvidence(
     assertCanWrite(ctx);
 
     const withdrawn: WithdrawnArtefact[] = [];
+    const now = new Date();
 
     const { candidates, targetKeys, installedKinds } = await runInTenantContext(ctx, async (db) => {
         // The same resolution the emitter runs, in the same pass, so the two
@@ -1357,10 +1673,13 @@ export async function withdrawStaleAgenticEvidence(
                 sourceDigest: true,
                 periodStart: true,
                 periodEnd: true,
+                agentId: true,
                 // Read through the relation in the SAME query — the deleted
                 // state is per-row, and a read per row in the loop below would
-                // be an N+1 over a population capped at 20k.
+                // be an N+1 over a population capped at 20k. Likewise the
+                // agent's status, for a per-agent row.
                 control: { select: { deletedAt: true } },
+                agent: { select: { status: true } },
             },
             take: POPULATION_CAP,
         });
@@ -1383,14 +1702,14 @@ export async function withdrawStaleAgenticEvidence(
     }
 
     for (const row of candidates) {
-        const reason = withdrawalReasonFor(row, targetKeys, installedKinds);
+        const reason = withdrawalReasonFor(row, targetKeys, installedKinds, now);
         if (reason === null) continue;
 
         const at = new Date();
         // The period the artefact COVERS, by its kind: a passport's notice
         // names its ISO week (`2026-W42`), not the month the week starts in.
         const period = periodForKind(row.kind, row.periodStart);
-        const notice = buildWithdrawalNotice(period, reason, at, row.sourceDigest);
+        const notice = buildWithdrawalNotice(period, reason, at, row.sourceDigest, row.agentId);
         await runInTenantContext(ctx, async (db) => {
             await db.evidence.update({
                 where: { id: row.evidenceId },
@@ -1430,13 +1749,27 @@ function targetKey(controlId: string, kind: string): string {
  * absent from the target set (`resolveTargetControls` filters `deletedAt: null`).
  * Reversing these two lines would report every removed control as
  * `OBLIGATION_UNMAPPED` and the notice would tell an assessor the wrong story.
+ *
+ * `AGENT_RETIRED` comes second: it is a per-row fact this pass observed (the
+ * agent's status, read through the relation), like the soft-delete, and it is
+ * asked only of a period still OPEN — a closed period's per-agent artefact is a
+ * true record of what the agent did and stays.
  */
 function withdrawalReasonFor(
-    row: { controlId: string; kind: string; control: { deletedAt: Date | null } },
+    row: {
+        controlId: string;
+        kind: string;
+        periodEnd: Date;
+        agentId: string | null;
+        control: { deletedAt: Date | null };
+        agent: { status: string } | null;
+    },
     targetKeys: ReadonlySet<string>,
     installedKinds: ReadonlySet<AgenticArtefactKind>,
+    now: Date,
 ): ArtefactWithdrawalReason | null {
     if (row.control.deletedAt !== null) return 'CONTROL_REMOVED';
+    if (row.agentId !== null && row.agent?.status === 'RETIRED' && row.periodEnd > now) return 'AGENT_RETIRED';
     // A kind with no target declaration in THIS build cannot be judged absent —
     // see point 3 in the function docstring above.
     if (!isKnownKind(row.kind)) return null;
@@ -1448,4 +1781,89 @@ function withdrawalReasonFor(
 
 function isKnownKind(kind: string): kind is AgenticArtefactKind {
     return AGENTIC_ARTEFACT_KINDS.some((k) => k === kind);
+}
+
+// ── Retirement (#3700) ──────────────────────────────────────────────────────
+
+export interface RetiredAgentEvidenceWithdrawal {
+    /** Artefacts withdrawn by this call. */
+    readonly count: number;
+    /** Their ids, in period order. */
+    readonly ids: readonly string[];
+    /**
+     * More open-period artefacts existed than one retirement withdraws
+     * (`RETIREMENT_ARTEFACT_CAP`); the rest are withdrawn by the next sweep.
+     */
+    readonly deferredToSweep: boolean;
+}
+
+/**
+ * Withdraw a retiring agent's per-agent artefacts of every period still OPEN,
+ * inside the retirement's own transaction, with reason `AGENT_RETIRED`.
+ *
+ * Called by `applyRetirementCascadeInTx` after the agent's status is RETIRED,
+ * so the agent row is already locked by this transaction: an emitter write for
+ * this agent either committed before it — and is withdrawn here — or waits and
+ * is then refused (the per-agent write locks the agent row first, and a
+ * trigger refuses a CURRENT write for a retired agent).
+ *
+ * No gate of its own, deliberately. Retirement is one act under
+ * `admin.agent_registry` alone (0e), and every effect is written directly; the
+ * emitter's `assertCanWrite` here would add a gate to retirement that nobody
+ * decided it should carry. It lives in this file because this file is the only
+ * writer of `AgenticEvidenceArtefact`.
+ *
+ * What it does NOT touch, by construction rather than by care:
+ *   • tenant-wide artefacts — the WHERE is the agent, and a CHECK makes a
+ *     tenant-wide row with an agent (and an AGENT_RETIRED tenant-wide
+ *     withdrawal) unrepresentable;
+ *   • closed periods — `periodEnd > now`; a true record of what the agent did
+ *     stays true;
+ *   • any row's existence — the Evidence is archived with a notice in place of
+ *     the counts, and nothing is deleted.
+ *
+ * Evidence then artefact, per row: the order the withdrawal sweep and the
+ * emitter's update branch take, so none of the three can deadlock another.
+ */
+export async function withdrawRetiredAgentEvidenceInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    agentId: string,
+    now: Date,
+): Promise<RetiredAgentEvidenceWithdrawal> {
+    const rows = await db.agenticEvidenceArtefact.findMany({
+        where: { tenantId: ctx.tenantId, agentId, status: 'CURRENT', periodEnd: { gt: now } },
+        select: { id: true, evidenceId: true, kind: true, periodStart: true, sourceDigest: true },
+        orderBy: [{ periodStart: 'asc' }, { id: 'asc' }],
+        take: RETIREMENT_ARTEFACT_CAP + 1,
+    });
+    const deferredToSweep = rows.length > RETIREMENT_ARTEFACT_CAP;
+    if (deferredToSweep) {
+        log('warn', 'Agentic evidence: retirement left open-period artefacts for the next sweep', {
+            tenantId: ctx.tenantId,
+            agentId,
+            cap: RETIREMENT_ARTEFACT_CAP,
+        });
+    }
+
+    const ids: string[] = [];
+    for (const row of rows.slice(0, RETIREMENT_ARTEFACT_CAP)) {
+        const notice = buildWithdrawalNotice(
+            periodForKind(row.kind, row.periodStart),
+            'AGENT_RETIRED',
+            now,
+            row.sourceDigest,
+            agentId,
+        );
+        await db.evidence.update({
+            where: { id: row.evidenceId },
+            data: { content: notice, isArchived: true },
+        });
+        await db.agenticEvidenceArtefact.update({
+            where: { id: row.id },
+            data: { status: 'WITHDRAWN', withdrawnAt: now, withdrawnReason: 'AGENT_RETIRED' },
+        });
+        ids.push(row.id);
+    }
+    return { count: ids.length, ids, deferredToSweep };
 }

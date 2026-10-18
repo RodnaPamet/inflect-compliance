@@ -41,7 +41,7 @@ const artefact = (outcome: 'created' | 'updated' | 'unchanged') => ({ outcome })
 
 beforeEach(() => {
     jest.clearAllMocks();
-    emitAgenticEvidence.mockResolvedValue({ artefacts: [artefact('unchanged')] });
+    emitAgenticEvidence.mockResolvedValue({ artefacts: [artefact('unchanged')], perAgentRefused: 1 });
     reconcileClosedHarnessPeriods.mockResolvedValue({
         periodLabels: ['2026-09'],
         artefacts: [artefact('updated'), artefact('updated')],
@@ -62,7 +62,9 @@ describe('the scheduled tick re-asserts closed harness months', () => {
         // The tick's own clock, not a fixed month.
         expect(options.now.getTime()).toBeGreaterThanOrEqual(before);
 
-        expect(result).toMatchObject({ unchanged: 1, updated: 2, demoted: 1, skipped: 0 });
+        // `perAgentRefused`: a per-agent artefact refused for an agent retired
+        // between the plan and the write (#3700) — counted, not dropped.
+        expect(result).toMatchObject({ unchanged: 1, updated: 2, demoted: 1, perAgentRefused: 1, skipped: 0 });
     });
 
     it('does not reconcile on a backfill of one named month', async () => {

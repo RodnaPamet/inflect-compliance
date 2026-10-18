@@ -600,6 +600,19 @@ model AiDecisionLog {
   /// human resumes or aborts rather than a session it never opened.
   sessionRef    String?
   userId        String?
+  /// The registered agent the writing request spoke for — `ctx.agentId`, the
+  /// agent its API key is bound to — or NULL for a person, an unbound key, a
+  /// system job, and every row written before migration 20261018140000 (#3700).
+  /// Stamped at insert by `logAiDecision` and covered by the immutability
+  /// trigger, so a decision is attributed by the credential that made it and
+  /// can never be re-attributed afterwards. It is what lets the evidence emitter
+  /// count ONE agent's decisions (`AI_DECISION_RECORDS_PER_AGENT`).
+  ///
+  /// NO foreign key, like `userId` and `sessionRef`: this table is retained
+  /// through a tenant purge and never DML'd by it (`NEVER_DML`), so an FK to the
+  /// purgeable register would either block the purge or have to rewrite a row
+  /// the trigger keeps immutable. NULL is "unattributed", never "some agent".
+  agentId       String?
   createdAt     DateTime       @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
