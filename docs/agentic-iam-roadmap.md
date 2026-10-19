@@ -934,6 +934,44 @@ the whole queue, and whether an expired dissent proposal is raised again.
   shown beside the rates, and with nothing concluded both rates are
   NOT_ASSESSED, never 100%.
 
+### External reliance on the auditor's workpapers
+
+Step `4d` (#3681) packages the basis for an external auditor's reliance in the
+product. The owner's decisions of 2026-10-19 are on the issue: ISO/IEC 42001 as
+the first framework, every control the five library v1 procedures are on, a
+pack built in the product and shared through pack-scoped access, and Inflect's
+ISO/IEC 27001 certification body as the auditor.
+
+- **The pack.** `assembleAgentAuditReliancePack`
+  (`usecases/agent-audit-reliance.ts`) assembles and freezes an ordinary audit
+  pack for one audit cycle, at `POST …/audits/cycles/:cycleId/reliance-pack` or
+  **Reliance pack** on the cycle page. It holds one CONTROL item per control in
+  scope and one FRAMEWORK_COVERAGE summary. A control's item carries every
+  workpaper of the period, internal audit's sampling record of each, the
+  agreement figures and every limit that applies. The summary carries the scope,
+  the catalogue version and its standing, and the pack's agreement rate with its
+  two definitions (`assurance.reliance_reperformance_agreement_rate` and the
+  disagreement rate). The rules live in the pure planner
+  `lib/agentic/audit-reliance.ts`.
+- **Zero is never reliance.** The pack is refused, with a named reason and an
+  audit row, for a cycle with no period, a period holding no whole month or
+  quarter, no workpaper in the period, more than 2,000 workpapers, or a
+  workpaper it cannot attribute to a control. A control in scope with no
+  workpaper is listed with `NO_WORKPAPERS_IN_PERIOD`, never left out, and no
+  concluded review is no rate.
+- **Access.** The pack is shared like any frozen pack: a share link scoped to the
+  one pack, with expiry and revocation, and the auditor's grant naming it. The
+  shared page and the pack page render the reliance block
+  (`components/audits/RelianceSnapshotBlock.tsx`). The pack carries no personal
+  identifiers.
+- **The memo.** `docs/agentic-audit-reliance-memo.md` states the basis
+  (internal audit's re-performance) and the limits: library v1 not approved by
+  internal audit nor agreed by PwC, and only `agent.authority_conformance`
+  citing an ISO/IEC 42001 Annex A identifier.
+- **Open, and outside the code.** The external auditor's conclusion on reliance
+  is recorded on #3681 and as Evidence against each control it covers once
+  given; none is recorded.
+
 ### Tenant-authored skills
 
 Step `4c` (#3680) lets a tenant teach its own agents with a skill it wrote, which
@@ -1330,7 +1368,7 @@ and one new key:
 | Set a peer's inbound quota (`4b`) | `admin.agent_registry` | The key that registers the peer (decision 25). |
 | Issue, read and revoke a peer's inbound credential; read a peer's kept messages (`4b`) | `admin.agent_registry` | Binding a peer to a receiving agent and a workflow allowlist is configuration of whom the tenant talks to, as registering and pinning are (decision 12). Issuing also refuses an API key. The send itself is an external tool call under `admin.agent_external_tools`. |
 | Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/admin/agents/skills/tenant/**`; see above. |
-| Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | The existing gates, and `audits.manage` for workpapers | No new route. Packs go through the pack usecases behind `assertCanManageAuditPacks`, which admits EDITOR; putting workpapers into a pack reads them, so that part also requires `audits.manage`, which EDITOR does not hold. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
+| Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | `audits.manage` and `admin.manage`, both | One route, `POST …/audits/cycles/:cycleId/reliance-pack` (#3681), because a reliance item's snapshot is built from the workpapers server-side and the existing item route takes a client-supplied snapshot. `audits.manage` because assembling reads every workpaper of the period, and `admin.manage` because assembling also freezes the pack, which `assertCanFreezePack` admits for OWNER and ADMIN by role; requiring both leaves no custom role that passes the route and fails the usecase without an `AUTHZ_DENIED` row. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
 
 Steps `1b`, `1c`, `1d`, `3c` and `4e` plan no route of their own. `1b` extends
 the run detail page that the existing run routes serve, and `3c`'s handlers run
