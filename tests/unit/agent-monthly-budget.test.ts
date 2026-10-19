@@ -17,6 +17,9 @@
  * All three are asserted below, in both directions.
  */
 import {
+    BUDGET_RUN_TOKEN_CEILING,
+    MAX_MONTHLY_TOKEN_BUDGET,
+    monthlyBudgetSettingRefusal,
     evaluateMonthlyBudget,
     monthStartUtc,
     monthlyBudgetRefusalMessage,
@@ -235,5 +238,41 @@ describe('the verdict is a CHECK, not a reservation — and the bound on that', 
         });
         expect(second.allowed).toBe(false);
         expect(second.reason).toBe('MONTHLY_TOKEN_BUDGET_EXCEEDED');
+    });
+});
+
+// ─── What a person may set (#3777) ──────────────────────────────────────────
+
+describe('monthlyBudgetSettingRefusal', () => {
+    it('charges the same ceiling the gate charges every run', () => {
+        // The client-safe constant must not drift from the gate's own.
+        expect(BUDGET_RUN_TOKEN_CEILING).toBe(ENGINE_RUN_CAPS.TOKENS);
+    });
+
+    it('allows no budget, 0, one run\'s ceiling and the maximum', () => {
+        for (const ok of [null, 0, BUDGET_RUN_TOKEN_CEILING, BUDGET_RUN_TOKEN_CEILING * 50, MAX_MONTHLY_TOKEN_BUDGET]) {
+            expect({ ok, refusal: monthlyBudgetSettingRefusal(ok) }).toEqual({ ok, refusal: null });
+        }
+    });
+
+    it('names each refusal', () => {
+        expect(monthlyBudgetSettingRefusal(1)).toBe('BELOW_ONE_RUN');
+        expect(monthlyBudgetSettingRefusal(BUDGET_RUN_TOKEN_CEILING - 1)).toBe('BELOW_ONE_RUN');
+        expect(monthlyBudgetSettingRefusal(-1)).toBe('NEGATIVE');
+        expect(monthlyBudgetSettingRefusal(MAX_MONTHLY_TOKEN_BUDGET + 1)).toBe('ABOVE_MAXIMUM');
+        expect(monthlyBudgetSettingRefusal(250_000.5)).toBe('NOT_A_WHOLE_NUMBER');
+    });
+
+    it('every value it allows above 0 admits at least one run at the gate', () => {
+        for (const budget of [BUDGET_RUN_TOKEN_CEILING, BUDGET_RUN_TOKEN_CEILING + 1, MAX_MONTHLY_TOKEN_BUDGET]) {
+            expect(
+                evaluateMonthlyBudget({ budgetTokens: budget, spentThisMonth: 0, runTokenCap: ENGINE_RUN_CAPS.TOKENS }).allowed,
+            ).toBe(true);
+        }
+        // And the one value it refuses below the ceiling is one the gate refuses outright.
+        expect(
+            evaluateMonthlyBudget({ budgetTokens: BUDGET_RUN_TOKEN_CEILING - 1, spentThisMonth: 0, runTokenCap: ENGINE_RUN_CAPS.TOKENS })
+                .allowed,
+        ).toBe(false);
     });
 });
