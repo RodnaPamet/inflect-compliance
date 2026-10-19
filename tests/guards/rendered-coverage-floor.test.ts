@@ -338,7 +338,10 @@ const ROOT = path.resolve(__dirname, '../..');
 // a merge group found it.
 //   368 (#3720/#3727): + members-owner-custom-role.test.tsx, measured by this
 // guard's own counter on this branch rebased onto main (3.240.0).
-const RENDERED_TEST_FLOOR = 368;
+//   372 (#3678): + agent-harness-estate-health.test.tsx, measured by this
+// guard's own counter on this branch rebased onto main (3.244.1); the other
+// three arrived from other branches inside the slack.
+const RENDERED_TEST_FLOOR = 372;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

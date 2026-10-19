@@ -181,6 +181,8 @@ const renderTab = (canRegisterShadow?: boolean) =>
                 tenantSlug="acme"
                 harness={view()}
                 scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false } }}
+                // No estate declared (#3678): the estate card is its own suite's.
+                estateHealth={{ generatedAt: '2026-10-19T00:00:00.000Z', scanWindow: 500, windowTruncated: false, estates: { rows: [], truncated: false } }}
                 {...(canRegisterShadow === undefined ? {} : { canRegisterShadow })}
                 canReviewProposals
                 canInvestigate

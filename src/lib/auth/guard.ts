@@ -592,6 +592,7 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'concurrency',
     'external-tools',
     'harness-acceptances',
+    'harness-estates',
     'harness-scanner-keys',
     'harness-scans',
     'intake',

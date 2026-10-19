@@ -249,6 +249,17 @@ Where each condition stands:
 | 1, 2, 3 and 4 | The scanner, #3686 | Open |
 | 8 | The scan evidence, #3687 | Open |
 
+For the two sources step `4a` built (#3678), Okta and Azure Key Vault,
+conditions 2 to 4 hold and are tested by request log: each source sends only
+GET requests to its own host, plus the OAuth token exchange to the identity
+platform for Key Vault; the vault reader calls only the two list endpoints,
+which return no value; and the scanner posts only to the ingest, over HTTPS.
+Neither source has a field for a write credential. Condition 1 concerns MCP,
+which neither reads, so it stays with #3686. Step `4a` also stores one new
+reference to a person, the owner of each source of a client estate
+(`AgentHarnessEstateSource.ownerUserId`), a tenant member chosen by the tenant's
+own staff, and its `docs/data-retention.md` row names it DSAR-relevant.
+
 #3686's hardening checklist carries condition 1 and the write-credential half
 of condition 2. The assessment holds for the scanner only when #3686 meets all
 four of its conditions, and for the evidence emitted from a scan only when

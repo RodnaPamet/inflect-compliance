@@ -1546,8 +1546,8 @@ cannot declare completeness; all three are derived or refused.
 
 **The harness ingest** (`usecases/agent-harness-scans.ts`, since #3665) is the
 only writer of `AgentHarnessScan`, `DiscoveredAgent` and `AgentHarnessScanItem`;
-the key and acceptance usecases are the only writers of theirs, and
-`tests/guards/agent-harness-single-write-seam.test.ts` holds all five. Four
+the key, acceptance and estate usecases are the only writers of theirs, and
+`tests/guards/agent-harness-single-write-seam.test.ts` holds all seven. Four
 rules in it are easy to undo:
 
 - **Whose reports count is the register's decision, never the scanner's.**
@@ -1617,6 +1617,43 @@ through their own routes. Rules that are easy to undo:
   ownership. The body carries no owner reference, user id, justification,
   pointer, credential reference, tool server or agent name (DPIA condition 8),
   and the level never decides the status: the ladder is report-only.
+
+**The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
+client's estate and posts what the ingest above verifies. Okta and Azure Key
+Vault today; Entra, MCP, the register and the container are #3686.
+
+- **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
+  verb is GET — do not give `getJson` a method parameter. The OAuth token
+  exchange is the one POST, behind its own interface. Every request is declared
+  in `scanner-surface.ts`, whose hash is the report's manifest hash, and the
+  tests hold each fake's request log to it: a new endpoint goes there first.
+- **A secret's value is never requested.** Okta's `/apps/{id}/credentials/secrets`
+  and Key Vault's `/secrets/{name}` return values; credentials are reported by
+  reference.
+- **It imports the contract, never a copy.** It checks its report with the
+  ingest's schema and `firstSecretShapedMember` before it signs, through
+  `harnessSignedMessage`. `eslint.config.mjs` allows `harness-contract`,
+  `harness-findings`, `harness-ladder` and `canonical-json` from `@/` and refuses
+  every other `@/`, `@prisma/*`, `next` and `@inflect/ui` import.
+- **No register link from the estate's own labels.** `registeredAgentId` is
+  `null` from these sources: an Okta profile or a vault tag is written by the
+  estate's administrator, who could use it to hide a shadow agent.
+- **An unreadable source is in the report**, `INCOMPLETE` with its reason —
+  including one whose credential is missing (`AUTH_FAILED`).
+
+**Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
+`AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure
+`src/lib/agentic/harness-estate-health.ts`):
+
+- **A scan is an estate's through the scanner that signed it**, and one estate
+  per scanner is a unique key, because a report cannot name an estate. An
+  estate's scanner is fixed; moving it is a new estate.
+- **Every source has an owner who is an ACTIVE member when written**, and an
+  estate declares at least one source. A departed owner is shown, never hidden.
+- **Health fails towards STALE.** A scan counts only when the matrix calls it
+  COMPLETE and every declared source was read in full with at least one row;
+  freshness is from `min(asOf, ingestedAt)`; STALE after 1.5 cadences, and no
+  complete scan among those read is STALE, never "unknown".
 
 **The `UNCLASSIFIED` AI-system tier** (#3691 deploy 1, #3669 deploy 2) marks
 a provisional `AiSystem` entry that nobody has classified. Every reader treats

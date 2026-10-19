@@ -129,6 +129,8 @@ const renderTab = (scannerKeys: HarnessScannerKeysView = keysView()) =>
             tenantSlug="acme"
             harness={NO_SCANS}
             scannerKeys={scannerKeys}
+            // No estate declared (#3678): the estate card is its own suite's.
+            estateHealth={{ generatedAt: '2026-10-19T00:00:00.000Z', scanWindow: 500, windowTruncated: false, estates: { rows: [], truncated: false } }}
             canReviewProposals
             canInvestigate
             canExport={false}
