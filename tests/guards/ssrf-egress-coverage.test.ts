@@ -127,6 +127,12 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
 const MCP_CLIENTS: readonly string[] = [
     'src/app-layer/integrations/mcp/client.ts',
     'src/lib/mcp/client/index.ts',
+    // The THIRD client on the one wire (#3679; a2a-threat-model O4 E): A2A to a
+    // peer agent, with its own closed method set. Held to the same rule — no
+    // fetch call of its own, the shared transport imported — because a task to
+    // another organisation's agent is exactly the request that must not find a
+    // second way out.
+    'src/lib/agentic/a2a/client.ts',
 ];
 
 describe('SSRF — every tenant-controlled sink routes through safeFetch', () => {
@@ -230,11 +236,11 @@ describe('SSRF — the MCP clients reach the network only through the shared tra
         }
     });
 
-    it('the list covers both dialects, so neither is silently unlisted', () => {
+    it('the list covers every dialect, so none is silently unlisted', () => {
         // #3400 was invisible because the OTHER MCP client was registered: a
         // reader checking "is the MCP client covered?" finds yes for one of two
         // and is unlikely to ask which. Pinning the denominator makes a future
         // omission loud.
-        expect(MCP_CLIENTS).toHaveLength(2);
+        expect(MCP_CLIENTS).toHaveLength(3);
     });
 });

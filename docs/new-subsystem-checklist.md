@@ -88,7 +88,9 @@ alertable signal.
 - [ ] A token-gated endpoint has no session behind its caller, so it cannot take
       `requirePermission`. The outbound MCP endpoints whose only client is our own
       external-write dispatch (`/api/mcp/entra-grant`,
-      `/api/mcp/entra-service-principal`) are this kind. Triage it into
+      `/api/mcp/entra-service-principal`) are this kind, and so is the inbound
+      A2A endpoint (`/api/a2a`), whose caller is another organisation's agent.
+      Triage it into
       `PROTOCOL_CREDENTIAL` in
       `tests/guardrails/api-route-has-some-authorization.test.ts`, naming the
       mechanism its handler calls, and write the `AUTHZ_DENIED` row explicitly for

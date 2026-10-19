@@ -56,8 +56,9 @@ import { getPriorStateRead } from '@/app-layer/usecases/external-prior-state-rea
 import { recordIntent } from '@/app-layer/usecases/external-write-journal';
 import { openAutomaticExternalWrite } from '@/app-layer/usecases/external-write-automatic';
 import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
+import { dispatchA2aSend, resolveGrantedA2aSendTools } from '@/app-layer/usecases/a2a-outbound';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
-import type { ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
+import { clampForInboundA2a, type ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
 
 import type { McpReadTool } from './types';
 
@@ -196,10 +197,39 @@ export async function resolveExternalReadTools(
     policyCardVersion: number,
 ): Promise<McpReadTool<Record<string, unknown>>[]> {
     const granted = await resolveGrantedExternalTools(ctx, grantedTools);
-    return granted.map((g) =>
-        adapterFor(g.qualified, g.def, g.transport, g.parameterSets, g.connection, policyCardVersion),
-    );
+    // ── AND THE A2A PEERS THIS AGENT MAY SEND TO (#3679) ────────────────────
+    //
+    // A task to a peer is an external tool on this same path, not a neighbour
+    // of it: the same grant, the same funnel, the same rung, the same journal.
+    // What differs is where it is resolved (the peer's pinned card, not a
+    // `tools/list`) and who sends it (the dispatch pass, through the A2A
+    // client). Resolved here so the offered set stays ONE snapshot.
+    const peers = await resolveGrantedA2aSendTools(ctx, grantedTools);
+    return [
+        ...granted.map((g) =>
+            adapterFor(g.qualified, g.def, { kind: 'mcp', transport: g.transport }, g.parameterSets, g.connection, policyCardVersion),
+        ),
+        ...peers.map((p) =>
+            adapterFor(
+                p.qualified,
+                p.def,
+                { kind: 'a2a', peerId: p.peerId },
+                p.parameterSets,
+                p.connection,
+                policyCardVersion,
+            ),
+        ),
+    ];
 }
+
+/**
+ * WHERE a tool's call goes. An MCP server's tools go to its transport; an A2A
+ * send goes to the A2A ladder, which never sends from inside the call and never
+ * takes the read path, whatever the definition declares (O3 E).
+ */
+type ExternalSend =
+    | { readonly kind: 'mcp'; readonly transport: { url: string; authorization?: string } }
+    | { readonly kind: 'a2a'; readonly peerId: string };
 
 /** One approved external tool, in the shape the funnel already knows. */
 function adapterFor(
@@ -210,7 +240,7 @@ function adapterFor(
         inputSchema: Record<string, unknown>;
         annotations?: Record<string, unknown>;
     },
-    transport: { url: string; authorization?: string },
+    send: ExternalSend,
     parameterSets: ReadonlyArray<{
         label: string;
         parameters: Record<string, unknown>;
@@ -513,6 +543,23 @@ function adapterFor(
                 }
             }
 
+            // ── AN A2A SEND IS ALWAYS A WRITE, AND ALWAYS THE LADDER (#3679) ──
+            //
+            // Above the read/write branch on purpose: asking another
+            // organisation's agent to act is a write whatever its definition
+            // says, so there is no path from here to a read for it.
+            if (send.kind === 'a2a') {
+                return dispatchA2aSend(ctx, {
+                    qualified,
+                    peerId: send.peerId,
+                    connection: { id: connection.id, name: connection.name },
+                    policyCardVersion,
+                    outbound: merged,
+                    parameterSetLabel: chosen?.label ?? null,
+                });
+            }
+            const transport = send.transport;
+
             // ── IS THIS A WRITE? (#2861) ────────────────────────────────
             //
             // `declaresWrite` is the one definition; the catalogue an operator
@@ -607,14 +654,23 @@ async function dispatchWrite(
     // the header.
     const priorState = await callTool(call.transport, readRef.toolName, call.outbound);
 
-    if (call.connection.mode === 'DRY_RUN') {
+    // ── A RUN A PEER STARTED NEVER WRITES ABOVE PROPOSE_ONLY (#3679, R17) ────
+    //
+    // Owner decision 2026-10-17. The rung the branches below act on is the
+    // connection's, narrowed for a run whose `RequestContext.a2aInbound` is set:
+    // on an AUTOMATIC connection the write becomes a proposal a person
+    // approves, rather than a row the dispatch pass sends unattended. Only
+    // narrows; a run nobody outside started is unaffected.
+    const mode = clampForInboundA2a(call.connection.mode, Boolean(ctx.a2aInbound));
+
+    if (mode === 'DRY_RUN') {
         const handle = await recordIntent(ctx, {
             connectionId: call.connection.id,
             connectionName: call.connection.name,
             endpointUrl: call.connection.url,
             toolName: call.qualified,
             advertisedToolName: call.advertisedName,
-            mode: call.connection.mode,
+            mode,
             argumentsJson: JSON.stringify(call.outbound),
             priorStateJson: JSON.stringify(priorState),
             agentId: ctx.agentId ?? null,
@@ -638,7 +694,7 @@ async function dispatchWrite(
         };
     }
 
-    if (call.connection.mode === 'PROPOSE_ONLY') {
+    if (mode === 'PROPOSE_ONLY') {
         // The write becomes a row in the queue a human already reviews, carrying
         // everything that review needs: where it goes, what is called, what would
         // change, and what it replaces. `createAgentProposal` applies the shared
@@ -678,7 +734,7 @@ async function dispatchWrite(
         };
     }
 
-    if (call.connection.mode === 'AUTOMATIC') {
+    if (mode === 'AUTOMATIC') {
         // ── THE UNATTENDED ARM (#2861 / #3051) ──────────────────────────────
         //
         // Nothing is sent from here either, and that is deliberate rather than
@@ -736,6 +792,6 @@ async function dispatchWrite(
     // identity ladder's lesson about inheriting permission by falling through.
     throw new Error(
         `external_write_rung_unimplemented: this build dispatches no external write at ` +
-            `${call.connection.mode}. Nothing was sent.`,
+            `${mode}. Nothing was sent.`,
     );
 }

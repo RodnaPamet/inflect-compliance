@@ -36,6 +36,7 @@ import { SharePointClient } from './providers/sharepoint/client';
 import { SharePointMapper } from './providers/sharepoint/mapper';
 import { ServiceNowProvider } from './providers/servicenow';
 import { McpServerProvider } from './providers/mcp-server-provider';
+import { A2aPeerProvider } from './providers/a2a-peer-provider';
 import { ServiceNowClient } from './providers/servicenow/client';
 import { ServiceNowChangeMapper } from './providers/servicenow/mapper';
 
@@ -105,6 +106,13 @@ registry.register(new ServiceNowProvider());
 // and `testConnectionCredentials` both reject a provider the registry does not
 // know, which made the admin screen the provider was written FOR unreachable.
 registry.register(new McpServerProvider());
+
+// A2A peer — the outbound route to one registered A2A peer agent (#3679). Empty
+// `supportedChecks`, like the MCP server above: it is here so the connection,
+// its rung on the external write ladder and its credential use the surfaces
+// every other connection uses, and `upsertIntegrationConnection` refuses a
+// provider the registry does not know.
+registry.register(new A2aPeerProvider());
 
 // Future providers:
 // registry.register(new GitLabProvider());

@@ -202,13 +202,11 @@ Two documents specify UC5's new parts.
   live, on that connection's page under the integrations admin page.
 - `docs/a2a-threat-model.md` models A2A traffic in both directions, hop by hop,
   naming for each hop the trust boundary, the STRIDE threats and the control.
-  No A2A traffic exists on `main`. The model requires that A2A traffic pass
-  through the existing funnel with no second authority model, and that a peer's
-  agent card be pinned by hash so that a changed card refuses traffic until a
-  person re-approves it; steps `2e` and `4b` build both. Each control is either
-  on `main`, cited by file and symbol, or assigned to step `2e` or `4b`, and
-  the residual risks list every assigned control with the step that closes it;
-  the controls it assigned to `2d` are on `main`. On 2026-10-17 the owner
+  The model requires that A2A traffic pass through the existing funnel with no
+  second authority model, and that a peer's agent card be pinned by hash so
+  that a changed card refuses traffic until a person re-approves it; steps `2e`
+  and `4b` built both. Every control it names is on `main`, cited by file and
+  symbol, except one: R19, Inflect's own published agent card, is open. On 2026-10-17 the owner
   accepted three of those controls as requirements on step `4b`: inbound A2A is refused for a tenant that has not set both
   `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns` (R13); a run started
   by an inbound A2A task never dispatches an external write above
@@ -221,7 +219,7 @@ Two documents specify UC5's new parts.
 
 Step `2e` (#3673) builds the record an A2A peer is admitted against, and
 [`docs/a2a-mapping.md`](a2a-mapping.md) maps A2A tasks onto the funnel with no
-second authority model. No task is exchanged on `main`; that is `4b`.
+second authority model.
 
 - `PeerAgent` holds admission facts only: an accountable owner, the supplier, a
   risk tier, the peer's Ed25519 signing key, the approved card pin and a status
@@ -232,11 +230,46 @@ second authority model. No task is exchanged on `main`; that is `4b`.
   approval reads the card again and refuses when it moved, and an API key never
   approves one. The hash (`a2a-agent-card/v1`) covers the whole card, with
   component hashes for its text, its endpoint and the rest.
-- `checkPeerAdmission` is the gate `4b` calls before every message: ACTIVE,
-  owner still an ACTIVE member, tier scored, pinned, card readable and
-  unchanged, or refused.
+- `checkPeerAdmission` is the admission rule: ACTIVE, owner still an ACTIVE
+  member, tier scored, pinned, card readable and unchanged, or refused.
 - The routes under `/api/t/:slug/admin/agents/peers` take
   `admin.agent_registry`, by owner decision (2026-10-18, R3).
+
+### A2A messaging with one pinned peer
+
+Step `4b` (#3679) carries tasks in both directions, built and tested against an
+in-process fake peer. No real vendor's agent has exchanged a task: that pilot
+stays open on #3752. The mapping is in
+[`docs/a2a-mapping.md`](a2a-mapping.md) and the controls in
+[`docs/a2a-threat-model.md`](a2a-threat-model.md).
+
+- **Inbound.** `POST /api/a2a/:tenantSlug/peers/:peerId`. Before the body is
+  parsed: the peer's kill, its live `iflp_` credential, its Ed25519 receipt over
+  the exact body against its registered key, admission against a card copy at
+  most 15 minutes old (R18), the tenant's own signing key, the peer's quota
+  (default 60 an hour), a replay check, and both tenant run caps set (R13). The credential binds one receiving agent and a
+  workflow allowlist, and retiring that agent revokes it. The task text enters the run input labelled
+  `THIRD_PARTY_INGESTED` and is scanned before the run exists. The run is the
+  receiving agent's, under the peer's owner, so the peer reaches no tool the
+  agent was not granted; its external writes are clamped to `PROPOSE_ONLY`
+  (R17) and it is offered no A2A send (R14). Every refusal writes
+  `AUTHZ_DENIED`.
+- **Outbound.** The send is the external tool of an `a2a-peer` connection,
+  whose rung on the external write ladder governs it: journaled at `DRY_RUN`, a
+  proposal at `PROPOSE_ONLY`, an approved parameter set at `AUTOMATIC`, with the
+  pin as prior state. Only the dispatch pass sends, through `wirePost`.
+- **Receipts.** Every task and result is signed (`inflect-a2a-receipt/1`),
+  verified on receipt and kept with its exact body and the key it verifies under
+  as a write-once `PeerAgentMessage`. Each tenant signs with its own key,
+  `TenantA2aSigningKey`, its seed encrypted under the tenant's DEK, generated and
+  rotated by an OWNER; a rotation keeps the retired public key so old receipts
+  still verify. With no key, A2A refuses both ways.
+- **Kill.** `PeerAgentKillSwitch` is re-read on every message in both
+  directions, lifted only by a person with a reason, and drilled as the `PEER`
+  scope.
+- **The page.** `/agents/peers` lists the peers with their pin, card state and
+  quota and shows the tenant's signing key; a peer's page carries its kill
+  switch, its inbound credential and its signed messages.
 
 ### Audit procedure catalogue
 
@@ -830,7 +863,7 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 | Area | Shipped on `main` | Not built |
 |---|---|---|
 | Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
-| Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
+| Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. A2A with a pinned peer in both directions: an inbound task becomes a labelled, scanned run input for one registered agent, an outbound task is an external write on the ladder, every message is signed with the tenant's own key and kept, a per-peer kill stops both directions, and the peers page shows all of it. | No real vendor's agent has exchanged an A2A task: both directions are built and tested against an in-process fake peer, and the pilot stays open on #3752. Inflect publishes no agent card of its own (R19). |
 | Skills | Nine original, licensed skills. Eight have a committed evaluation record that passes the mount gate; `iam-audit-procedures` ships its evaluation set and no record, and no workflow declares it (#3749). The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
@@ -1043,6 +1076,32 @@ changed what #3698 built; #3700 then built the step decision 13 called for.
     Creation is `POST /access-reviews/agents` under `access_reviews.create`.
     (`3a`, #3674)
 
+### Decisions recorded by the owner on 2026-10-19
+
+Made on the questions step `4b` (#3679) raised. They continue the numbering.
+
+21. **A2A signing keys are per tenant, in the database, wrapped by the tenant
+    DEK.** `TenantA2aSigningKey` replaces a deployment-wide key: generated and
+    rotated by an OWNER under `admin.tenant_lifecycle`, audited, never by an
+    API key; a rotation keeps the previous public key so receipts signed under
+    it stay verifiable, and a receipt names the key id that signed it. A tenant
+    with no key refuses A2A both ways.
+22. **An A2A peer is the customer's own vendor, not Inflect's sub-processor.**
+    The tenant registers and pins it and chooses what its agents send it
+    (`docs/sub-processors.md`).
+23. **Approved external writes open as `PROPOSE_ONLY` rows on every MCP
+    connection**, also one at `AUTOMATIC`: the authority of such a row is a
+    person's approval of one change, checked against the prior state they read.
+24. **Retiring an agent revokes its inbound peer credentials**, in the
+    retirement cascade's transaction and audited.
+25. **The per-peer quota is a column on the peer**, default 60 an hour, held to
+    1..1000 by a CHECK, set by the key that registers the peer. The receipt
+    clock window stays a constant, five minutes either way.
+26. **The inbound credential stays Security ephemeral.** The vendor pilot
+    partner, Inflect's published card (R19), promoting an `ACCEPTED` send on a
+    later `tasks/get`, and feeding a peer's reply into the sending run are
+    follow-up issues. (`4b`)
+
 ### Permission keys
 
 Decided in step `0e` (#3664) and signed with it (decision 9). This covers every
@@ -1154,7 +1213,10 @@ and one new key:
 | Read and record the outcome of a sampled workpaper (`3d`) | `audits.view` | Every role holds it, so the usecase admits only the workpaper's assigned reviewer, who must be THIRD-line and must not own the auditor agent, as `decide` narrows to the assigned reviewer. Requiring `audits.manage` would shut out an internal auditor on the AUDITOR role, which does not hold it. The draw and the assignment are a scheduled sweep, with no route. |
 | Show the scan health per estate and per source (`4a`) | `admin.agent_registry_view`, or `admin.agent_registry` | It reads scans, under the key their list takes. Shipped by #3678 at `GET …/admin/agents/harness-estates` and as a card on the harness tab. |
 | Declare, change or remove a client estate (`4a`) | `admin.agent_registry` | Which scanner covers which estate, at what cadence and with whom accountable for each source, is the register's decision and never the scanner's: the ingest key cannot reach it. Shipped by #3678 at `POST …/admin/agents/harness-estates` and `PATCH`/`DELETE …/harness-estates/[estateId]`. |
-| Kill an A2A peer, and lift the kill (`4b`) | `admin.agent_kill_switch` | The key that stops an agent stops a peer: there is no second authority model (decision 4). `*` does not carry it. |
+| Kill an A2A peer, and lift the kill (`4b`) | `admin.agent_kill_switch` | The key that stops an agent stops a peer: there is no second authority model (decision 4). `*` does not carry it. A lift also refuses a caller whose context carries an `apiKeyId`. |
+| Generate or rotate the tenant's A2A signing key (`4b`) | `admin.tenant_lifecycle` | OWNER only, the key that rotates the tenant's DEK (decision 21): the key speaks for the whole tenant to another organisation. Refused to an API key. Reading its public half is `admin.agent_registry`, the key that hands a peer its credential. |
+| Set a peer's inbound quota (`4b`) | `admin.agent_registry` | The key that registers the peer (decision 25). |
+| Issue, read and revoke a peer's inbound credential; read a peer's kept messages (`4b`) | `admin.agent_registry` | Binding a peer to a receiving agent and a workflow allowlist is configuration of whom the tenant talks to, as registering and pinning are (decision 12). Issuing also refuses an API key. The send itself is an external tool call under `admin.agent_external_tools`. |
 | Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/admin/agents/skills/tenant/**`; see above. |
 | Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | The existing gates, and `audits.manage` for workpapers | No new route. Packs go through the pack usecases behind `assertCanManageAuditPacks`, which admits EDITOR; putting workpapers into a pack reads them, so that part also requires `audits.manage`, which EDITOR does not hold. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
 
@@ -1167,17 +1229,17 @@ grants.
 
 Two endpoints take no `requirePermission`, because no session or role stands
 behind the caller, and nothing in the permission system can express who it is.
-The first shipped in `2c` (#3671); the second is planned:
+The first shipped in `2c` (#3671), the second in `4b` (#3679):
 
 | Endpoint (step) | Gate | Why |
 |---|---|---|
 | `read_service_principal_state` and `disable_service_principal`, on the sibling route `/api/mcp/entra-service-principal` (`2c`, shipped) | The per-connection token, as on the grant endpoint, and the token's connection must be configured for this endpoint | The only client is Inflect's own external-write dispatch. The header of `src/app/api/mcp/entra-grant/route.ts` sets the precedent: the gate is the token, and every refusal that can be attributed to a tenant writes the `AUTHZ_DENIED` row `requirePermission` would have written. A sibling rather than the grant endpoint, because the rung is per connection. |
-| The inbound A2A task endpoint (`4b`) | The pinned peer's signature over the task, checked against its approved card before the body is read | The caller is another organisation's agent, and its reach is the receiving agent's grants (decision 4), not a key of its own. Every refusal that can be attributed to a tenant writes `AUTHZ_DENIED`. |
+| The inbound A2A task endpoint, `POST /api/a2a/:tenantSlug/peers/:peerId` (`4b`, shipped) | The peer's live `iflp_` credential, its signature over the exact body verified against its registered key, and admission against its approved card, all before the body is parsed (`handleInboundA2a` in `src/app-layer/usecases/a2a-inbound.ts`) | The caller is another organisation's agent, and its reach is the receiving agent's grants (decision 4), not a key of its own. Every refusal that can be attributed to a tenant writes `AUTHZ_DENIED`. |
 
 Each is triaged into the `PROTOCOL_CREDENTIAL` class of
 `tests/guardrails/api-route-has-some-authorization.test.ts`, where `/api/mcp`,
-`/api/mcp/entra-grant`, `/api/mcp/entra-service-principal` and `/api/mcp/token`
-sit. A new route fails that test until it is triaged.
+`/api/mcp/entra-grant`, `/api/mcp/entra-service-principal`, `/api/mcp/token`
+and `/api/a2a` sit. A new route fails that test until it is triaged.
 
 **The retirement cascade is one act under one key.** Retirement takes
 `admin.agent_registry` alone. It does not also ask for the keys that gate each
@@ -1265,7 +1327,10 @@ a legal decision, as that document records.
 | `AuditWorkpaper` (`3b`) | Regulatory artefact | The auditor agent's re-performance of one procedure for one period, with a one-way review stamp. An audit relies on it, so it is not pruned by age. |
 | `AuditWorkpaperFinding` (`3b`) | Regulatory artefact | Added by `3b` (#3675), which this table did not plan: one finding a workpaper links, insert-only. Kept as long as its workpaper, because which findings a workpaper raised is part of the record. The finding is a plain id, bound at insert, so the link outlives a purged finding and nothing retained cascades from a table the purge deletes. |
 | The sampled-workpaper review (`3d`) | Regulatory artefact | One row per sampled workpaper: the reviewer's outcome and stable dissent codes, with no free text. `AgentProposalSampleAudit` is the pattern; it cannot be reused, because every row of it requires a proposal. It is classed Business record since 2026-10-18 because it cascades from its proposal and goes with it in a tenant purge, so this review keeps the regulatory class only while nothing it cascades from is purged. Kept as long as the workpaper it judges, because a disagreement rate whose history can be pruned cannot be trended. |
-| The A2A task receipt, sent and received (`4b`) | Regulatory artefact | Signed evidence of an agent action, the class `AgentActionReceipt` has. That model holds receipts from an external mediator and fits neither a receipt Inflect signs nor a peer's, so `4b` either adds a model under this class or states why it reuses one. |
+| `PeerAgentMessage`, the A2A task receipt, sent and received (`4b`) | Regulatory artefact | Signed evidence of an agent action, the class `AgentActionReceipt` has. That model holds receipts from an external mediator and fits neither a receipt Inflect signs nor a peer's, so `4b` adds this model. Write-once by trigger, keyed by plain id with no foreign key, and retained across a tenant purge. |
+| `PeerAgentKillSwitch` (`4b`) | Regulatory artefact | Who stopped a peer, why, and who lifted it, as the agent kill history is kept. Retained across a tenant purge. |
+| `PeerAgentInboundCredential` (`4b`) | Security ephemeral | A hashed bearer and its binding; revoked one-way, and of no evidential value once revoked, as an API key is (decision 26). |
+| `TenantA2aSigningKey` (`4b`) | Configuration | The tenant's signing key, the class `AgentHarnessScannerKey` has. Retired keys keep their public half, so a receipt verifies by the key id it names; the retained receipts carry their own copy of the key, so purging this table with the tenant leaves them checkable. |
 | `TenantSkill` (`4c`) | Configuration | The head of one tenant skill, the class `AgentPolicyCard` has. As built (#3680) it holds only the skill's name and creator and is append-only: which version is in service is that version's status, held to one per skill by a partial unique index, so the head has nothing to update. |
 | `TenantSkillVersion` (`4c`) | Business record | One immutable version, with its content hash, its evaluation record and its approver. Planned as a regulatory artefact; #3680 classed it a business record instead, and the owner kept that class (2026-10-18), for two reasons. Its text is the tenant's, often a third party's methodology held only under the tenant's licence, which a tenant purge must not keep. And the runs whose pins name it are operational and purged with the tenant. A version is still never edited, and the hash-chained `TENANT_SKILL_*` audit rows, which carry its content hash, survive the purge. |
 

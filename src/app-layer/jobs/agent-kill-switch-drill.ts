@@ -94,6 +94,7 @@ import {
     type KillScope,
 } from '@/lib/agentic/kill-switch';
 import { buildDelegatedJobContext } from '../context-system';
+import { probePeerKillPredicate } from '../usecases/a2a-peer-kill';
 import { drainPages } from './drain-pages';
 
 /**
@@ -115,10 +116,17 @@ type RefusalReason =
     /** The boundary CLEARED the call while a kill was in force. */
     | 'not_refused';
 
+/**
+ * A scope the drill exercises: the three the tool boundary resolves, and the
+ * per-peer kill of A2A traffic (#3679), which is a separate table with its own
+ * predicate and is drilled beside them, never as one of them.
+ */
+export type DrillScope = KillScope | 'PEER';
+
 export interface KillSwitchDrillResult {
     outcome: 'PASSED' | 'FAILED' | 'ERROR';
-    scopesHonoured: KillScope[];
-    scopesFailed: KillScope[];
+    scopesHonoured: DrillScope[];
+    scopesFailed: DrillScope[];
     toolCallsAfterKill: number;
     boundaryRefusalReason: RefusalReason | null;
     detail: string;
@@ -291,14 +299,23 @@ export async function runKillSwitchDrill(
 
         const refusal = await probeBoundaryDecision(tenantId, 'AGENT');
         const uncommittable = await probeUncommittableScopes(tenantId);
+        // THE PER-PEER KILL (#3679; threat model, "Stopping a peer": "exercised
+        // by the drill like the existing scopes"). Predicate only, inside a
+        // transaction that is rolled back, for the reason TENANT and PLATFORM
+        // are: a committed kill on a real peer would stop a real partner. That
+        // the inbound endpoint and the outbound send CALL the predicate is proved
+        // in CI by tests/integration/a2a-peer-messaging.test.ts.
+        const peerHonoured = await probePeerKillPredicate(tenantId, actor);
 
-        const scopesHonoured = [
-            ...(refusal === 'agent_killed' ? (['AGENT'] as KillScope[]) : []),
+        const scopesHonoured: DrillScope[] = [
+            ...(refusal === 'agent_killed' ? (['AGENT'] as DrillScope[]) : []),
             ...uncommittable.honoured,
+            ...(peerHonoured ? (['PEER'] as DrillScope[]) : []),
         ];
-        const scopesFailed = [
-            ...(refusal === 'agent_killed' ? [] : (['AGENT'] as KillScope[])),
+        const scopesFailed: DrillScope[] = [
+            ...(refusal === 'agent_killed' ? [] : (['AGENT'] as DrillScope[])),
             ...uncommittable.failed,
+            ...(peerHonoured ? [] : (['PEER'] as DrillScope[])),
         ];
 
         const outcome = scopesFailed.length === 0 ? 'PASSED' : 'FAILED';
@@ -397,8 +414,8 @@ export async function runKillSwitchDrill(
 function describeDrill(
     outcome: string,
     refusal: RefusalReason,
-    honoured: KillScope[],
-    failed: KillScope[],
+    honoured: DrillScope[],
+    failed: DrillScope[],
 ): string {
     const arms =
         "The boundary's own decision function (resolveKillState, which step 0 of " +
@@ -410,7 +427,9 @@ function describeDrill(
         'real agents. That the tool gate CALLS this decision, and calls it before ' +
         'the credential and exposure checks, is proved in CI by ' +
         'tests/integration/agent-kill-switch.test.ts and not here: loading the gate ' +
-        'inside the worker would pull a module tree the worker cannot evaluate.';
+        'inside the worker would pull a module tree the worker cannot evaluate. ' +
+        'The per-peer A2A kill (PEER) was exercised against its own predicate, in ' +
+        'a transaction that was ROLLED BACK, against a canary peer id no peer can have.';
     const verdict =
         outcome === 'PASSED'
             ? `All ${honoured.length} scopes honoured. No tool call cleared the boundary ` +

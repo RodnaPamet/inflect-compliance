@@ -54,6 +54,9 @@ const ENTRIES = [
     // proves the route is LINKED — what this file adds is that the link
     // actually arrives somewhere.
     { id: 'agents-view-decisions', path: '/agents/decisions' },
+    // #3679 — A2A peers and the tenant's signing key, listed with its menu
+    // entry for the reason the notes above give.
+    { id: 'agents-view-peers', path: '/agents/peers' },
 ] as const;
 
 /**

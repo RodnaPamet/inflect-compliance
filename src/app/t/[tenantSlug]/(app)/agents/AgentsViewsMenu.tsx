@@ -50,6 +50,7 @@ import { useTranslations } from 'next-intl';
 import {
     BadgeCheck,
     Gauge6,
+    Globe,
     PenWriting,
     ShieldSlash,
     SquareCheck,
@@ -68,6 +69,7 @@ export type AgentsViewRoute =
     | 'reports'
     | 'decisions'
     | 'external-tools'
+    | 'peers'
     | 'compose';
 
 export interface AgentsViewsMenuProps {
@@ -212,6 +214,20 @@ export function AgentsViewsMenu({
                             icon: <Workflow className="size-4" />,
                             href: href('/agents/external-tools'),
                             selected: current === 'external-tools',
+                        },
+                        canInvestigate && {
+                            // A2A peers (#3679): which other organisation's
+                            // agents this tenant exchanges tasks with, their
+                            // pins, kills, credentials and signed receipts, and
+                            // the tenant's own signing key. ASSURANCE for the
+                            // same reason as external tools: what it shows is
+                            // whether the approvals that admit a peer still
+                            // hold. `admin.agent_registry`, as its page asks.
+                            id: 'agents-view-peers',
+                            label: t('views.peers'),
+                            icon: <Globe className="size-4" />,
+                            href: href('/agents/peers'),
+                            selected: current === 'peers',
                         },
                     ],
                 },

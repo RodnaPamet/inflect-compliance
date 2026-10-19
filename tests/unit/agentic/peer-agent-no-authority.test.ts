@@ -25,8 +25,11 @@ const ADMISSION_FACTS = [
     'observedCardHash', 'observedAt',
     'pinnedCardHash', 'pinnedTextHash', 'pinnedEndpointHash', 'pinnedOtherHash',
     'pinRevision', 'pinnedByUserId', 'pinnedAt', 'previousCardHash',
-    // relations to the rows above, nothing else
-    'tenant', 'owner', 'vendor',
+    // how much it may send: a LIMIT that only narrows (#3679), never a grant
+    'inboundMessagesPerHour',
+    // relations to the rows above, and the credentials it presents inbound —
+    // which narrow to one receiving agent and a workflow allowlist (#3679)
+    'tenant', 'owner', 'vendor', 'inboundCredentials',
 ].sort();
 
 describe('PeerAgent carries admission facts only', () => {

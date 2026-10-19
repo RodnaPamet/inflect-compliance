@@ -95,6 +95,9 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // Agent register (Epic Agentic) — filter defs. Same LucideIcon-typed
     // precedent as every other *filter-defs.ts entry here.
     'src/app/t/[tenantSlug]/(app)/agents/filter-defs.ts',
+    // #3679 — the A2A peers status filter. `FilterDefInput.icon` is typed
+    // `LucideIcon`; same precedent as every other *filter-defs.ts entry here.
+    'src/app/t/[tenantSlug]/(app)/agents/peers/filter-defs.ts',
     // Synced-identity roster (#2418) — filter defs for the provider facet
     // that came with server-side roster search. `FilterDefInput.icon` is
     // typed `LucideIcon`, so a new filter-defs file has no Nucleo option —

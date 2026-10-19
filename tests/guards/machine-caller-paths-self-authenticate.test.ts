@@ -87,6 +87,12 @@ const CONTRACTS: ReadonlyArray<{
         why: 'Bearer TenantApiKey with an mcp:read capability scope',
     },
     {
+        prefix: '/api/a2a',
+        handler: 'api/a2a/[tenantSlug]/peers/[peerId]/route.ts',
+        gate: /handleInboundA2a\s*\(/,
+        why: 'the peer\'s iflp_ credential plus its Ed25519 signature, card pin and kill (#3679)',
+    },
+    {
         prefix: '/api/admin',
         handler: 'api/admin/diagnostics/route.ts',
         gate: /verifyPlatformApiKey\s*\(/,

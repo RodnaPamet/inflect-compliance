@@ -108,6 +108,14 @@ export const MACHINE_CALLER_PREFIXES = [
     // `Bearer <TenantApiKey>` → `authenticateMcpRequest` → verifyApiKey with
     // an `mcp:read` capability scope.
     '/api/mcp',
+    // The inbound A2A endpoint (#3679): another organisation's agent, which has
+    // no cookie by construction. Its OWN entry rather than a widening of the
+    // `iflk_` carve-out on `/api/t/**`, which also skips the admin-role and MFA
+    // gates (`matchTenantApiKeyRequest`). The edge decides nothing here: the
+    // handler checks the peer's `iflp_` credential, its Ed25519 signature over
+    // the exact body, its card pin and its kill before it reads the body
+    // (`handleInboundA2a`).
+    '/api/a2a',
     // Browser-sent CSP violation reports. Credential-less by spec — the
     // browser will not attach cookies, so requiring one guarantees zero
     // reports. Protected by a per-IP report limiter and a 16 KB body cap.
@@ -589,6 +597,7 @@ function tenantPathTemplate(pathname: string): string | null {
  * route under the agent subtree fails CI until it is listed here.
  */
 export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
+    'a2a-signing-key',
     'concurrency',
     'external-tools',
     'harness-acceptances',

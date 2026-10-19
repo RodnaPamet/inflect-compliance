@@ -15,6 +15,9 @@
  *                 agent is unrevoked" holds without reference to a clock
  *   scanner keys  `AgentHarnessScannerKey.revokedAt` / `revokedByUserId`, through
  *                 that table's one write seam
+ *   A2A inbound   `PeerAgentInboundCredential.revokedAt` / `revokedByUserId` on
+ *                 every live credential naming the agent as receiver (#3679),
+ *                 through that table's one write seam
  *   tool grants   `RegisteredAgentTool` rows DELETED (a grant is authority, not
  *                 history; its audit row is the trail)
  *   proposals     `AgentProposal.status` PENDING → EXPIRED, exactly as the expiry
@@ -72,6 +75,7 @@ import { AgentPolicyCardRepository } from '../repositories/AgentPolicyCardReposi
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
 import type { RequestContext } from '../types';
 import { revokeScannerKeysForAgentInTx } from './agent-harness-scanner-keys';
+import { revokePeerInboundCredentialsForAgentInTx } from './a2a-peer-credentials';
 import { withdrawRetiredAgentEvidenceInTx } from './agentic-evidence-emission';
 
 /**
@@ -120,6 +124,15 @@ export async function applyRetirementCascadeInTx(
 
     // ── Harness scanner signing keys ─────────────────────────────────
     const scanner = await revokeScannerKeysForAgentInTx(db, ctx, agentId, now);
+
+    // ── Inbound A2A credentials ──────────────────────────────────────
+    const peerCredentials = await revokePeerInboundCredentialsForAgentInTx(
+        db,
+        ctx,
+        agentId,
+        now,
+        RETIREMENT_KEY_ID_CAP,
+    );
 
     // ── Tool grants ──────────────────────────────────────────────────
     // `listForAgent` is bounded (the catalogue is a handful of tools); the
@@ -174,6 +187,10 @@ export async function applyRetirementCascadeInTx(
         scannerKeys: {
             count: scanner.count,
             ...boundedIds(scanner.ids, scanner.count, RETIREMENT_KEY_ID_CAP),
+        },
+        peerInboundCredentials: {
+            count: peerCredentials.count,
+            ...boundedIds(peerCredentials.ids, peerCredentials.count, RETIREMENT_KEY_ID_CAP),
         },
         toolGrants: { count: droppedGrants, names: grants.map((g) => g.toolName) },
         proposals: {
@@ -235,7 +252,8 @@ export async function writeRetirementAuditRows(
             toStatus: 'RETIRED',
             summary:
                 `Retired registered agent ${agent.id}: ${cascade.apiKeysRevoked} API key(s) and ` +
-                `${cascade.scannerKeysRevoked} scanner key(s) revoked, ` +
+                `${cascade.scannerKeysRevoked} scanner key(s) and ` +
+                `${cascade.peerInboundCredentialsRevoked} inbound A2A credential(s) revoked, ` +
                 `${cascade.toolGrantsDropped} tool grant(s) dropped, ` +
                 `${cascade.proposalsExpired} pending proposal(s) expired, ` +
                 `${cascade.evidenceArtefactsWithdrawn} open-period evidence artefact(s) withdrawn`,
@@ -244,6 +262,7 @@ export async function writeRetirementAuditRows(
                 apiKeysRevoked: cascade.apiKeysRevoked,
                 liveApiKeysRevoked: cascade.liveApiKeysRevoked,
                 scannerKeysRevoked: cascade.scannerKeysRevoked,
+                peerInboundCredentialsRevoked: cascade.peerInboundCredentialsRevoked,
                 toolGrantsDropped: cascade.toolGrantsDropped,
                 proposalsExpired: cascade.proposalsExpired,
                 policyCardFrozenAtVersion: cascade.policyCardFrozenAtVersion,
@@ -290,6 +309,26 @@ export async function writeRetirementAuditRows(
                 keyIds: effects.scannerKeys.ids,
                 count: effects.scannerKeys.count,
                 idsTruncated: effects.scannerKeys.idsTruncated,
+            },
+        });
+    }
+
+    if (effects.peerInboundCredentials.count > 0) {
+        await logEvent(db, ctx, {
+            action: 'AGENT_RETIREMENT_PEER_CREDENTIALS_REVOKED',
+            entityType: 'RegisteredAgent',
+            entityId: agent.id,
+            detailsJson: {
+                category: 'access',
+                entityName: 'PeerAgentInboundCredential',
+                operation: 'revoked',
+                reason: 'agent_retired',
+                summary:
+                    `Revoked ${effects.peerInboundCredentials.count} inbound A2A credential(s) ` +
+                    `naming retired agent ${agent.id} as their receiver`,
+                credentialIds: effects.peerInboundCredentials.ids,
+                count: effects.peerInboundCredentials.count,
+                idsTruncated: effects.peerInboundCredentials.idsTruncated,
             },
         });
     }

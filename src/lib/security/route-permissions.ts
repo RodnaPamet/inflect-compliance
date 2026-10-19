@@ -456,6 +456,38 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
+    // The tenant's own A2A signing key (#3679; owner decision 2026-10-19).
+    // Rotating it is OWNER-tier — the key that rotates the tenant's DEK — and
+    // reading its public half is the register key's, as handing a peer its
+    // credential is. Method-scoped, and above the /admin/agents catch-all.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/a2a-signing-key$`),
+        methods: ['POST'],
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Generate or rotate the tenant\'s A2A signing key: it signs every task and ' +
+            'answer the tenant exchanges with another organisation\'s agent, so ' +
+            'replacing it is the same tier of act as rotating the tenant DEK.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/a2a-signing-key$`),
+        methods: ['GET'],
+        permission: 'admin.agent_registry',
+        note:
+            'Read the public half of the tenant\'s A2A signing keys, in force and ' +
+            'retired, to hand to a peer. The private seed is never returned.',
+    },
+    // A2A peer KILL (#3679). The key that stops an agent stops a peer (roadmap
+    // permission table; decision 4: no second authority model). Above the
+    // peers subtree rule below, because first match wins and that rule names
+    // the register key.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/peers\\/[^/]+\\/kill$`),
+        permission: 'admin.agent_kill_switch',
+        note:
+            'Engage or lift a kill on one A2A peer: every next message to or from it ' +
+            'is refused while it is in force. Lifting needs a person and a reason.',
+    },
     // A2A peers (#3673). The same key as the catch-all below, stated on its
     // own because which key it is was a decision (owner, 2026-10-18; residual
     // R3 of docs/a2a-threat-model.md), not an inheritance.
@@ -463,7 +495,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         path: new RegExp(`^${T}\\/admin\\/agents\\/peers(\\/.*)?$`),
         permission: 'admin.agent_registry',
         note:
-            'Register an A2A peer agent, score it, and approve its card pin. ' +
+            'Register an A2A peer agent, score it, approve its card pin, issue ' +
+            'or revoke its inbound credential (#3679) and read its signed receipts. ' +
             'Configuration, so the register key: admin.agent_external_tools ' +
             'is the key for an agent call leaving the tenant, and the ' +
             'authority that acts must not also configure whom it talks to.',

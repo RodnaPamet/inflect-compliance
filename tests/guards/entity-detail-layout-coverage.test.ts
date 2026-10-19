@@ -113,6 +113,12 @@ const DETAIL_PAGES: DetailPageEntry[] = [
         note: "Admin-side vendor template builder. Pending migration — wizard-shaped page; may need <EntityDetailLayout> adaptation rather than direct adoption.",
     },
     {
+        file: "src/app/t/[tenantSlug]/(app)/agents/peers/[peerId]/page.tsx",
+        adopted: true,
+        compositionFile: "src/app/t/[tenantSlug]/(app)/agents/peers/[peerId]/PeerDetailClient.tsx",
+        note: "A2A peer detail (#3679). Born on <EntityDetailLayout>: the server page reads through the API's usecases and delegates to PeerDetailClient, which mounts the shell with overview, kill switch, inbound credential and signed messages tabs.",
+    },
+    {
         file: "src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/readiness/page.tsx",
         adopted: true,
         note: "Audit cycle readiness sub-page. Migrated R8-PR3 — uses <EntityDetailLayout> with breadcrumb stacking (Audits → Readiness → Cycle → Readiness Report) + back link to the parent cycle.",
