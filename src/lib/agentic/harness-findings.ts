@@ -144,7 +144,13 @@ import {
     type HarnessLevel,
     type HarnessReach,
 } from './harness-ladder';
-import type { HarnessReportAgent, HarnessReportBody, HarnessUnboundCredential, SOURCE_KINDS } from './harness-contract';
+import type {
+    HarnessModelEndpoint,
+    HarnessReportAgent,
+    HarnessReportBody,
+    HarnessUnboundCredential,
+    SOURCE_KINDS,
+} from './harness-contract';
 import { HARNESS_CONTRACT_V2, isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
@@ -231,6 +237,12 @@ export interface PlannedAgent {
     readonly blockingNextRung: readonly HarnessCriterionId[];
     readonly verdicts: readonly CriterionVerdict[];
     readonly tools: HarnessReportAgent['tools'];
+    /**
+     * The model endpoints `/2` reported, as reported (#3759). `null` is NOT
+     * REPORTED — a `/1` report, or a `/2` agent without `models` — which the
+     * ingest stores as NULL, apart from `[]`, reported empty.
+     */
+    readonly models: readonly HarnessModelEndpoint[] | null;
 }
 
 /**
@@ -612,6 +624,7 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             blockingNextRung: score.blockingNextRung,
             verdicts: a.verdicts,
             tools: a.tools,
+            models: 'models' in a ? (a.models ?? null) : null,
         };
     });
 

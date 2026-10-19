@@ -20,6 +20,8 @@ import {
     harnessSignedMessage,
     isScanComplete,
     looksLikeSecret,
+    MAX_MODELS_PER_AGENT,
+    parseStoredHarnessModels,
     parseStoredHarnessSources,
     parseStoredHarnessTools,
     verifyAndParseHarnessReport,
@@ -342,6 +344,43 @@ describe('inflect-agent-harness/2 (#3754)', () => {
             const v1Tools = JSON.parse(JSON.stringify(validReportBody().agents[0].tools)) as unknown;
             expect(parseStoredHarnessTools(v1Tools)?.[0]).not.toHaveProperty('calls');
             expect(parseStoredHarnessTools([{ ...(v1Tools as object[])[0], calls: 3 }])).toBeNull();
+        });
+    });
+
+    describe('stored model endpoints read back in three states that never collapse (#3759)', () => {
+        it('NULL is not reported; [] is reported empty; a /2 report\'s models round-trip', () => {
+            expect(parseStoredHarnessModels(null)).toEqual({ state: 'NOT_REPORTED' });
+            expect(parseStoredHarnessModels(undefined)).toEqual({ state: 'NOT_REPORTED' });
+            expect(parseStoredHarnessModels([])).toEqual({ state: 'REPORTED', endpoints: [] });
+            const stored = JSON.parse(JSON.stringify(validV2ReportBody().agents[0].models)) as unknown;
+            const read = parseStoredHarnessModels(stored);
+            expect(read).toEqual({ state: 'REPORTED', endpoints: V2_MODEL_ENDPOINTS });
+            if (read.state !== 'REPORTED') throw new Error('expected REPORTED');
+            expect(canonicalJson(read.endpoints)).toBe(canonicalJson(stored));
+        });
+
+        it('a value the contract would refuse reads UNREADABLE — never as not reported, never as none', () => {
+            const unreadable = [
+                // Not an array at all, and the JSON value `false`.
+                { endpoint: 'https://api.openai.com/v1', model: null },
+                false,
+                'https://api.openai.com/v1',
+                // A member the contract does not define.
+                [{ endpoint: 'https://api.openai.com/v1', model: null, prompt: 'You are a helpful agent.' }],
+                // A missing member.
+                [{ endpoint: 'https://api.openai.com/v1' }],
+                // Userinfo, a secret's shape, prose.
+                [{ endpoint: 'https://svc@api.example/v1', model: null }],
+                [{ endpoint: `https://api.example/${secret()}`, model: null }],
+                [{ endpoint: 'call the model with this prompt', model: null }],
+                // One past the per-agent cap.
+                Array.from({ length: MAX_MODELS_PER_AGENT + 1 }, (_, i) => ({ endpoint: `m${i}.example`, model: null })),
+            ];
+            for (const json of unreadable) {
+                expect(parseStoredHarnessModels(json)).toEqual({ state: 'UNREADABLE' });
+            }
+            const atCap = Array.from({ length: MAX_MODELS_PER_AGENT }, (_, i) => ({ endpoint: `m${i}.example`, model: null }));
+            expect(parseStoredHarnessModels(atCap).state).toBe('REPORTED');
         });
     });
 

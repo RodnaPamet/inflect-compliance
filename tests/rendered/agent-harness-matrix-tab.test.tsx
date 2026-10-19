@@ -135,6 +135,7 @@ const matrixRow = (over: Partial<MatrixRow> = {}): MatrixRow => ({
     blockingNextRung: ['H3.manifests_pinned'],
     verdicts: [],
     verdictsUnreadable: false,
+    models: { state: 'NOT_REPORTED' },
     latestIngestedLevel: null,
     acceptance: null,
     acceptAffordance: 'NONE',
@@ -350,6 +351,66 @@ describe('stored verdicts that could not be re-read', () => {
         for (const c of ALL_HARNESS_CRITERIA as readonly HarnessCriterionId[]) {
             expect(cell(c).getAttribute('data-state')).toBe('UNANSWERED');
         }
+    });
+});
+
+// ─── Model endpoints (#3759) ────────────────────────────────────────────────
+
+describe('the model endpoints a scan reported for an agent (#3759)', () => {
+    const HM = (H as unknown as { models: Record<string, string> }).models;
+    const modelsCell = () => screen.getByTestId('harness-models-scan_latest-da_1');
+
+    it('not reported and reported empty are two different things on the row', () => {
+        const { unmount } = renderHarness(
+            view({ sections: [section({ rows: [matrixRow({ models: { state: 'NOT_REPORTED' } })] })] }),
+        );
+        expect(modelsCell().getAttribute('data-state')).toBe('NOT_REPORTED');
+        expect(modelsCell().textContent).toBe(HM.notReported);
+        expect(modelsCell().textContent).not.toBe(HM.reportedEmpty);
+        unmount();
+
+        renderHarness(
+            view({ sections: [section({ rows: [matrixRow({ models: { state: 'REPORTED', endpoints: [] } })] })] }),
+        );
+        expect(modelsCell().getAttribute('data-state')).toBe('REPORTED_EMPTY');
+        expect(modelsCell().textContent).toBe(HM.reportedEmpty);
+        expect(modelsCell().textContent).not.toBe(HM.notReported);
+    });
+
+    it('a stored value that could not be re-read says so, and reads as neither', () => {
+        renderHarness(view({ sections: [section({ rows: [matrixRow({ models: { state: 'UNREADABLE' } })] })] }));
+        expect(modelsCell().getAttribute('data-state')).toBe('UNREADABLE');
+        expect(modelsCell().textContent).toBe(HM.unreadable);
+    });
+
+    it('lists each endpoint and its model as text, never as a link', () => {
+        renderHarness(
+            view({
+                sections: [
+                    section({
+                        rows: [
+                            matrixRow({
+                                models: {
+                                    state: 'REPORTED',
+                                    endpoints: [
+                                        { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+                                        { endpoint: 'llm-gateway.internal.example', model: null },
+                                    ],
+                                },
+                            }),
+                        ],
+                    }),
+                ],
+            }),
+        );
+        const c = modelsCell();
+        expect(c.getAttribute('data-state')).toBe('REPORTED');
+        const items = within(c).getAllByRole('listitem');
+        expect(items.map((li) => li.textContent)).toEqual([
+            'https://api.openai.com/v1gpt-4o-mini',
+            `llm-gateway.internal.example${HM.modelAbsent}`,
+        ]);
+        expect(c.querySelector('a')).toBeNull();
     });
 });
 

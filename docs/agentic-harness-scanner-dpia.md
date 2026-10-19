@@ -63,7 +63,7 @@ pointers. Exactly one member is personal data by design:
 | `agents[].tools[]`, `agents[].skills[]` | Server URL, tool name, manifest hash, pin flag, read-only hint; skill name, licence, declared flag | No |
 | `unboundCredentials[]` (`/2` only) | `ref`, a `scheme://locator` reference to a credential no discovered agent holds, and the source kind that saw it | No by design; the same caveat as an agent's credential locator |
 | `agents[].tools[].calls`, `windowDays` (`/2` only, optional) | How many times the agent called the tool, and over how many days | No: a count of an agent's calls, carrying nothing of what it sent or received |
-| `agents[].models[]` (`/2` only, optional) | `endpoint`, a `scheme://locator` or a host, and the model's id | No by design; the same caveat as a locator. Verified with the report and not stored |
+| `agents[].models[]` (`/2` only, optional) | `endpoint`, a `scheme://locator` or a host, and the model's id | No by design; the same caveat as a locator. Verified with the report and kept on the agent's scan item since #3759 |
 | `agents[].verdicts[].evidence`, `findings[].evidence` | A pointer of at most 512 characters | No by design; the same caveat as a locator |
 | `scan.scanner` | The scanner's own register id, version and manifest hash | No |
 | `signature` | Algorithm, public key, signature | No |
@@ -83,7 +83,9 @@ name the reference, which carries a person's name only if the client's own
 locator does (the description is in the field-encryption manifest, as for
 every finding).
 A scan item holds one agent's derived level, reach, criterion verdicts and tool
-names with manifest digests; a scan holds its signer, the digest of the signed
+names with manifest digests, and, from a `/2` report that carries them, its
+model endpoints (`modelsJson`, #3759): each a reference and a model id, as the
+contract admitted them, and NULL when the report carried none. A scan holds its signer, the digest of the signed
 body, the signature and the per-source completeness. The schema is
 `prisma/schema/agentic.prisma`.
 
@@ -529,7 +531,7 @@ and the source kinds in `SOURCE_KINDS`, which gained `code`. `/2` adds
 `unboundCredentials[]`, which carries credential references under the rules an
 agent's credential already had; an optional call count with its window on each
 tool, stored with the tool; and optional model endpoints, references verified
-and not stored. None of them adds a data category or carries content; the `code`
+and not stored (#3759 has since kept them; see below). None of them adds a data category or carries content; the `code`
 kind brings a reader of source code and configuration into the estate, held by
 condition 15 and owned by #3737. No stored column that names a person was added.
 The owner accepted this amendment and condition 15 on 2026-10-19, and the merge
@@ -547,3 +549,16 @@ merge of the pull request that carries it (#3740) signs the amendment.
 records what is and is not read from it, with risks R15 and R16. The owner
 decided on 2026-10-19 that merging the pull request that adds LangSmith to this
 assessment re-signs it, as with step `4a`, so that merge signs this amendment.
+
+#3759 reopened it on where scan data goes: the model endpoints a `/2` report
+carries, which the ingest had verified and not kept, are now kept on the
+agent's scan item (`AgentHarnessScanItem.modelsJson`), so the harness matrix
+can show which models each agent calls (owner decision, 2026-10-19). Nothing
+else changes. What is kept is exactly what the contract admits — a reference
+with no userinfo and no secret's shape, and a model id — refused before any
+write otherwise, and re-read against the same strict schema on the way out, so
+a stored value that no longer passes is shown as unreadable rather than
+trusted. No column that names a person is added, the class of the table is
+unchanged (Business record, deleted with its scan and the tenant), and RLS
+already covers the table. The merge of the pull request that carries this
+paragraph signs the amendment.

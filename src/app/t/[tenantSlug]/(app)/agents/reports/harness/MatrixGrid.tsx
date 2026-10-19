@@ -69,6 +69,55 @@ function LevelCell({ scanId, row }: { scanId: string; row: MatrixRow }) {
     );
 }
 
+/**
+ * The model endpoints this scan reported for the agent (#3759). Text only:
+ * an endpoint is a reference the scanner chose, so it is never a link, and a
+ * row that reported nothing, reported none, or could not be re-read each says
+ * so in its own words — never one shown as another.
+ */
+function ModelsCell({ scanId, row }: { scanId: string; row: MatrixRow }) {
+    const t = useTranslations('agents');
+    const testId = `harness-models-${scanId}-${row.discoveredAgentId}`;
+    const models = row.models;
+    if (models.state === 'UNREADABLE') {
+        return (
+            <span className="text-xs text-content-error" data-testid={testId} data-state="UNREADABLE">
+                {t('harness.models.unreadable')}
+            </span>
+        );
+    }
+    if (models.state === 'NOT_REPORTED') {
+        return (
+            <Tooltip content={t('harness.models.notReportedHint')}>
+                <span className="text-xs text-content-muted" data-testid={testId} data-state="NOT_REPORTED">
+                    {t('harness.models.notReported')}
+                </span>
+            </Tooltip>
+        );
+    }
+    if (models.endpoints.length === 0) {
+        return (
+            <Tooltip content={t('harness.models.reportedEmptyHint')}>
+                <span className="text-xs" data-testid={testId} data-state="REPORTED_EMPTY">
+                    {t('harness.models.reportedEmpty')}
+                </span>
+            </Tooltip>
+        );
+    }
+    return (
+        <ul className="flex flex-col gap-tight" data-testid={testId} data-state="REPORTED">
+            {models.endpoints.map((m, i) => (
+                <li key={`${i}:${m.endpoint}`} className="flex flex-col">
+                    <span className="break-all font-mono text-xs">{m.endpoint}</span>
+                    <span className="font-mono text-xs text-content-muted">
+                        {m.model ?? t('harness.models.modelAbsent')}
+                    </span>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
 function AcceptanceCell({
     scanId,
     row,
@@ -138,6 +187,12 @@ export function MatrixGrid({
                     header: t('harness.colReach'),
                     enableSorting: false,
                     cell: ({ row }) => <span className="text-xs">{t(`harness.reach.${row.original.reach}`)}</span>,
+                },
+                {
+                    id: 'models',
+                    header: t('harness.colModels'),
+                    enableSorting: false,
+                    cell: ({ row }) => <ModelsCell scanId={scanId} row={row.original} />,
                 },
                 {
                     id: 'acceptance',
