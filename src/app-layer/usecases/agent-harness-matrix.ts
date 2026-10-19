@@ -29,6 +29,8 @@
  *
  *   • stored sources that do not re-validate make the scan INCOMPLETE;
  *   • stored verdicts that do not re-validate make every cell UNANSWERED;
+ *   • stored model endpoints that do not re-validate read UNREADABLE, never
+ *     as "not reported" and never as "none";
  *   • a register row deleted after a scan linked it is SHADOW again;
  *   • every read has a `take:` one past its cap, so truncation is a fact held
  *     rather than one nobody can observe;
@@ -58,7 +60,12 @@ import { runInTenantContext } from '@/lib/db-context';
 import { forbidden } from '@/lib/errors/types';
 import { mayReadAgentInventory } from '@/lib/permissions';
 import { listHarnessScans } from './agent-harness-scans';
-import { MAX_AGENTS, parseStoredHarnessSources, parseStoredHarnessVerdicts } from '@/lib/agentic/harness-contract';
+import {
+    MAX_AGENTS,
+    parseStoredHarnessModels,
+    parseStoredHarnessSources,
+    parseStoredHarnessVerdicts,
+} from '@/lib/agentic/harness-contract';
 import {
     HARNESS_FINDING_SOURCE_KIND,
     harnessBarFor,
@@ -299,7 +306,8 @@ export async function getHarnessMatrix(
         });
 
         // 3d. Heavy items for the displayed rows only. Never the owner reference,
-        // the owner kind or the tools: the tab renders none of them.
+        // the owner kind or the tools: the tab renders none of them. The model
+        // endpoints it does render (#3759), as text.
         const withRows = planned.filter((p) => p.displayIds.length > 0);
         const heavy = withRows.length === 0
             ? []
@@ -315,6 +323,7 @@ export async function getHarnessMatrix(
                     reach: true,
                     blockingNextRung: true,
                     verdictsJson: true,
+                    modelsJson: true,
                     discoveredAgent: {
                         select: {
                             id: true,
@@ -505,6 +514,7 @@ export async function getHarnessMatrix(
                     blockingNextRung: item.blockingNextRung,
                     verdicts: verdicts === null ? [] : [...collapseVerdicts(verdicts).values()],
                     verdictsUnreadable: verdicts === null,
+                    models: parseStoredHarnessModels(item.modelsJson),
                     latestIngestedLevel:
                         da.lastScanId !== p.latest.id && da.lastLevel !== item.level ? da.lastLevel : null,
                     acceptance: accepted

@@ -75,7 +75,7 @@ import {
     type CriterionVerdict,
     type HarnessCriterionId,
 } from './harness-ladder';
-import type { StoredSource } from './harness-read-model';
+import type { HarnessAgentModels, StoredSource } from './harness-read-model';
 
 export {
     HARNESS_CONTRACT_IDS,
@@ -547,6 +547,24 @@ export type StoredHarnessTool = z.infer<typeof ToolSchemaV2>;
 export function parseStoredHarnessTools(json: unknown): StoredHarnessTool[] | null {
     const parsed = z.array(ToolSchemaV2).max(MAX_TOOLS_PER_AGENT).safeParse(json);
     return parsed.success ? parsed.data : null;
+}
+
+/**
+ * One scan item's stored model endpoints (#3759), re-validated against `/2`'s
+ * strict model schema: the endpoint's reference shape, no userinfo, no
+ * secret's shape, no member the contract does not define, and at most
+ * `MAX_MODELS_PER_AGENT`.
+ *
+ * `null` — the column's NULL — is NOT_REPORTED: the ingest writes NULL for a
+ * `/1` scan and for a `/2` agent without `models`. A value that does not
+ * re-validate is UNREADABLE, never NOT_REPORTED and never an empty list: an
+ * edited row must not read as "this agent calls no model".
+ */
+export function parseStoredHarnessModels(json: unknown): HarnessAgentModels {
+    if (json === null || json === undefined) return { state: 'NOT_REPORTED' };
+    const parsed = z.array(ModelEndpointSchema).max(MAX_MODELS_PER_AGENT).safeParse(json);
+    if (!parsed.success) return { state: 'UNREADABLE' };
+    return { state: 'REPORTED', endpoints: parsed.data.map((m) => ({ endpoint: m.endpoint, model: m.model })) };
 }
 
 /** Why a report was refused. Stable codes: the ingest records them. */

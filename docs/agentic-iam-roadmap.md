@@ -65,7 +65,8 @@ first. `inflect-agent-harness/2` (#3754, owner decisions 2026-10-19) is `/1`
 plus the source kind `code`, the INCOMPLETE reason `UNPARSEABLE`, an
 `unboundCredentials[]` member, and, optionally per agent, a call count over a
 window on each tool (stored with the tool) and the model endpoints it calls
-(verified, not stored); it is what the reference scanner emits. The
+(stored on the agent's scan item since #3759, and shown on the harness matrix);
+it is what the reference scanner emits. The
 schemas are `src/lib/agentic/harness-contract.ts` and the executable reference
 is `tests/helpers/agent-harness-fake-scanner.ts`, which produces both. The
 verifier checks size, then JSON, then the Ed25519 signature by a trusted key,
@@ -173,7 +174,8 @@ TypeScript's syntax-only parser — and never imports or runs what it reads. A
 location it cannot read, or a definition it cannot resolve, makes the source
 `INCOMPLETE` with its reason (`UNPARSEABLE` for the latter), and the agent is
 still reported. Each agent's model endpoints go into `/2`'s optional
-`models[]`, which the ingest verifies and does not store.
+`models[]`, which the ingest verifies and keeps on the agent's scan item
+(#3759); the harness matrix lists them per agent as text.
 
 A tenant declares each client ESTATE it scans (`AgentHarnessEstate`): a name,
 the registered scanner agent whose signed reports are the estate's, the cadence

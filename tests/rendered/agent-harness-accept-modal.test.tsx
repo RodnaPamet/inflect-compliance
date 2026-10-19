@@ -134,6 +134,7 @@ const row = (over: Partial<MatrixRow>): MatrixRow => ({
     blockingNextRung: [],
     verdicts: [],
     verdictsUnreadable: false,
+    models: { state: 'NOT_REPORTED' },
     latestIngestedLevel: null,
     acceptance: null,
     acceptAffordance: 'ACCEPT',

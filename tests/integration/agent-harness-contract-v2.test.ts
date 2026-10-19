@@ -5,6 +5,9 @@
  *   1. BOTH IDS INGEST. A `/1` report from a deployed scanner still verifies and
  *      ingests unchanged; a `/2` report does too, and its `code` source and
  *      `UNPARSEABLE` reason round-trip into the stored scan and its readers.
+ *   1c. MODEL ENDPOINTS ARE KEPT (#3759), on the scan item and nowhere else:
+ *      NULL is NOT REPORTED, `[]` is reported empty, and a stored value that
+ *      no longer re-validates reads UNREADABLE on the matrix.
  *   2. A REFUSED REPORT WRITES NOTHING: a `/1` report carrying a `/2` member,
  *      and an unbound credential with a secret's shape. (Every malformation the
  *      fake scanner names is also driven through the ingest by
@@ -19,6 +22,7 @@
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
 
 import { prismaTestClient } from '../helpers/db';
+import { canonicalJson } from '@/lib/canonical-json';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
@@ -35,6 +39,7 @@ import { ingestHarnessReport, listHarnessScans } from '@/app-layer/usecases/agen
 import { getHarnessMatrix } from '@/app-layer/usecases/agent-harness-matrix';
 import { addHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
 import {
+    parseStoredHarnessModels,
     parseStoredHarnessSources,
     parseStoredHarnessTools,
     type HarnessReportBodyV1,
@@ -244,7 +249,7 @@ describe('1. both ids verify and ingest through the one path', () => {
 });
 
 describe('1b. per-tool call counts and model endpoints (owner decision, 2026-10-19)', () => {
-    it('a /2 report carrying both ingests: the counts round-trip in the stored tools; the endpoints are verified, not stored', async () => {
+    it('a /2 report carrying both ingests: the counts round-trip in the stored tools, and the endpoints in the stored item (#3759)', async () => {
         const body = v2For(T1);
         const result = await ingest(T1, body);
         const item = await prisma.agentHarnessScanItem.findFirstOrThrow({
@@ -253,14 +258,16 @@ describe('1b. per-tool call counts and model endpoints (owner decision, 2026-10-
         expect(parseStoredHarnessTools(item.toolsJson)).toEqual([
             expect.objectContaining({ name: 'list_accounts', calls: 42, windowDays: 30 }),
         ]);
-        // No stored field holds a model endpoint: the ingest verified them
-        // with the report and keeps none of them.
-        const stored = JSON.stringify([
+        // The endpoints round-trip byte for byte after canonicalisation, and
+        // read back through the strict schema as reported.
+        expect(canonicalJson(item.modelsJson)).toBe(canonicalJson(body.agents[0].models));
+        expect(parseStoredHarnessModels(item.modelsJson)).toEqual({ state: 'REPORTED', endpoints: V2_MODEL_ENDPOINTS });
+        // They are kept on the scan item and nowhere else.
+        const elsewhere = JSON.stringify([
             await prisma.agentHarnessScan.findMany({ where: { tenantId: T1, id: result.scanId } }),
-            await prisma.agentHarnessScanItem.findMany({ where: { tenantId: T1, scanId: result.scanId } }),
             await prisma.discoveredAgent.findMany({ where: { tenantId: T1 } }),
         ]);
-        for (const m of V2_MODEL_ENDPOINTS) expect(stored).not.toContain(m.endpoint);
+        for (const m of V2_MODEL_ENDPOINTS) expect(elsewhere).not.toContain(m.endpoint);
     });
 
     it('a secret-shaped endpoint is refused, by path, and nothing is written', async () => {
@@ -284,6 +291,75 @@ describe('1b. per-tool call counts and model endpoints (owner decision, 2026-10-
         await expect(ingest(T1, withModels)).rejects.toThrow('harness_report_refused: SCHEMA: agents.0: 1 unrecognized key');
         expect(await harnessRowCounts(T1)).toEqual(before);
     });
+});
+
+describe('1c. stored model endpoints: not reported, reported empty, reported, unreadable (#3759)', () => {
+    /** The stored column as Postgres holds it: SQL NULL, or the JSON type of the value. */
+    async function modelsColumn(itemId: string): Promise<{ isNull: boolean; type: string | null }> {
+        const [row] = await prisma.$queryRawUnsafe<Array<{ isNull: boolean; type: string | null }>>(
+            `SELECT "modelsJson" IS NULL AS "isNull", jsonb_typeof("modelsJson") AS "type" FROM "AgentHarnessScanItem" WHERE "id" = $1`,
+            itemId,
+        );
+        return row;
+    }
+
+    async function itemOf(tenantId: string, scanId: string, discoveredId: string) {
+        return prisma.agentHarnessScanItem.findFirstOrThrow({
+            where: { tenantId, scanId, discoveredAgent: { discoveredId } },
+            select: { id: true, discoveredAgentId: true, modelsJson: true },
+        });
+    }
+
+    async function matrixModels(tenantId: string, discoveredAgentId: string) {
+        const matrix = await getHarnessMatrix(ctxFor(tenantId));
+        const row = matrix.sections.flatMap((s) => s.rows).find((r) => r.discoveredAgentId === discoveredAgentId);
+        if (!row) throw new Error('expected the agent on the matrix');
+        return row.models;
+    }
+
+    it('a /1 scan and a /2 agent without models store SQL NULL and read NOT REPORTED; [] stores [] and reads reported empty', async () => {
+        const v1 = await ingest(T1, v1For(T1));
+        const v1Item = await itemOf(T1, v1.scanId, 'entra:sp:registered-1');
+        expect(await modelsColumn(v1Item.id)).toEqual({ isNull: true, type: null });
+        expect(await matrixModels(T1, v1Item.discoveredAgentId)).toEqual({ state: 'NOT_REPORTED' });
+
+        // The fake scanner's /2 body gives its shadow agent no `models`.
+        const absent = await ingest(T1, v2For(T1));
+        const shadow = await itemOf(T1, absent.scanId, 'entra:sp:shadow-1');
+        expect(await modelsColumn(shadow.id)).toEqual({ isNull: true, type: null });
+        expect(await matrixModels(T1, shadow.discoveredAgentId)).toEqual({ state: 'NOT_REPORTED' });
+
+        const empty = await ingest(T1, v2For(T1, (b) => (b.agents[0].models = [])));
+        const emptyItem = await itemOf(T1, empty.scanId, 'entra:sp:registered-1');
+        expect(await modelsColumn(emptyItem.id)).toEqual({ isNull: false, type: 'array' });
+        expect(emptyItem.modelsJson).toEqual([]);
+        expect(await matrixModels(T1, emptyItem.discoveredAgentId)).toEqual({ state: 'REPORTED', endpoints: [] });
+    });
+
+    it('the matrix lists what the latest scan reported', async () => {
+        const result = await ingest(T1, v2For(T1));
+        const item = await itemOf(T1, result.scanId, 'entra:sp:registered-1');
+        expect(await matrixModels(T1, item.discoveredAgentId)).toEqual({ state: 'REPORTED', endpoints: V2_MODEL_ENDPOINTS });
+    });
+
+    it('a stored value that no longer re-validates reads UNREADABLE on the matrix, never NOT REPORTED or none', async () => {
+        const result = await ingest(T1, v2For(T1));
+        const item = await itemOf(T1, result.scanId, 'entra:sp:registered-1');
+        // A hand edit outside the ingest — the shape the contract refuses at the door.
+        await prisma.agentHarnessScanItem.update({
+            where: { id: item.id },
+            data: { modelsJson: [{ endpoint: 'https://svc@api.example/v1', model: null }] },
+        });
+        expect(await matrixModels(T1, item.discoveredAgentId)).toEqual({ state: 'UNREADABLE' });
+    });
+
+    it('an endpoint carrying userinfo is refused before any write, and nothing is written', async () => {
+        const before = await harnessRowCounts(T1);
+        const body = v2For(T1, (b) => (b.agents[0].models = [{ endpoint: 'https://svc@api.example/v1', model: null }]));
+        await expect(ingest(T1, body)).rejects.toThrow('harness_report_refused: SCHEMA: agents.0.models.0.endpoint');
+        expect(await harnessRowCounts(T1)).toEqual(before);
+    });
+
 });
 
 describe('2. a refused report writes nothing', () => {
@@ -398,5 +474,24 @@ describe('4. two tenants', () => {
             expect(seen.every((f) => f.tenantId === own)).toBe(true);
             expect(seen.some((f) => f.tenantId === other)).toBe(false);
         }
+    });
+
+    it('one tenant\'s model endpoints (#3759) never reach the other\'s matrix, and RLS hides its items', async () => {
+        // Both tenants hold reports by now: T2's own ingested in the test above.
+        expect(await prisma.agentHarnessScan.count({ where: { tenantId: T2 } })).toBeGreaterThan(0);
+        const marker = 'https://t1-only-model.example/v1';
+        await ingest(T1, v2For(T1, (b) => (b.agents[0].models = [{ endpoint: marker, model: 'm-t1' }])));
+
+        expect(JSON.stringify(await getHarnessMatrix(ctxFor(T2)))).not.toContain(marker);
+        expect(JSON.stringify(await getHarnessMatrix(ctxFor(T1)))).toContain(marker);
+
+        const seenByT2 = await asTenant(T2, (tx) =>
+            tx.agentHarnessScanItem.findMany({ where: { tenantId: T1 }, select: { id: true } }),
+        );
+        expect(seenByT2).toEqual([]);
+        const seenByT1 = await asTenant(T1, (tx) =>
+            tx.agentHarnessScanItem.findMany({ where: { tenantId: T1 }, select: { modelsJson: true } }),
+        );
+        expect(JSON.stringify(seenByT1)).toContain(marker);
     });
 });

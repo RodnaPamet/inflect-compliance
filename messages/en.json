@@ -9287,6 +9287,15 @@
       "colLevel": "Level",
       "colReach": "Reach",
       "colAcceptance": "Acceptance",
+      "colModels": "Models",
+      "models": {
+        "notReported": "Not reported",
+        "notReportedHint": "This scan did not report model endpoints for this agent. That is not the same as calling none.",
+        "reportedEmpty": "None reported",
+        "reportedEmptyHint": "The scanner reported that this agent calls no model endpoint.",
+        "unreadable": "The stored model endpoints could not be re-read.",
+        "modelAbsent": "model not reported"
+      },
       "shadowBadge": "Shadow",
       "level": {
         "H0": "H0 · Shadow",
