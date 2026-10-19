@@ -83,6 +83,11 @@ export default function CycleDetailPage() {
     const toast = useToast();
 
     const [creating, setCreating] = useState(false);
+    // #3681 — the agent-audit reliance pack is assembled and frozen in one
+    // call; a refusal (`NO_WORKPAPERS_IN_PERIOD`, …) is shown inline, by
+    // name, rather than as a toast that disappears.
+    const [assemblingReliance, setAssemblingReliance] = useState(false);
+    const [relianceRefusal, setRelianceRefusal] = useState<string | null>(null);
 
     // fix/audits-surface — a network blip on the initial load must surface a
     // real error+retry state, not the "cycle not found" empty state. Without a
@@ -168,6 +173,28 @@ export default function CycleDetailPage() {
         } catch {
             toast.error(tx('cycleDetail.createPackError'));
         } finally { setCreating(false); }
+    };
+
+    const assembleReliancePack = async () => {
+        setAssemblingReliance(true);
+        setRelianceRefusal(null);
+        try {
+            const res = await fetch(apiUrl(`/audits/cycles/${cycleId}/reliance-pack`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            const body = await res.json().catch(() => null);
+            if (!res.ok) {
+                setRelianceRefusal(body?.message || tx('cycleDetail.relianceError'));
+                return;
+            }
+            router.push(`/t/${tenantSlug}/audits/packs/${body.packId}`);
+        } catch {
+            setRelianceRefusal(tx('cycleDetail.relianceError'));
+        } finally {
+            setAssemblingReliance(false);
+        }
     };
 
     // feat/audit-cycle-unify — advance the cycle through its lifecycle
@@ -327,6 +354,28 @@ export default function CycleDetailPage() {
                 <p className="text-xs text-content-subtle">
                     {tx('cycleDetail.totalItems', { count: preview?.totalItems || 0 })}
                 </p>
+            </div>
+
+            {/* #3681 — the agent-audit reliance pack. */}
+            <div className={cn(cardVariants(), 'space-y-default')} id="cycle-reliance-card">
+                <div className="flex items-center justify-between">
+                    <Heading level={2}>{tx('cycleDetail.relianceTitle')}</Heading>
+                    <Button
+                        variant="secondary"
+                        onClick={assembleReliancePack}
+                        disabled={assemblingReliance}
+                        id="assemble-reliance-pack-btn"
+                        icon={<AppIcon name="package" size={16} />}
+                    >
+                        {assemblingReliance ? tx('cycleDetail.relianceAssembling') : tx('cycleDetail.reliancePack')}
+                    </Button>
+                </div>
+                <p className="text-sm text-content-muted">{tx('cycleDetail.relianceHelp')}</p>
+                {relianceRefusal && (
+                    <p className="text-sm text-content-error" role="alert" id="reliance-refusal">
+                        {relianceRefusal}
+                    </p>
+                )}
             </div>
 
             {/* feat/audit-cycle-unify — fieldwork audits attached to this cycle. */}

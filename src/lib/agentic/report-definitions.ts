@@ -868,6 +868,46 @@ export const METRIC_DEFINITIONS = {
         ],
     },
 
+    // ── The reliance pack (#3681) ───────────────────────────────────
+    // The same rule as the two rates above over a different population: the
+    // workpapers a reliance pack holds, i.e. those of a library v1 procedure
+    // whose period lies wholly inside the audit cycle, not the rows drawn in
+    // a rolling window. Two entries rather than a footnote on the two above,
+    // because an external auditor cites the id and the population must be the
+    // one the figure was computed over.
+    'assurance.reliance_reperformance_agreement_rate': {
+        id: 'assurance.reliance_reperformance_agreement_rate',
+        label: 'Share of concluded reviews, of the workpapers relied on, that concurred with the auditor agent',
+        population:
+            'CONCURRED over (CONCURRED + DISSENTED), among AuditWorkpaperSampleReview rows of the ' +
+            'AuditWorkpaper rows in the reliance pack: workpapers of a library v1 procedure whose ' +
+            'period lies wholly inside the audit cycle’s period',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'a value in 0..1, per control and once for the pack, computed when the pack was assembled',
+        ],
+        excludes: [
+            'workpapers internal audit did not draw, listed beside the rate as not drawn',
+            'drawn but unreviewed workpapers, in neither the numerator nor the denominator',
+            'INDETERMINATE answers, which are neither agreement nor disagreement',
+            'UNASSIGNED workpapers, which nobody could be asked to review',
+            'any figure at all when no review concluded — zero concluded reviews is not "100% agreement"',
+        ],
+    },
+    'assurance.reliance_reperformance_disagreement_rate': {
+        id: 'assurance.reliance_reperformance_disagreement_rate',
+        label: 'Share of concluded reviews, of the workpapers relied on, that dissented from the auditor agent',
+        population:
+            'DISSENTED over (CONCURRED + DISSENTED), over the same rows as ' +
+            'assurance.reliance_reperformance_agreement_rate',
+        moment: 'AS_OF_GENERATION',
+        includes: ['a value in 0..1, the complement of the agreement rate over the same denominator'],
+        excludes: [
+            'workpapers not drawn, drawn but unreviewed, INDETERMINATE and UNASSIGNED, as for the agreement rate',
+            'any figure at all when no review concluded',
+        ],
+    },
+
     // ── Third-party agent assessments ────────────────────────────────
     'thirdparty.agents': {
         id: 'thirdparty.agents',

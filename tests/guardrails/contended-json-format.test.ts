@@ -144,7 +144,9 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // 2e, #3673): +3/-0.
         // Moved 2026-10-19 by one sorted ADDITION,
         // docs/agent-harness-scanner-onboarding.md (step 4a, #3678): +3/-0.
-        keyOrderSha: 'f77a548be5b243873aa9c22d4c486e76b0e1cbd82b58791fa6f1c44d09289875',
+        // Moved 2026-10-19 by one sorted ADDITION,
+        // docs/agentic-audit-reliance-memo.md (step 4d, #3681): +3/-0.
+        keyOrderSha: 'bd9dc51c60b4fe44ebc27b7a41c70138f5f1adfc32ace37e2156fc80a49ff4d2',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

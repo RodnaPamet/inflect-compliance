@@ -3445,7 +3445,12 @@
       "statusChanged": "Статусът на цикъла е променен на {status}.",
       "loadError": "Одиторският цикъл не можа да бъде зареден.",
       "retry": "Опитай отново",
-      "defaultPackName": "Стандартен пакет за {framework}"
+      "defaultPackName": "Стандартен пакет за {framework}",
+      "relianceTitle": "Разчитане на одита от агента",
+      "reliancePack": "Пакет за разчитане",
+      "relianceAssembling": "Сглобяване…",
+      "relianceHelp": "Сглобява и замразява пакет за външния одитор: за всяка контрола, покрита от одитна процедура от библиотека v1 — работните документи на одитиращия агент за периода на цикъла, записа на вътрешния одит за извадката по всеки от тях и процента на съгласие с неговата дефиниция. Споделя се като всеки замразен пакет.",
+      "relianceError": "Пакетът за разчитане не можа да бъде сглобен."
     },
     "readiness": {
       "cycleFallback": "Цикъл",
@@ -12169,6 +12174,39 @@
         "submitError": "Изпращането е неуспешно. Моля, опитайте отново.",
         "submittedTitle": "Вашите изпращания",
         "submittedEmpty": "Все още няма изпращания в тази сесия."
+      },
+      "reliance": {
+        "rateAbsent": "Няма процент на съгласие: вътрешният одит не е приключил преглед на тези работни документи. Това не е 100% съгласие.",
+        "rate": "Съгласие {agreement}: {concurred} от {concluded} приключени повторни изпълнения съвпадат с одитиращия агент.",
+        "counts": "{workpapers} работни документа; неизтеглени {notDrawn}, чакащи {awaiting}, неназначени {unassigned}, неопределени {indeterminate}, с несъгласие {dissented}.",
+        "procedures": "Одитни процедури: {list}",
+        "workpaper": "{period} · {procedure} · {conclusion}, {exceptions} изключения · вътрешен одит: {state}",
+        "period": "{framework} · {count} месеца и тримесечия изцяло в цикъла",
+        "scopeLine": "{procedure}: {controls} контроли",
+        "excludes": "Изключва: {list}",
+        "limit": {
+          "NO_WORKPAPERS_IN_PERIOD": "Няма работен документ за периода",
+          "NO_CONCLUDED_REVIEW": "Няма приключен преглед",
+          "WORKPAPERS_NOT_DRAWN": "Работни документи, неизтеглени за преглед",
+          "REVIEWS_AWAITING": "Прегледи, чакащи отговор",
+          "REVIEWS_UNASSIGNED": "Прегледи, за които няма кого да попитаме",
+          "REVIEWS_INDETERMINATE": "Неопределени прегледи",
+          "DISSENT_RECORDED": "Вътрешният одит е несъгласен",
+          "CONCLUSION_FAIL": "Процедура е приключила с FAIL",
+          "CONCLUSION_INCONCLUSIVE": "Процедура е без заключение",
+          "ATTRIBUTED_BY_CURRENT_PLAN": "Отнесено по текущия план (тестовото изпълнение е изтрито)",
+          "CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT": "Каталогът с процедури не е одобрен от вътрешния одит",
+          "CATALOGUE_NOT_AGREED_BY_PWC": "Каталогът с процедури не е съгласуван с PwC",
+          "PROCEDURE_WITHOUT_CONTROL": "Процедура от библиотеката не е на контрола"
+        },
+        "state": {
+          "NOT_DRAWN": "неизтеглен",
+          "UNASSIGNED": "неназначен",
+          "AWAITING": "чакащ",
+          "CONCURRED": "съгласен",
+          "DISSENTED": "несъгласен",
+          "INDETERMINATE": "неопределен"
+        }
       }
     }
   },
