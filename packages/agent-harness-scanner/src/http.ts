@@ -36,7 +36,9 @@
  *     that is CANCELLED at the cap, never read whole and measured afterwards.
  *     `Content-Length` is a free early refusal, not the check.
  *   • STATUS. 401/403 is AUTH_FAILED, 429 RATE_LIMITED, anything else that is
- *     not 2xx UNREACHABLE, and a body that is not JSON PAGINATION_TORN.
+ *     not 2xx UNREACHABLE, and a body that is not JSON PAGINATION_TORN. The
+ *     one exception is asked for by name: a 404 on a request marked
+ *     `absentOk` is an absence, never an empty listing.
  *
  * Nothing here logs. A URL can carry a cursor and a header carries the
  * credential; neither belongs in a log line, so the callers log kinds and
@@ -55,11 +57,16 @@ export interface Transport {
 }
 
 export interface ReadOnlyHttp {
-    /** GET a JSON document from `url`, which must be on `origin`. */
+    /**
+     * GET a JSON document from `url`, which must be on `origin`. With
+     * `absentOk`, a 404 resolves `{ absent: true }` instead of ending the read:
+     * for a source that has already proved it can read the estate, and asks
+     * for something the estate may simply not have (a directory with no files).
+     */
     getJson(
         url: string,
-        opts: { readonly origin: string; readonly headers: Readonly<Record<string, string>> },
-    ): Promise<{ readonly body: unknown; readonly headers: Headers }>;
+        opts: { readonly origin: string; readonly headers: Readonly<Record<string, string>>; readonly absentOk?: boolean },
+    ): Promise<{ readonly body: unknown; readonly headers: Headers; readonly absent?: true }>;
 }
 
 /** One MCP server, as a source reaches it: the endpoint URL, and the headers each request carries. */
@@ -276,7 +283,7 @@ export function createSourceWire(
     const charge = budget(caps.source ?? MAX_SOURCE_BYTES);
 
     const http: ReadOnlyHttp = {
-        async getJson(url, { origin, headers }) {
+        async getJson(url, { origin, headers, absentOk }) {
             if (!isOnOrigin(url, origin)) {
                 throw new SourceReadError('PAGINATION_TORN', 'refused a link off the configured origin');
             }
@@ -287,6 +294,10 @@ export function createSourceWire(
                     redirect: 'error',
                     signal: AbortSignal.timeout(remaining(t)),
                 });
+                if (res.status === 404 && absentOk === true) {
+                    await res.body?.cancel();
+                    return { body: null, headers: res.headers, absent: true };
+                }
                 if (!res.ok) {
                     await res.body?.cancel();
                     throw new SourceReadError(reasonForStatus(res.status), `the source answered HTTP ${res.status}`);

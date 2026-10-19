@@ -22,6 +22,7 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 | `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile.owner`, a token's `userId`. Every token is reported except the scanner's own, identified by id from `/api-tokens/current` | `GET /api/v1/apps`, `GET /api/v1/api-tokens/current`, `GET /api/v1/api-tokens` |
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
 | `runtime` | LangSmith | Tracing projects that called a tool in a bounded window, and deployments when the estate opts in, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /api/v1/sessions`; with `readDeployments`, `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted) |
+| `cicd` | GitHub Actions (#3784) | Each workflow file on each configured repository's default branch that holds a secret, whose run token may write, or that reaches secrets dynamically; its secrets and run token by reference. The repository's Actions secrets by name, and each one no workflow references, as unbound | `GET /repos/{owner}/{repo}`, `GET /repos/{owner}/{repo}/contents/.github/workflows`, `GET …/contents/.github/workflows/{file}`, `GET /repos/{owner}/{repo}/actions/secrets` on `api.github.com` |
 | `code` | LangChain and LangGraph (#3737) | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference | None. Local reads only (`lstat`, `readdir`, `readFile`) |
 
 ### Entra
@@ -183,6 +184,82 @@ read rather than being skipped. Before the first estate scans a real workspace,
 one dry run confirms the outcome
 ([onboarding, section 4](../../docs/agent-harness-scanner-onboarding.md#4-the-scanner-configuration-and-its-schedule)).
 
+### GitHub Actions
+
+Decision 10 puts CI/CD in the pilot (#3784). A workflow runs unattended, holds
+credentials, and those credentials reach production, so it is an agent-shaped
+principal. The source reads what each configured repository declares about its
+workflows, with a fine-grained token holding **Contents: read** and **Secrets:
+read** and nothing else. Secrets: read lists names; GitHub has no read of a
+secret's value.
+
+| Agent | Id | Reported when |
+|---|---|---|
+| A workflow file | `github:workflow:<owner>/<repo>/<file>` | it references a repository, organisation or environment secret; or any job's token may write (a `write` scope, `write-all`, or no `permissions:` at all, which takes a repository default the source does not read); or it reaches secrets dynamically |
+
+A workflow that only reads and holds no secret is counted in `rows` and
+reported as nothing.
+
+**What a workflow holds,** by reference and never by value:
+
+- its run token, `github-token://github.com/<owner>/<repo>/.github/workflows/<file>`:
+  bound, app-only, minted for each job and expiring with it;
+- an OIDC token, `github-oidc://…`, when a job may mint one (`id-token: write`
+  or `write-all`): the identity a workflow federates into a cloud with;
+- each secret it references, `github-secret://github.com/<owner>/<repo>/<NAME>`,
+  aged from the listing's `updated_at`. A repository secret is readable by every
+  workflow in the repository, so it is reported as not bound to this one. A
+  secret the repository's listing does not hold (an organisation's or an
+  environment's) is reported with its age unknown.
+
+**What counts as a reference** is an expression only: the inside of a
+`${{ … }}` span, or a whole `if:` value. A script that mentions `secrets.FOO` in
+its text holds nothing. Names compare upper-case, as GitHub's do.
+
+**Dynamic access** is a computed index (`secrets[matrix.key]`), the whole
+context (`toJSON(secrets)`), or `secrets: inherit` on a call to a workflow in
+another repository. Such a workflow is a principal whatever else it holds, its
+`H2.credential_bound` is evidenced false, and no secret of that repository is
+reported unbound. `secrets: inherit` on a call to a workflow in the same
+repository hides nothing, because the callee's own file is read.
+
+**Verdicts** come from the file:
+
+- `H2.credential_bound` is false when the workflow holds a secret or reaches
+  secrets dynamically. When its only credentials are the run's own, it is true,
+  and so is `H2.grant_kind_declared`.
+- `H2.tools_allowlisted` is true when every job's token scope is an explicit
+  `permissions:` map, and false otherwise, naming the first job that is not.
+  `read-all` and `write-all` are not allowlists.
+
+**Unbound secrets.** A repository secret that no workflow file references is
+reported in `unboundCredentials[]`, and the ingest raises `ORPHAN_CREDENTIAL`.
+This happens only when every workflow file was read and parsed and none reaches
+secrets dynamically: "referenced by no file I read" is evidence only when there
+is no file the source could not read.
+
+**Completeness.**
+
+- A repository the token cannot see answers 404 at `GET /repos/{owner}/{repo}`,
+  and the read is `UNREACHABLE`, never zero workflows. A 404 on the
+  workflow directory, asked only after the repository answered, is zero
+  workflows.
+- A directory listing at GitHub's 1,000-entry cap, or a file GitHub serves
+  without content (over 1 MB) or over 512 KiB decoded, is `BYTE_CAP`.
+- A secrets listing whose `total_count` changes between pages, or does not match
+  the secrets read, is `PAGINATION_TORN`.
+- A file that is not one YAML document with a `jobs` mapping, or that declares
+  a `permissions:` value other than `read-all`, `write-all` or a map of `read`,
+  `write` and `none`, is `UNPARSEABLE`. The other files are still reported, and
+  that repository reports no unbound secret.
+
+The YAML is parsed by `js-yaml` under its safe core schema: no type construction,
+at most 1,000 aliases, and 100 levels of nesting.
+
+**Not read:** organisation and environment secret listings, CODEOWNERS (a
+workflow's owner is reported `null`, which the ingest reads as unowned), and
+GitHub Enterprise Server.
+
 ### The `code` source
 
 `src/sources/langchain.ts` reads the roots it is given and recognises:
@@ -275,7 +352,9 @@ the HTTP fakes see to that declaration.
 Itself; Node's built-ins; `zod`; `typescript`, whose syntax-only parser the
 `code` source reads JavaScript and TypeScript with (already the repository's own
 dependency, and needed by `tsx`, which runs the scanner; the scanner container,
-#3686, installs a pinned version of it, owner answer 2026-10-19); the wire
+#3686, installs a pinned version of it, owner answer 2026-10-19); `js-yaml`,
+which the `cicd` source reads workflow files with (already the repository's own
+dependency, #3784); the wire
 contract from the application —
 `@/lib/agentic/harness-contract`, `@/lib/agentic/harness-findings`,
 `@/lib/agentic/harness-ladder` and `@/lib/canonical-json`; and the application's
@@ -316,6 +395,11 @@ secret-shaped string anywhere in the file is refused by path.
       "endpoint": { "cloud": "eu" },
       "apiKeyEnv": "LANGSMITH_API_KEY",
       "workspaceId": "<workspace id>", "windowDays": 7
+    },
+    {
+      "kind": "cicd", "product": "github-actions",
+      "repositories": ["acme/payments-api", "acme/infra"],
+      "tokenEnv": "GITHUB_READ_TOKEN"
     },
     {
       "kind": "code", "product": "langchain",
@@ -368,10 +452,14 @@ control plane.
   issuer's rights and the GET-only wire is what keeps the read read-only.
   `workspaceId` is sent as `X-Tenant-Id`; leave it out for a key scoped to one
   workspace.
+- `GITHUB_READ_TOKEN`: a fine-grained personal access token, or a GitHub App
+  installation token, limited to the listed repositories and holding the
+  repository permissions **Contents: read** and **Secrets: read**, and no other.
 
 Entra is read from `graph.microsoft.com`, Okta orgs must be on `*.okta.com` or `*.oktapreview.com`, vaults on
 `*.vault.azure.net`, LangSmith on `api.smith.langchain.com` (`"cloud": "us"`) or
-`eu.api.smith.langchain.com` (`"cloud": "eu"`), and the ingest on https.
+`eu.api.smith.langchain.com` (`"cloud": "eu"`), GitHub on `api.github.com`, and
+the ingest on https.
 A `code` root is an absolute path with no `..` segment, reported only by its
 label; it takes no credential.
 
@@ -455,10 +543,11 @@ operator. The image holds no credential and no configuration. It runs as uid
 What the image is, and why:
 
 - **What it holds.** The scanner's source, the eight application modules it
-  imports (the wire contract and what that imports), and three packages pinned
+  imports (the wire contract and what that imports), and four packages pinned
   exactly in its own manifest, `container/package.json`, with its own lockfile:
   `tsx`, which runs it; `typescript`, whose parser the `code` source reads
-  JavaScript and TypeScript with (owner answer, 2026-10-19); and `zod`. No npm,
+  JavaScript and TypeScript with (owner answer, 2026-10-19); `js-yaml`, which
+  the `cicd` source reads workflow files with (#3784); and `zod`. No npm,
   no npx, no corepack. The build context is an allowlist,
   `Dockerfile.dockerignore`, so a file kept beside the checkout, such as an
   environment file holding the signing key, never reaches the build.

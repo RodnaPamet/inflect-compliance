@@ -223,7 +223,7 @@ updates:
           - patch
 
   # ── The harness scanner's image (#3686) ──
-  # The image pins its base by digest and its three packages exactly, in its
+  # The image pins its base by digest and its four packages exactly, in its
   # own lockfile, so nothing about it moves unless something proposes the move;
   # and its Trivy gate (ci.yml, `Scanner image`) fails once a fixed CVE is
   # waiting on one. Both are therefore watched here. A major version is left

@@ -8,10 +8,10 @@
 # packages/agent-harness-scanner/README.md, Container.
 #
 # WHAT IT HOLDS, AND NOTHING ELSE. The scanner's source, the eight application
-# modules it imports (the wire contract and what that imports), and the three
+# modules it imports (the wire contract and what that imports), and the four
 # packages the image's own manifest pins exactly: tsx, which runs it; the
-# TypeScript parser the `code` source reads JavaScript and TypeScript with; and
-# zod. The build context is limited to those files by `Dockerfile.dockerignore`
+# TypeScript parser the `code` source reads JavaScript and TypeScript with;
+# js-yaml, which the `cicd` source reads workflow files with; and zod. The build context is limited to those files by `Dockerfile.dockerignore`
 # beside this file, and the COPY lines below name the same set. Both are held
 # to the import closure of `src/cli.ts` by
 # tests/unit/agent-harness-scanner/scanner-image.test.ts, so a contract module that
@@ -21,7 +21,7 @@
 # holds the key its reports are signed with, so the bytes a client builds are
 # the bytes CI scanned. Dependabot proposes the digest's updates.
 
-# ─── Stage 1: the three packages, from the image's own lockfile ───
+# ─── Stage 1: the four packages, from the image's own lockfile ───
 FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS deps
 WORKDIR /app
 COPY packages/agent-harness-scanner/container/package.json packages/agent-harness-scanner/container/package-lock.json ./

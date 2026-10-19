@@ -28,6 +28,14 @@ export {
     type SourceRead,
 } from './source';
 export { azureKeyVaultSource, type AzureKeyVaultSourceOptions } from './sources/azure-key-vault';
+export {
+    analyseWorkflow,
+    githubActionsSource,
+    GITHUB_API_ORIGIN,
+    GITHUB_READ_PATHS,
+    type GitHubActionsSourceOptions,
+    type WorkflowAnalysis,
+} from './sources/github-actions';
 export { langchainCodeSource, scanLangChainCode, type LangChainCodeSourceOptions } from './sources/langchain';
 export type { DetectedAgent, DetectedCredential, DetectedModel, DetectedTool } from './sources/code/recognize';
 export { langSmithSource, LANGSMITH_CLOUD_ORIGINS, LANGSMITH_READ_PATHS, type LangSmithSourceOptions } from './sources/langsmith';

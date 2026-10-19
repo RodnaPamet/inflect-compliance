@@ -374,6 +374,30 @@ ids, statuses, dates and flags: no agent name, no key name or prefix, no free
 text. The owner it reports is an Inflect user id, the `agents[].owner` member
 above, and a person's identifier as that row records.
 
+The GitHub Actions source (#3784) reads the `cicd` kind, and holds conditions
+2, 3 and 4 the way the others do, tested by request log. Every request is a GET
+to one of four declared paths on `api.github.com`:
+- a repository's metadata;
+- its workflow directory;
+- each workflow file;
+- its Actions secrets listing.
+
+The configuration's one credential field names a token holding Contents: read
+and Secrets: read, which cannot write. It holds condition 3 for the secrets it
+reads: the listing returns a secret's name and dates, GitHub has no read of a
+secret's value, and the per-secret endpoint is not on the declared surface. The
+fake answers that endpoint with a marker, which the tests hold out of the
+result.
+
+A workflow file's text reaches the source and is parsed in memory, then dropped
+with the page. That text can carry what the client wrote into it: comments,
+commands, an address in a notification step. What leaves the source is a
+reference to each secret the file's expressions name, the workflow's run-token
+and OIDC references, and verdict pointers into the file. All of these are built
+from repository, file and secret names the client chose, so they carry a
+person's name only if the client named one after a person (the locator caveat
+above). No owner is reported.
+
 The container (#3686) is how an estate runs the scanner, and it changes
 nothing above: it adds no source, no data category, no recipient and no stored
 column. A client builds it from this repository; it is not published. It holds

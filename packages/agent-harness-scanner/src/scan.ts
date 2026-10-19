@@ -25,6 +25,7 @@ import { buildReportBody, signReport } from './report';
 import { sourceResult, SourceReadError, toolCallsOf, type HarnessSource, type SourceRead } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
+import { githubActionsSource } from './sources/github-actions';
 import { inflectRegisterSource } from './sources/inflect-register';
 import { langchainCodeSource } from './sources/langchain';
 import { langSmithSource } from './sources/langsmith';
@@ -125,6 +126,8 @@ export function buildSources(
             );
         } else if (s.kind === 'okta-app') {
             sources.push(oktaSource({ orgUrl: s.orgUrl, apiToken: secret.trim(), ownerProfileKey: s.ownerProfileKey }));
+        } else if (s.kind === 'cicd') {
+            sources.push(githubActionsSource({ repositories: s.repositories, token: secret.trim() }));
         } else if (s.kind === 'runtime') {
             sources.push(
                 langSmithSource({
