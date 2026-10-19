@@ -610,7 +610,11 @@ model TenantCustomRole {
   tenantId        String
   name            String /// Display name, e.g. "Compliance Lead"
   description     String? /// Optional description of the role's purpose
-  baseRole        Role               @default(READER) /// Fallback enum role for coarse checks
+  /// Fallback enum role for coarse checks, and the role a membership carrying
+  /// this custom role resolves to. Never OWNER or AI_ADMIN: CHECK
+  /// "TenantCustomRole_base_role_not_built_in_scope" (#3734), behind the
+  /// usecases' VALID_BASE_ROLES.
+  baseRole        Role               @default(READER)
   permissionsJson Json /// Typed PermissionSet — see src/lib/permissions.ts
   isActive        Boolean            @default(true) /// Soft-disable without deleting assignments
   createdAt       DateTime           @default(now())
