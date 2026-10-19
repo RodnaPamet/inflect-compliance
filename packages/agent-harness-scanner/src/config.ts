@@ -10,12 +10,17 @@
  *     scrub.
  *   • NO WRITE CREDENTIAL HAS A FIELD. The sources take one READ credential
  *     each — an Okta SSWS token for a read-only administrator, an Entra client
- *     that holds `Key Vault Reader` — and the only other credential is the
- *     Inflect API key that posts the report, which needs the
- *     `admin:harness_ingest` scope and nothing else (contract, Transport).
+ *     that holds `Key Vault Reader`, a LangSmith workspace Viewer key — and the
+ *     only other credential is the Inflect API key that posts the report,
+ *     which needs the `admin:harness_ingest` scope and nothing else (contract,
+ *     Transport).
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
- *     on the public cloud's, the ingest on https. A typo cannot send a token
- *     somewhere new, because there is no free-form host to type into.
+ *     on the public cloud's, LangSmith on its US or EU cloud host, the ingest on
+ *     https. A typo cannot send a token somewhere new, because there is no
+ *     free-form host to type into — with ONE exception, which says so in its
+ *     name: a self-hosted LangSmith (`endpoint.selfHosted`), the customer's own
+ *     host, checked as any customer-named host is (`customer-host.ts`) here and
+ *     re-resolved before every request.
  *
  * Strict objects throughout: an unknown key is an error, so a misspelt
  * `ownerTag` is a refused file rather than a default silently used.
@@ -24,8 +29,14 @@ import { z } from 'zod';
 
 import { looksLikeSecret, SOURCE_KINDS } from '@/lib/agentic/harness-contract';
 
+import { customerOriginProblem } from './customer-host';
 import { httpsOrigin } from './http';
 import { AZURE_KEY_VAULT_HOST_SUFFIX } from './sources/azure-key-vault';
+import {
+    LANGSMITH_CLOUD_ORIGINS,
+    LANGSMITH_DEFAULT_WINDOW_DAYS,
+    LANGSMITH_MAX_WINDOW_DAYS,
+} from './sources/langsmith';
 import { OKTA_HOST_SUFFIXES } from './sources/okta';
 
 const envName = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/, 'an environment variable NAME, never a value');
@@ -63,7 +74,41 @@ const AzureKeyVaultSourceConfigSchema = z
     })
     .strict();
 
-export const SourceConfigSchema = z.discriminatedUnion('kind', [OktaSourceConfigSchema, AzureKeyVaultSourceConfigSchema]);
+const LangSmithSourceConfigSchema = z
+    .object({
+        kind: z.literal('runtime'),
+        /** The runtime product. LangSmith is the one adapter (#3738); the field keeps the kind generic. */
+        product: z.literal('langsmith'),
+        /**
+         * Exactly one of: a cloud data region, whose host is fixed here, or the
+         * customer's own self-hosted LangSmith — the one host in this file a
+         * person types, refused unless it is a bare https origin that is not a
+         * private, loopback, link-local or internal address.
+         */
+        endpoint: z.union([
+            z.object({ cloud: z.enum(Object.keys(LANGSMITH_CLOUD_ORIGINS) as [keyof typeof LANGSMITH_CLOUD_ORIGINS]) }).strict(),
+            z
+                .object({
+                    selfHosted: z.string().refine((v) => customerOriginProblem(v) === null, 'selfHosted must be a public https origin'),
+                })
+                .strict(),
+        ]),
+        /** A read-scoped LangSmith API key (a workspace Viewer service key). */
+        apiKeyEnv: envName,
+        /** The workspace (`X-Tenant-Id`); leave out for a key scoped to one workspace. */
+        workspaceId: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/).optional(),
+        /** The bounded window tool usage is summarised over. */
+        windowDays: z.number().int().min(1).max(LANGSMITH_MAX_WINDOW_DAYS).default(LANGSMITH_DEFAULT_WINDOW_DAYS),
+        /** False for a LangSmith that runs no deployment control plane; projects are still read. */
+        readDeployments: z.boolean().default(true),
+    })
+    .strict();
+
+export const SourceConfigSchema = z.discriminatedUnion('kind', [
+    OktaSourceConfigSchema,
+    AzureKeyVaultSourceConfigSchema,
+    LangSmithSourceConfigSchema,
+]);
 
 export const ScannerConfigSchema = z
     .object({
@@ -144,8 +189,19 @@ export function parseScannerConfig(json: unknown): ScannerConfig {
     return parsed.data;
 }
 
+/** The environment variable holding one source's read credential. */
+export function sourceCredentialEnv(source: SourceConfig): string {
+    switch (source.kind) {
+        case 'okta-app':
+            return source.apiTokenEnv;
+        case 'vault':
+            return source.clientSecretEnv;
+        case 'runtime':
+            return source.apiKeyEnv;
+    }
+}
+
 /** The environment variables a configuration names, every one of them. */
 export function credentialEnvNames(config: ScannerConfig): string[] {
-    const fromSources = config.sources.map((s) => (s.kind === 'okta-app' ? s.apiTokenEnv : s.clientSecretEnv));
-    return [config.scanner.signingKeyEnv, config.inflect.apiKeyEnv, ...fromSources];
+    return [config.scanner.signingKeyEnv, config.inflect.apiKeyEnv, ...config.sources.map(sourceCredentialEnv)];
 }

@@ -1,9 +1,10 @@
 # Onboarding a client estate to the harness scanner
 
 How a tenant puts one client estate under the reference harness scanner,
-`packages/agent-harness-scanner` (#3678): what to register in Inflect, what to
-prepare in the estate, how to label the estate's principals so the scanner can
-attribute them, and how the estate's schedule health is judged. The report the
+`packages/agent-harness-scanner` (#3678; its LangSmith source is #3738): what to
+register in Inflect, what to prepare in the estate, how to label the estate's
+principals so the scanner can attribute them, and how the estate's schedule
+health is judged. The report the
 scanner sends is specified in [`docs/agent-harness-contract.md`](agent-harness-contract.md);
 the scanner's own reference is `packages/agent-harness-scanner/README.md`.
 
@@ -35,10 +36,24 @@ scanner signed it, so each estate has a scanner of its own.
 |---|---|---|
 | `okta-app` | An SSWS API token for a read-only administrator | `*.okta.com`, `*.oktapreview.com` |
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
+| `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
 credential is supplied through an environment variable that the configuration
 names; none is ever written in the configuration file.
+
+**LangSmith.** Name the workspace to read with `workspaceId` (sent as
+`X-Tenant-Id`) unless the key is scoped to one workspace. A self-hosted
+LangSmith is configured by its origin (`"endpoint": { "selfHosted":
+"https://…" }`) and must be a bare https origin whose name resolves only to
+public addresses: the scanner checks it when the file is read, resolves it again
+before every request, and does not send the key to a private, loopback,
+link-local or metadata address. A self-hosted LangSmith that runs no deployment
+control plane is configured with `"readDeployments": false`. The scanner sends
+LangSmith GET requests only, and the Viewer role is what keeps the key read-only
+on LangSmith's side; where the workspace cannot assign a key that role, the key
+carries the rights of whoever issued it and only the scanner's GET-only wire
+keeps the read read-only.
 
 ## 3. Labelling the estate's principals
 
@@ -60,6 +75,19 @@ it, so the credential lands on the same agent:
 | An Okta service app | `okta:app:<appId>` |
 | An Okta API token | `okta:api-token:<tokenId>` |
 | An Entra service principal | `entra:sp:<objectId>` |
+| A LangSmith deployment | `langsmith:deployment:<deploymentId>` |
+| A LangSmith tracing project | `langsmith:project:<projectId>` |
+
+**LangSmith reads no label.** Its agents are identified by LangSmith's own ids,
+and LangSmith records no owner for a project or a deployment, so each is reported
+unowned. Every deployment is reported. A tracing project that no deployment
+writes to is reported when it recorded a tool call in the window (`windowDays`,
+7 by default, at most 30); one that only called a model is counted and reported
+as nothing. Each agent's tools are the tool names its project's calls carry,
+summarised over the window, and nothing of any run is read. LangSmith records no
+tool definition, pin or read-only hint, and the contract counts an undeclared
+hint as a write, so every LangSmith agent that called a tool raises
+`UNPINNED_WRITE_TOOL` at the ingest.
 
 What the scanner deliberately does not take from these labels:
 
@@ -95,3 +123,8 @@ read in full that returned nothing is **EMPTY**, not complete. A source the
 scanner could not read appears with its reason: `AUTH_FAILED` for a credential
 the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
 `TIME_BOX`, `BYTE_CAP` or `PAGINATION_TORN` for the rest.
+
+A LangSmith source's rows are the deployments and projects it listed, so a
+workspace whose window held no tool call and no deployment is read in full with
+rows and reports no agent. A scan that found no agent at all raises
+`EMPTY_SCAN` and never counts as the estate's complete scan.

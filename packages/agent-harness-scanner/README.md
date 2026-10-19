@@ -16,9 +16,55 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 |---|---|---|---|
 | `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile.owner`, a token's `userId`. Every token is reported except the scanner's own, identified by id from `/api-tokens/current` | `GET /api/v1/apps`, `GET /api/v1/api-tokens/current`, `GET /api/v1/api-tokens` |
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
+| `runtime` | LangSmith | Deployments, and tracing projects that called a tool in a bounded window, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted), `GET /api/v1/sessions` |
 
-Azure Key Vault is the only vault adapter. The `vault` kind and the `product`
-field keep the interface generic for the next one.
+Azure Key Vault is the only vault adapter and LangSmith the only runtime
+adapter. The `vault` and `runtime` kinds and the `product` field keep the
+interface generic for the next one.
+
+### LangSmith
+
+Two kinds of agent, each identified by LangSmith's own id:
+
+| Agent | Id | Reported when |
+|---|---|---|
+| A deployment (LangSmith Deployment) | `langsmith:deployment:<id>` | always: a deployment is an agent server by existence |
+| A tracing project no deployment writes to | `langsmith:project:<id>` | it recorded at least one tool call in the window |
+
+A project that only called a model is counted in `rows` and reported as nothing,
+and an evaluation experiment is not listed. A deployment's tools are those its
+tracing project recorded.
+
+**Tool usage is an aggregate.** The projects listing is asked for its stats over
+the window (`windowDays`, 7 by default, at most 30), filtered to tool runs: the
+count of tool calls, and the run facets that split it by tool name. Each tool is
+reported with `server` set to the project its calls were traced in
+(`langsmith://<host>/projects/<id>`), `manifestHash: null`, `pinned: false` and
+`readOnlyHint: null`, because LangSmith records no definition, pin or hint. The
+contract counts an undeclared hint as a write, so the ingest raises
+`UNPINNED_WRITE_TOOL` for every agent that called a tool. The call counts have no
+member in `inflect-agent-harness/1`; the log line reports their total
+(`toolCalls`). A tool name that is not a plain identifier, such as a run name set
+at call time, is reported as a digest (`tool-sha256:<16 hex>`).
+
+**Completeness is proven.** The facets must account for every call the count
+records, or the read is `PAGINATION_TORN`: a facet list cut short is never
+reported as the whole. So is a page cut short, absent stats, and a project listed
+twice across offsets. A rejected or expired key is `AUTH_FAILED`, a host that
+cannot be reached `UNREACHABLE`, and a refusal from LangSmith's rate limiter
+`RATE_LIMITED`. A window with no tool call and no deployment reports no agent,
+and the ingest raises `EMPTY_SCAN` for a scan that found none.
+
+**What is never kept.** Both listings return more than the source reads: a
+deployment's `secrets` and source configuration, a project's description and
+metadata, and facets over run tags and metadata. Only ids, a deployment's
+tracing project, and a project's tool-call count and tool-name facets are read.
+
+The endpoint paths are one table, `LANGSMITH_READ_PATHS` in
+`src/sources/langsmith.ts`. The paths and query parameters are in LangSmith's
+published OpenAPI documents. The members of one run facet (`key`, `value`, `n`)
+are not documented there, and a facet that does not read as a count stops the
+read rather than being skipped.
 
 ### The labelling conventions
 
@@ -41,6 +87,13 @@ What the sources never do:
 - **Read a secret's value.** Neither `GET /api/v1/apps/{id}/credentials/secrets`
   (Okta returns client secrets there) nor `GET {vault}/secrets/{name}` is
   called. Credentials are reported by reference (`okta://…`, `azure-kv://…`).
+  One listing the scanner does call can carry values it never reads: LangSmith's
+  deployments listing documents each deployment's `secrets`, name and value. The
+  source reads a deployment's id and tracing project and nothing else, and the
+  tests hold a marker in that member out of the report and the log.
+- **Read a run.** No LangSmith run, trace or run content is fetched: not
+  `GET /api/v1/runs/{id}`, not `POST /api/v1/runs/query`. Tool usage comes from
+  the projects listing's aggregates.
 - **Link to the register.** `registeredAgentId` is always `null` from these
   sources: a label in the estate being scanned is something its administrator can
   write. The register is the `inflect-register` source's (#3686).
@@ -82,10 +135,21 @@ secret-shaped string anywhere in the file is refused by path.
       "vaultUrls": ["https://acme-agents.vault.azure.net"],
       "directoryTenantId": "<Entra tenant id>", "clientId": "<app id>",
       "clientSecretEnv": "AZURE_CLIENT_SECRET"
+    },
+    {
+      "kind": "runtime", "product": "langsmith",
+      "endpoint": { "cloud": "eu" },
+      "apiKeyEnv": "LANGSMITH_API_KEY",
+      "workspaceId": "<workspace id>", "windowDays": 7
     }
   ]
 }
 ```
+
+A self-hosted LangSmith names its own host instead:
+`"endpoint": { "selfHosted": "https://langsmith.acme.example" }`. Set
+`"readDeployments": false` for one that runs no deployment control plane; its
+projects are still read.
 
 - `SCANNER_SIGNING_KEY`: the Ed25519 private key, PKCS#8 PEM. Register its
   public half at `POST /api/t/{slug}/admin/agents/harness-scanner-keys`
@@ -95,9 +159,24 @@ secret-shaped string anywhere in the file is refused by path.
 - `OKTA_API_TOKEN`: an SSWS token for a read-only administrator.
 - `AZURE_CLIENT_SECRET`: an Entra application holding `Key Vault Reader` on each
   vault, which reads metadata and cannot read a secret's contents.
+- `LANGSMITH_API_KEY`: a LangSmith service key holding the workspace Viewer
+  role, where the workspace can assign one; otherwise the key carries its
+  issuer's rights and the GET-only wire is what keeps the read read-only.
+  `workspaceId` is sent as `X-Tenant-Id`; leave it out for a key scoped to one
+  workspace.
 
 Okta orgs must be on `*.okta.com` or `*.oktapreview.com`, vaults on
-`*.vault.azure.net`, and the ingest on https.
+`*.vault.azure.net`, LangSmith on `api.smith.langchain.com` (`"cloud": "us"`) or
+`eu.api.smith.langchain.com` (`"cloud": "eu"`), and the ingest on https.
+
+A self-hosted LangSmith is the one host the configuration lets a person type, so
+it is checked the way the application checks any customer-named host
+(`src/customer-host.ts`, after the `publicOrigin` rule kind): it must be a bare
+https origin, not a literal private, loopback or link-local address, not
+`localhost` or a metadata name, and not a `.local` or `.internal` name. Before
+every request the scanner resolves the host again and refuses to send the key
+if any address it resolves to is private, so a name repointed after the file was
+written stops the read as `UNREACHABLE`.
 
 ## Running
 

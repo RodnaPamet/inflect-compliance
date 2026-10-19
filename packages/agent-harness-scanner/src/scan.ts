@@ -16,13 +16,15 @@ import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from '
 
 import type { HarnessReportBody } from '@/lib/agentic/harness-contract';
 
-import type { ScannerConfig } from './config';
+import { sourceCredentialEnv, type ScannerConfig } from './config';
+import type { ResolveHost } from './customer-host';
 import { createSourceWire, type FetchLike } from './http';
 import type { ScannerLog } from './log';
 import { postReport, type PostResult } from './post';
 import { buildReportBody, signReport } from './report';
-import { sourceResult, SourceReadError, type HarnessSource, type SourceRead } from './source';
+import { sourceResult, SourceReadError, toolCallsOf, type HarnessSource, type SourceRead } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
+import { langSmithSource } from './sources/langsmith';
 import { oktaSource } from './sources/okta';
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -33,6 +35,8 @@ export interface ScanDeps {
     readonly log: ScannerLog;
     /** The wire. A TEST SEAM: the CLI never passes one, so production uses the global fetch. */
     readonly fetchImpl?: FetchLike;
+    /** How a customer-named host is re-resolved. A TEST SEAM, like `fetchImpl`: production uses DNS. */
+    readonly resolveHost?: ResolveHost;
     readonly now?: () => number;
 }
 
@@ -50,18 +54,32 @@ function requiredEnv(env: Env, name: string, what: string): string {
 }
 
 /** The configured sources, constructed — or, where a credential is missing, already reported unreadable. */
-export function buildSources(config: ScannerConfig, env: Env): { sources: HarnessSource[]; unreadable: SourceRead[] } {
+export function buildSources(
+    config: ScannerConfig,
+    env: Env,
+    seams: { readonly resolveHost?: ResolveHost } = {},
+): { sources: HarnessSource[]; unreadable: SourceRead[] } {
     const sources: HarnessSource[] = [];
     const unreadable: SourceRead[] = [];
     for (const s of config.sources) {
-        const secretName = s.kind === 'okta-app' ? s.apiTokenEnv : s.clientSecretEnv;
-        const secret = env[secretName];
+        const secret = env[sourceCredentialEnv(s)];
         if (typeof secret !== 'string' || secret.trim() === '') {
             unreadable.push(sourceResult(s.kind, 0, [], new SourceReadError('AUTH_FAILED', 'credential not set')));
             continue;
         }
         if (s.kind === 'okta-app') {
             sources.push(oktaSource({ orgUrl: s.orgUrl, apiToken: secret.trim(), ownerProfileKey: s.ownerProfileKey }));
+        } else if (s.kind === 'runtime') {
+            sources.push(
+                langSmithSource({
+                    endpoint: s.endpoint,
+                    apiKey: secret.trim(),
+                    workspaceId: s.workspaceId ?? null,
+                    windowDays: s.windowDays,
+                    readDeployments: s.readDeployments,
+                    resolveHost: seams.resolveHost,
+                }),
+            );
         } else {
             sources.push(
                 azureKeyVaultSource({
@@ -92,7 +110,7 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
 
     const asOf = new Date(now());
     const deadline = asOf.getTime() + config.timeBoxSeconds * 1000;
-    const { sources, unreadable } = buildSources(config, env);
+    const { sources, unreadable } = buildSources(config, env, { resolveHost: deps.resolveHost });
 
     const reads = await Promise.all(
         sources.map(async (source) => {
@@ -106,7 +124,7 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     );
 
     for (const r of [...reads, ...unreadable]) {
-        const fields = { source: r.kind, status: r.status, rows: r.rows, principals: r.observations.length };
+        const fields = { source: r.kind, status: r.status, rows: r.rows, principals: r.observations.length, toolCalls: toolCallsOf(r) };
         if (r.status === 'COMPLETE') log.info('source read', fields);
         else log.warn('source incomplete', { ...fields, reason: r.reason ?? null });
     }
