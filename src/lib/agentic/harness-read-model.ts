@@ -45,6 +45,28 @@ export interface StoredSource {
 
 export type HarnessStoredReach = 'READ_ONLY' | 'WRITE_OR_EXTERNAL' | 'UNKNOWN';
 
+/** One model endpoint an agent calls, as `/2` reports it: a reference and a model id. */
+export interface HarnessModelEndpointView {
+    readonly endpoint: string;
+    readonly model: string | null;
+}
+
+/**
+ * The model endpoints a scan item holds (#3759), in three states that never
+ * collapse into one another:
+ *
+ *   • NOT_REPORTED — the scan said nothing: a `/1` report, or a `/2` agent
+ *     without `models`. Not "calls no model";
+ *   • REPORTED — what the scanner reported, possibly EMPTY, which is the
+ *     scanner's claim that the agent calls none;
+ *   • UNREADABLE — the stored value failed re-validation. Never shown as
+ *     either of the other two.
+ */
+export type HarnessAgentModels =
+    | { readonly state: 'NOT_REPORTED' }
+    | { readonly state: 'UNREADABLE' }
+    | { readonly state: 'REPORTED'; readonly endpoints: readonly HarnessModelEndpointView[] };
+
 export type AcceptAffordance = 'ACCEPT' | 'RENEW' | 'OWNER_ONLY' | 'REGISTER_FIRST' | 'NONE';
 
 export interface HarnessScanRow {
@@ -96,6 +118,8 @@ export interface MatrixRow {
     readonly verdicts: readonly CriterionVerdict[];
     /** The stored verdicts failed re-validation: every cell renders unanswered (fail closed). */
     readonly verdictsUnreadable: boolean;
+    /** The model endpoints this scan reported for the agent. Rendered as text, never as links. */
+    readonly models: HarnessAgentModels;
     /**
      * Set when a scan received LATER (but describing an earlier moment) read
      * this agent at a different level. Acceptance follows that reading, because
