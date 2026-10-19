@@ -90,6 +90,7 @@ const ENTRY_IDS = [
     'agents-view-reports',
     'agents-view-review-quality',
     'agents-view-external-tools',
+    'agents-view-peers',
 ] as const;
 
 async function openMenu(
@@ -122,7 +123,7 @@ async function openMenu(
 /** The rendered menu-item rows, in DOM order. */
 const items = () => screen.queryAllByRole('menuitem');
 
-describe('nine entries in two labelled groups', () => {
+describe('ten entries in two labelled groups', () => {
     it('renders exactly those, in order', async () => {
         await openMenu();
         // The ids, as an exact ordered list — a count would pass for six rows
@@ -144,6 +145,7 @@ describe('nine entries in two labelled groups', () => {
             '/t/acme/agents/reports',
             '/t/acme/agents/review-quality',
             '/t/acme/agents/external-tools',
+            '/t/acme/agents/peers',
         ]);
     });
 
@@ -165,6 +167,7 @@ describe('nine entries in two labelled groups', () => {
             VIEWS.reports,
             VIEWS.reviewQuality,
             VIEWS.externalTools,
+            VIEWS.peers,
         ]);
     });
 });
@@ -177,6 +180,7 @@ describe('`selected` marks the current route', () => {
         ['quarantine', 'agents-view-quarantine'],
         ['decisions', 'agents-view-decisions'],
         ['review-quality', 'agents-view-review-quality'],
+        ['peers', 'agents-view-peers'],
     ] as const)('on %s exactly that one row is selected', async (current, id) => {
         await openMenu({ current });
         // The selected TONE is the observable — the shared `ROW_CLASS` plus
@@ -205,6 +209,7 @@ describe('a permission-absent entry is NOT RENDERED', () => {
             'agents-view-reports',
             'agents-view-review-quality',
             'agents-view-external-tools',
+            'agents-view-peers',
         ]);
     });
 

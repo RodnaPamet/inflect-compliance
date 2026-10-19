@@ -131,6 +131,14 @@ const AI_GUARD_EXEMPT: Readonly<Record<string, string>> = {
         'that: the static driver has no model call at all, and the Flue ' +
         "driver's ingestion is guarded at the tool boundary in " +
         '`flue/tools-adapter.ts`, whose own tests assert both slices.',
+    'src/app-layer/usecases/a2a-inbound.ts':
+        'Imports `ai/guard` for `guardEgress` on the answer to an A2A peer ' +
+        '(#3679); it assembles no prompt and calls no model. The untrusted ' +
+        "text it receives, the peer's task, goes only into a run input, which " +
+        '`startWorkflowRun` scans with `assertNoReviewRequired` before the run ' +
+        'row exists, refusing a flag as well as a block. The answer carries ' +
+        'ids, kinds and statuses only, and still withholds its artefact on any ' +
+        'review-required egress verdict.',
     'src/app-layer/usecases/compliance-posture.ts':
         'Sends only aggregate counts/percentages to the model — no tenant free ' +
         'text is assembled into the prompt (documented in the posture prompt-' +

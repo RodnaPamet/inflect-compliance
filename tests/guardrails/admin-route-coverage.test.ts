@@ -207,6 +207,16 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/peers/[peerId]/route.ts',
     'admin/agents/peers/[peerId]/card/route.ts',
     'admin/agents/peers/[peerId]/card/approve/route.ts',
+    // A2A messaging (#3679). The inbound credential and the receipts fall to
+    // the peers rule (`admin.agent_registry`); the kill has its own rule above
+    // it, `admin.agent_kill_switch` — the key that stops an agent.
+    'admin/agents/peers/[peerId]/inbound-credential/route.ts',
+    'admin/agents/peers/[peerId]/kill/route.ts',
+    'admin/agents/peers/[peerId]/messages/route.ts',
+    // The tenant's own A2A signing key (#3679, owner decision 2026-10-19).
+    // Method-scoped rules above the /admin/agents catch-all: GET is the
+    // register key, POST (generate or rotate) is admin.tenant_lifecycle.
+    'admin/agents/a2a-signing-key/route.ts',
     // Quarantine triage — the proposals the agentic output guard refused, with
     // the content that was attempted. Read-only, gated on
     // `admin.agent_registry` by its own rule in ROUTE_PERMISSIONS (nothing in

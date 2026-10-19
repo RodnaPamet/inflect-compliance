@@ -67,6 +67,8 @@ const MARKERS: Readonly<Record<string, RegExp>> = {
     'legacy-mcp': /\.refusalReason\)\.toBe\(/,
     // Live validation refuses: `expect(r.valid).toBe(false)`.
     'mcp-server': /\.valid\)\.toBe\(false\)/,
+    // The A2A peer route (#3679) refuses the same way.
+    'a2a-peer': /\.valid\)\.toBe\(false\)/,
 };
 
 const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: string }>> = {
@@ -125,6 +127,15 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
     'mcp-server': {
         test: 'tests/unit/mcp-server-provider.test.ts',
         needle: 'McpServerProvider',
+    },
+    // `a2a-peer` (#3679) is a route to a peer, not a check provider: empty
+    // `supportedChecks`, like the MCP server above. Its fail-closed surface is
+    // validation — no peer named, or a header-injecting credential, refuses —
+    // and, as above, a validation confers nothing: every send is gated by the
+    // peer's admission, its kill and the connection's rung.
+    'a2a-peer': {
+        test: 'tests/unit/a2a-peer-provider.test.ts',
+        needle: 'A2aPeerProvider',
     },
 };
 

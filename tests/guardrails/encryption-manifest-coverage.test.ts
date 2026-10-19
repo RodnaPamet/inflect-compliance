@@ -125,6 +125,7 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'defeat the equality read the admin surface makes while protecting ' +
         'nothing. The free-text sibling on this path IS encrypted — see ' +
         'AgentKillSwitch.reason / liftReason.',
+    'PeerAgentMessage.bodyDigest': 'The SHA-256 hex of an A2A message body (#3679) — a digest, not content. Plaintext on purpose: it is what the signed statement covers, and a receipt must be checkable against its body without first holding the key that decrypts it.',
     'AgentKillSwitch.reasonCode': "A closed vocabulary pinned by a CHECK to one literal ('OWNER_DEPARTED'), written only by the owner-orphan pass's system actor (#3670). Plaintext because reports and the lift trigger filter on it; it carries no tenant content — the free-text reason beside it is the encrypted column.",
     'AgentKillSwitchDrill.detail': 'Machine-generated from source constants — scope names, counts and a fixed explanation of which arm proved what. It carries no tenant content by construction. Deliberately plaintext: it is the drill\'s own evidence, and a KEK failure is one of the things a drill would have to report from behind the key that failed.',
     'AgentServicePrincipalConfirmation.invalidatedReason':

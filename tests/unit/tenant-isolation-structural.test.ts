@@ -213,6 +213,15 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // tenant-scoped business route. See
             // src/lib/observability/web-vitals.ts.
             'telemetry',
+            // #3679 — the inbound A2A endpoint, `/api/a2a/[tenantSlug]/peers/[peerId]`.
+            // Tenant-scoped by its own [tenantSlug] segment, but NOT under
+            // /api/t/: the caller is another organisation's agent with no
+            // session, and /api/t/** is gated at the edge by the session's
+            // membership check. `handleInboundA2a` resolves the tenant from the
+            // slug, binds the run under a tenant context, and authenticates
+            // the peer itself (credential, signature, admission) — triaged
+            // PROTOCOL_CREDENTIAL in api-route-has-some-authorization.
+            'a2a',
         ]);
 
         // Legacy routes are allowed as documented thin wrappers

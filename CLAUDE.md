@@ -1860,6 +1860,56 @@ Card text is hashed through `JSON.stringify`, not straight to SHA-256: UTF-8
 encoding turns every lone surrogate into U+FFFD, so two different texts would
 hash alike.
 
+**A2A messaging** (`usecases/a2a-inbound.ts`, `a2a-outbound.ts`, since #3679)
+carries tasks both ways with one pinned peer. Ten rules in it are easy to undo:
+
+- **The outbound rung lives on the `a2a-peer` connection, never on the peer.**
+  The send is that connection's external tool, and its A2A branch in
+  `adapterFor` runs BEFORE the read/write split, so every send takes the ladder
+  whatever the tool declares. Nothing is sent from the call; the dispatch pass is
+  the only sender, through `wirePost`.
+- **`ctx.a2aInbound` only narrows.** A peer-started run's external writes are
+  clamped to `PROPOSE_ONLY` (`clampForInboundA2a`, R17) and it gets no A2A send
+  (R14). `executeFrom` restores it from `WorkflowRun.inboundPeerId`; a resume
+  that dropped it would win `AUTOMATIC` back.
+- **Admission before parsing.** `handleInboundA2a` parses nothing the peer wrote
+  until kill, credential, receipt and admission pass. The peer is told
+  "refused" whatever the reason; the reason goes to `AUTHZ_DENIED`.
+- **Each tenant signs with its own key** (`TenantA2aSigningKey`, owner decision
+  2026-10-19). The seed is in the Epic B manifest and is read only by
+  `resolveTenantA2aSigningKey`; rotation is `admin.tenant_lifecycle`, never an
+  API key, and RETIRES the old key (seed NULLed, public half kept) so receipts
+  verify by the key id they name. There is no deployment key — do not bring
+  back an env var. No key ⇒ `NO_SIGNING_KEY` both ways, asked inbound only
+  after the peer has proved itself.
+- **A receipt keeps the EXACT bytes and the key it verifies under.**
+  `PeerAgentMessage` is write-once by trigger and its body is never sanitised
+  or re-serialised. Verify against the key the row NAMES
+  (`verifyStoredA2aReceipt(row, key, fingerprint)`), never one it supplies for
+  itself. A reply whose receipt fails is discarded and settles `INDETERMINATE`.
+- **Write-once triggers on encrypted columns must admit the re-wrap.** The
+  tenant-DEK and master-KEK sweeps rewrite every manifest ciphertext with a raw
+  UPDATE; the receipt, kill and key triggers let through ciphertext → `v2:`
+  ciphertext with every other column unchanged, and nothing else. A new
+  write-once table with an encrypted column needs the same exception.
+- **The card copy is at most 15 minutes old** (`A2A_CARD_MAX_AGE_MS`, R18), and
+  the per-peer quota is `PeerAgent.inboundMessagesPerHour` (1..1000, register
+  key). Neither moves without the owner.
+- **`iflp_` is not `iflk_`.** `/api/a2a` is its own `MACHINE_CALLER_PREFIXES`
+  entry and self-authenticates; `matchTenantApiKeyRequest` is untouched, and the
+  egress scan refuses both prefixes. Retiring the receiving agent revokes the
+  peer's credential in the cascade, so the next message fails at the credential
+  check.
+- **An approved external write opens at `PROPOSE_ONLY`**, also on an
+  `AUTOMATIC` connection: its authority is a person's approval, and the
+  `AUTOMATIC` arm would demand a parameter set it never ran.
+- **The per-peer kill is a sibling table** (`PeerAgentKillSwitch`), read
+  uncached on every message both ways; an API key cannot lift it. It and
+  `PeerAgentMessage` key the peer by plain id with no FK, so the tenant purge,
+  which retains both, cannot cascade into them. Single writers:
+  `a2a-messages.ts`, `a2a-peer-kill.ts`, `a2a-peer-credentials.ts`,
+  `a2a-signing-key.ts`.
+
 **The inventory view key** (`admin.agent_registry_view`, #3710) is read-only:
 the register list and row, scans and the matrix, `get_discovered_agent`, the
 governance pack, and — beside `admin.view` — runs and proposals. OWNER, ADMIN,

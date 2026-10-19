@@ -479,6 +479,29 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // and the table carries no tenant column to leak across — but the asymmetry
     // is stated rather than left to be discovered.
     AgentKillSwitch: ['reason', 'liftReason'],
+    // The per-peer A2A kill (#3679) — the same two fields for the same reason as
+    // the agent kill above, sanitised at its single write seam
+    // (`usecases/a2a-peer-kill.ts`, `requireReason`). The boundary read selects
+    // only id/engagedAt and filters on (tenantId, peerId, liftedAt).
+    PeerAgentKillSwitch: ['reason', 'liftReason'],
+    // A2A receipts (#3679) — the EXACT body a signed statement's digest covers:
+    // task text another organisation's agent wrote, and tenant data sent to one.
+    // Encrypted at rest and NEVER sanitised: a changed byte breaks the digest
+    // the row is kept to prove (`verifyStoredA2aReceipt`). Never rendered — the
+    // receipt list returns statements and signatures, not bodies. Not used in
+    // any WHERE/orderBy; reads are by (tenantId, peerId, direction, createdAt),
+    // runId or journalId. The statement itself (`receiptJson`) stays plaintext:
+    // ids, a digest, timestamps and the two parties, so a receipt can be listed
+    // and its signature checked without the key.
+    PeerAgentMessage: ['body'],
+    // The tenant's own A2A signing key (#3679, owner decision 2026-10-19): the
+    // 32-byte Ed25519 seed, wrapped by the tenant DEK here and nowhere else. It
+    // is read only by `resolveTenantA2aSigningKey` to sign, never returned by a
+    // route, never logged, and NULLed when the key is retired (a CHECK holds
+    // "in force ⇔ seed present"). Never in a WHERE/orderBy: the in-force key is
+    // found by (tenantId, retiredAt). The public key and fingerprint stay
+    // plaintext — a peer is handed them and receipts name the fingerprint.
+    TenantA2aSigningKey: ['privateKeySeed'],
 
     // ─── Epic G-7 risk treatment plans ─────────────────
     //  Both columns can name internal systems / vendors / users:

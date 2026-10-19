@@ -219,6 +219,16 @@ const MIGRATED_PAGES = [
     // matters while several branches are open against it.
     'agents/parameter-sets/page.tsx',
     'agents/parameter-sets/ParameterSetsClient.tsx',
+    // #3679 — A2A peers and one peer. PROMOTED ON LANDING for the reason the
+    // parameter-sets entry gives: design-system-native from birth (semantic
+    // tokens only; EntityListPage + EntityDetailLayout + Card + DataTable +
+    // StatusBadge + MetaStrip + Modal + ConfirmDialog + CopyText + FormField +
+    // Combobox + NumberStepper + InlineNotice primitives, no raw palette greys,
+    // no legacy btn/badge/glass-card).
+    'agents/peers/page.tsx',
+    'agents/peers/PeersClient.tsx',
+    'agents/peers/[peerId]/page.tsx',
+    'agents/peers/[peerId]/PeerDetailClient.tsx',
     // ── The seven redirect shims (#2427/#2428/#2437) ───────────────────────
     //
     // Listed as MIGRATED rather than counted as unmigrated, and that is not a

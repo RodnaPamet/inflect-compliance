@@ -237,6 +237,10 @@ export const SUBPAGES: readonly string[] = [
     // where an operator already has that connection selected.
     '/agents/parameter-sets',
     '/agents/compose',
+    // #3679 — A2A peers and one peer, reached from the agents Views menu and
+    // from the list's rows.
+    '/agents/peers',
+    '/agents/peers/[peerId]',
     '/agents/proposals',
     '/agents/quarantine',
     '/agents/receipts',

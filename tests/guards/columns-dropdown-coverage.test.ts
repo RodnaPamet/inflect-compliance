@@ -97,6 +97,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(b) multi-section — fixed derived columns (discovered id, via, first/last seen, last level, why it is shadow); per-column hide/show not meaningful.',
     'agents/reports/harness/ScanHistory.tsx':
         '(b) multi-section — read-only fixed-column scan log (as of, received, scanner, version, scan, completeness, agents, sources); per-column hide/show not meaningful.',
+    'agents/peers/[peerId]/PeerDetailClient.tsx':
+        '(a) sub-component — two detail-tab sub-tables (kill history, signed messages) with fixed columns; the receipt column is the point of the table, so per-column hide/show is not meaningful.',
     'agents/reports/harness/ScannerKeysCard.tsx':
         '(b) multi-section — the scanner-key register, a short fixed-column list (scanner, fingerprint, added, status, revoke); per-column hide/show not meaningful.',
     'admin/api-keys/page.tsx':

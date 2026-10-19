@@ -10,7 +10,7 @@
  * else's endpoint.
  *
  * So this scan is deliberately not a data-loss classifier. It hunts two
- * markers that mean "this came from inside and cannot have a legitimate reason
+ * kinds of marker that mean "this came from inside and cannot have a legitimate reason
  * to leave", both matched exactly rather than guessed at:
  *
  *   - a CIPHERTEXT envelope — a `v1:`/`v2:` value is a raw encrypted column.
@@ -19,6 +19,8 @@
  *     middleware decrypt.
  *   - an INFLECT API KEY — `iflk_`. A credential minted for this deployment,
  *     addressed outward, is exfiltration whatever the surrounding prose says.
+ *     An A2A peer's inbound credential, `iflp_` (#3679), is the same marker
+ *     with a different prefix, and is refused for the same reason.
  *
  * Both are zero-false-positive: neither string occurs in ordinary prose, so the
  * scan needs no tuning and no allowlist, and a refusal is always worth reading.
@@ -35,6 +37,7 @@
  */
 import { API_KEY_PREFIX } from '@/lib/auth/api-key-auth';
 import { isEncryptedValue } from '@/lib/security/encryption';
+import { PEER_INBOUND_TOKEN_PREFIX } from '@/lib/agentic/a2a/credential';
 
 /**
  * The first internal secret found in an outbound payload, named for the
@@ -54,6 +57,10 @@ export function findInternalSecret(payload: unknown): string | null {
                 found = 'an encrypted field value';
             } else if (value.includes(API_KEY_PREFIX)) {
                 found = 'an Inflect API key';
+            } else if (value.includes(PEER_INBOUND_TOKEN_PREFIX)) {
+                // An A2A peer's inbound credential (#3679) is an Inflect-minted
+                // bearer too, and the same rule applies to it going out.
+                found = 'an Inflect A2A peer credential';
             }
         }
         return value;

@@ -62,6 +62,10 @@ const EXPECTED_PROVIDER_IDS = [
     // application, which is why no host allowlist applies to it and its endpoint is
     // classified `publicOrigin` rather than `vendorOrigin`.
     'legacy-mcp',
+    // #3679. The outbound route to one A2A peer: its rung on the external
+    // write ladder and its credential live on a connection like every other
+    // external write's, so `upsertIntegrationConnection` must know it.
+    'a2a-peer',
 ].sort();
 
 describe('integration provider fleet — runtime wiring', () => {

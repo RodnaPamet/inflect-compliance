@@ -71,6 +71,7 @@ import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { coerceStoredMode } from '@/lib/integrations/external-write-ladder';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
+import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { runInTenantContext } from '@/lib/db-context';
 import {
@@ -87,6 +88,7 @@ import {
 } from './external-write-automatic';
 import { checkTargetInPopulation } from './external-tool-target-populations';
 import { servicePrincipalLinkConfirmed } from './agent-service-principal-confirmation';
+import { sendA2aJournalRow, type A2aNetworkOptions } from './a2a-outbound';
 
 /**
  * Bound per pass, so one tenant's backlog cannot monopolise a worker.
@@ -283,6 +285,11 @@ function errorResultText(result: unknown): string {
 export async function runExternalWriteDispatch(input: {
     tenantId: string;
     limit?: number;
+    /**
+     * Test seams for the A2A send (#3679): the card fetch and the wire. No
+     * file under src/ passes this; the job calls with `{ tenantId }` alone.
+     */
+    a2a?: A2aNetworkOptions;
 }): Promise<ExternalWriteDispatchResult> {
     // `context-system`, never `context` — the latter reaches @/lib/auth -> @/auth
     // and dies in the worker, which has no Next request to hang a session on.
@@ -311,10 +318,13 @@ export async function runExternalWriteDispatch(input: {
                     where: {
                         id: { in: connectionIds },
                         tenantId: input.tenantId,
-                        provider: MCP_SERVER_PROVIDER_ID,
+                        // An A2A peer's outbound connection is an external
+                        // write connection too (#3679): same rung, same rows.
+                        provider: { in: [MCP_SERVER_PROVIDER_ID, A2A_PEER_PROVIDER_ID] },
                     },
                     select: {
                         id: true,
+                        provider: true,
                         isEnabled: true,
                         configJson: true,
                         secretEncrypted: true,
@@ -379,6 +389,24 @@ export async function runExternalWriteDispatch(input: {
         const narrowed = rowRungNarrowedRefusal(row.mode, rung);
         if (narrowed) {
             await refuse(narrowed);
+            continue;
+        }
+
+        // ── AN A2A TASK TO A PEER (#3679) ────────────────────────────────────
+        //
+        // The three checks above are the ladder's and apply to every row. What
+        // follows them for an MCP write — a URL, a minted token, a paired read
+        // tool — does not exist for a peer: where it goes is its pinned card,
+        // and its prior state is the pin it was authorised under. So a peer's
+        // row leaves the loop here, to the one function that re-asks the kill,
+        // admission, the basis and the bounds, signs it, and sends it through
+        // the A2A client on the same wire.
+        if (connection.provider === A2A_PEER_PROVIDER_ID) {
+            const outcome = await sendA2aJournalRow(ctx, row, connection, input.a2a);
+            if (outcome === 'APPLIED') result.applied += 1;
+            else if (outcome === 'ACCEPTED') result.accepted += 1;
+            else if (outcome === 'INDETERMINATE') result.indeterminate += 1;
+            else result.refused += 1;
             continue;
         }
 

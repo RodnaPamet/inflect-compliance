@@ -77,6 +77,20 @@ export interface RequestContext {
      * mean different things and reading either like the other is the hazard.
      */
     apiKeyMaxAutonomy?: number | null;
+
+    /**
+     * Set when this context belongs to a RUN AN A2A PEER STARTED (#3679): the
+     * peer, and the verified inbound message that started it.
+     *
+     * Set by the inbound A2A endpoint alone, written onto the run's write-once
+     * `WorkflowRun.inboundPeerId` / `inboundMessageId` at creation, and
+     * restored from those columns by `executeFrom` for every segment — a
+     * start, a person's resume and a queued Flue segment alike. Two owner rules read it: such a run never dispatches an
+     * external write above `PROPOSE_ONLY` (threat-model R17,
+     * `clampForInboundA2a`), and never sends an outbound A2A task (R14). It
+     * grants nothing; it only ever narrows.
+     */
+    a2aInbound?: { readonly peerId: string; readonly messageId: string };
 }
 
 export interface PaginatedResult<T> {

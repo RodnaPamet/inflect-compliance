@@ -68,6 +68,8 @@ interface DbOverrides {
     unrevokedKeys?: number;
     liveKeys?: number;
     scannerKeys?: number;
+    /** Live inbound A2A credentials naming the agent as receiver (#3679). */
+    peerInboundCredentials?: number;
     tools?: readonly string[];
     pendingProposals?: number;
     card?: { id: string; currentVersion: number } | null;
@@ -125,6 +127,10 @@ function makeDb(overrides: DbOverrides = {}) {
         agentHarnessScannerKey: {
             findMany: jest.fn(async () => ids('scanner-key', overrides.scannerKeys ?? 0)),
             updateMany: jest.fn(async () => ({ count: overrides.scannerKeys ?? 0 })),
+        },
+        peerAgentInboundCredential: {
+            findMany: jest.fn(async () => ids('peer-credential', overrides.peerInboundCredentials ?? 0)),
+            updateMany: jest.fn(async () => ({ count: overrides.peerInboundCredentials ?? 0 })),
         },
         registeredAgentTool: {
             findMany: jest.fn(async () =>
@@ -338,6 +344,7 @@ const FULL_AGENT: DbOverrides = {
     unrevokedKeys: 3,
     liveKeys: 2,
     scannerKeys: 1,
+    peerInboundCredentials: 1,
     tools: ['list_risks', 'propose_risks'],
     pendingProposals: 4,
     card: { id: 'card-1', currentVersion: 3 },
@@ -358,6 +365,7 @@ describe('retirement cascades, status first and audit last', () => {
         const effectWrites = [
             db.tenantApiKey.updateMany,
             db.agentHarnessScannerKey.updateMany,
+            db.peerAgentInboundCredential.updateMany,
             db.registeredAgentTool.deleteMany,
             db.agentProposal.updateMany,
             db.agentOwnershipTransfer.updateMany,
@@ -400,6 +408,7 @@ describe('retirement cascades, status first and audit last', () => {
             'AGENT_RETIRED',
             'AGENT_RETIREMENT_KEYS_REVOKED',
             'AGENT_RETIREMENT_SCANNER_KEYS_REVOKED',
+            'AGENT_RETIREMENT_PEER_CREDENTIALS_REVOKED',
             'AGENT_RETIREMENT_TOOLS_DROPPED',
             'AGENT_RETIREMENT_PROPOSALS_EXPIRED',
             'AGENT_RETIREMENT_POLICY_CARD_FROZEN',
@@ -413,6 +422,7 @@ describe('retirement cascades, status first and audit last', () => {
             apiKeysRevoked: 3,
             liveApiKeysRevoked: 2,
             scannerKeysRevoked: 1,
+            peerInboundCredentialsRevoked: 1,
             toolGrantsDropped: 2,
             proposalsExpired: 4,
             policyCardFrozenAtVersion: 3,
@@ -423,12 +433,14 @@ describe('retirement cascades, status first and audit last', () => {
         // The response carries the same summary the row does.
         expect(result).toEqual({ id: 'agent-1', status: 'RETIRED', cascade: summary.cascade });
 
-        const tools = mockLogEvent.mock.calls[3][2].detailsJson as Record<string, any>;
+        const peerCredentials = mockLogEvent.mock.calls[3][2].detailsJson as Record<string, any>;
+        expect(peerCredentials).toMatchObject({ credentialIds: ['peer-credential-1'], count: 1, reason: 'agent_retired' });
+        const tools = mockLogEvent.mock.calls[4][2].detailsJson as Record<string, any>;
         expect(tools.before).toEqual({ toolNames: ['list_risks', 'propose_risks'] });
-        const proposals = mockLogEvent.mock.calls[4][2].detailsJson as Record<string, any>;
+        const proposals = mockLogEvent.mock.calls[5][2].detailsJson as Record<string, any>;
         expect(proposals.proposalIds).toEqual(['proposal-1', 'proposal-2', 'proposal-3', 'proposal-4']);
         expect(proposals.idsTruncated).toBe(false);
-        const transfer = mockLogEvent.mock.calls[6][2].detailsJson as Record<string, any>;
+        const transfer = mockLogEvent.mock.calls[7][2].detailsJson as Record<string, any>;
         expect(transfer.transferId).toBe('transfer-1');
         expect(transfer.targetUserId).toBe('owner-2');
     });

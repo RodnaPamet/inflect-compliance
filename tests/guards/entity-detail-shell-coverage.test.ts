@@ -61,6 +61,9 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // the first UI for the policy card, tool pins, ASI coverage and the circuit
   // breaker; before it they were reachable only by API.
   { page: "src/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentDetailClient.tsx", entity: "Registered agent" },
+  // A2A peer (#3679) — server page delegates to PeerDetailClient, which mounts
+  // <EntityDetailLayout>, the same pattern as the register's detail page.
+  { page: "src/app/t/[tenantSlug]/(app)/agents/peers/[peerId]/PeerDetailClient.tsx", entity: "A2A peer" },
   // Business Continuity (BIA) — server page delegates to BiaDetailClient
   // which mounts <EntityDetailLayout> (same pattern as access-reviews).
   { page: "src/app/t/[tenantSlug]/(app)/audits/business-continuity/[id]/BiaDetailClient.tsx", entity: "Business impact analysis" },

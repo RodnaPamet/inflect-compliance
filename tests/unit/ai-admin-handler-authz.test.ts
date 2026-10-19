@@ -153,6 +153,11 @@ describe('every admin API gate on disk, asked about an AI_ADMIN', () => {
         // mode is (`/admin/identity-write-policy`).
         'src/app/api/t/[tenantSlug]/admin/agents/owner-orphan-pass/route.ts: admin.tenant_lifecycle':
             'the orphan-pass mode is an OWNER decision (tenant lifecycle), like the identity write ladder',
+        // 4b (#3679, owner decision 2026-10-19): generating or rotating the
+        // tenant's A2A signing key is OWNER-tier, the key that rotates the DEK;
+        // reading its public half (GET) stays the agent register key.
+        'src/app/api/t/[tenantSlug]/admin/agents/a2a-signing-key/route.ts: admin.tenant_lifecycle':
+            'the A2A signing key speaks for the whole tenant to another organisation; rotating it is tenant lifecycle',
     };
 
     it('every gate under the agent allowlist names only keys AI_ADMIN holds, or is a listed OWNER-only route', async () => {

@@ -41,6 +41,20 @@ const SEAMS = {
     // the text, the review stamps and the pinned hash.
     tenantSkill: { table: 'TenantSkill', seam: 'src/app-layer/usecases/tenant-skills.ts' },
     tenantSkillVersion: { table: 'TenantSkillVersion', seam: 'src/app-layer/usecases/tenant-skills.ts' },
+    // A2A messaging (#3679). A receipt is evidence of what crossed the
+    // boundary, a kill is evidence of a stop, and a credential decides which
+    // agent a peer reaches: one writer each, so none can be written by a path
+    // that skipped the checks its writer makes.
+    peerAgentMessage: { table: 'PeerAgentMessage', seam: 'src/app-layer/usecases/a2a-messages.ts' },
+    peerAgentKillSwitch: { table: 'PeerAgentKillSwitch', seam: 'src/app-layer/usecases/a2a-peer-kill.ts' },
+    peerAgentInboundCredential: {
+        table: 'PeerAgentInboundCredential',
+        seam: 'src/app-layer/usecases/a2a-peer-credentials.ts',
+    },
+    // The tenant's own A2A signing key (owner decision 2026-10-19). One writer,
+    // because it is the only place the seed is decrypted and the only place a
+    // rotation can be refused to anybody but an OWNER.
+    tenantA2aSigningKey: { table: 'TenantA2aSigningKey', seam: 'src/app-layer/usecases/a2a-signing-key.ts' },
 } as const;
 type Delegate = keyof typeof SEAMS;
 
@@ -98,9 +112,13 @@ describe('the harness tables have one write seam each', () => {
     const files = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] });
     const scanned = files.map((abs) => ({ rel: repoRelative(abs), writes: findWrites(codeOf(readFileSync(abs, 'utf8'))) }));
 
-    it('scans the tree and finds exactly the five seams writing', () => {
+    it('scans the tree and finds exactly the seams writing', () => {
         expect(files.length).toBeGreaterThan(500);
         expect(scanned.filter((s) => s.writes.length > 0).map((s) => s.rel).sort()).toEqual([
+            'src/app-layer/usecases/a2a-messages.ts',
+            'src/app-layer/usecases/a2a-peer-credentials.ts',
+            'src/app-layer/usecases/a2a-peer-kill.ts',
+            'src/app-layer/usecases/a2a-signing-key.ts',
             'src/app-layer/usecases/agent-harness-acceptance.ts',
             'src/app-layer/usecases/agent-harness-estates.ts',
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
