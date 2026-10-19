@@ -31,10 +31,12 @@ import type {
     MatrixRow,
     ShadowRow,
 } from '@/lib/agentic/harness-read-model';
+import type { HarnessEstateHealthView } from '@/lib/agentic/harness-estate-health';
 
 import { AcceptShortfallModal, type AcceptTarget } from './AcceptShortfallModal';
 import { AcceptancesCard } from './AcceptancesCard';
 import { RegisterShadowAgentModal } from './RegisterShadowAgentModal';
+import { EstateHealthCard } from './EstateHealthCard';
 import { ScanHistory } from './ScanHistory';
 import { ScannerKeysCard } from './ScannerKeysCard';
 import { ScannerSection } from './ScannerSection';
@@ -44,8 +46,15 @@ export function HarnessTab({
     view,
     scannerKeys,
     canRegisterShadow = false,
+    estateHealth,
 }: {
     view: HarnessMatrixView;
+    /**
+     * Per-estate schedule health (#3678). Rendered with or without scans: an
+     * estate whose scanner has sent nothing is the stale estate this card exists
+     * to show.
+     */
+    estateHealth: HarnessEstateHealthView;
     /**
      * `null` for a reader without `admin.agent_registry` (#3710): the key
      * register is that key's to read and to change, so a view-key reader gets
@@ -82,6 +91,8 @@ export function HarnessTab({
             <InlineNotice variant="info" icon={null} data-testid="harness-report-only">
                 {t('harness.reportOnly')}
             </InlineNotice>
+
+            <EstateHealthCard view={estateHealth} />
 
             {!hasScans ? (
                 <InlineNotice variant="error" title={t('harness.noScansTitle')} data-testid="harness-no-scans">

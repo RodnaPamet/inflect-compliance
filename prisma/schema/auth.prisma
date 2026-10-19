@@ -215,6 +215,8 @@ model Tenant {
   agentHarnessScanItems             AgentHarnessScanItem[]
   discoveredAgents                  DiscoveredAgent[]
   agentHarnessAcceptances           AgentHarnessAcceptance[]
+  agentHarnessEstates               AgentHarnessEstate[]
+  agentHarnessEstateSources         AgentHarnessEstateSource[]
   agentOwnershipTransfers           AgentOwnershipTransfer[]
   agentServicePrincipalConfirmations AgentServicePrincipalConfirmation[]
   auditWorkpapers                   AuditWorkpaper[]
@@ -1188,6 +1190,9 @@ model User {
   /// NOT NULL on the agent side, so every registered agent appears here.
   registeredAgentsOwned         RegisteredAgent[]               @relation("RegisteredAgentOwner")
   peerAgentsOwned               PeerAgent[]                     @relation("PeerAgentOwner")
+  /// #3678 — the harness-scan sources of a client estate this user is the
+  /// accountable owner of. `RESTRICT` on the source side.
+  harnessEstateSourcesOwned     AgentHarnessEstateSource[]      @relation("AgentHarnessEstateSourceOwner")
   agentCircuitBreakersClosed    AgentCircuitBreaker[]           @relation("AgentCircuitBreakerClosedBy")
   /// #3672 — external agent connections this user is the accountable owner of
   /// (integration passport P11). `SET NULL` on the connection side.

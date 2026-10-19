@@ -195,6 +195,11 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/harness-scanner-keys/route.ts',
     'admin/agents/harness-scanner-keys/[keyId]/route.ts',
     'admin/agents/harness-acceptances/route.ts',
+    // Client estates (#3678). The GET has its own rule, the inventory read,
+    // above the subtree rule; declaring, changing and removing an estate fall
+    // to the subtree rule's `admin.agent_registry`.
+    'admin/agents/harness-estates/route.ts',
+    'admin/agents/harness-estates/[estateId]/route.ts',
     // A2A peers (#3673). Their own rule above the subtree rule, on the same
     // key, `admin.agent_registry`: the owner chose it (residual R3 of
     // docs/a2a-threat-model.md), so it is stated rather than inherited.

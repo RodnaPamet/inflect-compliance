@@ -797,6 +797,9 @@ model RegisteredAgent {
   harnessScannerKeys AgentHarnessScannerKey[]
   harnessScans       AgentHarnessScan[]
   discoveredAs       DiscoveredAgent[]
+  /// The client estate this agent scans, when it is a scanner (#3678). At most
+  /// one: `@@unique([tenantId, scannerAgentId])` on the estate.
+  harnessEstates     AgentHarnessEstate[]
   /// Two-step handovers of this agent's accountability (#3698). The current
   /// owner is `ownerUserId`; this is how it came to be that person.
   ownershipTransfers AgentOwnershipTransfer[]
@@ -2547,6 +2550,68 @@ model AgentHarnessAcceptance {
   @@unique([id, tenantId])
   @@index([tenantId, discoveredAgentId])
   @@index([tenantId, expiresAt])
+}
+
+/// One client ESTATE a harness scanner covers (#3678, step 4a): a named
+/// environment, the registered scanner agent whose signed reports describe it,
+/// the cadence its scans are expected at, and — on its sources — what it reads
+/// and who is accountable for each.
+///
+/// CONFIGURATION, never evidence. It declares what SHOULD be scanned and how
+/// often; what WAS scanned stays on AgentHarnessScan, which nothing here writes
+/// or links to. The health view on `/agents/reports?tab=harness` compares the
+/// two, and only there does a scan count for an estate.
+///
+/// ONE ESTATE PER SCANNER. A report cannot name an estate — the contract has no
+/// such member and is strict — so a scan belongs to the estate whose scanner
+/// signed it, through `scannerAgentId`. A scanner deployment is one estate's,
+/// and the unique key makes that true rather than assumed.
+///
+/// `usecases/agent-harness-estates.ts` is the ONLY writer of this table and of
+/// AgentHarnessEstateSource (`tests/guards/agent-harness-single-write-seam.test.ts`).
+model AgentHarnessEstate {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// The operator's label, e.g. "Acme production". Sanitised plain text.
+  name            String
+  /// The register row of the scanner whose signed reports are this estate's.
+  scannerAgentId  String
+  /// A complete scan is expected at least this often. CHECKed to 1..720.
+  cadenceHours    Int
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant  Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scanner RegisteredAgent            @relation(fields: [scannerAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  sources AgentHarnessEstateSource[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, scannerAgentId])
+  @@unique([tenantId, name])
+}
+
+/// One source an estate's scanner reads (`okta-app`, `vault`, …), and the
+/// person accountable for it in the client's organisation. Every source of an
+/// estate has a named owner: the column is NOT NULL and the owner must hold an
+/// ACTIVE membership when it is written. A source the estate declares and a
+/// scan does not report is how the health view shows coverage that was lost.
+model AgentHarnessEstateSource {
+  id          String   @id @default(cuid())
+  tenantId    String
+  estateId    String
+  /// A contract source kind (`SOURCE_KINDS`). CHECKed to the contract's seven.
+  kind        String
+  ownerUserId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  estate AgentHarnessEstate @relation(fields: [estateId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  owner  User               @relation("AgentHarnessEstateSourceOwner", fields: [ownerUserId], references: [id])
+
+  @@unique([tenantId, estateId, kind])
+  @@index([tenantId, ownerUserId])
 }
 
 /// Step 2c (#3671): a PERSON's confirmation that one discovered Entra service

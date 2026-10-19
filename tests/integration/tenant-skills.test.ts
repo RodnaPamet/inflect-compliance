@@ -352,7 +352,9 @@ describeFn('tenant-authored skills (real DB)', () => {
 
             const detail = await getTenantSkill(reviewerA(), created.skillId);
             const text = detail.versions[0].instructions ?? '';
-            expect(text).not.toMatch(/<script|<b>/);
+            // No markup survives at all: the fixture's own text holds no `<`, so any
+            // `<` here is a tag the sanitiser let through, in whatever case.
+            expect(text).not.toContain('<');
             expect(text).toContain('Bold step.');
             expect(created.contentHash).toBe(skillContentHash(text));
 

@@ -26,6 +26,12 @@ const SEAMS = {
     discoveredAgent: { table: 'DiscoveredAgent', seam: 'src/app-layer/usecases/agent-harness-scans.ts' },
     agentHarnessScannerKey: { table: 'AgentHarnessScannerKey', seam: 'src/app-layer/usecases/agent-harness-scanner-keys.ts' },
     agentHarnessAcceptance: { table: 'AgentHarnessAcceptance', seam: 'src/app-layer/usecases/agent-harness-acceptance.ts' },
+    // The estate declarations (#3678): which scanner covers which estate, at what
+    // cadence and with whom accountable for each source. A second writer could
+    // point an estate at a scanner that scans something else, and its health
+    // would read fresh.
+    agentHarnessEstate: { table: 'AgentHarnessEstate', seam: 'src/app-layer/usecases/agent-harness-estates.ts' },
+    agentHarnessEstateSource: { table: 'AgentHarnessEstateSource', seam: 'src/app-layer/usecases/agent-harness-estates.ts' },
     // Not a harness table, held here because the rule is the same one (#3673):
     // the peer's card pin is the only thing that admits it, so exactly one file
     // may write the row that carries the pin.
@@ -114,6 +120,7 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/a2a-peer-kill.ts',
             'src/app-layer/usecases/a2a-signing-key.ts',
             'src/app-layer/usecases/agent-harness-acceptance.ts',
+            'src/app-layer/usecases/agent-harness-estates.ts',
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
             'src/app-layer/usecases/peer-agents.ts',

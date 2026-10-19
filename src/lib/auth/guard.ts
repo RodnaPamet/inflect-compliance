@@ -601,6 +601,7 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'concurrency',
     'external-tools',
     'harness-acceptances',
+    'harness-estates',
     'harness-scanner-keys',
     'harness-scans',
     'intake',
@@ -615,7 +616,7 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
 ];
 
 /**
- * The admin API READS the edge admits an AUDITOR to (#3710) — the agent
+ * The admin API READS the edge admits an AUDITOR to (#3710, #3678) — the agent
  * inventory, which the read-only `admin.agent_registry_view` gates and AUDITOR
  * holds. Exact templates, `[agentId]` standing for one segment that is not in
  * `AGENT_ADMIN_API_STATIC_SEGMENTS`, and GET or HEAD only:
@@ -625,6 +626,9 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
  *     the detail page's Overview tab reads it from the browser, which is why the
  *     edge must admit it at all
  *   - `/api/t/[slug]/admin/agents/harness-scans`  the scan list
+ *   - `/api/t/[slug]/admin/agents/harness-estates` the client estates and their
+ *     schedule health, built from the scans (owner decision, 2026-10-19). The
+ *     exact list template only: one estate's path is PATCH and DELETE
  *   - `/api/t/[slug]/admin/agents/reports`        the governance pack
  *
  * Nothing under those paths, no other method, and no other admin path: AUDITOR
@@ -636,6 +640,7 @@ export const AUDITOR_ADMIN_READ_PATHS: readonly string[] = [
     '/api/t/[slug]/admin/agents',
     '/api/t/[slug]/admin/agents/[agentId]',
     '/api/t/[slug]/admin/agents/harness-scans',
+    '/api/t/[slug]/admin/agents/harness-estates',
     '/api/t/[slug]/admin/agents/reports',
 ];
 

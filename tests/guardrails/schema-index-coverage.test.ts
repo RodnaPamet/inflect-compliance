@@ -701,6 +701,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // The tenant's own A2A signing key (#3679, owner decision 2026-10-19).
     TenantA2aSigningKey:
         'getTenantA2aSigningKeys lists the retired keys by (tenantId, retiredAt not null) ordered by retiredAt desc — @@index([tenantId, retiredAt]); the receipt re-verification reads by (tenantId, fingerprint IN …) — @@unique([tenantId, fingerprint]); a tenant rotates rarely, bounded take ≤200.',
+    // Client estates (#3678) — getHarnessEstateHealth lists a tenant's estates
+    // by tenantId ordered by name; a portfolio is a handful.
+    AgentHarnessEstate:
+        'getHarnessEstateHealth filters by tenantId alone and orders by (name, id) — exactly the tenantId-leading @@unique([tenantId, name]); every other read is by (id, tenantId) or (tenantId, scannerAgentId | name), both unique keys; bounded take ≤51.',
     PeerAgent:
         'listPeerAgents filters by tenantId only and every other read is by (id, tenantId) or the tenantId-leading @@unique([tenantId, cardUrl]) — a tenant registers a handful of peers, covered by @@index([tenantId, status]); bounded take ≤200.',
     // Tenant-authored skills (#3680) — a workspace authors a handful of skills.

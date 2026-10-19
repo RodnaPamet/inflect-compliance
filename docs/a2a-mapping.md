@@ -182,7 +182,7 @@ Held by `tests/guards/agent-harness-single-write-seam.test.ts`.
 ## Roadmap (future direction)
 
 - **A real peer.** Step 4b was built and tested against an in-process fake
-  peer. The pilot with a real vendor's agent stays open on #3679, and it is the
+  peer. The pilot with a real vendor's agent stays open on #3752, and it is the
   first time a task crosses an organisation boundary.
 - **Inflect's own published card (R19).** Inflect publishes no card today; an
   operator hands a peer the endpoint, Inflect's identity for the pair and the

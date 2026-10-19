@@ -5,6 +5,7 @@ import { buildAgentGovernancePack } from '@/app-layer/usecases/agent-governance-
 import { getAgentGovernanceStatus } from '@/app-layer/usecases/agent-registry';
 import { canRunRegistrationIntake } from '@/app-layer/usecases/agent-registration-intake';
 import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecases/agent-harness-matrix';
+import { getHarnessEstateHealth } from '@/app-layer/usecases/agent-harness-estates';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
@@ -112,11 +113,13 @@ export default async function AgentReportsPage({
     // AFTER the gate, and only for the tab asked for.
     const requested = ((await searchParams) ?? {}).tab;
     if ((Array.isArray(requested) ? requested[0] : requested) === 'harness') {
-        const [harness, scannerKeys] = await Promise.all([
+        const [harness, scannerKeys, estateHealth] = await Promise.all([
             getHarnessMatrix(ctx),
             // Only for a holder of the register key (#3710): the key register
             // is that key's to read, and `null` renders no card at all.
             canInvestigate ? getHarnessScannerKeysView(ctx) : Promise.resolve(null),
+            // Per-estate schedule health (#3678): the same inventory read.
+            getHarnessEstateHealth(ctx),
         ]);
         return (
             <ReportsClient
@@ -126,6 +129,7 @@ export default async function AgentReportsPage({
                 // pack's, and keeps the server/client boundary honest.
                 harness={JSON.parse(JSON.stringify(harness))}
                 scannerKeys={JSON.parse(JSON.stringify(scannerKeys))}
+                estateHealth={JSON.parse(JSON.stringify(estateHealth))}
                 // The intake's own rule, so the shadow list's Register action
                 // is shown exactly where the usecase would take it (#3712).
                 canRegisterShadow={canRunRegistrationIntake(ctx)}

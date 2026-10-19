@@ -449,6 +449,7 @@ describe('the route-permission map', () => {
         ['/api/t/acme/admin/agents', 'GET'],
         ['/api/t/acme/admin/agents/agent-1', 'GET'],
         ['/api/t/acme/admin/agents/harness-scans', 'GET'],
+        ['/api/t/acme/admin/agents/harness-estates', 'GET'],
         ['/api/t/acme/admin/agents/reports', 'GET'],
     ])('%s %s is the inventory read', (path, method) => {
         expect(resolve(path, method)).toEqual(INVENTORY);
@@ -462,6 +463,10 @@ describe('the route-permission map', () => {
         ['/api/t/acme/admin/agents/skills', 'GET'],
         ['/api/t/acme/admin/agents/peers', 'POST'],
         ['/api/t/acme/admin/agents/intake', 'POST'],
+        // Declaring, changing or removing a client estate (#3678).
+        ['/api/t/acme/admin/agents/harness-estates', 'POST'],
+        ['/api/t/acme/admin/agents/harness-estates/est-1', 'PATCH'],
+        ['/api/t/acme/admin/agents/harness-estates/est-1', 'DELETE'],
         // Filing the pack is a WRITE — an Evidence row — so not the view key.
         ['/api/t/acme/admin/agents/reports/export', 'POST'],
     ])('%s %s stays on the register key alone', (path, method) => {
@@ -491,6 +496,7 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
         '/api/t/acme/admin/agents/',
         '/api/t/acme/admin/agents/agent-1',
         '/api/t/acme/admin/agents/harness-scans',
+        '/api/t/acme/admin/agents/harness-estates',
         '/api/t/acme/admin/agents/reports',
     ])('admits GET and HEAD %s', (path) => {
         expect(checkAdminAccess(path, 'AUDITOR', memberships, 'GET')).toBe('allow');
@@ -498,16 +504,19 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
     });
 
     it.each(['POST', 'PUT', 'PATCH', 'DELETE', undefined])('refuses %s on the same paths', (method) => {
-        for (const path of ['/api/t/acme/admin/agents', '/api/t/acme/admin/agents/agent-1']) {
+        for (const path of ['/api/t/acme/admin/agents', '/api/t/acme/admin/agents/agent-1', '/api/t/acme/admin/agents/harness-estates']) {
             expect(checkAdminAccess(path, 'AUDITOR', memberships, method)).toBe('deny');
         }
     });
 
     it('refuses every static sibling, every deeper path, every other admin root, and the export', () => {
         const refused = [
-            ...AGENT_ADMIN_API_STATIC_SEGMENTS.filter((s) => s !== 'harness-scans' && s !== 'reports').map(
-                (s) => `/api/t/acme/admin/agents/${s}`,
-            ),
+            ...AGENT_ADMIN_API_STATIC_SEGMENTS.filter(
+                (s) => s !== 'harness-scans' && s !== 'harness-estates' && s !== 'reports',
+            ).map((s) => `/api/t/acme/admin/agents/${s}`),
+            // One estate's own path is a write path (PATCH, DELETE): the
+            // allowance is the exact list template, nothing beneath it.
+            '/api/t/acme/admin/agents/harness-estates/est-1',
             '/api/t/acme/admin/agents/agent-1/risk-assessment',
             '/api/t/acme/admin/agents/agent-1/tools',
             '/api/t/acme/admin/agents/reports/export',
@@ -532,6 +541,7 @@ describe('the edge: an AUDITOR reaches the inventory GETs and nothing else under
             '/api/t/[slug]/admin/agents': 'src/app/api/t/[tenantSlug]/admin/agents/route.ts',
             '/api/t/[slug]/admin/agents/[agentId]': 'src/app/api/t/[tenantSlug]/admin/agents/[agentId]/route.ts',
             '/api/t/[slug]/admin/agents/harness-scans': 'src/app/api/t/[tenantSlug]/admin/agents/harness-scans/route.ts',
+            '/api/t/[slug]/admin/agents/harness-estates': 'src/app/api/t/[tenantSlug]/admin/agents/harness-estates/route.ts',
             '/api/t/[slug]/admin/agents/reports': 'src/app/api/t/[tenantSlug]/admin/agents/reports/route.ts',
         };
         expect(Object.keys(routeOf).sort()).toEqual([...AUDITOR_ADMIN_READ_PATHS].sort());

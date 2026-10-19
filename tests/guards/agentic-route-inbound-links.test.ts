@@ -273,6 +273,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // API surface, because the tab reads the same rows server-side. The
     // describe at the end of this file pins both halves of that.
     't/[tenantSlug]/admin/agents/harness-acceptances/route.ts',
+    // #3678 — client estates. API-only in step 4a: the owner schedules the
+    // client estates when 0e names them, an operator declares each one, and the
+    // harness tab reads the health server-side through the usecase, as it reads
+    // the scans.
+    't/[tenantSlug]/admin/agents/harness-estates/[estateId]/route.ts',
+    't/[tenantSlug]/admin/agents/harness-estates/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/[keyId]/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/route.ts',
     't/[tenantSlug]/admin/agents/harness-scans/route.ts',
