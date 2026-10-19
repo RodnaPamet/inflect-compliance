@@ -180,6 +180,22 @@ export interface WorkflowDefinition {
      */
     requiredInput?: readonly string[];
 
+    /**
+     * THIS WORKFLOW PROPOSES NOTHING (#3749), by construction rather than by
+     * its description.
+     *
+     * Leaving out a PROPOSE step is not enough on the Flue engine: a Flue run
+     * is offered every propose tool its agent is granted (`flueToolsFor`), and
+     * the model chooses its own calls. With this set the run is offered the
+     * read surface alone, whatever the agent holds, and each propose tool it
+     * would otherwise have had is listed in the run's omissions as
+     * `READ_ONLY_WORKFLOW`. A definition carrying it declares no PROPOSE step
+     * either (`tests/unit/agentic/audit-narrative-workflow.test.ts`).
+     *
+     * Only ever NARROWS. Absent means the engine's usual offer.
+     */
+    readOnly?: true;
+
     key: string;
     name: string;
     description: string;

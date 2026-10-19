@@ -651,6 +651,26 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'audit-narrative-dispatch',
+        // DAILY at 08:50 UTC (#3749, owner decision 4: "a job starts one run
+        // after each period's procedures have run"). The procedure plans run at
+        // 06:17 UTC on the 2nd; a workpaper waits NARRATIVE_SETTLE_HOURS (24)
+        // before it is narrated, so the period's other procedures have run too,
+        // and the first dispatch for a month is the 3rd. Daily because a period
+        // with more workpapers than one answer carries is narrated over several
+        // days, each run skipping what is narrated, and because a refused tenant
+        // (an unscored auditor, a missing grant) should be picked up the day it
+        // is fixed.
+        //
+        // 08:50: before internal audit's 09:40 sampling sweep and its working
+        // hours, so a narrative is on the review sheet when the queue is read;
+        // and off the 08:00 jobs and the busy minutes.
+        pattern: '50 8 * * *',     // daily at 08:50 UTC
+        description:
+            "#3749 — start the auditor agent's narrative of a period's workpapers, at most once a day per tenant. Picks the period of the tenant's oldest workpaper that has no narrative, whose period has ended and which is at least 24 hours old, and starts one audit-narrative run for it as the auditor agent that wrote it, with that agent's owner's permissions. Refuses by name: a tenant that ran one in the last 20 hours, whose runs resolve to the static engine, whose auditor is missing, inactive, unscored, not granted list_audit_workpapers, killed or breaker-latched, or whose owner cannot read workpapers. The run's narratives are stored by the capture when it settles; this job writes nothing itself.",
+        defaultPayload: {},
+    },
+    {
         name: 'incident-notification-deadlines',
         pattern: '0 * * * *',     // hourly — a 24h Article 23 deadline needs sub-day granularity
         description:

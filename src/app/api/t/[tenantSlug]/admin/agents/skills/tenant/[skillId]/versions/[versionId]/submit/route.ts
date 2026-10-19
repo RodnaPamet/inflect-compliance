@@ -12,7 +12,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 type Params = { tenantSlug: string; skillId: string; versionId: string };
 
 export const POST = withApiErrorHandling(
-    requirePermission<Params>('admin.agent_skill_review', async (_req: NextRequest, { params }, ctx) => {
+    requirePermission<Params>('admin.agent_skill_author', async (_req: NextRequest, { params }, ctx) => {
         const { skillId, versionId } = await params;
         return jsonResponse(await submitTenantSkillVersion(ctx, skillId, versionId));
     }),

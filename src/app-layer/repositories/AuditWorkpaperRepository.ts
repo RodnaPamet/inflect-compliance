@@ -132,6 +132,21 @@ export class AuditWorkpaperRepository {
     }
 
     /**
+     * Which of these workpapers have a stored narrative (#3749), for the
+     * period read's `narrated` flag. At most one narrative per workpaper, so
+     * the read is bounded by the ids asked about.
+     */
+    static async narratedAmong(db: PrismaTx, ctx: RequestContext, workpaperIds: readonly string[]): Promise<Set<string>> {
+        if (workpaperIds.length === 0) return new Set();
+        const rows = await db.auditWorkpaperNarrative.findMany({
+            where: { tenantId: ctx.tenantId, workpaperId: { in: [...workpaperIds] } },
+            select: { workpaperId: true },
+            take: workpaperIds.length,
+        });
+        return new Set(rows.map((r) => r.workpaperId));
+    }
+
+    /**
      * THE ONE-WAY STAMP. Conditional on the row being unstamped, so two
      * concurrent reviewers cannot both succeed: the second matches zero rows.
      */

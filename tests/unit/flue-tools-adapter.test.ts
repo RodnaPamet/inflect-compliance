@@ -386,6 +386,23 @@ describe('propose tools are offered, under the same terms and one rung higher', 
         expect(set.omitted).toEqual([]);
     });
 
+    it('offers no propose tool to a read-only workflow, and names each one it withheld', () => {
+        // #3749: the audit narrative run's agent holds `propose_finding`, and
+        // the workflow proposes nothing. Leaving out a PROPOSE step does not
+        // stop a model choosing its own calls; withholding the surface does.
+        mockLoadable.mockReturnValue([tool('list_risks')]);
+        mockLoadablePropose.mockReturnValue([proposeTool('propose_risks'), proposeTool('propose_controls')]);
+
+        const set = flueToolsFor(invocation(), undefined, undefined, { readOnly: true });
+        expect(set.tools.map((t) => t.name)).toEqual(['list_risks']);
+        expect(set.omitted).toEqual([
+            { name: 'propose_risks', reason: 'READ_ONLY_WORKFLOW' },
+            { name: 'propose_controls', reason: 'READ_ONLY_WORKFLOW' },
+        ]);
+        // …and the default is the usual offer.
+        expect(flueToolsFor(invocation()).tools.map((t) => t.name)).toEqual(['list_risks', 'propose_risks', 'propose_controls']);
+    });
+
     it('offers nothing to propose when the credential may not — the registry decides', () => {
         // `loadableProposeTools` is the one place the propose capability and
         // the register's grants are read. An empty answer from it must empty

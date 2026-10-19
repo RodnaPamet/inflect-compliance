@@ -229,8 +229,12 @@ function asToolArgs(data: unknown): Record<string, unknown> {
         : {};
 }
 
-/** Why a tool was not advertised. Diagnostic only — never a refusal. */
-export type ToolOmissionReason = 'SCOPE' | 'AUTONOMY' | 'UNCONVERTIBLE_SCHEMA';
+/**
+ * Why a tool was not advertised. Diagnostic only — never a refusal.
+ * `READ_ONLY_WORKFLOW` is a propose tool withheld because the run's workflow
+ * declares `readOnly` (#3749).
+ */
+export type ToolOmissionReason = 'SCOPE' | 'AUTONOMY' | 'UNCONVERTIBLE_SCHEMA' | 'READ_ONLY_WORKFLOW';
 
 /**
  * One guard flag. Rule ids and verdict only — never the content that tripped it.
@@ -604,6 +608,15 @@ export function flueToolsFor(
     inv: McpInvocation,
     observe?: GuardObserver,
     originFor?: OriginResolver,
+    opts: {
+        /**
+         * The run's workflow declares `readOnly` (#3749): offer the read
+         * surface alone. Every propose tool the registry would have offered is
+         * listed as omitted, so "offered no propose tool" is a fact the run
+         * records rather than one inferred from an empty list.
+         */
+        readOnly?: boolean;
+    } = {},
 ): FlueToolSet {
     // One latch for the RUN — review, once required, stays required across
     // every subsequent tool, on EITHER surface. The observer is per-run too;
@@ -617,13 +630,12 @@ export function flueToolsFor(
     // The origin resolver reaches only the propose surface, because only a
     // propose call writes a row that can carry one. Passing it to both would
     // read as though a read were being attributed somewhere.
-    const propose = offerTools(
-        inv,
-        loadableProposeTools(inv),
-        PROPOSE_CAPABILITY,
-        review,
-        originFor,
-    );
+    const propose: Pick<FlueToolSet, 'tools' | 'omitted'> = opts.readOnly
+        ? {
+              tools: [],
+              omitted: loadableProposeTools(inv).map((t) => ({ name: t.name, reason: 'READ_ONLY_WORKFLOW' as const })),
+          }
+        : offerTools(inv, loadableProposeTools(inv), PROPOSE_CAPABILITY, review, originFor);
 
     return {
         tools: [...read.tools, ...propose.tools],

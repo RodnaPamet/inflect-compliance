@@ -26,11 +26,15 @@
  * — the scan record of the one agent — and the READ step below is what turns
  * the id into that record, under the label the skills name it by.
  *
- * ── READ-ONLY, LIKE EVERY FLUE-REQUESTING WORKFLOW ──────────────────────────
+ * ── READ-ONLY, BY DECLARATION ───────────────────────────────────────────────
  *
- * No PROPOSE step and no write tool. Proposing an owner is TEXT here; turning a
- * confirmed suggestion into a register row is the registration intake's act
- * (step 2a), performed by a person.
+ * No PROPOSE step, and `readOnly`, because on the Flue engine the steps are a
+ * hint: the model chooses its calls from everything its agent is granted, and
+ * without the flag a review agent granted any propose tool would be offered it
+ * (#3775). With it the run is offered the read surface alone, and each withheld
+ * propose tool is an omission `READ_ONLY_WORKFLOW`. Proposing an owner is TEXT
+ * here; turning a confirmed suggestion into a register row is the registration
+ * intake's act (step 2a), performed by a person.
  */
 import type { WorkflowContext, WorkflowDefinition } from '../workflow-types';
 import { requiredString } from './required-input';
@@ -48,6 +52,8 @@ export const discoveredAgentReviewWorkflow: WorkflowDefinition = {
     // The skills are mounted only on the Flue engine; on a deployment that has
     // not enabled it this runs the declared read and synthesis, statically.
     driver: 'flue',
+    // Offered the read surface alone on Flue (#3775): see the header.
+    readOnly: true,
     skills: DISCOVERED_AGENT_REVIEW_SKILLS,
     /** Refused at admission without it — see `requiredInput` on the type. */
     requiredInput: ['discoveredAgentId'],

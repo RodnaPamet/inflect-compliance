@@ -70,6 +70,7 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
         agent_harness_ingest: true,
         agent_ownership: true,
         agent_skill_review: true,
+        agent_skill_author: true,
     },
 };
 

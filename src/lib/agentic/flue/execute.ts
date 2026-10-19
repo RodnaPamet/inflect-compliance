@@ -454,6 +454,8 @@ export async function executeFlueRun(
             const stepSeq = stepOfCall.get(toolCallId);
             return stepSeq === undefined ? undefined : { runId, stepSeq };
         },
+        // A read-only definition is offered no propose tool (#3749).
+        { readOnly: def.readOnly === true },
     );
     const latch: CapLatch = { halt: null };
     let seq = fromSeq;

@@ -179,3 +179,16 @@ describe('a run offered NO tools', () => {
         expect(completing[0].errorMessage).toBeUndefined();
     });
 });
+
+describe('a read-only definition is offered the read surface alone (#3749)', () => {
+    it('passes readOnly to the tool set for a definition that declares it, and not otherwise', async () => {
+        const { flueToolsFor } = jest.requireMock('@/lib/agentic/flue/tools-adapter') as { flueToolsFor: jest.Mock };
+        offeredTools = [aTool()];
+
+        await executeFlueRun(CTX, 'run-1', { ...DEF, readOnly: true } as WorkflowDefinition, 0, Date.now(), 'anthropic/claude');
+        expect(flueToolsFor.mock.calls.at(-1)?.[3]).toEqual({ readOnly: true });
+
+        await executeFlueRun(CTX, 'run-2', DEF, 0, Date.now(), 'anthropic/claude');
+        expect(flueToolsFor.mock.calls.at(-1)?.[3]).toEqual({ readOnly: false });
+    });
+});

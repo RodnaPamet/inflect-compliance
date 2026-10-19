@@ -94,6 +94,7 @@ import {
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
 import { recordDecisionOutcome } from '@/app-layer/ai/decision-log';
 import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
+import { captureAuditNarrativeAfterRun } from './audit-workpaper-narrative';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
 import type { AgentDriver } from '@/lib/agentic/agent-driver';
@@ -1025,6 +1026,9 @@ async function executeFrom(
         // engines settle their own runs, and only this function sees every
         // settlement. A no-op for every other workflow; never throws.
         await captureReviewAttributionAfterRun(runCtx, runId, def.key, outcome.status);
+        // …and a COMPLETED audit narrative run's narratives (#3749), held to
+        // their workpapers first. The same seam, the same never-throws rule.
+        await captureAuditNarrativeAfterRun(runCtx, runId, def.key, outcome.status);
         return outcome;
     } catch (err) {
         // A THROW IS A FAILED RUN for metric purposes, and it has to be

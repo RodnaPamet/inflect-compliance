@@ -727,6 +727,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'read by (tenantId, skillId) ordered by version — exactly @@unique([tenantId, skillId, version]) — or by (tenantId, status) for the mount read and the approval budget check, covered by @@index([tenantId, status]); bounded take ≤500.',
     DiscoveredAgent:
         'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) — exactly the @@unique([tenantId, discoveredId]), bounded by the report\'s agent count; the harness matrix\'s shadow list filters by tenantId and registeredAgentId IS NULL (or a deleted register row) and orders by lastSeenAt desc — covered by @@index([tenantId, registeredAgentId]) + @@index([tenantId, lastSeenAt]); bounded take ≤201.',
+    // The auditor agent's narrative of a workpaper (#3749) — at most one per workpaper.
+    AuditWorkpaperNarrative:
+        'the period read\'s narrated flag and the capture read narratives by (tenantId, workpaperId IN …) — exactly the @@unique([tenantId, workpaperId]); no order; bounded take by the ids asked about (≤50 shown workpapers, ≤6 narratives an answer carries), one row per workpaper.',
     // A review run's stored owner suggestion (#3728) — at most one per discovered agent.
     DiscoveredAgentAttribution:
         'the harness matrix\'s shadow list reads suggestions by (tenantId, discoveredAgentId IN …) and the intake and the capture by (tenantId, discoveredAgentId) — exactly the @@unique([tenantId, discoveredAgentId]); no order; bounded take by the shown shadow rows (≤200), one row per agent.',

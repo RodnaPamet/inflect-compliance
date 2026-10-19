@@ -223,6 +223,7 @@ model Tenant {
   auditWorkpapers                   AuditWorkpaper[]
   auditWorkpaperFindings            AuditWorkpaperFinding[]
   auditWorkpaperSampleReviews       AuditWorkpaperSampleReview[]
+  auditWorkpaperNarratives          AuditWorkpaperNarrative[]
   agentBehaviourWindows             AgentBehaviourWindow[]
   agentCircuitBreakers              AgentCircuitBreaker[]
   agenticEvidenceArtefacts          AgenticEvidenceArtefact[]

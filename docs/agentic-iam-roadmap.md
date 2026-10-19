@@ -224,9 +224,11 @@ are named on the run's row. Each pass records an `IntegrationExecution` row
 
 Step `1d` (#3668) declared the two IAM skills, `harness-level-assessment` and
 `nhi-ownership-attribution`, on the workflow `discovered-agent-review`
-(`src/lib/agentic/workflows/discovered-agent-review.ts`). It is the only
-workflow that declares a skill. It asks for the Flue engine and is read-only:
-one read and one synthesis, no proposal and no checkpoint.
+(`src/lib/agentic/workflows/discovered-agent-review.ts`), the first workflow
+to declare a skill; `audit-narrative` (#3749) is the second. It asks for the
+Flue engine and is read-only: one read and one synthesis, no proposal and no
+checkpoint. It declares `readOnly`, so on Flue the run is offered the read
+surface alone (#3775).
 
 - **A run names one discovered agent.** `requiredInput` is
   `discoveredAgentId`, so a run without it, or with a blank or non-string
@@ -364,7 +366,8 @@ stays open on #3752. The mapping is in
   parsed: the peer's kill, its live `iflp_` credential, its Ed25519 receipt over
   the exact body against its registered key, admission against a card copy at
   most 15 minutes old (R18), the tenant's own signing key, the peer's quota
-  (default 60 an hour), a replay check, and both tenant run caps set (R13). The credential binds one receiving agent and a
+  (default 60 an hour), a replay check, and both tenant run caps set (R13),
+  which a holder of `admin.agent_registry` sets on the agents page (#3777). The credential binds one receiving agent and a
   workflow allowlist, and retiring that agent revokes it. The task text enters the run input labelled
   `THIRD_PARTY_INGESTED` and is scanned before the run exists. The run is the
   receiving agent's, under the peer's owner, so the peer reaches no tool the
@@ -944,10 +947,41 @@ both as open, and every evidence row and finding proposal says so.
   27001:2022 identifiers map to, or on `--control` ids. A re-run writes
   nothing. Monthly procedures run on the 2nd at 06:17 UTC, quarterly ones on
   the 2nd of each quarter's first month.
-- **The `iam-audit-procedures` skill** ships its evaluation set and no
-  evaluation record, so no workflow declares it and no run mounts it. The
-  workpaper read tool it needs, `list_audit_workpapers`, shipped with #3749's
-  first part; the auditor workflow and the record are its second.
+- **The `iam-audit-procedures` skill and the narrative workflow (#3749).** The
+  skill is declared by one workflow, `audit-narrative`, which mounts it on the
+  Flue engine with its committed evaluation record. Given a `periodLabel`, the
+  run reads that period's workpapers through `list_audit_workpapers` and answers
+  with one JSON block: per workpaper, the conclusion it records, the exception
+  codes discussed and at most 400 characters of narrative.
+  - **Read-only by declaration.** The definition sets `readOnly`, so on Flue
+    the run is offered no propose tool, although the auditor agent holds
+    `propose_finding` (owner decision 2: the procedure runner already proposed
+    every exception).
+  - **Held to the record before it is stored.** When the run settles, the
+    capture (`usecases/audit-workpaper-narrative.ts`, the table's one writer)
+    reads the answer back from the decision log and holds each narrative to
+    its workpaper (`checkNarrativesAgainstRecord`). The conclusion must be the
+    workpaper's, every code it lists or cites one the workpaper records, and no
+    e-mail address may appear. One narrative that fails refuses the whole
+    answer, by a named outcome.
+  - **Stored write-once.** `AuditWorkpaperNarrative` holds one per workpaper,
+    encrypted, with a database trigger that re-checks the codes and another
+    that refuses every UPDATE. It is shown on the workpaper review sheet, and
+    the period read flags each workpaper `narrated`.
+  - **How a run starts.** On demand through `POST …/agent-runs`: by a signed-in
+    person where runs resolve to the static engine, or by the auditor agent's
+    own key on Flue. And daily, by the scheduled `audit-narrative-dispatch`
+    (08:50 UTC, owner decision 4): per tenant, it picks the period of the
+    oldest workpaper with no narrative whose period has ended and which is at
+    least 24 hours old, and starts one run for it as the auditor agent that
+    wrote the workpaper, with that agent's owner's permissions as they are
+    that day. A tenant that started a narrative run in the last 20 hours is
+    skipped, whoever started it, so a retried job cannot start a second. Every
+    tenant it does not start is refused by a named outcome: the static engine,
+    an auditor missing, inactive, unscored, not granted `list_audit_workpapers`,
+    killed or breaker-latched, or an owner who holds neither
+    `audits.workpaper_view` nor `audits.manage`. Each decision, and a night
+    with nothing to narrate, is counted (`agentic.audit_narrative.dispatch`).
 
 ### Internal audit's sampling of the workpapers
 
@@ -1074,7 +1108,8 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 - **Review.** A version moves one way, `DRAFT` → `IN_REVIEW` → `APPROVED` →
   `RETIRED`, by trigger. Approval names the content hash the reviewer read, is
   refused for the version's author by the usecase and by a CHECK, and is refused
-  for an API key. Every act takes `admin.agent_skill_review`. An edit is a new
+  for an API key. Authoring takes `admin.agent_skill_author` and approving,
+  rejecting and retiring take `admin.agent_skill_review` (#3778). An edit is a new
   version at `DRAFT`; the approved version keeps serving until the new one is
   approved, and is then retired as superseded.
 - **Evaluation.** The author attaches an evaluation record in the repository's
@@ -1124,10 +1159,10 @@ lead's acceptance is open and is recorded on #3682 when given.
 |---|---|---|
 | Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested under `inflect-agent-harness/2` (`/1` retired, #3686), levels derived and stored per scan, shadow and below-bar agents raised as findings, credentials a `/2` report saw bound to no agent raised as `ORPHAN_CREDENTIAL` when their source and every identity-bearing source in the scan were read in full, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678), and a stale estate raises a finding and a metric every day (#3741); it reads LangSmith tool usage, and deployments where an estate opts in, as the `runtime` source (#3738), and LangChain and LangGraph agent definitions in code as the `code` source (#3737); it reads Entra service principals and app registrations, MCP servers' tool listings, and the tenant's own register, and runs as a container a client builds from source (#3686). Nothing scans the pilot estate and no client estate is scheduled. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. A2A with a pinned peer in both directions: an inbound task becomes a labelled, scanned run input for one registered agent, an outbound task is an external write on the ladder, every message is signed with the tenant's own key and kept, a per-peer kill stops both directions, and the peers page shows all of it. | No real vendor's agent has exchanged an A2A task: both directions are built and tested against an in-process fake peer, and the pilot stays open on #3752. Inflect publishes no agent card of its own (R19). |
-| Skills | Nine original, licensed skills. Eight have a committed evaluation record that passes the mount gate; `iam-audit-procedures` ships its evaluation set and no record, and no workflow declares it (#3749). The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
+| Skills | Nine original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine, and `iam-audit-procedures` by another, `audit-narrative` (#3749); both are read-only by declaration, as every Flue workflow with no PROPOSE step must be (#3775); each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
-| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; `scripts/audit-pilot-setup.ts` sets the pilot up with its agreed parameters. Internal audit samples the workpapers: a daily keyed draw at the tenant's rate (100% in the pilot), which only internal audit sets, each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, where internal audit sees every assignment, every dissent a finding proposal somebody other than the dissenter decides, and the re-performance agreement rate in the governance pack with its definition. | Internal audit's approval and PwC's agreement of the catalogue are open; procedures 6 to 8 have no handler; the auditor's skill has no evaluation record and no workflow declares it (#3749). |
+| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; `scripts/audit-pilot-setup.ts` sets the pilot up with its agreed parameters. Internal audit samples the workpapers: a daily keyed draw at the tenant's rate (100% in the pilot), which only internal audit sets, each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, where internal audit sees every assignment, every dissent a finding proposal somebody other than the dissenter decides, and the re-performance agreement rate in the governance pack with its definition. The auditor agent narrates a period's workpapers (`audit-narrative`, #3749), on demand and by a daily dispatch that starts one run per tenant as the auditor under its owner's permissions: each narrative is held to its workpaper's conclusion and codes before it is stored, write-once and encrypted, and is shown on the review sheet. | Internal audit's approval and PwC's agreement of the catalogue are open; procedures 6 to 8 have no handler. |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | — |
 
 ## Roadmap (future direction)
@@ -1373,16 +1408,18 @@ a rule in `src/lib/security/route-permissions.ts`, except the two endpoints
 under [Token-gated endpoints](#token-gated-endpoints), which say why. Key names
 follow `PERMISSION_SCHEMA` in `src/lib/permissions.ts`.
 
-**Four keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
+**Five keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
 the seventh, which #3699 shipped, the inventory view key, which #3710 shipped,
-and one new key:
+and the two halves of the tenant skill right, which #3680 shipped as one key and
+#3778 split:
 
 | Key | Gates | Granted by role | Bearer tokens |
 |---|---|---|---|
 | `admin.agent_harness_ingest` | Submitting a signed report, `POST /api/t/:slug/admin/agents/harness-scans` (`1a`, shipped in #3688), and the scanner's read of the register (`1a`, below) | OWNER, ADMIN | The `admin:harness_ingest` scope grants it and nothing else (`SCOPE_ACTION_MAP` in `src/lib/auth/api-key-auth.ts`). `*` carries it too: `*` is ADMIN's set minus the four agent-governance flags, and ADMIN holds it |
 | `admin.agent_ownership` | Proposing, reading, cancelling and completing an agent ownership transfer, `…/admin/agents/[agentId]/ownership-transfer` and `…/complete` (`2a`, shipped in #3699; `admin.tenant_lifecycle` until then) | OWNER, AI_ADMIN. Not ADMIN, which holds `admin.agent_registry`: an agent's accountable owner must not be movable by the role that owner is accountable to. An OWNER can grant it to an ADMIN through a custom role | Not carried by `*` (ADMIN's set, which lacks it), and no scope maps to it |
 | `admin.agent_registry_view` | READING the agent inventory (#3710): the register list and one agent's row (`GET …/admin/agents`, `GET …/admin/agents/[agentId]`), the harness scans and the matrix (`GET …/admin/agents/harness-scans`, `/agents/reports?tab=harness`), the client estates' schedule health (`GET …/admin/agents/harness-estates`, #3678), one discovered agent's facts (`get_discovered_agent`), and the governance pack (`GET …/admin/agents/reports`, `/agents/reports`). Also agent runs and proposals (`/agents/runs`, `/agents/proposals`, and the run routes `…/agent-runs/[id]/stream` and `…/checkpoint`), with `admin.view` as the other key that opens them. Every inventory read also admits `admin.agent_registry`, so nobody who read the inventory before the split lost it. Read-only: filing the pack, every register write, scanner keys, peers, intake, acceptances and estate declarations stay on `admin.agent_registry` | OWNER, ADMIN, AI_ADMIN, AUDITOR. A custom role may carry it | The `admin:agent_registry_view` scope grants it and nothing else. Neither `*` nor `admin:*` carries it (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so every key issued before it resolves as it did, and an agent reads the inventory only through a key minted for that read |
-| `admin.agent_skill_review` | Authoring, evaluating, submitting, approving, rejecting and retiring a tenant skill, `…/admin/agents/skills/tenant/**` (`4c`, shipped in #3680) | OWNER, ADMIN, AI_ADMIN. AI_ADMIN because it holds every agent key (decision 16), and #3680 classified this one as an agent key | Not carried by `*` (subtracted explicitly, because ADMIN holds it), and no scope maps to it |
+| `admin.agent_skill_author` | Authoring a tenant skill: creating it, creating a version, attaching its evaluation record and submitting it, `…/admin/agents/skills/tenant/**` (#3778, which split it from the review key). Reading a skill admits it too | OWNER, ADMIN, AI_ADMIN. A custom role may carry it alone; one stored before the split takes it from its own `agent_skill_review` (`DERIVED_FROM` in `src/lib/permissions.ts`) | Not carried by `*` (subtracted explicitly, because ADMIN holds it), and no scope maps to it |
+| `admin.agent_skill_review` | Approving, rejecting and retiring a tenant skill version, `…/versions/[versionId]/approve`, `/reject` and `/retire` (`4c`, shipped in #3680, which also gated authoring until #3778). Reading a skill admits it too | OWNER, ADMIN, AI_ADMIN. AI_ADMIN because it holds every agent key (decision 16), and #3680 classified this one as an agent key | Not carried by `*` (subtracted explicitly, because ADMIN holds it), and no scope maps to it |
 
 - **Reading scans takes the inventory view key.** `GET …/admin/agents/harness-scans`
   lists scans under `admin.agent_registry_view` or `admin.agent_registry`, and
@@ -1432,11 +1469,13 @@ and one new key:
   `ScopeCheckAction` now admits, and the MCP read-suite guardrail lists it as
   the one non-view scope, with its reason.
 - **A tenant skill's reviewer is never its author.** Step `4c` (#3680) asks for
-  "a new skill-review right", and `admin.agent_skill_review` is it. One key
-  gates authoring and approval, because #3680 gives the authoring surface on
-  the Skills tab to holders of the right, and the usecase refuses an approval
-  by the version's author, as does a CHECK below it (#3680). `*` does not
-  carry it, for the reason it does not
+  "a new skill-review right", and `admin.agent_skill_review` is it. #3680 gated
+  authoring and approval on that one key. #3778 split authoring into
+  `admin.agent_skill_author` (owner decision, 2026-10-19), so a provider who
+  writes a tenant's skills can be kept from approving them
+  ([`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)); the
+  usecase also refuses an approval by the version's author, as does a CHECK
+  below it (#3680). `*` carries neither half, for the reason it does not
   carry the four agent-governance flags: a skill is text mounted into an
   agent's context, and a key held by an agent that could approve skill text
   could teach itself.
@@ -1499,7 +1538,8 @@ and one new key:
 | Generate or rotate the tenant's A2A signing key (`4b`) | `admin.tenant_lifecycle` | OWNER only, the key that rotates the tenant's DEK (decision 21): the key speaks for the whole tenant to another organisation. Refused to an API key. Reading its public half is `admin.agent_registry`, the key that hands a peer its credential. |
 | Set a peer's inbound quota (`4b`) | `admin.agent_registry` | The key that registers the peer (decision 25). |
 | Issue, read and revoke a peer's inbound credential; read a peer's kept messages (`4b`) | `admin.agent_registry` | Binding a peer to a receiving agent and a workflow allowlist is configuration of whom the tenant talks to, as registering and pinning are (decision 12). Issuing also refuses an API key. The send itself is an external tool call under `admin.agent_external_tools`. |
-| Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/admin/agents/skills/tenant/**`; see above. |
+| Author a tenant skill (`4c`) | `admin.agent_skill_author` | Shipped in #3680 under the review key and split by #3778: create, version, attach a record and submit at `…/admin/agents/skills/tenant/**`; see above. |
+| Approve, reject or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/versions/[versionId]/approve`, `/reject` and `/retire`; reading a skill takes either key; see above. |
 | Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | `audits.manage` and `admin.manage`, both | One route, `POST …/audits/cycles/:cycleId/reliance-pack` (#3681), because a reliance item's snapshot is built from the workpapers server-side and the existing item route takes a client-supplied snapshot. `audits.manage` because assembling reads every workpaper of the period, and `admin.manage` because assembling also freezes the pack, which `assertCanFreezePack` admits for OWNER and ADMIN by role; requiring both leaves no custom role that passes the route and fails the usecase without an `AUTHZ_DENIED` row. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
 
 Steps `1b`, `1c`, `1d`, `3c` and `4e` plan no route of their own. `1b` extends

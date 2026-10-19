@@ -230,6 +230,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // tenant inside its budget could start runs until the shared worker pool
     // was the limit.
     't/[tenantSlug]/admin/agents/concurrency/route.ts',
+    // #3777 — the FIRST capacity axis, the monthly token budget, which had a
+    // reader and no writer. Set beside the cap on the register page.
+    't/[tenantSlug]/admin/agents/budget/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/circuit-breaker/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/policy-card/route.ts',

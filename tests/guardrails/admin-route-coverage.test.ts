@@ -97,6 +97,8 @@ const ADMIN_ONLY_ROUTES = [
     // the kill key: a cap bounds how much NEW work may start and stops
     // nothing already running.
     'admin/agents/concurrency/route.ts',
+    // #3777 — the monthly token budget, the cap's sibling under the same key.
+    'admin/agents/budget/route.ts',
     'admin/agents/kill-switch/route.ts',
     // The owner-orphan pass's mode and recorded passes (#3670) —
     // `admin.tenant_lifecycle`, the identity ladder's key: the mode decides

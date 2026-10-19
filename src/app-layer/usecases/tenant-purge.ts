@@ -116,6 +116,7 @@ export const TENANT_PURGE_RETAINED: ReadonlySet<string> = new Set([
     'AuditLog',
     'AuditWorkpaper',
     'AuditWorkpaperFinding',
+    'AuditWorkpaperNarrative',
     'AuditWorkpaperSampleReview',
     'ExternalWriteJournal',
     'IdentityWriteJournal',

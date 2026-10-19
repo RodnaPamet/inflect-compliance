@@ -2175,6 +2175,33 @@ hand), and `WorkflowRun.mountedSkills` pins each mounted skill's hash at
 admission, write-once by trigger — `[]` is "mounted nothing", NULL is "predates
 the pin", and the two must never be conflated.
 
+**A workflow without a PROPOSE step is not read-only on Flue.** The model picks
+its own calls from everything its agent is granted, propose tools included.
+`readOnly: true` on a definition is what withholds the propose surface
+(`flueToolsFor(…, { readOnly })`, each withheld tool an omission
+`READ_ONLY_WORKFLOW`). Every Flue-requesting definition with no PROPOSE step
+sets it — `audit-narrative`, `discovered-agent-review`, `posture-review` and
+`access-posture` (#3775, owner decision) — and
+`tests/unit/agentic/flue-read-only-workflows.test.ts` fails, over the
+registry, for one that does not. External read tools stay on the read surface,
+so `access-posture` still reaches the directory.
+
+**The audit narrative (#3749)** is model prose about a regulatory record, so it
+is stored only through `usecases/audit-workpaper-narrative.ts`, after
+`checkNarrativesAgainstRecord` has held every narrative in the answer to its
+workpaper — the conclusion, every listed code and every code-shaped token in the
+text — and one failure refuses the whole answer. `AuditWorkpaperNarrative` is
+write-once and encrypted, and its insert trigger re-checks the codes. The skill
+names every code in `EXCEPTION_SEVERITY` (a unit test fails when the library
+gains one it does not name), and the answer is one JSON block because the
+capture reads it back from the 4000-character decision-log summary.
+The daily `audit-narrative-dispatch` keeps a tenant to one run a day by
+`NARRATIVE_RUN_SPACING_HOURS` read against `WorkflowRun`, not by a BullMQ
+bucket, so it is a dispatcher by name only; it starts runs as a JOB context
+carrying the auditor's `agentId` and its owner's permissions resolved that day,
+and refuses `engine_not_flue` rather than start a static run that can narrate
+nothing.
+
 **Tenant-authored skills** (#3680) pass the same gate, and four rules in it are
 easy to undo. A `TenantSkillVersion` mounts only when APPROVED by someone other
 than its author (usecase AND a CHECK), its record is recomputed at every mount,
@@ -2186,8 +2213,11 @@ the new one is approved. The mount reads only the run's own tenant
 (`tenant-mount.ts`), and the budget counts repository and tenant skills
 together. A tenant pin adds `origin: 'tenant'` and `versionId`; a repository
 pin keeps exactly its three keys, so a run pinned before tenant skills existed
-does not drift on resume. One key, `admin.agent_skill_review`, gates authoring
-and approval, and no API key holds it.
+does not drift on resume. Two keys since #3778: `admin.agent_skill_author`
+creates, versions, attaches a record and submits, and `admin.agent_skill_review`
+approves, rejects and retires; a read takes either, and no API key holds either.
+A custom role stored before the split takes authoring from its own review key
+(`DERIVED_FROM`).
 
 **The two IAM skills' answers** (`src/lib/agentic/iam-skill-outputs.ts`, since
 #3668) are parsed before anything acts on them, and three rules there are easy

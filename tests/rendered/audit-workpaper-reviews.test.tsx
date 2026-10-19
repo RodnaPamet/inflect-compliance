@@ -173,6 +173,7 @@ function detail(
             controlTestRunId: 'run-1',
             createdAt: '2026-10-02T06:17:00.000Z',
         },
+        narrative: null,
     };
 }
 
@@ -270,6 +271,36 @@ describe('the sheet shows the record and takes the answer as codes', () => {
         expect(within(sheet).getByTestId('workpaper-review-facts')).toHaveTextContent('iam.leaver_timeliness@2026-09');
         expect(within(sheet).getByTestId('workpaper-review-outcomes')).toHaveTextContent('emp_2 · EXCEPTION · ACCOUNT_ACTIVE_AFTER_WINDOW');
         expect(within(sheet).getByTestId('workpaper-review-exceptions')).toHaveTextContent('prop-9');
+    });
+
+    it('shows the auditor agent’s narrative beside the record, labelled as a summary to re-perform (#3749)', async () => {
+        mockData(
+            { reviewer: { eligible: true, reason: null }, truncated: false, rows: [row()] },
+            {
+                ...detail(),
+                narrative: {
+                    text: 'Two of four leavers were sampled; emp_2 stayed active after the window. FAIL.',
+                    exceptionCodes: ['ACCOUNT_ACTIVE_AFTER_WINDOW'],
+                    runId: 'run-narr-1',
+                    createdAt: '2026-10-03T06:00:00.000Z',
+                },
+            },
+        );
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const sheet = await openRow();
+        const section = within(sheet).getByTestId('workpaper-review-narrative');
+        expect(within(section).getByTestId('workpaper-review-narrative-text')).toHaveTextContent('emp_2 stayed active after the window');
+        expect(section).toHaveTextContent('re-perform the workpaper');
+        expect(section).toHaveTextContent('run-narr-1');
+        // It informs; it does not answer. The form is still the reviewer's.
+        expect(within(sheet).getByTestId('workpaper-review-answer-form')).toBeInTheDocument();
+    });
+
+    it('says when no narrative has been drafted yet, rather than leaving a gap', async () => {
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const sheet = await openRow();
+        expect(within(sheet).getByTestId('workpaper-review-narrative')).toHaveTextContent('No narrative yet');
+        expect(within(sheet).queryByTestId('workpaper-review-narrative-text')).toBeNull();
     });
 
     it('has no free-text field anywhere in the answer form', async () => {
