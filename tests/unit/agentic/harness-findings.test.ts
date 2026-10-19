@@ -61,6 +61,21 @@ describe('levels are derived by the ladder, never read', () => {
     });
 });
 
+describe('model endpoints are carried as reported, and absence stays absence (#3759)', () => {
+    it('a /2 agent\'s models are planned as reported; a /2 agent without them, and every /1 agent, plan null', () => {
+        const v2 = Object.fromEntries(planHarnessScan(validV2ReportBody(), prior()).agents.map((a) => [a.discoveredId, a]));
+        expect(v2['entra:sp:registered-1'].models).toEqual(validV2ReportBody().agents[0].models);
+        expect(v2['entra:sp:shadow-1'].models).toBeNull();
+        for (const a of planHarnessScan(validReportBody(), prior()).agents) expect(a.models).toBeNull();
+    });
+
+    it('reported empty is planned as [], not as null', () => {
+        const body = validV2ReportBody();
+        body.agents[0].models = [];
+        expect(planHarnessScan(body, prior()).agents[0].models).toEqual([]);
+    });
+});
+
 describe('the register decides SHADOW, whatever the report claims', () => {
     it('a registered agent the register knows is linked', () => {
         const plan = planHarnessScan(validReportBody(), prior());

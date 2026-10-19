@@ -31,7 +31,7 @@
  * `tests/guards/agent-harness-single-write-seam.test.ts` refuses a write to the
  * three tables from any other file.
  */
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 
 import type { RequestContext } from '../types';
@@ -342,6 +342,9 @@ async function record(
                 verdictsJson: a.verdicts as unknown as Prisma.InputJsonValue,
                 blockingNextRung: [...a.blockingNextRung],
                 toolsJson: a.tools as unknown as Prisma.InputJsonValue,
+                // NULL is NOT REPORTED, apart from `[]` (#3759). `DbNull`, not
+                // `JsonNull`: a SQL NULL, never the JSON value `null`.
+                modelsJson: a.models === null ? Prisma.DbNull : (a.models as unknown as Prisma.InputJsonValue),
             })),
         });
     }

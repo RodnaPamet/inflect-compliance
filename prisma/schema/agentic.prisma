@@ -2515,6 +2515,13 @@ model AgentHarnessScanItem {
   /// `[{ server, name, manifestHash, pinned, readOnlyHint }]` — identifiers
   /// and hashes; a tool's description text never crosses the contract.
   toolsJson         Json
+  /// `[{ endpoint, model }]` — the model endpoints `/2`'s optional `models[]`
+  /// reported for this agent, by reference only (#3759). NULL is NOT
+  /// REPORTED (a `/1` scan, or a `/2` agent without `models`), which is not
+  /// the same as `[]`, reported empty. Read back through
+  /// `parseStoredHarnessModels`, which reads a row it cannot parse as
+  /// unreadable, never as either of those.
+  modelsJson        Json?
   createdAt         DateTime          @default(now())
 
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
