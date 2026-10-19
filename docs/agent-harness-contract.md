@@ -1,14 +1,14 @@
-# The `inflect-agent-harness` report contract (`/1` and `/2`)
+# The `inflect-agent-harness` report contract (`/2`)
 
 How a harness scanner reports what it found in a client environment. A scanner
 runs inside the client's perimeter, enumerates agent-shaped principals and the
 harness each one runs under, and returns one signed report. This document is
 normative: `MUST`, `MUST NOT`, `SHOULD` and `MAY` carry their RFC 2119 meanings.
 
-Two contract ids are in force. `inflect-agent-harness/1` (#3660) is the first;
-`inflect-agent-harness/2` (#3754) is `/1` plus five additions, and is what a
-scanner built today emits. [The two ids](#the-two-ids) says what `/2` adds and
-how the ingest holds each report to its own id.
+One contract id is in force: `inflect-agent-harness/2` (#3754). It is the first
+id, `inflect-agent-harness/1` (#3660), plus five additions. `/1` is retired
+(#3686): the ingest refuses a report that names it. [The two ids](#the-two-ids)
+says what `/2` added and how `/1` was retired.
 
 `tests/helpers/agent-harness-fake-scanner.ts` is the **reference
 implementation**. Where this prose and that file disagree, the file is the one
@@ -46,30 +46,26 @@ from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onbo
 | Optional `calls` and `windowDays` on a tool | `agents[].tools[]` | How often the agent called the tool over the scan window (#3738 fills them) |
 | Optional `models[]` | `agents[]` | The model endpoints the agent calls, by reference (#3737, #3738) |
 
-Nothing in `/1` is removed or reinterpreted, and every `/1` bound is unchanged.
+Nothing in `/1` was removed or reinterpreted, and every `/1` bound is unchanged.
 The two optional additions carry counts and references only: no input, no
 output, no prompt — a model entry or a tool with any other member is refused.
 
-**The transition rule.**
+**`/1` is retired.** The owner set the moment on 2026-10-19: `/1` was retired at
+the release of the scanner container (#3686), the reference scanner's first
+deployment, which emits `/2`. No other scanner ever spoke `/1`.
 
-- The ingest verifies BOTH ids, through the same four steps in the same order:
-  size, JSON, signature by a trusted key, then the strict schema. Only the last
-  step differs, and the id that picks the schema is itself read only after the
-  signature has verified. A deployed `/1` scanner keeps working.
-- Each id has its OWN strict schema. A `/1` report that carries any `/2`
-  addition — the member, the kind or the reason — MUST be refused (`SCHEMA`),
-  never read as a `/2` report that forgot to say so. A `/2` report MUST carry
-  `unboundCredentials`, empty when it saw none. An id the verifier does not
-  accept is refused as `SCHEMA` without the refusal repeating it.
-- A scanner SHOULD emit `/2`. A `/1` report has no member that speaks about
-  unbound credentials, so it opens no `ORPHAN_CREDENTIAL` and closes none: its
-  silence is not a statement that there are none.
+- A scanner MUST emit `/2`. A `/2` report MUST carry `unboundCredentials`, empty
+  when it saw none.
+- A report naming `/1` is checked like any other — size, JSON, signature by a
+  trusted key — and then refused as `SCHEMA` with the issue
+  `contract: inflect-agent-harness/1 is retired; the scanner must speak
+  inflect-agent-harness/2`. The ingest writes nothing. An id that was never in
+  force is refused as `SCHEMA` without the refusal repeating it.
 - The ids the verifier accepts are `HARNESS_CONTRACT_IDS` in
-  `src/lib/agentic/harness-contract-rules.ts`. Retiring `/1` is removing it from
-  that list, a reviewed change made once no deployed scanner sends it. The
-  owner set the moment on 2026-10-19: `/1` is retired at the release of the
-  scanner container (#3686), the first deployment of the reference scanner,
-  which emits `/2`.
+  `src/lib/agentic/harness-contract-rules.ts`, which holds `/2` alone.
+- Scans already stored from `/1` reports stay readable: a stored scan is read
+  against `/2`'s source kinds and reasons, which contain `/1`'s. Their agents'
+  model endpoints read NOT REPORTED, since `/1` had no member for them.
 
 ## Signing and verification
 
@@ -80,8 +76,6 @@ The report is a JSON object: a body plus a `signature` member.
   "unboundCredentials": [],
   "signature": { "alg": "ed25519", "signerKey": "<hex or base64 raw public key>", "sig": "<hex or base64>" } }
 ```
-
-A `/1` report is the same without `unboundCredentials`.
 
 - The signed message MUST be SHA-256 over the canonical JSON of the report with
   the `signature` member removed. Canonical JSON sorts object keys recursively,
@@ -101,7 +95,7 @@ refusal.
 
 | Member | Meaning |
 |---|---|
-| `contract` | Exactly `inflect-agent-harness/1` or `inflect-agent-harness/2`. The rest of the body is held to that id's schema. |
+| `contract` | Exactly `inflect-agent-harness/2`. The retired `inflect-agent-harness/1` is refused. |
 | `scan.id` | The scanner's id for this run, unique per tenant. |
 | `scan.asOf` | ISO 8601 time the scan describes. |
 | `scan.scanner` | The scanner's own `agentId` in the register, its `version`, and the `sha256:` manifest hash of its own tool surface. |
@@ -319,9 +313,8 @@ planner (`src/lib/agentic/harness-findings.ts`), never from the report's
   incomplete identity-bearing source can make a credential look unbound, never
   bound, so it does not hold a close back; but a credential the source still
   lists is never closed, whether or not that scan could open it;
-- an absent or `INCOMPLETE` source closes nothing, and neither does a `/1`
-  report. An incomplete identity-bearing source therefore opens nothing and
-  closes nothing.
+- an absent or `INCOMPLETE` source closes nothing. An incomplete
+  identity-bearing source therefore opens nothing and closes nothing.
 
 A source kind is **identity-bearing** when it can report the agent a credential
 is bound to, by listing the credential among that agent's `credentials[]`. The
@@ -347,8 +340,9 @@ are stored with the tool on the scan item (`AgentHarnessScanItem.toolsJson`), so
 they round-trip and read back with it. `models[]` is verified with the rest of
 the report — schema, then the secret scan over every string — and, since #3759,
 kept on the same scan item (`AgentHarnessScanItem.modelsJson`) exactly as
-reported. NULL there means NOT REPORTED — a `/1` report, or a `/2` agent
-without `models` — which is not the same as `[]`, reported empty. The matrix
+reported. NULL there means NOT REPORTED — an agent reported without
+`models`, or any agent of a scan stored from a `/1` report — which is not the
+same as `[]`, reported empty. The matrix
 reads the column back against the contract's strict model schema and shows a
 value that fails it as unreadable, never as either of the other two. Neither
 raises or closes a finding.

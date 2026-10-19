@@ -5,8 +5,9 @@ issue). It runs inside a client's estate, reads that estate's sources
 **read-only**, builds an `inflect-agent-harness/2` report
 ([`docs/agent-harness-contract.md`](../../docs/agent-harness-contract.md)),
 signs it with an Ed25519 key the tenant registered, and posts it unchanged to
-the tenant's ingest. The ingest still accepts `/1`, so a scanner built before
-#3754 keeps working until it is upgraded.
+the tenant's ingest. `/2` is the one id the ingest accepts: `/1` was retired
+with this scanner's container (#3686), so a scanner built before #3754 is
+refused and must be rebuilt from this package.
 
 ## Sources
 

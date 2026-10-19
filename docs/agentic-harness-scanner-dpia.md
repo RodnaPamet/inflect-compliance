@@ -2,8 +2,8 @@
 
 This assessment covers two processing operations. The **scanner** is to run
 in a client's environment and read the agent-shaped principals there. The
-**ingest** receives the scanner's signed `inflect-agent-harness/1` or `/2`
-report into that client's own Inflect tenant. The report format is
+**ingest** receives the scanner's signed `inflect-agent-harness/2` report into
+that client's own Inflect tenant (the first id, `/1`, is retired, #3686). The report format is
 [`docs/agent-harness-contract.md`](agent-harness-contract.md) and its schemas
 and verifier are `src/lib/agentic/harness-contract.ts`.
 
@@ -14,7 +14,7 @@ which is delivered in parts:
 |---|---|
 | The ingest: the route `/api/t/:slug/admin/agents/harness-scans`, the derived levels and findings, and the five tables `AgentHarnessScannerKey`, `AgentHarnessScan`, `DiscoveredAgent`, `AgentHarnessScanItem` and `AgentHarnessAcceptance` | #3688, merged on 2026-10-17 |
 | Conditions 7 and 10 on the ingest, and the no-cascade rule under [Retention](#retention) | #3692, merged on 2026-10-17 |
-| The scanner package and container | #3686 |
+| The scanner package and container | #3686: the Entra, MCP and register sources in #3767, #3768 and #3769, and the container in the pull request that closes it |
 | The harness matrix, and the evidence emitted from a scan | #3687 |
 
 Where a safeguard is enforced by code on `main`, the code is named. Where it is
@@ -269,7 +269,7 @@ Where each condition stands:
 |---|---|---|
 | 5, 6, 9 and 11 | The ingest, #3688 | Met; #3688 merged on 2026-10-17 |
 | 7 and 10 | The ingest, #3692 | Met; #3692 merged on 2026-10-17, with the no-cascade rule under [Retention](#retention) |
-| 1, 2, 3 and 4 | The scanner, #3686 | Open |
+| 1, 2, 3 and 4 | The scanner, #3686 | Met, each tested: 1 by the MCP source's request log (#3768); 2 by the configuration schema of every source and the MCP and register sources' request logs (#3768, #3769); 3 by the Azure Key Vault reader (#3678); 4 by every source's request log and the container's smoke test, which runs the image with no network (#3686) |
 | 8 | The scan evidence, #3687 | Open |
 | 15 | The `code` source, #3737 | Met by #3737 |
 
@@ -374,10 +374,22 @@ ids, statuses, dates and flags: no agent name, no key name or prefix, no free
 text. The owner it reports is an Inflect user id, the `agents[].owner` member
 above, and a person's identifier as that row records.
 
+The container (#3686) is how an estate runs the scanner, and it changes
+nothing above: it adds no source, no data category, no recipient and no stored
+column. A client builds it from this repository; it is not published. It holds
+no credential and no configuration. The signing key and each source's
+credential reach it as the environment variables the configuration names, from
+the estate's own secret store, so the key stays on the estate's infrastructure
+as the [Roles](#roles) table requires. It runs with a read-only root
+filesystem, as a non-root user, with no package manager. CI builds it on every
+pull request and runs it with no network, read-only and with every capability
+dropped: the dry-run report it prints verifies against the key it was given, and
+a scan with nowhere to post exits non-zero.
+
 #3686's hardening checklist carries condition 1 and the write-credential half
-of condition 2. The assessment holds for the scanner only when #3686 meets all
-four of its conditions, and for the evidence emitted from a scan only when
-#3687 meets condition 8.
+of condition 2. The assessment holds for the scanner only while #3686's four
+conditions hold, and for the evidence emitted from a scan only when #3687 meets
+condition 8.
 
 1. The scanner sends an MCP server `initialize`, the one-way
    `notifications/initialized` the protocol requires, and `tools/list` only,
@@ -538,7 +550,6 @@ owns it:
 
 | Gap | Owner |
 |---|---|
-| The scanner package and container | #3686 |
 | The harness matrix, and the evidence emitted from a scan | #3687 |
 | A person confirming a discovered agent's owner | Step `2a` |
 | The controller's answers to the two lawful-basis questions | Open; recorded on #3664 when given |

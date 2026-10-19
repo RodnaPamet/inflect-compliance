@@ -106,7 +106,7 @@ export const CONTENT_SOURCE_PROVENANCE = {
     'questionnaire.inbound-answer': 'THIRD_PARTY_INGESTED',
     'questionnaire.vendor-response': 'THIRD_PARTY_INGESTED',
     'scanner.vulnerability-import': 'THIRD_PARTY_INGESTED',
-    // A signed `inflect-agent-harness/1` or `/2` report (#3665, #3754). The
+    // A signed `inflect-agent-harness/2` report (#3665, #3754). The
     // signature says WHICH scanner sent it, not that what it observed is true
     // or benign: its identifiers and evidence pointers are written by the
     // client's estate.

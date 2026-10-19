@@ -36,7 +36,7 @@ import { ingestHarnessReport } from '@/app-layer/usecases/agent-harness-scans';
 import { addHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
 import { getHarnessMatrix } from '@/app-layer/usecases/agent-harness-matrix';
 import { registerShadowAgent } from '@/app-layer/usecases/agent-registration-intake';
-import type { HarnessReportAgentV1, HarnessReportBodyV1 } from '@/lib/agentic/harness-contract';
+import type { HarnessReportAgent, HarnessReportBody } from '@/lib/agentic/harness-contract';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -97,13 +97,13 @@ async function clearOwnRows(): Promise<void> {
  * The fake scanner's valid body for T1, every shadow in it with no claimed id
  * unless `claims` names one. `incomplete` reports the mcp source cut short.
  */
-function bodyFor(claims: Partial<Record<Shadow, string>> = {}, opts: { incomplete?: boolean } = {}): HarnessReportBodyV1 {
+function bodyFor(claims: Partial<Record<Shadow, string>> = {}, opts: { incomplete?: boolean } = {}): HarnessReportBody {
     const s = seeded[T1];
     const body = validReportBody();
     body.scan.id = `scan_${T1}_${++scanSeq}`;
     body.scan.scanner.agentId = s.scannerAgentId;
     body.agents[0].registeredAgentId = s.targetAgentId;
-    const template: HarnessReportAgentV1 = body.agents[1];
+    const template: HarnessReportAgent = body.agents[1];
     body.agents = [
         body.agents[0],
         ...SHADOWS.map((sh) => ({
