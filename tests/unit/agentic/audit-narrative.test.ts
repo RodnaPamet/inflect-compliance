@@ -19,6 +19,8 @@ import {
 } from '@/lib/agentic/audit-narrative';
 import { MAX_ANSWER_CHARS } from '@/lib/agentic/review-attribution';
 import { summaryCapFor } from '@/app-layer/ai/decision-log';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const PERIOD = '2027-03';
 
@@ -178,5 +180,70 @@ describe('holding a narrative to the record', () => {
     it('lowercase prose is not a conclusion word', () => {
         const text = 'One leaver passed the first attribute and failed the window: LEAVER_DISABLED_LATE, FAIL.';
         expect(check(answer([narrative({ text })]))).toMatchObject({ ok: true });
+    });
+});
+
+// ─── 3. the committed evaluation record's narrate answers ───────────────────
+
+/**
+ * The narrate cases' answers, as a named model revision gave them, read through
+ * the functions the capture uses and held to records built from each case's
+ * own listing. The evaluation gate checks needles; this checks the block parses
+ * and that the contract accepts what a passing model writes, so a skill whose
+ * record passes but whose answers the capture would refuse fails here.
+ */
+describe("the iam-audit-procedures evaluation record's narrate answers", () => {
+    const read = (file: string) =>
+        JSON.parse(readFileSync(join(process.cwd(), 'src/lib/agentic/flue/skills/iam-audit-procedures', file), 'utf8'));
+    const record = read('evaluation-record.json') as { answers: Array<{ caseId: string; answer: string }> };
+    const set = read('evaluation-set.json') as { cases: Array<{ id: string; input: string }> };
+    const answerOf = (id: string) => record.answers.find((a) => a.caseId === id)?.answer ?? '';
+
+    /** The case's own listing, as the facts the capture would read from the database. */
+    function recordsOf(id: string): { period: string; facts: WorkpaperRecordFacts[] } {
+        const input = set.cases.find((c) => c.id === id)?.input ?? '';
+        const period = /periodLabel: (\S+)/.exec(input)?.[1] ?? '';
+        const listing = JSON.parse(input.slice(input.indexOf('{'))) as {
+            workpapers: Array<{
+                workpaperId: string;
+                periodLabel: string;
+                conclusion: 'PASS' | 'FAIL' | 'INCONCLUSIVE';
+                conclusionBasis: string;
+                exceptions: Array<{ code: string }>;
+            }>;
+        };
+        return {
+            period,
+            facts: listing.workpapers.map((w) => ({
+                id: w.workpaperId,
+                periodLabel: w.periodLabel,
+                conclusion: w.conclusion,
+                conclusionBasis: w.conclusionBasis,
+                exceptionCodes: w.exceptions.map((e) => e.code),
+                outcomeCodes: w.exceptions.map((e) => e.code),
+            })),
+        };
+    }
+
+    it.each([
+        ['narrate-fail-and-pass', ['wp_lt', 'wp_tb']],
+        ['narrate-inconclusive-is-not-clean', ['wp_rc']],
+        ['narrate-asked-to-upgrade', ['wp_lt']],
+        ['narrate-only-the-period-asked', ['wp_mar']],
+        ['narrate-definition-says-pass', ['wp_lt']],
+    ])('%s parses and holds to its own record', (id, narrated) => {
+        const reading = readNarrativeFromAnswer(answerOf(id));
+        if (!reading.ok) throw new Error(`${id}: ${reading.reason} ${reading.issues.join('; ')}`);
+        const { period, facts } = recordsOf(id);
+        const check = checkNarrativesAgainstRecord(reading.answer, period, facts);
+        expect({ id, check: check.ok ? 'ok' : check.reason }).toEqual({ id, check: 'ok' });
+        expect(reading.answer.narratives.map((n) => n.workpaperId).sort()).toEqual([...narrated].sort());
+    });
+
+    it('the answer with no workpapers given offers no narrative', () => {
+        expect(readNarrativeFromAnswer(answerOf('narrate-no-workpapers-given'))).toMatchObject({
+            ok: false,
+            reason: 'NO_NARRATIVE_IN_ANSWER',
+        });
     });
 });

@@ -90,7 +90,7 @@ describe('the skill', () => {
         const s = skill();
         const pin = { name: NARRATIVE_SKILL, version: s.metadata.version, contentHash: skillContentHash(s.instructions) };
         expect(checkSkillMountable(s)).toEqual({ ok: true, pin });
-        expect(resolveSkillsFor(auditNarrativeWorkflow).map((d) => d.name)).toEqual([NARRATIVE_SKILL]);
-        expect(resolveSkillPins(auditNarrativeWorkflow)).toEqual([pin]);
+        expect(resolveSkillsFor(auditNarrativeWorkflow.skills).map((d) => d.name)).toEqual([NARRATIVE_SKILL]);
+        expect(resolveSkillPins(auditNarrativeWorkflow.skills)).toEqual([pin]);
     });
 });
