@@ -84,17 +84,17 @@ model ProcessMap {
   /// write amplification on a 3-second debounce, not one big row.
   freeformJson    Json?
 
-  tenant                 Tenant                   @relation(fields: [tenantId], references: [id])
-  createdBy              User                     @relation("ProcessMapCreatedBy", fields: [createdByUserId], references: [id])
-  deletedBy              User?                    @relation("ProcessMapDeletedBy", fields: [deletedByUserId], references: [id])
-  nodes                  ProcessNode[]
-  edges                  ProcessEdge[]
-  snapshots              ProcessMapSnapshot[]
-  businessImpactAnalyses BusinessImpactAnalysis[]
+  tenant    Tenant               @relation(fields: [tenantId], references: [id])
+  createdBy User                 @relation("ProcessMapCreatedBy", fields: [createdByUserId], references: [id])
+  deletedBy User?                @relation("ProcessMapDeletedBy", fields: [deletedByUserId], references: [id])
+  nodes     ProcessNode[]
+  edges     ProcessEdge[]
+  snapshots ProcessMapSnapshot[]
 
   @@unique([id, tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, updatedAt])
+  businessImpactAnalyses BusinessImpactAnalysis[]
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -182,19 +182,20 @@ model ProcessNode {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  tenant     Tenant     @relation(fields: [tenantId], references: [id])
-  processMap ProcessMap @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id])
+  processMap             ProcessMap               @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
   /// Business Impact Analyses attached to this node — the BIA lives in
   /// the Internal Audit area (not the canvas); this is the link back.
 
   @@unique([processMapId, nodeKey])
+  @@index([tenantId, processMapId])
+
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
-  @@index([tenantId, processMapId])
 }
 
 model ProcessEdge {

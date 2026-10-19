@@ -140,7 +140,7 @@ model CompliancePostureSummary {
   /// proposed dropping the constraint with nothing to re-add it (#2367).
   /// Cascade is what docs/data-retention.md specifies for this row
   /// ("Cascade on tenant delete; overwritten daily").
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
 }
