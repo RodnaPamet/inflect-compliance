@@ -937,7 +937,10 @@ the whole queue, and whether an expired dissent proposal is raised again.
   the sweep raises one the answer could not. The person who dissented never
   decides it: approval, approval with edits, rejection and bulk rejection all
   refuse the review's `reviewedByUserId` (`DISSENT_AUTHOR_MAY_NOT_DECIDE`),
-  keyed off the origin ref, so the bar holds when the sweep raised it. A
+  keyed off the origin ref, so the bar holds when the sweep raised it. The
+  database holds the same bar for every writer (#3760): a decision or an
+  approval signature by the dissenter is refused by a trigger, and the
+  proposal's origin ref is write-once. A
   proposal that expires undecided is not raised again: the link is write-once,
   and the expiry is the record that nobody decided.
 - **The number.** Report 6 of the governance pack (`workpaper-review`), on
