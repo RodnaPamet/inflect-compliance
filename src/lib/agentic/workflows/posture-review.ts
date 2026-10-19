@@ -56,6 +56,9 @@ const arrayLen = (v: unknown): number => (Array.isArray(v) ? v.length : 0);
 
 export const postureReviewWorkflow: WorkflowDefinition = {
     driver: 'flue',
+    // Its description says "nothing is proposed or changed", and on Flue only
+    // this flag makes that true of a model choosing its own calls (#3775).
+    readOnly: true,
 
     key: 'posture-review',
     name: 'Posture review',

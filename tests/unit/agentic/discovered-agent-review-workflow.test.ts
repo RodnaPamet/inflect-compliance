@@ -147,6 +147,9 @@ describe('its required input, and how it becomes the skills’ input', () => {
 
     it('is read-only: no PROPOSE step and no checkpoint', () => {
         expect(discoveredAgentReviewWorkflow.steps.map((s) => s.kind)).toEqual(['READ', 'SYNTHESIS']);
+        // And by declaration, which is what withholds the propose surface on
+        // Flue, where the steps are only a hint (#3775).
+        expect(discoveredAgentReviewWorkflow.readOnly).toBe(true);
     });
 
     it('its static synthesis states no level and no owner, only what was read', () => {

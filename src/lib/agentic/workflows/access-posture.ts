@@ -54,6 +54,10 @@ export const accessPostureWorkflow: WorkflowDefinition = {
     // the static engine and runs the declared reads only — a narrower answer,
     // not a broken one.
     driver: 'flue',
+    // "Change nothing, propose nothing" (#3775). The directory tools it reaches
+    // for are external READ tools, which the read surface still offers; only
+    // the propose surface is withheld.
+    readOnly: true,
 
     key: 'access-posture',
     name: 'Access posture',
