@@ -36,6 +36,19 @@ export type IncompleteReason = (typeof INCOMPLETE_REASONS_V2)[number];
 
 export type ObservedCredential = HarnessReportAgent['credentials'][number];
 export type ObservedOwner = NonNullable<HarnessReportAgent['owner']>;
+export type ObservedTool = HarnessReportAgent['tools'][number];
+
+/**
+ * One tool a source saw a principal CALL, and how many calls it counted in the
+ * source's window. The report carries the tool. `inflect-agent-harness/2` has a
+ * member for the count (`calls`, with `windowDays`); until a follow-up of #3738
+ * fills it, the count reaches the scanner's log as a per-source total and goes
+ * no further.
+ */
+export interface ObservedToolUse {
+    readonly tool: ObservedTool;
+    readonly calls: number;
+}
 
 /** What one source saw of one principal. Merged across sources by `discoveredId`. */
 export interface Observation {
@@ -44,6 +57,8 @@ export interface Observation {
     readonly credentials: readonly ObservedCredential[];
     /** Only verdicts the source holds evidence for; unanswered counts as no. */
     readonly verdicts: readonly CriterionVerdict[];
+    /** Tools the source saw this principal use. A source that reads no tools leaves it out. */
+    readonly tools?: readonly ObservedToolUse[];
 }
 
 /** How far one source got, and what it saw on the way. */
@@ -73,6 +88,11 @@ export interface SourceContext {
     readonly http: ReadOnlyHttp;
     /** The OAuth client-credentials exchange, for a source whose API takes a bearer token. */
     readonly tokens: TokenExchange;
+}
+
+/** The total of the calls a read's observations counted: what the log line reports for a source that reads tools. */
+export function toolCallsOf(read: Pick<SourceRead, 'observations'>): number {
+    return read.observations.reduce((sum, o) => sum + (o.tools ?? []).reduce((s, t) => s + t.calls, 0), 0);
 }
 
 /** Most pages one source follows. A listing longer than this is reported, not read forever. */

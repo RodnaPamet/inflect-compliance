@@ -15,17 +15,20 @@
  *     the reads, and a source that stopped is INCOMPLETE with its reason. The
  *     scan's completeness is not stated anywhere: the ingest derives it.
  *   • AGENTS MERGE BY `discoveredId`. A principal seen by two sources is one
- *     agent `discoveredVia` both, with both sources' credentials. The owner is
- *     the first one found in source order — the identity source before the
- *     vault — and a disagreement is not resolved by inventing a third answer.
+ *     agent `discoveredVia` both, with both sources' credentials and tools. The
+ *     owner is the first one found in source order — the identity source before
+ *     the vault — and a disagreement is not resolved by inventing a third
+ *     answer. A tool is one per (`server`, `name`); its call count stays with
+ *     the source for now. `/2` has a member for it (`calls`, with
+ *     `windowDays`), and filling it is a follow-up of #3738's.
  *   • VERDICTS COLLAPSE TO THE LEAST FAVOURABLE per criterion, the ladder's
  *     own rule (`collapseVerdicts`), so the report never says more than the
  *     most cautious source did.
  *   • CAPS ARE REPORTED, NOT ABSORBED. When the merged population or one
- *     agent's credentials exceed what a report may carry, the overflow is cut
- *     deterministically and every source that contributed to what was cut is
- *     marked INCOMPLETE `BYTE_CAP`. A report that silently held the first 5,000
- *     agents would describe a slice as the estate.
+ *     agent's credentials or tools exceed what a report may carry, the overflow
+ *     is cut deterministically and every source that contributed to what was
+ *     cut is marked INCOMPLETE `BYTE_CAP`. A report that silently held the
+ *     first 5,000 agents would describe a slice as the estate.
  *   • `registeredAgentId` IS ALWAYS NULL from these sources. Linking a
  *     principal to the register is the register source's job, never a label in
  *     the estate (see `source.ts`).
@@ -47,6 +50,7 @@ import {
     HarnessReportBodyV2Schema,
     MAX_AGENTS,
     MAX_CREDENTIALS_PER_AGENT,
+    MAX_TOOLS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
     SOURCE_KINDS_V2,
     harnessSignedMessage,
@@ -58,7 +62,7 @@ import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type CriterionVerdict } from '@/lib/agentic/harness-ladder';
 
 import { SCANNER_VERSION, scannerManifestHash } from './scanner-surface';
-import type { IncompleteReason, ObservedCredential, ObservedOwner, SourceKind, SourceRead } from './source';
+import type { IncompleteReason, ObservedCredential, ObservedOwner, ObservedTool, SourceKind, SourceRead } from './source';
 
 export interface ScanIdentity {
     /** The scanner's id for this run; unique per tenant, or the ingest refuses it as a REPLAY. */
@@ -76,6 +80,7 @@ interface MergedAgent {
     via: Set<SourceKind>;
     owner: ObservedOwner | null;
     credentials: Map<string, { credential: ObservedCredential; via: SourceKind }>;
+    tools: Map<string, { tool: ObservedTool; via: SourceKind }>;
     verdicts: CriterionVerdict[];
 }
 
@@ -98,11 +103,16 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
                 via: new Set<SourceKind>(),
                 owner: null,
                 credentials: new Map(),
+                tools: new Map(),
                 verdicts: [],
             };
             agent.via.add(read.kind);
             if (agent.owner === null && o.owner !== null) agent.owner = o.owner;
             for (const c of o.credentials) if (!agent.credentials.has(c.ref)) agent.credentials.set(c.ref, { credential: c, via: read.kind });
+            for (const { tool } of o.tools ?? []) {
+                const key = `${tool.server}\n${tool.name}`;
+                if (!agent.tools.has(key)) agent.tools.set(key, { tool, via: read.kind });
+            }
             agent.verdicts.push(...o.verdicts);
             merged.set(o.discoveredId, agent);
         }
@@ -115,13 +125,17 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
     const agents: HarnessReportAgent[] = kept.map((a) => {
         const creds = [...a.credentials.values()].sort((x, y) => byString(x.credential.ref, y.credential.ref));
         for (const cut of creds.slice(MAX_CREDENTIALS_PER_AGENT)) capped(cut.via);
+        const tools = [...a.tools.values()].sort(
+            (x, y) => byString(x.tool.server, y.tool.server) || byString(x.tool.name, y.tool.name),
+        );
+        for (const cut of tools.slice(MAX_TOOLS_PER_AGENT)) capped(cut.via);
         return {
             discoveredId: a.discoveredId,
             discoveredVia: [...a.via].sort((x, y) => kindOrder(x) - kindOrder(y)),
             registeredAgentId: null,
             owner: a.owner,
             credentials: creds.slice(0, MAX_CREDENTIALS_PER_AGENT).map((c) => c.credential),
-            tools: [],
+            tools: tools.slice(0, MAX_TOOLS_PER_AGENT).map((t) => t.tool),
             skills: [],
             verdicts: [...collapseVerdicts(a.verdicts).values()].sort((x, y) => byString(x.criterion, y.criterion)),
         };

@@ -66,7 +66,7 @@ none: both report every credential against its principal.
 | `src/lib/agentic/harness-findings.ts` | `ORPHAN_CREDENTIAL` in the planner; `orphanCredentialRefOf`, `orphanCredentialRefPrefix`; `PriorHarnessState.openOrphanCredentials`; `IDENTITY_BEARING_SOURCE`; `toolEvidenceSource` and `toolEvidenceSourcesOf` for `UNPINNED_WRITE_TOOL` |
 | `src/app-layer/usecases/agent-harness-scans.ts` | Reads this scanner's open orphan findings for a `/2` report; writes through the existing seam |
 | `prisma/migrations/20261019070000_agent_harness_estate_code_source/` | Widens `AgentHarnessEstateSource_kind_known` to the eight kinds |
-| `packages/agent-harness-scanner/src/{report,source,scan,scanner-surface}.ts` | Emits `/2`; `SourceRead.unboundCredentials`; version `0.2.0` |
+| `packages/agent-harness-scanner/src/{report,source,scan,scanner-surface}.ts` | Emits `/2`; `SourceRead.unboundCredentials`; version `0.3.0`, after the LangSmith source's `0.2.0` (#3738) |
 | `tests/helpers/agent-harness-fake-scanner.ts` | `validV2ReportBody` beside the `/1` body, and `validV2CompleteReportBody`, the same with `code` read in full; sixteen new malformations |
 | `messages/{en,bg}.json` | The `UNPARSEABLE` reason's label |
 | `docs/agent-harness-contract.md`, `docs/agentic-harness-scanner-dpia.md`, `docs/agentic-iam-roadmap.md`, `CLAUDE.md` | The transition rule, the DPIA amendment and condition 15, Current state |
@@ -136,6 +136,13 @@ none: both report every credential against its principal.
   password with a known shape, and the ingest's secret walk reaches it.
 - **Stored tools are re-read against `/2`'s tool**, which every `/1` tool is,
   so a scan item carrying counts reads back rather than going unreadable.
+- **The LangSmith `runtime` source (#3738) merged while this was open, on
+  `/1`'s names.** Merged in and ported: it reports through the same builder,
+  so it emits `/2` like every other source, with the data it already had. Its
+  call counts stay in the log line and its endpoints are not read; filling
+  `/2`'s `calls` and `models[]` from it is a follow-up (owner, 2026-10-19).
+  The scanner version is `0.3.0`: LangSmith took `0.2.0`, and reporting under
+  a new contract id is a change to what the scanner reports.
 
 ## Owner answers (2026-10-19)
 

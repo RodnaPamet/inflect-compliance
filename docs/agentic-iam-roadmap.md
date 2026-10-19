@@ -125,6 +125,29 @@ the ingest's own schema and secret scan before it signs, and never reads a
 register link from the estate's own labels: `registeredAgentId` is `null` from
 both sources. The Entra, MCP and register sources and the container are #3686.
 
+#3738 added a third source behind the same interface: LangSmith, as the
+`runtime` kind (owner decisions of 2026-10-19). It reads, by GET only, the
+tracing projects of a workspace on LangSmith's US or EU cloud host or the
+customer's self-hosted LangSmith, and reports each project that called a tool in
+a bounded window, with the tool names its runs carried. Deployments are listed
+and reported too only for an estate that opts in, because LangSmith's
+deployments listing carries their secrets. Tool usage is read as the projects
+listing's aggregates over the window; no run is fetched, so no run input,
+output or trace leaves the estate, and a run name that is not an identifier is
+reported by digest. The aggregates must account for every tool call they count
+or the source is `PAGINATION_TORN`. LangSmith records no tool pin or hint, so
+each agent that called a tool raises `UNPINNED_WRITE_TOOL` at the ingest, by the
+owner's decision that a tool seen only there is unpinned and undeclared until an
+MCP read or a registration proves otherwise. A self-hosted host is checked as a
+customer-named host when the configuration is read and resolved again before
+every request; one on the estate's own network names the private ranges it may
+resolve into, after the application's egress allowlist, with metadata, loopback
+and link-local refused inside them. The call counts and the agents' model
+endpoints have no member in `inflect-agent-harness/1`; the counts reach only the
+scanner's log, and the owner placed both in contract `/2` (#3754), for the
+LangSmith source to fill once `/2` is on `main`. The scanner DPIA names the
+source and what is and is not read from it.
+
 A tenant declares each client ESTATE it scans (`AgentHarnessEstate`): a name,
 the registered scanner agent whose signed reports are the estate's, the cadence
 a complete scan is expected at, and each source with a named owner who is an
@@ -950,7 +973,7 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested under `inflect-agent-harness/1` or `/2`, levels derived and stored per scan, shadow and below-bar agents raised as findings, credentials a `/2` report saw bound to no agent raised as `ORPHAN_CREDENTIAL` when their source and every identity-bearing source in the scan were read in full, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested under `inflect-agent-harness/1` or `/2`, levels derived and stored per scan, shadow and below-bar agents raised as findings, credentials a `/2` report saw bound to no agent raised as `ORPHAN_CREDENTIAL` when their source and every identity-bearing source in the scan were read in full, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678); it reads LangSmith tool usage, and deployments where an estate opts in, as the `runtime` source (#3738); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. A2A with a pinned peer in both directions: an inbound task becomes a labelled, scanned run input for one registered agent, an outbound task is an external write on the ladder, every message is signed with the tenant's own key and kept, a per-peer kill stops both directions, and the peers page shows all of it. | No real vendor's agent has exchanged an A2A task: both directions are built and tested against an in-process fake peer, and the pilot stays open on #3752. Inflect publishes no agent card of its own (R19). |
 | Skills | Nine original, licensed skills. Eight have a committed evaluation record that passes the mount gate; `iam-audit-procedures` ships its evaluation set and no record, and no workflow declares it (#3749). The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
@@ -1494,9 +1517,9 @@ What this means for Phase 1:
   `4a` built the vault reader for Azure Key Vault, the only vault product
   (owner decision, 2026-10-18), proven on fixtures.
 - **Okta and runtime readers have no pilot population either.** Neither kind
-  is in the pilot. Step `4a` (#3678) built an Okta reader and no step builds a
-  `runtime` reader; a reader for either is proven on fixtures only, because
-  Inflect's estate has none named.
+  is in the pilot. Step `4a` (#3678) built an Okta reader and #3738 a LangSmith
+  reader for `runtime`; each is proven on fixtures only, because Inflect's
+  estate has none named.
 - **`cicd` is in the pilot and no step builds its reader.** #3686 reads the
   four kinds above and #3678 built the Okta and Azure Key Vault readers, so the pilot scan
   does not read the three CI/CD identities in the table. Which step builds a
