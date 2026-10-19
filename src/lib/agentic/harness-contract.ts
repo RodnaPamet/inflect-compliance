@@ -45,6 +45,7 @@ import { z } from 'zod';
 import { canonicalJson } from '@/lib/canonical-json';
 import { ed25519PublicKeyFromMaterial } from '@/lib/mcp/receipt-verification';
 
+import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
 import {
     ALL_HARNESS_CRITERIA,
     isHarnessCriterionId,
@@ -52,6 +53,8 @@ import {
     type HarnessCriterionId,
 } from './harness-ladder';
 import type { StoredSource } from './harness-read-model';
+
+export { isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 export const HARNESS_CONTRACT_ID = 'inflect-agent-harness/1';
 
@@ -106,35 +109,6 @@ const SHA256_HEX = /^sha256:[0-9a-f]{64}$/;
  */
 const REFERENCE = /^[a-z][a-z0-9+.-]{1,31}:\/\/\S{1,480}$/;
 
-/**
- * Shapes that are a secret wherever they appear, including inside something
- * that otherwise looks like a reference. Deliberately short: a false refusal
- * names itself and costs a scanner fix; a false acceptance puts a credential in
- * a tenant's database.
- */
-const SECRET_SHAPES: readonly RegExp[] = [
-    /gh[pousr]_[A-Za-z0-9]{20,}/,
-    /github_pat_[A-Za-z0-9_]{20,}/,
-    /AKIA[0-9A-Z]{16}/,
-    /xox[abpors]-[A-Za-z0-9-]{10,}/,
-    /sk-[A-Za-z0-9]{20,}/,
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
-    // A URL carrying a password in its userinfo: `scheme://user:password@host`.
-    // The authority ends at the first `/`, `?`, `#` or `\`, so an `@` or a `:`
-    // further along — `kv://prod/agents:reporting@v2` — is a locator, not a
-    // credential. The username may itself hold an `@` (an e-mail address); the
-    // password is everything after its first `:` up to the LAST `@`. A username
-    // alone (`ssh://git@host`) is not matched: it is not a secret, and a token
-    // used AS the username is caught by its own shape above. The match starts
-    // at the literal `://` — whatever the scheme, or none — which keeps the scan
-    // linear: a leading scheme class would be retried at every offset.
-    /:\/\/[^/?#\\\s:]*:[^/?#\\\s]*[^/?#\\\s@]@/,
-];
-
-export function looksLikeSecret(value: string): boolean {
-    return SECRET_SHAPES.some((re) => re.test(value));
-}
 
 const id = z.string().min(1).max(MAX_ID_CHARS);
 const sourceKind = z.enum(SOURCE_KINDS);
@@ -295,10 +269,6 @@ export function harnessSignedMessage(body: unknown): Buffer {
     return createHash('sha256').update(canonicalJson(body), 'utf8').digest();
 }
 
-/** Is the scan complete? Derived from its sources, never declared. */
-export function isScanComplete(body: Pick<HarnessReportBody, 'population'>): boolean {
-    return body.population.sources.length > 0 && body.population.sources.every((s) => s.status === 'COMPLETE');
-}
 
 // ─── Reading back what the ingest stored ───
 //
