@@ -90,6 +90,8 @@ export interface WorkpaperView {
     readonly auditorAgentId: string;
     /** Whether the second or third line has stamped it reviewed. */
     readonly reviewed: boolean;
+    /** Whether the auditor agent's narrative of it is stored (#3749). */
+    readonly narrated: boolean;
     readonly createdAt: string;
     /** The members whose stored value did not re-validate, so read `null`. */
     readonly unreadable: readonly string[];
@@ -102,7 +104,27 @@ export interface PeriodWorkpapersView {
     readonly truncated: boolean;
 }
 
-export function toWorkpaperView(row: StoredWorkpaperRow): WorkpaperView {
+/**
+ * The codes a workpaper's per-unit record carries, re-validated: its
+ * exceptions' and its unit outcomes'. Each is `null` when its column no longer
+ * passes, so a caller holding a narrative to the record cannot read an
+ * unreadable record as one with no codes.
+ */
+export function recordedCodes(row: { readonly exceptionsJson: unknown; readonly itemOutcomesJson: unknown }): {
+    readonly exceptionCodes: readonly string[] | null;
+    readonly outcomeCodes: readonly string[] | null;
+} {
+    const exceptions = StoredExceptionsSchema.safeParse(row.exceptionsJson);
+    const outcomes = StoredOutcomesSchema.safeParse(row.itemOutcomesJson);
+    return {
+        exceptionCodes: exceptions.success ? [...new Set(exceptions.data.map((e) => e.code))] : null,
+        outcomeCodes: outcomes.success
+            ? [...new Set(outcomes.data.flatMap((o) => (o.code === null ? [] : [o.code])))]
+            : null,
+    };
+}
+
+export function toWorkpaperView(row: StoredWorkpaperRow, narrated = false): WorkpaperView {
     const unreadable: string[] = [];
 
     let parameters: WorkpaperView['parameters'] = null;
@@ -154,6 +176,7 @@ export function toWorkpaperView(row: StoredWorkpaperRow): WorkpaperView {
         conclusionBasis: row.conclusionBasis,
         auditorAgentId: row.auditorAgentId,
         reviewed: row.reviewedAt !== null,
+        narrated,
         createdAt: row.createdAt.toISOString(),
         unreadable,
     };

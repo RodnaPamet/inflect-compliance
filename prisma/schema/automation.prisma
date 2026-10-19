@@ -78,10 +78,10 @@ model NotificationOutbox {
 }
 
 model TenantNotificationSettings {
-  id                String   @id @default(cuid())
-  tenantId          String   @unique
-  enabled           Boolean  @default(true)
-  defaultFromName   String   @default("Inflect Compliance")
+  id                String             @id @default(cuid())
+  tenantId          String             @unique
+  enabled           Boolean            @default(true)
+  defaultFromName   String             @default("Inflect Compliance")
   // No @default, deliberately. This column is the `From` header processOutbox
   // puts on every message for the tenant, so its value is a DEPLOYMENT fact and
   // the application is the only thing that may decide it — `defaults()` in
@@ -108,9 +108,9 @@ model TenantNotificationSettings {
   // is therefore the empty array, which is also the pre-migration behaviour of
   // every existing row.
   mutedInAppTypes   NotificationType[] @default([])
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
 }
 
 model UserNotificationPreference {
@@ -128,15 +128,15 @@ model UserNotificationPreference {
 }
 
 model IntegrationConnection {
-  id                String                   @id @default(cuid())
-  tenantId          String
-  provider          String
-  name              String
-  isEnabled         Boolean                  @default(true)
-  configJson        Json                     @default("{}")
-  secretEncrypted   String?
-  lastTestedAt      DateTime?
-  lastTestStatus    String?
+  id                     String                     @id @default(cuid())
+  tenantId               String
+  provider               String
+  name                   String
+  isEnabled              Boolean                    @default(true)
+  configJson             Json                       @default("{}")
+  secretEncrypted        String?
+  lastTestedAt           DateTime?
+  lastTestStatus         String?
   // Credential health as observed by BACKGROUND syncs. Deliberately separate
   // from lastTestedAt/lastTestStatus, which belong to the operator-initiated
   // "Test connection" button — sharing one field would let a manual test paper
@@ -144,23 +144,23 @@ model IntegrationConnection {
   //
   // Set ONLY on 401/403 (IntegrationAuthError), never on 404 or 429, and
   // cleared on every successful sync. See integrations/connection-health.ts.
-  authFailedAt      DateTime?
-  authFailureReason String?
+  authFailedAt           DateTime?
+  authFailureReason      String?
   // Per-connection sync LEASE. One sync at a time per connection: two
   // concurrent SharePoint delta syncs replay the same change set and each
   // create a fresh Evidence row for the same file (only the mapping is
   // upserted), leaving an orphaned duplicate. Reaped by staleness in the
   // acquire predicate — see integrations/connection-lock.ts.
-  syncLockedAt      DateTime?
-  syncLockToken     String?
+  syncLockedAt           DateTime?
+  syncLockToken          String?
   // H3-2 — multi-run enumeration state for directories over MAX_USERS.
   // syncCursor is the provider's opaque continuation (Okta rel=next URL,
   // Google pageToken, Entra @odata.nextLink); syncPassStartedAt marks when
   // the current multi-run PASS began, and is what the deprovision reconcile
   // compares ConnectedIdentityAccount.syncedAt against on completion.
   // Both NULL means "no pass in flight". See usecases/identity-sync.ts.
-  syncCursor        String?
-  syncPassStartedAt DateTime?
+  syncCursor             String?
+  syncPassStartedAt      DateTime?
   /// #2861 — how far this connection may go when an AGENT drives a write to it.
   ///
   /// A STRING, not a Postgres enum, and that is the lesson the identity ladder
@@ -190,67 +190,59 @@ model IntegrationConnection {
   /// which is the fail-closed direction (`RESTRICT` would block erasure,
   /// `CASCADE` would delete the connection). Not backfilled: every connection
   /// started unowned, which is what the passport reports.
-  ownerUserId       String?
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
-  tenant            Tenant                   @relation(fields: [tenantId], references: [id])
-  owner             User?                    @relation("IntegrationConnectionOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  executions        IntegrationExecution[]
-  syncMappings      IntegrationSyncMapping[]
-  identityAccounts  ConnectedIdentityAccount[]
-  externalWriteJournal ExternalWriteJournal[]
+  ownerUserId            String?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  tenant                 Tenant                     @relation(fields: [tenantId], references: [id])
+  owner                  User?                      @relation("IntegrationConnectionOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  executions             IntegrationExecution[]
+  syncMappings           IntegrationSyncMapping[]
+  identityAccounts       ConnectedIdentityAccount[]
+  externalWriteJournal   ExternalWriteJournal[]
+  /// OVERSHARING: the far end returned columns the `?fields=` projection
+  /// did not ask for. Flagged on the CONNECTION as well as on the snapshot
+  /// so an operator sees a misbehaving server without opening a pull, and
+  /// deliberately not fatal — dropping the columns is a complete remedy, and
+  /// refusing would let a misconfigured legacy server halt recertification.
+  oversharingObservedAt  DateTime?
+  oversharingColumns     String[]
+  legacyAccessSnapshots  LegacyAccessSnapshot[]
+
+  legacyIdentityAliases LegacyIdentityAlias[]
 
   @@unique([tenantId, provider, name])
-  @@index([tenantId])
-  @@index([tenantId, provider])
-  /// `ownerUserId`'s foreign-key index, tenant-leading (schema-index Layer B).
-  @@index([tenantId, ownerUserId])
-
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
-  /// OVERSHARING: the far end returned columns the `?fields=` projection
-  /// did not ask for. Flagged on the CONNECTION as well as on the snapshot
-  /// so an operator sees a misbehaving server without opening a pull, and
-  /// deliberately not fatal — dropping the columns is a complete remedy, and
-  /// refusing would let a misconfigured legacy server halt recertification.
-  oversharingObservedAt DateTime?
-  oversharingColumns    String[]
-  legacyAccessSnapshots LegacyAccessSnapshot[]
-
-  legacyIdentityAliases LegacyIdentityAlias[]
-
+  @@index([tenantId])
+  @@index([tenantId, provider])
+  /// `ownerUserId`'s foreign-key index, tenant-leading (schema-index Layer B).
+  @@index([tenantId, ownerUserId])
 }
 
 model IntegrationExecution {
-  id            String                     @id @default(cuid())
-  tenantId      String
-  connectionId  String?
-  provider      String
-  automationKey String
-  controlId     String?
-  status        IntegrationExecutionStatus @default(PENDING)
-  resultJson    Json?
-  evidenceId    String?
-  errorMessage  String?
-  durationMs    Int?
-  triggeredBy   String                     @default("scheduled")
-  jobRunId      String?
-  executedAt    DateTime                   @default(now())
-  completedAt   DateTime?
-  createdAt     DateTime                   @default(now())
-  connection    IntegrationConnection?     @relation(fields: [connectionId, tenantId], references: [id, tenantId])
-  control       Control?                   @relation(fields: [controlId], references: [id])
-  tenant        Tenant                     @relation(fields: [tenantId], references: [id])
-
-  @@index([tenantId])
-  @@index([tenantId, automationKey])
-  @@index([tenantId, controlId])
-  @@index([tenantId, status])
-  @@index([jobRunId])
+  id                       String                     @id @default(cuid())
+  tenantId                 String
+  connectionId             String?
+  provider                 String
+  automationKey            String
+  controlId                String?
+  status                   IntegrationExecutionStatus @default(PENDING)
+  resultJson               Json?
+  evidenceId               String?
+  errorMessage             String?
+  durationMs               Int?
+  triggeredBy              String                     @default("scheduled")
+  jobRunId                 String?
+  executedAt               DateTime                   @default(now())
+  completedAt              DateTime?
+  createdAt                DateTime                   @default(now())
+  connection               IntegrationConnection?     @relation(fields: [connectionId, tenantId], references: [id, tenantId])
+  control                  Control?                   @relation(fields: [controlId], references: [id])
+  tenant                   Tenant                     @relation(fields: [tenantId], references: [id])
   legacyAccountResolutions LegacyAccountResolution[]
 
   /// Lets a child row's FK be composite, which makes a cross-tenant pointer
@@ -258,7 +250,11 @@ model IntegrationExecution {
   /// is the primary key, so the pair is unique by construction and no existing
   /// row can violate the new index.
   @@unique([id, tenantId])
-
+  @@index([tenantId])
+  @@index([tenantId, automationKey])
+  @@index([tenantId, controlId])
+  @@index([tenantId, status])
+  @@index([jobRunId])
 }
 
 model IntegrationWebhookEvent {
@@ -409,6 +405,12 @@ model AutomationRule {
   elsePrevRules AutomationRule[]      @relation("RuleElseChain")
 
   @@unique([tenantId, name])
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, triggerEvent])
@@ -417,13 +419,6 @@ model AutomationRule {
   @@index([nextRuleId])
   @@index([elseRuleId])
   @@index([tenantId, subFlowGroupId])
-
-  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
-  /// references. `id` alone is already unique; this exists so Postgres
-  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
-  /// makes a cross-tenant reference unrepresentable rather than merely
-  /// filtered.
-  @@unique([id, tenantId])
 }
 
 model AutomationExecution {
@@ -554,7 +549,7 @@ model AgentActionReceipt {
   /// evidence pointing at the wrong text into exactly the case it is read.
   toolManifestRevision Int?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   auditLog AuditLog? @relation(fields: [auditLogId, tenantId], references: [id, tenantId])

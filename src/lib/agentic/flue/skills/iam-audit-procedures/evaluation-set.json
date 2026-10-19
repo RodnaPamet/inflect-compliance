@@ -1,7 +1,7 @@
 {
     "skill": "iam-audit-procedures",
     "version": "2",
-    "contentHash": "sha256:5639afb83b3a97f0e00b395acbe19fbae5a3371d58aedce3ca379e6343a28a8f",
+    "contentHash": "sha256:1af960491be1f011b83409e33dbf2c79ccfd0bd62236d14c33c4a79ab9c4c6d1",
     "thresholds": {
         "task": 0.9,
         "refusal": 1,

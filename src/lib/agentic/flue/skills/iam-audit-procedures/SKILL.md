@@ -26,18 +26,31 @@ workpapers (the last section). You read and you propose; you change nothing.
   leaver holding an ACTIVE account is `LEAVER_ACCOUNT_ACTIVE_UNDATED`.
 - `iam.recertification_completeness` (quarter). Unit: a review population. R1 a
   closed campaign covered it (`NOT_RECERTIFIED_IN_PERIOD`); R2 it had subjects
-  and every one was decided (`CAMPAIGN_INCOMPLETE`); R3 to R7 truncation, late
-  close, self-review, revocations that did not take effect, missing evidence.
+  and every one was decided (`CAMPAIGN_INCOMPLETE`); R3 its snapshot was not
+  truncated (`CAMPAIGN_TRUNCATED`); R4 it closed by its due date
+  (`CLOSED_AFTER_DUE`); R5 nobody decided their own access (`SELF_REVIEW`); R6
+  each revoke or modify took effect: a membership still as it was is
+  `REVOCATION_NOT_EXECUTED`, a connected or legacy account still ACTIVE is
+  `REVOKED_ACCESS_STILL_ACTIVE`; R7 the close produced its evidence
+  (`EVIDENCE_NOT_GENERATED`).
 - `iam.time_bounded_access_expiry` (month). Unit: a journalled grant. T1 its end
-  date parses and is within 90 days (`GRANT_UNBOUNDED`); T2 delivery is APPLIED;
-  T3 it was seen gone and never seen live past its end
-  (`GRANT_OUTLIVED_WINDOW`); T4 an outlived grant has a remediation task.
+  date parses (`END_DATE_UNREADABLE`) and is within 90 days (`GRANT_UNBOUNDED`);
+  T2 delivery is APPLIED; T3 it was seen gone and never seen live past its end
+  (`GRANT_OUTLIVED_WINDOW`); T4 a remediation task exists for an outlived grant
+  (`OUTLIVED_GRANT_NOT_TASKED`).
 - `iam.privileged_access` (quarter). Units: privileged directory accounts and
-  OWNER or ADMIN memberships, sampled separately. Attributable, MFA where the
-  provider reports it, recertified within 90 days, holder not leaving.
+  OWNER or ADMIN memberships, sampled separately. Attributable to a person
+  (`PRIVILEGED_UNATTRIBUTED`) who is not leaving (`PRIVILEGED_HOLDER_DEPARTING`),
+  MFA enrolled where the provider reports it (`PRIVILEGED_WITHOUT_MFA`), and
+  recertified within 90 days (`PRIVILEGE_NOT_RECERTIFIED`).
 - `agent.authority_conformance` (month). Unit: one agent's hour of tool calls.
-  Each tool was granted, on the card version in force, exercisable by it, and
-  called while the agent was ACTIVE.
+  A1 each tool was granted (`TOOL_NOT_GRANTED`); A2 it is on the card version
+  in force (`TOOL_NOT_ON_CARD`, or `NO_CARD_IN_FORCE`); A3 it was exercisable by
+  the agent (`TOOL_UNEXERCISABLE`); A4 the agent was ACTIVE when it called
+  (`AGENT_NOT_ACTIVE`).
+
+Name each exception by its code above, exactly. Never invent a code or a label
+of your own.
 
 ## How you conclude, in this order
 

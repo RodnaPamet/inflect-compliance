@@ -146,16 +146,6 @@ model FileRecord {
   // Epic G-4 — campaigns whose evidence PDF this row carries.
   accessReviews        AccessReview[]   @relation("AccessReviewEvidence")
 
-  @@index([tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, createdAt])
-  @@index([tenantId, scanStatus])
-  // Backs the rescan sweep's selection shape: tenant + PENDING + due-now,
-  // ordered by attempts. Without the third column every sweep re-reads the
-  // whole PENDING set to discard the backed-off rows.
-  @@index([tenantId, scanStatus, nextScanAttemptAt])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, previousFileRecordId])
   /// Composite parent key for tenant-carrying child foreign keys.
   /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
   /// single-column child `fileRecordId -> FileRecord(id)` leaves a
@@ -170,6 +160,16 @@ model FileRecord {
   /// of prisma/fresh-db-schema-drift.expected.sql files rather than guesses.
   /// The key lands here so the follow-up carries no index work.
   @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, scanStatus])
+  // Backs the rescan sweep's selection shape: tenant + PENDING + due-now,
+  // ordered by attempts. Without the third column every sweep re-reads the
+  // whole PENDING set to discard the backed-off rows.
+  @@index([tenantId, scanStatus, nextScanAttemptAt])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, previousFileRecordId])
 }
 
 model EvidenceReview {

@@ -51,6 +51,12 @@ model Policy {
   versions             PolicyVersion[]      @relation("PolicyVersions")
 
   @@unique([id, tenantId])
+  /// #2356 batch 3b — the defining side of a ONE-TO-ONE must be unique
+  /// over exactly the fields the relation uses, and the relation now uses
+  /// [currentVersionId, tenantId].  Any single-column @unique above is KEPT: it is the
+  /// stronger claim (one per id GLOBALLY, not merely per tenant), so
+  /// dropping it would widen the model rather than narrow it.
+  @@unique([currentVersionId, tenantId])
   @@index([tenantId, slug])
   @@index([tenantId])
   @@index([tenantId, createdAt])
@@ -63,13 +69,6 @@ model Policy {
   /// SharePoint drive/item reverse lookup on webhook delta. Declared here so a
   /// fresh DB built from the migrations matches this schema.
   @@index([tenantId, spDriveId, spItemId])
-
-  /// #2356 batch 3b — the defining side of a ONE-TO-ONE must be unique
-  /// over exactly the fields the relation uses, and the relation now uses
-  /// [currentVersionId, tenantId].  Any single-column @unique above is KEPT: it is the
-  /// stronger claim (one per id GLOBALLY, not merely per tenant), so
-  /// dropping it would widen the model rather than narrow it.
-  @@unique([currentVersionId, tenantId])
 }
 
 model PolicyVersion {
@@ -92,14 +91,13 @@ model PolicyVersion {
   tenant           Tenant                            @relation(fields: [tenantId], references: [id])
 
   @@unique([policyId, versionNumber])
-  @@index([tenantId])
-
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
+  @@index([tenantId])
 }
 
 model PolicyApproval {

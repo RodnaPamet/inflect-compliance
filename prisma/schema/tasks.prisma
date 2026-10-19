@@ -62,6 +62,12 @@ model Task {
   evidence                  Evidence[]
 
   @@unique([tenantId, key])
+  /// Composite parent key for tenant-carrying child foreign keys.
+  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
+  /// single-column child `xId -> Task(id)` leaves a cross-tenant reference
+  /// REPRESENTABLE however carefully the application filters. Referencing
+  /// [taskId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
+  @@unique([id, tenantId])
   // B3-5 — the bare `@@index([tenantId])` was dropped: it is a strict
   // prefix of `@@unique([tenantId, key])` and of all eleven composites
   // below, so the planner can always serve a `tenantId`-only predicate
@@ -89,12 +95,6 @@ model Task {
   // prefix of `[tenantId, dueAt, status]` below, so the planner
   // never needs both.
   @@index([tenantId, dueAt, status])
-  /// Composite parent key for tenant-carrying child foreign keys.
-  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
-  /// single-column child `xId -> Task(id)` leaves a cross-tenant reference
-  /// REPRESENTABLE however carefully the application filters. Referencing
-  /// [taskId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
-  @@unique([id, tenantId])
 }
 
 /// Per-tenant monotonic counter for minting `TSK-N` work-item keys.

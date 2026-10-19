@@ -405,16 +405,15 @@ model RiskHierarchyNode {
   tenant       Tenant              @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, type, name])
-  @@index([tenantId, type])
-  @@index([tenantId, parentId])
-  @@index([parentId])
-
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
+  @@index([tenantId, type])
+  @@index([tenantId, parentId])
+  @@index([parentId])
 }
 
 /// RQ-5 — M:N join: a risk can sit in multiple hierarchy nodes.
@@ -458,18 +457,17 @@ model KeyRiskIndicator {
   owner            User?        @relation("KriOwner", fields: [ownerUserId], references: [id])
   readings         KriReading[]
 
-  @@index([tenantId])
-  @@index([tenantId, riskId])
-  @@index([tenantId, isActive])
-  @@index([riskId])
-  @@index([ownerUserId])
-
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, riskId])
+  @@index([tenantId, isActive])
+  @@index([riskId])
+  @@index([ownerUserId])
 }
 
 /// RQ-6 — a single KRI measurement; RAG computed at write time.
@@ -667,15 +665,14 @@ model ReportTemplate {
   runs        ReportRun[]
   schedules   ReportSchedule[]
 
-  @@index([tenantId])
-  @@index([tenantId, type])
-
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, type])
 }
 
 /// RQ-10 — a single report generation execution.
@@ -755,15 +752,15 @@ model RiskSuggestionSession {
   createdBy       User                    @relation("SuggestionSessionCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant                  @relation(fields: [tenantId], references: [id])
 
-  @@index([tenantId])
-  @@index([tenantId, createdAt])
-  @@index([tenantId, status])
   /// Composite parent key for tenant-carrying child foreign keys.
   /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
   /// single-column child `xId -> RiskSuggestionSession(id)` leaves a cross-tenant reference
   /// REPRESENTABLE however carefully the application filters. Referencing
   /// [sessionId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
   @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
 }
 
 model RiskSuggestionItem {

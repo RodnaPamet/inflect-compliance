@@ -423,6 +423,12 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // the source's namespace — often an e-mail address. Read by key only,
     // never filtered or sorted on.
     DiscoveredAgentAttribution: ['signalsJson', 'proposedOwnerRef'],
+    // The auditor agent's narrative of a workpaper (#3749). Model OUTPUT about
+    // a record that lists exceptions about named people's access, held by the
+    // narrative contract to codes and conclusions the workpaper records and
+    // naming units by id — but prose, unlike the workpaper's own columns, so
+    // encrypted. Read by workpaper id only, never filtered or sorted on.
+    AuditWorkpaperNarrative: ['text'],
 
     // ─── Epic MCP Phase 3 — agent proposal queue ───────
     // `payloadJson` is the agent-proposed business content (risk/control/policy/

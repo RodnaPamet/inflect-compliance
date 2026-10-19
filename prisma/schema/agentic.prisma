@@ -9,7 +9,7 @@
 /// (the proposed content, validated + Epic-D sanitised at the propose boundary)
 /// and `rationale` are encrypted at rest (Epic B — see encrypted-fields.ts).
 model AgentProposal {
-  id                   String               @id @default(cuid())
+  id                   String                 @id @default(cuid())
   tenantId             String
   kind                 AgentProposalKind
   /// CREATE (queue a new record) or UPDATE (change one that already exists).
@@ -17,7 +17,7 @@ model AgentProposal {
   /// NULL here would be a third state the diff builder would have to guess at —
   /// see `AgentProposalOperation` in enums.prisma.
   operation            AgentProposalOperation @default(CREATE)
-  status               SuggestionItemStatus @default(PENDING)
+  status               SuggestionItemStatus   @default(PENDING)
   payloadJson          String
   /// The id of the record an UPDATE proposal would change. NULL for a CREATE,
   /// and a database CHECK (`AgentProposal_update_requires_target`) refuses an
@@ -93,8 +93,8 @@ model AgentProposal {
   /// unique target for Postgres to point at. The CHECK below carries the half
   /// that IS enforceable: a step ordinal naming no run addresses nothing, so it
   /// must not be storable.
-  runId                String?
-  stepSeq              Int?
+  runId   String?
+  stepSeq Int?
 
   /// ─── The agentic OUTPUT GUARD verdict (see ai/guard/proposal-guard.ts) ───
   ///
@@ -103,18 +103,18 @@ model AgentProposal {
   /// The default is CLEAN so pre-guard rows read as unscanned-but-permitted
   /// rather than as scanned-and-clean — which they were, since the queue they
   /// entered had no guard.
-  guardVerdict         AgentGuardVerdict    @default(CLEAN)
+  guardVerdict     AgentGuardVerdict      @default(CLEAN)
   /// The stable rule ids that fired. Ids ONLY — never the matched text, so this
   /// column can be read by an operator surface without leaking the payload.
-  guardRuleIds         String[]             @default([])
+  guardRuleIds     String[]               @default([])
   /// `sha256:<hex>` over (kind, payload, rationale). The join key that proves
   /// "the same content was guarded" without persisting the content. Same
   /// construction as `AiDecisionLog.inputDigest`.
-  guardInputDigest     String?
+  guardInputDigest String?
   /// The trust label the guarded content carried. Defaults to the untrusted
   /// value: an agent proposal is third-party content by construction, and a row
   /// that somehow arrives without a label must not read as tenant-authored.
-  guardProvenance      AgentContentProvenance @default(THIRD_PARTY_INGESTED)
+  guardProvenance  AgentContentProvenance @default(THIRD_PARTY_INGESTED)
 
   /// HOW MANY DISTINCT HUMANS must approve this proposal — resolved ONCE, at
   /// the propose seam, by `resolveApprovalRequirement` in
@@ -137,7 +137,7 @@ model AgentProposal {
   /// requirement was never computed, and it reads as
   /// `UNKNOWN_REQUIREMENT_APPROVALS` (2) at EVERY consumer including the
   /// trigger — an uncomputed requirement must not be the cheapest one.
-  requiredApprovals    Int?
+  requiredApprovals Int?
   /// WHEN THE REVIEW WINDOW CLOSES. Past this instant the proposal cannot be
   /// approved, and the `agent-proposal-expiry` sweep moves it to `EXPIRED`.
   ///
@@ -158,23 +158,23 @@ model AgentProposal {
   /// absence as "window closed" would retire every in-flight proposal at the
   /// moment of deploy — an outage wearing the costume of a control. The sweep
   /// stamps a deadline onto those rows instead.
-  expiresAt            DateTime?
+  expiresAt         DateTime?
 
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  agent                RegisteredAgent?     @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent     RegisteredAgent?        @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
   /// Composite FK so a proposal can never point at another tenant's run, the
   /// shape every tenant-scoped child here uses. `Restrict` matches the `agent`
   /// relation directly above: a run is the evidence for the proposals it
   /// produced, so deleting one out from under them has to be refused rather
   /// than silently nulling the link that made them reviewable.
-  run                  WorkflowRun?         @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  approvals            AgentProposalApproval[]
+  run       WorkflowRun?            @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  approvals AgentProposalApproval[]
 
   /// Composite parent key, so an approval can never point cross-tenant. Same
   /// shape `AgentPolicyCard` carries for its versions.
-  sampleAudits         AgentProposalSampleAudit[]
+  sampleAudits AgentProposalSampleAudit[]
 
   /// Composite parent key, so a sample-audit row can never point at another
   /// tenant's proposal — the same shape `AgentPolicyCard` carries for its
@@ -386,14 +386,14 @@ model AgentProposalApproval {
 /// (accumulated state) and `summary` (the output artifact) are encrypted at rest
 /// (Epic B — see encrypted-fields.ts).
 model WorkflowRun {
-  id                String            @id @default(cuid())
-  tenantId          String
-  workflowKey       String
-  status            WorkflowRunStatus @default(RUNNING)
-  startedByUserId   String?
-  triggeredViaKeyId String?
-  startedAt         DateTime          @default(now())
-  completedAt       DateTime?
+  id                 String                       @id @default(cuid())
+  tenantId           String
+  workflowKey        String
+  status             WorkflowRunStatus            @default(RUNNING)
+  startedByUserId    String?
+  triggeredViaKeyId  String?
+  startedAt          DateTime                     @default(now())
+  completedAt        DateTime?
   /// WHEN THE HUMAN'S WINDOW CLOSES, pinned when the run parks at a
   /// HUMAN_CHECKPOINT from that step's mandatory `approvalWindow`.
   ///
@@ -410,8 +410,8 @@ model WorkflowRun {
   /// later one gets a fresh window for that step, because it is a new
   /// decision by (possibly) a new person. A single checkpoint's clock runs
   /// once and never restarts.
-  approvalExpiresAt DateTime?
-  contextJson       String?
+  approvalExpiresAt  DateTime?
+  contextJson        String?
   /// Chain head over `contextJson` — the SHA-256 link computed by
   /// `sealContext` in `src/lib/agentic/context-integrity.ts` (OWASP ASI06).
   ///
@@ -432,17 +432,17 @@ model WorkflowRun {
   /// sealed. Any run in flight across the deploy that adds this column is
   /// therefore halted, on purpose — trust-on-first-use here would let anyone
   /// who can clear the head bypass the chain entirely.
-  contextHash       String?
-  summary           String?
-  stepCount         Int               @default(0)
-  costTokens        Int               @default(0)
-  errorMessage      String?
+  contextHash        String?
+  summary            String?
+  stepCount          Int                          @default(0)
+  costTokens         Int                          @default(0)
+  errorMessage       String?
   /// Which registered agent this run belongs to. Same nullable-in-schema,
   /// required-at-the-usecase split as `AgentProposal.agentId` above, and for the
   /// same reason: the column is added to a populated table in the migration that
   /// backfills it, so it cannot be NOT NULL at ALTER time. A NULL means
   /// "pre-register", not "any agent".
-  agentId           String?
+  agentId            String?
   /// WHICH AUTOMATION-RULE FIRING CAUSED THIS RUN (#3537).
   ///
   /// NULL for a human-started run and for an MCP-credential-started one: they
@@ -466,7 +466,7 @@ model WorkflowRun {
   /// runs resolves precisely, where joining on `(agentId, workflowKey)` does
   /// not: two rules may invoke the same agent on the same workflow, and a
   /// human may start the same workflow for the same agent.
-  parentExecutionId String?
+  parentExecutionId  String?
   /// WHICH VERSION OF THE AGENT'S POLICY CARD WAS IN FORCE when this run was
   /// admitted. Same three states and the same write-once trigger as
   /// `AgentProposal.policyCardVersion` above — see that comment.
@@ -478,7 +478,7 @@ model WorkflowRun {
   /// (`MCP_TOOL_INVOKED` / `AUTHZ_DENIED`) carries the version that decided it.
   /// This column answers "what did this run open under", which is the question
   /// that stops being answerable once the card has moved on.
-  policyCardVersion Int?
+  policyCardVersion  Int?
   /// WHICH ENGINE WALKED THIS RUN — the driver `selectRunDriver` actually
   /// chose, not the one the tenant configured or the definition asked for.
   ///
@@ -503,7 +503,7 @@ model WorkflowRun {
   /// second driver exists a run spanning an operator's toggle could walk its
   /// later segments on the other engine. The per-segment truth would belong on
   /// `WorkflowStep`, and this column would keep meaning what it says.
-  driver            AgentDriverMode   @default(STATIC)
+  driver             AgentDriverMode              @default(STATIC)
   /// WHAT THIS RUN WAS TAUGHT (#3666): one `{ name, version, contentHash }`
   /// per skill the run mounted, in declaration order, written in the CREATE.
   ///
@@ -521,7 +521,7 @@ model WorkflowRun {
   ///
   /// Names and hashes only — no skill text — so it is not in the Epic B
   /// encryption manifest; the hash points at the document in the repository.
-  mountedSkills     Json?
+  mountedSkills      Json?
   /// THE A2A PEER WHOSE TASK STARTED THIS RUN (#3679), or NULL for every run
   /// a peer did not start. A plain id with no FK, as `parentExecutionId` is:
   /// the run must say who caused it after the peer is retired.
@@ -532,24 +532,19 @@ model WorkflowRun {
   /// never dispatches an external write above `PROPOSE_ONLY` (threat-model
   /// R17) and never sends an outbound A2A task (R14). WRITE-ONCE at the
   /// database with `inboundMessageId`, so a later UPDATE cannot lift either.
-  inboundPeerId     String?
+  inboundPeerId      String?
   /// The `PeerAgentMessage` (INBOUND, TASK) whose verified, signed message
   /// started this run. A plain id, for the reason above.
-  inboundMessageId  String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  agent             RegisteredAgent?  @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  steps             WorkflowStep[]
-  proposals         AgentProposal[]
+  inboundMessageId   String?
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  tenant             Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent              RegisteredAgent?             @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  steps              WorkflowStep[]
+  proposals          AgentProposal[]
   /// The owner suggestion a `discovered-agent-review` run's answer parsed into
   /// (#3728) — at most one, and only for that workflow.
   reviewAttributions DiscoveredAgentAttribution[]
-
-  @@index([tenantId, status, startedAt])
-  @@index([tenantId, agentId])
-  /// The canvas query: every run one rule firing started, for one tenant.
-  @@index([tenantId, parentExecutionId])
 
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
@@ -557,14 +552,18 @@ model WorkflowRun {
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
+  @@index([tenantId, status, startedAt])
+  @@index([tenantId, agentId])
+  /// The canvas query: every run one rule firing started, for one tenant.
+  @@index([tenantId, parentExecutionId])
 }
 
 /// An append-only record of one workflow step — the run's audit narrative.
 model WorkflowStep {
-  id          String             @id @default(cuid())
-  runId       String
-  tenantId    String
-  seq         Int
+  id           String             @id @default(cuid())
+  runId        String
+  tenantId     String
+  seq          Int
   /// The CONTEXT-CHAIN position in force when this step was recorded.
   ///
   /// The replay anchor, and it lives HERE rather than on `WorkflowRun` for one
@@ -576,11 +575,11 @@ model WorkflowStep {
   ///
   /// Nullable: added to a populated table, and a step recorded before this
   /// column existed genuinely does not know its position.
-  contextSeq  Int?
-  kind        WorkflowStepKind
-  toolCalled  String?
-  inputJson   String?
-  outputJson  String?
+  contextSeq   Int?
+  kind         WorkflowStepKind
+  toolCalled   String?
+  inputJson    String?
+  outputJson   String?
   /// ─── What the guard said about THIS step ────────────────────────────────
   /// NULL means no guard ran here, and that is a different fact from CLEAN.
   /// A checkpoint or a synthesis reaches no tenant content and is never
@@ -597,11 +596,11 @@ model WorkflowStep {
   /// reported usage. `WorkflowRun.costTokens` remains the enforced total and
   /// the cap still reads it; this is the per-step breakdown an incident
   /// review wants, which the run total cannot give.
-  costTokens  Int?
-  status      WorkflowStepStatus @default(PENDING)
-  at          DateTime           @default(now())
-  actorUserId String?
-  run         WorkflowRun        @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  costTokens   Int?
+  status       WorkflowStepStatus @default(PENDING)
+  at           DateTime           @default(now())
+  actorUserId  String?
+  run          WorkflowRun        @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([runId, seq])
   @@index([tenantId, runId])
@@ -766,56 +765,56 @@ model RegisteredAgent {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  aiSystem  AiSystem        @relation(fields: [aiSystemId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  owner     User            @relation("RegisteredAgentOwner", fields: [ownerUserId], references: [id])
-  vendor    Vendor?         @relation("RegisteredAgentVendor", fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  proposals AgentProposal[]
-  runs      WorkflowRun[]
+  tenant                        Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  aiSystem                      AiSystem                            @relation(fields: [aiSystemId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  owner                         User                                @relation("RegisteredAgentOwner", fields: [ownerUserId], references: [id])
+  vendor                        Vendor?                             @relation("RegisteredAgentVendor", fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  proposals                     AgentProposal[]
+  runs                          WorkflowRun[]
   /// The credentials that speak for this agent. Many, not one: rotation issues
   /// a new key before revoking the old, and an agent must not become
   /// unregistered for the width of that window.
-  apiKeys   TenantApiKey[]
+  apiKeys                       TenantApiKey[]
   /// The tools this agent is allowed to reach. EMPTY MEANS NONE — the list is
   /// an allowlist, and an agent nobody has granted anything to can call nothing.
-  tools     RegisteredAgentTool[]
+  tools                         RegisteredAgentTool[]
   /// The agent-risk-assessment runs against this agent (Epic Agentic 3). Many,
   /// not one: a re-score after a staleness trigger is a NEW run, so the
   /// previous judgement and the basis it was true of stay legible.
-  assessments AgentRiskAssessment[]
+  assessments                   AgentRiskAssessment[]
   /// The agent's policy card (Epic Agentic 5) — at most one, holding many
   /// versions. Optional because an agent registered before the card existed has
   /// none, and an absent card contributes NO term at the tool boundary: the
   /// register's own governance artefact must never be the thing that takes a
   /// working agent dark.
-  policyCard  AgentPolicyCard?
+  policyCard                    AgentPolicyCard?
   /// The agent's own behavioural history, and the latch it can throw. The
   /// breaker is optional for the same reason the card is: an agent registered
   /// before it existed has none, and an absent breaker refuses nothing.
-  behaviourWindows AgentBehaviourWindow[]
-  circuitBreaker   AgentCircuitBreaker?
+  behaviourWindows              AgentBehaviourWindow[]
+  circuitBreaker                AgentCircuitBreaker?
   /// Harness assurance (#3665): the keys this agent signs scans with when it
   /// is a scanner, the scans it signed, and the discovered agents a scan
   /// reconciled to this register row.
-  harnessScannerKeys AgentHarnessScannerKey[]
-  harnessScans       AgentHarnessScan[]
-  discoveredAs       DiscoveredAgent[]
+  harnessScannerKeys            AgentHarnessScannerKey[]
+  harnessScans                  AgentHarnessScan[]
+  discoveredAs                  DiscoveredAgent[]
   /// The client estate this agent scans, when it is a scanner (#3678). At most
   /// one: `@@unique([tenantId, scannerAgentId])` on the estate.
-  harnessEstates     AgentHarnessEstate[]
+  harnessEstates                AgentHarnessEstate[]
   /// Two-step handovers of this agent's accountability (#3698). The current
   /// owner is `ownerUserId`; this is how it came to be that person.
-  ownershipTransfers AgentOwnershipTransfer[]
+  ownershipTransfers            AgentOwnershipTransfer[]
   /// The per-agent evidence artefacts about this agent (#3700) — the ones its
   /// retirement withdraws for the periods still open.
-  evidenceArtefacts  AgenticEvidenceArtefact[]
+  evidenceArtefacts             AgenticEvidenceArtefact[]
   /// People's confirmations that a discovered Entra service principal is this
   /// agent's own (#3671). Required before an unattended disable.
   servicePrincipalConfirmations AgentServicePrincipalConfirmation[]
   /// Inbound A2A credentials that name this agent as the receiving agent
   /// (#3679). The credential binds a peer to ONE agent; the agent's own grants
   /// decide what a peer-started run may reach.
-  peerInboundCredentials PeerAgentInboundCredential[]
+  peerInboundCredentials        PeerAgentInboundCredential[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -976,7 +975,7 @@ model AgentAssessmentQuestion {
   /// the answer weight in the scorer — see `agent-risk-scoring.ts`.
   criticality String
 
-  domain  AgentAssessmentDomain      @relation(fields: [domainId], references: [id])
+  domain  AgentAssessmentDomain       @relation(fields: [domainId], references: [id])
   answers AgentRiskAssessmentAnswer[]
 
   @@index([domainId])
@@ -1382,7 +1381,7 @@ model ExternalToolParameterSet {
   label    String
 
   /// The arguments themselves, exactly as they will be dispatched.
-  parameters Json
+  parameters     Json
   /// SHA-256 over the canonicalised (sorted-key, no-whitespace) parameters.
   /// What an approval names, so a caller approves what it reviewed rather than
   /// whatever the row says at the moment the request lands.
@@ -1500,7 +1499,6 @@ model ExternalToolParameterSet {
   /// tenant-scoped lookup index — every query this table serves is `tenantId`,
   /// or `tenantId + toolName`, or all three.
   @@unique([tenantId, toolName, label])
-
   /// Composite parent key, so a four-eyes signature can never be attached to
   /// another tenant's parameter set. Same shape `AgentProposal` carries for
   /// its approvals, and the migration creates the index with `IF NOT EXISTS`
@@ -1583,7 +1581,6 @@ model ExternalToolParameterSetApproval {
   /// there is no application-layer arrangement of that check that closes the
   /// window — there is a unique index that never opens one.
   @@unique([tenantId, parameterSetId, revision, approverUserId, pendingHash])
-
   /// The read the promotion trigger and the operator listing both make:
   /// (tenantId, parameterSetId) and then the revision. Tenant-leading, and it
   /// also makes `parameterSetId` the second column of a tenant composite,
@@ -1740,9 +1737,9 @@ model PlatformAgentKillSwitch {
   engagedByRef String
   engagedAt    DateTime @default(now())
 
-  liftedAt   DateTime?
+  liftedAt    DateTime?
   liftedByRef String?
-  liftReason String?
+  liftReason  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1949,7 +1946,7 @@ model AgentCircuitBreaker {
 
   trippedAt      DateTime?
   trippedWindow  String?
-  trippedSignals String[] @default([])
+  trippedSignals String[]  @default([])
 
   /// Samples from before this instant are DISCARDED.
   ///
@@ -1966,20 +1963,20 @@ model AgentCircuitBreaker {
   /// not interchangeable: the first says the anomaly WAS the new normal and
   /// advances the epoch, the second says the agent was fixed and KEEPS the old
   /// baseline. Collapsing them would silently adopt rogue behaviour as normal.
-  closeReason String?
+  closeReason    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent    RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
   /// RESTRICT, not the Prisma default SetNull for an optional relation. The DB
   /// is right and its migration says why (20260906120000_agent_circuit_breaker):
   /// "RESTRICT, not CASCADE, and not SET NULL. The name against a close is the
   /// evidence; deleting the user must not silently erase who un-trapped an
   /// agent, and SET NULL would violate the accountability CHECK above rather
   /// than fail loudly."
-  closedBy User?         @relation("AgentCircuitBreakerClosedBy", fields: [closedByUserId], references: [id], onDelete: Restrict)
+  closedBy User?           @relation("AgentCircuitBreakerClosedBy", fields: [closedByUserId], references: [id], onDelete: Restrict)
 
   /// The pair `AgentPolicyCard` carries, and for the same two reasons: the
   /// tenant-leading unique is the tenant-scoped lookup index every tenant model
@@ -2289,7 +2286,7 @@ model ExternalWriteJournal {
   /// which is the half an auditor asks about.
   expiryRaisedAt DateTime?
   /// Why a FAILED write failed, or what an INDETERMINATE one was last seen doing.
-  detail  String?
+  detail         String?
 
   attemptedAt DateTime  @default(now())
   settledAt   DateTime?
@@ -2307,7 +2304,7 @@ model ExternalWriteJournal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id])
   connection IntegrationConnection? @relation(fields: [connectionId, tenantId], references: [id, tenantId])
 
   /// "What did we last do through this connection?" — the operator's first
@@ -2355,7 +2352,7 @@ model ExternalToolPriorStateRead {
   /// The qualified name of the READ called first. Validated to be on the SAME
   /// connection and to be a read — see `external-prior-state-read.ts`, because
   /// neither is expressible as a constraint.
-  readToolName String
+  readToolName  String
 
   /// Who nominated it. This decides what gets called before a customer's system
   /// is changed, so the column is not decoration.
@@ -2482,15 +2479,15 @@ model DiscoveredAgent {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  registeredAgent RegisteredAgent?         @relation(fields: [registeredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
-  items           AgentHarnessScanItem[]
-  acceptances     AgentHarnessAcceptance[]
+  tenant                        Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  registeredAgent               RegisteredAgent?                    @relation(fields: [registeredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  items                         AgentHarnessScanItem[]
+  acceptances                   AgentHarnessAcceptance[]
   servicePrincipalConfirmations AgentServicePrincipalConfirmation[]
   /// The newest parsed owner suggestion of a review run (#3728) — at most one,
   /// held by `@@unique([tenantId, discoveredAgentId])` on that model. A
   /// suggestion, never the owner: `ownerRef` above is what the SOURCE records.
-  attributions    DiscoveredAgentAttribution[]
+  attributions                  DiscoveredAgentAttribution[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, discoveredId])

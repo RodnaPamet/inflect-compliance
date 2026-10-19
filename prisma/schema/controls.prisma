@@ -13,7 +13,7 @@ model ControlKeySequence {
 }
 
 model Control {
-  id                           String                   @id @default(cuid())
+  id                           String                    @id @default(cuid())
   /// NULLABLE ON PURPOSE. A NULL tenant is a GLOBAL LIBRARY control — the
   /// shared catalogue every tenant can read but none can write:
   ///
@@ -48,7 +48,7 @@ model Control {
   successCriteria              String?
   testingMethodology           String?
   category                     String?
-  status                       ControlStatus            @default(NOT_STARTED)
+  status                       ControlStatus             @default(NOT_STARTED)
   effectiveness                Int?
   /// RQ3-8 — annual cost (operate + maintain) in the tenant's
   /// currency. Float matches the existing money-field pattern
@@ -57,7 +57,7 @@ model Control {
   /// a typed `NO_COST` reason rather than fabricating a number.
   annualCost                   Float?
   lastTested                   DateTime?
-  isCustom                     Boolean                  @default(false)
+  isCustom                     Boolean                   @default(false)
   ownerUserId                  String?
   createdByUserId              String?
   frequency                    ControlFrequency?
@@ -66,19 +66,19 @@ model Control {
   automationKey                String?
   automationType               ControlAutomationType?
   mitigationType               ControlMitigationType?
-  applicability                Applicability            @default(APPLICABLE)
+  applicability                Applicability             @default(APPLICABLE)
   applicabilityJustification   String?
   applicabilityDecidedByUserId String?
   applicabilityDecidedAt       DateTime?
-  createdAt                    DateTime                 @default(now())
-  updatedAt                    DateTime                 @updatedAt
+  createdAt                    DateTime                  @default(now())
+  updatedAt                    DateTime                  @updatedAt
   deletedAt                    DateTime?
   deletedByUserId              String?
   retentionUntil               DateTime?
-  applicabilityDecidedBy       User?                    @relation("ControlApplicabilityDecider", fields: [applicabilityDecidedByUserId], references: [id])
-  createdBy                    User?                    @relation("ControlCreator", fields: [createdByUserId], references: [id])
-  owner                        User?                    @relation("ControlOwner", fields: [ownerUserId], references: [id])
-  tenant                       Tenant?                  @relation(fields: [tenantId], references: [id])
+  applicabilityDecidedBy       User?                     @relation("ControlApplicabilityDecider", fields: [applicabilityDecidedByUserId], references: [id])
+  createdBy                    User?                     @relation("ControlCreator", fields: [createdByUserId], references: [id])
+  owner                        User?                     @relation("ControlOwner", fields: [ownerUserId], references: [id])
+  tenant                       Tenant?                   @relation(fields: [tenantId], references: [id])
   assets                       ControlAsset[]
   contributors                 ControlContributor[]
   evidenceLinks                ControlEvidenceLink[]
@@ -89,8 +89,8 @@ model Control {
   evidenceControlLinks         EvidenceControlLink[]
   agenticEvidenceArtefacts     AgenticEvidenceArtefact[]
   frameworkMappings            FrameworkMapping[]
-  findings                     Finding[]                @relation("FindingControl")
-  compensatingForFindings      Finding[]                @relation("FindingCompensatingControl")
+  findings                     Finding[]                 @relation("FindingControl")
+  compensatingForFindings      Finding[]                 @relation("FindingCompensatingControl")
   integrationExecutions        IntegrationExecution[]
   policyLinks                  PolicyControlLink[]
   processEdgeControls          ProcessEdgeControl[]
@@ -100,8 +100,8 @@ model Control {
   // (a) exceptions registered against THIS control,
   // (b) exceptions that name THIS control as their compensating
   //     control (i.e. "we mitigate the gap by doing this").
-  exceptions                   ControlException[]       @relation("ControlExceptionAffected")
-  compensatingForExceptions    ControlException[]       @relation("ControlExceptionCompensating")
+  exceptions                   ControlException[]        @relation("ControlExceptionAffected")
+  compensatingForExceptions    ControlException[]        @relation("ControlExceptionCompensating")
   /// `@@index([tenantId, category])` was DROPPED on 2026-08-08 (roadmap P3.4),
   /// together with the raw `category` list filter it backed. The Category
   /// column renders a DERIVED value (`categorizeControl`: ISO Annex clause →
@@ -386,6 +386,12 @@ model ControlTestPlan {
   runs               ControlTestRun[]
   steps              ControlTestStep[]
 
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
   @@index([tenantId])
   @@index([tenantId, controlId])
   @@index([tenantId, nextDueAt])
@@ -393,13 +399,6 @@ model ControlTestPlan {
   @@index([tenantId, nextRunAt])
   @@index([tenantId, automationType, status])
   @@index([tenantId, deletedAt])
-
-  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
-  /// references. `id` alone is already unique; this exists so Postgres
-  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
-  /// makes a cross-tenant reference unrepresentable rather than merely
-  /// filtered.
-  @@unique([id, tenantId])
 }
 
 model ControlTestRun {
@@ -426,18 +425,17 @@ model ControlTestRun {
   // (90d) erases its runs too (runs' evidence links already cascade).
   testPlan         ControlTestPlan           @relation(fields: [testPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
-  @@index([tenantId])
-  @@index([tenantId, testPlanId])
-  @@index([tenantId, result])
-  @@index([tenantId, executedAt])
-  @@index([tenantId, controlId])
-
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, testPlanId])
+  @@index([tenantId, result])
+  @@index([tenantId, executedAt])
+  @@index([tenantId, controlId])
 }
 
 model ControlTestEvidenceLink {

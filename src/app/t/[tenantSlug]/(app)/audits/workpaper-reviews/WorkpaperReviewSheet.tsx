@@ -99,6 +99,11 @@ export interface WorkpaperReviewDetailPayload {
         controlTestRunId: string;
         createdAt: string;
     };
+    /**
+     * The auditor agent's narrative of the workpaper (#3749), held to its
+     * record before it was stored; `null` when none has been drafted.
+     */
+    narrative: { text: string; exceptionCodes: string[]; runId: string; createdAt: string } | null;
 }
 
 /** Narrows a Combobox value back to the vocabulary it was built from. */
@@ -258,6 +263,28 @@ export function WorkpaperReviewSheet({
                                         })}
                                     </Field>
                                 </dl>
+                            </section>
+
+                            <section className="space-y-tight" data-testid="workpaper-review-narrative">
+                                <Heading level={3} as="h3">{t('workpaperReviews.sectionNarrative')}</Heading>
+                                {data?.narrative ? (
+                                    <>
+                                        <InlineNotice variant="info" icon={null}>
+                                            {t('workpaperReviews.narrativeNotice')}
+                                        </InlineNotice>
+                                        <p className="text-sm whitespace-pre-wrap" data-testid="workpaper-review-narrative-text">
+                                            {data.narrative.text}
+                                        </p>
+                                        <p className="text-xs text-content-muted">
+                                            {t('workpaperReviews.narrativeMeta', {
+                                                at: formatDateTime(data.narrative.createdAt),
+                                                run: data.narrative.runId,
+                                            })}
+                                        </p>
+                                    </>
+                                ) : (
+                                    <p className="text-sm text-content-muted">{t('workpaperReviews.noNarrative')}</p>
+                                )}
                             </section>
 
                             <section className="space-y-tight">
