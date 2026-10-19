@@ -515,6 +515,6 @@ describe('5. end to end: configuration, a signed report the ingest verifies', ()
         expect(body.population.sources).toEqual([{ kind: 'cicd', status: 'COMPLETE', rows: 8 }]);
         expect(body.unboundCredentials).toEqual([{ ref: secretRef('STALE_DEPLOY_KEY'), sourceKind: 'cicd' }]);
         expect(body.agents.map((a) => a.discoveredVia)).toEqual([['cicd'], ['cicd'], ['cicd'], ['cicd']]);
-        for (const text of [raw, ...lines]) expect(text).not.toContain(GITHUB_READ_TOKEN_VALUE);
+        expect([raw, ...lines].some((text) => text.includes(GITHUB_READ_TOKEN_VALUE))).toBe(false);
     });
 });
