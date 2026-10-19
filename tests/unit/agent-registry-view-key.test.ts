@@ -241,7 +241,7 @@ describe('admin:agent_registry_view — one named scope, and no wildcard', () =>
 
     it('every action only its name grants is READ-ONLY: it maps to `_view` flags alone', () => {
         const groups = Object.entries(WILDCARD_EXCLUDED_ACTIONS).flatMap(([r, as]) => as.map((a) => `${r}:${a}`));
-        expect(groups).toEqual(['admin:agent_registry_view']);
+        expect(groups.sort()).toEqual(['admin:agent_registry_view', 'audits:workpaper_view']);
         for (const g of groups) {
             const flags = flagsOf([g]);
             expect(flags.length).toBeGreaterThan(0);

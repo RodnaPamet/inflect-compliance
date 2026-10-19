@@ -105,7 +105,33 @@ export type PermissionSet = {
      */
     processes: { edit: boolean };
     frameworks: { view: boolean; install: boolean };
-    audits: { view: boolean; manage: boolean; freeze: boolean; share: boolean };
+    audits: {
+        view: boolean;
+        manage: boolean;
+        freeze: boolean;
+        share: boolean;
+        /**
+         * READING THE AUDITOR AGENT'S WORKPAPERS (#3749), and nothing else.
+         *
+         * Reading workpapers takes `audits.manage` (step 0e): a workpaper lists
+         * exceptions about named people's access. This key is the read half of
+         * that, for a bearer token: the auditor agent's key reads a period's
+         * workpapers (`list_audit_workpapers`) through it and can manage,
+         * freeze and share nothing. The workpaper reads admit either key, so
+         * nobody who could read workpapers before it lost the read.
+         *
+         * Held by OWNER and ADMIN, the roles that hold `audits.manage`. A custom
+         * role may express it; a stored custom role saved before it existed
+         * takes it from its own `audits.manage` (`DERIVED_FROM`), never from its
+         * base role, so a role that switched `manage` off does not gain the read.
+         *
+         * Carried by a bearer token only through its own NAMED scope,
+         * `audits:workpaper_view`. Neither `*` nor `audits:*` carries it
+         * (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so
+         * every key already issued resolves to what it did before.
+         */
+        workpaper_view: boolean;
+    };
     reports: {
         view: boolean;
         export: boolean;
@@ -441,7 +467,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     continuity: ['edit'],
     processes: ['edit'],
     frameworks: ['view', 'install'],
-    audits: ['view', 'manage', 'freeze', 'share'],
+    audits: ['view', 'manage', 'freeze', 'share', 'workpaper_view'],
     reports: ['view', 'export', 'schedule_external'],
     admin: [
         'view', 'manage', 'members', 'sso', 'scim',
@@ -514,7 +540,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: true },
-                audits: { view: true, manage: true, freeze: true, share: true },
+                audits: { view: true, manage: true, freeze: true, share: true, workpaper_view: true },
                 reports: { view: true, export: true, schedule_external: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
@@ -545,7 +571,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: true },
-                audits: { view: true, manage: true, freeze: true, share: true },
+                audits: { view: true, manage: true, freeze: true, share: true, workpaper_view: true },
                 reports: { view: true, export: true, schedule_external: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
@@ -602,7 +628,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: false },
-                audits: { view: true, manage: false, freeze: false, share: false },
+                audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
             };
@@ -626,7 +652,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 processes: { edit: false },
                 frameworks: { view: true, install: false },
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
-                audits: { view: true, manage: false, freeze: false, share: true },
+                audits: { view: true, manage: false, freeze: false, share: true, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
             };
@@ -692,7 +718,7 @@ function readerPermissions(): PermissionSet {
         continuity: { edit: false },
         processes: { edit: false },
         frameworks: { view: true, install: false },
-        audits: { view: true, manage: false, freeze: false, share: false },
+        audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
         reports: { view: true, export: false, schedule_external: false },
         admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
     };
@@ -885,11 +911,26 @@ export function validatePermissionsJson(json: unknown): string[] {
 }
 
 /**
+ * Keys a stored custom-role blob that predates them takes from ANOTHER key of
+ * the same blob rather than from its base role (#3749).
+ *
+ * A key that splits a read off an existing key would otherwise widen any custom
+ * role that had switched the existing key off: the base role's default is
+ * `true` wherever the base holds the existing key. `audits.workpaper_view` is
+ * the read half of `audits.manage`, so a blob saved before it existed reads
+ * workpapers exactly when it could before: when it held `audits.manage`.
+ */
+const DERIVED_FROM: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+    audits: { workpaper_view: 'manage' },
+};
+
+/**
  * Safely parses a permissionsJson blob from the database into a typed PermissionSet.
  * Falls back to the baseRole's defaults for any missing or invalid fields.
  *
  * Used at read-time to ensure the runtime always has a complete, valid PermissionSet
- * even if the stored JSON is partially malformed (defensive programming).
+ * even if the stored JSON is partially malformed (defensive programming). A key
+ * named in `DERIVED_FROM` falls back to its source key in the blob first.
  */
 export function parsePermissionsJson(json: unknown, baseRole: Role): PermissionSet {
     const defaults = getPermissionsForRole(baseRole);
@@ -909,6 +950,11 @@ export function parsePermissionsJson(json: unknown, baseRole: Role): PermissionS
             for (const action of actions) {
                 if (action in obj[domain] && typeof obj[domain][action] === 'boolean') {
                     domainResult[action] = obj[domain][action] as boolean;
+                    continue;
+                }
+                const source = DERIVED_FROM[domain]?.[action];
+                if (source !== undefined && typeof obj[domain][source] === 'boolean') {
+                    domainResult[action] = obj[domain][source] as boolean;
                 }
             }
 

@@ -169,7 +169,12 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     continuity: { write: ['edit'] },
     processes:  { write: ['edit'] },
     frameworks: { read: ['view'], write: ['install'] },
-    audits:     { read: ['view'], write: ['manage', 'freeze', 'share'] },
+    // `workpaper_view` (#3749) is its own action, named-only like
+    // `admin:agent_registry_view` (`WILDCARD_EXCLUDED_ACTIONS` below): it is how
+    // the auditor agent's key reads a period's workpapers, and a key reads those
+    // only when somebody minted it for that purpose. It maps to the view key
+    // alone, never to `manage`, so the key can manage, freeze and share nothing.
+    audits:     { read: ['view'], write: ['manage', 'freeze', 'share'], workpaper_view: ['workpaper_view'] },
     reports:    { read: ['view'], write: ['export'] },
     // `external_tools` is its OWN action, not part of `write`. The permission
     // it carries decides whether this credential may leave the tenant at all —
@@ -212,7 +217,10 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
  * Action groups that only their OWN NAME grants — neither `*` nor
  * `<resource>:*` reaches them (#3710).
  *
- * `admin:agent_registry_view` is the one member. A wildcard grants every action
+ * `admin:agent_registry_view` was the first member, and `audits:workpaper_view`
+ * (#3749) the second, for the same reason: it lets a credential read the
+ * auditor agent's workpapers, which list exceptions about named people's
+ * access. A wildcard grants every action
  * on a resource "including ones added later", and that is acceptable for an
  * ordinary action because the operator who minted the wildcard chose breadth.
  * This one is not ordinary breadth: it lets a credential read the agent
@@ -227,18 +235,21 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
  */
 export const WILDCARD_EXCLUDED_ACTIONS: Readonly<Record<string, readonly string[]>> = {
     admin: ['agent_registry_view'],
+    audits: ['workpaper_view'],
 };
 
 /**
  * The resource-scope ACTIONS a credential check may name. The three verbs, plus
  * the named groups an MCP read tool may require instead of `read`:
  * `agent_registry_view`, whose resource's `read` group is `admin.view`, the
- * admin console, which `get_discovered_agent` has no business demanding; and
+ * admin console, which `get_discovered_agent` has no business demanding;
  * `harness_ingest` (#3686, owner decision 3), the scope a harness scanner's key
  * carries, which `get_harness_register` requires so the scanner reads the
- * register with the key it already holds and nothing wider.
+ * register with the key it already holds and nothing wider; and
+ * `workpaper_view` (#3749), because `audits:read` does not reach a workpaper and
+ * `audits:write` would let the key manage, freeze and share audits.
  */
-export type ScopeCheckAction = 'read' | 'write' | 'admin' | 'agent_registry_view' | 'harness_ingest';
+export type ScopeCheckAction = 'read' | 'write' | 'admin' | 'agent_registry_view' | 'harness_ingest' | 'workpaper_view';
 
 /**
  * All valid scope strings that can be assigned to an API key.
@@ -316,6 +327,10 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
         const adminPermissions = getPermissionsForRole('ADMIN');
         return {
             ...adminPermissions,
+            // Named-only, as `agent_registry_view` below: a `*` key keeps the
+            // workpaper read it already had through `audits.manage`, and gains
+            // no new key on the deploy that added this one (#3749).
+            audits: { ...adminPermissions.audits, workpaper_view: false },
             admin: {
                 ...adminPermissions.admin,
                 agent_registry: false,

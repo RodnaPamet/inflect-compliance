@@ -110,6 +110,28 @@ export class AuditWorkpaperRepository {
     }
 
     /**
+     * One period's workpapers in full, for `list_audit_workpapers` (#3749):
+     * the facts and the per-unit records, never `evidenceRefs` or
+     * `proposalIds`. Oldest first, so a capped read shows the earliest.
+     */
+    static async listForPeriod(db: PrismaTx, ctx: RequestContext, periodLabel: string, limit: number) {
+        return db.auditWorkpaper.findMany({
+            where: { tenantId: ctx.tenantId, periodLabel },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            select: {
+                ...summarySelect,
+                populationDefinition: true,
+                populationDigest: true,
+                parametersJson: true,
+                attributesTested: true,
+                itemOutcomesJson: true,
+                exceptionsJson: true,
+            },
+            take: limit,
+        });
+    }
+
+    /**
      * THE ONE-WAY STAMP. Conditional on the row being unstamped, so two
      * concurrent reviewers cannot both succeed: the second matches zero rows.
      */

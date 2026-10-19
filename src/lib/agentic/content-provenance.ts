@@ -344,6 +344,14 @@ export const MCP_TOOL_CORPUS: Readonly<Record<string, ToolCorpusEntry>> = {
             'Finding titles, descriptions and root causes are free text sourced ' +
             'from audits, vendor responses and scanner output.',
     },
+    list_audit_workpapers: {
+        provenance: 'THIRD_PARTY_INGESTED',
+        sources: ['platform.aggregate', 'agent.tool-result'],
+        basis:
+            "Codes, counts and digests the auditor agent's procedures computed, with unit ids " +
+            "that come from the tenant's directory, HRIS and register rows. An agent job wrote it, " +
+            'so the payload takes that part.',
+    },
     get_agent_recertification_evidence: {
         provenance: 'THIRD_PARTY_INGESTED',
         sources: ['platform.aggregate', 'ui.authenticated-form', 'agent.tool-result'],

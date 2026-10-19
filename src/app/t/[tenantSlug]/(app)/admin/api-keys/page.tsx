@@ -111,7 +111,10 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     vendors:    { labelKey: 'scopeGroup.vendors',    scopes: ['vendors:read', 'vendors:write'] },
     tests:      { labelKey: 'scopeGroup.tests',      scopes: ['tests:read', 'tests:write'] },
     frameworks: { labelKey: 'scopeGroup.frameworks', scopes: ['frameworks:read', 'frameworks:write'] },
-    audits:     { labelKey: 'scopeGroup.audits',     scopes: ['audits:read', 'audits:write'] },
+    // `audits:workpaper_view` (#3749): reading the auditor agent's workpapers,
+    // which list exceptions about named people's access. No wildcard carries
+    // it, so ticking it is the only way to grant it.
+    audits:     { labelKey: 'scopeGroup.audits',     scopes: ['audits:read', 'audits:write', 'audits:workpaper_view'] },
     reports:    { labelKey: 'scopeGroup.reports',    scopes: ['reports:read', 'reports:write'] },
     // `admin:external_tools` is listed SEPARATELY from `admin:write` because it
     // is a separate action server-side, and for the reason it is: it decides
