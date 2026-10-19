@@ -10,12 +10,13 @@
  *     scrub.
  *   • NO WRITE CREDENTIAL HAS A FIELD. The network sources take one READ
  *     credential each — an Okta SSWS token for a read-only administrator, an
- *     Entra client that holds `Key Vault Reader`, a LangSmith workspace Viewer
- *     key — the `code` source takes none, and the only other credential is the
+ *     Entra client that holds `Key Vault Reader`, an Entra client that holds
+ *     `Application.Read.All`, a LangSmith workspace Viewer key — the `code`
+ *     source takes none, and the only other credential is the
  *     Inflect API key that posts the report, which needs the
  *     `admin:harness_ingest` scope and nothing else (contract, Transport).
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
- *     on the public cloud's, LangSmith on its US or EU cloud host, the ingest on
+ *     on the public cloud's, Entra on Microsoft Graph's public-cloud host, LangSmith on its US or EU cloud host, the ingest on
  *     https. A typo cannot send a token somewhere new, because there is no
  *     free-form host to type into — with ONE exception, which says so in its
  *     name: a self-hosted LangSmith (`endpoint.selfHosted`), the customer's own
@@ -72,6 +73,29 @@ const AzureKeyVaultSourceConfigSchema = z
         clientSecretEnv: envName,
         principalTag: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/).default('inflect-principal'),
         ownerTag: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/).default('owner'),
+    })
+    .strict();
+
+const guidString = z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
+
+const EntraSourceConfigSchema = z
+    .object({
+        kind: z.literal('entra-sp'),
+        /**
+         * The directory's id, a GUID rather than a domain: an application is
+         * the estate's own when its `appOwnerOrganizationId` is this id.
+         */
+        directoryId: guidString,
+        /** An application holding `Application.Read.All`, and nothing that writes. */
+        clientId: guidString,
+        clientSecretEnv: envName,
+        /**
+         * Also report the service principals of third-party applications
+         * consented into the directory (owner decision, 2026-10-19: off unless
+         * the estate opts in). Microsoft's first-party applications are never
+         * reported.
+         */
+        includeThirdPartyApplications: z.boolean().default(false),
     })
     .strict();
 
@@ -155,6 +179,7 @@ const LangSmithSourceConfigSchema = z
     .strict();
 
 export const SourceConfigSchema = z.discriminatedUnion('kind', [
+    EntraSourceConfigSchema,
     OktaSourceConfigSchema,
     AzureKeyVaultSourceConfigSchema,
     CodeSourceConfigSchema,
@@ -243,6 +268,8 @@ export function parseScannerConfig(json: unknown): ScannerConfig {
 /** The environment variable holding one source's read credential. The `code` source holds none. */
 export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code' }>): string {
     switch (source.kind) {
+        case 'entra-sp':
+            return source.clientSecretEnv;
         case 'okta-app':
             return source.apiTokenEnv;
         case 'vault':

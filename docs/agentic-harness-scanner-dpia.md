@@ -340,6 +340,19 @@ checked before the allowlist, so even `0.0.0.0/0` cannot reach
 before every request and an address outside the listed ranges sends nothing.
 Both checks, at configuration and before each request, apply it.
 
+The Entra source (#3686) holds conditions 2 and 4 the same way, and is tested
+by request log. It makes one token exchange to the identity platform for the
+Graph audience, then GETs `/v1.0/applications` and `/v1.0/servicePrincipals` on
+`graph.microsoft.com` and nothing else. Its configuration has one credential
+field, the client secret of an application holding `Application.Read.All`, which
+reads and cannot write. It reads what condition 3 asks of a vault reader: Graph
+lists a credential's id, dates and usage and never its value. Graph does return
+each password credential's `hint`, the first characters of the secret, and
+free-text display names of principals and credentials. The source reads neither,
+both are dropped with the page, and a test holds a marker in each out of the
+signed report and the log. An owner is a user's directory object id, the
+`agents[].owner` member above.
+
 #3686's hardening checklist carries condition 1 and the write-credential half
 of condition 2. The assessment holds for the scanner only when #3686 meets all
 four of its conditions, and for the evidence emitted from a scan only when

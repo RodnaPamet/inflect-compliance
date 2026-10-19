@@ -15,10 +15,42 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 
 | Kind | Product | What it reads | Requests |
 |---|---|---|---|
+| `entra-sp` | Entra (#3686) | Service principals of applications registered in the directory, and managed identities, with the credentials on each principal and its application registration, by reference, and their owners. Microsoft's own applications and disabled principals never; third-party applications only when the estate opts in | `POST` the client-credentials token exchange to `login.microsoftonline.com` for the Graph audience, then `GET /v1.0/applications`, `GET /v1.0/servicePrincipals` on `graph.microsoft.com` |
 | `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile.owner`, a token's `userId`. Every token is reported except the scanner's own, identified by id from `/api-tokens/current` | `GET /api/v1/apps`, `GET /api/v1/api-tokens/current`, `GET /api/v1/api-tokens` |
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
 | `runtime` | LangSmith | Tracing projects that called a tool in a bounded window, and deployments when the estate opts in, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /api/v1/sessions`; with `readDeployments`, `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted) |
 | `code` | LangChain and LangGraph (#3737) | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference | None. Local reads only (`lstat`, `readdir`, `readFile`) |
+
+### Entra
+
+Which service principals are agents is the owner's decision of 2026-10-19 on
+#3686: an `Application` principal whose application is registered in this
+directory (`appOwnerOrganizationId` is the configured `directoryId`), and every
+`ManagedIdentity`. A third-party application's principal is reported only with
+`"includeThirdPartyApplications": true`, and Microsoft's first-party
+applications never are. A disabled principal is counted in `rows` and reported
+as nothing.
+
+Each is `entra:sp:<objectId>`. Its credentials are the password and certificate
+credentials on its application registration and on the principal itself,
+referenced as `entra://<directoryId>/applications/<appId>/password/<keyId>` (or
+`…/certificate/…`, or `…/servicePrincipals/<id>/…`), with their age and expiry.
+A certificate whose `usage` is `Sign`, such as a SAML signing certificate, is not
+a credential the principal signs in with, and is left out. Its owner is the
+first user, by object id, among the registration's owners, else the principal's.
+`H2.credential_bound` is reported met when it holds a credential of its own or is
+a managed identity. The grant kind is not reported: whether a credential acts
+for a person depends on the permissions granted to it, which the source does not
+read, so every credential's `grant` is `unknown`.
+
+A credential on an application registration that has no service principal in
+the directory signs in as nothing there. It is reported in `/2`'s
+`unboundCredentials[]`, and only after both listings were read in full.
+
+Graph returns each password credential's `hint`, the first characters of the
+secret, and free-text display names, with the members the source asks for.
+Neither is read; both are dropped with the page, and the tests hold a marker in
+each out of the report and the log.
 
 Azure Key Vault is the only vault adapter and LangSmith the only runtime
 adapter. The `vault` and `runtime` kinds and the `product` field keep the
@@ -115,10 +147,11 @@ keeps them on the agent's scan item (#3759), and the harness matrix lists them.
 references a source saw bound to no principal, from which the ingest derives
 `ORPHAN_CREDENTIAL`. A source returns them on its read
 (`SourceRead.unboundCredentials`), and the report builder drops any reference a
-principal in the merged population holds. Okta and Key Vault report every
-credential against the principal it belongs to, so neither returns one. Nor
-does the `code` source: a reference in code that no agent uses is not evidence
-that a credential exists. The list is empty from all three.
+principal in the merged population holds. Entra returns the credentials of an
+application registration with no service principal in the directory. Okta and
+Key Vault report every credential against the principal it belongs to, so
+neither returns one. Nor does the `code` source: a reference in code that no
+agent uses is not evidence that a credential exists.
 
 ### The labelling conventions
 
@@ -193,6 +226,10 @@ secret-shaped string anywhere in the file is refused by path.
   "inflect": { "baseUrl": "https://inflect.example.com", "tenantSlug": "acme", "apiKeyEnv": "INFLECT_INGEST_KEY" },
   "schedule": { "everyHours": 24 },
   "sources": [
+    {
+      "kind": "entra-sp", "directoryId": "<Entra directory id, a GUID>",
+      "clientId": "<app id>", "clientSecretEnv": "ENTRA_CLIENT_SECRET"
+    },
     { "kind": "okta-app", "orgUrl": "https://acme.okta.com", "apiTokenEnv": "OKTA_API_TOKEN" },
     {
       "kind": "vault", "product": "azure-key-vault",
@@ -226,6 +263,11 @@ control plane.
   (`public-key` prints it).
 - `INFLECT_INGEST_KEY`: an API key with the `admin:harness_ingest` scope and no
   other.
+- `ENTRA_CLIENT_SECRET`: an Entra application holding the Microsoft Graph
+  application permission `Application.Read.All`, which lists registrations and
+  service principals and cannot change them. Add
+  `"includeThirdPartyApplications": true` to report third-party applications
+  consented into the directory as well.
 - `OKTA_API_TOKEN`: an SSWS token for a read-only administrator.
 - `AZURE_CLIENT_SECRET`: an Entra application holding `Key Vault Reader` on each
   vault, which reads metadata and cannot read a secret's contents.
@@ -235,7 +277,7 @@ control plane.
   `workspaceId` is sent as `X-Tenant-Id`; leave it out for a key scoped to one
   workspace.
 
-Okta orgs must be on `*.okta.com` or `*.oktapreview.com`, vaults on
+Entra is read from `graph.microsoft.com`, Okta orgs must be on `*.okta.com` or `*.oktapreview.com`, vaults on
 `*.vault.azure.net`, LangSmith on `api.smith.langchain.com` (`"cloud": "us"`) or
 `eu.api.smith.langchain.com` (`"cloud": "eu"`), and the ingest on https.
 A `code` root is an absolute path with no `..` segment, reported only by its
@@ -287,6 +329,6 @@ than one and a half cadences.
 The log is one JSON line per event on stderr, with kinds and counts only. A
 string with a secret's shape is replaced before it is written.
 
-The container that runs this in a client's estate, and the Entra, MCP and
-register sources, are #3686. The container installs a pinned `typescript`,
+The container that runs this in a client's estate, and the MCP and register
+sources, are #3686. The container installs a pinned `typescript`,
 which the `code` source parses with at run time (owner answer, 2026-10-19).

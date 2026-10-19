@@ -34,6 +34,7 @@ scanner signed it, so each estate has a scanner of its own.
 
 | Source | Credential the scanner reads with | Hosts |
 |---|---|---|
+| `entra-sp` (Entra) | An Entra application holding the Microsoft Graph application permission `Application.Read.All`, with a client secret | `graph.microsoft.com`, and the token from `login.microsoftonline.com` |
 | `okta-app` | An SSWS API token for a read-only administrator | `*.okta.com`, `*.oktapreview.com` |
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
@@ -42,6 +43,16 @@ scanner signed it, so each estate has a scanner of its own.
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
 credential is supplied through an environment variable that the configuration
 names; none is ever written in the configuration file.
+
+**Entra.** Configure the directory by its id, a GUID, not by a domain: the scanner
+reports an application's service principal when the application is registered in
+that directory. It also reports every managed identity. It never reports a
+Microsoft first-party application, nor a disabled principal. A third-party
+application consented into the directory is reported only when the estate sets
+`"includeThirdPartyApplications": true` (owner decision, 2026-10-19).
+`Application.Read.All` lists registrations and service principals and cannot
+change either; Graph never lists a secret's value, and the scanner drops the
+first characters of each secret that Graph does return (`hint`) with the page.
 
 **LangSmith.** Name the workspace to read with `workspaceId` (sent as
 `X-Tenant-Id`) unless the key is scoped to one workspace. The scanner sends
@@ -107,6 +118,7 @@ estate in its scanner configuration, under the key named in the last column.
 | A service app's owner in Okta | the app's `profile.owner` property | the OAuth service app's `profile` object | `ownerProfileKey` on the `okta-app` source |
 | Which principal a vault credential belongs to | the tag `inflect-principal` | each Key Vault secret's or certificate's tags | `principalTag` on the `vault` source |
 | A vault credential's owner | the tag `owner` | the same tags | `ownerTag` on the `vault` source |
+| An Entra service principal's owner | the first user among the application registration's owners, else among the service principal's | Graph's `owners` of each | None: Entra records owners itself |
 
 The value of `inflect-principal` is the principal's id in the source that finds
 it, so the credential lands on the same agent:

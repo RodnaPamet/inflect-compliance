@@ -237,7 +237,7 @@ permissions:
 env:
   NODE_VERSION: "24"
   SKIP_ENV_VALIDATION: "1"
-  # The Jest test job runs ~1/5 of ~1650 test files per shard with
+  # The Jest test job runs ~1/6 of ~1650 test files per shard with
   # `jest --runInBand`, which holds every file's module graph in ONE
   # process for the whole shard (no worker recycling —
   # `workerIdleMemoryLimit` is inert in-band), and the coverage job runs
@@ -489,7 +489,7 @@ jobs:
   #  Needs Postgres for integration tests.
   #
   #  Sharded across N matrix jobs via `jest --shard=K/N`. The default
-  #  TOTAL_SHARDS = 5 turns a ~30-min single-process run into ~5×7-min
+  #  TOTAL_SHARDS = 6 turns a ~30-min single-process run into ~6×6-min
   #  parallel runs (each shard owns ~1/N of the suite). Each shard
   #  still runs serially inside its own process (`--runInBand`) to
   #  preserve the test-suite's "one DB per worker" invariant.
@@ -520,10 +520,16 @@ jobs:
         # step's 10240 MB heap, a month after the 8192 -> 10240 raise. Every
         # in-band shard holds its whole module graph in one heap, so the
         # durable answer to suite growth is a smaller share per shard, not a
-        # heap edging toward the runner's 16 GB. A sixth leg is the next
-        # step, with `check-merged-coverage.ts`'s count raised by one.
-        shard: [1, 2, 3, 4, 5]
-        total: [5]
+        # heap edging toward the runner's 16 GB.
+        #
+        # Six since 2026-10-19 (#3767): shard 2/5 OOM'd the same way ("Ineffective
+        # mark-compacts near heap limit", exit 134, ~8.9 GB of old space) on a
+        # PR that added one small unit test — the path-hash reshuffle the
+        # workflow-level note describes, a day after the fifth leg. This is the
+        # sixth leg that note named, with `check-merged-coverage.ts`'s count
+        # raised by one. A seventh is the next step.
+        shard: [1, 2, 3, 4, 5, 6]
+        total: [6]
 
     env:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
@@ -703,8 +709,8 @@ jobs:
             --selectProjects node jsdom \
             --shard=${{ matrix.shard }}/${{ matrix.total }}
 
-      # One of the SEVEN artifacts the merged gate expects. The other six
-      # are the four sibling shards, the `Ratchets` job and `Flue` — see
+      # One of the EIGHT artifacts the merged gate expects. The other seven
+      # are the five sibling shards, the `Ratchets` job and `Flue` — see
       # the population note on `coverage-gate`.
       #
       # It said FIVE, and enumerated five, for as long as
@@ -964,7 +970,7 @@ jobs:
           pattern: coverage-shard-*
           path: coverage-shards
 
-      # Merges the seven `coverage-final.json` files (five Test shards,
+      # Merges the eight `coverage-final.json` files (six Test shards,
       # Ratchets and Flue) and compares the total
       # against jest.thresholds.json — reproducing what Jest's own
       # `--coverageThreshold` did before the job was sharded, including
@@ -974,7 +980,7 @@ jobs:
       # make the gate stricter-looking while measuring less.
       # Semantics are pinned by tests/unit/scripts/check-merged-coverage.test.ts.
       - name: "Gate: test coverage thresholds"
-        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 7
+        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 8
 
       # Only kept for post-mortem on a RED run.
       - name: Upload merged coverage inputs
