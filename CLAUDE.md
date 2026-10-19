@@ -2179,8 +2179,12 @@ the pin", and the two must never be conflated.
 its own calls from everything its agent is granted, propose tools included.
 `readOnly: true` on a definition is what withholds the propose surface
 (`flueToolsFor(…, { readOnly })`, each withheld tool an omission
-`READ_ONLY_WORKFLOW`); `audit-narrative` sets it, and #3775 asks whether the
-others should.
+`READ_ONLY_WORKFLOW`). Every Flue-requesting definition with no PROPOSE step
+sets it — `audit-narrative`, `discovered-agent-review`, `posture-review` and
+`access-posture` (#3775, owner decision) — and
+`tests/unit/agentic/flue-read-only-workflows.test.ts` fails, over the
+registry, for one that does not. External read tools stay on the read surface,
+so `access-posture` still reaches the directory.
 
 **The audit narrative (#3749)** is model prose about a regulatory record, so it
 is stored only through `usecases/audit-workpaper-narrative.ts`, after
