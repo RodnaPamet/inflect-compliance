@@ -12,6 +12,8 @@ and the verifier are `src/lib/agentic/harness-contract.ts`; the ladder that
 scores the verdicts is `src/lib/agentic/harness-ladder.ts`.
 `packages/agent-harness-scanner` is the deployable scanner (#3678). It builds
 its report against those schemas and refuses to sign one they would refuse.
+Putting a client estate under it, and the labels it reads owners and principals
+from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
 
 ## What the report may and may not say
 

@@ -436,3 +436,10 @@ changes: the contract id (`inflect-agent-harness/2`), the source kinds in
 on step `1a`, or where scan data goes. #3710 reopened it on the last of those —
 a model became a reader of the owner reference — and the merge of the pull
 request that carries the amendment signs it again, with condition 12 met.
+
+Step `4a` (#3678) reopened it on a stored column that holds a person's
+identifier, the owner of each source of a client estate, and added two sources,
+Okta and Azure Key Vault. The owner accepted the paragraph that records them
+under [Conditions on step 1a](#conditions-on-step-1a) on 2026-10-19, and that
+answer is the decision that extends this sign-off to the two new sources; the
+merge of the pull request that carries it (#3740) signs the amendment.

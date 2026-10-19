@@ -115,8 +115,11 @@ last complete scan per estate and per source, and STALE once that scan is older
 than one and a half cadences or there is none. A scan counts for an estate only
 when it is complete, found agents, and read every declared source in full.
 Declaring takes `admin.agent_registry`; reading the health takes the inventory
-key. No client estate is scheduled: the owner schedules them as step `0e` names
-them, and the view is proven on three fixture estates.
+key, and the edge admits an AUDITOR to that read. No client estate is scheduled:
+the owner schedules them as step `0e` names them, and the view is proven on
+three fixture estates. Putting a client estate under the scanner, with the
+labels it reads owners and principals from, is
+[`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
 
 ### The first IAM skills, on a declared workflow
 
@@ -957,7 +960,7 @@ and one new key:
 |---|---|---|---|
 | `admin.agent_harness_ingest` | Submitting a signed report, `POST /api/t/:slug/admin/agents/harness-scans` (`1a`, shipped in #3688), and the scanner's read of the register (`1a`, below) | OWNER, ADMIN | The `admin:harness_ingest` scope grants it and nothing else (`SCOPE_ACTION_MAP` in `src/lib/auth/api-key-auth.ts`). `*` carries it too: `*` is ADMIN's set minus the four agent-governance flags, and ADMIN holds it |
 | `admin.agent_ownership` | Proposing, reading, cancelling and completing an agent ownership transfer, `…/admin/agents/[agentId]/ownership-transfer` and `…/complete` (`2a`, shipped in #3699; `admin.tenant_lifecycle` until then) | OWNER, AI_ADMIN. Not ADMIN, which holds `admin.agent_registry`: an agent's accountable owner must not be movable by the role that owner is accountable to. An OWNER can grant it to an ADMIN through a custom role | Not carried by `*` (ADMIN's set, which lacks it), and no scope maps to it |
-| `admin.agent_registry_view` | READING the agent inventory (#3710): the register list and one agent's row (`GET …/admin/agents`, `GET …/admin/agents/[agentId]`), the harness scans and the matrix (`GET …/admin/agents/harness-scans`, `/agents/reports?tab=harness`), one discovered agent's facts (`get_discovered_agent`), and the governance pack (`GET …/admin/agents/reports`, `/agents/reports`). Also agent runs and proposals (`/agents/runs`, `/agents/proposals`, and the run routes `…/agent-runs/[id]/stream` and `…/checkpoint`), with `admin.view` as the other key that opens them. Every inventory read also admits `admin.agent_registry`, so nobody who read the inventory before the split lost it. Read-only: filing the pack, every register write, scanner keys, peers, intake and acceptances stay on `admin.agent_registry` | OWNER, ADMIN, AI_ADMIN, AUDITOR. A custom role may carry it | The `admin:agent_registry_view` scope grants it and nothing else. Neither `*` nor `admin:*` carries it (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so every key issued before it resolves as it did, and an agent reads the inventory only through a key minted for that read |
+| `admin.agent_registry_view` | READING the agent inventory (#3710): the register list and one agent's row (`GET …/admin/agents`, `GET …/admin/agents/[agentId]`), the harness scans and the matrix (`GET …/admin/agents/harness-scans`, `/agents/reports?tab=harness`), the client estates' schedule health (`GET …/admin/agents/harness-estates`, #3678), one discovered agent's facts (`get_discovered_agent`), and the governance pack (`GET …/admin/agents/reports`, `/agents/reports`). Also agent runs and proposals (`/agents/runs`, `/agents/proposals`, and the run routes `…/agent-runs/[id]/stream` and `…/checkpoint`), with `admin.view` as the other key that opens them. Every inventory read also admits `admin.agent_registry`, so nobody who read the inventory before the split lost it. Read-only: filing the pack, every register write, scanner keys, peers, intake, acceptances and estate declarations stay on `admin.agent_registry` | OWNER, ADMIN, AI_ADMIN, AUDITOR. A custom role may carry it | The `admin:agent_registry_view` scope grants it and nothing else. Neither `*` nor `admin:*` carries it (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so every key issued before it resolves as it did, and an agent reads the inventory only through a key minted for that read |
 | `admin.agent_skill_review` | Authoring, approving and retiring a tenant skill (`4c`) | OWNER, ADMIN | Not carried by `*`, and no scope maps to it |
 
 - **Reading scans takes the inventory view key.** `GET …/admin/agents/harness-scans`
@@ -973,8 +976,9 @@ and one new key:
   scope. The view-key question this section used to leave open — an auditor's
   read of the inventory, which the `agent_registry` docstring named and left
   undone — was closed by the owner on 2026-10-18 (#3710): AUDITOR holds the key,
-  and the edge admits an AUDITOR to a GET of exactly the four inventory routes
-  (`AUDITOR_ADMIN_READ_PATHS` in `src/lib/auth/guard.ts`).
+  and the edge admits an AUDITOR to a GET of exactly the inventory routes
+  (`AUDITOR_ADMIN_READ_PATHS` in `src/lib/auth/guard.ts`): the four #3710 named,
+  and `…/harness-estates` since #3678 (owner decision, 2026-10-19).
 - **Submitting is a key of its own.** The other five agent keys are held by the
   people who govern agents; the ingest key is held by the scanner, through its
   API key, and nothing else that key carries should let it do more (the
@@ -1217,8 +1221,11 @@ tracked on #3664.
 
 What this means for Phase 1:
 
-- **Three of the scanner's four sources are in the pilot.** The scanner of
-  #3686 reads `entra-sp`, one vault, `mcp` and `inflect-register`. Inflect has
+- **Three of the scanner's four sources are in the pilot.** The scanner reads
+  `entra-sp`, one vault, `mcp` and `inflect-register`: #3686 adds the first,
+  the third and the fourth to `packages/agent-harness-scanner` with its
+  container, and the vault reader is #3678's Azure Key Vault reader (owner
+  decision, 2026-10-19, which dropped #3686's own vault item). Inflect has
   no vault, so the recommendation on #3664 that the pilot sit on Entra with a
   vault and an internal MCP server is met for Entra and MCP and not for the
   vault. `1a`'s exit can be met on the sources the estate has when the vault reader is

@@ -14,11 +14,25 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 
 | Kind | Product | What it reads | Requests |
 |---|---|---|---|
-| `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile` property (`owner` by default), a token's `userId` | `GET /api/v1/apps`, `GET /api/v1/api-tokens` |
+| `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile.owner`, a token's `userId`. Every token is reported except the scanner's own, identified by id from `/api-tokens/current` | `GET /api/v1/apps`, `GET /api/v1/api-tokens/current`, `GET /api/v1/api-tokens` |
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
 
 Azure Key Vault is the only vault adapter. The `vault` kind and the `product`
 field keep the interface generic for the next one.
+
+### The labelling conventions
+
+These are the documented defaults (owner decision, 2026-10-19). Each can be
+overridden for one estate in its configuration:
+
+| What | Default | Override |
+|---|---|---|
+| An Okta service app's owner | the app's `profile.owner` | `ownerProfileKey` on the `okta-app` source |
+| The principal a Key Vault secret or certificate belongs to | the tag `inflect-principal`, holding the principal's id (`okta:app:<id>`, `entra:sp:<objectId>`, …) | `principalTag` on the `vault` source |
+| A Key Vault credential's owner | the tag `owner` | `ownerTag` on the `vault` source |
+
+Onboarding a client estate end to end, with these conventions, is
+[`docs/agent-harness-scanner-onboarding.md`](../../docs/agent-harness-scanner-onboarding.md).
 
 What the sources never do:
 

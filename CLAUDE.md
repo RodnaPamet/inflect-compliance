@@ -1640,6 +1640,13 @@ Vault today; Entra, MCP, the register and the container are #3686.
   estate's administrator, who could use it to hide a shadow agent.
 - **An unreadable source is in the report**, `INCOMPLETE` with its reason —
   including one whose credential is missing (`AUTH_FAILED`).
+- **Every Okta API token is a principal except the scanner's own**, which is
+  identified by id from `GET /api/v1/api-tokens/current` — never by its name,
+  which any administrator can give any token. A scanner that cannot identify
+  its token stops the read before the list, with the request's reason.
+- **The labels are documented defaults** (`profile.owner`, the tags
+  `inflect-principal` and `owner`), overridable per estate in the configuration;
+  `docs/agent-harness-scanner-onboarding.md` is where a client is told them.
 
 **Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
 `AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure
@@ -1869,7 +1876,8 @@ AI_ADMIN and AUDITOR hold it. Three rules in it are easy to undo:
   peers, intake and acceptances stay on the register key;
   `tests/unit/agent-registry-view-key.test.ts` reads every write handler off the
   filesystem and refuses a view-only caller. The edge admits an AUDITOR to a GET
-  of the four inventory routes only (`AUDITOR_ADMIN_READ_PATHS`).
+  of the five inventory routes only (`AUDITOR_ADMIN_READ_PATHS`): exact templates,
+  so `…/harness-estates` is admitted and `…/harness-estates/[estateId]` is not.
 
 **A Flue run's declared input reaches the model as data**
 (`src/lib/agentic/flue/run-message.ts`): the definition's `requiredInput` keys

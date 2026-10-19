@@ -42,7 +42,12 @@ export interface OktaFixture {
     /** Pages of the apps listing (already filtered to OIDC by the fake, as Okta's filter would). */
     apps: unknown[][];
     tokens: unknown[][];
+    /** The id `GET /api/v1/api-tokens/current` answers: the token the scanner reads with. */
+    currentTokenId: string;
 }
+
+/** The scanner's own SSWS token in the fixture org: listed, and answered by `/current`. */
+export const SCANNER_OKTA_TOKEN_ID = '00TScannerOwn';
 
 export function oktaFixture(): OktaFixture {
     return {
@@ -70,9 +75,15 @@ export function oktaFixture(): OktaFixture {
             ],
         ],
         tokens: [
-            [{ id: '00TToken1', userId: '00uAdmin1', created: '2026-07-01T00:00:00.000Z', expiresAt: '2026-11-01T00:00:00.000Z' }],
-            [{ id: '00TToken2', userId: '00uAdmin2', created: '2026-10-01T00:00:00.000Z' }],
+            [
+                { id: '00TToken1', userId: '00uAdmin1', created: '2026-07-01T00:00:00.000Z', expiresAt: '2026-11-01T00:00:00.000Z' },
+                // The scanner's own token. Named like any other on purpose: it is
+                // told apart by its id from `/current`, never by its name.
+                { id: SCANNER_OKTA_TOKEN_ID, name: 'Automation token', userId: '00uScannerOwner', created: '2026-09-01T00:00:00.000Z' },
+            ],
+            [{ id: '00TToken2', name: 'Automation token', userId: '00uAdmin2', created: '2026-10-01T00:00:00.000Z' }],
         ],
+        currentTokenId: SCANNER_OKTA_TOKEN_ID,
     };
 }
 
@@ -196,6 +207,10 @@ export function createSourceFakes(opts: {
             if (method !== 'GET') return json({ errorCode: 'E0000022' }, 405);
             if (u.pathname === '/api/v1/apps') return page(okta.apps, u, u.origin);
             if (u.pathname === '/api/v1/api-tokens') return page(okta.tokens, u, u.origin);
+            if (u.pathname === '/api/v1/api-tokens/current') {
+                const own = okta.tokens.flat().find((t) => (t as { id?: string }).id === okta.currentTokenId);
+                return json(own ?? { id: okta.currentTokenId });
+            }
             // The endpoint a reader must never call: Okta returns client secrets here.
             if (/^\/api\/v1\/apps\/[^/]+\/credentials\/secrets$/.test(u.pathname)) {
                 return json([{ id: 'ocs1', client_secret: OKTA_CLIENT_SECRET_VALUE }]);

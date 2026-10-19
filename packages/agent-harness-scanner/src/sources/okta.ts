@@ -13,10 +13,18 @@
  *     ingest reads as unowned rather than guessing.
  *   • API TOKENS. SSWS tokens act AS the admin who created them, so each is a
  *     principal whose authority is a person's. `GET /api/v1/api-tokens`, paged.
- *     The owner is the token's `userId`, which Okta records itself.
+ *     The owner is the token's `userId`, which Okta records itself. Every one
+ *     is reported — and so raises SHADOW_AGENT at the ingest until it is
+ *     registered or linked — EXCEPT the token this scanner reads with (owner
+ *     decision, 2026-10-19). That one is identified POSITIVELY, by id, from
+ *     `GET /api/v1/api-tokens/current`, which returns the metadata of the token
+ *     that made the request; never by its name, which any administrator can
+ *     give any token. If the scanner cannot identify itself, the read stops
+ *     there with the request's reason, rather than reporting a list it could
+ *     not tell itself apart from.
  *
- * READ-ONLY. Two list endpoints and nothing else, by GET (`ReadOnlyHttp` has no
- * other verb). In particular this never reads an app's
+ * READ-ONLY. Two list endpoints and the current-token read, by GET
+ * (`ReadOnlyHttp` has no other verb). In particular this never reads an app's
  * `/credentials/secrets`: Okta returns client secrets there, and a reader that
  * can see a secret is a reader that can leak one. A service app's credential is
  * therefore reported by REFERENCE with its age unknown (`ageDays: null`).
@@ -58,8 +66,8 @@ export interface OktaSourceOptions {
     readonly ownerProfileKey: string;
 }
 
-/** The two endpoints this source may call. `scanner-surface.ts` declares them for the manifest hash. */
-export const OKTA_READ_PATHS = ['/api/v1/apps', '/api/v1/api-tokens'] as const;
+/** The endpoints this source may call. `scanner-surface.ts` declares them for the manifest hash. */
+export const OKTA_READ_PATHS = ['/api/v1/apps', '/api/v1/api-tokens', '/api/v1/api-tokens/current'] as const;
 
 const PAGE_LIMIT = '200';
 
@@ -149,11 +157,23 @@ export function oktaSource(opts: OktaSourceOptions): HarnessSource {
                     }
                 }
 
+                // Which token is this scanner's own? Asked before the list, so a
+                // list is never read that the scanner could not tell itself apart in.
+                const { body: current } = await ctx.http.getJson(`${origin}${OKTA_READ_PATHS[2]}`, { origin, headers });
+                const ownTokenId = (current as OktaApiToken | null)?.id;
+                if (!isPlainId(ownTokenId)) {
+                    throw new SourceReadError('PAGINATION_TORN', 'the current API token had no usable id');
+                }
+
                 const tokens = `${origin}${OKTA_READ_PATHS[1]}?limit=${PAGE_LIMIT}`;
                 for await (const page of readPages(ctx.http, tokens, { origin, headers, parse: oktaPage })) {
                     for (const item of page as OktaApiToken[]) {
                         rows += 1;
                         if (!isPlainId(item?.id)) throw new SourceReadError('PAGINATION_TORN', 'an API token had no usable id');
+                        // The scanner's own credential is read, counted, and not a
+                        // principal it reports: it is the scanner, which the register
+                        // already holds as the agent that signs this report.
+                        if (item.id === ownTokenId) continue;
                         add({
                             discoveredId: `okta:api-token:${item.id}`,
                             owner: isPlainId(item.userId) ? { kind: 'user', id: item.userId, source: 'okta-api-token' } : null,

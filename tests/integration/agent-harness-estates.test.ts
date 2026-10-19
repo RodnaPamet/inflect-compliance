@@ -29,6 +29,7 @@ import {
     NEVER_REPORTED,
     OKTA_TOKEN_VALUE,
     oktaFixture,
+    SCANNER_OKTA_TOKEN_ID,
     vaultFixture,
     VAULT,
     type Fakes,
@@ -260,6 +261,26 @@ describe('2. the health view, from real scans through the real ingest', () => {
         // Initech: complete 60 hours ago; the latest, three hours ago, could not read the vault.
         await scanAndIngest(T1, 2, 60);
         await scanAndIngest(T1, 2, 3, { INITECH_AZURE_CLIENT_SECRET: undefined });
+    });
+
+    it('every Okta API token raises SHADOW_AGENT through the real ingest, except the scanner\'s own', async () => {
+        const shadowRefs = (
+            await prisma.finding.findMany({
+                where: { tenantId: T1, sourceKind: 'AGENT_HARNESS', sourceRef: { startsWith: 'SHADOW_AGENT:okta:api-token:' } },
+                select: { sourceRef: true },
+            })
+        ).map((f) => f.sourceRef as string);
+        // Acme's org and Globex's, each with two tokens beside the scanner's own.
+        expect(shadowRefs.sort()).toEqual([
+            'SHADOW_AGENT:okta:api-token:00TGToken1',
+            'SHADOW_AGENT:okta:api-token:00TGToken2',
+            'SHADOW_AGENT:okta:api-token:00TToken1',
+            'SHADOW_AGENT:okta:api-token:00TToken2',
+        ]);
+        const own = await prisma.discoveredAgent.count({
+            where: { tenantId: T1, discoveredId: { in: [`okta:api-token:${SCANNER_OKTA_TOKEN_ID}`, 'okta:api-token:00TGScannerOwn'] } },
+        });
+        expect(own).toBe(0);
     });
 
     it('a fresh estate shows its last complete scan, per estate and per source', async () => {

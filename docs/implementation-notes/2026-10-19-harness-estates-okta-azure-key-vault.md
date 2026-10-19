@@ -76,11 +76,15 @@ Freshness is measured from `min(asOf, ingestedAt)`.
   Vault tag naming a register agent is something the estate administrator can
   write; believing it would let them hide a shadow agent. `registeredAgentId`
   is `null` from both sources; the register source is #3686.
-- **Okta API tokens are principals.** An SSWS token acts as the admin who made
-  it, so it is reported as delegated, not bound to an agent, owned by its
-  `userId`, with an evidenced `H2.credential_bound: false`. A service app's
-  client credential is reported by reference with its age unknown, because
-  Okta's secrets endpoint returns the secret.
+- **Okta API tokens are principals, except the scanner's own.** An SSWS token
+  acts as the admin who made it, so it is reported as delegated, not bound to an
+  agent, owned by its `userId`, with an evidenced `H2.credential_bound: false`.
+  The token the scanner reads with is identified by id from
+  `GET /api/v1/api-tokens/current` — read before the list, so a list is never
+  reported that the scanner could not tell itself apart in — and is counted but
+  not reported. A name is never the test. A service app's client credential is
+  reported by reference with its age unknown, because Okta's secrets endpoint
+  returns the secret.
 - **Vault credentials attach by tag.** A secret or certificate tagged
   `inflect-principal` with a `discoveredId` lands on that principal's agent;
   untagged items are counted in `rows` and reported as nothing. A tagged
@@ -98,3 +102,30 @@ Freshness is measured from `min(asOf, ingestedAt)`.
 - **Writes are API-only in this step.** The owner schedules the client estates
   when 0e names them, an operator declares each one, and the harness tab reads
   the health server-side.
+
+## Owner decisions (2026-10-19)
+
+Recorded on PR #3740 while it was held for them.
+
+- **Okta API tokens: flagged, but not the scanner's own.** Every token stays a
+  principal that raises `SHADOW_AGENT` until registered or linked; the
+  scanner's own is recognised positively and excluded. Built as above, with
+  `/api-tokens/current` added to the declared surface (so the manifest hash
+  moved).
+- **AUDITOR read at the edge: yes.** `AUDITOR_ADMIN_READ_PATHS` gains the exact
+  template `…/admin/agents/harness-estates`, GET and HEAD; one estate's own path
+  stays refused, and the handler's view-key gate stays the authority.
+- **The labelling conventions are the documented defaults** — `profile.owner`
+  for an Okta service app's owner, the Key Vault tags `inflect-principal` and
+  `owner` — each overridable per estate. Published in the package README and in
+  `docs/agent-harness-scanner-onboarding.md`, which the contract and the roadmap
+  point to.
+- **Source owners must be tenant members**, as built.
+- **Staleness is 1.5 cadences, and a source read in full with zero rows is
+  EMPTY**, as built.
+- **The DPIA paragraph is accepted**, and that answer extends the sign-off to
+  the two new sources; the DPIA's Sign-off section says so.
+- **Stale-estate alerting is a follow-up issue**, not this step.
+- **#3686 is re-scoped** to add its Entra, MCP and register sources and the
+  container to `packages/agent-harness-scanner`; its vault item is dropped,
+  Azure Key Vault being the vault reader.

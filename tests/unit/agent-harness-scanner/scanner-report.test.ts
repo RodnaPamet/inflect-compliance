@@ -23,6 +23,7 @@ import {
     OKTA_ORG,
     OKTA_TOKEN_VALUE,
     AZURE_CLIENT_SECRET_VALUE,
+    SCANNER_OKTA_TOKEN_ID,
     VAULT,
 } from '../../helpers/agent-harness-source-fakes';
 import { isScanComplete, MAX_CREDENTIALS_PER_AGENT, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
@@ -88,7 +89,7 @@ describe('1. a report the ingest verifies', () => {
         });
         expect(body.scan.id).toMatch(/^acme-prod-20261019T030000Z-[0-9a-f]{8}$/);
         expect(body.population.sources).toEqual([
-            { kind: 'okta-app', status: 'COMPLETE', rows: 5 },
+            { kind: 'okta-app', status: 'COMPLETE', rows: 6 },
             { kind: 'vault', status: 'COMPLETE', rows: 6 },
         ]);
 
@@ -101,6 +102,8 @@ describe('1. a report the ingest verifies', () => {
             'okta:app:0oaService1',
             'okta:app:0oaService2',
         ]);
+        // The scanner's own Okta token is not among them (`/api-tokens/current`).
+        expect(agents.has(`okta:api-token:${SCANNER_OKTA_TOKEN_ID}`)).toBe(false);
         // Seen by both: the identity source's owner, both sources' credentials.
         expect(agents.get('okta:app:0oaService1')).toMatchObject({
             discoveredVia: ['okta-app', 'vault'],

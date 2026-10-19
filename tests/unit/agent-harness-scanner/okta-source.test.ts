@@ -2,9 +2,12 @@
  * The scanner's Okta source over a fixture org (#3678).
  *
  *   1. It finds service apps and API tokens, with their owners, and nothing else.
- *   2. READ-ONLY, by its request log: every request is a GET to one of the two
- *      declared list paths on the configured org, and it never asks for an
- *      app's client secrets — the fake would hand them over if it did.
+ *   2. READ-ONLY, by its request log: every request is a GET to a declared path
+ *      on the configured org, and it never asks for an app's client secrets —
+ *      the fake would hand them over if it did.
+ *   4. ITS OWN TOKEN IS NOT A SHADOW PRINCIPAL. The scanner identifies the token
+ *      it reads with by id, from `/api-tokens/current`, and reports every other
+ *      token — including one that carries the same name.
  *   3. An org it cannot read is INCOMPLETE with the contract's reason, for every
  *      way a read can stop, and what it read before stopping is kept.
  */
@@ -14,6 +17,7 @@ import {
     OKTA_TOKEN_VALUE,
     oktaFixture,
     OKTA_CLIENT_SECRET_VALUE,
+    SCANNER_OKTA_TOKEN_ID,
     type Fakes,
 } from '../../helpers/agent-harness-source-fakes';
 import { createSourceWire } from '../../../packages/agent-harness-scanner/src/http';
@@ -35,7 +39,8 @@ describe('1. what the Okta source finds', () => {
         const fakes = createSourceFakes();
         const result = await read(fakes);
 
-        expect(result).toMatchObject({ kind: 'okta-app', status: 'COMPLETE', rows: 5 });
+        // Three apps and three tokens read, the scanner's own among them.
+        expect(result).toMatchObject({ kind: 'okta-app', status: 'COMPLETE', rows: 6 });
         expect(result.reason).toBeUndefined();
         const byId = new Map(result.observations.map((o) => [o.discoveredId, o]));
         // The web app is an OIDC app but not a service app: no principal.
@@ -69,12 +74,18 @@ describe('1. what the Okta source finds', () => {
 });
 
 describe('2. read-only, by the request log', () => {
-    it('every request is a GET to a declared list path on the org — and never the client-secret endpoint', async () => {
+    it('every request is a GET to a declared path on the org — and never the client-secret endpoint', async () => {
         const fakes = createSourceFakes();
         const result = await read(fakes);
 
-        // Two pages of apps, two pages of tokens.
-        expect(fakes.log).toHaveLength(4);
+        // Two pages of apps, the current-token read, two pages of tokens.
+        expect(fakes.log.map((r) => r.path)).toEqual([
+            '/api/v1/apps',
+            '/api/v1/apps',
+            '/api/v1/api-tokens/current',
+            '/api/v1/api-tokens',
+            '/api/v1/api-tokens',
+        ]);
         for (const req of fakes.log) {
             expect(req.method).toBe('GET');
             expect(req.host).toBe('acme.okta.com');
@@ -166,5 +177,46 @@ describe('3. an org it cannot read is INCOMPLETE with a reason', () => {
         const fixture = oktaFixture();
         fixture.apps[0].push({ id: 'has a space', signOnMode: 'OPENID_CONNECT' });
         expect(await read(createSourceFakes({ okta: fixture }))).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
+    });
+});
+
+describe('4. the scanner\'s own token is not a shadow principal', () => {
+    it('is identified by id from /current and left out; every other token is reported', async () => {
+        const result = await read(createSourceFakes());
+        const tokens = result.observations.map((o) => o.discoveredId).filter((id) => id.startsWith('okta:api-token:'));
+        expect(tokens.sort()).toEqual(['okta:api-token:00TToken1', 'okta:api-token:00TToken2']);
+        expect(tokens).not.toContain(`okta:api-token:${SCANNER_OKTA_TOKEN_ID}`);
+        // It was read, so it is counted: the row count is the population read.
+        expect(result.rows).toBe(6);
+    });
+
+    it('a name is never the test: another token named like the scanner\'s is still reported', async () => {
+        const fixture = oktaFixture();
+        // 00TToken2 already carries the scanner token's name; make the match exact.
+        const own = fixture.tokens[0][1] as { name: string };
+        expect((fixture.tokens[1][0] as { name: string }).name).toBe(own.name);
+        const result = await read(createSourceFakes({ okta: fixture }));
+        expect(result.observations.map((o) => o.discoveredId)).toContain('okta:api-token:00TToken2');
+    });
+
+    it('when /current names a different token, that one is left out and the scanner\'s listed token is reported', async () => {
+        const fixture = oktaFixture();
+        fixture.currentTokenId = '00TToken1';
+        const ids = (await read(createSourceFakes({ okta: fixture }))).observations.map((o) => o.discoveredId);
+        expect(ids).toContain(`okta:api-token:${SCANNER_OKTA_TOKEN_ID}`);
+        expect(ids).not.toContain('okta:api-token:00TToken1');
+    });
+
+    it('a scanner that cannot identify its own token stops before the list, with the reason', async () => {
+        const denied = createSourceFakes();
+        denied.override = (r) => (r.path === '/api/v1/api-tokens/current' ? { status: 403, body: { errorCode: 'E0000006' } } : undefined);
+        const result = await read(denied);
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'AUTH_FAILED', rows: 3 });
+        expect(result.observations.some((o) => o.discoveredId.startsWith('okta:api-token:'))).toBe(false);
+        expect(denied.log.some((r) => r.path === '/api/v1/api-tokens')).toBe(false);
+
+        const anonymous = createSourceFakes();
+        anonymous.override = (r) => (r.path === '/api/v1/api-tokens/current' ? { status: 200, body: { name: 'no id' } } : undefined);
+        expect(await read(anonymous)).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
     });
 });
