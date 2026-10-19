@@ -36,6 +36,11 @@ const SEAMS = {
     // the peer's card pin is the only thing that admits it, so exactly one file
     // may write the row that carries the pin.
     peerAgent: { table: 'PeerAgent', seam: 'src/app-layer/usecases/peer-agents.ts' },
+    // And for the same reason (#3680): a tenant skill's approval is what lets
+    // its text reach a model, so exactly one file may write the rows that carry
+    // the text, the review stamps and the pinned hash.
+    tenantSkill: { table: 'TenantSkill', seam: 'src/app-layer/usecases/tenant-skills.ts' },
+    tenantSkillVersion: { table: 'TenantSkillVersion', seam: 'src/app-layer/usecases/tenant-skills.ts' },
 } as const;
 type Delegate = keyof typeof SEAMS;
 
@@ -101,6 +106,7 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
             'src/app-layer/usecases/peer-agents.ts',
+            'src/app-layer/usecases/tenant-skills.ts',
         ]);
     });
 

@@ -111,6 +111,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_external_tools: true,
             agent_harness_ingest: true,
             agent_ownership: true,
+            agent_skill_review: true,
         });
     });
 
@@ -135,6 +136,9 @@ describe('PermissionSet admin capabilities', () => {
             agent_harness_ingest: true,
             // #3699 — ADMIN holds the register key and NOT the ownership key.
             agent_ownership: false,
+            // #3680 — ADMIN holds the skill-review key (step 0e's table); the
+            // four-eyes rule is the author/approver split, not a second key.
+            agent_skill_review: true,
         });
     });
 
@@ -158,6 +162,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_external_tools: false,
             agent_harness_ingest: false,
             agent_ownership: false,
+            agent_skill_review: false,
         });
     });
 
@@ -182,6 +187,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_external_tools: false,
             agent_harness_ingest: false,
             agent_ownership: false,
+            agent_skill_review: false,
         });
     });
 
@@ -205,6 +211,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_external_tools: false,
             agent_harness_ingest: false,
             agent_ownership: false,
+            agent_skill_review: false,
         });
     });
 });

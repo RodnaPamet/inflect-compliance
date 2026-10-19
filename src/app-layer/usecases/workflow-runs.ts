@@ -78,8 +78,8 @@ import {
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import { canonicalJson } from '@/lib/canonical-json';
 import { SkillLoadError } from '@/lib/agentic/flue/skills';
-import { resolveSkillPins } from '@/lib/agentic/flue/skills/resolve';
-import type { MountedSkillPin } from '@/lib/agentic/flue/skills/mount-gate';
+import { resolveRunSkillMount } from '@/lib/agentic/flue/skills/tenant-mount';
+import { pinForRow, type MountedSkillPin } from '@/lib/agentic/flue/skills/mount-gate';
 import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
 import {
@@ -460,7 +460,11 @@ export async function startWorkflowRun(
     // applies the mount gate and the text scan: a skill that has no passing
     // evaluation record, or that the scan refused, stops the run BEFORE its row
     // is written — the reason the registration check above sits here too.
-    const mountedSkills = chosenDriver === 'flue' ? pinSkillsOrRefuse(def.skills) : [];
+    //
+    // A Flue run in this tenant also mounts the tenant's OWN approved skills
+    // that name this workflow (#3680), through the same gate, and pins them
+    // beside the repository's, marked `origin: 'tenant'`.
+    const mountedSkills = chosenDriver === 'flue' ? await pinSkillsOrRefuse(ctx, def) : [];
 
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
@@ -495,7 +499,7 @@ export async function startWorkflowRun(
             // shape `no-raw-prompt-logging` can read; the list, as an
             // identifier, is a field bag it cannot.
             mountedSkillCount: mountedSkills.length,
-            mountedSkillsDigest: createHash('sha256').update(canonicalJson(mountedSkills)).digest('hex'),
+            mountedSkillsDigest: createHash('sha256').update(canonicalJson(mountedSkills.map(pinForRow))).digest('hex'),
             // Which engine walked this run, and — when it was not the one
             // configured — why not. In the hash-chained trail rather than only
             // in a log line, because "which engine executed this" is a question
@@ -1081,14 +1085,16 @@ async function recordRunSettlementMetrics(
  * FAILED.
  */
 /**
- * The skills a Flue run declares, as pins — or a named 400 when any of them
- * cannot be mounted (unknown, refused by the text scan, or without a passing
- * evaluation record). The skill loader's own error names the skill and the
- * reason, never the skill's text.
+ * The skills a Flue run mounts, as pins — its definition's repository skills
+ * and this tenant's approved skills on the workflow (#3680) — or a named 400
+ * when any of them cannot be mounted (unknown, refused by the text scan,
+ * without a passing evaluation record, or, for a tenant skill, not approved or
+ * no longer matching its approved hash). The skill loader's own error names the
+ * skill and the reason, never the skill's text.
  */
-function pinSkillsOrRefuse(declared: readonly string[] | undefined): MountedSkillPin[] {
+async function pinSkillsOrRefuse(ctx: RequestContext, def: WorkflowDefinition): Promise<MountedSkillPin[]> {
     try {
-        return resolveSkillPins(declared);
+        return (await resolveRunSkillMount(ctx, def, 'admission')).pins;
     } catch (err) {
         if (err instanceof SkillLoadError) throw badRequest(`skill_not_mountable: ${err.message}`);
         throw err;
@@ -1166,7 +1172,7 @@ async function createSealedRun(
                     driver: driver === 'flue' ? 'FLUE' : 'STATIC',
                     // …and what it was TAUGHT. `[]` for a run that mounts no
                     // skill, never NULL: NULL means the row predates the pin.
-                    mountedSkills: mountedSkills.map((p) => ({ name: p.name, version: p.version, contentHash: p.contentHash })),
+                    mountedSkills: mountedSkills.map(pinForRow),
                 },
                 select: { id: true },
             });

@@ -468,6 +468,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'is the key for an agent call leaving the tenant, and the ' +
             'authority that acts must not also configure whom it talks to.',
     },
+    // Tenant-authored skills (#3680, step 4c). Their own key, above the
+    // catch-all: authoring and approving what an agent is taught is the
+    // skill-review right, not the register's. Reading the Skills tab, tenant
+    // skills included, stays on the catch-all's `admin.agent_registry`.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/skills\\/tenant(\\/.*)?$`),
+        permission: 'admin.agent_skill_review',
+        note:
+            'Author, edit, evaluate, submit, approve, reject and retire a ' +
+            'tenant-authored skill. The approver is never the version\'s ' +
+            'author (usecase and CHECK), and no API key holds the key.',
+    },
     // The registration intake (#3669). The same key as the catch-all below,
     // stated on its own because step 0e's permission table names it: the
     // intake creates a register row and its AI-system entry, which is the

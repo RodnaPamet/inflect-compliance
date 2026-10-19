@@ -9,20 +9,21 @@ supply chain: written to a standard, reviewed, evaluated and pinned.
 The corpus lives in `src/lib/agentic/flue/skills/`, one directory per skill. The
 loader is `src/lib/agentic/flue/skills/index.ts`, the resolver that mounts skills
 on a run is `resolve.ts` beside it, and the evaluation format is
-`evaluation-record.ts`.
+`evaluation-record.ts`. A tenant may also author its own skills inside the
+product, under the same rules; see [Tenant-authored skills](#tenant-authored-skills).
 
 ## The nine rules
 
 | # | Rule | What it means | Enforced by |
 |---|---|---|---|
 | 1 | **A skill teaches; it never grants.** | Tools come from grants. A skill that names a tool confers nothing, and a delegated specialist's skills are intersected with what the parent workflow declared. | `src/lib/agentic/flue/subagents/index.ts` (narrowing); the tool funnel in `src/lib/mcp/authorize.ts` |
-| 2 | **Declared, not ambient.** | A run mounts exactly the skills its workflow declares. An unknown name fails closed. | `resolveSkillsFor` in `resolve.ts`; `tests/flue/agent-mounts-only-declared-skills.test.ts` |
-| 3 | **Bounded.** | At most 8 KiB of instructions per skill. The catalogue line (name and description) costs bytes on every turn, so each workflow's declared skills, and each run's mounted skills, fit in 2 KiB. The corpus as a whole is not capped. | `MAX_SKILL_BYTES`, `MAX_CATALOG_BYTES` and `assertWorkflowCatalogsWithinBudget` |
+| 2 | **Declared, not ambient.** | A run mounts exactly the skills its workflow declares, plus its own tenant's approved skills whose approved version names that workflow. An unknown name fails closed. | `resolveSkillsFor` and `resolveRunSkills` in `resolve.ts`; `tests/flue/agent-mounts-only-declared-skills.test.ts` |
+| 3 | **Bounded.** | At most 8 KiB of instructions per skill. The catalogue line (name and description) costs bytes on every turn, so each workflow's declared skills, and each run's mounted skills, fit in 2 KiB, counting repository and tenant skills together. The corpus as a whole is not capped. | `MAX_SKILL_BYTES`, `MAX_CATALOG_BYTES`, `assertWorkflowCatalogsWithinBudget` and `resolveRunSkills` |
 | 4 | **Licensed and sourced.** | Every skill states a licence, a source and a version. Standards are cited by identifier; sold standard text, such as ISO Annex A control titles, is never reproduced. | The loader refuses a missing licence; `tests/unit/flue-skills-corpus.test.ts` spot-checks ISO titles |
-| 5 | **Reviewed as code.** | A change is a pull request. The product shows skills read-only, and the directory of readable documents is the record of what agents can be taught. | `tests/rendered/agent-skills-tab.test.tsx` counts zero edit controls |
+| 5 | **Reviewed as code.** | A change to a repository skill is a pull request. The product shows repository skills read-only, and the directory of readable documents is the record of what agents can be taught. A tenant skill is reviewed in the product instead, by a person other than its author. | `tests/rendered/agent-skills-tab.test.tsx` and `tests/rendered/agent-skills-tenant-authoring.test.tsx` count zero controls on the repository section |
 | 6 | **Output discipline.** | A procedure ends in a proposal or a named gap, cites the artefact it relied on, refuses when a required input is missing, and never treats an absence of exceptions as evidence. | `metadata.output` and `metadata.requiredInput`, validated by the loader; run admission refuses a missing required input (`src/lib/agentic/workflows/required-input.ts`) |
 | 7 | **Evaluated before mounted.** | Each version ships an evaluation set, and a record of a real model's answers must pass the set's thresholds before a run may mount it. | `checkSkillMountable` in `mount-gate.ts`, applied by the resolver; records are made by `npm run skills:evaluate` |
-| 8 | **Pinned on the run.** | A run records each mounted skill's name, version and content hash, so "what did the agent know" is answerable per run. | `WorkflowRun.mountedSkills`, written at admission and refused any later change by a trigger; a resume whose skills no longer match the pin fails |
+| 8 | **Pinned on the run.** | A run records each mounted skill's name, version and content hash, so "what did the agent know" is answerable per run. A tenant skill's pin also carries `origin: 'tenant'` and its version's id. | `WorkflowRun.mountedSkills`, written at admission and refused any later change by a trigger; a resume whose skills no longer match the pin fails |
 | 9 | **Injection-safe text.** | No URL the model is told to fetch, no instruction about revealing its context, no tool name outside the declared set, no secret-shaped string. | `scanSkillText` in `text-scan.ts`, run by the loader on every document; see below |
 
 ## Frontmatter
@@ -146,8 +147,11 @@ real model passed the text; the run's own pin records what that run was taught.
 
 ## The pin on every run
 
-`WorkflowRun.mountedSkills` holds one `{ name, version, contentHash }` per skill
-the run mounted, written when the run is admitted. `[]` means the run mounted
+`WorkflowRun.mountedSkills` holds one `{ name, version, contentHash }` per
+repository skill the run mounted, and one
+`{ name, version, contentHash, origin: 'tenant', versionId }` per tenant skill,
+written when the run is admitted. Repository pins come first, in declaration
+order, then tenant pins in name order. `[]` means the run mounted
 none; `NULL` means the run predates the pin. A database trigger refuses any
 change to the column once the row exists, including filling in a `NULL`. When a
 run resumes after a checkpoint, the skills it would mount are compared with the
@@ -156,6 +160,98 @@ anything reaches the model. The run detail page lists the pin.
 
 ## Who may author skills
 
-Skills are reviewed in the repository. The repository corpus is Inflect-original
-guidance; third-party methodology enters only as skills a tenant authors under
-its own licence, behind the same rules (step 4c, #3680).
+Repository skills are reviewed in the repository, and the repository corpus is
+Inflect-original guidance. Third-party methodology, such as PwC's, enters only
+as skills a tenant authors under its own licence, behind the same rules (step
+4c, #3680).
+
+## Tenant-authored skills
+
+A tenant authors a skill on the Skills tab of an agent's page, in the workspace
+section. The repository section stays read-only. The models are
+`TenantSkill` (the name) and `TenantSkillVersion` (everything that reaches a
+model); the only writer is `src/app-layer/usecases/tenant-skills.ts`; the mount
+gate is `src/lib/agentic/flue/skills/tenant-skill.ts`.
+
+### Who may author and approve
+
+Every act takes `admin.agent_skill_review`, which OWNER, ADMIN and `AI_ADMIN`
+hold, and which no API key holds: `*` subtracts it and no scope maps to it. One
+key covers authoring and approval. The four-eyes rule is a person, not a second
+key: the approver of a version is never its author. The usecase refuses it
+(`SELF_APPROVAL`), a CHECK makes it unrepresentable, and an API-key caller never
+approves (`APPROVER_NOT_A_PERSON`).
+
+### The lifecycle
+
+A version moves one way, and a trigger holds it:
+
+| Status | Reached by | Means |
+|---|---|---|
+| `DRAFT` | creating a skill, or editing one | Its text is fixed. It mounts nothing. Its evaluation record may be attached, once. |
+| `IN_REVIEW` | submitting a draft that carries a passing record | Waiting for a person other than its author. It mounts nothing. |
+| `APPROVED` | an approval naming the version's content hash | In service: runs of the workflows it names mount it. |
+| `RETIRED` | rejection (`REJECTED`), a newer version (`SUPERSEDED`), or withdrawal (`WITHDRAWN`) | Terminal. It mounts nothing. |
+
+**An edit is a new version.** A version's text and metadata never change after
+it is inserted. Editing a skill creates version N+1 at `DRAFT` and retires any
+open (`DRAFT` or `IN_REVIEW`) version as superseded. The version in service
+keeps serving until N+1 is approved; the approval then retires it as superseded
+in the same transaction. A skill has at most one version in service and at most
+one open version (partial unique indexes).
+
+### The text
+
+Every field is sanitised (`sanitizePlainText`) at the write seam, then held to
+the loader's own rules and scanned by `scanSkillText`, through the same
+`validateSkillFields` a repository document goes through. The scan runs at save
+as feedback: refused text is refused by rule id and never stored. It runs again
+at every mount as the gate, because a deploy can tighten a rule. The
+instructions and the evaluation record are encrypted at rest. A version the scan
+refuses is listed by rule id; its text is never returned.
+
+A tenant skill's licence and source are required. Its name is an Agent Skills
+identifier, unique in the tenant, and never the name of a repository skill: the
+runtime mounts a name once, and a delegated specialist narrows its parent's
+skills by name. A version names the workflows it mounts on, and the approval
+covers that list. Only workflows that run on the Flue engine can be named,
+because a static run mounts no skill.
+
+### The evaluation record
+
+The record is the repository's own format, `SkillEvaluationRecordSchema`: the
+evaluation set, tied to the skill's name, the version number and the content
+hash of the version's stored instructions, plus a named model revision's answers
+and the time they were given. The product shows each version's content hash so
+the set can name it.
+
+The author attaches the record to the draft. It is checked by
+`checkEvaluationRecord`, the function the repository gate calls, with its pass
+rates recomputed from the raw answers, and it is stored only if it passes. A
+record that carries a rate is refused as malformed. Submission and approval
+recompute it again, and so does every mount.
+
+The product does not run the model that answers the set (owner decision,
+2026-10-18): running it would send tenant text to a model outside a run and
+spend the tenant's tokens. The review shows who attached the record, which model
+revision answered it and the recomputed rates, and the reviewer decides whether
+to rely on it.
+
+### The mount gate
+
+A tenant version mounts only when all of these hold. Each failure fails the run
+closed, before its row is written, with a named refusal:
+
+| Refusal | Meaning |
+|---|---|
+| `NOT_APPROVED` | The version is not in service. |
+| `SELF_APPROVED` | Its approver is its author. |
+| `PIN_MISMATCH` | Its decrypted instructions no longer hash to the hash its approval pinned. The encrypted column stays writable by the DEK rotation sweep, so the database freezes it against `app_user` only; this check covers every other writer. |
+| text scan rule ids | The load-time scan refuses its text. |
+| `NO_RECORD` and the evaluation refusals | Its record, recomputed from the raw answers, does not pass. |
+
+The mount reads only the run's own tenant's rows, under row-level security and
+a `tenantId` filter. Approval runs the whole gate as if the version were already
+approved, and refuses a version that would put any workflow it names over the
+catalogue budget (`CATALOGUE_OVER_BUDGET`), counting that workflow's repository
+skills and the tenant's other skills in service on it.

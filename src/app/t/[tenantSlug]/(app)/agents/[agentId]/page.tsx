@@ -146,6 +146,12 @@ export default async function AgentDetailPage({
                 canKill: ctx.appPermissions.admin.agent_kill_switch,
                 canCloseBreaker:
                     ctx.appPermissions.admin.agent_registry && ctx.permissions.canAdmin,
+                // The key alone, plus the read every agent floor keeps: the
+                // tenant-skill usecases assert exactly `canRead` and
+                // `admin.agent_skill_review` (#3680), so this flag renders the
+                // authoring controls for exactly the people they work for.
+                canReviewSkills:
+                    ctx.appPermissions.admin.agent_skill_review === true && ctx.permissions.canRead,
             }}
         />
     );

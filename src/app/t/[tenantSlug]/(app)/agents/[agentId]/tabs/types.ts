@@ -113,3 +113,14 @@ export interface CircuitBreakerTabProps extends AgentTabProps {
      */
     canCloseBreaker: boolean;
 }
+
+/** Skills. The tab's read is the register key the page already required. */
+export interface SkillsTabProps extends AgentTabProps {
+    /**
+     * `admin.agent_skill_review` (#3680): author, edit, evaluate, submit,
+     * approve, reject and retire the WORKSPACE's own skills. The repository
+     * corpus is read-only whatever this says. Optional and false by default, so
+     * a caller that does not thread it renders the tab read-only.
+     */
+    canReviewSkills?: boolean;
+}

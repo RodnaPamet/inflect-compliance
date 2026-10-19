@@ -295,6 +295,16 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // agent is taught is a tenant question, and the list exists to answer
     // "what did the agent know" for an assessor.
     't/[tenantSlug]/admin/agents/skills/route.ts',
+    // #3680 — tenant-authored skills, driven by the Skills tab's workspace
+    // section for holders of admin.agent_skill_review.
+    't/[tenantSlug]/admin/agents/skills/tenant/route.ts',
+    't/[tenantSlug]/admin/agents/skills/tenant/[skillId]/route.ts',
+    't/[tenantSlug]/admin/agents/skills/tenant/[skillId]/versions/route.ts',
+    't/[tenantSlug]/admin/agents/skills/tenant/[skillId]/versions/[versionId]/approve/route.ts',
+    't/[tenantSlug]/admin/agents/skills/tenant/[skillId]/versions/[versionId]/evaluation/route.ts',
+    't/[tenantSlug]/admin/agents/skills/tenant/[skillId]/versions/[versionId]/reject/route.ts',
+    't/[tenantSlug]/admin/agents/skills/tenant/[skillId]/versions/[versionId]/retire/route.ts',
+    't/[tenantSlug]/admin/agents/skills/tenant/[skillId]/versions/[versionId]/submit/route.ts',
     't/[tenantSlug]/admin/agents/tool-manifests/route.ts',
     // #2860 — saved arguments for an external MCP tool, and the approval a
     // change to one needs. Same tenant-wide class as the manifest pin above:

@@ -75,6 +75,13 @@ export interface AgentDetailPermissions {
     canKill: boolean;
     /** `admin.agent_registry` AND the role-tier admin check the usecase asserts. */
     canCloseBreaker: boolean;
+    /**
+     * `admin.agent_skill_review` (#3680) — authoring and review of the
+     * WORKSPACE's own skills on the Skills tab. The repository corpus is
+     * read-only regardless. Optional so a caller that predates it renders the
+     * tab read-only.
+     */
+    canReviewSkills?: boolean;
 }
 
 // `skills` is the SEVENTH key and `runs` the EIGHTH. The integration plan said
@@ -274,7 +281,7 @@ export function AgentDetailClient({
             {tab === 'tools' && (
                 <ToolsTab {...props} onChanged={refresh} canGrantTools={perms.canGrantTools} />
             )}
-            {tab === 'skills' && <SkillsTab {...props} />}
+            {tab === 'skills' && <SkillsTab {...props} canReviewSkills={perms.canReviewSkills === true} />}
             {tab === 'coverage' && <CoverageTab {...props} />}
             {/* Read-only, and no `onChanged`: resuming or aborting a run
                 happens on the run itself, where the steps are. */}

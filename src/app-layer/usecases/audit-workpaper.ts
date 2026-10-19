@@ -15,9 +15,9 @@
  *     author's owner owns an audited agent is the auditee auditing itself, so
  *     the seam refuses it (`AUDITOR_NOT_INDEPENDENT`) rather than storing it
  *     and hoping a reader notices.
- *   • STAMP its review: a PERSON in internal audit — an ACTIVE member whose
- *     line of defence an OWNER has declared THIRD, holding `audits.view`, and
- *     not the auditor agent's owner. Once, ever (usecase, conditional UPDATE and
+ *   • STAMP its review: a PERSON in the second or third line — an ACTIVE
+ *     member whose line of defence an OWNER has declared SECOND or THIRD
+ *     (#3735), holding `audits.view`, and not the auditor agent's owner. Once, ever (usecase, conditional UPDATE and
  *     trigger).
  *   • READ: `audits.manage` (step 0e's table). A workpaper lists exceptions
  *     about named people's access, and `audits.view` is every role's.
@@ -49,7 +49,7 @@ import {
     sampleMatchesBinding,
     type AuditWorkpaperRefusal,
 } from '@/lib/agentic/audit-workpaper';
-import { WORKPAPER_REVIEWER_LINE, independenceReasonText } from '@/lib/agentic/auditor-independence';
+import { WORKPAPER_STAMP_LINES, independenceReasonText } from '@/lib/agentic/auditor-independence';
 import { assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { AuditWorkpaperRepository } from '../repositories/AuditWorkpaperRepository';
@@ -329,8 +329,9 @@ export async function linkFindingsToAuditWorkpaper(
 }
 
 /**
- * STAMP a workpaper reviewed — once. The reviewer is a person in internal
- * audit (THIRD line), who does not own the auditor agent. Step 3d's sampling
+ * STAMP a workpaper reviewed — once. The reviewer is a person in the second or
+ * third line (`WORKPAPER_STAMP_LINES`, #3735), who does not own the auditor
+ * agent. Step 3d's sampling
  * decides WHICH workpapers a reviewer is assigned; this is the stamp they set.
  */
 export async function stampAuditWorkpaperReview(ctx: RequestContext, workpaperId: string) {
@@ -367,14 +368,14 @@ export async function stampAuditWorkpaperReview(ctx: RequestContext, workpaperId
         if (membership.lineOfDefence === null) {
             refuse(
                 'REVIEWER_LINE_UNDECLARED',
-                'Your line of defence is not declared. A workpaper is reviewed by internal audit, the ' +
-                    'third line, and an OWNER declares it.',
+                'Your line of defence is not declared. A workpaper is reviewed by the second or third ' +
+                    'line, and an OWNER declares it.',
             );
         }
-        if (membership.lineOfDefence !== WORKPAPER_REVIEWER_LINE) {
+        if (!WORKPAPER_STAMP_LINES.includes(membership.lineOfDefence)) {
             refuse(
-                'REVIEWER_NOT_THIRD_LINE',
-                'A workpaper is reviewed by internal audit, the third line of defence.',
+                'REVIEWER_LINE_NOT_ELIGIBLE',
+                'A workpaper is reviewed by the second line (risk and compliance) or the third (internal audit).',
             );
         }
         // The auditor's CURRENT owner, read now: ownership may have moved since

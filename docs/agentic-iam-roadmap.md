@@ -715,13 +715,51 @@ auditee (rule 8).
   auditor, a row born reviewed, and a sample that differs from the first one
   drawn for the procedure and period, which is binding. Every column is fixed at
   insert apart from the review stamp, `reviewedAt` and `reviewedByUserId`, which
-  `stampAuditWorkpaperReview` sets once. Only an ACTIVE THIRD-line member who
-  does not own the auditor may set it. A trigger refuses any other UPDATE from
+  `stampAuditWorkpaperReview` sets once. Only an ACTIVE SECOND- or THIRD-line
+  member who does not own the auditor may set it (owner decision 2026-10-18,
+  #3735; 3b shipped THIRD only). Which workpapers a reviewer is assigned stays
+  internal audit's, in `3d`. A trigger refuses any other UPDATE from
   every role, and `app_user` holds no DELETE. Findings are linked through
   `AuditWorkpaperFinding`, which is insert-only, and nothing on the workpaper's
   path writes a finding. Reading workpapers takes `audits.manage`. There is no
   workpaper route: the writer is step `3c`'s auditor, and the review route is
   step `3d`'s.
+
+### Tenant-authored skills
+
+Step `4c` (#3680) lets a tenant teach its own agents with a skill it wrote, which
+is how third-party methodology, PwC's among it, enters the product: under the
+author's licence and behind the lifecycle a repository skill has (decision 5).
+`docs/agent-skill-standard.md` ("Tenant-authored skills") is the full rule set.
+
+- **Models.** `TenantSkill` holds the name, unique in the tenant and never a
+  repository skill's, and is append-only. `TenantSkillVersion` holds everything
+  that reaches a model: the frontmatter fields, the instructions (encrypted at
+  rest), the licence and source the author supplied, the workflows it mounts
+  on, the content hash and the evaluation record. Both have row-level security
+  with `FORCE`, and `app_user` deletes neither. The only writer is
+  `src/app-layer/usecases/tenant-skills.ts`.
+- **Review.** A version moves one way, `DRAFT` → `IN_REVIEW` → `APPROVED` →
+  `RETIRED`, by trigger. Approval names the content hash the reviewer read, is
+  refused for the version's author by the usecase and by a CHECK, and is refused
+  for an API key. Every act takes `admin.agent_skill_review`. An edit is a new
+  version at `DRAFT`; the approved version keeps serving until the new one is
+  approved, and is then retired as superseded.
+- **Evaluation.** The author attaches an evaluation record in the repository's
+  format to the draft. It is stored only if it passes, recomputed from its raw
+  answers, and recomputed again at submission, approval and every mount. The
+  product does not run the model that answers the set (owner decision,
+  2026-10-18).
+- **Mounting.** A Flue run mounts its workflow's repository skills, then its
+  own tenant's approved versions that name the workflow, through the same text
+  scan and evaluation recomputation, plus a check that the decrypted text still
+  hashes to the approved hash. The read is the run's own tenant only. The
+  catalogue budget counts both kinds together, at approval and at every run.
+  `WorkflowRun.mountedSkills` records a tenant skill with `origin: 'tenant'` and
+  its version's id.
+- **Surface.** The Skills tab lists the repository corpus read-only and the
+  workspace's skills beside it, with authoring and review for holders of the
+  key.
 
 ### What the six use cases stand on
 
@@ -729,7 +767,7 @@ auditee (rule 8).
 |---|---|---|
 | Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
-| Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
+| Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, so no workpaper is written; no sampling of workpapers. |
@@ -961,7 +999,7 @@ and one new key:
 | `admin.agent_harness_ingest` | Submitting a signed report, `POST /api/t/:slug/admin/agents/harness-scans` (`1a`, shipped in #3688), and the scanner's read of the register (`1a`, below) | OWNER, ADMIN | The `admin:harness_ingest` scope grants it and nothing else (`SCOPE_ACTION_MAP` in `src/lib/auth/api-key-auth.ts`). `*` carries it too: `*` is ADMIN's set minus the four agent-governance flags, and ADMIN holds it |
 | `admin.agent_ownership` | Proposing, reading, cancelling and completing an agent ownership transfer, `…/admin/agents/[agentId]/ownership-transfer` and `…/complete` (`2a`, shipped in #3699; `admin.tenant_lifecycle` until then) | OWNER, AI_ADMIN. Not ADMIN, which holds `admin.agent_registry`: an agent's accountable owner must not be movable by the role that owner is accountable to. An OWNER can grant it to an ADMIN through a custom role | Not carried by `*` (ADMIN's set, which lacks it), and no scope maps to it |
 | `admin.agent_registry_view` | READING the agent inventory (#3710): the register list and one agent's row (`GET …/admin/agents`, `GET …/admin/agents/[agentId]`), the harness scans and the matrix (`GET …/admin/agents/harness-scans`, `/agents/reports?tab=harness`), the client estates' schedule health (`GET …/admin/agents/harness-estates`, #3678), one discovered agent's facts (`get_discovered_agent`), and the governance pack (`GET …/admin/agents/reports`, `/agents/reports`). Also agent runs and proposals (`/agents/runs`, `/agents/proposals`, and the run routes `…/agent-runs/[id]/stream` and `…/checkpoint`), with `admin.view` as the other key that opens them. Every inventory read also admits `admin.agent_registry`, so nobody who read the inventory before the split lost it. Read-only: filing the pack, every register write, scanner keys, peers, intake, acceptances and estate declarations stay on `admin.agent_registry` | OWNER, ADMIN, AI_ADMIN, AUDITOR. A custom role may carry it | The `admin:agent_registry_view` scope grants it and nothing else. Neither `*` nor `admin:*` carries it (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so every key issued before it resolves as it did, and an agent reads the inventory only through a key minted for that read |
-| `admin.agent_skill_review` | Authoring, approving and retiring a tenant skill (`4c`) | OWNER, ADMIN | Not carried by `*`, and no scope maps to it |
+| `admin.agent_skill_review` | Authoring, evaluating, submitting, approving, rejecting and retiring a tenant skill, `…/admin/agents/skills/tenant/**` (`4c`, shipped in #3680) | OWNER, ADMIN, AI_ADMIN. AI_ADMIN because it holds every agent key (decision 16), and #3680 classified this one as an agent key | Not carried by `*` (subtracted explicitly, because ADMIN holds it), and no scope maps to it |
 
 - **Reading scans takes the inventory view key.** `GET …/admin/agents/harness-scans`
   lists scans under `admin.agent_registry_view` or `admin.agent_registry`, and
@@ -1014,7 +1052,8 @@ and one new key:
   "a new skill-review right", and `admin.agent_skill_review` is it. One key
   gates authoring and approval, because #3680 gives the authoring surface on
   the Skills tab to holders of the right, and the usecase refuses an approval
-  by the version's author. `*` does not carry it, for the reason it does not
+  by the version's author, as does a CHECK below it (#3680). `*` does not
+  carry it, for the reason it does not
   carry the four agent-governance flags: a skill is text mounted into an
   agent's context, and a key held by an agent that could approve skill text
   could teach itself.
@@ -1052,7 +1091,7 @@ and one new key:
 | Show the scan health per estate and per source (`4a`) | `admin.agent_registry_view`, or `admin.agent_registry` | It reads scans, under the key their list takes. Shipped by #3678 at `GET …/admin/agents/harness-estates` and as a card on the harness tab. |
 | Declare, change or remove a client estate (`4a`) | `admin.agent_registry` | Which scanner covers which estate, at what cadence and with whom accountable for each source, is the register's decision and never the scanner's: the ingest key cannot reach it. Shipped by #3678 at `POST …/admin/agents/harness-estates` and `PATCH`/`DELETE …/harness-estates/[estateId]`. |
 | Kill an A2A peer, and lift the kill (`4b`) | `admin.agent_kill_switch` | The key that stops an agent stops a peer: there is no second authority model (decision 4). `*` does not carry it. |
-| Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | New; see above. |
+| Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/admin/agents/skills/tenant/**`; see above. |
 | Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | The existing gates, and `audits.manage` for workpapers | No new route. Packs go through the pack usecases behind `assertCanManageAuditPacks`, which admits EDITOR; putting workpapers into a pack reads them, so that part also requires `audits.manage`, which EDITOR does not hold. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
 
 Steps `1b`, `1c`, `1d`, `3c` and `4e` plan no route of their own. `1b` extends
@@ -1163,8 +1202,8 @@ a legal decision, as that document records.
 | `AuditWorkpaperFinding` (`3b`) | Regulatory artefact | Added by `3b` (#3675), which this table did not plan: one finding a workpaper links, insert-only. Kept as long as its workpaper, because which findings a workpaper raised is part of the record. The finding is a plain id, bound at insert, so the link outlives a purged finding and nothing retained cascades from a table the purge deletes. |
 | The sampled-workpaper review (`3d`) | Regulatory artefact | One row per sampled workpaper: the reviewer's outcome and stable dissent codes, with no free text. `AgentProposalSampleAudit` is the pattern; it cannot be reused, because every row of it requires a proposal. It is classed Business record since 2026-10-18 because it cascades from its proposal and goes with it in a tenant purge, so this review keeps the regulatory class only while nothing it cascades from is purged. Kept as long as the workpaper it judges, because a disagreement rate whose history can be pruned cannot be trended. |
 | The A2A task receipt, sent and received (`4b`) | Regulatory artefact | Signed evidence of an agent action, the class `AgentActionReceipt` has. That model holds receipts from an external mediator and fits neither a receipt Inflect signs nor a peer's, so `4b` either adds a model under this class or states why it reuses one. |
-| `TenantSkill` (`4c`) | Configuration | The mutable head of one tenant skill: its status and which version is current. The class `AgentPolicyCard` has, for the same shape. |
-| `TenantSkillVersion` (`4c`) | Regulatory artefact | One immutable version, with its content hash, its evaluation record and its approver. `WorkflowRun.mountedSkills` pins the hash a run mounted, so a version is kept and never edited, as `AgentPolicyCardVersion` is. Its instructions are encrypted at rest (#3680). |
+| `TenantSkill` (`4c`) | Configuration | The head of one tenant skill, the class `AgentPolicyCard` has. As built (#3680) it holds only the skill's name and creator and is append-only: which version is in service is that version's status, held to one per skill by a partial unique index, so the head has nothing to update. |
+| `TenantSkillVersion` (`4c`) | Business record | One immutable version, with its content hash, its evaluation record and its approver. Planned as a regulatory artefact; #3680 classed it a business record instead, and the owner kept that class (2026-10-18), for two reasons. Its text is the tenant's, often a third party's methodology held only under the tenant's licence, which a tenant purge must not keep. And the runs whose pins name it are operational and purged with the tenant. A version is still never edited, and the hash-chained `TENANT_SKILL_*` audit rows, which carry its content hash, survive the purge. |
 
 Planned changes that add no model:
 

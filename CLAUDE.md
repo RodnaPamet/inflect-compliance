@@ -1909,8 +1909,9 @@ auditor is not the auditee". Five rules, each held by a test:
   trigger takes the same key.
 - **A workpaper is one-way and the auditor's.** Only a job or a context whose
   `agentId` is the ACTIVE, independent auditor writes one; every column is
-  frozen at insert apart from a review stamp set once by a THIRD-line member who
-  does not own the auditor (trigger, every role; no `app_user` DELETE); the first
+  frozen at insert apart from a review stamp set once by a SECOND- or THIRD-line
+  member who does not own the auditor (`WORKPAPER_STAMP_LINES`, #3735; the
+  trigger freezes the rest for every role; no `app_user` DELETE); the first
   sample per (procedure, period) is binding (trigger). No free-text column: a
   new one is a decision in `encrypted-fields.ts`, not an addition.
 - **A workpaper links findings and never closes one.** `AuditWorkpaperFinding` is
@@ -1934,6 +1935,20 @@ beside it (`skills/mount-gate.ts`; made by `npm run skills:evaluate`, never by
 hand), and `WorkflowRun.mountedSkills` pins each mounted skill's hash at
 admission, write-once by trigger — `[]` is "mounted nothing", NULL is "predates
 the pin", and the two must never be conflated.
+
+**Tenant-authored skills** (#3680) pass the same gate, and four rules in it are
+easy to undo. A `TenantSkillVersion` mounts only when APPROVED by someone other
+than its author (usecase AND a CHECK), its record is recomputed at every mount,
+and its decrypted instructions still hash to `approvedContentHash`: the
+encrypted column cannot be frozen against the DEK rotation sweep, so that
+recomputation IS the freeze, and dropping it as redundant leaves the text
+unbound. An edit is a new DRAFT version; the approved one keeps serving until
+the new one is approved. The mount reads only the run's own tenant
+(`tenant-mount.ts`), and the budget counts repository and tenant skills
+together. A tenant pin adds `origin: 'tenant'` and `versionId`; a repository
+pin keeps exactly its three keys, so a run pinned before tenant skills existed
+does not drift on resume. One key, `admin.agent_skill_review`, gates authoring
+and approval, and no API key holds it.
 
 **The two IAM skills' answers** (`src/lib/agentic/iam-skill-outputs.ts`, since
 #3668) are parsed before anything acts on them, and three rules there are easy

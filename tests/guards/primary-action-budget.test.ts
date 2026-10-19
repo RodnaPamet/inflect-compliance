@@ -145,7 +145,11 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // to secondary — it is on screen with the form's primary submit, so the
     // pair was one region with two primaries — paying for an intake dialog's
     // primary under the product-wide ceiling.
-    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 4,
+    // 4 -> 3 (#3680): the watchers card's Watch toggle, primary while not
+    // watching, is secondary in both states — a personal notification
+    // preference, its state carried by its label and `aria-pressed` — paying
+    // for the tenant-skill editor's save under the product-wide ceiling.
+    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 3,
     // 2026-10-04 census 3 -> 4. Three ternary variant sites plus three literal
     // primaries; one ternary branch was invisible to the old regex.
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 4,

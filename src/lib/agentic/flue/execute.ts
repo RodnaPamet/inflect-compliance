@@ -25,7 +25,8 @@ import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
 import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
-import { resolveSkillPins, resolveSkillsFor, skillPinDrift } from './skills/resolve';
+import { skillPinDrift } from './skills/resolve';
+import { resolveRunSkillMount } from './skills/tenant-mount';
 import { bindRun, releaseRun } from './run-binding';
 import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
 import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate';
@@ -474,18 +475,21 @@ export async function executeFlueRun(
     }));
 
     // THE SKILLS THIS DEFINITION ASKS FOR, resolved here rather than in the
-    // agent (#3470). `resolveSkillsFor` refuses a name the shipped corpus does
-    // not contain, so a definition cannot conjure expertise that is not on disk
+    // agent (#3470). The resolver refuses a name the shipped corpus does not
+    // contain, so a definition cannot conjure expertise that is not on disk
     // and reviewed — the same shape as the tool set: the agent receives
-    // documents, never the ability to go and find documents.
-    const skills = resolveSkillsFor(def.skills);
+    // documents, never the ability to go and find documents. It adds this
+    // tenant's OWN approved skills on the workflow (#3680), read under this
+    // run's tenant context and gated exactly as at admission.
+    const { documents: skills, pins: currentPins } = await resolveRunSkillMount(ctx, def);
 
     // …AND THEY ARE THE ONES THIS RUN WAS PINNED TO (#3666). The row recorded
     // each skill's hash when the run was admitted; a deploy between segments
     // can change a skill's text, and a run that carried on would then be
     // taught something its own row does not describe. Refused before dispatch,
     // like the kill switch, so nothing reaches the model under the wrong text.
-    const drift = skillPinDrift(initial.mountedSkills, resolveSkillPins(def.skills));
+    // A tenant skill approved, superseded or retired mid-run drifts the same way.
+    const drift = skillPinDrift(initial.mountedSkills, currentPins);
     if (drift) {
         const status = await failRun(ctx, runId, `skill_pin_drift: ${drift}`);
         return { status, stepFailures: 0 };

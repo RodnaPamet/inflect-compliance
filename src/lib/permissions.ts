@@ -362,6 +362,31 @@ export type PermissionSet = {
          * act at both ends.
          */
         agent_ownership: boolean;
+        /**
+         * AUTHORING AND REVIEWING A TENANT SKILL (#3680, step 4c): create a
+         * draft, edit it into a new version, attach its evaluation record,
+         * submit it for review, approve or reject it, and retire it
+         * (`…/admin/agents/skills/tenant/**`).
+         *
+         * One key for authoring and approval, because step 4c gives authoring
+         * to holders of "a new skill-review right" — and the four-eyes rule is
+         * not a second key but a person: the usecase refuses an approval by the
+         * version's author, and a CHECK makes one unrepresentable. A holder can
+         * therefore author or approve, never both for the same version.
+         *
+         * OWNER, ADMIN and AI_ADMIN hold it. OWNER and ADMIN by step 0e's signed
+         * permission table (`docs/agentic-iam-roadmap.md`), which names both:
+         * deciding what an agent may be taught is operational administration of
+         * agents, like the register and the card, and a tenant needs two holders
+         * for the four-eyes rule to be satisfiable at all — refusing ADMIN would
+         * make a one-OWNER tenant unable to approve anything. AI_ADMIN because it
+         * is an agent key (`AGENT_ADMIN_KEYS`), and that role holds every one.
+         *
+         * Never carried by a bearer token: `*` subtracts it and no scope maps to
+         * it. A skill is text mounted into an agent's context, and a key held by
+         * an agent that could approve skill text could teach itself.
+         */
+        agent_skill_review: boolean;
     };
 };
 
@@ -424,7 +449,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'compliance_dsar_view', 'compliance_dsar_manage',
         'agent_registry', 'agent_registry_view', 'agent_tool_exposure', 'agent_policy_card',
         'agent_kill_switch', 'agent_external_tools', 'agent_harness_ingest',
-        'agent_ownership',
+        'agent_ownership', 'agent_skill_review',
     ],
 };
 
@@ -435,11 +460,10 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
  * its owners, the DSAR register, the admin console's `view`) and `AI_ADMIN`
  * holds none of them.
  *
- * There is no skill key yet: the Skills tab reads under `agent_registry`, and
- * the planned `agent_skill_review` (step 4c) does not exist. When it lands it
- * must be classified here or as tenant-wide —
- * `tests/unit/ai-admin-permissions.test.ts` enumerates `PERMISSION_SCHEMA` and
- * fails on a key nobody classified.
+ * `agent_skill_review` (step 4c, #3680) is classified here: what an agent may
+ * be taught is about agents, not the tenant. The Skills tab's READ of the
+ * corpus stays under `agent_registry`. `tests/unit/ai-admin-permissions.test.ts`
+ * enumerates `PERMISSION_SCHEMA` and fails on a key nobody classified.
  */
 export const AGENT_ADMIN_KEYS = [
     'agent_registry',
@@ -450,6 +474,7 @@ export const AGENT_ADMIN_KEYS = [
     'agent_external_tools',
     'agent_harness_ingest',
     'agent_ownership',
+    'agent_skill_review',
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 // The two agent read predicates (#3710) live in `agent-inventory-read.ts` so a
@@ -500,6 +525,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
                     agent_ownership: true,
+                    agent_skill_review: true,
                 },
             };
         case 'ADMIN':
@@ -550,6 +576,11 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // be movable by the role that owner is accountable to. An
                     // OWNER can grant it through a custom role.
                     agent_ownership: false,
+                    // ADMIN holds it (#3680), by step 0e's permission table:
+                    // what an agent is taught is operational administration of
+                    // agents. The four-eyes rule is the author/approver split,
+                    // which the usecase and a CHECK hold whoever holds the key.
+                    agent_skill_review: true,
                 },
             };
         case 'EDITOR':
@@ -573,7 +604,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
             };
         case 'AUDITOR':
             return {
@@ -597,7 +628,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
             };
         case 'READER':
             return readerPermissions();
@@ -628,6 +659,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_external_tools: true,
                     agent_harness_ingest: true,
                     agent_ownership: true,
+                    agent_skill_review: true,
                 },
             };
         }
@@ -662,7 +694,7 @@ function readerPermissions(): PermissionSet {
         frameworks: { view: true, install: false },
         audits: { view: true, manage: false, freeze: false, share: false },
         reports: { view: true, export: false, schedule_external: false },
-        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
+        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
     };
 }
 

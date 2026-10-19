@@ -2048,6 +2048,28 @@ enum PeerAgentStatus {
   RETIRED
 }
 
+/// Lifecycle of one version of a tenant-authored skill (#3680, step 4c). A
+/// version's text never changes: an edit is a NEW version, which starts here at
+/// DRAFT. DRAFT → IN_REVIEW (submitted, with a passing evaluation record) →
+/// APPROVED (by a person other than the author) → RETIRED; DRAFT and IN_REVIEW
+/// may also go straight to RETIRED. RETIRED is terminal. Held by a trigger.
+enum TenantSkillVersionStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  RETIRED
+}
+
+/// Why a tenant skill version left service. REJECTED: a reviewer refused it in
+/// review. SUPERSEDED: a newer version of the same skill was created (a draft or
+/// one in review) or approved (the version in service). WITHDRAWN: a holder of
+/// the review key took it out of service.
+enum TenantSkillRetiredReason {
+  REJECTED
+  SUPERSEDED
+  WITHDRAWN
+}
+
 /// Agent-safety risk tier — a DIFFERENT taxonomy from `AiRiskTier`, and the two
 /// must never be read for one another.
 ///
