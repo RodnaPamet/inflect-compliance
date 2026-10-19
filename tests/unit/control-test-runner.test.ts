@@ -644,7 +644,70 @@ describe('runControlTestRunner — INTEGRATION uses the same handler seam', () =
             automationType: 'INTEGRATION',
             automationConfig: { connectorId: 'aws-1' },
             scheduledFor: SCHEDULED_FOR_DATE,
+            // The PLANNED run the handler is executing (#3676): a handler that
+            // records something about the run names it by this id.
+            runId: 'run-1',
             db: mockTx,
         });
+    });
+});
+
+// ─── A handler that raises its exceptions as proposals (#3676) ────
+
+describe('runControlTestRunner — a FAIL raised as proposals', () => {
+    test('writes no Finding of its own, and still records the FAIL', async () => {
+        // The auditor agent's procedures raise every exception as a finding
+        // PROPOSAL a person decides. A runner Finding beside them would be a
+        // direct path to a Finding the auditor's grants never allowed.
+        runnerHandlerRegistry.register('INTEGRATION', async () => ({
+            result: 'FAIL',
+            evidenceContent: 'exceptions: 2',
+            findingSummary: '2 exceptions',
+            findingsRaisedAs: 'PROPOSALS',
+        }));
+        mockPlanFindFirst.mockResolvedValueOnce(makePlan({ automationType: 'INTEGRATION' }));
+        mockTestRunCreate.mockResolvedValueOnce({ id: 'run-1' });
+        mockTx.evidence.create.mockResolvedValueOnce({ id: 'ev-1' });
+
+        const result = await runControlTestRunner(PAYLOAD_BASE);
+
+        expect(result).toMatchObject({ runStatus: 'COMPLETED', runResult: 'FAIL', findingCreated: false });
+        expect(mockFindingCreate).not.toHaveBeenCalled();
+        expect(mockTx.findingEvidence.create).not.toHaveBeenCalled();
+        expect(mockEmitTestRunFailed).toHaveBeenCalledTimes(1);
+        // A FAIL is a real verdict: it attests the control was tested.
+        expect(mockAttestControlTested.mock.calls[0][3]).toBe('FAIL');
+    });
+
+    test('calls afterEvidence once, with the linked evidence id, before returning', async () => {
+        const after = jest.fn(async () => undefined);
+        runnerHandlerRegistry.register('INTEGRATION', async () => ({
+            result: 'PASS',
+            evidenceContent: 'ok',
+            afterEvidence: after,
+        }));
+        mockPlanFindFirst.mockResolvedValueOnce(makePlan({ automationType: 'INTEGRATION' }));
+        mockTestRunCreate.mockResolvedValueOnce({ id: 'run-1' });
+        mockTx.evidence.create.mockResolvedValueOnce({ id: 'ev-9' });
+
+        await runControlTestRunner(PAYLOAD_BASE);
+
+        expect(after).toHaveBeenCalledTimes(1);
+        expect(after).toHaveBeenCalledWith('ev-9');
+    });
+
+    test('a throw from afterEvidence fails the run rather than recording it without its record', async () => {
+        runnerHandlerRegistry.register('INTEGRATION', async () => ({
+            result: 'PASS',
+            evidenceContent: 'ok',
+            afterEvidence: async () => {
+                throw new Error('workpaper refused');
+            },
+        }));
+        mockPlanFindFirst.mockResolvedValueOnce(makePlan({ automationType: 'INTEGRATION' }));
+        mockTestRunCreate.mockResolvedValueOnce({ id: 'run-1' });
+        mockTx.evidence.create.mockResolvedValueOnce({ id: 'ev-1' });
+
+        await expect(runControlTestRunner(PAYLOAD_BASE)).rejects.toThrow('workpaper refused');
     });
 });

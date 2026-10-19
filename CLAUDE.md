@@ -1918,6 +1918,44 @@ auditor is not the auditee". Five rules, each held by a test:
   insert-only, and the workpaper usecase and repository write no `Finding` —
   `tests/integration/audit-workpaper.test.ts` reads both files for it.
 
+**The auditor's procedures** (`services/audit-procedures/`, step 3c, #3676) run
+library v1 — catalogue procedures 1 to 5 — on the control-test runner as the
+registered auditor agent. Six rules, each held by a test or a lint rule:
+
+- **Library v1 is PROPOSED.** `LIBRARY_V1_STATUS` records internal audit's
+  approval, PwC's agreement and each PwC reference as OPEN. Changing one is a
+  claim about an external party's act; it belongs only in the pull request that
+  records that act on #3663.
+- **One runner, one INTEGRATION handler.** `agenticControlTestHandler` sends a
+  `procedure` config to `auditProcedureHandler`; never a second runner or a
+  second INTEGRATION registration (the registry throws on one).
+- **The auditor reads and proposes.** Its remit is Inflect's read tools and
+  `propose_finding` (`AUDITOR_TOOL_REMIT`), refused at grant, mark and
+  activation, and the handler will not run an auditor that exceeds it, is
+  killed, inactive or not independent. Exceptions leave only as
+  `propose_finding` proposals through the funnel under the auditor's identity
+  (principal: its owner's own membership); a procedure result sets
+  `findingsRaisedAs: 'PROPOSALS'`, so the runner writes no Finding. The ESLint
+  block over the directory refuses finding writes and stored-figure reads
+  (`resultJson`, `executedAt`, breaker and card counts).
+- **Zero is never complete, in the catalogue's order** (`decideConclusion`):
+  precondition → FAIL → untestable → PASS, and PASS only as
+  `populationCount > 0 && tested === sampleSize && exceptions === 0`. An empty
+  population is INCONCLUSIVE and stamps no `lastTested`.
+- **The workpaper is written in the runner's transaction** (`afterEvidence` →
+  `recordAuditWorkpaperInTx`): a second transaction cannot see the uncommitted
+  `ControlTestRun` and is refused `RUN_NOT_FOUND`. Each exception names its
+  proposal; a re-run names the live one rather than proposing again.
+- **Only the auditor's owner sets or switches off a procedure plan.** Every path
+  that can pause, archive, unschedule, re-type or delete a test plan asks
+  `assertAuditorOwnerMayChangeProcedurePlans` (`usecases/audit-procedure-plans.ts`)
+  and refuses anyone but a PERSON who owns the auditor the plan names — never
+  an API key, agent or job, the owner's own key included —
+  `AUDIT_PROCEDURE_PLAN_OWNER_ONLY`. A new path that stops a plan running asks
+  it too, or the audited first line can switch off its own audit. The plan is
+  where the second line's parameters live, and the library keeps no default
+  for them (pilot values: `scripts/audit-pilot-setup.ts`).
+
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
 `resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):

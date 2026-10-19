@@ -105,6 +105,7 @@ import {
 import type { PrismaTx } from '@/lib/db-context';
 
 import { loadReviewObservations, DEFAULT_WINDOW_DAYS } from '../usecases/agent-review-quality';
+import { auditProcedureHandler } from './audit-procedures';
 import {
     runnerHandlerRegistry,
     type AutomationHandler,
@@ -909,12 +910,22 @@ export function renderAgenticCheckEvidence(
  * Every field it returns is derived from the outcome above, so the evidence
  * row, the run's notes and the Finding's description cannot disagree about
  * what happened.
+ *
+ * ── ONE SLOT, TWO ENGINE FAMILIES ───────────────────────────────────────────
+ *
+ * `runnerHandlerRegistry` holds one handler per automation type and throws on
+ * a second registration, and this handler holds INTEGRATION. The auditor
+ * agent's audit procedures (#3676, `./audit-procedures`) are the second family
+ * on it: a config naming `check` is one of the four checks above, a config
+ * naming `procedure` is an audit procedure, and anything else is declined by
+ * both and goes down the manual path. Neither family answers for the other's
+ * plans, and there is still one runner.
  */
 export const agenticControlTestHandler: AutomationHandler = async (
     input: AutomationHandlerInput,
 ): Promise<AutomationHandlerResult | null> => {
     const config = parseAgenticCheckConfig(input.automationConfig);
-    if (!config) return null;
+    if (!config) return auditProcedureHandler(input);
 
     const definition = AGENTIC_CHECKS[config.check];
     const outcome = await runAgenticCheck(input.db, input.tenantId, config, new Date());
