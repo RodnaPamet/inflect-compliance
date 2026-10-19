@@ -166,8 +166,19 @@ function serve(listing: Record<string, unknown>, detail?: Record<string, unknown
     });
 }
 
-const renderTab = (canReviewSkills: boolean) =>
-    render(<SkillsTab tenantSlug="acme" agentId="agent-1" refreshToken={0} canReviewSkills={canReviewSkills} />);
+// One flag stood for both halves until #3778; a holder of both is what most
+// cases here exercise, so `canAuthorSkills` follows `canReviewSkills` unless a
+// case splits them.
+const renderTab = (canReviewSkills: boolean, canAuthorSkills: boolean = canReviewSkills) =>
+    render(
+        <SkillsTab
+            tenantSlug="acme"
+            agentId="agent-1"
+            refreshToken={0}
+            canReviewSkills={canReviewSkills}
+            canAuthorSkills={canAuthorSkills}
+        />,
+    );
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -274,5 +285,47 @@ describe('review', () => {
         expect(screen.queryByTestId('tenant-skill-version-2-instructions')).toBeNull();
         expect(screen.queryByTestId('tenant-skill-attach-2')).toBeNull();
         expect(screen.queryByTestId('tenant-skill-approve-2')).toBeNull();
+    });
+});
+
+describe('the two halves (#3778): authoring and review are separate keys', () => {
+    const draft = () =>
+        version({ status: 'DRAFT', canApprove: false, author: { userId: 'u-me', label: 'Me', isViewer: true } });
+    const inReview = () => version();
+
+    it('an author who cannot review gets New skill and the authoring acts, and no review act', async () => {
+        serve(payload(), { id: 'skill-1', name: 'pwc-joiner-review', versions: [draft(), { ...inReview(), id: 'ver-3', version: 3, canApprove: false }] });
+        renderTab(false, true);
+        expect(screen.getByTestId('tenant-skill-new')).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId('tenant-skill-review-pwc-joiner-review'));
+        await waitFor(() => expect(screen.getByTestId('tenant-skill-version-2')).toBeInTheDocument());
+        expect(screen.getByTestId('tenant-skill-edit')).toBeInTheDocument();
+        expect(screen.getByTestId('tenant-skill-submit-2')).toBeInTheDocument();
+        // Nothing the review key does: no approve (the server says canApprove
+        // false without it), no reject, no retire.
+        expect(screen.queryByTestId('tenant-skill-approve-3')).toBeNull();
+        expect(screen.queryByTestId('tenant-skill-reject-3')).toBeNull();
+        expect(screen.queryByTestId('tenant-skill-retire-2')).toBeNull();
+        expect(screen.queryByTestId('tenant-skill-retire-3')).toBeNull();
+    });
+
+    it('a reviewer who cannot author gets the review acts, and no New skill, edit, attach or submit', async () => {
+        serve(payload(), { id: 'skill-1', name: 'pwc-joiner-review', versions: [inReview(), { ...draft(), id: 'ver-4', version: 4, evaluation: null }] });
+        renderTab(true, false);
+        expect(screen.queryByTestId('tenant-skill-new')).toBeNull();
+        fireEvent.click(screen.getByTestId('tenant-skill-review-pwc-joiner-review'));
+        await waitFor(() => expect(screen.getByTestId('tenant-skill-approve-2')).toBeInTheDocument());
+        expect(screen.getByTestId('tenant-skill-reject-2')).toBeInTheDocument();
+        expect(screen.getByTestId('tenant-skill-retire-2')).toBeInTheDocument();
+        expect(screen.queryByTestId('tenant-skill-edit')).toBeNull();
+        expect(screen.queryByTestId('tenant-skill-attach-4')).toBeNull();
+        expect(screen.queryByTestId('tenant-skill-submit-4')).toBeNull();
+    });
+
+    it('a viewer with neither half opens no sheet and authors nothing', () => {
+        serve(payload());
+        renderTab(false, false);
+        expect(screen.queryByTestId('tenant-skill-new')).toBeNull();
+        expect(screen.queryByTestId('tenant-skill-review-pwc-joiner-review')).toBeNull();
     });
 });

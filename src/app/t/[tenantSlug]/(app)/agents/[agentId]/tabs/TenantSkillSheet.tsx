@@ -119,11 +119,22 @@ export function editableFields(versions: readonly TenantSkillVersionRow[]): Tena
 
 export function TenantSkillSheet({
     skillId,
+    canAuthor = true,
+    canReview = true,
     onClose,
     onChanged,
     onEdit,
 }: {
     skillId: string;
+    /**
+     * The two halves (#3778): editing, attaching a record and submitting take
+     * `admin.agent_skill_author`; rejecting and retiring take
+     * `admin.agent_skill_review`, and approving is offered by the server's
+     * `canApprove`, which already requires it. True by default so a caller
+     * that predates the split renders what it did.
+     */
+    canAuthor?: boolean;
+    canReview?: boolean;
     onClose: () => void;
     onChanged: () => void;
     onEdit: (skill: { skillId: string; name: string; from?: TenantSkillDraftFields }) => void;
@@ -196,17 +207,19 @@ export function TenantSkillSheet({
                     ) : null}
                     {data ? (
                         <>
-                            <div className="flex justify-end">
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    disabled={busy}
-                                    data-testid="tenant-skill-edit"
-                                    onClick={() => onEdit({ skillId: data.id, name: data.name, from: editableFields(data.versions) })}
-                                >
-                                    {t('skills.sheet.edit')}
-                                </Button>
-                            </div>
+                            {canAuthor ? (
+                                <div className="flex justify-end">
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={busy}
+                                        data-testid="tenant-skill-edit"
+                                        onClick={() => onEdit({ skillId: data.id, name: data.name, from: editableFields(data.versions) })}
+                                    >
+                                        {t('skills.sheet.edit')}
+                                    </Button>
+                                </div>
+                            ) : null}
                             {data.versions.map((v) => (
                                 <section
                                     key={v.id}
@@ -281,7 +294,7 @@ export function TenantSkillSheet({
                                         </p>
                                     ) : null}
 
-                                    {v.status === 'DRAFT' && v.evaluation === null && !v.textRefused ? (
+                                    {canAuthor && v.status === 'DRAFT' && v.evaluation === null && !v.textRefused ? (
                                         <FormField label={t('skills.sheet.recordLabel')} description={t('skills.sheet.recordHint', { hash: v.contentHash })}>
                                             <Textarea
                                                 id={`tenant-skill-record-${v.version}`}
@@ -294,7 +307,7 @@ export function TenantSkillSheet({
                                     ) : null}
 
                                     <div className="flex flex-wrap justify-end gap-tight">
-                                        {v.status === 'DRAFT' && v.evaluation === null && !v.textRefused ? (
+                                        {canAuthor && v.status === 'DRAFT' && v.evaluation === null && !v.textRefused ? (
                                             <Button
                                                 size="sm"
                                                 variant="secondary"
@@ -305,7 +318,7 @@ export function TenantSkillSheet({
                                                 {t('skills.sheet.attach')}
                                             </Button>
                                         ) : null}
-                                        {v.status === 'DRAFT' && v.evaluation !== null ? (
+                                        {canAuthor && v.status === 'DRAFT' && v.evaluation !== null ? (
                                             <Button
                                                 size="sm"
                                                 variant="secondary"
@@ -337,7 +350,7 @@ export function TenantSkillSheet({
                                                 {t('skills.sheet.authorCannotApprove')}
                                             </p>
                                         ) : null}
-                                        {v.status === 'IN_REVIEW' ? (
+                                        {canReview && v.status === 'IN_REVIEW' ? (
                                             <Button
                                                 size="sm"
                                                 variant="secondary"
@@ -348,7 +361,7 @@ export function TenantSkillSheet({
                                                 {t('skills.sheet.reject')}
                                             </Button>
                                         ) : null}
-                                        {v.status !== 'RETIRED' ? (
+                                        {canReview && v.status !== 'RETIRED' ? (
                                             <Button
                                                 size="sm"
                                                 variant="secondary"

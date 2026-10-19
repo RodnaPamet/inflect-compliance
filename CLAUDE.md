@@ -2203,8 +2203,11 @@ the new one is approved. The mount reads only the run's own tenant
 (`tenant-mount.ts`), and the budget counts repository and tenant skills
 together. A tenant pin adds `origin: 'tenant'` and `versionId`; a repository
 pin keeps exactly its three keys, so a run pinned before tenant skills existed
-does not drift on resume. One key, `admin.agent_skill_review`, gates authoring
-and approval, and no API key holds it.
+does not drift on resume. Two keys since #3778: `admin.agent_skill_author`
+creates, versions, attaches a record and submits, and `admin.agent_skill_review`
+approves, rejects and retires; a read takes either, and no API key holds either.
+A custom role stored before the split takes authoring from its own review key
+(`DERIVED_FROM`).
 
 **The two IAM skills' answers** (`src/lib/agentic/iam-skill-outputs.ts`, since
 #3668) are parsed before anything acts on them, and three rules there are easy

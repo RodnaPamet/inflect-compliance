@@ -15,7 +15,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 type Params = { tenantSlug: string; skillId: string; versionId: string };
 
 export const POST = withApiErrorHandling(
-    requirePermission<Params>('admin.agent_skill_review', async (req: NextRequest, { params }, ctx) => {
+    requirePermission<Params>('admin.agent_skill_author', async (req: NextRequest, { params }, ctx) => {
         const { skillId, versionId } = await params;
         const body = AttachTenantSkillEvaluationSchema.parse(await req.json());
         return jsonResponse(await attachTenantSkillEvaluation(ctx, skillId, versionId, body));

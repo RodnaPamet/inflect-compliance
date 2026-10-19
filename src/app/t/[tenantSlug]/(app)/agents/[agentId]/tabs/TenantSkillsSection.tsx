@@ -7,9 +7,11 @@
  * Every member the tab admits sees the list: each skill's version in service,
  * its licence and source, the workflows it mounts on, any version open for
  * review, and — for a version the skill text scan refuses — the rule ids and
- * never the text. Only a holder of `admin.agent_skill_review` gets controls:
- * a new skill, and a review sheet per skill. The server is the authority for
- * every act; the controls only decide what is worth offering.
+ * never the text. Controls follow the two keys (#3778): a holder of
+ * `admin.agent_skill_author` gets a new skill and the authoring acts, a holder
+ * of `admin.agent_skill_review` the review acts, and either opens a skill's
+ * sheet. The server is the authority for every act; the controls only decide
+ * what is worth offering.
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -45,13 +47,17 @@ export function TenantSkillsSection({
     skills,
     workflows,
     canReview,
+    canAuthor = false,
     onChanged,
 }: {
     skills: readonly TenantSkillRow[];
     workflows: readonly { key: string; name: string }[];
     canReview: boolean;
+    /** `admin.agent_skill_author` (#3778). */
+    canAuthor?: boolean;
     onChanged: () => void;
 }) {
+    const canOpen = canAuthor || canReview;
     const t = useTranslations('agents.skills');
     const [editing, setEditing] = useState<TenantSkillEditorTarget | null>(null);
     const [reviewing, setReviewing] = useState<string | null>(null);
@@ -60,7 +66,7 @@ export function TenantSkillsSection({
         <section className="space-y-compact" data-testid="agent-skills-tenant">
             <div className="flex items-start justify-between gap-compact">
                 <Heading level={2} className="text-base">{t('tenant.title')}</Heading>
-                {canReview ? (
+                {canAuthor ? (
                     // Secondary, as the harness tab's card trigger is: a card
                     // action inside a tab, not the page's defining action, and
                     // the product-wide primary ceiling has no slot to spend on
@@ -132,7 +138,7 @@ export function TenantSkillsSection({
                                 ) : null}
                             </>
                         ) : null}
-                        {canReview ? (
+                        {canOpen ? (
                             <div className="flex justify-end">
                                 <Button
                                     variant="secondary"
@@ -148,9 +154,11 @@ export function TenantSkillsSection({
                 ))
             )}
 
-            {canReview && reviewing ? (
+            {canOpen && reviewing ? (
                 <TenantSkillSheet
                     skillId={reviewing}
+                    canAuthor={canAuthor}
+                    canReview={canReview}
                     onClose={() => setReviewing(null)}
                     onChanged={onChanged}
                     onEdit={(target) => {
@@ -159,7 +167,7 @@ export function TenantSkillsSection({
                     }}
                 />
             ) : null}
-            {canReview && editing ? (
+            {canAuthor && editing ? (
                 <TenantSkillEditorModal
                     target={editing}
                     workflows={workflows}

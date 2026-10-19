@@ -1,6 +1,6 @@
 /**
  * `/api/t/:slug/admin/agents/skills/tenant/:skillId` — one tenant skill and its
- * versions, for review (#3680). It returns each version's instructions, so a
+ * versions, for authoring and review (#3680, #3778). It returns each version's instructions, so a
  * reviewer reads the text they approve, except a version the skill text scan
  * refuses, which is shown by rule id only.
  */
@@ -14,8 +14,13 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 type Params = { tenantSlug: string; skillId: string };
 
 export const GET = withApiErrorHandling(
-    requirePermission<Params>('admin.agent_skill_review', async (_req: NextRequest, { params }, ctx) => {
-        const { skillId } = await params;
-        return jsonResponse(await getTenantSkill(ctx, skillId));
-    }),
+    // Either half (#3778): the author edits from these versions, the reviewer
+    // approves from them.
+    requirePermission<Params>(
+        { keys: ['admin.agent_skill_author', 'admin.agent_skill_review'], mode: 'any' },
+        async (_req: NextRequest, { params }, ctx) => {
+            const { skillId } = await params;
+            return jsonResponse(await getTenantSkill(ctx, skillId));
+        },
+    ),
 );

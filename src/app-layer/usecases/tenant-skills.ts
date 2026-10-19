@@ -24,11 +24,14 @@
  *
  * ── WHO MAY ACT ─────────────────────────────────────────────────────────────
  *
- * One key, `admin.agent_skill_review`, gates authoring and approval: step 4c
- * gives authoring to holders of the review right. The four-eyes rule is a
- * PERSON, not a second key: approval refuses the version's author
- * (`SELF_APPROVAL`) and refuses an API-key caller (`APPROVER_NOT_A_PERSON`),
- * and the database refuses an approval whose approver is the author.
+ * Two keys since #3778 (owner decision): `admin.agent_skill_author` creates a
+ * skill or a version, attaches a record and submits; `admin.agent_skill_review`
+ * approves, rejects and retires; reading a skill takes either. The split lets a
+ * provider who writes a tenant's skills be kept from approving them. The
+ * four-eyes rule is ALSO a PERSON, whoever holds both keys: approval refuses
+ * the version's author (`SELF_APPROVAL`) and refuses an API-key caller
+ * (`APPROVER_NOT_A_PERSON`), and the database refuses an approval whose
+ * approver is the author.
  *
  * ── AN EDIT IS A NEW VERSION ────────────────────────────────────────────────
  *
@@ -167,19 +170,42 @@ async function counted<T>(action: string, fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * `admin.agent_skill_review`, re-asserted beneath the route's literal
- * `requirePermission` so a second caller of this usecase cannot reach it
- * without the key. `canRead` stays required, as on every agent-governance floor.
+ * The two halves, each re-asserted beneath the route's literal
+ * `requirePermission` so a second caller of this usecase cannot reach an act
+ * without its key (#3778). `canRead` stays required, as on every
+ * agent-governance floor.
  */
-export function assertMayReviewSkills(ctx: RequestContext): void {
-    if (ctx.permissions.canRead !== true || ctx.appPermissions?.admin?.agent_skill_review !== true) {
-        throw new AppError(
-            'Authoring or reviewing a tenant skill requires admin.agent_skill_review.',
-            'FORBIDDEN',
-            403,
-            true,
-        );
+function refuseWithout(ctx: RequestContext, holds: boolean, message: string): void {
+    if (ctx.permissions.canRead !== true || !holds) {
+        throw new AppError(message, 'FORBIDDEN', 403, true);
     }
+}
+
+/** Approve, reject or retire: `admin.agent_skill_review`. */
+export function assertMayReviewSkills(ctx: RequestContext): void {
+    refuseWithout(
+        ctx,
+        ctx.appPermissions?.admin?.agent_skill_review === true,
+        'Approving, rejecting or retiring a tenant skill requires admin.agent_skill_review.',
+    );
+}
+
+/** Create a skill or a version, attach a record, submit: `admin.agent_skill_author`. */
+export function assertMayAuthorSkills(ctx: RequestContext): void {
+    refuseWithout(
+        ctx,
+        ctx.appPermissions?.admin?.agent_skill_author === true,
+        'Authoring a tenant skill requires admin.agent_skill_author.',
+    );
+}
+
+/** Read one skill and its versions: either half. */
+export function assertMayReadTenantSkill(ctx: RequestContext): void {
+    refuseWithout(
+        ctx,
+        ctx.appPermissions?.admin?.agent_skill_author === true || ctx.appPermissions?.admin?.agent_skill_review === true,
+        'Reading a tenant skill requires admin.agent_skill_author or admin.agent_skill_review.',
+    );
 }
 
 // ─── Preparing a version's text ─────────────────────────────────────
@@ -301,7 +327,7 @@ export interface CreatedTenantSkillVersion {
 /** A new skill, with version 1 at DRAFT authored by the caller. */
 export async function createTenantSkill(ctx: RequestContext, input: CreateTenantSkillInput): Promise<CreatedTenantSkillVersion> {
     return counted('create', async () => {
-        assertMayReviewSkills(ctx);
+        assertMayAuthorSkills(ctx);
         const name = input.name.trim();
         assertNameAvailableToTenant(name);
         const text = prepareText(name, input);
@@ -381,7 +407,7 @@ export async function createTenantSkillVersion(
     input: TenantSkillTextInput,
 ): Promise<CreatedTenantSkillVersion> {
     return counted('edit', async () => {
-        assertMayReviewSkills(ctx);
+        assertMayAuthorSkills(ctx);
         try {
             return await runInTenantContext(ctx, async (db) => {
                 const skill = await findSkill(db, ctx, skillId);
@@ -483,7 +509,7 @@ export async function attachTenantSkillEvaluation(
     input: { record: Record<string, unknown> },
 ): Promise<RecordSummary> {
     return counted('evaluation', async () => {
-        assertMayReviewSkills(ctx);
+        assertMayAuthorSkills(ctx);
         const sanitized = sanitizeDeep(input.record);
         const recordJson = JSON.stringify(sanitized);
         return runInTenantContext(ctx, async (db) => {
@@ -556,7 +582,7 @@ function loadOrRefuse(v: TenantSkillVersionText) {
 /** DRAFT → IN_REVIEW. Needs a passing record, recomputed again here. */
 export async function submitTenantSkillVersion(ctx: RequestContext, skillId: string, versionId: string): Promise<{ status: 'IN_REVIEW' }> {
     return counted('submit', async () => {
-        assertMayReviewSkills(ctx);
+        assertMayAuthorSkills(ctx);
         return runInTenantContext(ctx, async (db) => {
             const v = await findVersionForMount(db, ctx, skillId, versionId);
             if (v.status !== 'DRAFT') throw refuse('NOT_DRAFT', 'Only a draft is submitted for review.');
@@ -848,7 +874,7 @@ const DETAIL_VERSIONS = 50;
 
 /** One skill with its versions, for a holder of the review key. */
 export async function getTenantSkill(ctx: RequestContext, skillId: string): Promise<TenantSkillDetail> {
-    assertMayReviewSkills(ctx);
+    assertMayReadTenantSkill(ctx);
     return runInTenantContext(ctx, async (db) => {
         const skill = await db.tenantSkill.findFirst({
             where: { id: skillId, tenantId: ctx.tenantId },
@@ -922,7 +948,13 @@ export async function getTenantSkill(ctx: RequestContext, skillId: string): Prom
                 approvedBy: r.approvedByUserId ? label(r.approvedByUserId) : null,
                 retiredAt: r.retiredAt?.toISOString() ?? null,
                 createdAt: r.createdAt.toISOString(),
-                canApprove: r.status === 'IN_REVIEW' && r.authorUserId !== ctx.userId && !ctx.apiKeyId,
+                // The review key too (#3778): a reader who holds only the
+                // authoring half is not offered an approval it cannot make.
+                canApprove:
+                    r.status === 'IN_REVIEW'
+                    && r.authorUserId !== ctx.userId
+                    && !ctx.apiKeyId
+                    && ctx.appPermissions?.admin?.agent_skill_review === true,
                 mount:
                     verdict === null
                         ? null

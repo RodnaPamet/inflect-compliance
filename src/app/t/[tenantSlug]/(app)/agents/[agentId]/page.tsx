@@ -152,6 +152,10 @@ export default async function AgentDetailPage({
                 // authoring controls for exactly the people they work for.
                 canReviewSkills:
                     ctx.appPermissions.admin.agent_skill_review === true && ctx.permissions.canRead,
+                // The authoring half (#3778), asserted the same way by the
+                // authoring usecases.
+                canAuthorSkills:
+                    ctx.appPermissions.admin.agent_skill_author === true && ctx.permissions.canRead,
             }}
         />
     );

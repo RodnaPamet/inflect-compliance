@@ -117,11 +117,12 @@ describe('API Key Scopes — scopesToPermissions', () => {
         // `audits` differs in exactly one place: the workpaper view key (#3749),
         // which only its own named scope grants.
         expect(starAudits).toEqual({ ...adminAudits, workpaper_view: false });
-        // And `admin` differs in exactly six places — asserted as a whole
-        // object, so a SEVENTH divergence appearing later fails here rather than
+        // And `admin` differs in exactly seven places — asserted as a whole
+        // object, so an EIGHTH divergence appearing later fails here rather than
         // slipping past the named checks below. The fifth is the inventory
         // view key (#3710), which only its own named scope grants; the sixth is
-        // the skill-review key (#3680), which no scope grants.
+        // the skill-review key (#3680) and the seventh its authoring half
+        // (#3778), which no scope grants.
         expect(starAdmin).toEqual({
             ...adminAdmin,
             agent_registry: false,
@@ -130,6 +131,7 @@ describe('API Key Scopes — scopesToPermissions', () => {
             agent_policy_card: false,
             agent_kill_switch: false,
             agent_skill_review: false,
+            agent_skill_author: false,
         });
     });
 
