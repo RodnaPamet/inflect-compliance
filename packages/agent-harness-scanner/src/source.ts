@@ -28,13 +28,13 @@ import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
 import type {
     HarnessReportAgent,
     INCOMPLETE_REASONS_V2,
-    SOURCE_KINDS_V2,
+    SOURCE_KINDS_V3,
 } from '@/lib/agentic/harness-contract';
 
 import type { McpListingWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from './http';
 
-/** The scanner speaks `inflect-agent-harness/2`, so its kinds and reasons are `/2`'s. */
-export type SourceKind = (typeof SOURCE_KINDS_V2)[number];
+/** The scanner speaks `inflect-agent-harness/3`: its kinds are `/3`'s, and its reasons `/2`'s, which `/3` keeps. */
+export type SourceKind = (typeof SOURCE_KINDS_V3)[number];
 export type IncompleteReason = (typeof INCOMPLETE_REASONS_V2)[number];
 
 export type ObservedCredential = HarnessReportAgent['credentials'][number];

@@ -398,6 +398,26 @@ from repository, file and secret names the client chose, so they carry a
 person's name only if the client named one after a person (the locator caveat
 above). No owner is reported.
 
+The GCP service-account source (#3785) reads the `gcp-sa` kind that
+`inflect-agent-harness/3` adds, and holds conditions 2, 3 and 4, tested by
+request log. It makes one token exchange: the JWT-bearer grant at
+`oauth2.googleapis.com`, never the key file's own `token_uri`. Every other
+request is a GET to one of two declared paths on `iam.googleapis.com`:
+- a project's service-account listing;
+- each account's user-managed key listing.
+
+The configuration's one credential field names the key of an account holding
+`roles/iam.serviceAccountViewer`, which reads and cannot write. It holds
+condition 3 the way the vault reader does: Google lists a key's id and dates,
+and has no read of a private key after it was created.
+
+The account listing returns each account's e-mail address, display name and
+description. The address can name a person (`jane.doe@…`), and so can the other
+two. None of them is kept: a principal is the account's numeric id, a key is
+referenced by project, account id and key id, the scanner's own account is
+recognised by its key's address and then dropped, and a test holds a marker in
+each member out of the result. No owner is reported.
+
 The container (#3686) is how an estate runs the scanner, and it changes
 nothing above: it adds no source, no data category, no recipient and no stored
 column. A client builds it from this repository; it is not published. It holds

@@ -2614,8 +2614,8 @@ model AgentHarnessEstateSource {
   id          String   @id @default(cuid())
   tenantId    String
   estateId    String
-  /// A contract source kind (`SOURCE_KINDS`). CHECKed to the contract's eight
-  /// (`inflect-agent-harness/2` added `code`, #3754).
+  /// A contract source kind (`SOURCE_KINDS`). CHECKed to the contract's nine
+  /// (`inflect-agent-harness/2` added `code`, #3754; `/3` added `gcp-sa`, #3785).
   kind        String
   ownerUserId String
   createdAt   DateTime @default(now())

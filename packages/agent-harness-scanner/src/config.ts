@@ -13,13 +13,16 @@
  *     Entra client that holds `Key Vault Reader`, an Entra client that holds
  *     `Application.Read.All`, a LangSmith workspace Viewer key, an MCP server's
  *     read token (`readTokenEnv`, one per server, optional), a GitHub
- *     fine-grained token holding Contents: read and Secrets: read — the `code`
+ *     fine-grained token holding Contents: read and Secrets: read, a Google
+ *     service-account key for an account holding
+ *     `roles/iam.serviceAccountViewer` — the `code`
  *     source takes none, and the only other credential is the
  *     Inflect API key that posts the report, which needs the
  *     `admin:harness_ingest` scope and nothing else (contract, Transport).
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
  *     on the public cloud's, Entra on Microsoft Graph's public-cloud host, LangSmith on its US or EU cloud host, GitHub
- *     Actions on `api.github.com`, the ingest on
+ *     Actions on `api.github.com`, Google Cloud on `iam.googleapis.com` with its token from
+ *     `oauth2.googleapis.com` (never a key file's own `token_uri`), the ingest on
  *     https. A typo cannot send a token somewhere new, because there is no
  *     free-form host to type into — with TWO exceptions, each the customer's
  *     own host and each checked as any customer-named host is
@@ -37,6 +40,7 @@ import { looksLikeSecret, SOURCE_KINDS } from '@/lib/agentic/harness-contract';
 import { customerOriginProblem, parsePrivateCidrAllowlist } from './customer-host';
 import { httpsOrigin } from './http';
 import { AZURE_KEY_VAULT_HOST_SUFFIX } from './sources/azure-key-vault';
+import { GCP_PROJECT_ID } from './sources/gcp-service-accounts';
 import { GITHUB_REPOSITORY } from './sources/github-actions';
 import {
     LANGSMITH_CLOUD_ORIGINS,
@@ -120,6 +124,26 @@ const GitHubActionsSourceConfigSchema = z
          * GitHub permission reads a value.
          */
         tokenEnv: envName,
+    })
+    .strict();
+
+const GcpServiceAccountSourceConfigSchema = z
+    .object({
+        kind: z.literal('gcp-sa'),
+        /** The cloud product. Google Cloud IAM is the one adapter (#3785); the field keeps the kind generic. */
+        product: z.literal('gcp-iam'),
+        /** Project ids, each read from `iam.googleapis.com` as the one service account. */
+        projects: z
+            .array(z.string().regex(GCP_PROJECT_ID, 'a project id'))
+            .min(1)
+            .max(50)
+            .refine((p) => new Set(p).size === p.length, 'each project appears once'),
+        /**
+         * The service-account key file's JSON, for an account holding
+         * `roles/iam.serviceAccountViewer` on those projects and nothing else.
+         * That role lists accounts and key metadata and changes neither.
+         */
+        keyEnv: envName,
     })
     .strict();
 
@@ -286,6 +310,7 @@ export const SourceConfigSchema = z.discriminatedUnion('kind', [
     McpSourceConfigSchema,
     InflectRegisterSourceConfigSchema,
     GitHubActionsSourceConfigSchema,
+    GcpServiceAccountSourceConfigSchema,
 ]);
 
 export const ScannerConfigSchema = z
@@ -384,6 +409,8 @@ export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code'
             return source.apiKeyEnv;
         case 'cicd':
             return source.tokenEnv;
+        case 'gcp-sa':
+            return source.keyEnv;
     }
 }
 

@@ -1,7 +1,8 @@
 /**
- * The `inflect-agent-harness/2` contract (#3754), validated against its
- * reference implementation, `tests/helpers/agent-harness-fake-scanner.ts`; and
- * the refusal of the retired `/1` (#3660, retired by #3686).
+ * The `inflect-agent-harness/2` (#3754) and `/3` (#3785) contracts, validated
+ * against their reference implementation,
+ * `tests/helpers/agent-harness-fake-scanner.ts`; and the refusal of the retired
+ * `/1` (#3660, retired by #3686).
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -11,10 +12,12 @@ import {
     HARNESS_CONTRACT_IDS,
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
+    HARNESS_CONTRACT_V3,
     INCOMPLETE_REASONS,
     INCOMPLETE_REASONS_V2,
     SOURCE_KINDS,
     SOURCE_KINDS_V2,
+    SOURCE_KINDS_V3,
     harnessSignedMessage,
     isScanComplete,
     looksLikeSecret,
@@ -29,6 +32,8 @@ import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
 import { scoreHarness } from '@/lib/agentic/harness-ladder';
 
 import {
+    GCP_SA_ID,
+    GCP_SA_KEY_REF,
     MALFORMATIONS,
     UNBOUND_VAULT_REF,
     V2_MODEL_ENDPOINTS,
@@ -38,6 +43,7 @@ import {
     validIncompleteReportBody,
     validReportBody,
     validV2ReportBody,
+    validV3ReportBody,
     type Malformation,
 } from '../../helpers/agent-harness-fake-scanner';
 import { REPO_ROOT, repoFiles } from '../../helpers/repo-files';
@@ -165,6 +171,43 @@ describe('looksLikeSecret', () => {
     });
 });
 
+describe('inflect-agent-harness/3 (#3785)', () => {
+    const verify = (body: unknown) => verifyAndParseHarnessReport(scanner3.serialise(body), [scanner3.publicKeyHex]);
+    const scanner3 = createFakeScanner();
+
+    it('is /2 plus one source kind, gcp-sa, and nothing else', () => {
+        expect(SOURCE_KINDS_V3).toEqual([...SOURCE_KINDS_V2, 'gcp-sa']);
+    });
+
+    it('verifies a /3 report carrying a gcp-sa source and the service account it found', () => {
+        const result = verify(validV3ReportBody());
+        if (!result.ok) throw new Error(result.reason);
+        expect(result).toMatchObject({ complete: true, body: { contract: HARNESS_CONTRACT_V3 } });
+        expect(result.body.population.sources).toContainEqual({ kind: 'gcp-sa', status: 'COMPLETE', rows: 3 });
+        expect(result.body.agents.find((a) => a.discoveredId === GCP_SA_ID)).toMatchObject({
+            discoveredVia: ['gcp-sa'],
+            credentials: [{ ref: GCP_SA_KEY_REF, boundToAgent: true, grant: 'app-only' }],
+        });
+    });
+
+    it('a /2 report still verifies beside it, and a /3 report may carry no gcp-sa source at all', () => {
+        expect(verify(validV2ReportBody())).toMatchObject({ ok: true, body: { contract: HARNESS_CONTRACT_V2 } });
+        expect(verify({ ...validReportBody(), contract: HARNESS_CONTRACT_V3 })).toMatchObject({ ok: true, body: { contract: HARNESS_CONTRACT_V3 } });
+    });
+
+    it('holds each report to its own id: gcp-sa under /2 is refused wherever it appears', () => {
+        for (const kind of ['v2-names-gcp-sa-source', 'v2-agent-discovered-via-gcp-sa', 'v2-unbound-from-gcp-sa'] as const) {
+            const { raw, trusted } = malformedReport(scanner3, kind);
+            expect(verifyAndParseHarnessReport(raw, trusted)).toMatchObject({ ok: false, reason: 'SCHEMA' });
+        }
+        // The same three bodies under /3 verify: what refused them was the id.
+        const body = validV3ReportBody();
+        expect(verify(body)).toMatchObject({ ok: true });
+        const unbound = { ...body, agents: body.agents.slice(0, 2), unboundCredentials: [{ ref: GCP_SA_KEY_REF, sourceKind: 'gcp-sa' }] };
+        expect(verify(unbound)).toMatchObject({ ok: true });
+    });
+});
+
 describe('inflect-agent-harness/2 (#3754)', () => {
     // Built at runtime so no literal credential pattern sits in this file.
     const secret = () => ['gh', 'p_', 'Q'.repeat(36)].join('');
@@ -197,13 +240,13 @@ describe('inflect-agent-harness/2 (#3754)', () => {
     it('a /1 report is refused since /1 was retired, and the refusal says so (#3686)', () => {
         // A report exactly as a /1 scanner sent it, signed by a trusted key.
         expect(issuesOf(retiredV1ReportBody())).toEqual([
-            `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V2}`,
+            `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V3}`,
         ]);
         // The retirement refuses the id, not the content: the same body under
         // /2, with /2's one required member, verifies.
         expect(verify({ ...retiredV1ReportBody(), contract: HARNESS_CONTRACT_V2, unboundCredentials: [] })).toMatchObject({ ok: true });
         // An id that never existed gets the plain refusal, naming nothing.
-        expect(issuesOf({ ...validReportBody(), contract: 'inflect-agent-harness/3' })).toEqual([
+        expect(issuesOf({ ...validReportBody(), contract: 'inflect-agent-harness/4' })).toEqual([
             'contract: not a contract id this verifier accepts',
         ]);
     });
@@ -385,9 +428,9 @@ describe('inflect-agent-harness/2 (#3754)', () => {
         });
     });
 
-    it('/2 is the one accepted id, and stored rows, a /1 scan\'s included, are read against its lists', () => {
-        expect(HARNESS_CONTRACT_IDS).toEqual([HARNESS_CONTRACT_V2]);
-        expect(SOURCE_KINDS).toEqual(SOURCE_KINDS_V2);
+    it('/2 and /3 are the accepted ids, and stored rows, a /1 scan\'s included, are read against /3\'s lists', () => {
+        expect(HARNESS_CONTRACT_IDS).toEqual([HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3]);
+        expect(SOURCE_KINDS).toEqual(SOURCE_KINDS_V3);
         expect(INCOMPLETE_REASONS).toEqual(INCOMPLETE_REASONS_V2);
         const v1Sources = JSON.parse(JSON.stringify(retiredV1ReportBody().population.sources)) as unknown;
         expect(parseStoredHarnessSources(v1Sources)?.map((s) => s.kind)).toEqual(['entra-sp', 'vault', 'mcp', 'inflect-register']);

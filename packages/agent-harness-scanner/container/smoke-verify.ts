@@ -13,7 +13,7 @@
  */
 import { readFileSync } from 'fs';
 
-import { HARNESS_CONTRACT_V2, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
 
 import { SCANNER_VERSION, scannerManifestHash } from '../src/scanner-surface';
 
@@ -35,7 +35,7 @@ const parsed = verifyAndParseHarnessReport(raw, publicKeyHex ? [publicKeyHex] : 
 check(parsed.ok, `the report verifies against the printed key${parsed.ok ? '' : ` (refused: ${parsed.reason})`}`);
 if (parsed.ok) {
     const { body } = parsed;
-    check(body.contract === HARNESS_CONTRACT_V2, `it speaks ${HARNESS_CONTRACT_V2}`);
+    check(body.contract === HARNESS_CONTRACT_V3, `it speaks ${HARNESS_CONTRACT_V3}`);
     check(body.scan.scanner.version === SCANNER_VERSION, `it names scanner version ${SCANNER_VERSION}`);
     check(body.scan.scanner.manifestHash === scannerManifestHash(), 'it carries the scanner surface hash');
     check(

@@ -9,7 +9,7 @@
  *   3. Credentials appear by reference only, over the whole signed report.
  *   4. An unreadable location or an unresolvable definition is INCOMPLETE with
  *      a named reason; nothing is left out.
- *   5. Its reports verify under `inflect-agent-harness/2`, beside the other
+ *   5. Its reports verify under `inflect-agent-harness/3`, beside the other
  *      sources, with no change to the contract.
  */
 import { execFileSync } from 'child_process';
@@ -31,7 +31,7 @@ import {
     literalCredentials,
     writeCodeEstate,
 } from '../../helpers/agent-harness-code-fixtures';
-import { HARNESS_CONTRACT_V2, looksLikeSecret, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V3, looksLikeSecret, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
 import { parseScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
 import { rawPublicKeyHex } from '../../../packages/agent-harness-scanner/src/report';
@@ -71,6 +71,9 @@ const NO_WIRE: { http: ReadOnlyHttp; tokens: TokenExchange; mcp: McpListingWire;
     },
     tokens: {
         clientCredentials: async () => {
+            throw new Error('the code source exchanges no token');
+        },
+        jwtBearer: async () => {
             throw new Error('the code source exchanges no token');
         },
     },
@@ -340,7 +343,7 @@ describe('4. what cannot be read or resolved is INCOMPLETE with its reason, neve
     });
 });
 
-describe('5. its reports verify under inflect-agent-harness/2, with no change to the contract', () => {
+describe('5. its reports verify under inflect-agent-harness/3, with no change to the contract', () => {
     it('every fixture estate in one signed report: `code` source, tools, references', async () => {
         const dir = estate(LANGCHAIN_PYTHON, LANGCHAIN_JS, LANGGRAPH);
         const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -359,7 +362,7 @@ describe('5. its reports verify under inflect-agent-harness/2, with no change to
             },
         });
         const verdict = verifyAndParseHarnessReport(raw, [rawPublicKeyHex(publicKey)]);
-        expect(verdict).toMatchObject({ ok: true, complete: true, body: { contract: HARNESS_CONTRACT_V2 } });
+        expect(verdict).toMatchObject({ ok: true, complete: true, body: { contract: HARNESS_CONTRACT_V3 } });
         expect(body.population.sources).toEqual([{ kind: 'code', status: 'COMPLETE', rows: 4 }]);
         expect(body.agents.map((a) => a.discoveredId)).toEqual([
             'code:acme/ops/graph.py#oncall_agent',

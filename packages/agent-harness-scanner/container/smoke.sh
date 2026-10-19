@@ -15,7 +15,7 @@
 #      one TypeScript agent, so both readers and the pinned TypeScript parser
 #      run, and prints a signed report;
 #   4. that report verifies against that key through the image's own contract
-#      module, speaks `/2`, and holds both agents (`smoke-verify.ts`);
+#      module, speaks `/3`, and holds both agents (`smoke-verify.ts`);
 #   5. `scan` without `--dry-run`, with nowhere to post to, exits non-zero:
 #      a scan that could not be delivered is never reported as a success.
 #

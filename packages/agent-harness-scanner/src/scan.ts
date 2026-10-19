@@ -14,7 +14,7 @@
  */
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'crypto';
 
-import type { HarnessReportBodyV2 } from '@/lib/agentic/harness-contract';
+import type { HarnessReportBodyV3 } from '@/lib/agentic/harness-contract';
 
 import { sourceCredentialEnv, type ScannerConfig } from './config';
 import type { ResolveHost } from './customer-host';
@@ -25,6 +25,7 @@ import { buildReportBody, signReport } from './report';
 import { sourceResult, SourceReadError, toolCallsOf, type HarnessSource, type SourceRead } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
+import { gcpServiceAccountSource } from './sources/gcp-service-accounts';
 import { githubActionsSource } from './sources/github-actions';
 import { inflectRegisterSource } from './sources/inflect-register';
 import { langchainCodeSource } from './sources/langchain';
@@ -128,6 +129,8 @@ export function buildSources(
             sources.push(oktaSource({ orgUrl: s.orgUrl, apiToken: secret.trim(), ownerProfileKey: s.ownerProfileKey }));
         } else if (s.kind === 'cicd') {
             sources.push(githubActionsSource({ repositories: s.repositories, token: secret.trim() }));
+        } else if (s.kind === 'gcp-sa') {
+            sources.push(gcpServiceAccountSource({ projects: s.projects, keyJson: secret.trim() }));
         } else if (s.kind === 'runtime') {
             sources.push(
                 langSmithSource({
@@ -161,7 +164,7 @@ function scanIdFor(estate: string, asOf: Date): string {
 }
 
 /** Read, build and sign. Returns the serialised report and the body it carries. */
-export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV2 }> {
+export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV3 }> {
     const { config, env, log } = deps;
     const now = deps.now ?? Date.now;
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));

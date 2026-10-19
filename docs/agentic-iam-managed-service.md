@@ -375,10 +375,13 @@ What the product holds here, and what it does not:
 
 - **Nothing schedules a recertification campaign.** PwC keeps the calendar, and
   a person starts each campaign.
-- **No source reads CI/CD identities, or a cloud project's own service
-  accounts.** The `cicd` kind has no reader, and no kind reads GCP service
-  accounts ([Pilot](agentic-iam-roadmap.md#pilot)). PwC lists both as out of the
-  scan's population in each report rather than reporting a complete inventory.
+- **The scan reads identities and credentials, not every grant.** The `cicd`
+  source (#3784) reads a repository's workflows and Actions secrets, and does
+  not list organisation or environment secrets: a reference to one is reported
+  with its age unknown. The `gcp-sa` source (#3785) reads a project's service
+  accounts and their user-managed keys, and not their role bindings. PwC states
+  both limits in each report rather than reporting a complete inventory of
+  grants.
 - **No real vendor's agent has exchanged an A2A task** (#3752). The peer path is
   proven against an in-process fake peer.
 - **The procedure catalogue is adopted for this repository, not approved or

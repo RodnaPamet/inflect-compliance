@@ -397,6 +397,7 @@ export function toolEvidenceSourcesOf(
  *   cicd              a pipeline identity, and the secrets its jobs receive
  *   inflect-register  a registered agent, and the API keys that speak for it
  *   code              an agent definition, and the credential references it reads
+ *   gcp-sa            a service account, and the user-managed keys it holds (#3785)
  *
  * Exactly one kind is not: `mcp`. A scanner sends an MCP server `initialize`
  * and `tools/list` and nothing else (DPIA condition 1), and neither answer
@@ -412,6 +413,7 @@ export const IDENTITY_BEARING_SOURCE: Readonly<Record<HarnessSourceKind, boolean
     cicd: true,
     'inflect-register': true,
     code: true,
+    'gcp-sa': true,
 });
 
 /** Is this source kind identity-bearing? A kind the table does not name is — the side that opens nothing. */

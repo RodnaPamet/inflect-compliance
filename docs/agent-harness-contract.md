@@ -1,14 +1,17 @@
-# The `inflect-agent-harness` report contract (`/2`)
+# The `inflect-agent-harness` report contract (`/2` and `/3`)
 
 How a harness scanner reports what it found in a client environment. A scanner
 runs inside the client's perimeter, enumerates agent-shaped principals and the
 harness each one runs under, and returns one signed report. This document is
 normative: `MUST`, `MUST NOT`, `SHOULD` and `MAY` carry their RFC 2119 meanings.
 
-One contract id is in force: `inflect-agent-harness/2` (#3754). It is the first
-id, `inflect-agent-harness/1` (#3660), plus five additions. `/1` is retired
-(#3686): the ingest refuses a report that names it. [The two ids](#the-two-ids)
-says what `/2` added and how `/1` was retired.
+Two contract ids are in force:
+- `inflect-agent-harness/2` (#3754): the first id, `inflect-agent-harness/1`
+  (#3660), plus five additions.
+- `inflect-agent-harness/3` (#3785): `/2` plus one source kind, `gcp-sa`.
+
+`/1` is retired (#3686): the ingest refuses a report that names it.
+[The ids](#the-ids) says what each id added and how `/1` was retired.
 
 `tests/helpers/agent-harness-fake-scanner.ts` is the **reference
 implementation**. Where this prose and that file disagree, the file is the one
@@ -16,7 +19,7 @@ the suite validates against the schemas, so it is the one to copy. The schemas
 and the verifier are `src/lib/agentic/harness-contract.ts`; the ladder that
 scores the verdicts is `src/lib/agentic/harness-ladder.ts`.
 `packages/agent-harness-scanner` is the deployable scanner (#3678). It emits
-`/2`, builds its report against those schemas and refuses to sign one they
+`/3`, builds its report against those schemas and refuses to sign one they
 would refuse.
 Putting a client estate under it, and the labels it reads owners and principals
 from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
@@ -34,7 +37,21 @@ from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onbo
   the scanner's own view. `/2`'s `unboundCredentials[]` is an observation, and
   the receiving side decides whether it is an `ORPHAN_CREDENTIAL`.
 
-## The two ids
+## The ids
+
+**`/3` is `/2` with exactly one addition** (#3785, owner decision 2026-10-19):
+the source kind `gcp-sa`, a Google Cloud project's service accounts. It is
+valid wherever a kind is: `population.sources[].kind`,
+`agents[].discoveredVia[]` and `unboundCredentials[].sourceKind`. Nothing else
+changed: no member, reason or bound. It is a new id rather than a widened `/2`
+because the kinds are a closed list on the wire. A `/2` verifier refuses a report
+naming `gcp-sa`, and so does this one: each report is held to the schema of the
+id it names, so a `/2` report that names `gcp-sa` anywhere is refused as
+`SCHEMA`.
+
+- A scanner SHOULD emit `/3`; the reference scanner does. A `/2` report stays
+  accepted, as it was.
+- A `/3` report MUST carry `unboundCredentials`, as a `/2` one must.
 
 `/2` is `/1` with exactly these additions (owner decisions, 2026-10-19):
 
@@ -54,18 +71,19 @@ output, no prompt — a model entry or a tool with any other member is refused.
 the release of the scanner container (#3686), the reference scanner's first
 deployment, which emits `/2`. No other scanner ever spoke `/1`.
 
-- A scanner MUST emit `/2`. A `/2` report MUST carry `unboundCredentials`, empty
-  when it saw none.
+- A scanner MUST emit `/2` or `/3`. A `/2` report MUST carry
+  `unboundCredentials`, empty when it saw none.
 - A report naming `/1` is checked like any other — size, JSON, signature by a
   trusted key — and then refused as `SCHEMA` with the issue
   `contract: inflect-agent-harness/1 is retired; the scanner must speak
-  inflect-agent-harness/2`. The ingest writes nothing. An id that was never in
+  inflect-agent-harness/3`. The ingest writes nothing. An id that was never in
   force is refused as `SCHEMA` without the refusal repeating it.
 - The ids the verifier accepts are `HARNESS_CONTRACT_IDS` in
-  `src/lib/agentic/harness-contract-rules.ts`, which holds `/2` alone.
-- Scans already stored from `/1` reports stay readable: a stored scan is read
-  against `/2`'s source kinds and reasons, which contain `/1`'s. Their agents'
-  model endpoints read NOT REPORTED, since `/1` had no member for them.
+  `src/lib/agentic/harness-contract-rules.ts`, which holds `/2` and `/3`.
+- Scans already stored from `/1` and `/2` reports stay readable: a stored scan
+  is read against `/3`'s source kinds and `/2`'s reasons, which contain every
+  earlier id's. The agents of a scan stored from a `/1` report read their model
+  endpoints as NOT REPORTED, since `/1` had no member for them.
 
 ## Signing and verification
 
@@ -95,19 +113,19 @@ refusal.
 
 | Member | Meaning |
 |---|---|
-| `contract` | Exactly `inflect-agent-harness/2`. The retired `inflect-agent-harness/1` is refused. |
+| `contract` | Exactly `inflect-agent-harness/2` or `inflect-agent-harness/3`. The retired `inflect-agent-harness/1` is refused. |
 | `scan.id` | The scanner's id for this run, unique per tenant. |
 | `scan.asOf` | ISO 8601 time the scan describes. |
 | `scan.scanner` | The scanner's own `agentId` in the register, its `version`, and the `sha256:` manifest hash of its own tool surface. |
 | `population.sources[]` | One entry per source kind read: `kind`, `status`, `rows`, and `reason` exactly when `status` is `INCOMPLETE`. Each kind appears once. |
 | `agents[]` | One entry per discovered agent, unique by `discoveredId`. |
 | `findings[]` | Coded findings the scanner raises itself. |
-| `unboundCredentials[]` | `/2` only, and required there: credentials a source saw bound to no discovered agent. See [Unbound credentials](#unbound-credentials). |
+| `unboundCredentials[]` | Required in `/2` and `/3`: credentials a source saw bound to no discovered agent. See [Unbound credentials](#unbound-credentials). |
 
 ### Sources
 
 `kind` is one of `entra-sp`, `okta-app`, `vault`, `mcp`, `runtime`, `cicd`,
-`inflect-register`, and in `/2` also `code`. An `INCOMPLETE` source MUST name
+`inflect-register` and `code`, and in `/3` also `gcp-sa`. An `INCOMPLETE` source MUST name
 one of `BYTE_CAP`, `TIME_BOX`, `AUTH_FAILED`, `UNREACHABLE`, `PAGINATION_TORN`,
 `RATE_LIMITED`, and in `/2` also `UNPARSEABLE`. A `COMPLETE` source MUST NOT
 carry a reason. A scanner MUST NOT drop a source it could not read: an unread
@@ -148,7 +166,7 @@ is left out. How it fills the members every source shares:
 | `owner` | `{ kind: user \| group, id, source }`, or `null` when no owner is recorded anywhere. |
 | `credentials[]` | `ref` (a `scheme://locator` reference), `ageDays`, `expires`, `boundToAgent`, and `grant`: `delegated`, `app-only` or `unknown`. |
 | `tools[]` | `server` (URL), `name`, `manifestHash` (`sha256:` or `null`), `pinned`, and `readOnlyHint` as the server declares it. An undeclared hint counts as a write. In `/2` a tool MAY carry `calls`, the number of times the agent called it, with `windowDays`, the days it was counted over (1 to 366): both or neither. |
-| `models[]` | `/2` only, optional. One entry per model endpoint the agent calls: `endpoint`, a `scheme://locator` (`https://api.openai.com/v1`, `env://AZURE_OPENAI_ENDPOINT`, `code://…`) or a bare host, and `model`, the model's id there or `null`. An endpoint MUST NOT carry userinfo or a secret's shape. |
+| `models[]` | From `/2` on, optional. One entry per model endpoint the agent calls: `endpoint`, a `scheme://locator` (`https://api.openai.com/v1`, `env://AZURE_OPENAI_ENDPOINT`, `code://…`) or a bare host, and `model`, the model's id there or `null`. An endpoint MUST NOT carry userinfo or a secret's shape. |
 | `skills[]` | `name`, `license` (or `null`), `declared`. |
 | `verdicts[]` | `criterion` (an id from the harness ladder), `met`, and `evidence`: a pointer to where the scanner saw it, or `null`. |
 
@@ -161,7 +179,7 @@ Transport). A verdict with `met: true` and no evidence counts as not met.
 
 ### Unbound credentials
 
-`/2` only. One entry per credential a source saw bound to no discovered agent:
+From `/2` on. One entry per credential a source saw bound to no discovered agent:
 
 | Member | Meaning |
 |---|---|
@@ -330,6 +348,7 @@ kind, so a kind added to the contract fails to compile until it is classified:
 | `cicd` | Yes | A pipeline identity, and the secrets its jobs receive |
 | `inflect-register` | Yes | A registered agent, and the API keys that speak for it |
 | `code` | Yes | An agent definition, and the credential references it reads |
+| `gcp-sa` | Yes | A service account, and the user-managed keys it holds (`/3`) |
 | `mcp` | **No** | A scanner sends an MCP server `initialize`, the initialized notification and `tools/list` only, and no answer names a caller or holds a credential |
 
 It is an `OBSERVATION` of `MEDIUM` severity, written through the same seam as
@@ -357,12 +376,13 @@ report-only throughout: no level or acceptance gates an agent.
 ## Versioning
 
 A change that adds, removes or reinterprets a member is a new contract id.
-`inflect-agent-harness/2` is the first such change; the next one is `/3`. The
-verifier accepts exactly the ids in `HARNESS_CONTRACT_IDS`, each against its own
-strict schema, under the [transition rule](#the-two-ids). Stored scans do not
-record the id they arrived under, so a stored source is re-read against every
-kind and reason any accepted id can carry (`SOURCE_KINDS`,
-`INCOMPLETE_REASONS`), and a client estate may declare exactly those kinds: the
-database CHECK on `AgentHarnessEstateSource.kind` lists the same eight. The
-migration that widened it for `code` (`20261019070000`) was kept as built by
-the owner on 2026-10-19.
+`inflect-agent-harness/2` was the first such change and `/3` the second; the
+next one is `/4`. The verifier accepts exactly the ids in
+`HARNESS_CONTRACT_IDS`, each against its own strict schema, under the
+[transition rule](#the-ids). Stored scans do not record the id they arrived
+under, so a stored source is re-read against every kind and reason any accepted
+id can carry (`SOURCE_KINDS`, `INCOMPLETE_REASONS`). A client estate may declare
+exactly those kinds: the database CHECK on `AgentHarnessEstateSource.kind`
+lists the same nine. The migration that widened it for `code`
+(`20261019070000`) was kept as built by the owner on 2026-10-19, and the one
+for `gcp-sa` (`20261019230000`) widens it the same way.

@@ -36,6 +36,13 @@ export {
     type GitHubActionsSourceOptions,
     type WorkflowAnalysis,
 } from './sources/github-actions';
+export {
+    gcpServiceAccountSource,
+    GCP_IAM_ORIGIN,
+    GCP_READ_PATHS,
+    GOOGLE_OAUTH_ORIGIN,
+    type GcpServiceAccountSourceOptions,
+} from './sources/gcp-service-accounts';
 export { langchainCodeSource, scanLangChainCode, type LangChainCodeSourceOptions } from './sources/langchain';
 export type { DetectedAgent, DetectedCredential, DetectedModel, DetectedTool } from './sources/code/recognize';
 export { langSmithSource, LANGSMITH_CLOUD_ORIGINS, LANGSMITH_READ_PATHS, type LangSmithSourceOptions } from './sources/langsmith';

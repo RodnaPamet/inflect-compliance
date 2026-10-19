@@ -1,5 +1,5 @@
 /**
- * FROM SOURCE READS TO A SIGNED `inflect-agent-harness/2` REPORT.
+ * FROM SOURCE READS TO A SIGNED `inflect-agent-harness/3` REPORT.
  *
  * The report is built against the contract's own schemas
  * (`src/lib/agentic/harness-contract.ts`) rather than a copy of them, and the
@@ -56,17 +56,17 @@
 import { sign, type KeyObject } from 'crypto';
 
 import {
-    HARNESS_CONTRACT_V2,
-    HarnessReportBodyV2Schema,
+    HARNESS_CONTRACT_V3,
+    HarnessReportBodyV3Schema,
     MAX_AGENTS,
     MAX_CREDENTIALS_PER_AGENT,
     MAX_MODELS_PER_AGENT,
     MAX_TOOLS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
-    SOURCE_KINDS_V2,
+    SOURCE_KINDS_V3,
     harnessSignedMessage,
     type HarnessReportAgent,
-    type HarnessReportBodyV2,
+    type HarnessReportBodyV3,
     type HarnessUnboundCredential,
 } from '@/lib/agentic/harness-contract';
 import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
@@ -92,7 +92,7 @@ export interface ScanIdentity {
     readonly scannerAgentId: string;
 }
 
-const kindOrder = (k: SourceKind) => SOURCE_KINDS_V2.indexOf(k);
+const kindOrder = (k: SourceKind) => SOURCE_KINDS_V3.indexOf(k);
 const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 interface MergedAgent {
@@ -120,7 +120,7 @@ function endpointKey(url: string): string {
 const modelKey = (m: ObservedModel) => `${m.endpoint}\u0000${m.model ?? ''}`;
 
 /** Build the report body. Pure: no clock, no I/O. */
-export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRead[]): HarnessReportBodyV2 {
+export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRead[]): HarnessReportBodyV3 {
     const ordered = [...reads].sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind));
     const status = new Map<SourceKind, { status: 'COMPLETE' | 'INCOMPLETE'; reason?: IncompleteReason; rows: number }>(
         ordered.map((r) => [r.kind, { status: r.status, reason: r.reason, rows: r.rows }]),
@@ -216,7 +216,7 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
     });
 
     return {
-        contract: HARNESS_CONTRACT_V2,
+        contract: HARNESS_CONTRACT_V3,
         scan: {
             id: identity.scanId,
             asOf: identity.asOf.toISOString(),
@@ -259,8 +259,8 @@ export function rawPublicKeyHex(publicKey: KeyObject): string {
  * never signed. A refusal names paths only: a message that quoted a value
  * could quote a secret.
  */
-export function signReport(body: HarnessReportBodyV2, keys: { privateKey: KeyObject; publicKey: KeyObject }): string {
-    const parsed = HarnessReportBodyV2Schema.safeParse(body);
+export function signReport(body: HarnessReportBodyV3, keys: { privateKey: KeyObject; publicKey: KeyObject }): string {
+    const parsed = HarnessReportBodyV3Schema.safeParse(body);
     if (!parsed.success) {
         throw new ReportRefusedLocally(parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.code}`));
     }

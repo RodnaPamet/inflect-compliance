@@ -1,6 +1,6 @@
 /**
- * The wire contract `inflect-agent-harness/2` (#3754), and the refusal of the
- * retired `/1` (#3660, retired by #3686).
+ * The wire contracts `inflect-agent-harness/2` (#3754) and `/3` (#3785), and
+ * the refusal of the retired `/1` (#3660, retired by #3686).
  *
  * ONE SOURCE OF TRUTH, three readers. `docs/agent-harness-contract.md` is what a
  * scanner is built against, `tests/helpers/agent-harness-fake-scanner.ts` is the
@@ -8,7 +8,13 @@
  * validates the fake scanner's output against these schemas, so the three cannot
  * drift apart silently. Same arrangement as `src/lib/mcp/client/contract.ts`.
  *
- * ‾‾‾ ONE ID, AND A RETIRED ONE ‾‾‾
+ * ‾‾‾ TWO IDS, AND A RETIRED ONE ‾‾‾
+ *
+ * `/3` is `/2` plus the `gcp-sa` source kind (#3785, owner decision
+ * 2026-10-19), and nothing else: one more member of a closed list, which is why
+ * it is a new id. Each report is held to the schema of the id it names, so a
+ * `/2` report that names `gcp-sa` is refused, as a `/2` verifier would refuse
+ * it. The reference scanner speaks `/3`; `/2` stays accepted.
  *
  * `/2` is `/1` plus the `code` source kind, the `UNPARSEABLE` reason, the
  * `unboundCredentials[]` member, and per agent an optional call count on each
@@ -66,6 +72,7 @@ import { ed25519PublicKeyFromMaterial } from '@/lib/mcp/receipt-verification';
 import {
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
+    HARNESS_CONTRACT_V3,
     isScanComplete,
     looksLikeSecret,
     type HarnessContractId,
@@ -82,6 +89,7 @@ export {
     HARNESS_CONTRACT_IDS,
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
+    HARNESS_CONTRACT_V3,
     isScanComplete,
     looksLikeSecret,
     type HarnessContractId,
@@ -125,13 +133,16 @@ export const SOURCE_KINDS_V2 = [
     'code',
 ] as const;
 
+/** `/3`'s kinds: `/2`'s, and `gcp-sa`, a Google Cloud project's service accounts (#3785). */
+export const SOURCE_KINDS_V3 = [...SOURCE_KINDS_V2, 'gcp-sa'] as const;
+
 /**
  * Every source kind a report this verifier accepts can carry, which is also
- * every kind a stored scan can hold, `/1` scans included. Stored scans are
- * re-read against it, and an estate may declare exactly these (the database
- * CHECKs the same list).
+ * every kind a stored scan can hold, `/1` and `/2` scans included. Stored scans
+ * are re-read against it, and an estate may declare exactly these (the
+ * database CHECKs the same list).
  */
-export const SOURCE_KINDS = SOURCE_KINDS_V2;
+export const SOURCE_KINDS = SOURCE_KINDS_V3;
 
 /**
  * Why a source could not be read completely. The last, `UNPARSEABLE` (a
@@ -318,6 +329,14 @@ const AgentSchemaV2 = z
     })
     .strict();
 
+/** `/3`'s agent: `/2`'s, over `/3`'s kinds. */
+const AgentSchemaV3 = z
+    .object({
+        ...agentMembersOver(SOURCE_KINDS_V3, ToolSchemaV2),
+        models: z.array(ModelEndpointSchema).max(MAX_MODELS_PER_AGENT).optional(),
+    })
+    .strict();
+
 const FindingSchema = z
     .object({
         code: z.enum(FINDING_CODES),
@@ -388,12 +407,14 @@ function checkReportInvariants(
  * reference, with the source kind that saw it. The ingest derives
  * ORPHAN_CREDENTIAL from these; the scanner does not raise it.
  */
-const UnboundCredentialSchema = z
-    .object({
-        ref: credentialRef,
-        sourceKind: z.enum(SOURCE_KINDS_V2),
-    })
-    .strict();
+function unboundCredentialSchemaOver<const K extends Members>(kinds: K) {
+    return z
+        .object({
+            ref: credentialRef,
+            sourceKind: z.enum(kinds),
+        })
+        .strict();
+}
 
 /**
  * The `/2` rules on `unboundCredentials[]`. Each one refuses a report that
@@ -443,7 +464,19 @@ function checkUnboundCredentials(
 export const HarnessReportBodyV2Schema = z
     .object({
         ...bodyMembersOver(HARNESS_CONTRACT_V2, SOURCE_KINDS_V2, INCOMPLETE_REASONS_V2, AgentSchemaV2),
-        unboundCredentials: z.array(UnboundCredentialSchema).max(MAX_UNBOUND_CREDENTIALS),
+        unboundCredentials: z.array(unboundCredentialSchemaOver(SOURCE_KINDS_V2)).max(MAX_UNBOUND_CREDENTIALS),
+    })
+    .strict()
+    .superRefine((r, ctx) => {
+        checkReportInvariants(r, ctx);
+        checkUnboundCredentials(r, ctx);
+    });
+
+/** `inflect-agent-harness/3`: `/2`'s members and rules over `/3`'s kinds. `/2`'s reasons are `/3`'s. */
+export const HarnessReportBodyV3Schema = z
+    .object({
+        ...bodyMembersOver(HARNESS_CONTRACT_V3, SOURCE_KINDS_V3, INCOMPLETE_REASONS_V2, AgentSchemaV3),
+        unboundCredentials: z.array(unboundCredentialSchemaOver(SOURCE_KINDS_V3)).max(MAX_UNBOUND_CREDENTIALS),
     })
     .strict()
     .superRefine((r, ctx) => {
@@ -462,19 +495,24 @@ export const HarnessSignatureSchema = z
     .strict();
 
 export type HarnessReportBodyV2 = z.infer<typeof HarnessReportBodyV2Schema>;
-/** A verified report. `/2` is the one id the verifier accepts. */
-export type HarnessReportBody = HarnessReportBodyV2;
+export type HarnessReportBodyV3 = z.infer<typeof HarnessReportBodyV3Schema>;
+/** A verified report, of either id the verifier accepts. */
+export type HarnessReportBody = HarnessReportBodyV2 | HarnessReportBodyV3;
 export type HarnessReportAgentV2 = HarnessReportBodyV2['agents'][number];
-export type HarnessReportAgent = HarnessReportAgentV2;
-export type HarnessUnboundCredential = HarnessReportBodyV2['unboundCredentials'][number];
-export type HarnessModelEndpoint = NonNullable<HarnessReportAgentV2['models']>[number];
+export type HarnessReportAgentV3 = HarnessReportBodyV3['agents'][number];
+export type HarnessReportAgent = HarnessReportAgentV2 | HarnessReportAgentV3;
+export type HarnessUnboundCredential = HarnessReportBody['unboundCredentials'][number];
+export type HarnessModelEndpoint = NonNullable<HarnessReportAgentV3['models']>[number];
 export type HarnessSignature = z.infer<typeof HarnessSignatureSchema>;
 
 /** The strict schema for each accepted id. A Map, so no prototype key can name one. */
 const BODY_SCHEMA_BY_ID: ReadonlyMap<HarnessContractId, z.ZodType<HarnessReportBody>> = new Map<
     HarnessContractId,
     z.ZodType<HarnessReportBody>
->([[HARNESS_CONTRACT_V2, HarnessReportBodyV2Schema]]);
+>([
+    [HARNESS_CONTRACT_V2, HarnessReportBodyV2Schema],
+    [HARNESS_CONTRACT_V3, HarnessReportBodyV3Schema],
+]);
 
 /** The schema for the id a body names, or null when it names none this verifier accepts. */
 function bodySchemaFor(body: Record<string, unknown>): z.ZodType<HarnessReportBody> | null {
@@ -671,7 +709,7 @@ export function verifyAndParseHarnessReport(
     const bodySchema = bodySchemaFor(body);
     if (bodySchema === null) {
         const issue = body.contract === HARNESS_CONTRACT_V1
-            ? `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V2}`
+            ? `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V3}`
             : 'contract: not a contract id this verifier accepts';
         return { ok: false, reason: 'SCHEMA', issues: [issue] };
     }

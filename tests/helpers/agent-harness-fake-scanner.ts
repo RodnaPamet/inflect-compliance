@@ -1,5 +1,6 @@
 /**
- * The REFERENCE implementation of a scanner speaking `inflect-agent-harness/2`.
+ * The REFERENCE implementation of a scanner speaking `inflect-agent-harness/2`
+ * and `/3`.
  *
  * `docs/agent-harness-contract.md` names this file as the executable reference,
  * and `tests/unit/agentic/harness-contract.test.ts` validates its output against
@@ -8,6 +9,8 @@
  *
  * It produces valid signed `/2` reports — `validReportBody`, the plainest, and
  * `validV2ReportBody`, which carries every member `/2` added — and, on request,
+ * `validV3ReportBody`, the same estate under `/3` with a `gcp-sa` source read
+ * in full — and, on request,
  * every malformation the contract tells an ingest to refuse, each paired with
  * the refusal it must get. One of those is `retiredV1ReportBody`, a report as a
  * `/1` scanner sent it, which the verifier refuses since `/1` was retired
@@ -21,10 +24,12 @@ import { generateKeyPairSync, sign, type KeyObject } from 'crypto';
 import {
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
+    HARNESS_CONTRACT_V3,
     MAX_REPORT_BYTES,
     harnessSignedMessage,
     type HarnessRefusal,
     type HarnessReportBodyV2,
+    type HarnessReportBodyV3,
 } from '@/lib/agentic/harness-contract';
 
 export interface FakeScanner {
@@ -205,6 +210,41 @@ export function validV2CompleteReportBody(): HarnessReportBodyV2 {
     return body;
 }
 
+/** The service account `validV3ReportBody` reports, and its one user-managed key. */
+export const GCP_SA_ID = 'gcp:sa:104238856123456789012';
+export const GCP_SA_KEY_REF = 'gcp-sa-key://acme-prod-319/104238856123456789012/2f1a9c0e3b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f';
+
+/**
+ * A valid `/3` report body: `validReportBody`'s estate under `/3`, with a
+ * `gcp-sa` source read in full and the service account it found, holding one
+ * user-managed key. Everything else is `/2`'s, unchanged — `/3` adds only the
+ * kind.
+ */
+export function validV3ReportBody(): HarnessReportBodyV3 {
+    const plain = validReportBody();
+    return {
+        ...plain,
+        contract: HARNESS_CONTRACT_V3,
+        population: { sources: [...plain.population.sources, { kind: 'gcp-sa', status: 'COMPLETE', rows: 3 }] },
+        agents: [
+            ...plain.agents,
+            {
+                discoveredId: GCP_SA_ID,
+                discoveredVia: ['gcp-sa'],
+                registeredAgentId: null,
+                owner: null,
+                credentials: [{ ref: GCP_SA_KEY_REF, ageDays: 400, expires: false, boundToAgent: true, grant: 'app-only' }],
+                tools: [],
+                skills: [],
+                verdicts: [
+                    { criterion: 'H2.credential_bound', met: true, evidence: 'gcp-sa:projects/acme-prod-319/serviceAccounts/104238856123456789012/keys' },
+                    { criterion: 'H2.grant_kind_declared', met: true, evidence: 'gcp-sa:projects/acme-prod-319/serviceAccounts/104238856123456789012' },
+                ],
+            },
+        ],
+    };
+}
+
 /** A credential-shaped string, built at runtime. Never a real credential. */
 function fakeSecret(): string {
     return ['gh', 'p_', 'Q'.repeat(36)].join('');
@@ -257,6 +297,11 @@ export const MALFORMATIONS = {
     'v2-secret-shaped-endpoint': 'SCHEMA',
     'v2-endpoint-with-userinfo': 'SCHEMA',
     'v2-model-with-a-prompt': 'SCHEMA',
+    // `/3` adds a kind to a closed list, and each id is held to its own: a `/2`
+    // report that names `gcp-sa` anywhere is refused, as a `/2` verifier would.
+    'v2-names-gcp-sa-source': 'SCHEMA',
+    'v2-agent-discovered-via-gcp-sa': 'SCHEMA',
+    'v2-unbound-from-gcp-sa': 'SCHEMA',
 } as const satisfies Record<string, HarnessRefusal>;
 
 export type Malformation = keyof typeof MALFORMATIONS;
@@ -323,7 +368,7 @@ export function malformedReport(
         case 'duplicate-source':
             return { raw: signedWith([['population', 'sources', 1, 'kind'], 'entra-sp']), trusted, expected };
         case 'wrong-contract':
-            return { raw: signedWith([['contract'], 'inflect-agent-harness/3']), trusted, expected };
+            return { raw: signedWith([['contract'], 'inflect-agent-harness/4']), trusted, expected };
         case 'unknown-criterion':
             return { raw: signedWith([['agents', 0, 'verdicts', 0, 'criterion'], 'H9.made_up']), trusted, expected };
         case 'retired-v1':
@@ -352,5 +397,21 @@ export function malformedReport(
             return { raw: signedV2With([['agents', 0, 'models', 0, 'endpoint'], 'https://svc@api.example/v1']), trusted, expected };
         case 'v2-model-with-a-prompt':
             return { raw: signedV2With([['agents', 0, 'models', 0, 'prompt'], 'You are a helpful agent.']), trusted, expected };
+        // `/3`'s own body, its id put back to `/2`: everything else valid.
+        case 'v2-names-gcp-sa-source':
+        case 'v2-agent-discovered-via-gcp-sa':
+        case 'v2-unbound-from-gcp-sa': {
+            const body = { ...validV3ReportBody(), contract: HARNESS_CONTRACT_V2 } as unknown as Record<string, unknown>;
+            if (kind === 'v2-agent-discovered-via-gcp-sa') {
+                // The source list is `/2`'s; only the agent still names the kind.
+                (body.population as { sources: unknown[] }).sources.pop();
+                (body.agents as { discoveredVia: string[] }[])[2].discoveredVia = ['gcp-sa'];
+            }
+            if (kind === 'v2-unbound-from-gcp-sa') {
+                (body.agents as unknown[]).pop();
+                body.unboundCredentials = [{ ref: GCP_SA_KEY_REF, sourceKind: 'gcp-sa' }];
+            }
+            return { raw: scanner.serialise(body), trusted, expected };
+        }
     }
 }

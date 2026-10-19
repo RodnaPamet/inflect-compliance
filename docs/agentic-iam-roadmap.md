@@ -64,8 +64,11 @@ from a client environment. `inflect-agent-harness/2` (#3754, owner decisions
 2026-10-19) is the first id, `/1`, plus the source kind `code`, the INCOMPLETE reason `UNPARSEABLE`, an
 `unboundCredentials[]` member, and, optionally per agent, a call count over a
 window on each tool (stored with the tool) and the model endpoints it calls
-(stored on the agent's scan item since #3759, and shown on the harness matrix);
-it is what the reference scanner emits. The
+(stored on the agent's scan item since #3759, and shown on the harness matrix).
+`inflect-agent-harness/3` (#3785, owner decision 2026-10-19) is `/2` plus one
+source kind, `gcp-sa`, and is what the reference scanner emits; the ingest
+accepts both, each against its own schema, so a `/2` report naming `gcp-sa` is
+refused. The
 schemas are `src/lib/agentic/harness-contract.ts` and the executable reference
 is `tests/helpers/agent-harness-fake-scanner.ts`. The verifier checks size,
 then JSON, then the Ed25519 signature by a trusted key, and only then the strict
@@ -110,7 +113,7 @@ signature (decision 9).
 
 Step `4a` (#3678) built the scanner the ingest was waiting for, as the owner
 decided on 2026-10-18: `packages/agent-harness-scanner`, a CLI that reads an
-estate's sources, signs an `inflect-agent-harness/2` report with a key the
+estate's sources, signs an `inflect-agent-harness` report (`/3` since #3785) with a key the
 tenant registered, and posts it unchanged to the ingest. It reads two sources
 behind one interface. `okta-app` is Okta's service apps and API tokens with
 their owners, and `vault` is Azure Key Vault's secrets and certificates tagged
@@ -163,7 +166,7 @@ customer-named host when the configuration is read and resolved again before
 every request; one on the estate's own network names the private ranges it may
 resolve into, after the application's egress allowlist, with metadata, loopback
 and link-local refused inside them. The scanner reports under
-`inflect-agent-harness/2` (#3754), which has a member for the call counts and
+`inflect-agent-harness/3` (#3785), which keeps `/2`'s (#3754) member for the call counts and
 one for the agents' model endpoints; the LangSmith source fills both in a
 follow-up (owner, 2026-10-19), and until then the counts reach only the
 scanner's log. The scanner DPIA names the
@@ -199,6 +202,17 @@ was read and parsed and none reaches secrets dynamically. Workflow YAML is parse
 by `js-yaml`, under its safe core schema, with alias and depth caps. A file the
 source cannot resolve makes it `INCOMPLETE` / `UNPARSEABLE`, and the other files
 are still reported.
+
+The scanner reads Google Cloud. Its `gcp-sa` source (#3785, owner decision
+2026-10-19) is the kind `inflect-agent-harness/3` adds. It authenticates with
+the OAuth JWT-bearer grant at `oauth2.googleapis.com`, never at a key file's own
+`token_uri`, as an account holding `roles/iam.serviceAccountViewer`. It reads
+each configured project's service accounts and their user-managed keys, by GET
+on `iam.googleapis.com`. Every enabled account but the scanner's own (recognised
+by its key's address) is a discovered agent keyed on its numeric id, with its
+enabled user-managed keys by reference. An account's e-mail address, display name
+and description are not kept. An estate may declare the kind, because the CHECK
+on `AgentHarnessEstateSource.kind` lists the contract's nine.
 
 A tenant declares each client ESTATE it scans (`AgentHarnessEstate`): a name,
 the registered scanner agent whose signed reports are the estate's, the cadence
@@ -1175,7 +1189,7 @@ lead's acceptance is open and is recorded on #3682 when given.
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested under `inflect-agent-harness/2` (`/1` retired, #3686), levels derived and stored per scan, shadow and below-bar agents raised as findings, credentials a `/2` report saw bound to no agent raised as `ORPHAN_CREDENTIAL` when their source and every identity-bearing source in the scan were read in full, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678), and a stale estate raises a finding and a metric every day (#3741); it reads LangSmith tool usage, and deployments where an estate opts in, as the `runtime` source (#3738), and LangChain and LangGraph agent definitions in code as the `code` source (#3737); it reads Entra service principals and app registrations, MCP servers' tool listings, and the tenant's own register, and runs as a container a client builds from source (#3686); and it reads GitHub Actions workflows and their secrets as the `cicd` source (#3784). Nothing scans the pilot estate and no client estate is scheduled. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested under `inflect-agent-harness/2` and `/3` (`/1` retired, #3686; `/3` adds the `gcp-sa` kind, #3785), levels derived and stored per scan, shadow and below-bar agents raised as findings, credentials a `/2` report saw bound to no agent raised as `ORPHAN_CREDENTIAL` when their source and every identity-bearing source in the scan were read in full, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678), and a stale estate raises a finding and a metric every day (#3741); it reads LangSmith tool usage, and deployments where an estate opts in, as the `runtime` source (#3738), and LangChain and LangGraph agent definitions in code as the `code` source (#3737); it reads Entra service principals and app registrations, MCP servers' tool listings, and the tenant's own register, and runs as a container a client builds from source (#3686); it reads GitHub Actions workflows and their secrets as the `cicd` source (#3784); and it reads Google Cloud service accounts and their user-managed keys as the `gcp-sa` source (#3785). Nothing scans the pilot estate and no client estate is scheduled. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. A2A with a pinned peer in both directions: an inbound task becomes a labelled, scanned run input for one registered agent, an outbound task is an external write on the ladder, every message is signed with the tenant's own key and kept, a per-peer kill stops both directions, and the peers page shows all of it. | No real vendor's agent has exchanged an A2A task: both directions are built and tested against an in-process fake peer, and the pilot stays open on #3752. Inflect publishes no agent card of its own (R19). |
 | Skills | Nine original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine, and `iam-audit-procedures` by another, `audit-narrative` (#3749); both are read-only by declaration, as every Flue workflow with no PROPOSE step must be (#3775); each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
@@ -1765,9 +1779,11 @@ What this means for Phase 1:
 - **The scanner is registered first.** `scan.scanner.agentId` names the scanner
   in the register (rule 1), so the pilot scanner is a registered agent in
   Inflect's tenant before the first scan.
-- **The GCP project's own service accounts are not covered.** They are
-  agent-shaped principals, and no kind in `SOURCE_KINDS` reads them, so no
-  planned step scans them.
+- **The GCP project's own service accounts are read by the `gcp-sa` source**
+  (#3785, owner decision 2026-10-19), which `inflect-agent-harness/3` adds.
+  Each enabled account but the scanner's own is a discovered agent with its
+  user-managed keys. Role bindings are not read: `getIamPolicy` is a POST, and
+  the scanner's wire has no verb for it.
 
 ### Phases and steps
 

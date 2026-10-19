@@ -26,13 +26,22 @@ export const HARNESS_CONTRACT_V1 = 'inflect-agent-harness/1';
 
 /**
  * `/1` plus the `code` source kind, the `UNPARSEABLE` reason and the
- * `unboundCredentials[]` member (#3754, owner decision 2026-10-19). The one id
- * the verifier accepts.
+ * `unboundCredentials[]` member (#3754, owner decision 2026-10-19). Accepted
+ * beside `/3`.
  */
 export const HARNESS_CONTRACT_V2 = 'inflect-agent-harness/2';
 
+/**
+ * `/2` plus the `gcp-sa` source kind, a Google Cloud project's service
+ * accounts (#3785, owner decision 2026-10-19), and nothing else. A new id
+ * rather than a widened `/2`, because the source kinds are a closed list on the
+ * wire: a `/2` verifier refuses a report naming `gcp-sa`, and a `/2` report
+ * that names it is still refused here. What the reference scanner speaks.
+ */
+export const HARNESS_CONTRACT_V3 = 'inflect-agent-harness/3';
+
 /** Every id the verifier accepts. `/1` is retired and is not among them. */
-export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V2] as const;
+export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3] as const;
 export type HarnessContractId = (typeof HARNESS_CONTRACT_IDS)[number];
 
 /**
