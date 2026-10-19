@@ -333,7 +333,7 @@ kind, so a kind added to the contract fails to compile until it is classified:
 | `cicd` | Yes | A pipeline identity, and the secrets its jobs receive |
 | `inflect-register` | Yes | A registered agent, and the API keys that speak for it |
 | `code` | Yes | An agent definition, and the credential references it reads |
-| `mcp` | **No** | A scanner sends an MCP server `initialize` and `tools/list` only, and neither answer names a caller or holds a credential |
+| `mcp` | **No** | A scanner sends an MCP server `initialize`, the initialized notification and `tools/list` only, and no answer names a caller or holds a credential |
 
 It is an `OBSERVATION` of `MEDIUM` severity, written through the same seam as
 every harness finding.

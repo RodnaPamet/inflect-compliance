@@ -1,13 +1,20 @@
 /**
- * THE SCANNER'S ONLY WAY OUT — a GET-only reader, and one OAuth token exchange.
+ * THE SCANNER'S ONLY WAY OUT — a GET-only reader, one OAuth token exchange, and
+ * an MCP listing.
  *
  * Read-only is a property of this module's SHAPE, not of the sources' good
  * behaviour. `ReadOnlyHttp` has one verb, `getJson`, and no method parameter,
  * so a source holding it has no way to spell a write. The OAuth client
- * credentials exchange is a POST by protocol; it is the only other request a
- * source can make, it lives behind its own interface (`TokenExchange`), and it
- * changes nothing in the estate — it asks the source's identity provider for a
- * token to READ with.
+ * credentials exchange is a POST by protocol; it lives behind its own interface
+ * (`TokenExchange`), and it changes nothing in the estate — it asks the
+ * source's identity provider for a token to READ with.
+ *
+ * MCP is JSON-RPC over POST, so an MCP server is the one place a source sends a
+ * body. `McpListingWire` has two functions and no method parameter: `open`
+ * sends `initialize` and then the one-way `notifications/initialized` the
+ * protocol requires, and `listTools` sends `tools/list`. There is no way to
+ * spell `tools/call` with it (DPIA conditions 1 and 2, owner decisions 5 and 6
+ * on #3686, 2026-10-19).
  *
  * Every request is held to four rules, each of which ends the source's read
  * with the contract's reason rather than an exception the runner has to guess
@@ -48,6 +55,35 @@ export interface ReadOnlyHttp {
         opts: { readonly origin: string; readonly headers: Readonly<Record<string, string>> },
     ): Promise<{ readonly body: unknown; readonly headers: Headers }>;
 }
+
+/** One MCP server, as a source reaches it: the endpoint URL, and the headers each request carries. */
+export interface McpTarget {
+    /** The server's Streamable HTTP endpoint, https. */
+    readonly url: string;
+    /** The read token's header, when the server takes one. Nothing else. */
+    readonly headers: Readonly<Record<string, string>>;
+}
+
+/** An open MCP session: what `initialize` returned, and what every later request must carry. */
+export interface McpSession {
+    readonly target: McpTarget;
+    readonly sessionId: string | null;
+    readonly protocolVersion: string;
+    /** Whether the server declared the `tools` capability. One that did not lists none. */
+    readonly offersTools: boolean;
+}
+
+export interface McpListingWire {
+    /** `initialize`, then `notifications/initialized`. Throws `SourceReadError`. */
+    open(target: McpTarget): Promise<McpSession>;
+    /** One page of `tools/list`. Throws `SourceReadError`. */
+    listTools(session: McpSession, cursor: string | null): Promise<{ readonly tools: readonly unknown[]; readonly nextCursor: string | null }>;
+}
+
+/** The protocol revision the scanner speaks. A server may answer with another it supports. */
+export const MCP_PROTOCOL_VERSION = '2025-06-18';
+/** The three messages the scanner may send an MCP server, and no other. `scanner-surface.ts` declares them. */
+export const MCP_MESSAGES = ['initialize', 'notifications/initialized', 'tools/list'] as const;
 
 export interface TokenExchange {
     /**
@@ -156,10 +192,66 @@ function remaining(t: Transport): number {
     return ms;
 }
 
+/**
+ * One JSON-RPC response from an MCP server's answer: a JSON body, or a
+ * Server-Sent Events stream read until the response with `id` arrives — and
+ * then cancelled, because a stream need not end. Both are read under the byte
+ * cap. Anything else is PAGINATION_TORN: an answer that is not the protocol's.
+ */
+async function readRpcResponse(res: Response, id: number, cap: number, onBytes: (n: number) => void): Promise<Record<string, unknown>> {
+    const type = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    const isResponse = (v: unknown): v is Record<string, unknown> =>
+        v !== null && typeof v === 'object' && (v as { id?: unknown }).id === id && ('result' in v || 'error' in v);
+    if (type === 'application/json') {
+        const body = parseJson(await readCapped(res, cap, onBytes));
+        if (!isResponse(body)) throw new SourceReadError('PAGINATION_TORN', 'the server answered with no response to the request');
+        return body;
+    }
+    if (type !== 'text/event-stream' || !res.body) {
+        await res.body?.cancel();
+        throw new SourceReadError('PAGINATION_TORN', 'the server answered in a content type MCP does not use');
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = '';
+    let total = 0;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            onBytes(value.byteLength);
+            if (total > cap) throw new SourceReadError('BYTE_CAP', 'the response exceeded the byte cap');
+            buffered += decoder.decode(value, { stream: true });
+            const events = buffered.split(/\r?\n\r?\n/);
+            buffered = events.pop() ?? '';
+            for (const event of events) {
+                const data = event
+                    .split(/\r?\n/)
+                    .filter((l) => l.startsWith('data:'))
+                    .map((l) => l.slice(5).replace(/^ /, ''))
+                    .join('\n');
+                if (data === '') continue;
+                const parsed = parseJson(data);
+                // A server may send its own notifications or requests first; they
+                // are not the answer, and none of them is acted on.
+                if (isResponse(parsed)) return parsed;
+            }
+        }
+        throw new SourceReadError('PAGINATION_TORN', 'the stream ended with no response to the request');
+    } finally {
+        await reader.cancel().catch(() => undefined);
+    }
+}
+
+/** A session id the server may hand back: visible ASCII, bounded. Anything else tears the session. */
+const MCP_SESSION_ID = /^[\x21-\x7e]{1,256}$/;
+const MCP_PROTOCOL = /^\d{4}-\d{2}-\d{2}$/;
+
 export function createSourceWire(
     t: Transport,
     caps: { readonly response?: number; readonly source?: number } = {},
-): { readonly http: ReadOnlyHttp; readonly tokens: TokenExchange } {
+): { readonly http: ReadOnlyHttp; readonly tokens: TokenExchange; readonly mcp: McpListingWire } {
     const responseCap = caps.response ?? MAX_RESPONSE_BYTES;
     const charge = budget(caps.source ?? MAX_SOURCE_BYTES);
 
@@ -222,7 +314,115 @@ export function createSourceWire(
         },
     };
 
-    return { http, tokens };
+    let rpcId = 0;
+    /** POST one JSON-RPC message from `MCP_MESSAGES` to the target. The method is never a parameter of the wire. */
+    async function post(
+        target: McpTarget,
+        method: (typeof MCP_MESSAGES)[number],
+        params: Record<string, unknown> | undefined,
+        session: { sessionId: string | null; protocolVersion: string | null },
+    ): Promise<{ res: Response; id: number | null }> {
+        let parsed: URL;
+        try {
+            parsed = new URL(target.url);
+        } catch {
+            throw new SourceReadError('UNREACHABLE', 'the MCP endpoint is not a URL');
+        }
+        if (parsed.protocol !== 'https:' || parsed.username !== '' || parsed.password !== '') {
+            throw new SourceReadError('UNREACHABLE', 'the MCP endpoint is not an https URL without credentials');
+        }
+        const notification = method.startsWith('notifications/');
+        const id = notification ? null : ++rpcId;
+        const headers: Record<string, string> = {
+            ...target.headers,
+            'Content-Type': 'application/json',
+            Accept: 'application/json, text/event-stream',
+        };
+        if (session.sessionId !== null) headers['Mcp-Session-Id'] = session.sessionId;
+        if (session.protocolVersion !== null) headers['MCP-Protocol-Version'] = session.protocolVersion;
+        const message = { jsonrpc: '2.0', ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) };
+        try {
+            const res = await t.fetchImpl(target.url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(message),
+                redirect: 'error',
+                signal: AbortSignal.timeout(remaining(t)),
+            });
+            if (!res.ok) {
+                await res.body?.cancel();
+                throw new SourceReadError(reasonForStatus(res.status), `the MCP server answered HTTP ${res.status}`);
+            }
+            return { res, id };
+        } catch (err) {
+            throw classifyThrow(err);
+        }
+    }
+
+    async function call(
+        target: McpTarget,
+        method: 'initialize' | 'tools/list',
+        params: Record<string, unknown>,
+        session: { sessionId: string | null; protocolVersion: string | null },
+    ): Promise<{ result: Record<string, unknown>; headers: Headers }> {
+        const { res, id } = await post(target, method, params, session);
+        let answer: Record<string, unknown>;
+        try {
+            answer = await readRpcResponse(res, id as number, responseCap, charge);
+        } catch (err) {
+            throw classifyThrow(err);
+        }
+        if ('error' in answer) throw new SourceReadError('UNREACHABLE', `the MCP server refused ${method}`);
+        const result = answer.result;
+        if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+            throw new SourceReadError('PAGINATION_TORN', `the MCP server's ${method} result was not an object`);
+        }
+        return { result: result as Record<string, unknown>, headers: res.headers };
+    }
+
+    const mcp: McpListingWire = {
+        async open(target) {
+            const { result, headers } = await call(
+                target,
+                'initialize',
+                {
+                    protocolVersion: MCP_PROTOCOL_VERSION,
+                    // The scanner offers the server nothing: no sampling, no roots, no elicitation.
+                    capabilities: {},
+                    clientInfo: { name: 'inflect-agent-harness-scanner', version: '1' },
+                },
+                { sessionId: null, protocolVersion: null },
+            );
+            const sessionHeader = headers.get('mcp-session-id');
+            if (sessionHeader !== null && !MCP_SESSION_ID.test(sessionHeader)) {
+                throw new SourceReadError('PAGINATION_TORN', 'the MCP server handed back a malformed session id');
+            }
+            const version = typeof result.protocolVersion === 'string' && MCP_PROTOCOL.test(result.protocolVersion)
+                ? result.protocolVersion
+                : null;
+            if (version === null) throw new SourceReadError('PAGINATION_TORN', 'the MCP server named no protocol version');
+            const capabilities = result.capabilities;
+            const offersTools =
+                capabilities !== null && typeof capabilities === 'object' && 'tools' in (capabilities as object);
+            const session: McpSession = { target, sessionId: sessionHeader, protocolVersion: version, offersTools };
+            // One-way: the server answers 202 and nothing else is read.
+            const { res } = await post(target, 'notifications/initialized', undefined, session);
+            await res.body?.cancel();
+            return session;
+        },
+        async listTools(session, cursor) {
+            const { result } = await call(session.target, 'tools/list', cursor === null ? {} : { cursor }, session);
+            const tools = result.tools;
+            const next = result.nextCursor;
+            if (!Array.isArray(tools)) throw new SourceReadError('PAGINATION_TORN', 'a tools/list page had no tools array');
+            if (next !== undefined && next !== null && (typeof next !== 'string' || next.length > 1024)) {
+                throw new SourceReadError('PAGINATION_TORN', 'a tools/list page had a malformed cursor');
+            }
+            return { tools, nextCursor: typeof next === 'string' && next !== '' ? next : null };
+        },
+    };
+
+    return { http, tokens, mcp };
 }
 
 /**

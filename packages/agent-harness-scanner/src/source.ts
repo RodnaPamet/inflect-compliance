@@ -28,7 +28,7 @@ import type {
     SOURCE_KINDS_V2,
 } from '@/lib/agentic/harness-contract';
 
-import type { ReadOnlyHttp, TokenExchange } from './http';
+import type { McpListingWire, ReadOnlyHttp, TokenExchange } from './http';
 
 /** The scanner speaks `inflect-agent-harness/2`, so its kinds and reasons are `/2`'s. */
 export type SourceKind = (typeof SOURCE_KINDS_V2)[number];
@@ -89,6 +89,8 @@ export interface SourceRead {
      * COMPLETE, so a source that stopped early may still list what it saw.
      */
     readonly unboundCredentials?: readonly string[];
+    /** The `mcp` source only: each server it read in full. */
+    readonly mcpServers?: readonly McpServerRead[];
 }
 
 export interface SourceContext {
@@ -105,6 +107,21 @@ export interface SourceContext {
     readonly http: ReadOnlyHttp;
     /** The OAuth client-credentials exchange, for a source whose API takes a bearer token. */
     readonly tokens: TokenExchange;
+    /** The MCP listing — `initialize`, the initialized notification, `tools/list` — for the `mcp` source. */
+    readonly mcp: McpListingWire;
+}
+
+/**
+ * One MCP server the `mcp` source read IN FULL, by its configured URL: the
+ * tools it lists, as the report carries them. The report builder replaces a
+ * `<key>:*` placeholder another source reported for that URL with these.
+ */
+export interface McpServerRead {
+    readonly label: string;
+    readonly url: string;
+    /** `sha256:` over the server's whole tool listing: what an estate pins. */
+    readonly manifestHash: string;
+    readonly tools: readonly ObservedTool[];
 }
 
 /** The total of the calls a read's observations counted: what the log line reports for a source that reads tools. */

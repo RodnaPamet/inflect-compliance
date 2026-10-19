@@ -22,6 +22,7 @@ import { HARNESS_CONTRACT_V2 } from '@/lib/agentic/harness-contract';
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
+import { MCP_MESSAGES } from './http';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
 
@@ -30,9 +31,9 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * Raised with any change to what the scanner reads or reports. 0.2.0: the
  * LangSmith source (#3738). 0.3.0: reports under `inflect-agent-harness/2`
  * (#3754). 0.4.0: the `code` source, LangChain and LangGraph (#3737). 0.5.0:
- * the Entra source (#3686).
+ * the Entra source (#3686). 0.6.0: the MCP source (#3686).
  */
-export const SCANNER_VERSION = '0.5.0';
+export const SCANNER_VERSION = '0.6.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -79,6 +80,10 @@ export const SCANNER_SURFACE = {
             executes: false,
         },
     ],
+    // An MCP server is the estate's own host, named in its configuration. To
+    // it the scanner POSTs these JSON-RPC messages and no other (DPIA
+    // condition 1, owner decision 5 on #3686): never `tools/call`.
+    lists: [{ source: 'mcp', method: 'POST', host: 'configured', jsonRpc: [...MCP_MESSAGES] }],
     sends: [{ method: 'POST', path: INGEST_PATH_TEMPLATE }],
 } as const;
 
@@ -91,6 +96,22 @@ export function scannerManifestHash(): string {
  * path, the token exchange, or the POST to the ingest. The request log of every
  * test is held to this.
  */
+/**
+ * Whether one message to an MCP server is on the declared surface: a JSON-RPC
+ * body whose method is one of `MCP_MESSAGES`. The request log of every MCP
+ * test is held to this, beside `isDeclaredRequest` for every other request.
+ */
+export function isDeclaredMcpMessage(body: string): boolean {
+    let message: unknown;
+    try {
+        message = JSON.parse(body);
+    } catch {
+        return false;
+    }
+    const method = (message as { method?: unknown } | null)?.method;
+    return typeof method === 'string' && (MCP_MESSAGES as readonly string[]).includes(method);
+}
+
 export function isDeclaredRequest(method: string, url: string): boolean {
     const { origin, pathname } = new URL(url);
     if (method === 'GET') {

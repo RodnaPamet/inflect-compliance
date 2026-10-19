@@ -36,6 +36,13 @@
  *   • The scanner's own `findings` are INCOMPLETE_SOURCE only. The ingest
  *     derives its findings and does not act on this member; the scanner raises
  *     only what it alone knows, which is where it could not read.
+ *   • A `<key>:*` PLACEHOLDER IS REPLACED BY WHAT THE SERVER SERVES. The `code`
+ *     source reports a tool set its agent fetches from an MCP server at run
+ *     time as one `<key>:*` entry at the server's URL. When the `mcp` source
+ *     read that same server IN FULL, the placeholder becomes the server's
+ *     actual tools, with their hashes, hints and pin, and the agent is
+ *     `discoveredVia` `mcp` too (owner decision 2 on #3686). A server read in
+ *     part replaces nothing: the placeholder, which counts as a write, stays.
  *   • AN UNBOUND CREDENTIAL IS ONE NO PRINCIPAL HOLDS, across every source.
  *     `unboundCredentials[]` is what each source saw bound to no principal,
  *     less any reference some merged principal holds — including one cut by a
@@ -64,7 +71,16 @@ import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type CriterionVerdict } from '@/lib/agentic/harness-ladder';
 
 import { SCANNER_VERSION, scannerManifestHash } from './scanner-surface';
-import type { IncompleteReason, ObservedCredential, ObservedModel, ObservedOwner, ObservedTool, SourceKind, SourceRead } from './source';
+import type {
+    IncompleteReason,
+    McpServerRead,
+    ObservedCredential,
+    ObservedModel,
+    ObservedOwner,
+    ObservedTool,
+    SourceKind,
+    SourceRead,
+} from './source';
 
 export interface ScanIdentity {
     /** The scanner's id for this run; unique per tenant, or the ingest refuses it as a REPLAY. */
@@ -88,6 +104,16 @@ interface MergedAgent {
 }
 
 const toolKey = (t: ObservedTool) => `${t.server}\u0000${t.name}`;
+
+/** One MCP endpoint however it is spelt: origin and path, no trailing slash. */
+function endpointKey(url: string): string {
+    try {
+        const u = new URL(url);
+        return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
+    } catch {
+        return url;
+    }
+}
 const modelKey = (m: ObservedModel) => `${m.endpoint}\u0000${m.model ?? ''}`;
 
 /** Build the report body. Pure: no clock, no I/O. */
@@ -120,6 +146,21 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
             for (const m of o.models ?? []) if (!agent.models.has(modelKey(m))) agent.models.set(modelKey(m), { model: m, via: read.kind });
             agent.verdicts.push(...o.verdicts);
             merged.set(o.discoveredId, agent);
+        }
+    }
+
+    // A run-time tool set (`<key>:*`) on a server the `mcp` source read in full
+    // is replaced by that server's tools.
+    const served = new Map<string, McpServerRead>();
+    for (const read of ordered) for (const s of read.mcpServers ?? []) served.set(endpointKey(s.url), s);
+    for (const agent of merged.values()) {
+        for (const [key, { tool }] of [...agent.tools]) {
+            if (!tool.name.endsWith(':*')) continue;
+            const server = served.get(endpointKey(tool.server));
+            if (server === undefined) continue;
+            agent.tools.delete(key);
+            for (const t of server.tools) if (!agent.tools.has(toolKey(t))) agent.tools.set(toolKey(t), { tool: t, via: 'mcp' });
+            agent.via.add('mcp');
         }
     }
 

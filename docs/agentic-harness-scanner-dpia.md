@@ -351,14 +351,31 @@ both are dropped with the page, and a test holds a marker in each out of the
 signed report and the log. An owner is a user's directory object id, the
 `agents[].owner` member above.
 
+The MCP source (#3686) holds conditions 1, 2 and 4, and is tested by request
+log. To each configured server it POSTs exactly three JSON-RPC messages:
+`initialize`, the one-way `notifications/initialized`, and `tools/list`, paged.
+The wire it holds has two functions and no method parameter, so it cannot spell
+`tools/call`, and the fake server answers `tools/call` with a marker that the
+tests hold out of the report. A tool's definition (its description and schemas)
+reaches the source and leaves it only as a SHA-256 hash; the server's
+`instructions` are not read. A server's read token is named by an environment
+variable, sent as a bearer token with those three messages only, and for
+Inflect's own `/api/mcp` is a key holding `mcp:read` alone. Each server is a host
+the customer names, checked at configuration and again before every request, as
+the self-hosted LangSmith is.
+
 #3686's hardening checklist carries condition 1 and the write-credential half
 of condition 2. The assessment holds for the scanner only when #3686 meets all
 four of its conditions, and for the evidence emitted from a scan only when
 #3687 meets condition 8.
 
-1. The scanner sends an MCP server `initialize` and `tools/list` only, asserted
+1. The scanner sends an MCP server `initialize`, the one-way
+   `notifications/initialized` the protocol requires, and `tools/list` only,
+   asserted
    by its request log.
-2. The scanner holds no write credential and never calls `tools/call`.
+2. The scanner holds no write credential and never calls `tools/call`. An MCP
+   server's read token, where the server takes one, is sent with the messages
+   condition 1 names and nothing else.
 3. The vault reader lists secret names, references and metadata, and never
    reads a secret's value.
 4. The scanner sends nothing anywhere except, over HTTPS, the ingest route of
@@ -486,7 +503,7 @@ including its 30-day notice window, before that data moves.
 | | Risk to the people concerned | Mitigation | Held by |
 |---|---|---|---|
 | R1 | A credential value reaches Inflect inside a report and is stored in the tenant. | Credentials travel as references, and a secret-shaped value is refused inside a credential reference. The contract checks no other member, so condition 10 requires the ingest to check every string member, which it does since #3692. Residual: a secret in a shape `SECRET_SHAPES` does not list passes both checks. | `credentialRef`, `looksLikeSecret`; condition 10 (#3692) |
-| R2 | The scanner collects content written by or about staff: tool descriptions, prompts, payloads. | The contract has no member for content and refuses unknown members; the scanner sends `initialize` and `tools/list` only, and its LangSmith source requests aggregates and never a run (R15). | `.strict()` schemas; condition 1 |
+| R2 | The scanner collects content written by or about staff: tool descriptions, prompts, payloads. | The contract has no member for content and refuses unknown members; the scanner sends `initialize`, the initialized notification and `tools/list` only, and its LangSmith source requests aggregates and never a run (R15). | `.strict()` schemas; condition 1 |
 | R3 | The scanner reads secret values in the client's estate while listing a vault. | The vault reader lists metadata and references only. | Condition 3 |
 | R4 | A forged report attributes an agent to the wrong person, or invents an owner. | The signature by a tenant-trusted key is checked before the body is read. The report's owner is a claim: intake has a person confirm it before it becomes the register's owner. | `verifyAndParseHarnessReport`; step `2a` intake |
 | R5 | Scan rows become visible in another tenant. | Row-level security, a tenant-leading index and a two-tenant test on every new table. The route is tenant-scoped, and an API key for another tenant is refused (`getTenantCtx`, `src/app-layer/context.ts`). | Step `1a` checklist; `getTenantCtx` |
@@ -560,3 +577,13 @@ merge of the pull request that carries it (#3740) signs the amendment.
 records what is and is not read from it, with risks R15 and R16. The owner
 decided on 2026-10-19 that merging the pull request that adds LangSmith to this
 assessment re-signs it, as with step `4a`, so that merge signs this amendment.
+
+#3686 reopened it on two conditions on step `1a`. The MCP protocol requires a
+client to send the one-way `notifications/initialized` after `initialize`, and
+some servers refuse `tools/list` without it, so condition 1 now names it beside
+the two requests (owner decision 5 on #3686, 2026-10-19). A server that needs
+authentication takes a read token, so condition 2 now says that token is sent
+with condition 1's messages and nothing else (owner decision 6). Neither adds a
+data category: the notification carries no content, and the token is a
+credential of the estate's that never reaches the report. The merge of the pull
+request that carries this paragraph signs the amendment.
