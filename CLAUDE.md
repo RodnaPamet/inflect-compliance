@@ -1901,8 +1901,15 @@ registered auditor agent. Six rules, each held by a test or a lint rule:
   `recordAuditWorkpaperInTx`): a second transaction cannot see the uncommitted
   `ControlTestRun` and is refused `RUN_NOT_FOUND`. Each exception names its
   proposal; a re-run names the live one rather than proposing again.
-- **Only the auditor's owner sets a procedure plan** (`scheduleTestPlan`), which
-  is where the second line's parameters live.
+- **Only the auditor's owner sets or switches off a procedure plan.** Every path
+  that can pause, archive, unschedule, re-type or delete a test plan asks
+  `assertAuditorOwnerMayChangeProcedurePlans` (`usecases/audit-procedure-plans.ts`)
+  and refuses anyone but a PERSON who owns the auditor the plan names — never
+  an API key, agent or job, the owner's own key included —
+  `AUDIT_PROCEDURE_PLAN_OWNER_ONLY`. A new path that stops a plan running asks
+  it too, or the audited first line can switch off its own audit. The plan is
+  where the second line's parameters live, and the library keeps no default
+  for them (pilot values: `scripts/audit-pilot-setup.ts`).
 
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,

@@ -49,7 +49,10 @@ one that concludes differently.
 | `src/app-layer/usecases/audit-workpaper.ts` | `recordAuditWorkpaperInTx`, the writer on the caller's transaction |
 | `src/app-layer/usecases/auditor-remit.ts` | the remit, refused at grant, mark and activation |
 | `src/app-layer/usecases/agent-tool-exposure.ts`, `agent-registry.ts` | call the remit refusals |
-| `src/app-layer/usecases/test-scheduling.ts` | only the auditor's owner sets, changes or removes a procedure plan |
+| `src/app-layer/usecases/audit-procedure-plans.ts` | the one gate: only a person who owns the named auditor changes or switches off a procedure plan (`AUDIT_PROCEDURE_PLAN_OWNER_ONLY`) |
+| `src/app-layer/usecases/test-scheduling.ts` | `scheduleTestPlan` asks that gate, and refuses a malformed config or a non-auditor |
+| `src/app-layer/usecases/control/test-plans.ts` | `updateTestPlan`, `bulkSetTestPlanStatus` and `bulkDeleteTestPlan` ask that gate before a pause, archive, automation change or delete |
+| `scripts/audit-pilot-setup.ts` | registers the pilot auditor and schedules the five plans through the usecases; dry run by default |
 | `src/lib/agentic/flue/skills/iam-audit-procedures/` | the skill and its evaluation set; no record |
 
 ## Decisions
@@ -82,10 +85,13 @@ one that concludes differently.
   raising it again, links a finding a person created from it, and re-raises
   only one that EXPIRED undecided. Proposing stops at the first refusal; the
   rest are counted and the basis says `EXCEPTIONS_NOT_ALL_PROPOSED`.
-- **The second line sets the plan.** `scheduleTestPlan` refuses a write that
-  puts, changes or removes a procedure config unless the caller is a person who
-  owns the named auditor (second line, by the independence rule). A malformed
-  procedure config is a 400 rather than a plan that runs `CONFIG_INVALID`.
+- **The second line sets the plan, and only the second line switches it off.**
+  `scheduleTestPlan` refuses a write that puts, changes or removes a procedure
+  config, or changes or clears the cron of a plan that carries one, unless the
+  caller is a person who owns the named auditor (second line, by the
+  independence rule). A malformed procedure config is a 400 rather than a plan
+  that runs `CONFIG_INVALID`. The same gate holds every other path that stops
+  such a plan running (decision 6, below).
 - **The remit is held four times.** Granting an auditor a tool outside read
   tools and `propose_finding`, marking an agent that holds one, and activating
   an auditor that holds one are refused `AUDITOR_REMIT_EXCEEDED`; and the
@@ -115,3 +121,67 @@ one that concludes differently.
   and no record: the record needs a model call this change could not make, and
   a record is never written by hand. No workflow declares it, because CI
   refuses a registered workflow that declares a skill the mount gate refuses.
+  The auditor workflow, a workpaper read tool and the evaluation record are
+  #3749 (decision 11).
+
+## Owner decisions (2026-10-19)
+
+The owner answered the pull request's eleven questions. Five confirm what was
+built, four changed code, two accept a limit.
+
+1. **The principal is the auditor's owner.** As built.
+2. **Procedure 5 excludes auditor agents' own windows.** As built, and recorded
+   as a reading of catalogue version 1, not a change to it. The check on the
+   auditor is internal audit's sampling of its workpapers, step `3d` (#3677).
+3. **A1 and A4 are judged at each recorded call.** As built.
+4. **Proposals only; the runner writes no Finding for a procedure.** As built.
+5. **The re-raising rule** (reuse a live proposal; re-raise only an EXPIRED
+   one). As built.
+6. **Only the auditor's owner pauses or deletes a procedure plan**, so the
+   audited first line cannot switch off its own audit. One gate,
+   `assertAuditorOwnerMayChangeProcedurePlans` in
+   `usecases/audit-procedure-plans.ts`, the same rule `scheduleTestPlan`
+   applied: a person (no API key, agent or job, even the owner's own key) who
+   owns the auditor the plan's `automationConfig` names. Every path that can
+   stop a plan running asks it, with the named reason
+   `AUDIT_PROCEDURE_PLAN_OWNER_ONLY` and the attempted change in `details`:
+   `updateTestPlan` (a status other than ACTIVE, or a new automation type),
+   `bulkSetTestPlanStatus` (PAUSED or ARCHIVED), `bulkDeleteTestPlan`, and
+   `scheduleTestPlan`. A batch holding one such plan is refused whole. A
+   resume and every other field stay open to the plan's managers, the gate is
+   in addition to each path's own permission, and a plan with no procedure is
+   not read by it. Proved by `tests/integration/audit-procedure-plan-gate.test.ts`
+   through the four real route handlers.
+7. **The pilot's parameters: `leaverWindowHours` 24, `remediationWindowDays`
+   14.** Agreed for the pilot and entered on each plan; the library keeps no
+   default, so a plan without them still runs INCONCLUSIVE `PARAMETER_UNSET`.
+   The values are written by the set-up script below, nowhere else.
+8. **An operator script sets the pilot up**, and is how 3c's exit — the
+   auditor re-performs all five procedures for the pilot period and writes a
+   workpaper for each — is met. `scripts/audit-pilot-setup.ts --tenant=<slug>
+   --owner=<email>` is a dry run that prints every step; `--apply` writes,
+   only through `registerAgent`, `grantAgentTool`, `activateRegisteredAgent`,
+   `createTestPlan` and `scheduleTestPlan`, under a context resolved from the
+   owner's own membership. It grants `propose_finding` and no read tool,
+   because the procedures read through the handler and call none. Activation
+   waits on the owner's risk assessment (registration scores nothing, and
+   activation refuses an unscored agent), so the first `--apply` reports it
+   PENDING `UNSCORED` and a re-run after the assessment activates. Controls
+   are mapped from each procedure's ISO/IEC 27001:2022 identifiers in
+   catalogue order (`annexId` or `code`, as `A.5.16` or `A-5.16`); the first
+   identifier that matches decides, and more than one control is
+   `CONTROL_AMBIGUOUS`. `--control=<procedure>=<id>` names one instead. Every
+   named refusal is decided before the first write. A re-run on a set-up
+   tenant writes nothing, not an audit row, and a plan the second line has
+   since changed is reported `DIFFERS` and left alone.
+   `tests/integration/audit-pilot-setup.test.ts` runs it twice against a real
+   database, then runs the five plans it scheduled on the real runner and
+   finds one workpaper each.
+9. **A leaver disabled late is HIGH**, not MEDIUM: the account was live for a
+   departed person past the window. Pinned in
+   `tests/unit/agentic/audit-procedure-library.test.ts`.
+10. **The two limits are accepted:** the 120 s automated-run transaction
+    budget, and procedure 2's empty case asserted at module level.
+11. **The skill stays unmounted**, and `skills-evaluate` is not run for it.
+    The follow-up is #3749: the auditor workflow, a workpaper read tool and
+    the evaluation record.

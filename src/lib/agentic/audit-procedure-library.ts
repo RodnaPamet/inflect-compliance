@@ -499,11 +499,16 @@ type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
  * account or grant that should have ended is HIGH; a control that did not
  * operate (no campaign, no follow-up) is HIGH; a late or incomplete act is
  * MEDIUM. A person decides the proposal and may change it.
+ *
+ * One exception to the last rule: a leaver disabled LATE is HIGH, not MEDIUM
+ * (owner decision 9, 2026-10-19). The account was live for a departed person
+ * past the window, which is the exposure the procedure exists to find; that it
+ * was closed afterwards does not undo the hours it was open.
  */
 export const EXCEPTION_SEVERITY: Readonly<Record<string, Severity>> = {
     LEAVER_ACCOUNT_ACTIVE: 'HIGH',
     LEAVER_ACCOUNT_ACTIVE_UNDATED: 'HIGH',
-    LEAVER_DISABLED_LATE: 'MEDIUM',
+    LEAVER_DISABLED_LATE: 'HIGH',
     NOT_RECERTIFIED_IN_PERIOD: 'HIGH',
     CAMPAIGN_INCOMPLETE: 'MEDIUM',
     CAMPAIGN_TRUNCATED: 'MEDIUM',

@@ -37,8 +37,10 @@ workpapers exists, which is a row in [Gaps](#gaps).
   switch, and sets the procedure parameters each workpaper records. On `main`
   the parameters are stored on the procedure's control-test plan, and only a
   person who owns the auditor agent the plan names may set, change or remove
-  that plan's procedure (`scheduleTestPlan`). The auditor may hold Inflect's
-  read tools and `propose_finding` and nothing else.
+  that plan's procedure, or pause, archive, unschedule or delete the plan:
+  every other caller, an API key and an agent included, is refused
+  `AUDIT_PROCEDURE_PLAN_OWNER_ONLY`. The auditor may hold Inflect's read tools
+  and `propose_finding` and nothing else.
 - **Internal audit is to approve this catalogue and to sample the auditor's
   workpapers.** A sampled workpaper must be re-checked by a person in internal
   audit, never by the auditor agent's owner. On `main` a workpaper's review
@@ -697,6 +699,15 @@ authorised calls only.
     period is reported;
   - the kill-switch drill's canary, which makes no tool call.
 
+**How `main` reads this version.** Two readings of version 1, made by step
+`3c` and confirmed by the repository owner on 2026-10-19, are not changes to
+the catalogue and are recorded here for internal audit. The windows of agents
+marked `isAuditor` are excluded and their count is reported (rule 8: the
+auditor is not the auditee); the check on the auditor's own conduct is
+internal audit's sampling of its workpapers, step `3d` (#3677). And A1 and A4
+are asked at each per-call record in the hour, and over the whole hour only
+when the hour has none.
+
 **Sample.** Keyed sample of windows, epoch `agent.authority_conformance@YYYY-MM`.
 
 **Attributes tested.** For every tool name in a sampled window's `toolNames`:
@@ -969,7 +980,7 @@ names the step that builds it, or says that no step does.
 | No agent subjects in access reviews: `AccessReviewScope` has no agent value | procedure 2 | step `3a` (#3674) |
 | Internal audit's approval and PwC's agreement of version 1 are open; the repository owner's merge adopts the version and supplies neither | all | internal audit and PwC, each recorded on issue #3663 when given |
 | PwC's methodology reference for each procedure is open | all | PwC, recorded on issue #3663 when given |
-| The parameters `leaverWindowHours` and `remediationWindowDays` have no agreed value. Both are stored on the procedure's plan (`automationConfig.parameters`); `killGraceSeconds` has no stored home | 1, 2, 6 | the second line sets the values; procedure 6 has no step |
+| The parameters `leaverWindowHours` and `remediationWindowDays` are agreed 2026-10-19 for the pilot: 24 h and 14 days, entered on each plan (`automationConfig.parameters`, written by `scripts/audit-pilot-setup.ts`); the library holds no default, so a value beyond the pilot is the second line's to enter on its plan. `killGraceSeconds` has no stored home | 1, 2, 6 | the second line sets the values beyond the pilot; procedure 6 has no step |
 | An account disabled outside Inflect carries no disable time, so L2 is UNTESTABLE for it | procedure 1 | no step; named in the step `3c` pull request (#3676) |
 | `src/app-layer/usecases/identity-sync.ts` stores an undetermined `isAdmin` or `mfaEnrolled` as `false`, including every Okta account past the enrichment cap | procedure 4 | no step; named in the step `3c` pull request (#3676) |
 | No procedure tests a legacy account's `expiresAt` | none in this version | no step; adding one is a change to this catalogue |

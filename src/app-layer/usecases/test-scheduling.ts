@@ -32,9 +32,10 @@ import {
     assertCanManageTestPlans,
 } from '../policies/test.policies';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest } from '@/lib/errors/types';
 import type { PrismaTx } from '@/lib/db-context';
 import { parseAuditProcedureConfig } from '@/lib/agentic/audit-procedure-library';
+import { assertAuditorOwnerMayChangeProcedurePlans } from './audit-procedure-plans';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { computeNextRunFromCron } from '../jobs/control-test-scheduler';
@@ -237,13 +238,17 @@ export async function scheduleTestPlan(
  * agent is operated: which procedure, which parameters (the leaver window, the
  * remediation window), how large a sample. Decision 3 gives that to the second
  * line, which owns and operates the auditor. So a schedule write that puts a
- * procedure config on a plan — or changes or removes one already there — is
- * refused unless the caller is a PERSON who owns the auditor agent named, and
- * that agent is an auditor of this workspace. Its owner is second line by the
- * independence rule, which the handler re-checks on every run.
+ * procedure config on a plan — or changes or removes one already there, or
+ * changes or clears the cron of a plan that carries one — is refused unless
+ * the caller is a PERSON who owns the auditor agent named, with the named
+ * reason `AUDIT_PROCEDURE_PLAN_OWNER_ONLY`. The same gate holds pausing and
+ * deleting such a plan (decision 6); it lives in `audit-procedure-plans.ts` so
+ * every path asks one question.
  *
- * A config that names a procedure and is malformed is a 400 here, rather than
- * a plan that would run INCONCLUSIVE `CONFIG_INVALID` on every tick.
+ * Two further refusals are this write's own: a config that names a procedure
+ * and is malformed is a 400 here, rather than a plan that would run
+ * INCONCLUSIVE `CONFIG_INVALID` on every tick; and a config whose agent is not
+ * an auditor of this workspace is a 400.
  */
 async function assertMayScheduleAuditProcedure(
     db: PrismaTx,
@@ -251,43 +256,20 @@ async function assertMayScheduleAuditProcedure(
     existing: unknown,
     incoming: unknown,
 ): Promise<void> {
-    const before = parseAuditProcedureConfig(existing);
-    const after = incoming === undefined ? before : parseAuditProcedureConfig(incoming);
+    // With no incoming config the stored one stays, so it is the one judged.
+    const after = parseAuditProcedureConfig(incoming === undefined ? existing : incoming);
     if (after.kind === 'INVALID') {
         throw badRequest(`This audit procedure configuration is not valid (${after.reason}).`);
     }
-    const named = [before, after]
-        .filter((p): p is Extract<typeof p, { kind: 'OK' }> => p.kind === 'OK')
-        .map((p) => p.config.auditorAgentId);
-    if (named.length === 0) return;
-    if (ctx.apiKeyId !== undefined || ctx.agentId !== undefined || ctx.actorType === 'JOB') {
-        throw forbidden('An audit procedure plan is set by a person: the owner of the auditor agent.');
-    }
-    const ids = [...new Set(named)];
-    const agents = await db.registeredAgent.findMany({
-        where: { tenantId: ctx.tenantId, id: { in: ids }, deletedAt: null },
-        select: { id: true, isAuditor: true, ownerUserId: true, status: true },
-        take: ids.length,
-    });
-    const byId = new Map(agents.map((a) => [a.id, a] as const));
+    await assertAuditorOwnerMayChangeProcedurePlans(db, ctx, [existing, incoming], 'SCHEDULE');
     if (after.kind === 'OK') {
-        const agent = byId.get(after.config.auditorAgentId);
+        const agent = await db.registeredAgent.findFirst({
+            where: { tenantId: ctx.tenantId, id: after.config.auditorAgentId, deletedAt: null },
+            select: { isAuditor: true, status: true },
+        });
         if (!agent || !agent.isAuditor || agent.status === 'RETIRED') {
             throw badRequest('The agent this plan names is not an auditor agent of this workspace.');
         }
-    }
-    // The owner of every auditor the write touches — the one it names now and
-    // the one it named before. An auditor no longer in the register has no
-    // owner to defer to, so it holds nothing back.
-    const notOwner = ids.filter((id) => {
-        const agent = byId.get(id);
-        return agent !== undefined && agent.ownerUserId !== ctx.userId;
-    });
-    if (notOwner.length > 0) {
-        throw forbidden(
-            "An audit procedure's plan and parameters are set by the second line: only the owner of the " +
-                'auditor agent it names may set, change or remove them.',
-        );
     }
 }
 

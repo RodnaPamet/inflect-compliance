@@ -708,8 +708,12 @@ both as open, and every evidence row and finding proposal says so.
   plan carries the parameters (`leaverWindowHours`, `remediationWindowDays`), an
   optional larger sample and an optional pinned period; otherwise the run
   audits the latest month or quarter that has ended. Only a person who owns
-  the named auditor sets, changes or removes a procedure plan
-  (`scheduleTestPlan`); a malformed one is a 400.
+  the named auditor sets, changes, pauses, archives, unschedules or deletes a
+  procedure plan: every path that can stop one running refuses anyone else,
+  an API key and an agent included, `AUDIT_PROCEDURE_PLAN_OWNER_ONLY`
+  (`usecases/audit-procedure-plans.ts`), so the audited first line cannot
+  switch off its own audit. A malformed config is a 400; a plan with no
+  procedure is untouched by any of it.
 - **It runs as the auditor.** Before reading anything the handler refuses —
   INCONCLUSIVE, with no workpaper and no proposal — unless the agent is
   registered, marked an auditor, ACTIVE, not stopped by a kill switch, holding
@@ -733,11 +737,24 @@ both as open, and every evidence row and finding proposal says so.
   the same procedure and period names the live proposal it already raised
   rather than raising it again, and links a finding a person created from it.
   The runner writes no Finding for a procedure run; nothing closes one.
-- **Two readings of catalogue version 1**, recorded for internal audit:
-  procedure 5 does not audit auditor agents' own windows (rule 8), and its A1
-  and A4 are asked at each recorded call in the hour.
+- **Two readings of catalogue version 1**, recorded for internal audit and
+  confirmed by the owner (2026-10-19): procedure 5 does not audit auditor
+  agents' own windows (rule 8), and its A1 and A4 are asked at each recorded
+  call in the hour. The check on the auditor is internal audit's sampling of
+  its workpapers, step `3d`.
+- **The pilot.** `leaverWindowHours` 24 and `remediationWindowDays` 14, agreed
+  2026-10-19 for the pilot and entered on each plan; the library has no
+  default. `scripts/audit-pilot-setup.ts --tenant=<slug> --owner=<email>`
+  is how 3c's exit is met: a dry run by default, `--apply` to write, only
+  through the usecases and as the owner. It registers the auditor, grants
+  `propose_finding` alone, activates it once the owner has risk-assessed it,
+  and schedules the five plans on the controls the catalogue's ISO/IEC
+  27001:2022 identifiers map to, or on `--control` ids. A re-run writes
+  nothing. Monthly procedures run on the 2nd at 06:17 UTC, quarterly ones on
+  the 2nd of each quarter's first month.
 - **The `iam-audit-procedures` skill** ships its evaluation set and no
-  evaluation record, so no workflow declares it and no run mounts it.
+  evaluation record, so no workflow declares it and no run mounts it. The
+  auditor workflow, a workpaper read tool and the record are #3749.
 
 ### Tenant-authored skills
 
@@ -784,7 +801,7 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 | Skills | Nine original, licensed skills. Eight have a committed evaluation record that passes the mount gate; `iam-audit-procedures` ships its evaluation set and no record, and no workflow declares it (#3749). The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
-| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive. | Internal audit's approval and PwC's agreement of the catalogue are open; procedures 6 to 8 have no handler; no sampling of workpapers; the auditor's skill has no evaluation record and no workflow declares it. |
+| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; `scripts/audit-pilot-setup.ts` sets the pilot up with its agreed parameters. | Internal audit's approval and PwC's agreement of the catalogue are open; procedures 6 to 8 have no handler; no sampling of workpapers; the auditor's skill has no evaluation record and no workflow declares it (#3749). |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | — |
 
 ## Roadmap (future direction)

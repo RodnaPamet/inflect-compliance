@@ -11,6 +11,7 @@ import {
     auditSampleSize,
     decideConclusion,
     drawAuditSample,
+    EXCEPTION_SEVERITY,
     exceptionFindingProposal,
     judgeUnit,
     latestEndedPeriod,
@@ -259,6 +260,23 @@ describe('an exception as a finding proposal', () => {
         expect(text).toMatch(/proposed to internal audit and PwC/);
         expect(text).toMatch(/not an approved or agreed definition/);
         expect(text).toMatch(/the auditor closes and resolves nothing/);
+    });
+});
+
+describe('the severity table', () => {
+    it('raises a leaver disabled late as HIGH, as the owner decided (decision 9, 2026-10-19)', () => {
+        expect(EXCEPTION_SEVERITY.LEAVER_DISABLED_LATE).toBe('HIGH');
+        expect(
+            exceptionFindingProposal({
+                procedureId: 'iam.leaver_timeliness',
+                periodLabel: '2026-09',
+                unitId: 'emp_1',
+                code: 'LEAVER_DISABLED_LATE',
+                controlId: 'ctl_1',
+                auditorAgentId: 'agt_1',
+                epoch: 'iam.leaver_timeliness@2026-09',
+            }).item.severity,
+        ).toBe('HIGH');
     });
 });
 
