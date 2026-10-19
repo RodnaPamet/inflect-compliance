@@ -25,8 +25,10 @@ import { buildReportBody, signReport } from './report';
 import { sourceResult, SourceReadError, toolCallsOf, type HarnessSource, type SourceRead } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
+import { inflectRegisterSource } from './sources/inflect-register';
 import { langchainCodeSource } from './sources/langchain';
 import { langSmithSource } from './sources/langsmith';
+import { mcpSource } from './sources/mcp';
 import { oktaSource } from './sources/okta';
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -67,6 +69,44 @@ export function buildSources(
         if (s.kind === 'code') {
             // Reads files under its roots and holds no credential.
             sources.push(langchainCodeSource({ roots: s.roots }));
+            continue;
+        }
+        if (s.kind === 'inflect-register') {
+            // Read with the ingest key, from the tenant the report is posted to.
+            const apiKey = env[config.inflect.apiKeyEnv];
+            if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+                unreadable.push(sourceResult(s.kind, 0, [], new SourceReadError('AUTH_FAILED', 'the ingest key is not set')));
+            } else {
+                sources.push(
+                    inflectRegisterSource({ baseUrl: config.inflect.baseUrl, tenantSlug: config.inflect.tenantSlug, apiKey: apiKey.trim() }),
+                );
+            }
+            continue;
+        }
+        if (s.kind === 'mcp') {
+            // One optional read token per server. A server whose token is
+            // configured and missing is unread; the others are still read.
+            sources.push(
+                mcpSource({
+                    servers: s.servers.map((server) => {
+                        const value = server.readTokenEnv === undefined ? undefined : env[server.readTokenEnv];
+                        return {
+                            label: server.label,
+                            url: server.url,
+                            agents: server.agents,
+                            pinnedManifestHash: server.pinnedManifestHash ?? null,
+                            token:
+                                server.readTokenEnv === undefined
+                                    ? null
+                                    : typeof value === 'string' && value.trim() !== ''
+                                        ? { value: value.trim() }
+                                        : ('MISSING' as const),
+                            egressPrivateCidrAllowlist: server.egressPrivateCidrAllowlist,
+                        };
+                    }),
+                    resolveHost: seams.resolveHost,
+                }),
+            );
             continue;
         }
         const secret = env[sourceCredentialEnv(s)];
@@ -130,9 +170,9 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
 
     const reads = await Promise.all(
         sources.map(async (source) => {
-            const { http, tokens } = createSourceWire({ fetchImpl, deadline, now });
+            const { http, tokens, mcp, register } = createSourceWire({ fetchImpl, deadline, now });
             try {
-                return await source.read({ asOf, http, tokens, deadline, now });
+                return await source.read({ asOf, http, tokens, mcp, register, deadline, now });
             } catch (err) {
                 return sourceResult(source.kind, 0, [], err);
             }
@@ -143,6 +183,11 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
         const fields = { source: r.kind, status: r.status, rows: r.rows, principals: r.observations.length, toolCalls: toolCallsOf(r) };
         if (r.status === 'COMPLETE') log.info('source read', fields);
         else log.warn('source incomplete', { ...fields, reason: r.reason ?? null });
+        // The listing hash is what an estate pins a server to: the log is where
+        // the operator reads it. The label is the estate's own; the URL is not logged.
+        for (const server of r.mcpServers ?? []) {
+            log.info('mcp server read', { server: server.label, tools: server.tools.length, manifestHash: server.manifestHash });
+        }
     }
 
     const body = buildReportBody(

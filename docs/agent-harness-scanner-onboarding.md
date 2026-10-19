@@ -22,8 +22,11 @@ scanner signed it, so each estate has a scanner of its own.
 2. **Trust its signing key.** Generate an Ed25519 key in the estate, print its
    public half with `public-key`, and register it at
    `POST /api/t/{slug}/admin/agents/harness-scanner-keys` (`admin.agent_registry`).
-3. **Issue the ingest key**: an API key with the `admin:harness_ingest` scope
-   and no other, bound to the scanner agent.
+3. **Issue the ingest key**: an API key with the `admin:harness_ingest` scope,
+   bound to the scanner agent. If the estate reads the register (the
+   `inflect-register` source, which the pilot does), give the key `mcp:read` as
+   well and grant the scanner agent the tool `get_harness_register`. The key
+   holds no other scope.
 4. **Declare the estate** at `POST /api/t/{slug}/admin/agents/harness-estates`
    (`admin.agent_registry`): its name, the scanner agent, the cadence in hours
    (1 to 720), and each source kind with its owner. Every owner must be an
@@ -35,6 +38,7 @@ scanner signed it, so each estate has a scanner of its own.
 | Source | Credential the scanner reads with | Hosts |
 |---|---|---|
 | `entra-sp` (Entra) | An Entra application holding the Microsoft Graph application permission `Application.Read.All`, with a client secret | `graph.microsoft.com`, and the token from `login.microsoftonline.com` |
+| `mcp` (MCP servers) | None, or per server a READ token. For Inflect's own `/api/mcp`, an API key holding `mcp:read` and no other MCP scope | Each server's configured https endpoint, which may be the estate's own host |
 | `okta-app` | An SSWS API token for a read-only administrator | `*.okta.com`, `*.oktapreview.com` |
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
@@ -53,6 +57,16 @@ application consented into the directory is reported only when the estate sets
 `Application.Read.All` lists registrations and service principals and cannot
 change either; Graph never lists a secret's value, and the scanner drops the
 first characters of each secret that Graph does return (`hint`) with the page.
+
+**MCP servers.** List each server by its Streamable HTTP endpoint, and under
+`agents` the `discoveredId` of each agent that uses it, as the identity source
+reports it (`entra:sp:<objectId>`, `okta:app:<id>`, …). A `code` agent that
+fetches a server's tools at run time needs no entry: its placeholder for the
+server's URL is replaced by what the server serves. To pin a server, run one
+`scan --dry-run`, read the server's `manifestHash` from the `mcp server read`
+log line, and set it as `pinnedManifestHash`. From then on, a change to any of
+its tools reads as unpinned. The scanner sends `initialize`, the initialized
+notification and `tools/list`, and never calls a tool.
 
 **LangSmith.** Name the workspace to read with `workspaceId` (sent as
 `X-Tenant-Id`) unless the key is scoped to one workspace. The scanner sends

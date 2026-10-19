@@ -21,6 +21,10 @@ export interface RequestLogEntry {
     readonly host: string;
     readonly path: string;
     readonly query: string;
+    /** For a POST to an MCP server: the JSON-RPC method the body carried, verbatim. */
+    readonly rpc?: string;
+    /** For a POST to an MCP server: the raw body, for `isDeclaredMcpMessage`. */
+    readonly body?: string;
 }
 
 export const OKTA_ORG = 'https://acme.okta.com';
@@ -91,6 +95,116 @@ export const ENTRA = {
     keyOrphanPasswordCred: 'd0000005-0000-4000-8000-000000003686',
     keyThirdPartyPasswordCred: 'd0000006-0000-4000-8000-000000003686',
 } as const;
+
+// ─── MCP servers, for the MCP source (#3686) ───
+
+/** A server answering in JSON, which refuses `tools/list` before `notifications/initialized`. */
+export const MCP_CRM = 'https://mcp.acme.example/crm/mcp';
+/** A server answering over Server-Sent Events, which takes a read token. */
+export const MCP_TICKETS = 'https://mcp.acme.example/tickets/mcp';
+export const MCP_TOKEN_VALUE = 'fake-mcp-read-token-value-3686';
+
+/** Strings that live where the MCP source must never look, or in definitions it must reduce to a hash. */
+export const MCP_MARKERS = {
+    toolDescription: 'marker-mcp-tool-description-3686',
+    serverInstructions: 'marker-mcp-server-instructions-3686',
+    /** What `tools/call` answers: a scanner that called it would hand the test this. */
+    toolCallResult: 'marker-mcp-tool-call-result-3686',
+} as const;
+
+export interface McpServerFixture {
+    /** Pages of `tools/list`. */
+    tools: unknown[][];
+    /** Answer every request as an SSE stream rather than a JSON body. */
+    sse?: boolean;
+    /** A bearer token the server requires. */
+    requireToken?: string;
+    /** Refuse `tools/list` until `notifications/initialized` has arrived, as the Python SDK does. */
+    strict?: boolean;
+    /** Hand back this session id from `initialize`, and require it afterwards. */
+    sessionId?: string;
+    /** The `initialize` result's capabilities; `{ tools: {} }` unless replaced. */
+    capabilities?: Record<string, unknown>;
+}
+
+export function mcpFixtures(): Record<string, McpServerFixture> {
+    return {
+        [MCP_CRM]: {
+            strict: true,
+            sessionId: 'sess-crm-0001',
+            tools: [
+                [
+                    {
+                        name: 'lookup_account',
+                        description: MCP_MARKERS.toolDescription,
+                        inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+                        annotations: { readOnlyHint: true },
+                    },
+                    {
+                        name: 'update_opportunity',
+                        description: 'Update an opportunity',
+                        inputSchema: { type: 'object' },
+                        annotations: { readOnlyHint: false, destructiveHint: true },
+                    },
+                ],
+                [{ name: 'list_pipelines', inputSchema: { type: 'object' } }],
+            ],
+        },
+        [MCP_TICKETS]: {
+            sse: true,
+            requireToken: MCP_TOKEN_VALUE,
+            tools: [[{ name: 'search_tickets', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }]],
+        },
+    };
+}
+
+// ─── The scanner's own tenant's register, on the ingest host (#3686) ───
+
+/** What `get_harness_register` answers in the fixture tenant. */
+export interface RegisterFixture {
+    asOf: string;
+    truncated: boolean;
+    agents: Array<{
+        registeredAgentId: string;
+        status: string;
+        ownerUserId: string;
+        axesDeclared: boolean;
+        tierFresh: boolean;
+        policyCardInForce: boolean;
+        apiKeys: Array<{ id: string; createdAt: string; expiresAt: string | null }>;
+        confirmedPrincipals: string[];
+    }>;
+}
+
+/** The fixture register: the scanner itself with its ingest key, and an agent a person confirmed as an Entra principal. */
+export function registerFixture(): RegisterFixture {
+    return {
+        asOf: '2026-10-19T03:00:00.000Z',
+        truncated: false,
+        agents: [
+            {
+                registeredAgentId: 'agt_scanner_acme',
+                status: 'ACTIVE',
+                ownerUserId: 'usr_owner_acme',
+                axesDeclared: true,
+                tierFresh: true,
+                policyCardInForce: true,
+                apiKeys: [{ id: 'key_ingest_acme', createdAt: '2026-10-09T00:00:00.000Z', expiresAt: '2027-01-01T00:00:00.000Z' }],
+                confirmedPrincipals: [],
+            },
+            {
+                registeredAgentId: 'agt_support_acme',
+                status: 'ACTIVE',
+                ownerUserId: 'usr_jane_acme',
+                axesDeclared: true,
+                tierFresh: false,
+                policyCardInForce: false,
+                apiKeys: [],
+                confirmedPrincipals: ['entra:sp:a0000001-0000-4000-8000-000000003686'],
+            },
+        ],
+    };
+}
 
 export interface GraphFixture {
     applications: unknown[][];
@@ -481,6 +595,10 @@ export interface Fakes {
 export function createSourceFakes(opts: {
     /** The Graph directory the Entra source reads; `graphFixture()` unless replaced. */
     graph?: GraphFixture;
+    /** MCP servers by endpoint URL; `mcpFixtures()` unless replaced. */
+    mcp?: Record<string, McpServerFixture>;
+    /** What the tenant's own `get_harness_register` answers; `registerFixture()` unless replaced. */
+    register?: RegisterFixture;
     okta?: OktaFixture;
     /** Further Okta orgs by origin, beside `OKTA_ORG`. */
     oktaOrgs?: Record<string, OktaFixture>;
@@ -490,6 +608,10 @@ export function createSourceFakes(opts: {
 } = {}): Fakes {
     const oktas: Record<string, OktaFixture> = { [OKTA_ORG]: opts.okta ?? oktaFixture(), ...opts.oktaOrgs };
     const graph = opts.graph ?? graphFixture();
+    const mcpServers = opts.mcp ?? mcpFixtures();
+    const register = opts.register ?? registerFixture();
+    /** Per server: whether the initialized notification has arrived. */
+    const mcpInitialized = new Set<string>();
     const vaults = opts.vaults ?? { [VAULT]: vaultFixture() };
     const langsmiths = opts.langsmith ?? { [LANGSMITH_US]: langSmithFixture() };
     const log: RequestLogEntry[] = [];
@@ -505,7 +627,24 @@ export function createSourceFakes(opts: {
         fetchImpl: async (url: string, init: RequestInit) => {
             const u = new URL(url);
             const method = (init.method ?? 'GET').toUpperCase();
-            const entry: RequestLogEntry = { method, host: u.host, path: u.pathname, query: u.search };
+            const isMcp =
+                method === 'POST' &&
+                (mcpServers[`${u.origin}${u.pathname}`] !== undefined || (u.origin === INGEST && u.pathname === '/api/mcp'));
+            let rpc: string | undefined;
+            if (isMcp) {
+                try {
+                    rpc = String((JSON.parse(String(init.body)) as { method?: unknown }).method);
+                } catch {
+                    rpc = '(not json)';
+                }
+            }
+            const entry: RequestLogEntry = {
+                method,
+                host: u.host,
+                path: u.pathname,
+                query: u.search,
+                ...(isMcp ? { rpc, body: String(init.body) } : {}),
+            };
             log.push(entry);
             const headers = new Headers(init.headers);
             const answer = fakes.override?.(entry) ?? route(u, method, headers, init.body);
@@ -595,11 +734,15 @@ export function createSourceFakes(opts: {
             if (/^\/secrets\/[^/]+(\/[^/]+)?$/.test(u.pathname)) return json({ value: VAULT_SECRET_VALUE, id: `${u.origin}${u.pathname}` });
             return json({ error: { code: 'NotFound' } }, 404);
         }
+        // ── MCP servers ──
+        const mcpServer = mcpServers[`${u.origin}${u.pathname}`];
+        if (mcpServer) return mcp(`${u.origin}${u.pathname}`, mcpServer, method, headers, body);
         // ── LangSmith ──
         const ls = langsmiths[u.origin];
         if (ls) return langSmith(ls, u, method, headers);
         // ── The Inflect ingest ──
         if (u.origin === INGEST) {
+            if (method === 'POST' && u.pathname === '/api/mcp') return inflectMcp(headers, body);
             if (method === 'POST' && /^\/api\/t\/[^/]+\/admin\/agents\/harness-scans$/.test(u.pathname)) {
                 posted.push(String(body));
                 ingestAuth.push(headers.get('authorization') ?? '');
@@ -695,6 +838,92 @@ export function createSourceFakes(opts: {
         return json({ detail: 'Not Found' }, 404);
     }
 
+    /**
+     * Inflect's own `/api/mcp` for the scanner's tenant: session-less, JSON,
+     * one text block of payload and one provenance block — as the real route
+     * answers. It serves `get_harness_register`, and any other tool with a
+     * marker a scanner must never receive.
+     */
+    function inflectMcp(headers: Headers, body: unknown): Answer {
+        ingestAuth.push(headers.get('authorization') ?? '');
+        const message = JSON.parse(String(body)) as { id?: number; method?: string; params?: { name?: string } };
+        const reply = (result: unknown) => json({ jsonrpc: '2.0', id: message.id, result });
+        if (message.method === 'initialize') {
+            return reply({ protocolVersion: '2025-06-18', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'inflect', version: '1' } });
+        }
+        if (message.method === 'notifications/initialized') return { status: 202 };
+        if (message.method === 'tools/call' && message.params?.name === 'get_harness_register') {
+            return reply({
+                content: [
+                    { type: 'text', text: JSON.stringify(register) },
+                    { type: 'text', text: JSON.stringify({ kind: 'content-provenance', tool: 'get_harness_register', provenance: 'THIRD_PARTY_INGESTED' }) },
+                ],
+            });
+        }
+        if (message.method === 'tools/call') return reply({ content: [{ type: 'text', text: MCP_MARKERS.toolCallResult }] });
+        return json({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } });
+    }
+
+    /**
+     * One MCP server over Streamable HTTP: `initialize`, the initialized
+     * notification, `tools/list` paged by cursor — and `tools/call`, which
+     * answers with a marker a scanner must never receive.
+     */
+    function mcp(key: string, server: McpServerFixture, method: string, headers: Headers, body: unknown): Answer {
+        if (method !== 'POST') return { status: 405 };
+        if (server.requireToken !== undefined && headers.get('authorization') !== `Bearer ${server.requireToken}`) {
+            return json({ error: 'unauthorized' }, 401);
+        }
+        let message: { id?: number; method?: string; params?: Record<string, unknown> };
+        try {
+            message = JSON.parse(String(body)) as typeof message;
+        } catch {
+            return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }, 400);
+        }
+        const answer = (payload: unknown, extraHeaders: Record<string, string> = {}): Answer =>
+            server.sse
+                ? {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream', ...extraHeaders },
+                    // A server notification first: the client must skip it to find its answer.
+                    raw:
+                        `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', data: 'hello' } })}\n\n` +
+                        `event: message\ndata: ${JSON.stringify(payload)}\n\n`,
+                }
+                : json(payload, 200, extraHeaders);
+        const reply = (result: unknown, extraHeaders: Record<string, string> = {}) =>
+            answer({ jsonrpc: '2.0', id: message.id, result }, extraHeaders);
+        const refuse = (code: number, text: string) => answer({ jsonrpc: '2.0', id: message.id, error: { code, message: text } });
+
+        if (message.method === 'initialize') {
+            mcpInitialized.delete(key);
+            return reply(
+                {
+                    protocolVersion: '2025-06-18',
+                    capabilities: server.capabilities ?? { tools: {} },
+                    serverInfo: { name: 'fake', version: '1' },
+                    instructions: MCP_MARKERS.serverInstructions,
+                },
+                server.sessionId ? { 'mcp-session-id': server.sessionId } : {},
+            );
+        }
+        if (server.sessionId && headers.get('mcp-session-id') !== server.sessionId) return json({ error: 'no session' }, 404);
+        if (message.method === 'notifications/initialized') {
+            mcpInitialized.add(key);
+            return { status: 202 };
+        }
+        if (message.method === 'tools/list') {
+            if (server.strict && !mcpInitialized.has(key)) return refuse(-32002, 'Received request before initialization was complete');
+            const at = Number(message.params?.cursor ?? '0');
+            const next = at + 1 < server.tools.length ? String(at + 1) : undefined;
+            return reply({ tools: server.tools[at] ?? [], ...(next ? { nextCursor: next } : {}) });
+        }
+        if (message.method === 'tools/call') {
+            return reply({ content: [{ type: 'text', text: MCP_MARKERS.toolCallResult }] });
+        }
+        return refuse(-32601, 'Method not found');
+    }
+
     return fakes;
 }
 
@@ -708,6 +937,8 @@ export const NEVER_REPORTED = [
     ENTRA_MARKERS.credentialName,
     ENTRA_MARKERS.principalName,
     ENTRA_MARKERS.applicationNotes,
+    MCP_TOKEN_VALUE,
+    ...Object.values(MCP_MARKERS),
     VAULT_SECRET_VALUE,
     OKTA_CLIENT_SECRET_VALUE,
     LANGSMITH_API_KEY_VALUE,

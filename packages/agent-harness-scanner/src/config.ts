@@ -11,17 +11,18 @@
  *   • NO WRITE CREDENTIAL HAS A FIELD. The network sources take one READ
  *     credential each — an Okta SSWS token for a read-only administrator, an
  *     Entra client that holds `Key Vault Reader`, an Entra client that holds
- *     `Application.Read.All`, a LangSmith workspace Viewer key — the `code`
+ *     `Application.Read.All`, a LangSmith workspace Viewer key, an MCP server's
+ *     read token (`readTokenEnv`, one per server, optional) — the `code`
  *     source takes none, and the only other credential is the
  *     Inflect API key that posts the report, which needs the
  *     `admin:harness_ingest` scope and nothing else (contract, Transport).
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
  *     on the public cloud's, Entra on Microsoft Graph's public-cloud host, LangSmith on its US or EU cloud host, the ingest on
  *     https. A typo cannot send a token somewhere new, because there is no
- *     free-form host to type into — with ONE exception, which says so in its
- *     name: a self-hosted LangSmith (`endpoint.selfHosted`), the customer's own
- *     host, checked as any customer-named host is (`customer-host.ts`) here and
- *     re-resolved before every request. The `code` source has no host: it
+ *     free-form host to type into — with TWO exceptions, each the customer's
+ *     own host and each checked as any customer-named host is
+ *     (`customer-host.ts`) here and re-resolved before every request: a
+ *     self-hosted LangSmith (`endpoint.selfHosted`), and an MCP server's URL. The `code` source has no host: it
  *     reads absolute local paths, each reported only by the label it is given.
  *
  * Strict objects throughout: an unknown key is an error, so a misspelt
@@ -178,12 +179,89 @@ const LangSmithSourceConfigSchema = z
     })
     .strict();
 
+/** A principal as another source names it: `<source>:<id…>`, no whitespace. The vault's tag takes the same shape. */
+const discoveredIdRef = z.string().regex(/^[a-z][a-z0-9-]{0,31}:\S{1,220}$/, 'a discoveredId, e.g. entra:sp:<objectId>');
+
+const egressPrivateCidrAllowlist = z
+    .array(z.string().max(64))
+    .max(32)
+    .refine((v) => parsePrivateCidrAllowlist(v) !== null, 'each entry must be a CIDR, e.g. 10.20.0.0/16 or fd00::/8')
+    .default([]);
+
+/** An MCP server's endpoint: https, no credentials, no query or fragment. A path is allowed — the endpoint is one. */
+function mcpEndpointProblem(value: string, allowlist: readonly string[]): string | null {
+    let u: URL;
+    try {
+        u = new URL(value);
+    } catch {
+        return 'must be a URL';
+    }
+    if (u.protocol !== 'https:' || u.username !== '' || u.password !== '' || u.search !== '' || u.hash !== '') {
+        return 'must be an https URL with no credentials, query or fragment';
+    }
+    const parsed = parsePrivateCidrAllowlist([...allowlist]);
+    return parsed === null ? 'has an allowlist that does not parse' : customerOriginProblem(u.origin, parsed);
+}
+
+const McpServerConfigSchema = z
+    .object({
+        label: slug,
+        url: z.string().max(512),
+        /** The agents that use this server, by the id the source that finds them gives (owner decision 2 on #3686). */
+        agents: z.array(discoveredIdRef).max(1_000).default([]),
+        /** `sha256:` of the listing the estate pinned: `pinned` is true only while the live listing matches it. */
+        pinnedManifestHash: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
+        /**
+         * A READ token for the server, by environment variable: sent as a bearer
+         * token with `initialize`, the initialized notification and `tools/list`,
+         * and nothing else (owner decision 6). For Inflect's own `/api/mcp`, a key
+         * holding `mcp:read` and no other MCP scope.
+         */
+        readTokenEnv: envName.optional(),
+        /** Private ranges the server's host may resolve into, as for a self-hosted LangSmith. */
+        egressPrivateCidrAllowlist,
+    })
+    .strict()
+    .superRefine((s, ctx) => {
+        if (mcpEndpointProblem(s.url, s.egressPrivateCidrAllowlist) !== null) {
+            ctx.addIssue({ code: 'custom', message: 'url must be an https MCP endpoint the scanner may reach', path: ['url'] });
+        }
+    });
+
+const McpSourceConfigSchema = z
+    .object({
+        kind: z.literal('mcp'),
+        servers: z
+            .array(McpServerConfigSchema)
+            .min(1)
+            .max(50)
+            .superRefine((servers, ctx) => {
+                if (new Set(servers.map((s) => s.label)).size !== servers.length) {
+                    ctx.addIssue({ code: 'custom', message: 'each server label appears once' });
+                }
+                if (new Set(servers.map((s) => s.url)).size !== servers.length) {
+                    ctx.addIssue({ code: 'custom', message: 'each server URL appears once' });
+                }
+            }),
+    })
+    .strict();
+
+/**
+ * The scanner's own tenant's register (#3686, part c). No field: it is read from
+ * `inflect.baseUrl`'s `/api/mcp` with the ingest key `inflect.apiKeyEnv` names,
+ * which must also carry `mcp:read` (owner decision 3), by the one tool the
+ * scanner may call.
+ */
+const InflectRegisterSourceConfigSchema = z.object({ kind: z.literal('inflect-register') }).strict();
+
 export const SourceConfigSchema = z.discriminatedUnion('kind', [
     EntraSourceConfigSchema,
     OktaSourceConfigSchema,
     AzureKeyVaultSourceConfigSchema,
     CodeSourceConfigSchema,
     LangSmithSourceConfigSchema,
+    McpSourceConfigSchema,
+    InflectRegisterSourceConfigSchema,
 ]);
 
 export const ScannerConfigSchema = z
@@ -265,8 +343,12 @@ export function parseScannerConfig(json: unknown): ScannerConfig {
     return parsed.data;
 }
 
-/** The environment variable holding one source's read credential. The `code` source holds none. */
-export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code' }>): string {
+/**
+ * The environment variable holding one source's read credential. The `code`
+ * source holds none, and the `mcp` source one per server at most
+ * (`mcpTokenEnvNames`).
+ */
+export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code' | 'mcp' | 'inflect-register' }>): string {
     switch (source.kind) {
         case 'entra-sp':
             return source.clientSecretEnv;
@@ -279,8 +361,19 @@ export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code'
     }
 }
 
+/** The read-token variables an `mcp` source names, one per server that takes a token. */
+export function mcpTokenEnvNames(source: Extract<SourceConfig, { kind: 'mcp' }>): string[] {
+    return source.servers.flatMap((s) => (s.readTokenEnv === undefined ? [] : [s.readTokenEnv]));
+}
+
 /** The environment variables a configuration names, every one of them. */
 export function credentialEnvNames(config: ScannerConfig): string[] {
-    const fromSources = config.sources.flatMap((s) => (s.kind === 'code' ? [] : [sourceCredentialEnv(s)]));
+    const fromSources = config.sources.flatMap((s) =>
+        s.kind === 'code' || s.kind === 'inflect-register'
+            ? []
+            : s.kind === 'mcp'
+                ? mcpTokenEnvNames(s)
+                : [sourceCredentialEnv(s)],
+    );
     return [config.scanner.signingKeyEnv, config.inflect.apiKeyEnv, ...fromSources];
 }

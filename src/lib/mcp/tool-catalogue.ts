@@ -28,6 +28,7 @@ export const MCP_READ_TOOL_NAMES = [
     'list_findings',
     'list_tasks',
     'get_discovered_agent',
+    'get_harness_register',
     'get_agent_recertification_evidence',
 ] as const;
 

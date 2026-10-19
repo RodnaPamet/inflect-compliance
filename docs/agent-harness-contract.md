@@ -237,7 +237,11 @@ tables.
 **Who may post.** The route requires `admin.agent_harness_ingest`. OWNER and
 ADMIN hold it; a scanner holds it through an API key with the
 `admin:harness_ingest` scope, which grants that one key and nothing else. A
-scanner key does not need, and should not have, any other scope.
+scanner that reads the tenant's register (its `inflect-register` source, #3686)
+also needs `mcp:read`, the capability `/api/mcp` takes, and its agent must be
+granted the one tool it calls, `get_harness_register`. That tool is authorized on
+`admin.agent_harness_ingest` and returns ids, statuses, dates and flags. A
+scanner key needs no other scope, and should have none.
 
 **Whose reports count.** The tenant registers the scanner's public key with
 `POST /api/t/{tenantSlug}/admin/agents/harness-scanner-keys`
@@ -333,7 +337,7 @@ kind, so a kind added to the contract fails to compile until it is classified:
 | `cicd` | Yes | A pipeline identity, and the secrets its jobs receive |
 | `inflect-register` | Yes | A registered agent, and the API keys that speak for it |
 | `code` | Yes | An agent definition, and the credential references it reads |
-| `mcp` | **No** | A scanner sends an MCP server `initialize` and `tools/list` only, and neither answer names a caller or holds a credential |
+| `mcp` | **No** | A scanner sends an MCP server `initialize`, the initialized notification and `tools/list` only, and no answer names a caller or holds a credential |
 
 It is an `OBSERVATION` of `MEDIUM` severity, written through the same seam as
 every harness finding.

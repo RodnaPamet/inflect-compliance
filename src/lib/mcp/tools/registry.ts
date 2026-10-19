@@ -47,7 +47,7 @@ import { findCoverageGapsTool, getFrameworkStatusTool } from './framework-tools'
 import { listEvidenceExpiringTool } from './evidence-tools';
 import { listFindingsTool, listTasksTool } from './work-tools';
 import { getTenantContextTool } from './context-tools';
-import { getDiscoveredAgentTool } from './harness-tools';
+import { getDiscoveredAgentTool, getHarnessRegisterTool } from './harness-tools';
 import { getAgentRecertificationEvidenceTool } from './access-review-tools';
 
 /**
@@ -70,6 +70,7 @@ export const READ_TOOLS = [
     listFindingsTool,
     listTasksTool,
     getDiscoveredAgentTool,
+    getHarnessRegisterTool,
     getAgentRecertificationEvidenceTool,
 ] as unknown as ReadonlyArray<McpReadTool<unknown>>;
 
