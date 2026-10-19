@@ -13,8 +13,10 @@
  * before being told whether there is anything to accept.
  *
  * CLIENT-SAFE: it imports the findings planner, whose own imports are the
- * ladder and a type-only contract import. No user id leaves the server — the
- * server computes the affordance and the client renders it.
+ * ladder, the contract's hash-free rules (`harness-contract-rules.ts`) and a
+ * type-only contract import; the client-reachable built-ins guard holds that.
+ * No user id leaves the server — the server computes the affordance and the
+ * client renders it.
  */
 import { isHarnessShortfall, type StoredReach } from './harness-findings';
 import type { HarnessLevel } from './harness-ladder';
