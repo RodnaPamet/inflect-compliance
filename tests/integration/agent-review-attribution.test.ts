@@ -73,7 +73,6 @@ import {
 import { recordModelDecision } from '@/lib/agentic/flue/model-decision';
 import { discoveredAgentReviewWorkflow } from '@/lib/agentic/workflows/discovered-agent-review';
 import { resetSkillCache } from '@/lib/agentic/flue/skills/resolve';
-import type { HarnessReportAgent } from '@/lib/agentic/harness-contract';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -163,7 +162,7 @@ async function seedTenant(tenantId: string): Promise<void> {
     body.scan = { id: `scan-${tenantId}`, asOf: '2026-10-18T03:00:00.000Z', scanner: { ...body.scan.scanner, agentId: scannerAgent.id } };
     const template = body.agents[1];
     body.agents = SHADOWS.map(
-        (s): HarnessReportAgent => ({ ...template, discoveredId: discoveredIdOf(s), registeredAgentId: null }),
+        (s): (typeof body.agents)[number] => ({ ...template, discoveredId: discoveredIdOf(s), registeredAgentId: null }),
     );
     body.findings = [];
     await ingestHarnessReport(ctx, scanner.serialise(body));
