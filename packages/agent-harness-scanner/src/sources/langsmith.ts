@@ -33,8 +33,9 @@
  * LangSmith does not record which server, if any, served a tool),
  * `manifestHash: null` and `pinned: false` (LangSmith records no definition,
  * so nothing the scanner saw pins one), and `readOnlyHint: null` (none is
- * declared; the contract counts that as a write). The call COUNT has no member
- * in `inflect-agent-harness/1`; the source holds it on the observation and the
+ * declared; the contract counts that as a write). The call COUNT has a member
+ * in `inflect-agent-harness/2` (`calls`, with `windowDays`) that a follow-up of
+ * #3738 fills; until then the source holds it on the observation and the
  * scanner's log reports the total. A tool name that is not a plain identifier
  * — a run name can be set at call time, and so can carry content — is
  * reported as a digest (`tool-sha256:<16 hex>`), never verbatim.

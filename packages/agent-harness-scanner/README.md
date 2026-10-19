@@ -2,10 +2,11 @@
 
 The reference harness scanner (#3678, owner decision of 2026-10-18 on that
 issue). It runs inside a client's estate, reads that estate's sources
-**read-only**, builds an `inflect-agent-harness/1` report
+**read-only**, builds an `inflect-agent-harness/2` report
 ([`docs/agent-harness-contract.md`](../../docs/agent-harness-contract.md)),
 signs it with an Ed25519 key the tenant registered, and posts it unchanged to
-the tenant's ingest.
+the tenant's ingest. The ingest still accepts `/1`, so a scanner built before
+#3754 keeps working until it is upgraded.
 
 ## Sources
 
@@ -49,9 +50,10 @@ reported with `server` set to the project its calls were traced in
 (`langsmith://<host>/projects/<id>`), `manifestHash: null`, `pinned: false` and
 `readOnlyHint: null`, because LangSmith records no definition, pin or hint. The
 contract counts an undeclared hint as a write, so the ingest raises
-`UNPINNED_WRITE_TOOL` for every agent that called a tool. The call counts have no
-member in `inflect-agent-harness/1`; the log line reports their total
-(`toolCalls`). A tool name that is not a plain identifier, such as a run name set
+`UNPINNED_WRITE_TOOL` for every agent that called a tool. The call counts are not
+in the report: `inflect-agent-harness/2` has a member for them (`calls`, with
+`windowDays`), which a follow-up of #3738 fills, and until then the log line
+reports their total (`toolCalls`). A tool name that is not a plain identifier, such as a run name set
 at call time, is reported as a digest (`tool-sha256:<16 hex>`).
 
 **Completeness is proven.** The facets must account for every call the count
@@ -74,6 +76,14 @@ are not documented there, and a facet that does not read as a count stops the
 read rather than being skipped. Before the first estate scans a real workspace,
 one dry run confirms the outcome
 ([onboarding, section 4](../../docs/agent-harness-scanner-onboarding.md#4-the-scanner-configuration-and-its-schedule)).
+
+**Unbound credentials.** `/2`'s `unboundCredentials[]` lists credential
+references a source saw bound to no principal, from which the ingest derives
+`ORPHAN_CREDENTIAL`. A source returns them on its read
+(`SourceRead.unboundCredentials`), and the report builder drops any reference a
+principal in the merged population holds. Both sources above report every
+credential against the principal it belongs to, so neither returns one, and
+the list is empty from them.
 
 ### The labelling conventions
 

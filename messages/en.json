@@ -9398,7 +9398,8 @@
         "AUTH_FAILED": "authentication failed",
         "UNREACHABLE": "unreachable",
         "PAGINATION_TORN": "pagination torn",
-        "RATE_LIMITED": "rate limited"
+        "RATE_LIMITED": "rate limited",
+        "UNPARSEABLE": "a definition could not be resolved"
       },
       "shadowHeading": "Shadow agents",
       "shadowIntro": "Agents a scan found with no live row in the agent register: never registered, or whose register row was deleted. They have no accountable owner, risk tier or grants on record.",

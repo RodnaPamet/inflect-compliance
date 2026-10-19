@@ -1,27 +1,45 @@
 /**
- * The `inflect-agent-harness/1` contract (#3660), validated against its
- * reference implementation, `tests/helpers/agent-harness-fake-scanner.ts`.
+ * The `inflect-agent-harness/1` contract (#3660) and `/2` (#3754), validated
+ * against their reference implementation,
+ * `tests/helpers/agent-harness-fake-scanner.ts`.
  */
 import { createHash } from 'crypto';
+import * as fs from 'fs';
 
 import { canonicalJson } from '@/lib/canonical-json';
 import {
+    HARNESS_CONTRACT_IDS,
+    HARNESS_CONTRACT_V1,
+    HARNESS_CONTRACT_V2,
+    INCOMPLETE_REASONS,
+    INCOMPLETE_REASONS_V1,
+    INCOMPLETE_REASONS_V2,
+    SOURCE_KINDS,
+    SOURCE_KINDS_V1,
+    SOURCE_KINDS_V2,
     harnessSignedMessage,
     isScanComplete,
     looksLikeSecret,
+    parseStoredHarnessSources,
+    parseStoredHarnessTools,
     verifyAndParseHarnessReport,
     type HarnessRefusal,
 } from '@/lib/agentic/harness-contract';
+import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
 import { scoreHarness } from '@/lib/agentic/harness-ladder';
 
 import {
     MALFORMATIONS,
+    UNBOUND_VAULT_REF,
+    V2_MODEL_ENDPOINTS,
     createFakeScanner,
     malformedReport,
     validIncompleteReportBody,
     validReportBody,
+    validV2ReportBody,
     type Malformation,
 } from '../../helpers/agent-harness-fake-scanner';
+import { REPO_ROOT, repoFiles } from '../../helpers/repo-files';
 
 const scanner = createFakeScanner();
 
@@ -135,5 +153,233 @@ describe('looksLikeSecret', () => {
         'https://graph.example.com/servicePrincipals/1',
     ])('accepts the reference %s', (value) => {
         expect(looksLikeSecret(value)).toBe(false);
+    });
+});
+
+describe('inflect-agent-harness/2 (#3754)', () => {
+    // Built at runtime so no literal credential pattern sits in this file.
+    const secret = () => ['gh', 'p_', 'Q'.repeat(36)].join('');
+    const verify = (body: unknown) => verifyAndParseHarnessReport(scanner.serialise(body), [scanner.publicKeyHex]);
+    const issuesOf = (body: unknown): string[] => {
+        const result = verify(body);
+        if (result.ok) throw new Error('expected a refusal');
+        expect(result.reason).toBe('SCHEMA');
+        return result.issues ?? [];
+    };
+
+    it('verifies, carrying the code source, the UNPARSEABLE reason and the unbound credential as signed', () => {
+        const result = verify(validV2ReportBody());
+        if (!result.ok) throw new Error(result.reason);
+        expect(result.body.contract).toBe(HARNESS_CONTRACT_V2);
+        expect(result.body.population.sources).toContainEqual({ kind: 'code', status: 'INCOMPLETE', reason: 'UNPARSEABLE', rows: 4 });
+        if (result.body.contract !== HARNESS_CONTRACT_V2) throw new Error('narrowed to /2');
+        expect(result.body.unboundCredentials).toEqual([{ ref: UNBOUND_VAULT_REF, sourceKind: 'vault' }]);
+        // The code source stopped early, so the scan is not complete.
+        expect(result.complete).toBe(false);
+    });
+
+    it('is complete only when the code source is read in full too, and an empty unbound list is valid', () => {
+        const body = validV2ReportBody();
+        body.population.sources = body.population.sources.map((s) => (s.kind === 'code' ? { kind: 'code', status: 'COMPLETE', rows: 4 } : s));
+        body.unboundCredentials = [];
+        expect(verify(body)).toMatchObject({ ok: true, complete: true });
+    });
+
+    it('a /1 report still verifies, and is held to /1 whatever it carries', () => {
+        expect(verify(validReportBody())).toMatchObject({ ok: true, body: { contract: HARNESS_CONTRACT_V1 } });
+        // Each /2 addition, on a /1 report, is refused by the /1 schema — never
+        // read as a /2 report that forgot to say so.
+        const unbound = { ...validReportBody(), unboundCredentials: [{ ref: UNBOUND_VAULT_REF, sourceKind: 'vault' }] };
+        expect(issuesOf(unbound)).toContain('(root): 1 unrecognized key');
+        const code = validReportBody() as unknown as { population: { sources: unknown[] } };
+        code.population.sources.push({ kind: 'code', status: 'COMPLETE', rows: 1 });
+        expect(issuesOf(code).some((i) => i.startsWith('population.sources.4.kind:'))).toBe(true);
+        const unparseable = validReportBody() as unknown as { population: { sources: unknown[] } };
+        unparseable.population.sources[2] = { kind: 'mcp', status: 'INCOMPLETE', reason: 'UNPARSEABLE', rows: 1 };
+        expect(issuesOf(unparseable).some((i) => i.startsWith('population.sources.2.reason:'))).toBe(true);
+    });
+
+    it('a /2 report must carry its member, and is checked against /2, not /1', () => {
+        const { unboundCredentials: _absent, ...missing } = validV2ReportBody();
+        expect(issuesOf(missing).some((i) => i.startsWith('unboundCredentials:'))).toBe(true);
+        // The same body relabelled /1 fails on exactly what /1 lacks.
+        const relabelled = { ...validV2ReportBody(), contract: HARNESS_CONTRACT_V1 };
+        const issues = issuesOf(relabelled);
+        expect(issues).toContain('(root): 1 unrecognized key');
+        expect(issues.some((i) => i.startsWith('population.sources.4.'))).toBe(true);
+    });
+
+    it('the verify order holds for /2: the signature covers the new member and is checked before the schema', () => {
+        const parsed = JSON.parse(scanner.serialise(validV2ReportBody())) as { unboundCredentials: { ref: string }[] };
+        parsed.unboundCredentials[0].ref = 'kv://prod/agents/someone-else';
+        expect(verifyAndParseHarnessReport(JSON.stringify(parsed), [scanner.publicKeyHex])).toEqual({ ok: false, reason: 'BAD_SIGNATURE' });
+        // A /2 body with a schema fault, signed by a key nobody trusts, is refused
+        // as UNTRUSTED_SIGNER: the schema is never reached.
+        const other = createFakeScanner();
+        const broken = { ...validV2ReportBody(), unboundCredentials: [{ ref: secret(), sourceKind: 'vault' }] };
+        expect(verifyAndParseHarnessReport(other.serialise(broken), [scanner.publicKeyHex])).toEqual({ ok: false, reason: 'UNTRUSTED_SIGNER' });
+    });
+
+    it('an id this verifier does not accept is refused without repeating it', () => {
+        const issues = issuesOf({ ...validV2ReportBody(), contract: `inflect-agent-harness/${secret()}` });
+        expect(issues).toEqual(['contract: not a contract id this verifier accepts']);
+        const { contract: _none, ...unnamed } = validV2ReportBody();
+        expect(issuesOf(unnamed)).toEqual(['contract: not a contract id this verifier accepts']);
+        // Neither a prototype key nor the list's own name is an id.
+        expect(issuesOf({ ...validV2ReportBody(), contract: 'constructor' })).toEqual(['contract: not a contract id this verifier accepts']);
+    });
+
+    describe('unboundCredentials[] carries references, never values', () => {
+        it('the contract refuses a raw value and a secret inside a reference, naming the path only', () => {
+            for (const ref of [secret(), `kv://${secret()}`, `vault://svc:${'pa'}${'ss'}word@vault.example/x`]) {
+                const issues = issuesOf({ ...validV2ReportBody(), unboundCredentials: [{ ref, sourceKind: 'vault' }] });
+                expect(issues.some((i) => i.startsWith('unboundCredentials.0.ref:'))).toBe(true);
+                expect(issues.join(' ')).not.toContain(ref);
+            }
+        });
+
+        it('the ingest\'s secret-shape walk reaches the member too, by path', () => {
+            const body = validV2ReportBody();
+            expect(firstSecretShapedMember(body)).toBeNull();
+            body.unboundCredentials[0] = { ref: `kv://prod/${secret()}`, sourceKind: 'vault' };
+            expect(firstSecretShapedMember(body)).toBe('unboundCredentials[0].ref');
+        });
+    });
+
+    it('refuses an unbound list that contradicts the rest of the report', () => {
+        const at = (unboundCredentials: unknown) => issuesOf({ ...validV2ReportBody(), unboundCredentials });
+        // A source the report does not list.
+        expect(at([{ ref: UNBOUND_VAULT_REF, sourceKind: 'cicd' }])).toEqual([
+            'unboundCredentials.0.sourceKind: an unbound credential must name a source the report lists',
+        ]);
+        // The same reference twice from one source.
+        const twice = { ref: UNBOUND_VAULT_REF, sourceKind: 'vault' };
+        expect(at([twice, twice])).toEqual(['unboundCredentials.1: each unbound credential appears once per source']);
+        // A credential an agent in the same report holds.
+        expect(at([{ ref: 'kv://prod/agents/sales-bot', sourceKind: 'vault' }])).toEqual([
+            'unboundCredentials.0.ref: a credential an agent in this report holds is not unbound',
+        ]);
+        // The same reference from two sources is two observations, and valid.
+        const two = validV2ReportBody();
+        two.unboundCredentials = [
+            { ref: UNBOUND_VAULT_REF, sourceKind: 'vault' },
+            { ref: UNBOUND_VAULT_REF, sourceKind: 'entra-sp' },
+        ];
+        expect(verify(two).ok).toBe(true);
+    });
+
+    describe('per-tool call counts and model endpoints (owner decision, 2026-10-19)', () => {
+        it('a /2 report carries both, each optional, and verifies', () => {
+            const result = verify(validV2ReportBody());
+            if (!result.ok || result.body.contract !== HARNESS_CONTRACT_V2) throw new Error('expected a verified /2 report');
+            const [registered, shadow] = result.body.agents;
+            expect(registered.tools[0]).toMatchObject({ calls: 42, windowDays: 30 });
+            expect(registered.models).toEqual(V2_MODEL_ENDPOINTS);
+            expect(shadow.models).toBeUndefined();
+            expect(shadow.tools[0]).not.toHaveProperty('calls');
+        });
+
+        it('a /1 report carrying either is refused by the /1 schema', () => {
+            const calls = validReportBody() as unknown as { agents: Array<{ tools: Array<Record<string, unknown>> }> };
+            Object.assign(calls.agents[0].tools[0], { calls: 1, windowDays: 1 });
+            expect(issuesOf(calls)).toContain('agents.0.tools.0: 2 unrecognized keys');
+            const models = { ...validReportBody() } as unknown as { agents: Array<Record<string, unknown>> };
+            models.agents[0].models = [{ endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }];
+            expect(issuesOf(models)).toContain('agents.0: 1 unrecognized key');
+        });
+
+        it('a count comes with its window, and both are bounded whole numbers', () => {
+            const at = (tool: Record<string, unknown>) => {
+                const body = validV2ReportBody() as unknown as { agents: Array<{ tools: Array<Record<string, unknown>> }> };
+                const merged: Record<string, unknown> = { ...body.agents[0].tools[0], ...tool };
+                // An undefined member is left out, as it would be on the wire.
+                for (const k of Object.keys(merged)) if (merged[k] === undefined) delete merged[k];
+                body.agents[0].tools[0] = merged;
+                return issuesOf(body).filter((i) => i.startsWith('agents.0.tools.0'));
+            };
+            expect(at({ windowDays: undefined })).toEqual(['agents.0.tools.0.calls: a call count and its window come together or not at all']);
+            expect(at({ calls: -1 }).length).toBeGreaterThan(0);
+            expect(at({ calls: 1.5 }).length).toBeGreaterThan(0);
+            expect(at({ windowDays: 0 }).length).toBeGreaterThan(0);
+            expect(at({ windowDays: 367 }).length).toBeGreaterThan(0);
+        });
+
+        it('an endpoint is a reference or a host — never a credential, never prose', () => {
+            const withEndpoint = (endpoint: string) => {
+                const body = validV2ReportBody();
+                body.agents[0].models = [{ endpoint, model: 'gpt-4o-mini' }];
+                return body;
+            };
+            for (const ok of ['https://api.openai.com/v1', 'env://AZURE_OPENAI_ENDPOINT', 'code://acme/agent.py#L4', 'llm-gateway.internal.example:8443']) {
+                expect(verify(withEndpoint(ok)).ok).toBe(true);
+            }
+            for (const bad of [
+                `https://api.example/${secret()}`,
+                ['https://svc:', 'pa', 'ss', 'word@api.example/v1'].join(''),
+                'https://svc@api.example/v1',
+                'call the model with this prompt',
+                '',
+            ]) {
+                const issues = issuesOf(withEndpoint(bad));
+                expect(issues.some((i) => i.startsWith('agents.0.models.0.endpoint'))).toBe(true);
+                if (bad !== '') expect(issues.join(' ')).not.toContain(bad);
+            }
+            // A model entry carries an endpoint and an id, and nothing else.
+            const prompt = validV2ReportBody() as unknown as { agents: Array<{ models: Array<Record<string, unknown>> }> };
+            prompt.agents[0].models[0].prompt = 'You are a helpful agent.';
+            expect(issuesOf(prompt)).toContain('agents.0.models.0: 1 unrecognized key');
+        });
+
+        it('the ingest\'s secret-shape walk reaches an endpoint and a model id too', () => {
+            const body = validV2ReportBody();
+            body.agents[0].models = [{ endpoint: 'https://api.openai.com/v1', model: secret() }];
+            expect(firstSecretShapedMember(body)).toBe('agents[0].models[0].model');
+        });
+
+        it('a stored tool keeps its count and window, and a /1 tool still reads back', () => {
+            const v2Tools = JSON.parse(JSON.stringify(validV2ReportBody().agents[0].tools)) as unknown;
+            expect(parseStoredHarnessTools(v2Tools)?.[0]).toMatchObject({ calls: 42, windowDays: 30 });
+            const v1Tools = JSON.parse(JSON.stringify(validReportBody().agents[0].tools)) as unknown;
+            expect(parseStoredHarnessTools(v1Tools)?.[0]).not.toHaveProperty('calls');
+            expect(parseStoredHarnessTools([{ ...(v1Tools as object[])[0], calls: 3 }])).toBeNull();
+        });
+    });
+
+    it('each id has its own lists, and the union is what stored rows are read against', () => {
+        expect(HARNESS_CONTRACT_IDS).toEqual([HARNESS_CONTRACT_V1, HARNESS_CONTRACT_V2]);
+        expect(SOURCE_KINDS_V2).toEqual([...SOURCE_KINDS_V1, 'code']);
+        expect(INCOMPLETE_REASONS_V2).toEqual([...INCOMPLETE_REASONS_V1, 'UNPARSEABLE']);
+        expect(new Set(SOURCE_KINDS)).toEqual(new Set([...SOURCE_KINDS_V1, ...SOURCE_KINDS_V2]));
+        expect(new Set(INCOMPLETE_REASONS)).toEqual(new Set([...INCOMPLETE_REASONS_V1, ...INCOMPLETE_REASONS_V2]));
+    });
+
+    it('every reason an accepted id can carry has a label in each locale the harness tab renders', () => {
+        // A reason with no label renders as its raw message key on the scan history.
+        for (const locale of ['en', 'bg']) {
+            const messages = JSON.parse(fs.readFileSync(`${REPO_ROOT}/messages/${locale}.json`, 'utf8')) as {
+                agents: { harness: { incompleteReason: Record<string, string> } };
+            };
+            expect(Object.keys(messages.agents.harness.incompleteReason).sort()).toEqual([...INCOMPLETE_REASONS].sort());
+        }
+    });
+
+    it('a stored /2 scan\'s sources read back, code and UNPARSEABLE included', () => {
+        const stored = JSON.parse(JSON.stringify(validV2ReportBody().population.sources)) as unknown;
+        expect(parseStoredHarnessSources(stored)).toContainEqual({ kind: 'code', status: 'INCOMPLETE', rows: 4, reason: 'UNPARSEABLE' });
+        // A kind no id defines still makes the row unreadable.
+        expect(parseStoredHarnessSources([{ kind: 'ldap', status: 'COMPLETE', rows: 1 }])).toBeNull();
+    });
+
+    it('an estate may declare exactly the kinds a report can carry: the newest migration\'s CHECK lists SOURCE_KINDS', () => {
+        // The CHECK is DROP + ADD in each migration that widens it, so the one
+        // that sorts LAST is the one in force.
+        const migrations = repoFiles({ under: 'prisma/migrations', extensions: ['.sql'] })
+            .filter((f) => fs.readFileSync(f, 'utf8').includes('"AgentHarnessEstateSource_kind_known"'))
+            .sort();
+        const newest = fs.readFileSync(migrations[migrations.length - 1], 'utf8');
+        const check = /ADD CONSTRAINT "AgentHarnessEstateSource_kind_known"\s+CHECK \("kind" IN \(([^)]*)\)\)/.exec(newest);
+        expect(check).not.toBeNull();
+        const allowed = check![1].split(',').map((k) => k.trim().replace(/^'|'$/g, '')).sort();
+        expect(allowed).toEqual([...SOURCE_KINDS].sort());
     });
 });

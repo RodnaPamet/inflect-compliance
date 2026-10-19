@@ -59,13 +59,22 @@ Three rules hold in that module:
 
 ### The scanner's report contract
 
-`docs/agent-harness-contract.md` defines `inflect-agent-harness/1`, the signed
-report a scanner returns from a client environment. The schemas are
-`src/lib/agentic/harness-contract.ts` and the executable reference is
-`tests/helpers/agent-harness-fake-scanner.ts`. The verifier checks size, then
-JSON, then the Ed25519 signature by a trusted key, and only then the schema. A
-report cannot state its own level, cannot carry a credential value, and cannot
-declare completeness: completeness is derived from its sources.
+`docs/agent-harness-contract.md` defines the signed report a scanner returns
+from a client environment, under two ids. `inflect-agent-harness/1` is the
+first. `inflect-agent-harness/2` (#3754, owner decisions 2026-10-19) is `/1`
+plus the source kind `code`, the INCOMPLETE reason `UNPARSEABLE`, an
+`unboundCredentials[]` member, and, optionally per agent, a call count over a
+window on each tool (stored with the tool) and the model endpoints it calls
+(verified, not stored); it is what the reference scanner emits. The
+schemas are `src/lib/agentic/harness-contract.ts` and the executable reference
+is `tests/helpers/agent-harness-fake-scanner.ts`, which produces both. The
+verifier checks size, then JSON, then the Ed25519 signature by a trusted key,
+and only then the strict schema of the id the report names, so a deployed `/1`
+scanner keeps working and a `/1` report carrying a `/2` member is refused. The
+owner decided on 2026-10-19 that `/1` is retired at the release of the scanner
+container (#3686). A report cannot state its own level, cannot carry a
+credential value, and cannot declare completeness: completeness is derived from
+its sources.
 
 ### The harness ingest
 
@@ -76,7 +85,17 @@ the scanner, and the scanner posts signed reports with an API key scoped to
 the discovered agents and the per-agent items. What a verified report means is
 decided by the pure planner `src/lib/agentic/harness-findings.ts`: the level is
 derived, the register decides whether an agent is shadow, and a finding closes
-only on positive evidence. A shortfall below the bar (H3 for an agent that can
+only on positive evidence. "No unpinned write tool" closes `UNPINNED_WRITE_TOOL`
+only when the source each tool is judged by was read in full: `code` for a tool
+whose server is a `code://` locator, `mcp` for any other, and, for a tool the
+report may have left out, `code` for an agent discovered via `code` and `mcp`
+for any other (owner answer, 2026-10-19). From a `/2` report the planner also
+derives `ORPHAN_CREDENTIAL` from `unboundCredentials[]`, never from the
+report's `findings`: it opens only when the source that saw the credential and
+every identity-bearing source the scan lists were read in full (every kind but
+`mcp`, owner answer 2026-10-19), and closes only when the same scanner reads
+that source in full and no longer sees the credential unbound. An absent or
+incomplete source closes nothing, and neither does a `/1` report. A shortfall below the bar (H3 for an agent that can
 write or whose reach is unknown, H2 for a read-only one) is a finding that never
 gates the agent; its owner may accept it for at most a year, and the nightly
 exception expiry monitor reopens it when the acceptance lapses.
@@ -92,7 +111,7 @@ signature (decision 9).
 
 Step `4a` (#3678) built the scanner the ingest was waiting for, as the owner
 decided on 2026-10-18: `packages/agent-harness-scanner`, a CLI that reads an
-estate's sources, signs an `inflect-agent-harness/1` report with a key the
+estate's sources, signs an `inflect-agent-harness/2` report with a key the
 tenant registered, and posts it unchanged to the ingest. It reads two sources
 behind one interface. `okta-app` is Okta's service apps and API tokens with
 their owners, and `vault` is Azure Key Vault's secrets and certificates tagged
@@ -123,10 +142,11 @@ MCP read or a registration proves otherwise. A self-hosted host is checked as a
 customer-named host when the configuration is read and resolved again before
 every request; one on the estate's own network names the private ranges it may
 resolve into, after the application's egress allowlist, with metadata, loopback
-and link-local refused inside them. The call counts and the agents' model
-endpoints have no member in `inflect-agent-harness/1`; the counts reach only the
-scanner's log, and the owner placed both in contract `/2` (#3754), for the
-LangSmith source to fill once `/2` is on `main`. The scanner DPIA names the
+and link-local refused inside them. The scanner reports under
+`inflect-agent-harness/2` (#3754), which has a member for the call counts and
+one for the agents' model endpoints; the LangSmith source fills both in a
+follow-up (owner, 2026-10-19), and until then the counts reach only the
+scanner's log. The scanner DPIA names the
 source and what is and is not read from it.
 
 A tenant declares each client ESTATE it scans (`AgentHarnessEstate`): a name,
@@ -143,6 +163,8 @@ the owner schedules them as step `0e` names them, and the view is proven on
 three fixture estates. Putting a client estate under the scanner, with the
 labels it reads owners and principals from, is
 [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
+An estate may declare any source kind a report can carry, `code` included; a
+database CHECK holds the same list as the contract.
 
 ### The first IAM skills, on a declared workflow
 
@@ -952,7 +974,7 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678); it reads LangSmith tool usage, and deployments where an estate opts in, as the `runtime` source (#3738); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested under `inflect-agent-harness/1` or `/2`, levels derived and stored per scan, shadow and below-bar agents raised as findings, credentials a `/2` report saw bound to no agent raised as `ORPHAN_CREDENTIAL` when their source and every identity-bearing source in the scan were read in full, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678); it reads LangSmith tool usage, and deployments where an estate opts in, as the `runtime` source (#3738); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. A2A with a pinned peer in both directions: an inbound task becomes a labelled, scanned run input for one registered agent, an outbound task is an external write on the ladder, every message is signed with the tenant's own key and kept, a per-peer kill stops both directions, and the peers page shows all of it. | No real vendor's agent has exchanged an A2A task: both directions are built and tested against an in-process fake peer, and the pilot stays open on #3752. Inflect publishes no agent card of its own (R19). |
 | Skills | Nine original, licensed skills. Eight have a committed evaluation record that passes the mount gate; `iam-audit-procedures` ships its evaluation set and no record, and no workflow declares it (#3749). The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |

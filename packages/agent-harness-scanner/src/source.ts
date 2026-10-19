@@ -24,14 +24,15 @@
 import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
 import type {
     HarnessReportAgent,
-    INCOMPLETE_REASONS,
-    SOURCE_KINDS,
+    INCOMPLETE_REASONS_V2,
+    SOURCE_KINDS_V2,
 } from '@/lib/agentic/harness-contract';
 
 import type { ReadOnlyHttp, TokenExchange } from './http';
 
-export type SourceKind = (typeof SOURCE_KINDS)[number];
-export type IncompleteReason = (typeof INCOMPLETE_REASONS)[number];
+/** The scanner speaks `inflect-agent-harness/2`, so its kinds and reasons are `/2`'s. */
+export type SourceKind = (typeof SOURCE_KINDS_V2)[number];
+export type IncompleteReason = (typeof INCOMPLETE_REASONS_V2)[number];
 
 export type ObservedCredential = HarnessReportAgent['credentials'][number];
 export type ObservedOwner = NonNullable<HarnessReportAgent['owner']>;
@@ -39,9 +40,10 @@ export type ObservedTool = HarnessReportAgent['tools'][number];
 
 /**
  * One tool a source saw a principal CALL, and how many calls it counted in the
- * source's window. The report carries the tool. `inflect-agent-harness/1` has no
- * member for a count, so the count reaches the scanner's log as a per-source
- * total and goes no further.
+ * source's window. The report carries the tool. `inflect-agent-harness/2` has a
+ * member for the count (`calls`, with `windowDays`); until a follow-up of #3738
+ * fills it, the count reaches the scanner's log as a per-source total and goes
+ * no further.
  */
 export interface ObservedToolUse {
     readonly tool: ObservedTool;
@@ -69,6 +71,14 @@ export interface SourceRead {
     readonly rows: number;
     /** Principals seen, including on a read that stopped early: what WAS read is real. */
     readonly observations: readonly Observation[];
+    /**
+     * Credential references this source saw bound to NO principal (`/2`'s
+     * `unboundCredentials[]`). A source that reports every credential against
+     * the principal it belongs to — Okta's and Key Vault's both do — sees none
+     * and leaves this out. The ingest acts on it only when the read was
+     * COMPLETE, so a source that stopped early may still list what it saw.
+     */
+    readonly unboundCredentials?: readonly string[];
 }
 
 export interface SourceContext {

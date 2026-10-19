@@ -2,8 +2,8 @@
 
 This assessment covers two processing operations. The **scanner** is to run
 in a client's environment and read the agent-shaped principals there. The
-**ingest** receives the scanner's signed `inflect-agent-harness/1` report into
-that client's own Inflect tenant. The report format is
+**ingest** receives the scanner's signed `inflect-agent-harness/1` or `/2`
+report into that client's own Inflect tenant. The report format is
 [`docs/agent-harness-contract.md`](agent-harness-contract.md) and its schemas
 and verifier are `src/lib/agentic/harness-contract.ts`.
 
@@ -61,6 +61,9 @@ pointers. Exactly one member is personal data by design:
 | `agents[].registeredAgentId` | The Inflect register id, or `null` | No |
 | `agents[].credentials[]` | `ref`, a `scheme://locator` reference; age in days; whether it expires; whether it is bound to the agent; the grant kind | No by design. A locator carries a person's name only if the client's own paths do. |
 | `agents[].tools[]`, `agents[].skills[]` | Server URL, tool name, manifest hash, pin flag, read-only hint; skill name, licence, declared flag | No |
+| `unboundCredentials[]` (`/2` only) | `ref`, a `scheme://locator` reference to a credential no discovered agent holds, and the source kind that saw it | No by design; the same caveat as an agent's credential locator |
+| `agents[].tools[].calls`, `windowDays` (`/2` only, optional) | How many times the agent called the tool, and over how many days | No: a count of an agent's calls, carrying nothing of what it sent or received |
+| `agents[].models[]` (`/2` only, optional) | `endpoint`, a `scheme://locator` or a host, and the model's id | No by design; the same caveat as a locator. Verified with the report and not stored |
 | `agents[].verdicts[].evidence`, `findings[].evidence` | A pointer of at most 512 characters | No by design; the same caveat as a locator |
 | `scan.scanner` | The scanner's own register id, version and manifest hash | No |
 | `signature` | Algorithm, public key, signature | No |
@@ -73,6 +76,12 @@ identifier, a flag, a count or a bounded pointer.
 
 **What the ingest stores.** The owner reference is stored on
 `DiscoveredAgent` (`ownerKind`, `ownerRef`), which each scan updates in place.
+An unbound credential is not stored as such: when its source, and every source
+in the scan that can report the agent a credential is bound to, were read in
+full, the ingest raises an `ORPHAN_CREDENTIAL` finding whose title and description
+name the reference, which carries a person's name only if the client's own
+locator does (the description is in the field-encryption manifest, as for
+every finding).
 A scan item holds one agent's derived level, reach, criterion verdicts and tool
 names with manifest digests; a scan holds its signer, the digest of the signed
 body, the signature and the per-source completeness. The schema is
@@ -221,8 +230,10 @@ Enforced on `main` by the contract, `src/lib/agentic/harness-contract.ts`:
   shape (`scheme://locator`) and refuses any value that `looksLikeSecret`
   matches against `SECRET_SHAPES`: GitHub, AWS, Slack and `sk-` token shapes,
   private-key blocks and JWTs, including inside a reference. The contract runs
-  that check on credential references only. Condition 10 requires the ingest to
-  run it on every other string, which it does since #3692.
+  that check on credential references only — an agent's, and in `/2` each of
+  `unboundCredentials[]`. Condition 10 requires the ingest to run it on every
+  other string, which it does since #3692, and its walk reaches the `/2`
+  member like any other.
 - **Bounded members.** `MAX_ID_CHARS` (256) for ids, names, owner and licence
   fields and the two signature fields. A credential reference is bounded by the
   `REFERENCE` pattern instead: a scheme of at most 32 characters and a locator
@@ -248,6 +259,7 @@ Where each condition stands:
 | 7 and 10 | The ingest, #3692 | Met; #3692 merged on 2026-10-17, with the no-cascade rule under [Retention](#retention) |
 | 1, 2, 3 and 4 | The scanner, #3686 | Open |
 | 8 | The scan evidence, #3687 | Open |
+| 15 | The `code` source, #3737 | Open |
 
 For the two sources step `4a` built (#3678), Okta and Azure Key Vault,
 conditions 2 to 4 hold and are tested by request log: each source sends only
@@ -275,7 +287,7 @@ member is treated is below.
 | | From LangSmith |
 |---|---|
 | **Read** | The tracing projects (`GET /api/v1/sessions`, experiments excluded): each one's id, and its stats over a bounded window of 7 days by default and 30 at most, filtered to tool runs — the number of tool calls and the same number split by tool name. Only for an estate that opts in (`readDeployments`, off by default): the deployments (`GET /v2/deployments`, `/api-host/v2/deployments` self-hosted), each one's id and the id of the tracing project it writes to. |
-| **Reported** | One agent per tool-calling project (`langsmith:project:<id>`) and, for an estate that opts in, per deployment (`langsmith:deployment:<id>`, which then stands for its tracing project), with the names of the tools it called. No owner, no credential, no register link. A tool name that is not a plain identifier is reported as a digest. The call counts are not reported: the contract has no member for them, and the scanner's log carries their total. |
+| **Reported** | One agent per tool-calling project (`langsmith:project:<id>`) and, for an estate that opts in, per deployment (`langsmith:deployment:<id>`, which then stands for its tracing project), with the names of the tools it called. No owner, no credential, no register link. A tool name that is not a plain identifier is reported as a digest. The call counts are not reported: `inflect-agent-harness/2` has a member for them, which a follow-up of #3738 fills, and until then the scanner's log carries their total. |
 | **Never read** | Runs. No run input, output, trace or event, and no run of any kind, is requested: neither `GET /api/v1/runs/{id}` nor `POST /api/v1/runs/query` is on the declared surface. |
 | **Received and not kept** | Both listings return more than the source reads. A project carries its name, description and `extra` metadata, and its facets cover run tags and run metadata as well as names. A deployment carries its `secrets`, which LangSmith's published schema documents with their values, and its source configuration — and that listing is requested only for an estate that opts in (owner decision, 2026-10-19), so by default none of it reaches the scanner. The source reads only the members in the first row; the rest is parsed with the page and dropped with it, and reaches no observation, no report and no log line. A test holds a marker string in every one of these members, and in the run content, out of the whole signed report and the log. |
 
@@ -341,6 +353,13 @@ four of its conditions, and for the evidence emitted from a scan only when
 11. `AgentHarnessAcceptance`'s free-text columns are in the field-encryption
     manifest and pass through `sanitizePlainText` at the write seam, as
     `ControlException`'s do.
+
+Condition 15 is on the `code` source that `inflect-agent-harness/2` added
+(#3754), numbered after #3710's conditions 12 to 14:
+
+15. A `code` source reads files and never imports or executes what it reads,
+    and reports a credential written into the code by its location (`code://…`)
+    or by the environment variable it names (`env://…`), never by its value.
 
 ## Retention
 
@@ -480,11 +499,22 @@ The signature covers the assessment as written, including the two
 them; their answers are recorded on #3664 when given.
 
 The assessment is reopened, and signed again the same way, when any of these
-changes: the contract id (`inflect-agent-harness/2`), the source kinds in
-`SOURCE_KINDS`, a stored column that holds a person's identifier, a condition
+changes: the contract ids the ingest accepts (`HARNESS_CONTRACT_IDS`), the
+source kinds in `SOURCE_KINDS`, a stored column that holds a person's identifier, a condition
 on step `1a`, or where scan data goes. #3710 reopened it on the last of those —
 a model became a reader of the owner reference — and the merge of the pull
 request that carries the amendment signs it again, with condition 12 met.
+
+#3754 reopened it on two of those: the contract id, `inflect-agent-harness/2`,
+and the source kinds in `SOURCE_KINDS`, which gained `code`. `/2` adds
+`unboundCredentials[]`, which carries credential references under the rules an
+agent's credential already had; an optional call count with its window on each
+tool, stored with the tool; and optional model endpoints, references verified
+and not stored. None of them adds a data category or carries content; the `code`
+kind brings a reader of source code and configuration into the estate, held by
+condition 15 and owned by #3737. No stored column that names a person was added.
+The owner accepted this amendment and condition 15 on 2026-10-19, and the merge
+of the pull request that carries this paragraph signs it.
 
 Step `4a` (#3678) reopened it on a stored column that holds a person's
 identifier, the owner of each source of a client estate, and added two sources,

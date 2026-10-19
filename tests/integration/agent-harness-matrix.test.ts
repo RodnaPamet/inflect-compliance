@@ -52,7 +52,7 @@ import {
     type HarnessCriterionId,
     type HarnessLevel,
 } from '@/lib/agentic/harness-ladder';
-import type { HarnessReportAgent, HarnessReportBody } from '@/lib/agentic/harness-contract';
+import type { HarnessReportAgentV1, HarnessReportBodyV1 } from '@/lib/agentic/harness-contract';
 import type { HarnessMatrixView, HarnessScannerSection } from '@/lib/agentic/harness-read-model';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -165,7 +165,7 @@ function reportAgent(
     discoveredId: string,
     level: HarnessLevel,
     opts: { registeredAgentId?: string | null; write?: boolean; verdicts?: CriterionVerdict[] } = {},
-): HarnessReportAgent {
+): HarnessReportAgentV1 {
     return {
         discoveredId,
         discoveredVia: ['entra-sp'],
@@ -180,7 +180,7 @@ function reportAgent(
     };
 }
 
-type Source = HarnessReportBody['population']['sources'][number];
+type Source = HarnessReportBodyV1['population']['sources'][number];
 const ALL_COMPLETE: Source[] = [
     { kind: 'entra-sp', status: 'COMPLETE', rows: 10 },
     { kind: 'vault', status: 'COMPLETE', rows: 4 },
@@ -191,9 +191,9 @@ function body(
     scannerAgentId: string,
     scanRef: string,
     asOf: string,
-    agents: HarnessReportAgent[],
+    agents: HarnessReportAgentV1[],
     sources: Source[] = ALL_COMPLETE,
-): HarnessReportBody {
+): HarnessReportBodyV1 {
     const b = validReportBody();
     b.scan = { id: scanRef, asOf, scanner: { ...b.scan.scanner, agentId: scannerAgentId } };
     b.population = { sources };
@@ -202,7 +202,7 @@ function body(
     return b;
 }
 
-const ingest = (tenantId: string, which: 'A' | 'B', b: HarnessReportBody) => {
+const ingest = (tenantId: string, which: 'A' | 'B', b: HarnessReportBodyV1) => {
     const s = which === 'A' ? seeded[tenantId].scannerA : seeded[tenantId].scannerB;
     return ingestHarnessReport(ownerCtx(tenantId), s.scanner.serialise(b));
 };

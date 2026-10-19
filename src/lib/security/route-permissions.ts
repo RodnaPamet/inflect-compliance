@@ -452,7 +452,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['POST'],
         permission: 'admin.agent_harness_ingest',
         note:
-            'Submit a signed inflect-agent-harness/1 report. The key alone ' +
+            'Submit a signed inflect-agent-harness/1 or /2 report. The key alone ' +
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
