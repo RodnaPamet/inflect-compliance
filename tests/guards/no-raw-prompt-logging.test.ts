@@ -762,7 +762,13 @@ const SINK_FLOOR = 30;
 // analyser would make the metric better and the logging no better. The
 // outcome, the tenant id and `err.name` are already member expressions or
 // literals, and the audit row names every field at the sink.
-const MEASURED_HOLES = 200;
+//
+// 200 -> 202: THE MONTHLY TOKEN BUDGET'S SETTER (#3777). Two holes, `previous`
+// and `budget`, the two numbers its audit row records, against one new sink:
+// the same shape as `setConcurrencyCap`'s `previousCap` / `cap` beside it. A
+// budget is a token count read from one integer column and passed in as a
+// number; "from what to what" is the whole point of the row.
+const MEASURED_HOLES = 202;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

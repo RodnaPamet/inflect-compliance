@@ -54,6 +54,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import type { AgentKpiCounts } from '@/app-layer/repositories/RegisteredAgentRepository';
+import { BUDGET_RUN_TOKEN_CEILING, MAX_MONTHLY_TOKEN_BUDGET, monthlyBudgetSettingRefusal } from '@/lib/agentic/monthly-budget';
+import { NumberStepper } from '@/components/ui/number-stepper';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AgentsViewsMenu } from './AgentsViewsMenu';
 import { buildAgentFilters, AGENT_FILTER_KEYS } from './filter-defs';
 import { NewAgentModal, type OwnerOption, type VendorOption } from './NewAgentModal';
@@ -492,6 +495,12 @@ function AgentsInner({
                             tenantSlug={tenantSlug}
                             canEdit={canWrite}
                         />
+                        <BudgetPanel
+                            budget={governance.budget?.tokens ?? null}
+                            spentThisMonth={governance.budget?.spentThisMonth ?? 0}
+                            tenantSlug={tenantSlug}
+                            canEdit={canWrite}
+                        />
                     </div>
                 }
                 kpis={
@@ -750,6 +759,12 @@ export interface GovernanceBannerInput {
      * quote it.
      */
     concurrency: { cap: number | null; inFlight: number };
+    /**
+     * #3777 — the monthly token budget and this UTC month's spend, summed only
+     * when a budget is set. OPTIONAL here so a caller that predates it reads
+     * as "no budget", which is what an absent budget is.
+     */
+    budget?: { tokens: number | null; spentThisMonth: number };
 }
 
 /**
@@ -882,6 +897,143 @@ export function ConcurrencyPanel({
             {canEdit && <p className="text-xs text-content-muted">{t('register.concurrency.hint')}</p>}
             {error && (
                 <InlineNotice variant="warning" data-testid="agents-concurrency-error">
+                    {error}
+                </InlineNotice>
+            )}
+        </div>
+    );
+}
+
+/**
+ * THE MONTHLY TOKEN BUDGET, beside the cap (#3777, owner decision): the two
+ * capacity axes in one place, under one key, in one idiom.
+ *
+ * `budget: null` is NO BUDGET and `0` refuses every run, kept apart as the cap
+ * keeps its two. A budget above 0 and below one run's ceiling would refuse
+ * every run while reading as a budget; the server refuses it, and this panel
+ * refuses it first with the same reason, so nobody saves a budget that can
+ * never admit a run.
+ */
+export function BudgetPanel({
+    budget,
+    spentThisMonth,
+    tenantSlug,
+    canEdit = true,
+}: {
+    budget: number | null;
+    spentThisMonth: number;
+    tenantSlug: string;
+    /** Whether this reader may SET it (`admin.agent_registry`); FALSE shows the state alone. */
+    canEdit?: boolean;
+}) {
+    const t = useTranslations('agents');
+    const router = useRouter();
+    // A CHOICE BETWEEN TWO STATES, as on the security page's rotation card:
+    // "no budget" is a named choice, never an empty box, and the stepper
+    // starts at a value that admits runs.
+    const [mode, setMode] = useState<'none' | 'set'>(budget === null ? 'none' : 'set');
+    const [value, setValue] = useState<number>(budget ?? BUDGET_RUN_TOKEN_CEILING * 50);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const next = mode === 'none' ? null : value;
+    const refusal = monthlyBudgetSettingRefusal(next);
+
+    async function save() {
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/t/${tenantSlug}/admin/agents/budget`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ budget: next }),
+            });
+            if (!res.ok) {
+                const body = (await res.json().catch(() => null)) as
+                    | { error?: { message?: string } }
+                    | null;
+                setError(body?.error?.message ?? t('register.budget.saveFailed'));
+                return;
+            }
+            // Re-read from the server: the month's spend comes from the same read.
+            router.refresh();
+        } catch {
+            setError(t('register.budget.saveFailed'));
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="space-y-tight text-sm" data-testid="agents-budget">
+            <p className="text-xs uppercase tracking-wide text-content-subtle">
+                {t('register.budget.heading')}
+            </p>
+            <p data-testid="agents-budget-state">
+                {budget === null
+                    // No spend is quoted with no budget: it is summed only
+                    // against a budget, so the figure would be a false zero.
+                    ? t('register.budget.unbudgeted')
+                    : t('register.budget.budgeted', { budget, spent: spentThisMonth })}
+            </p>
+            {canEdit && (
+                <div className="flex flex-wrap items-center gap-tight">
+                    <RadioGroup
+                        value={mode}
+                        onValueChange={(v) => setMode(v as 'none' | 'set')}
+                        aria-label={t('register.budget.modeAria')}
+                        className="flex flex-wrap items-center gap-compact"
+                    >
+                        {(['none', 'set'] as const).map((m) => (
+                            <label key={m} htmlFor={`agents-budget-mode-${m}`} className="flex items-center gap-tight cursor-pointer">
+                                <RadioGroupItem id={`agents-budget-mode-${m}`} value={m} size="sm" data-testid={`agents-budget-mode-${m}`} />
+                                {m === 'none' ? t('register.budget.useNone') : t('register.budget.useSet')}
+                            </label>
+                        ))}
+                    </RadioGroup>
+                    {mode === 'set' && (
+                        <NumberStepper
+                            id="agent-monthly-budget"
+                            value={value}
+                            onChange={setValue}
+                            min={0}
+                            max={MAX_MONTHLY_TOKEN_BUDGET}
+                            step={BUDGET_RUN_TOKEN_CEILING}
+                            ariaLabel={t('register.budget.inputLabel')}
+                            decrementAriaLabel={t('register.budget.decrease')}
+                            incrementAriaLabel={t('register.budget.increase')}
+                            className="max-w-xs"
+                            data-testid="agents-budget-input"
+                        />
+                    )}
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={save}
+                        disabled={saving || refusal !== null || next === budget}
+                        data-testid="agents-budget-save"
+                    >
+                        {t('register.budget.save')}
+                    </Button>
+                </div>
+            )}
+            {canEdit && (
+                <p className="text-xs text-content-muted">
+                    {t('register.budget.hint', { ceiling: BUDGET_RUN_TOKEN_CEILING })}
+                </p>
+            )}
+            {canEdit && refusal === 'BELOW_ONE_RUN' && (
+                <InlineNotice variant="warning" data-testid="agents-budget-below-one-run">
+                    {t('register.budget.belowOneRun', { ceiling: BUDGET_RUN_TOKEN_CEILING })}
+                </InlineNotice>
+            )}
+            {canEdit && mode === 'set' && value === 0 && (
+                <p className="text-xs text-content-muted" data-testid="agents-budget-zero">
+                    {t('register.budget.zero')}
+                </p>
+            )}
+            {error && (
+                <InlineNotice variant="warning" data-testid="agents-budget-error">
                     {error}
                 </InlineNotice>
             )}

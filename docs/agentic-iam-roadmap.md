@@ -364,7 +364,8 @@ stays open on #3752. The mapping is in
   parsed: the peer's kill, its live `iflp_` credential, its Ed25519 receipt over
   the exact body against its registered key, admission against a card copy at
   most 15 minutes old (R18), the tenant's own signing key, the peer's quota
-  (default 60 an hour), a replay check, and both tenant run caps set (R13). The credential binds one receiving agent and a
+  (default 60 an hour), a replay check, and both tenant run caps set (R13),
+  which a holder of `admin.agent_registry` sets on the agents page (#3777). The credential binds one receiving agent and a
   workflow allowlist, and retiring that agent revokes it. The task text enters the run input labelled
   `THIRD_PARTY_INGESTED` and is scanned before the run exists. The run is the
   receiving agent's, under the peer's owner, so the peer reaches no tool the

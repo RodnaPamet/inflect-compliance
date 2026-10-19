@@ -45,6 +45,7 @@
  * uses `null`, and the feature is opt-in by configuration. A tenant that wants
  * the control sets a number.
  */
+import { ENGINE_CAPS } from './workflow-types';
 
 /** Why a run was refused at the door. */
 export type MonthlyBudgetRefusal = 'MONTHLY_TOKEN_BUDGET_EXCEEDED';
@@ -152,3 +153,41 @@ export function monthlyBudgetRefusalMessage(verdict: MonthlyBudgetVerdict): stri
         `${verdict.worstCaseTotal}, above the configured budget of ${verdict.budgetTokens}`
     );
 }
+
+// ─── What a person may set (#3777) ──────────────────────────────────────────
+
+/**
+ * A run's worst-case token spend, which the gate charges up front: the engine's
+ * ceiling, unconditionally (`monthly-budget-policy.ts` says why it is never a
+ * card-narrowed figure). Read from the same constant `ENGINE_RUN_CAPS.TOKENS`
+ * is, through a module a client component can import.
+ */
+export const BUDGET_RUN_TOKEN_CEILING: number = ENGINE_CAPS.MAX_TOKENS;
+
+/** Comfortably inside a Postgres INTEGER, and far above any real month. */
+export const MAX_MONTHLY_TOKEN_BUDGET = 2_000_000_000;
+
+/**
+ * Why a budget cannot be stored, or null when it can. NULL (no budget) always can.
+ *
+ * `BELOW_ONE_RUN` is the one that is not a typo check. The gate compares a
+ * run's worst case, so a budget above 0 and below one run's ceiling refuses
+ * EVERY run while reading as a budget — the configuration mistake the refusal
+ * message above exists to expose after the fact. At the door it is refused
+ * before it is stored. 0 is legal: it says "no runs" plainly.
+ */
+export type MonthlyBudgetSettingRefusal = 'NOT_A_WHOLE_NUMBER' | 'NEGATIVE' | 'ABOVE_MAXIMUM' | 'BELOW_ONE_RUN';
+
+export function monthlyBudgetSettingRefusal(value: number | null): MonthlyBudgetSettingRefusal | null {
+    if (value === null) return null;
+    if (!Number.isInteger(value)) return 'NOT_A_WHOLE_NUMBER';
+    if (value < 0) return 'NEGATIVE';
+    if (value > MAX_MONTHLY_TOKEN_BUDGET) return 'ABOVE_MAXIMUM';
+    if (value > 0 && value < BUDGET_RUN_TOKEN_CEILING) return 'BELOW_ONE_RUN';
+    return null;
+}
+
+export const MONTHLY_BUDGET_SETTING_MESSAGE =
+    `The monthly token budget must be 0, or a whole number of tokens from ${BUDGET_RUN_TOKEN_CEILING} ` +
+    `(one run's ceiling) to ${MAX_MONTHLY_TOKEN_BUDGET}, or null for no budget. A budget above 0 ` +
+    `and below one run's ceiling would refuse every run.`;

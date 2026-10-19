@@ -8725,6 +8725,22 @@
         "hint": "Leave empty for no cap; 0 stops new agentic runs without engaging a kill switch. Separate from the monthly token budget, which bounds spend rather than simultaneity.",
         "invalid": "Enter a whole number of 0 or more, or leave it empty for no cap.",
         "saveFailed": "Could not save the cap. Try again."
+      },
+      "budget": {
+        "heading": "Monthly token budget",
+        "unbudgeted": "No budget configured: agentic runs are not limited by tokens per month.",
+        "budgeted": "Budget {budget} tokens, with {spent} spent this month (UTC).",
+        "inputLabel": "Monthly token budget",
+        "save": "Save budget",
+        "hint": "Each run is charged its ceiling of {ceiling} tokens up front, so a budget is 0 or at least that. Separate from the concurrent-run cap, which bounds simultaneity rather than spend.",
+        "belowOneRun": "A budget above 0 and below one run's ceiling of {ceiling} tokens would refuse every run. Enter 0 to stop runs, or at least {ceiling}.",
+        "saveFailed": "Could not save the budget. Try again.",
+        "modeAria": "Whether this workspace has a monthly token budget",
+        "useNone": "No budget",
+        "useSet": "Set a budget",
+        "decrease": "Decrease the monthly token budget",
+        "increase": "Increase the monthly token budget",
+        "zero": "A budget of 0 refuses every new agentic run."
       }
     },
     "views": {

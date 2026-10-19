@@ -307,6 +307,16 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'once. The second axis beside the monthly token budget, which ' +
             'bounds spend over a month and cannot express simultaneity.',
     },
+    // #3777 — the monthly token budget, the concurrency cap's sibling, under
+    // the same key for the same reason (capacity, not the emergency stop), by
+    // the owner's decision to set the two axes in one place.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/budget$`),
+        permission: 'admin.agent_registry',
+        note:
+            'Read or set this tenant\'s monthly token budget for agentic runs. ' +
+            'Inbound A2A refuses until it and the concurrency cap are both set.',
+    },
     // ── Agent RUN replay (#3472, plan point 08) ─────────────────────
     //
     // The live tail of one run's step ledger. The only `text/event-stream`

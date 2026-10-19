@@ -22,7 +22,9 @@
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
-import { forbidden } from '@/lib/errors/types';
+import { badRequest, forbidden } from '@/lib/errors/types';
+import { assertAgentGovernanceAdmin } from '@/app-layer/policies/agent-governance.policies';
+import { appendAuditEntry } from '@/lib/audit';
 import type { RequestContext } from '@/app-layer/types';
 
 import { ENGINE_RUN_CAPS } from './run-caps';
@@ -30,6 +32,8 @@ import {
     evaluateMonthlyBudget,
     monthStartUtc,
     monthlyBudgetRefusalMessage,
+    monthlyBudgetSettingRefusal,
+    MONTHLY_BUDGET_SETTING_MESSAGE,
     type MonthlyBudgetVerdict,
 } from './monthly-budget';
 
@@ -167,4 +171,56 @@ export async function assertWithinMonthlyBudget(
         throw forbidden(monthlyBudgetRefusalMessage(verdict));
     }
     return verdict;
+}
+
+/** The tenant's stored budget, or null for "no budget configured". */
+export async function readMonthlyTokenBudget(ctx: RequestContext): Promise<number | null> {
+    const row = await prisma.tenantSecuritySettings.findUnique({
+        where: { tenantId: ctx.tenantId },
+        select: { agentMonthlyTokenBudget: true },
+    });
+    return row?.agentMonthlyTokenBudget ?? null;
+}
+
+/**
+ * Set (or clear) the tenant's monthly token budget (#3777).
+ *
+ * The column had readers — this gate, the agentic reports, and inbound A2A,
+ * which refuses `TENANT_CAPS_UNSET` until both caps are set (R13) — and no
+ * writer. It is set beside the concurrency cap, under the same key, by the
+ * owner's decision on #3777, and in the same shape as `setConcurrencyCap`:
+ *
+ *   • `null` CLEARS the budget, which is unlimited; `0` refuses every run. Two
+ *     different instructions, kept apart.
+ *   • A value the gate would read as "refuse every run" while it looks like a
+ *     budget is refused here, with the reason (`monthlyBudgetSettingRefusal`).
+ *   • Upserts, because `TenantSecuritySettings` is created lazily.
+ *   • AUDITED with both values: lowering a budget can stop a tenant's agents
+ *     and raising one admits more spend, and "from what" is the first question
+ *     an incident review asks.
+ */
+export async function setMonthlyTokenBudget(
+    ctx: RequestContext,
+    budget: number | null,
+): Promise<{ budget: number | null }> {
+    assertAgentGovernanceAdmin(ctx, 'agent_registry');
+    if (monthlyBudgetSettingRefusal(budget) !== null) throw badRequest(MONTHLY_BUDGET_SETTING_MESSAGE);
+    const previous = await readMonthlyTokenBudget(ctx);
+
+    await prisma.tenantSecuritySettings.upsert({
+        where: { tenantId: ctx.tenantId },
+        create: { tenantId: ctx.tenantId, agentMonthlyTokenBudget: budget },
+        update: { agentMonthlyTokenBudget: budget },
+    });
+
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'AGENT_MONTHLY_TOKEN_BUDGET_SET',
+        entity: 'TenantSecuritySettings',
+        entityId: ctx.tenantId,
+        requestId: ctx.requestId,
+        detailsJson: { previousBudget: previous, budget },
+    });
+    return { budget };
 }

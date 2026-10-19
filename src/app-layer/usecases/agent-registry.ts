@@ -56,6 +56,7 @@ import {
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
 import { applyRetirementCascadeInTx, writeRetirementAuditRows } from './agent-retirement-cascade';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
+import { readMonthlyTokenBudget, spentThisMonth } from '@/lib/agentic/monthly-budget-policy';
 import {
     readConcurrencyCap,
     inFlightRunCount,
@@ -352,10 +353,17 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
      * run-start hot path, and a false zero as a reported figure.
      */
     concurrency: { cap: number | null; inFlight: number };
+    /**
+     * #3777 — the monthly token budget, the cap's sibling, and this UTC
+     * month's spend. `spentThisMonth` is summed only when a budget is set,
+     * for the reason `inFlight` is counted only under a cap: with no
+     * denominator the figure is not shown, and the sum is not free.
+     */
+    budget: { tokens: number | null; spentThisMonth: number };
 }> {
     assertCanReadAgentRegister(ctx);
     const now = new Date();
-    const [enforcing, unbound, cap] = await Promise.all([
+    const [enforcing, unbound, cap, budgetTokens] = await Promise.all([
         isAgentRegistrationEnforced(ctx.tenantId),
         runInTenantContext(ctx, async (db) => {
             const rows = await db.tenantApiKey.findMany({
@@ -388,6 +396,8 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
         // honest rendering of "this page cannot tell you" where a zeroed one
         // would not be.
         readConcurrencyCap(ctx).catch(() => null),
+        // Best-effort for the same reason as the cap.
+        readMonthlyTokenBudget(ctx).catch(() => null),
     ]);
 
     // THE COUNT IS CONDITIONAL ON THE CAP, and it was not.
@@ -404,6 +414,7 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
     // on the run-start path, and for the same reason: a NULL column is the
     // answer for every tenant until somebody sets a cap.
     const inFlight = cap === null ? 0 : await inFlightRunCount(ctx).catch(() => 0);
+    const spent = budgetTokens === null ? 0 : await spentThisMonth(ctx, now).catch(() => 0);
     return {
         enforcing,
         unboundCredentials: unbound.length,
@@ -411,6 +422,7 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
             .slice(0, UNBOUND_CREDENTIAL_SAMPLE_LIMIT)
             .map((r) => ({ id: r.id, name: r.name, keyPrefix: r.keyPrefix })),
         concurrency: { cap, inFlight },
+        budget: { tokens: budgetTokens, spentThisMonth: spent },
     };
 }
 
