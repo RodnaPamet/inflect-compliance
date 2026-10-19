@@ -78,6 +78,23 @@ describe('MCP read suite — registration', () => {
     });
 });
 
+/**
+ * Read tools whose resource scope is a named group that grants a NON-`_view`
+ * flag, each with the reason. One member, and it is the scanner's:
+ * `get_harness_register` (#3686, owner decision 3) takes `admin:harness_ingest`
+ * because that is the only scope a harness scanner's key carries, and the
+ * scanner reads the register with the key it posts its report with. That group
+ * grants `admin.agent_harness_ingest` alone, which submits a report and reads
+ * nothing else; the tool's payload is ids, statuses, dates and flags.
+ */
+const NON_VIEW_SCOPE_TOOLS: Readonly<Record<string, { readonly scope: string; readonly grants: readonly string[]; readonly reason: string }>> = {
+    get_harness_register: {
+        scope: 'admin:harness_ingest',
+        grants: ['admin.agent_harness_ingest'],
+        reason: "the harness scanner's key carries this scope and no other (#3686, owner decision 3)",
+    },
+};
+
 describe('MCP read suite — every tool is scope-gated, validated, bounded', () => {
     it('each tool declares a known read scope + a Zod arg schema', () => {
         for (const t of READ_TOOLS) {
@@ -92,7 +109,12 @@ describe('MCP read suite — every tool is scope-gated, validated, bounded', () 
             // admin console). Admitted only when everything the group grants is
             // a `_view` flag, which is read off the real mapping below rather
             // than taken from a list in this file.
-            if (t.resourceScope.action !== 'read') {
+            const named = NON_VIEW_SCOPE_TOOLS[t.name];
+            if (named !== undefined) {
+                // Exactly the scope and the grants written down, and nothing wider.
+                expect(`${t.resourceScope.resource}:${t.resourceScope.action}`).toBe(named.scope);
+                expect(grantsOf(t.resourceScope.resource, t.resourceScope.action)).toEqual(named.grants);
+            } else if (t.resourceScope.action !== 'read') {
                 expect({ tool: t.name, grants: grantsOf(t.resourceScope.resource, t.resourceScope.action) })
                     .toEqual({ tool: t.name, grants: expect.arrayContaining([expect.stringMatching(/_view$/)]) });
                 expect(grantsOf(t.resourceScope.resource, t.resourceScope.action).filter((g) => !g.endsWith('_view'))).toEqual([]);
@@ -114,6 +136,13 @@ describe('MCP read suite — every tool is scope-gated, validated, bounded', () 
         for (const t of READ_TOOLS) {
             expect((t.inputSchema as { additionalProperties?: boolean }).additionalProperties).toBe(false);
         }
+    });
+});
+
+describe('MCP read suite — the non-view scope exception names only registered tools', () => {
+    it('every NON_VIEW_SCOPE_TOOLS entry is a registered read tool', () => {
+        const names = READ_TOOLS.map((t) => t.name);
+        for (const tool of Object.keys(NON_VIEW_SCOPE_TOOLS)) expect(names).toContain(tool);
     });
 });
 

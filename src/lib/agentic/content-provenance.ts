@@ -359,6 +359,14 @@ export const MCP_TOOL_CORPUS: Readonly<Record<string, ToolCorpusEntry>> = {
             'Task titles/descriptions are mirrored from external ticketing systems ' +
             'and created by automation from webhook payloads.',
     },
+    get_harness_register: {
+        provenance: 'THIRD_PARTY_INGESTED',
+        sources: ['ui.authenticated-form', 'scanner.harness-report'],
+        basis:
+            'Register ids, statuses, dates and flags a tenant member set, plus the discovered ids a ' +
+            'person confirmed, which a harness report first carried. No names and no free text; the ' +
+            'confirmed ids take the least-trusted part.',
+    },
     get_discovered_agent: {
         provenance: 'THIRD_PARTY_INGESTED',
         sources: ['scanner.harness-report'],

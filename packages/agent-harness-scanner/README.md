@@ -16,6 +16,8 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 | Kind | Product | What it reads | Requests |
 |---|---|---|---|
 | `entra-sp` | Entra (#3686) | Service principals of applications registered in the directory, and managed identities, with the credentials on each principal and its application registration, by reference, and their owners. Microsoft's own applications and disabled principals never; third-party applications only when the estate opts in | `POST` the client-credentials token exchange to `login.microsoftonline.com` for the Graph audience, then `GET /v1.0/applications`, `GET /v1.0/servicePrincipals` on `graph.microsoft.com` |
+| `mcp` | MCP servers (#3686) | Each configured server's tools, by name, with a hash of each definition, the server's `readOnlyHint`, and whether the estate's pin matches the live listing. Reported against the agents the configuration lists for the server, and in place of a `code` agent's `<key>:*` placeholder for the same URL | `POST` to each configured endpoint: `initialize`, `notifications/initialized`, `tools/list`. Never `tools/call` |
+| `inflect-register` | The scanner's own tenant (#3686) | Each live registered agent: its owner, its own API keys by reference, and the verdicts the register can evidence; and each principal a person confirmed as an agent, linked to it. The only source that links to the register | `POST` to the ingest host's `/api/mcp`: `initialize`, `notifications/initialized`, and one `tools/call` of `get_harness_register` |
 | `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile.owner`, a token's `userId`. Every token is reported except the scanner's own, identified by id from `/api-tokens/current` | `GET /api/v1/apps`, `GET /api/v1/api-tokens/current`, `GET /api/v1/api-tokens` |
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
 | `runtime` | LangSmith | Tracing projects that called a tool in a bounded window, and deployments when the estate opts in, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /api/v1/sessions`; with `readDeployments`, `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted) |
@@ -51,6 +53,76 @@ Graph returns each password credential's `hint`, the first characters of the
 secret, and free-text display names, with the members the source asks for.
 Neither is read; both are dropped with the page, and the tests hold a marker in
 each out of the report and the log.
+
+### MCP
+
+Each configured server is asked what it serves and nothing else: `initialize`,
+the one-way `notifications/initialized` the protocol requires, then
+`tools/list`, paged by cursor (DPIA condition 1, as amended by owner decision 5
+on #3686). The wire the source holds has two functions, `open` and `listTools`,
+and no method parameter, so it cannot spell `tools/call`. A JSON body and a
+Server-Sent Events stream are both read, under the byte cap, and a stream is
+cancelled as soon as the answer arrives.
+
+A tool is reported with:
+- its name, by digest when it is not an identifier;
+- the server's configured URL;
+- `readOnlyHint` as the server's annotations declare it, else `null`, which the
+  contract counts as a write;
+- `manifestHash`, SHA-256 over the canonical JSON of the definition as served.
+  The definition's text never leaves the source; the hash stands for it.
+- `pinned`, true only when the server's `pinnedManifestHash` equals the hash of
+  its whole listing read live: SHA-256 over each tool's name and hash, in name
+  order. The scanner logs each server's listing hash (`mcp server read`), which
+  is the value to pin.
+
+Neither answer names a caller, so a server's tools reach an agent two ways (owner
+decision 2):
+- the agents the configuration lists for the server, by `discoveredId`;
+- a `<key>:*` placeholder another source reported at the same URL, which the
+  `code` source does for a tool set its agent fetches at run time. The report
+  builder replaces it with the server's tools and adds `mcp` to the agent's
+  `discoveredVia`, but only for a server read in full. A partial read replaces
+  nothing, and the placeholder stays, counting as a write.
+
+A server may take a read token (owner decision 6): `readTokenEnv`, sent as a
+bearer token with the three messages above and nothing else. For Inflect's own
+`/api/mcp` it is an API key holding `mcp:read` and no other MCP scope. A
+configured token missing from the environment leaves that server unread
+(`AUTH_FAILED`), and the other servers are still read.
+
+Each server is a host the customer names, so it is checked as the self-hosted
+LangSmith is: at configuration, and again before every request, with an optional
+`egressPrivateCidrAllowlist` per server. The source is complete only when every
+server was read to the end of its listing.
+
+### The register
+
+The scanner's own tenant's register, read through the one MCP tool the scanner
+may call (DPIA condition 2, as amended by owner decision 7 on #3686):
+`get_harness_register`, on the ingest host's `/api/mcp`, with the ingest key. The
+key needs `mcp:read` beside `admin:harness_ingest`, and the scanner agent must be
+granted the tool (owner decision 3). The source takes no configuration field:
+`{ "kind": "inflect-register" }`.
+
+Per live registered agent (not deleted, not `RETIRED`, not a legacy placeholder),
+it reports (owner decision 4):
+- each principal a person confirmed as the agent, as that principal's own id
+  (`entra:sp:<objectId>`), linked to the agent, so the Entra source's
+  observation of it merges with this one. An agent with no confirmed principal
+  is `inflect:agent:<id>`.
+- its owner, an Inflect user id;
+- its own live API keys, as
+  `inflect://<host>/t/<slug>/api-keys/<id>`, bound to the agent and `app-only`;
+- `H1.registered`, `H1.owner`, `H1.axes_declared`, `H1.tier_scored_fresh` (a
+  scored tier whose newest assessment is not stale), `H2.tools_allowlisted`
+  (deny-by-default grants) and `H2.policy_card`. `H2.credential_bound` and
+  `H2.grant_kind_declared` are reported only when the agent has a key of its
+  own, so the register's silence never outvotes another source that sees the
+  credential. `H2.audience_tokens` is not claimed.
+
+It is the only source whose `registeredAgentId` reaches the report. A register
+larger than one read returns is read as far as it goes and reported `BYTE_CAP`.
 
 Azure Key Vault is the only vault adapter and LangSmith the only runtime
 adapter. The `vault` and `runtime` kinds and the `product` field keep the
@@ -182,9 +254,10 @@ What the sources never do:
 - **Read a run.** No LangSmith run, trace or run content is fetched: not
   `GET /api/v1/runs/{id}`, not `POST /api/v1/runs/query`. Tool usage comes from
   the projects listing's aggregates.
-- **Link to the register.** `registeredAgentId` is always `null` from these
-  sources: a label in the estate being scanned is something its administrator can
-  write. The register is the `inflect-register` source's (#3686).
+- **Link to the register.** Only the `inflect-register` source's
+  `registeredAgentId` reaches the report; the builder drops the member from any
+  other source, because a label in the estate being scanned is something its
+  administrator can write.
 - **Leave their origin.** Every request is https, on the configured host, with
   redirects refused; a next-page link anywhere else ends the read as
   `PAGINATION_TORN`. Each source has a time box and a byte budget.
@@ -246,6 +319,18 @@ secret-shaped string anywhere in the file is refused by path.
     {
       "kind": "code", "product": "langchain",
       "roots": [{ "label": "support-bot", "path": "/estate/repos/support-bot" }]
+    },
+    { "kind": "inflect-register" },
+    {
+      "kind": "mcp",
+      "servers": [
+        {
+          "label": "crm", "url": "https://mcp.acme.example/crm/mcp",
+          "agents": ["entra:sp:<objectId>"],
+          "pinnedManifestHash": "sha256:<the listing hash from the log>",
+          "readTokenEnv": "MCP_CRM_TOKEN"
+        }
+      ]
     }
   ]
 }
@@ -261,14 +346,20 @@ control plane.
 - `SCANNER_SIGNING_KEY`: the Ed25519 private key, PKCS#8 PEM. Register its
   public half at `POST /api/t/{slug}/admin/agents/harness-scanner-keys`
   (`public-key` prints it).
-- `INFLECT_INGEST_KEY`: an API key with the `admin:harness_ingest` scope and no
-  other.
+- `INFLECT_INGEST_KEY`: an API key bound to the scanner agent, with the
+  `admin:harness_ingest` scope, and `mcp:read` when the estate reads the register
+  (`inflect-register`), and no other. The scanner agent must then be granted the
+  tool `get_harness_register`.
 - `ENTRA_CLIENT_SECRET`: an Entra application holding the Microsoft Graph
   application permission `Application.Read.All`, which lists registrations and
   service principals and cannot change them. Add
   `"includeThirdPartyApplications": true` to report third-party applications
   consented into the directory as well.
 - `OKTA_API_TOKEN`: an SSWS token for a read-only administrator.
+- `MCP_CRM_TOKEN` (any name, per server, optional): a READ token for that MCP
+  server. For Inflect's own `/api/mcp`, an API key holding `mcp:read` and no
+  other MCP scope. It is sent with `initialize`, the initialized notification
+  and `tools/list`, and nothing else.
 - `AZURE_CLIENT_SECRET`: an Entra application holding `Key Vault Reader` on each
   vault, which reads metadata and cannot read a secret's contents.
 - `LANGSMITH_API_KEY`: a LangSmith service key holding the workspace Viewer
@@ -329,6 +420,5 @@ than one and a half cadences.
 The log is one JSON line per event on stderr, with kinds and counts only. A
 string with a secret's shape is replaced before it is written.
 
-The container that runs this in a client's estate, and the MCP and register
-sources, are #3686. The container installs a pinned `typescript`,
+The container that runs this in a client's estate is #3686. The container installs a pinned `typescript`,
 which the `code` source parses with at run time (owner answer, 2026-10-19).

@@ -231,11 +231,14 @@ export const WILDCARD_EXCLUDED_ACTIONS: Readonly<Record<string, readonly string[
 
 /**
  * The resource-scope ACTIONS a credential check may name. The three verbs, plus
- * the named groups an MCP read tool may require instead of `read` — today only
+ * the named groups an MCP read tool may require instead of `read`:
  * `agent_registry_view`, whose resource's `read` group is `admin.view`, the
- * admin console, which `get_discovered_agent` has no business demanding.
+ * admin console, which `get_discovered_agent` has no business demanding; and
+ * `harness_ingest` (#3686, owner decision 3), the scope a harness scanner's key
+ * carries, which `get_harness_register` requires so the scanner reads the
+ * register with the key it already holds and nothing wider.
  */
-export type ScopeCheckAction = 'read' | 'write' | 'admin' | 'agent_registry_view';
+export type ScopeCheckAction = 'read' | 'write' | 'admin' | 'agent_registry_view' | 'harness_ingest';
 
 /**
  * All valid scope strings that can be assigned to an API key.
