@@ -333,6 +333,11 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
                 // Subtracting it costs nothing: an operator pulling a kill is at
                 // a keyboard, not holding a bearer token.
                 agent_kill_switch: false,
+                // And what an agent may be TAUGHT (#3680). A `*` key carried by
+                // an agent that could author and approve skill text could write
+                // its own instructions; ADMIN holds the key, so it is
+                // subtracted here rather than merely absent.
+                agent_skill_review: false,
             },
         };
     }

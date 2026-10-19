@@ -88,7 +88,11 @@ jest.mock('@/lib/db/rls-middleware', () => ({
     // fail to LOAD, and `Tests: 0 total` reads as a pass in every aggregate.
     ...jest.requireActual('@/lib/db/rls-middleware'),
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
-        fn({ registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-1' }) } }),
+        fn({
+            registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-1' }) },
+            // The tenant's own approved skills on the workflow (#3680): none.
+            tenantSkillVersion: { findMany: async () => [] },
+        }),
     ),
 }));
 

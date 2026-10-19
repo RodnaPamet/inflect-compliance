@@ -114,10 +114,11 @@ describe('API Key Scopes — scopesToPermissions', () => {
         const { admin: starAdmin, ...starRest } = perms;
         const { admin: adminAdmin, ...adminRest } = adminPerms;
         expect(starRest).toEqual(adminRest);
-        // And `admin` differs in exactly five places — asserted as a whole
-        // object, so a SIXTH divergence appearing later fails here rather than
+        // And `admin` differs in exactly six places — asserted as a whole
+        // object, so a SEVENTH divergence appearing later fails here rather than
         // slipping past the named checks below. The fifth is the inventory
-        // view key (#3710), which only its own named scope grants.
+        // view key (#3710), which only its own named scope grants; the sixth is
+        // the skill-review key (#3680), which no scope grants.
         expect(starAdmin).toEqual({
             ...adminAdmin,
             agent_registry: false,
@@ -125,6 +126,7 @@ describe('API Key Scopes — scopesToPermissions', () => {
             agent_tool_exposure: false,
             agent_policy_card: false,
             agent_kill_switch: false,
+            agent_skill_review: false,
         });
     });
 
@@ -144,6 +146,11 @@ describe('API Key Scopes — scopesToPermissions', () => {
         // `*` key that could lift its own kill switch is an agent that cannot be
         // stopped, and unlike the three above that failure has no backstop.
         expect(star.admin.agent_kill_switch).toBe(false);
+        // And what an agent is TAUGHT (#3680): a `*` key carried by an agent
+        // that could author and approve skill text could write its own
+        // instructions.
+        expect(star.admin.agent_skill_review).toBe(false);
+        expect(getPermissionsForRole('ADMIN').admin.agent_skill_review).toBe(true);
         // The contrast that makes it a decision rather than an omission: a human
         // ADMIN session holds all four.
         expect(getPermissionsForRole('ADMIN').admin.agent_registry).toBe(true);

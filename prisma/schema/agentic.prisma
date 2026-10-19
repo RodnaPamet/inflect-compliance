@@ -2732,3 +2732,126 @@ model PeerAgent {
   @@index([tenantId, ownerUserId])
   @@index([tenantId, vendorId])
 }
+
+/// A SKILL AUTHORED BY A TENANT (#3680, step 4c; UC6, settled decision Q5).
+///
+/// Repository skills are Inflect-original guidance reviewed as code. Third-party
+/// methodology, PwC's among it, enters only as a tenant's own skill under the
+/// author's licence, behind the same lifecycle: an evaluation record, a review
+/// by a person other than the author, a pinned content hash and the load-time
+/// text scan (`docs/agent-skill-standard.md`, "Tenant-authored skills").
+///
+/// This row is the skill's identity only: its name, unique in the tenant and
+/// never a repository skill's name, and who created it. Everything that reaches
+/// a model lives on an immutable `TenantSkillVersion`. The row is append-only
+/// (no UPDATE for any role, by trigger) and `app_user` cannot delete it.
+model TenantSkill {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// An Agent Skills identifier (lowercase letters, digits and single hyphens,
+  /// at most 64 characters; CHECKed). The name a run's catalogue shows.
+  name            String
+  /// A plain String with no FK, as `AgentProposalApproval.approverUserId` is:
+  /// the record must survive the creator's account being deleted.
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  tenant   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions TenantSkillVersion[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, name])
+}
+
+/// ONE IMMUTABLE VERSION of a tenant skill (#3680). An edit is a new version that
+/// starts at DRAFT; the text of a version never changes after insert.
+///
+/// ## What a version carries
+///
+/// The frontmatter fields of a repository skill (`description`, `license`,
+/// `sourceRef` and the standard's optional metadata), the instructions,
+/// ENCRYPTED at rest (Epic B), the workflows it mounts on, and `contentHash`:
+/// `sha256:` over the instructions exactly as stored, the same function a
+/// repository skill's evaluation set is tied by. The evaluation record (the set
+/// and a named model revision's answers) is stored once, while DRAFT, and only
+/// if it passes; its pass rates are recomputed on every read and never stored.
+///
+/// ## The lifecycle, held below the usecase
+///
+/// `TenantSkillVersionStatus` moves one way (trigger). The stamps that go with
+/// each move are set once and never rewritten (trigger), and agree with the
+/// status (CHECK). Approval copies the reviewed hash into `approvedContentHash`
+/// (CHECKed equal to `contentHash`) and is CHECKed to be by someone other than
+/// `authorUserId`. Partial unique indexes admit one APPROVED version per skill
+/// and one open (DRAFT or IN_REVIEW) version per skill; Prisma cannot declare a
+/// partial index, so do not add a `@@unique` for either.
+///
+/// The encrypted columns are frozen against `app_user` only, because the DEK
+/// rotation sweep re-encrypts them as the table owner. The mount gate
+/// recomputes the hash of the decrypted instructions and refuses a version
+/// whose text no longer matches its approved hash, whoever changed it.
+model TenantSkillVersion {
+  id       String @id @default(cuid())
+  tenantId String
+  skillId  String
+  /// 1, 2, 3 … per skill.
+  version  Int
+
+  /// The routing line every turn of a run that mounts it carries. Plaintext so
+  /// the trigger can freeze it for every role; sanitised at the write seam.
+  description   String
+  /// The procedure, loaded on activation. Encrypted at rest (Epic B) and
+  /// sanitised at the write seam.
+  instructions  String
+  /// Supplied by the author. A tenant skill states the licence it is taught
+  /// under and where it came from, as a repository skill does.
+  license       String
+  sourceRef     String
+  /// The standard's optional metadata, in the frontmatter's own comma-separated
+  /// form, validated by the loader's own rules.
+  requiredInput String?
+  output        String?
+  controls      String?
+  tools         String?
+  /// The registered workflow keys this version mounts on. Part of what is
+  /// reviewed: an approval covers this text on these workflows.
+  workflowKeys  String[]
+
+  /// `sha256:` over `instructions` as stored (`skillContentHash`).
+  contentHash  String
+  authorUserId String
+  status       TenantSkillVersionStatus @default(DRAFT)
+
+  /// The evaluation record, as serialised JSON. Encrypted at rest. Written once,
+  /// while DRAFT, and only when it passes.
+  evaluationRecordJson       String?
+  evaluationAttachedAt       DateTime?
+  evaluationAttachedByUserId String?
+
+  submittedAt       DateTime?
+  submittedByUserId String?
+
+  /// Never `authorUserId` (CHECK). `approvedContentHash` is the hash the
+  /// reviewer approved, and equals `contentHash` (CHECK).
+  approvedAt          DateTime?
+  approvedByUserId    String?
+  approvedContentHash String?
+
+  retiredAt       DateTime?
+  retiredByUserId String?
+  retiredReason   TenantSkillRetiredReason?
+
+  createdAt DateTime @default(now())
+
+  /// No `updatedAt`: each transition carries its own stamp, and a column
+  /// promising to record an update on a row whose text never changes would be
+  /// a promise the table does not make.
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  skill  TenantSkill @relation(fields: [skillId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, skillId, version])
+  /// The mount read: a tenant's APPROVED versions.
+  @@index([tenantId, status])
+}

@@ -21,11 +21,24 @@
  * evaluation record stops the run with `SkillNotMountableError` naming the
  * reason (`mount-gate.ts`). The gate runs once per skill per process: the files
  * it reads are part of the deployed build, like the corpus.
+ *
+ * TENANT-AUTHORED SKILLS (#3680) are resolved by `resolveRunSkills`, which takes
+ * the tenant's approved versions as an argument — the read is `tenant-mount.ts`,
+ * scoped to the run's own tenant, so this module still touches no database. A
+ * run mounts its workflow's declared repository skills, then every approved
+ * version of the tenant's own that names the workflow, each through
+ * `checkTenantSkillMountable` (the same text scan and evaluation recomputation),
+ * with no cache. The catalogue budget is applied ONCE, over both together: the
+ * per-turn cost is paid for every skill a run mounts, whoever wrote it. A
+ * tenant skill that takes a repository skill's name is refused rather than
+ * mounted beside it, because the runtime mounts a name once and a specialist
+ * narrows the parent's skills by name.
  */
 import {
     loadSkillCorpus,
     assertCatalogWithinBudget,
     catalogBytes,
+    MAX_CATALOG_BYTES,
     SkillLoadError,
     SkillTextRefusedError,
     type LoadedSkill,
@@ -33,7 +46,14 @@ import {
 } from './index';
 import { canonicalJson } from '@/lib/canonical-json';
 
-import { checkSkillMountable, SkillNotMountableError, type MountedSkillPin, type MountVerdict } from './mount-gate';
+import {
+    checkSkillMountable,
+    pinForRow,
+    SkillNotMountableError,
+    type MountedSkillPin,
+    type MountVerdict,
+} from './mount-gate';
+import { checkTenantSkillMountable, type TenantSkillVersionForMount } from './tenant-skill';
 
 /**
  * The document a run binding carries — `FlueSkillDocument` in `run-binding.ts`,
@@ -113,6 +133,74 @@ export function resolveSkillPins(declared: readonly string[] | undefined): Mount
     return (declared ?? []).map((name) => mountable(c, name, 'declared by a workflow definition but not in the shipped corpus').pin);
 }
 
+/** What a run mounts and what its row pins, in the same order. */
+export interface RunSkillMount {
+    readonly documents: ResolvedSkillDocument[];
+    readonly pins: MountedSkillPin[];
+}
+
+/**
+ * Order tenant versions by name, by code unit rather than by locale, so a run
+ * that resumes resolves the same order its row pinned on every host.
+ */
+function byName<T extends { readonly name: string }>(a: T, b: T): number {
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+}
+
+/**
+ * Everything a run of this workflow mounts IN THIS TENANT, with the pin its row
+ * records: the declared repository skills in declaration order, then the
+ * tenant's own approved versions in name order. `tenantVersions` must already
+ * be narrowed to the run's tenant and to versions naming this workflow;
+ * `tenant-mount.ts` is the read that does both.
+ *
+ * Fails closed on every refusal `resolveSkillsFor` applies, on a tenant version
+ * the gate refuses, on a tenant skill named like a repository skill, and on a
+ * combined catalogue over budget.
+ */
+export function resolveRunSkills(
+    declared: readonly string[] | undefined,
+    tenantVersions: readonly TenantSkillVersionForMount[],
+): RunSkillMount {
+    const c = shippedCorpus();
+    const documents: ResolvedSkillDocument[] = [];
+    const pins: MountedSkillPin[] = [];
+    for (const name of declared ?? []) {
+        const { skill, pin } = mountable(c, name, 'declared by a workflow definition but not in the shipped corpus');
+        documents.push({ name: skill.name, description: skill.description, instructions: skill.instructions });
+        pins.push(pin);
+    }
+    const seen = new Set(documents.map((d) => d.name));
+    for (const v of [...tenantVersions].sort(byName)) {
+        if (repositorySkillNames().has(v.name)) {
+            throw new SkillLoadError(v.name, 'a tenant skill may not take the name of a repository skill');
+        }
+        if (seen.has(v.name)) throw new SkillLoadError(v.name, 'duplicate skill name');
+        const verdict = checkTenantSkillMountable(v);
+        if (!verdict.ok) {
+            if (verdict.kind === 'refused') throw new SkillTextRefusedError(v.name, verdict.rules, verdict.guardRules);
+            throw new SkillNotMountableError(v.name, verdict.reason, verdict.detail);
+        }
+        seen.add(v.name);
+        documents.push({ name: v.name, description: verdict.skill.description, instructions: verdict.skill.instructions });
+        pins.push(verdict.pin);
+    }
+    // ONE budget over BOTH: the per-turn cost of this run's catalogue is every
+    // mounted skill's line, repository and tenant alike.
+    assertCatalogWithinBudget(documents);
+    return { documents, pins };
+}
+
+/**
+ * Every name the shipped corpus holds, refused skills included: a tenant skill
+ * may take none of them (the usecase refuses at creation; the resolver refuses
+ * again, because a later deploy may add a repository skill of that name).
+ */
+export function repositorySkillNames(): ReadonlySet<string> {
+    const c = shippedCorpus();
+    return new Set([...c.skills.map((s) => s.name), ...c.refused.map((r) => r.name)]);
+}
+
 /** Test seam: drop the cache so a suite can vary the corpus. */
 export function resetSkillCache(): void {
     corpus = null;
@@ -140,10 +228,13 @@ export interface WorkflowCatalog {
  * rather than thrown, so the surface that shows refusals can still be drawn; it
  * costs nothing, because no run of that workflow gets far enough to mount it.
  */
-export function workflowCatalogs(defs: readonly DeclaresSkills[]): WorkflowCatalog[] {
+export function workflowCatalogs(
+    defs: readonly DeclaresSkills[],
+    tenantSkills: readonly TenantCatalogueEntry[] = [],
+): WorkflowCatalog[] {
     const c = shippedCorpus();
     return defs.map((d) => {
-        const declared: LoadedSkill[] = [];
+        const declared: { name: string; description: string }[] = [];
         const refused: string[] = [];
         for (const name of d.skills ?? []) {
             if (c.refused.some((r) => r.name === name)) {
@@ -152,8 +243,34 @@ export function workflowCatalogs(defs: readonly DeclaresSkills[]): WorkflowCatal
             }
             declared.push(lookup(c, name, `declared by workflow "${d.key}" but not in the shipped corpus`));
         }
+        // The tenant's approved skills that name this workflow pay the same
+        // per-turn price as the repository's (#3680).
+        for (const t of tenantSkills) if (t.workflowKeys.includes(d.key)) declared.push(t);
         return { key: d.key, bytes: catalogBytes(declared), refused };
     });
+}
+
+/** The catalogue line of a tenant skill and the workflows it mounts on. */
+export interface TenantCatalogueEntry {
+    readonly name: string;
+    readonly description: string;
+    readonly workflowKeys: readonly string[];
+}
+
+/**
+ * The workflows whose catalogue these tenant skills, together with each
+ * workflow's declared repository skills, would put over budget. Empty when
+ * every one fits. The approval of a tenant skill refuses on a non-empty answer,
+ * so a reviewer learns before a run does; the run applies the same budget again
+ * (`resolveRunSkills`), because two approvals can race.
+ */
+export function workflowsOverBudget(
+    defs: readonly DeclaresSkills[],
+    tenantSkills: readonly TenantCatalogueEntry[],
+): { key: string; bytes: number }[] {
+    return workflowCatalogs(defs, tenantSkills)
+        .filter((w) => w.bytes > MAX_CATALOG_BYTES)
+        .map((w) => ({ key: w.key, bytes: w.bytes }));
 }
 
 /**
@@ -199,7 +316,10 @@ export function assertWorkflowSkillsMountable(defs: readonly DeclaresSkills[]): 
  */
 export function skillPinDrift(pinned: unknown, current: readonly MountedSkillPin[]): string | null {
     if (pinned === null || pinned === undefined) return null;
-    const now = current.map((p) => ({ name: p.name, version: p.version, contentHash: p.contentHash }));
+    // `pinForRow`, the shape the row stores: a repository pin's three keys, and a
+    // tenant pin's two more. A repository pin is unchanged from #3666, so a run
+    // pinned before tenant skills existed does not drift on resume.
+    const now = current.map(pinForRow);
     if (canonicalJson(pinned) === canonicalJson(now)) return null;
     const was = Array.isArray(pinned) ? pinned : [];
     const key = (p: unknown) => canonicalJson(p);

@@ -1004,6 +1004,8 @@ let _policyCardEvaluation: Counter | null = null;
 let _policyCardRefusal: Counter | null = null;
 let _toolManifestDrift: Counter | null = null;
 let _peerCardCheck: Counter | null = null;
+let _tenantSkillMount: Counter | null = null;
+let _tenantSkillReview: Counter | null = null;
 let _agentKillRefusal: Counter | null = null;
 let _agentKillDrill: Counter | null = null;
 
@@ -1157,6 +1159,48 @@ export function recordPeerCardCheck(attrs: { outcome: string; context: 'register
         });
     }
     _peerCardCheck.add(1, { outcome: attrs.outcome, context: attrs.context });
+}
+
+// ── Tenant-authored skills (#3680) ───────────────────────────────────────────
+
+/**
+ * One resolution of a tenant's own skills for a run: `MOUNTED` (zero tenant
+ * skills included), or the refusal that stopped the run (`NOT_APPROVED`, `PIN_MISMATCH`, `TEXT_REFUSED`, a recomputed evaluation
+ * refusal, `NAME_RESERVED`, `OVER_BUDGET`, …).
+ *
+ * ALERT ON — any `outcome="PIN_MISMATCH"`. An approved version's decrypted text
+ * no longer hashes to the hash its approval pinned, which only a write below
+ * the application can cause. Any other refusal is a tenant's own configuration
+ * (a skill approved before a scan rule tightened, a catalogue that two
+ * approvals filled together), and stops that tenant's runs of one workflow.
+ */
+export function recordTenantSkillMount(attrs: { outcome: string; context: 'admission' | 'segment' }): void {
+    if (!_tenantSkillMount) {
+        _tenantSkillMount = getMeter().createCounter('agentic.tenant_skill.mount', {
+            description:
+                'Resolutions of a tenant\'s own approved skills for a Flue run, and why one was refused. ' +
+                'A refusal fails the run closed before anything reaches the model.',
+            unit: '1',
+        });
+    }
+    _tenantSkillMount.add(1, { outcome: attrs.outcome, context: attrs.context });
+}
+
+/**
+ * One act in a tenant skill's review lifecycle (`create`, `edit`,
+ * `evaluation`, `submit`, `approve`, `reject`, `retire`) and its outcome:
+ * `OK` or the named refusal. A run of `SELF_APPROVAL` or `HASH_CHANGED` is a
+ * reviewer working around the four-eyes rule or approving text they did not
+ * read, and is worth a look.
+ */
+export function recordTenantSkillReview(attrs: { action: string; outcome: string }): void {
+    if (!_tenantSkillReview) {
+        _tenantSkillReview = getMeter().createCounter('agentic.tenant_skill.review', {
+            description: 'Acts in the review lifecycle of a tenant-authored skill, by action and outcome.',
+            unit: '1',
+        });
+    }
+    _tenantSkillReview.add(1, { action: attrs.action, outcome: attrs.outcome });
 }
 
 // ── The kill switch, and its drill (OWASP ASI08 / ASI10) ───────────────────

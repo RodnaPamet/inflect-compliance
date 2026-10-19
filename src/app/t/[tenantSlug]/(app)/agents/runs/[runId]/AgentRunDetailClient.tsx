@@ -61,7 +61,11 @@ export interface RunHeader {
      * none; null means the row predates the pin, which is a different fact and
      * is shown as one.
      */
-    mountedSkills: Array<{ name: string; version: string; contentHash: string }> | null;
+    /**
+     * `origin: 'tenant'` marks a skill this workspace authored (#3680); a
+     * repository skill carries no origin.
+     */
+    mountedSkills: Array<{ name: string; version: string; contentHash: string; origin?: 'tenant'; versionId?: string }> | null;
 }
 
 const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 'neutral'> = {
@@ -367,6 +371,11 @@ export function AgentRunDetailClient({
                             {pinnedSkills.map((s) => (
                                 <li key={s.name} className="flex flex-wrap items-baseline gap-x-compact">
                                     <span className="text-content-default">{s.name}</span>
+                                    {s.origin === 'tenant' ? (
+                                        <span className="text-content-muted" data-testid={`run-skill-tenant-${s.name}`}>
+                                            {t('runs.detail.skillTenant')}
+                                        </span>
+                                    ) : null}
                                     <span className="text-content-muted">{t('runs.detail.skillVersion', { version: s.version })}</span>
                                     <code className="break-all text-xs text-content-muted">{s.contentHash}</code>
                                 </li>

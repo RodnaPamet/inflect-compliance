@@ -67,6 +67,8 @@ jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
 jest.mock('@/lib/agentic/flue/skills/resolve', () => ({
     resolveSkillsFor: () => [],
     resolveSkillPins: () => [],
+    // The executor resolves repository and tenant skills together (#3680).
+    resolveRunSkills: () => ({ documents: [], pins: [] }),
     skillPinDrift: () => null,
 }));
 jest.mock('@/lib/mcp/tools/propose-tools', () => ({ isProposeTool: () => false, proposedItemCount: () => 0 }));
@@ -98,7 +100,11 @@ jest.mock('@/app-layer/ai/decision-log', () => ({
 jest.mock('@/lib/db/rls-middleware', () => ({
     ...jest.requireActual('@/lib/db/rls-middleware'),
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
-        fn({ registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-1' }) } }),
+        fn({
+            registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-1' }) },
+            // The tenant's own approved skills on the workflow (#3680): none.
+            tenantSkillVersion: { findMany: async () => [] },
+        }),
     ),
 }));
 
