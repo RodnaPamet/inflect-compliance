@@ -137,8 +137,8 @@ model IncidentTimelineEntry {
 /// Incidents as a sibling operational-resilience obligation. Tenant-
 /// scoped: RLS + Epic B (`notes`) + Epic D + indexes.
 model BusinessImpactAnalysis {
-  id             String    @id @default(cuid())
-  tenantId       String
+  id            String    @id @default(cuid())
+  tenantId      String
   /// Attach to a modeled process node (preferred). Null = free-standing
   /// service not yet on a process map.
   /// The process node this BIA analyses, by the NATURAL key rather than the
@@ -170,28 +170,28 @@ model BusinessImpactAnalysis {
   /// `processMapId` keeps a real FK so tenant isolation still fails on
   /// referential integrity rather than on RLS alone, and deleting a map still
   /// clears both columns.
-  processMapId   String?
-  processNodeKey String?
-  name           String
+  processMapId    String?
+  processNodeKey  String?
+  name          String
   /// CRITICAL | HIGH | MEDIUM | LOW.
-  criticality    String
+  criticality   String
   /// Recovery Time Objective — hours to restore after disruption.
-  rtoHours       Int?
+  rtoHours      Int?
   /// Recovery Point Objective — tolerable data-loss window (hours).
-  rpoHours       Int?
+  rpoHours      Int?
   /// Max Tolerable Period of Disruption — hours before the impact is
   /// existential. The primary driver of recovery-priority ranking.
-  mtpdHours      Int?
+  mtpdHours     Int?
   /// Structured impact ramp: [{ atHours, financial, operational,
   /// reputational, legal }] — powers the impact-over-time surface.
-  impactProfile  Json?
+  impactProfile Json?
   /// Free-text analyst notes — encrypted at rest (Epic B) + sanitized
   /// on write (Epic D).
-  notes          String?
-  ownerUserId    String?
-  reviewedAt     DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  notes         String?
+  ownerUserId   String?
+  reviewedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
   processMap    ProcessMap?           @relation(fields: [processMapId, tenantId], references: [id, tenantId])
@@ -201,15 +201,16 @@ model BusinessImpactAnalysis {
   /// this BIA via a ControlEvidenceLink (kind BIA).
   evidenceLinks ControlEvidenceLink[]
 
+  @@index([tenantId, criticality])
+  @@index([tenantId, processMapId, processNodeKey])
+  @@index([tenantId, ownerUserId])
+
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
-  @@index([tenantId, criticality])
-  @@index([tenantId, processMapId, processNodeKey])
-  @@index([tenantId, ownerUserId])
 }
 
 /// A dependency a BIA'd process relies on — a polymorphic pointer

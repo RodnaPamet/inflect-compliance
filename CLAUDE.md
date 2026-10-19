@@ -2175,6 +2175,23 @@ hand), and `WorkflowRun.mountedSkills` pins each mounted skill's hash at
 admission, write-once by trigger — `[]` is "mounted nothing", NULL is "predates
 the pin", and the two must never be conflated.
 
+**A workflow without a PROPOSE step is not read-only on Flue.** The model picks
+its own calls from everything its agent is granted, propose tools included.
+`readOnly: true` on a definition is what withholds the propose surface
+(`flueToolsFor(…, { readOnly })`, each withheld tool an omission
+`READ_ONLY_WORKFLOW`); `audit-narrative` sets it, and #3775 asks whether the
+others should.
+
+**The audit narrative (#3749)** is model prose about a regulatory record, so it
+is stored only through `usecases/audit-workpaper-narrative.ts`, after
+`checkNarrativesAgainstRecord` has held every narrative in the answer to its
+workpaper — the conclusion, every listed code and every code-shaped token in the
+text — and one failure refuses the whole answer. `AuditWorkpaperNarrative` is
+write-once and encrypted, and its insert trigger re-checks the codes. The skill
+names every code in `EXCEPTION_SEVERITY` (a unit test fails when the library
+gains one it does not name), and the answer is one JSON block because the
+capture reads it back from the 4000-character decision-log summary.
+
 **Tenant-authored skills** (#3680) pass the same gate, and four rules in it are
 easy to undo. A `TenantSkillVersion` mounts only when APPROVED by someone other
 than its author (usecase AND a CHECK), its record is recomputed at every mount,

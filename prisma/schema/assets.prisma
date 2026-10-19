@@ -64,12 +64,6 @@ model Asset {
   /// Unique within a tenant — `AST-N` collisions are race-free
   /// via the AssetKeySequence counter.
   @@unique([tenantId, key])
-  /// Composite parent key for tenant-carrying child foreign keys.
-  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
-  /// single-column child `xId -> Asset(id)` leaves a cross-tenant reference
-  /// REPRESENTABLE however carefully the application filters. Referencing
-  /// [assetId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
-  @@unique([id, tenantId])
   /// CONSTRAINT NOT VISIBLE HERE: the database also carries
   /// `Asset_tenantId_name_key`, a PARTIAL unique index on
   /// (tenantId, name) WHERE "deletedAt" IS NULL — added by migration
@@ -92,6 +86,12 @@ model Asset {
   @@index([tenantId, criticality])
   @@index([tenantId, status])
   @@index([tenantId, deletedAt])
+  /// Composite parent key for tenant-carrying child foreign keys.
+  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
+  /// single-column child `xId -> Asset(id)` leaves a cross-tenant reference
+  /// REPRESENTABLE however carefully the application filters. Referencing
+  /// [assetId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
+  @@unique([id, tenantId])
 }
 
 /// Per-tenant monotonic counter for minting `AST-N` asset keys.
@@ -208,15 +208,15 @@ model ScannerRun {
   tenant   Tenant           @relation(fields: [tenantId], references: [id])
   findings ScannerFinding[]
 
+  @@index([tenantId, source, ranAt])
+  @@index([tenantId, scanType, ranAt])
+  @@index([tenantId])
   /// Composite parent key for tenant-carrying child foreign keys.
   /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
   /// single-column child `xId -> ScannerRun(id)` leaves a cross-tenant reference
   /// REPRESENTABLE however carefully the application filters. Referencing
   /// [scannerRunId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
   @@unique([id, tenantId])
-  @@index([tenantId, source, ranAt])
-  @@index([tenantId, scanType, ranAt])
-  @@index([tenantId])
 }
 
 /// Tenant-scoped normalised finding from a ScannerRun. Deduped across

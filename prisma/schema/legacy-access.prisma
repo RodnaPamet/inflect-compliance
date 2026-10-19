@@ -59,7 +59,7 @@ model LegacyAccessSnapshot {
   rowCount     Int @default(0)
   rowsReceived Int @default(0)
 
-  status        LegacyAccessSnapshotStatus @default(PENDING)
+  status        LegacyAccessSnapshotStatus  @default(PENDING)
   refusalReason LegacyAccessRefusalReason?
   /// Operator-facing explanation. System-generated and never a cell value —
   /// see the LegacyIngestError docblock, which is where that rule is enforced.
@@ -82,10 +82,9 @@ model LegacyAccessSnapshot {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  tenant      Tenant                    @relation(fields: [tenantId], references: [id])
-  connection  IntegrationConnection     @relation(fields: [connectionId, tenantId], references: [id, tenantId])
-  accounts    LegacyAccount[]
-  resolutions LegacyAccountResolution[]
+  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  connection IntegrationConnection @relation(fields: [connectionId, tenantId], references: [id, tenantId])
+  accounts   LegacyAccount[]
 
   /// Lets a child row's FK be composite, which is what makes a cross-tenant
   /// parent pointer unrepresentable rather than merely checked.
@@ -99,6 +98,8 @@ model LegacyAccessSnapshot {
   /// sits fourth, so without the middle two columns only the `tenantId` prefix is
   /// usable and the scan is tenant-wide. Not a duplicate of that index.
   @@index([tenantId, pulledAt])
+  resolutions LegacyAccountResolution[]
+
 }
 
 /// One account from one snapshot, in canonical form.
@@ -129,8 +130,8 @@ model LegacyAccount {
   title          String?
   managerRef     String?
 
-  status          LegacyAccountStatus @default(UNKNOWN)
-  lastLoginAt     DateTime?
+  status      LegacyAccountStatus @default(UNKNOWN)
+  lastLoginAt DateTime?
   /// Drives the temporal veto — an account that did not exist when a person
   /// left cannot be that person's — so it is load-bearing for correctness
   /// rather than informational.
@@ -182,7 +183,7 @@ model LegacyAccountResolution {
   /// The snapshot resolved. Always a COMPLETE one — the usecase refuses
   /// otherwise, because a resolution over a population nobody can vouch for
   /// inherits exactly that problem.
-  snapshotId  String
+  snapshotId String
 
   accountKey String
   outcome    LegacyResolutionOutcome
@@ -193,9 +194,9 @@ model LegacyAccountResolution {
 
   /// The engine's evidence. Arrays of `{ kind, score, evidence }` and
   /// `{ employeeId, score, signals, vetoes, strongest }`.
-  signalsJson      Json
-  candidatesJson   Json
-  vetoesJson       Json
+  signalsJson    Json
+  candidatesJson Json
+  vetoesJson     Json
   /// Is the SUGGESTED employee involved in a re-key? Null when there is none.
   ///
   /// Stamped by the run, not computed by the reader. `makeRekeyLookup` takes the
@@ -218,13 +219,13 @@ model LegacyAccountResolution {
   /// System-generated, and the only one the engine writes is
   /// `service token: <token>` — a token from the connection's own configuration,
   /// never a cell value.
-  note             String?
+  note String?
 
   createdAt DateTime @default(now())
 
-  tenant    Tenant               @relation(fields: [tenantId], references: [id])
-  execution IntegrationExecution @relation(fields: [executionId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  snapshot  LegacyAccessSnapshot @relation(fields: [snapshotId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant    Tenant                @relation(fields: [tenantId], references: [id])
+  execution IntegrationExecution  @relation(fields: [executionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  snapshot  LegacyAccessSnapshot  @relation(fields: [snapshotId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   /// Step 6c's model opinions about this resolution, one per model revision.
   verdicts LegacyMatchVerdict[]
@@ -395,7 +396,7 @@ model LegacyMatchVerdict {
   tenantId String
 
   /// The resolution this is an opinion about.
-  resolutionId  String
+  resolutionId String
   /// The model and the EXACT revision the endpoint reported. Exact, because a
   /// near-match would wave through the vendor-update case the canary exists to
   /// catch, one step before the canary runs.
@@ -403,7 +404,7 @@ model LegacyMatchVerdict {
   modelRevision String
 
   /// The lane, when a verdict was produced.
-  verdict          LegacyMatchVerdictClass?
+  verdict LegacyMatchVerdictClass?
   /// Why not, when one was not.
   nonVerdictReason LegacyMatchNonVerdictReason?
 
@@ -433,8 +434,8 @@ model LegacyMatchVerdict {
   personProbability Float?
   /// The top option's probability, and its gap to the runner-up. Stored rather
   /// than re-derived so the queue can sort and filter without parsing JSON.
-  topProbability    Float?
-  topMargin         Float?
+  topProbability Float?
+  topMargin      Float?
 
   /// Round-trip latency, and the input tokens the provider reported. The token
   /// count is what `OVER_BUDGET` is judged against.

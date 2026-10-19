@@ -101,14 +101,15 @@ model AuditCycle {
   audits             Audit[]
   readinessSnapshots ReadinessSnapshot[]
 
+  @@index([tenantId, frameworkKey, status])
+  @@index([tenantId, deletedAt])
+
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
-  @@index([tenantId, frameworkKey, status])
-  @@index([tenantId, deletedAt])
 }
 
 model AuditPack {
@@ -155,13 +156,14 @@ model AuditPackItem {
   shareComments AuditPackShareComment[]
 
   @@unique([auditPackId, entityType, entityId])
+  @@index([tenantId, auditPackId])
+
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
-  @@index([tenantId, auditPackId])
 }
 
 model AuditPackShare {
@@ -178,14 +180,15 @@ model AuditPackShare {
   tenant          Tenant                  @relation(fields: [tenantId], references: [id])
   comments        AuditPackShareComment[]
 
+  @@index([tokenHash])
+  @@index([tenantId, auditPackId])
+
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres
   /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
-  @@index([tokenHash])
-  @@index([tenantId, auditPackId])
 }
 
 // feat/auditor-return-channel — the RETURN CHANNEL that closes the
@@ -351,26 +354,26 @@ model ReadinessSnapshot {
 /// engagements and the harness level. Written once, by
 /// `prepareAgentReviewPacks`, and never updated (trigger).
 model AccessReviewAgentPack {
-  id                      String   @id @default(cuid())
-  tenantId                String
-  accessReviewId          String
-  decisionId              String
+  id               String   @id @default(cuid())
+  tenantId         String
+  accessReviewId   String
+  decisionId       String
   /// The registered agent described. No FK — see the header.
-  agentId                 String
+  agentId          String
   /// The workflow run whose READ step produced the sections. No FK: a run is
   /// operational and may be pruned; the pack is the record that outlives it.
-  preparedByRunId         String
+  preparedByRunId  String
   /// The registered agent whose run prepared it — the campaign's preparer,
   /// or for the preparer's own pack its cross-preparer — or NULL when a
   /// person prepared the preparer's own pack on the static path. A CHECK
   /// refuses it equal to `agentId`: no agent prepares the pack it is reviewed
   /// by.
-  preparedByAgentId       String?
+  preparedByAgentId String?
   /// How the pack was prepared: `AGENT_RUN` (a registered agent's run) or
   /// `PERSON_STATIC_SELF_PACK` (the preparer's own pack, prepared by a person
   /// on the static path because the campaign names no cross-preparer). A
   /// CHECK pairs it with `preparedByAgentId`.
-  preparationBasis        String
+  preparationBasis String
   /// The campaign's preparer, bound to `AccessReview.preparerAgentId` by FK,
   /// so a CHECK can hold the one exception: a pack no agent prepared must be
   /// the preparer's own.
@@ -378,26 +381,26 @@ model AccessReviewAgentPack {
   /// Who STARTED the preparation; the run is the agent's, or (for a
   /// `PERSON_STATIC_SELF_PACK`) this person's. No FK, matching
   /// `grantedByUserId`: the record must survive the account.
-  preparedByUserId        String
+  preparedByUserId String
   /// The observation window: the 90 days before the campaign froze its
   /// population. `windowEnd` is `AccessReview.createdAt`, so every page of
   /// one campaign reads the same window.
-  windowStart             DateTime
-  windowEnd               DateTime
+  windowStart      DateTime
+  windowEnd        DateTime
   /// The pack sections, exactly as the read tool returned them.
-  sectionsJson            Json
+  sectionsJson     Json
   /// `sha256:<hex>` over the canonical JSON of `sectionsJson`. Enters the
   /// campaign's closing evidence, which is how the evidence hash covers the
   /// packs without inlining them.
-  contentHash             String
-  preparedAt              DateTime @default(now())
+  contentHash      String
+  preparedAt       DateTime @default(now())
 
-  tenant           Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  accessReview     AccessReview                  @relation("AgentPackCampaign", fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessReview AccessReview                  @relation("AgentPackCampaign", fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
   /// RESTRICT on update: a campaign's preparer cannot move once a pack names it.
-  preparerCampaign AccessReview                  @relation("AgentPackCampaignPreparer", fields: [accessReviewId, campaignPreparerAgentId], references: [id, preparerAgentId], onDelete: Cascade, onUpdate: Restrict)
-  decision         AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  narrowings       AccessReviewAgentNarrowing[]
+  preparerCampaign AccessReview              @relation("AgentPackCampaignPreparer", fields: [accessReviewId, campaignPreparerAgentId], references: [id, preparerAgentId], onDelete: Cascade, onUpdate: Restrict)
+  decision     AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  narrowings   AccessReviewAgentNarrowing[]
 
   /// One pack per subject, ever — preparation is one-shot. Composite because
   /// Prisma types a composite relation as 1:1 only over its exact field list;
