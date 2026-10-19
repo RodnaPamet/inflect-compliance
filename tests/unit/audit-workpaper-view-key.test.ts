@@ -23,11 +23,18 @@ let mockRefuseDb = false;
 const mockFindMany = jest.fn(async (args: { take: number; where: Record<string, unknown> }) =>
     mockRows.filter((r) => r.periodLabel === args.where.periodLabel).slice(0, args.take),
 );
+let mockNarrated = new Set<string>();
+const mockNarrativeFindMany = jest.fn(async (args: { where: { workpaperId: { in: string[] } }; take: number }) =>
+    args.where.workpaperId.in.filter((id) => mockNarrated.has(id)).map((workpaperId) => ({ workpaperId })),
+);
 jest.mock('@/lib/db-context', () => ({
     ...jest.requireActual('@/lib/db-context'),
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => {
         if (mockRefuseDb) throw new Error(DB_REACHED);
-        return fn({ auditWorkpaper: { findMany: mockFindMany } });
+        return fn({
+            auditWorkpaper: { findMany: mockFindMany },
+            auditWorkpaperNarrative: { findMany: mockNarrativeFindMany },
+        });
     }),
 }));
 
@@ -220,6 +227,8 @@ describe('listAuditWorkpapersForPeriod', () => {
         mockRows = [];
         mockRefuseDb = false;
         mockFindMany.mockClear();
+        mockNarrated = new Set();
+        mockNarrativeFindMany.mockClear();
     });
 
     it.each([
@@ -270,6 +279,21 @@ describe('listAuditWorkpapersForPeriod', () => {
         const byDefault = await listAuditWorkpapersForPeriod(ctx, '2026-09');
         expect(mockFindMany.mock.calls[2][0].take).toBe(MAX_WORKPAPERS_PER_PERIOD_READ + 1);
         expect(byDefault.truncated).toBe(false);
+    });
+
+    it('flags each shown workpaper whose narrative is stored, and asks only about the ones it shows (#3749)', async () => {
+        mockRows = [1, 2, 3].map((i) => storedRow(i));
+        mockNarrated = new Set(['wp_2', 'wp_3']);
+        const view = await listAuditWorkpapersForPeriod(ctxWith({ workpaper_view: true }), '2026-09', 2);
+        expect(view.workpapers.map((w) => [w.workpaperId, w.narrated])).toEqual([
+            ['wp_1', false],
+            ['wp_2', true],
+        ]);
+        // The row read one past the bound is not shown, so it is not asked about.
+        expect(mockNarrativeFindMany.mock.calls[0][0]).toMatchObject({
+            where: { tenantId: 'tenant-1', workpaperId: { in: ['wp_1', 'wp_2'] } },
+            take: 2,
+        });
     });
 
     it('a period with no workpapers is an empty list, not truncated', async () => {

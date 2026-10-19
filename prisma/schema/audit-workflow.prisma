@@ -612,6 +612,9 @@ model AuditWorkpaper {
   /// Internal audit's re-performance of this workpaper, when it was drawn
   /// (3d). At most one: `@@unique([tenantId, workpaperId])` on the review.
   sampleReviews AuditWorkpaperSampleReview[]
+  /// The auditor agent's narrative of this workpaper (#3749). At most one:
+  /// `@@unique([tenantId, workpaperId])` on the narrative.
+  narratives    AuditWorkpaperNarrative[]
 
   @@unique([id, tenantId])
   @@index([tenantId, procedureId, periodLabel])
@@ -737,4 +740,45 @@ model AuditWorkpaperSampleReview {
   @@index([tenantId, assignedToUserId, sampledAt])
   /// The rate: this tenant, drawn inside the window.
   @@index([tenantId, sampledAt])
+}
+
+/// THE AUDITOR AGENT'S NARRATIVE OF ONE WORKPAPER (#3749): a few sentences a
+/// reviewer reads beside it — what the procedure tested, what the sample
+/// showed, and the conclusion the workpaper records. Drafted by an
+/// `audit-narrative` run on the Flue engine, and stored only after the
+/// output contract (`checkNarrativesAgainstRecord`) has held it to the
+/// record: the conclusion is the workpaper's, and every code it lists or
+/// cites is one the workpaper records.
+///
+/// WRITE-ONCE: `app_user` holds neither UPDATE nor DELETE, and a trigger
+/// refuses an UPDATE from every role. One per workpaper. Model text, so
+/// sanitised at its one writer (`audit-workpaper-narrative.ts`) and encrypted
+/// at rest (Epic B). Kept as long as its workpaper, which the tenant purge
+/// keeps.
+model AuditWorkpaperNarrative {
+  id          String @id @default(cuid())
+  tenantId    String
+  workpaperId String
+
+  /// The run that drafted it. A plain id with no foreign key: workflow runs
+  /// are purged on their own schedule, and the narrative outlives them.
+  runId String
+
+  /// The exception codes the narrative discusses, each one its workpaper
+  /// records (the insert trigger checks it against `exceptionsJson`).
+  exceptionCodes String[] @default([])
+
+  /// The narrative, at most 400 characters before encryption.
+  text String
+
+  createdAt DateTime @default(now())
+
+  // No `updatedAt`: the row never changes.
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workpaper AuditWorkpaper @relation(fields: [workpaperId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One narrative per workpaper, ever — the capture's idempotency key, and
+  /// the tenant-leading construct that indexes the `workpaperId` FK.
+  @@unique([tenantId, workpaperId])
 }

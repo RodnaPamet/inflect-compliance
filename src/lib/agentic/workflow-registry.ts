@@ -14,6 +14,7 @@ import { postureReviewWorkflow } from './workflows/posture-review';
 import { accessPostureWorkflow } from './workflows/access-posture';
 import { discoveredAgentReviewWorkflow } from './workflows/discovered-agent-review';
 import { agentRecertificationPackWorkflow } from './workflows/agent-recertification-pack';
+import { auditNarrativeWorkflow } from './workflows/audit-narrative';
 
 /**
  * "Diagnostic" — read the tenant's compliance posture, then synthesise a
@@ -70,6 +71,11 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
     // one read and one pure synthesis — and it writes no campaign record:
     // `prepareAgentReviewPacks` reads its recorded steps and writes the packs.
     [agentRecertificationPackWorkflow.key]: agentRecertificationPackWorkflow,
+    // #3749: the auditor agent's narrative of a period's workpapers. The first
+    // `readOnly` definition — on Flue it is offered no propose tool — and its
+    // answer is captured, held to the record, when the run settles. See the
+    // header of `audit-narrative.ts`.
+    [auditNarrativeWorkflow.key]: auditNarrativeWorkflow,
 };
 
 /**

@@ -88,6 +88,7 @@ import {
 } from '@/lib/agentic/workpaper-review-sampling';
 import { assertCanRead } from '../policies/common';
 import { AuditWorkpaperRepository } from '../repositories/AuditWorkpaperRepository';
+import { narrativeOfWorkpaper } from './audit-workpaper-narrative';
 import {
     RecordWorkpaperReviewSchema,
     SetWorkpaperReviewSamplePercentSchema,
@@ -501,11 +502,13 @@ export async function getWorkpaperReview(ctx: RequestContext, reviewId: string) 
         const pending = review.outcome === 'PENDING';
         viewer = { mine: true, answerable: pending, refusal: pending ? null : 'ALREADY_REVIEWED' };
     }
-    const workpaper = await runInTenantContext(ctx, (db) =>
-        AuditWorkpaperRepository.getById(db, ctx, review.workpaperId),
-    );
+    const { workpaper, narrative } = await runInTenantContext(ctx, async (db) => ({
+        workpaper: await AuditWorkpaperRepository.getById(db, ctx, review.workpaperId),
+        // The auditor agent's narrative of it (#3749), when one is stored.
+        narrative: await narrativeOfWorkpaper(db, ctx, review.workpaperId),
+    }));
     if (!workpaper) throw notFound('Workpaper not found');
-    return { review, workpaper, viewer };
+    return { review, workpaper, viewer, narrative };
 }
 
 export interface RecordWorkpaperReviewResult {

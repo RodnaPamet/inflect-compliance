@@ -196,6 +196,9 @@ const RICH_TEXT_COVERAGE: Readonly<
     // A review run's owner suggestion (#3728): model output, parsed through the
     // skill's contract and sanitised by its one writer before it is stored.
     DiscoveredAgentAttribution: { usecases: ['src/app-layer/usecases/agent-harness-attribution.ts'], sanitizer: 'sanitizePlainText' },
+    // The auditor agent's narrative of a workpaper (#3749): model output, held
+    // to the record by the narrative contract and sanitised by its one writer.
+    AuditWorkpaperNarrative: { usecases: ['src/app-layer/usecases/audit-workpaper-narrative.ts'], sanitizer: 'sanitizePlainText' },
     RiskTreatmentPlan: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
     TreatmentMilestone: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
     // NIS2 Article 23 incident response — incident narrative, the filed

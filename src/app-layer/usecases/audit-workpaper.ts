@@ -514,12 +514,14 @@ export async function listAuditWorkpapersForPeriod(
     }
     // One past the cap, so "exactly `limit`" and "the first `limit` of more"
     // are told apart (invariant 5 of the recertification section).
-    const rows = await runInTenantContext(ctx, (db) =>
-        AuditWorkpaperRepository.listForPeriod(db, ctx, periodLabel, limit + 1),
-    );
+    const { rows, narrated } = await runInTenantContext(ctx, async (db) => {
+        const found = await AuditWorkpaperRepository.listForPeriod(db, ctx, periodLabel, limit + 1);
+        const shown = found.slice(0, limit).map((r) => r.id);
+        return { rows: found, narrated: await AuditWorkpaperRepository.narratedAmong(db, ctx, shown) };
+    });
     return {
         periodLabel,
-        workpapers: rows.slice(0, limit).map(toWorkpaperView),
+        workpapers: rows.slice(0, limit).map((r) => toWorkpaperView(r, narrated.has(r.id))),
         truncated: rows.length > limit,
     };
 }
