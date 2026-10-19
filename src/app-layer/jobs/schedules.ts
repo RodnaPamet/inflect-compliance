@@ -270,6 +270,37 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agent-harness-estate-staleness',
+        pattern: '47 6 * * *',    // daily at 06:47 UTC
+        // NO tenantId: absent means "discover the tenants using the harness
+        // (an estate, a scanner key, or a stale-estate finding still open) and
+        // run each". See `AgentHarnessEstateStalenessPayload`.
+        //
+        // The time, and each part of it is load-bearing:
+        //   - DAILY, and late in the UTC morning, because scanners run on their
+        //     own anchors (`schedule.everyHours` from each run's start), so no
+        //     minute is after every scanner. The health rule already tolerates
+        //     half a cadence of lateness, so the minute moves when a stale
+        //     estate is reported by at most a day and never whether it is; a
+        //     slot after the overnight window an operator would anchor a nightly
+        //     scan in gives last night's report the chance to arrive first.
+        //   - AFTER agentic-evidence-emission (06:30), which also reads the
+        //     harness scans. Neither writes what the other reads — this pass
+        //     writes Findings and an execution row, the emission writes Evidence
+        //     — but an incident in one must not arrive inside the other's minute
+        //     and be triaged as part of it.
+        //   - NOT at 06:00 beside agent-credential-hygiene and the kill-switch
+        //     drill, which raise agentic Findings of their own, for that reason.
+        //   - BEFORE notification-dispatch (07:00) and the 08:00 reminders.
+        //   - 06:47 is a minute no other entry fires in: not the hourly :00 or
+        //     the reaper's :37, and not a multiple of 2, 5, 10 or 15, so none of
+        //     the frequent ticks either.
+        // Declaration order in this array is NOT execution order; only the cron
+        // pattern is.
+        description: 'Per tenant, judge every client harness estate against its cadence with the rule the health card runs (lib/agentic/harness-estate-health.ts), open one finding per stale estate naming the estate, its scanner and the sources missing or incomplete, and record the pass, including a tenant with no estate as evaluated 0. A finding closes only when a complete scan of the estate arrives — never on an edit or a removal of the estate.',
+        defaultPayload: {},
+    },
+    {
         name: 'integration-passport-sweep',
         pattern: '45 5 * * 0',    // weekly, Sunday 05:45 UTC
         // NO tenantId and NO asOf: absent means "every tenant with an external

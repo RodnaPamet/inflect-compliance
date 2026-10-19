@@ -14,6 +14,7 @@
 import { metrics } from '@opentelemetry/api';
 
 import type { ServicePrincipalDisableStatus } from '@/lib/agentic/service-principal-disable';
+import type { EstateStaleReason } from '@/lib/agentic/harness-estate-staleness';
 
 const METER_NAME = 'inflect-compliance-integrations';
 function getMeter() {
@@ -1458,6 +1459,72 @@ export function recordAgentCredentialHygiene(attrs: {
     if (attrs.opened > 0) _credentialHygieneFindings.add(attrs.opened, { transition: 'opened' });
     if (attrs.reopened > 0) _credentialHygieneFindings.add(attrs.reopened, { transition: 'reopened' });
     if (attrs.resolved > 0) _credentialHygieneFindings.add(attrs.resolved, { transition: 'resolved' });
+}
+
+let _estateStalenessPass: Counter | null = null;
+let _estateEvaluated: Counter | null = null;
+let _estateStale: Counter | null = null;
+
+/**
+ * One harness-estate staleness pass, per tenant (#3741), and what it measured.
+ *
+ * Three instruments, because the quiet failures look alike from a findings
+ * queue — no stale estate, no estate to judge, and no pass at all all open
+ * nothing:
+ *
+ *   agentic.harness_estate.pass{outcome}     every terminal path: `evaluated`,
+ *                                            `no_estates`, `error`, and
+ *                                            `swept_nobody` for a sweep that
+ *                                            found no tenant to visit
+ *   agentic.harness_estate.evaluated         estates judged — the DENOMINATOR.
+ *                                            Added on every completed pass, zero
+ *                                            included, so "0 stale of 0
+ *                                            evaluated" reads as nothing measured
+ *   agentic.harness_estate.stale{reason}     estates found stale, by why:
+ *                                            `scanner_not_live`,
+ *                                            `no_scan_in_window`,
+ *                                            `no_complete_scan`
+ *
+ * ALERT ON — any increase of `.stale` (a client estate's scanner went quiet,
+ * stopped reading a source in full, or was retired); any `outcome="error"`;
+ * and the ABSENCE of any pass outcome for two days. A `.stale` rate is a count
+ * of estate-days, not of estates: a stale estate is counted again on every
+ * daily pass until a complete scan arrives.
+ *
+ * No tenant label, and no estate or scanner identifier: a handful of outcomes
+ * and three reasons. Which estate is stale is the finding's to say.
+ */
+export function recordHarnessEstateStaleness(attrs: {
+    outcome: 'evaluated' | 'no_estates' | 'error' | 'swept_nobody';
+    evaluated: number;
+    staleByReason: Partial<Record<EstateStaleReason, number>>;
+}): void {
+    if (!_estateStalenessPass) {
+        _estateStalenessPass = getMeter().createCounter('agentic.harness_estate.pass', {
+            description: 'Harness-estate staleness passes, by terminal outcome',
+            unit: '1',
+        });
+    }
+    _estateStalenessPass.add(1, { outcome: attrs.outcome });
+    if (attrs.outcome === 'evaluated' || attrs.outcome === 'no_estates') {
+        if (!_estateEvaluated) {
+            _estateEvaluated = getMeter().createCounter('agentic.harness_estate.evaluated', {
+                description: 'Client estates judged against their cadence by a staleness pass',
+                unit: '1',
+            });
+        }
+        _estateEvaluated.add(attrs.evaluated);
+    }
+    for (const [reason, count] of Object.entries(attrs.staleByReason)) {
+        if (!count || count <= 0) continue;
+        if (!_estateStale) {
+            _estateStale = getMeter().createCounter('agentic.harness_estate.stale', {
+                description: 'Client estates found stale by a staleness pass, by reason',
+                unit: '1',
+            });
+        }
+        _estateStale.add(count, { reason: reason.toLowerCase() });
+    }
 }
 
 // ── Internal audit's sampling of the auditor's workpapers (#3677) ──────────

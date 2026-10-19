@@ -867,6 +867,7 @@ export interface JobPayloadMap {
     'integration-passport-sweep': IntegrationPassportSweepPayload;
     'agent-owner-orphan-pass': AgentOwnerOrphanPassPayload;
     'agent-credential-hygiene': AgentCredentialHygienePayload;
+    'agent-harness-estate-staleness': AgentHarnessEstateStalenessPayload;
 }
 
 /**
@@ -913,6 +914,17 @@ export interface AgentOwnerOrphanPassPayload {
  * Findings only: no shape of this payload writes a credential.
  */
 export interface AgentCredentialHygienePayload {
+    tenantId?: string;
+}
+
+/**
+ * agent-harness-estate-staleness — raise a finding per client estate whose last
+ * complete scan is older than the health rule allows (#3741). `tenantId` absent
+ * is the scheduled sweep, which DISCOVERS the tenants using the harness;
+ * present runs that tenant, and records a row even when it declares no estate.
+ * Findings only: no shape of this payload writes an estate or a scan.
+ */
+export interface AgentHarnessEstateStalenessPayload {
     tenantId?: string;
 }
 
@@ -1276,6 +1288,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         // ONE attempt. The reconcile is idempotent on (rule, credential), so a
         // retry would rewrite nothing — and also prove nothing. Tomorrow's tick
         // is the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'agent-harness-estate-staleness': {
+        // ONE attempt. The reconcile is idempotent per estate — a retry would
+        // find its own findings and open nothing — but each attempt writes an
+        // execution row per tenant, and three rows for one morning would make
+        // "did it run?" harder to read, not easier. Tomorrow's tick is the retry.
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,

@@ -193,3 +193,15 @@ A LangSmith source's rows are the deployments and projects it listed, so a
 workspace whose window held no tool call and no deployment is read in full with
 rows and reports no agent. A scan that found no agent at all raises
 `EMPTY_SCAN` and never counts as the estate's complete scan.
+
+A stale estate also raises a finding (#3741, owner decision 2026-10-19). The
+`agent-harness-estate-staleness` job runs daily at 06:47 UTC, judges every
+estate with the same rule the card uses, and opens one `HIGH` observation per
+stale estate (`sourceKind = AGENT_HARNESS`, `sourceRef = STALE_ESTATE:<estate
+id>`). The finding names the estate, its scanner and each declared source that
+no scan in the window read in full, and is assigned to the scanner agent's
+owner. A second run leaves it as it is; an estate that goes stale again reopens
+the same finding. It closes only when a complete scan of every declared source
+arrives. Raising the cadence or dropping a source does not close it, even
+though the card then reads FRESH, and removing the estate leaves it open for a
+person to close.
