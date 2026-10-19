@@ -12,12 +12,14 @@
  *     credential each — an Okta SSWS token for a read-only administrator, an
  *     Entra client that holds `Key Vault Reader`, an Entra client that holds
  *     `Application.Read.All`, a LangSmith workspace Viewer key, an MCP server's
- *     read token (`readTokenEnv`, one per server, optional) — the `code`
+ *     read token (`readTokenEnv`, one per server, optional), a GitHub
+ *     fine-grained token holding Contents: read and Secrets: read — the `code`
  *     source takes none, and the only other credential is the
  *     Inflect API key that posts the report, which needs the
  *     `admin:harness_ingest` scope and nothing else (contract, Transport).
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
- *     on the public cloud's, Entra on Microsoft Graph's public-cloud host, LangSmith on its US or EU cloud host, the ingest on
+ *     on the public cloud's, Entra on Microsoft Graph's public-cloud host, LangSmith on its US or EU cloud host, GitHub
+ *     Actions on `api.github.com`, the ingest on
  *     https. A typo cannot send a token somewhere new, because there is no
  *     free-form host to type into — with TWO exceptions, each the customer's
  *     own host and each checked as any customer-named host is
@@ -35,6 +37,7 @@ import { looksLikeSecret, SOURCE_KINDS } from '@/lib/agentic/harness-contract';
 import { customerOriginProblem, parsePrivateCidrAllowlist } from './customer-host';
 import { httpsOrigin } from './http';
 import { AZURE_KEY_VAULT_HOST_SUFFIX } from './sources/azure-key-vault';
+import { GITHUB_REPOSITORY } from './sources/github-actions';
 import {
     LANGSMITH_CLOUD_ORIGINS,
     LANGSMITH_DEFAULT_WINDOW_DAYS,
@@ -97,6 +100,26 @@ const EntraSourceConfigSchema = z
          * reported.
          */
         includeThirdPartyApplications: z.boolean().default(false),
+    })
+    .strict();
+
+const GitHubActionsSourceConfigSchema = z
+    .object({
+        kind: z.literal('cicd'),
+        /** The CI/CD product. GitHub Actions is the one adapter (#3784); the field keeps the kind generic. */
+        product: z.literal('github-actions'),
+        /** `owner/repo`, each read from `api.github.com` with the one token. */
+        repositories: z
+            .array(z.string().regex(GITHUB_REPOSITORY, 'owner/repo'))
+            .min(1)
+            .max(50)
+            .refine((r) => new Set(r.map((x) => x.toLowerCase())).size === r.length, 'each repository appears once'),
+        /**
+         * A fine-grained token holding Contents: read and Secrets: read on those
+         * repositories, and nothing else. Secrets: read lists secret names; no
+         * GitHub permission reads a value.
+         */
+        tokenEnv: envName,
     })
     .strict();
 
@@ -262,6 +285,7 @@ export const SourceConfigSchema = z.discriminatedUnion('kind', [
     LangSmithSourceConfigSchema,
     McpSourceConfigSchema,
     InflectRegisterSourceConfigSchema,
+    GitHubActionsSourceConfigSchema,
 ]);
 
 export const ScannerConfigSchema = z
@@ -358,6 +382,8 @@ export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code'
             return source.clientSecretEnv;
         case 'runtime':
             return source.apiKeyEnv;
+        case 'cicd':
+            return source.tokenEnv;
     }
 }
 

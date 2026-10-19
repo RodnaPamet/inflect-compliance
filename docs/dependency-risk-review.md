@@ -399,6 +399,27 @@ passes because that exemption is listed, in date, and still matching. The
 scope and is no longer true of the tree. The number to trust is the gate's, not
 a figure in prose.
 
+## Review — 2026-10-19 — `js-yaml` in the harness scanner
+
+### `js-yaml` — `5.4.2` (exact, in the scanner image)
+
+The 2026-05-22 review's exposure line said every call site parses first-party
+YAML. #3784 adds one that does not. The harness scanner's `cicd` source parses a
+client's GitHub Actions workflow files, which the client wrote and Inflect did
+not. The package is the repository's own reviewed dependency, so nothing new
+enters the tree. The scanner image installs it as a fourth pinned package, in
+its own manifest and lockfile (`packages/agent-harness-scanner/container/`).
+It brings `argparse` with it, for its command-line interface, which the scanner
+never runs.
+
+| | |
+|---|---|
+| **Runtime use** | `packages/agent-harness-scanner/src/sources/github-actions.ts`, `analyseWorkflow`: one `yaml.load` per workflow file, inside the scanner container in the client's estate. Nothing in the application's own build gains a call site. |
+| **Input** | A workflow file's text, as the client's repository holds it: under 512 KiB decoded, refused above that, and refused when GitHub serves it without content (over 1 MB). |
+| **Exposure** | `load` under the default core schema constructs no type, so a tag cannot run code. Two documented amplification paths are bounded at the call: `maxAliases: 1000` (the library's default is unlimited) and `maxDepth: 100`. Merge keys are off under the core schema. Any parse failure is caught and reported as `UNPARSEABLE`, never thrown out of the source. The document is walked once, with a seen-set, so an alias that reaches one node many times is read once. |
+| **Blast radius** | The scanner's own process, in the client's estate. What leaves it is a signed report the ingest verifies against its own strict schema, which a mis-parse cannot widen. |
+| **Decision** | **Reviewed — adopted in the scanner image at the version the repository's tests run against.** The `REVIEWED` floor (major 5) is unchanged. Dependabot proposes the image's updates as a group (`.github/dependabot.yml`). |
+
 ## Re-running this review
 
 When auditing the next batch of dependencies, copy the per-package

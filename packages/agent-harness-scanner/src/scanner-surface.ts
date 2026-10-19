@@ -22,6 +22,7 @@ import { HARNESS_CONTRACT_V2 } from '@/lib/agentic/harness-contract';
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
+import { GITHUB_API_ORIGIN, GITHUB_READ_PATHS } from './sources/github-actions';
 import { HARNESS_REGISTER_TOOL, MCP_MESSAGES } from './http';
 import { INFLECT_MCP_PATH } from './sources/inflect-register';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
@@ -33,9 +34,9 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * LangSmith source (#3738). 0.3.0: reports under `inflect-agent-harness/2`
  * (#3754). 0.4.0: the `code` source, LangChain and LangGraph (#3737). 0.5.0:
  * the Entra source (#3686). 0.6.0: the MCP source (#3686). 0.7.0: the register
- * source (#3686).
+ * source (#3686). 0.8.0: the GitHub Actions source (#3784).
  */
-export const SCANNER_VERSION = '0.7.0';
+export const SCANNER_VERSION = '0.8.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -47,6 +48,8 @@ export const SCANNER_SURFACE = {
     reads: [
         { source: 'entra-sp', product: 'entra', method: 'GET', origin: GRAPH_ORIGIN, paths: [...ENTRA_READ_PATHS] },
         { source: 'okta-app', product: 'okta', method: 'GET', paths: [...OKTA_READ_PATHS] },
+        // Templates: `{owner}`, `{repo}` and `{file}` each stand for one path segment.
+        { source: 'cicd', product: 'github-actions', method: 'GET', origin: GITHUB_API_ORIGIN, paths: [...GITHUB_READ_PATHS] },
         {
             source: 'vault',
             product: 'azure-key-vault',
@@ -141,12 +144,19 @@ export function isDeclaredRegisterMessage(body: string): boolean {
     return message?.method === 'tools/call' && message.params?.name === HARNESS_REGISTER_TOOL;
 }
 
+/** Whether `pathname` is `declared`, where a `{name}` segment of `declared` stands for exactly one segment. */
+function pathMatches(declared: string, pathname: string): boolean {
+    const want = declared.split('/');
+    const got = pathname.split('/');
+    return want.length === got.length && want.every((seg, i) => (/^\{[a-z]+\}$/.test(seg) ? got[i] !== '' : seg === got[i]));
+}
+
 export function isDeclaredRequest(method: string, url: string): boolean {
     const { origin, pathname } = new URL(url);
     if (method === 'GET') {
         // A read that names its origin (one whose host is fixed by kind) is held to it.
         return SCANNER_SURFACE.reads.some(
-            (r) => (r.paths as readonly string[]).includes(pathname) && (!('origin' in r) || r.origin === origin),
+            (r) => (r.paths as readonly string[]).some((p) => pathMatches(p, pathname)) && (!('origin' in r) || r.origin === origin),
         );
     }
     if (method !== 'POST') return false;

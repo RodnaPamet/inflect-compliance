@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "license": "BUSL-1.1",
-  "description": "What the scanner container installs: the runner, the parser the code source reads TypeScript with, and the schema library. Exact versions, the ones the repository's tests run the scanner against. See ../README.md, Container.",
+  "description": "What the scanner container installs: the runner, the parser the code source reads TypeScript with, the YAML parser the cicd source reads workflows with, and the schema library. Exact versions, the ones the repository's tests run the scanner against. See ../README.md, Container.",
   "dependencies": {
+    "js-yaml": "5.4.2",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "zod": "4.6.5"

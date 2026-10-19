@@ -42,6 +42,7 @@ scanner signed it, so each estate has a scanner of its own.
 | `okta-app` | An SSWS API token for a read-only administrator | `*.okta.com`, `*.oktapreview.com` |
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
+| `cicd` (GitHub Actions) | A fine-grained token limited to the listed repositories, holding the repository permissions Contents: read and Secrets: read | `api.github.com` |
 | `code` (LangChain and LangGraph) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
@@ -121,6 +122,17 @@ remains, with no `mcp` source in the scan (owner answer, 2026-10-19,
 `docs/agent-harness-contract.md`, Transport). A tool set the code fetches from
 an MCP server at run time is still judged by a complete `mcp` read.
 
+**GitHub Actions.** List each repository as `owner/repo` under `repositories`.
+The scanner reads the workflow files on each one's default branch and its
+Actions secrets by name; Secrets: read lists names, and GitHub has no read of a
+value. A workflow is reported when it references a secret, when a job's token
+may write, or when it reaches secrets dynamically. Give every job an explicit
+`permissions:` map: a job without one takes the repository's default, which the
+scanner does not read and so reports as possibly writing, with
+`H2.tools_allowlisted` unmet. A repository secret that no workflow references
+is reported unbound and raises `ORPHAN_CREDENTIAL`. Organisation and environment
+secrets are not listed: a reference to one is reported with its age unknown.
+
 ## 3. Labelling the estate's principals
 
 The scanner reports what the estate itself records, and nothing it would have to
@@ -144,6 +156,7 @@ it, so the credential lands on the same agent:
 | An Entra service principal | `entra:sp:<objectId>` |
 | A LangSmith deployment | `langsmith:deployment:<deploymentId>` |
 | A LangSmith tracing project | `langsmith:project:<projectId>` |
+| A GitHub Actions workflow | `github:workflow:<owner>/<repo>/<file>` |
 
 **LangSmith reads no label.** Its agents are identified by LangSmith's own ids,
 and LangSmith records no owner for a project or a deployment, so each is reported
@@ -165,6 +178,9 @@ What the scanner deliberately does not take from these labels:
 - **Anything untagged.** A vault item with no `inflect-principal` tag is counted
   and reported as nothing; which of a vault's secrets belong to agents is the
   estate's statement to make.
+- **An owner for a workflow.** GitHub records none, and the scanner does not read
+  CODEOWNERS, so each workflow is reported unowned and raises `SHADOW_AGENT`
+  until somebody registers it.
 - **An owner for a coded agent.** The `code` source reports each agent
   definition as `code:<label>/<path>#<name>`, where the name is the variable the
   definition is bound to, with no owner: code names no accountable person. It
@@ -222,7 +238,10 @@ the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
 `UNPARSEABLE`: it read a file that does not parse, or an agent definition built
 from something it cannot resolve statically — a tool list returned by a
 function, a model passed in as a parameter, `**kwargs`. The agent is still
-reported with what did resolve, and the source line names the reason.
+reported with what did resolve, and the source line names the reason. The
+`cicd` source adds it for a workflow file that is not one YAML document with a
+`jobs` mapping, or that declares a `permissions:` value it does not know; the
+repository's other workflows are still reported.
 
 A LangSmith source's rows are the deployments and projects it listed, so a
 workspace whose window held no tool call and no deployment is read in full with
