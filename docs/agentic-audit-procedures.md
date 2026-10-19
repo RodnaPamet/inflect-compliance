@@ -17,23 +17,28 @@ internal audit's approval nor PwC's agreement of version 1 is recorded on issue
 is proposed to internal audit and PwC, and no procedure here is a definition
 either of them has approved or agreed.
 
-No handler for any of these procedures exists on `main`. As adopted, the
-catalogue is the definition the step `3c` handlers implement. The gaps it
-depends on are listed at the end, each with the step that builds it.
+Procedures 1 to 5 run on `main` as handlers on the control-test runner, as the
+registered auditor agent (step `3c`, #3676;
+`src/app-layer/services/audit-procedures/`), and each run writes one
+workpaper. Procedures 6 to 8 have no handler. The gaps the catalogue depends
+on are listed at the end, each with the step that builds it.
 
 ## Ownership and approval
 
 This catalogue binds whoever operates it to the rule below, which is decision 3
 of [`docs/agentic-iam-roadmap.md`](agentic-iam-roadmap.md). Step `3b` (#3675)
 put three parts of it on `main`: the line-of-defence value on a membership, the
-auditor independence check, and the workpaper record. Two parts are not on
-`main`: no handler runs the auditor agent, and no sampling of workpapers exists.
-Each is a row in [Gaps](#gaps).
+auditor independence check, and the workpaper record. Step `3c` (#3676) put the
+auditor agent's handlers on `main`. One part is not on `main`: no sampling of
+workpapers exists, which is a row in [Gaps](#gaps).
 
 - **The second line of defence is to own and operate the auditor agent.** It
   registers the agent, decides its grants and its policy card, holds its kill
-  switch, and sets the procedure parameters each workpaper records. The auditor
-  agent is step `3c`.
+  switch, and sets the procedure parameters each workpaper records. On `main`
+  the parameters are stored on the procedure's control-test plan, and only a
+  person who owns the auditor agent the plan names may set, change or remove
+  that plan's procedure (`scheduleTestPlan`). The auditor may hold Inflect's
+  read tools and `propose_finding` and nothing else.
 - **Internal audit is to approve this catalogue and to sample the auditor's
   workpapers.** A sampled workpaper must be re-checked by a person in internal
   audit, never by the auditor agent's owner. On `main` a workpaper's review
@@ -287,8 +292,9 @@ workpaper's path writes a finding.
   plan whose `automationConfig` names none of its checks.
 - On an automated FAIL the runner itself creates one `Finding` linked through
   the run's evidence. This catalogue raises one finding proposal per exception.
-  How the two paths combine is a decision for step `3c`; it is listed under
-  gaps.
+  Step `3c` decided how the two combine: a procedure handler returns
+  `findingsRaisedAs: 'PROPOSALS'`, and the runner writes no `Finding` of its
+  own for that run. A FAIL still stamps `Control.lastTested`.
 
 ---
 
@@ -958,15 +964,13 @@ names the step that builds it, or says that no step does.
 
 | Gap | Affects | Built by |
 |---|---|---|
-| No handler runs any procedure | 1 to 5 | step `3c` (#3676) |
 | No handler runs any procedure | 6 to 8 | no step; adding one is a change to this catalogue and a new step issue |
 | No sampling of workpapers by internal audit | ownership rule | step `3d` (#3677) |
 | No agent subjects in access reviews: `AccessReviewScope` has no agent value | procedure 2 | step `3a` (#3674) |
 | Internal audit's approval and PwC's agreement of version 1 are open; the repository owner's merge adopts the version and supplies neither | all | internal audit and PwC, each recorded on issue #3663 when given |
 | PwC's methodology reference for each procedure is open | all | PwC, recorded on issue #3663 when given |
-| The parameters `leaverWindowHours`, `remediationWindowDays` and `killGraceSeconds` have no stored home and no agreed value | 1, 2, 6 | step `3c` stores them with the handler's plan; the second line sets the values |
-| How the runner's one `Finding` per automated FAIL combines with one finding proposal per exception | all | step `3c` decides |
-| An account disabled outside Inflect carries no disable time, so L2 is UNTESTABLE for it | procedure 1 | no step; step `3c` names it in its pull request |
-| `src/app-layer/usecases/identity-sync.ts` stores an undetermined `isAdmin` or `mfaEnrolled` as `false`, including every Okta account past the enrichment cap | procedure 4 | no step; step `3c` names it in its pull request |
+| The parameters `leaverWindowHours` and `remediationWindowDays` have no agreed value. Both are stored on the procedure's plan (`automationConfig.parameters`); `killGraceSeconds` has no stored home | 1, 2, 6 | the second line sets the values; procedure 6 has no step |
+| An account disabled outside Inflect carries no disable time, so L2 is UNTESTABLE for it | procedure 1 | no step; named in the step `3c` pull request (#3676) |
+| `src/app-layer/usecases/identity-sync.ts` stores an undetermined `isAdmin` or `mfaEnrolled` as `false`, including every Okta account past the enrichment cap | procedure 4 | no step; named in the step `3c` pull request (#3676) |
 | No procedure tests a legacy account's `expiresAt` | none in this version | no step; adding one is a change to this catalogue |
 | Privilege granted by a custom role is not classified | procedure 4 | no step |

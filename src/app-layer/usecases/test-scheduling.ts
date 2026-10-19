@@ -32,7 +32,9 @@ import {
     assertCanManageTestPlans,
 } from '../policies/test.policies';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import type { PrismaTx } from '@/lib/db-context';
+import { parseAuditProcedureConfig } from '@/lib/agentic/audit-procedure-library';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { computeNextRunFromCron } from '../jobs/control-test-scheduler';
@@ -131,9 +133,12 @@ export async function scheduleTestPlan(
                 // restart it — see the nextDueAt note below.
                 nextDueAt: true,
                 createdAt: true,
+                // Whether this plan runs, or is to run, an audit procedure (#3676).
+                automationConfig: true,
             },
         });
         if (!plan) throw notFound('Test plan not found');
+        await assertMayScheduleAuditProcedure(db, ctx, plan.automationConfig, input.automationConfig);
 
         // Recompute nextRunAt under the NEW (or just-cleared) schedule.
         const tz = input.scheduleTimezone ?? null;
@@ -223,6 +228,67 @@ export async function scheduleTestPlan(
     });
     await bumpEntityCacheVersion(ctx, 'test');
     return result;
+}
+
+/**
+ * THE SECOND LINE SETS AN AUDIT PROCEDURE'S PARAMETERS (#3676, decision 3).
+ *
+ * A plan whose `automationConfig` names an audit procedure is how the auditor
+ * agent is operated: which procedure, which parameters (the leaver window, the
+ * remediation window), how large a sample. Decision 3 gives that to the second
+ * line, which owns and operates the auditor. So a schedule write that puts a
+ * procedure config on a plan — or changes or removes one already there — is
+ * refused unless the caller is a PERSON who owns the auditor agent named, and
+ * that agent is an auditor of this workspace. Its owner is second line by the
+ * independence rule, which the handler re-checks on every run.
+ *
+ * A config that names a procedure and is malformed is a 400 here, rather than
+ * a plan that would run INCONCLUSIVE `CONFIG_INVALID` on every tick.
+ */
+async function assertMayScheduleAuditProcedure(
+    db: PrismaTx,
+    ctx: RequestContext,
+    existing: unknown,
+    incoming: unknown,
+): Promise<void> {
+    const before = parseAuditProcedureConfig(existing);
+    const after = incoming === undefined ? before : parseAuditProcedureConfig(incoming);
+    if (after.kind === 'INVALID') {
+        throw badRequest(`This audit procedure configuration is not valid (${after.reason}).`);
+    }
+    const named = [before, after]
+        .filter((p): p is Extract<typeof p, { kind: 'OK' }> => p.kind === 'OK')
+        .map((p) => p.config.auditorAgentId);
+    if (named.length === 0) return;
+    if (ctx.apiKeyId !== undefined || ctx.agentId !== undefined || ctx.actorType === 'JOB') {
+        throw forbidden('An audit procedure plan is set by a person: the owner of the auditor agent.');
+    }
+    const ids = [...new Set(named)];
+    const agents = await db.registeredAgent.findMany({
+        where: { tenantId: ctx.tenantId, id: { in: ids }, deletedAt: null },
+        select: { id: true, isAuditor: true, ownerUserId: true, status: true },
+        take: ids.length,
+    });
+    const byId = new Map(agents.map((a) => [a.id, a] as const));
+    if (after.kind === 'OK') {
+        const agent = byId.get(after.config.auditorAgentId);
+        if (!agent || !agent.isAuditor || agent.status === 'RETIRED') {
+            throw badRequest('The agent this plan names is not an auditor agent of this workspace.');
+        }
+    }
+    // The owner of every auditor the write touches — the one it names now and
+    // the one it named before. An auditor no longer in the register has no
+    // owner to defer to, so it holds nothing back.
+    const notOwner = ids.filter((id) => {
+        const agent = byId.get(id);
+        return agent !== undefined && agent.ownerUserId !== ctx.userId;
+    });
+    if (notOwner.length > 0) {
+        throw forbidden(
+            "An audit procedure's plan and parameters are set by the second line: only the owner of the " +
+                'auditor agent it names may set, change or remove them.',
+        );
+    }
 }
 
 // PR-Q — the standalone `getUpcomingTests` usecase + its `GET /tests/upcoming`

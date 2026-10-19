@@ -58,6 +58,7 @@ describe('the Flue skill corpus', () => {
             'eu-ai-act-classification',
             'evidence-sufficiency',
             'harness-level-assessment',
+            'iam-audit-procedures',
             'iso-27001-annex-a-drafting',
             'nhi-ownership-attribution',
             'nis2-article-23-timelines',

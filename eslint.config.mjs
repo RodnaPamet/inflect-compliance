@@ -302,6 +302,58 @@ const config = [
         },
     },
     {
+        // ── The auditor agent's procedures re-perform from raw rows, and write
+        //    no finding (#3676) ──
+        //
+        // `docs/agentic-audit-procedures.md`, Re-performance: a procedure never
+        // takes a stored derived figure as evidence — a `CheckResult`, an
+        // `IntegrationExecution.resultJson`, a card's `actionsInWindow`, a
+        // window's breaker verdict, a control-test run, or the `executedAt`
+        // stamp a campaign close writes on every decided row, skipped ones
+        // included. And a workpaper never writes a Finding: every exception
+        // leaves as a `propose_finding` proposal a person decides, so no
+        // finding write, no finding usecase or repository, and no other propose
+        // tool. The behavioural half is tests/integration/audit-procedures.test.ts,
+        // where every failing fixture carries a stored figure that is wrong.
+        //
+        // These two rules REPLACE the base block's options for these files, and
+        // its clipboard and date-input selectors cannot apply to server-side
+        // procedure modules, which render nothing and run no browser API.
+        files: ['src/app-layer/services/audit-procedures/**/*.ts'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: ['**/FindingRepository', '**/usecases/finding', '**/usecases/finding/**'],
+                            message:
+                                'An audit procedure writes no Finding: each exception is a propose_finding proposal a person decides.',
+                        },
+                    ],
+                },
+            ],
+            'no-restricted-syntax': [
+                'error',
+                {
+                    selector:
+                        'MemberExpression[property.name=/^(resultJson|checkResult|actionsInWindow|anomalous|executedAt|controlTestRun)$/], Property[key.name=/^(resultJson|checkResult|actionsInWindow|anomalous|executedAt|controlTestRun)$/]',
+                    message:
+                        'An audit procedure re-performs from raw rows: it never reads a stored derived figure (a check result, an execution result, a card or breaker count, a control-test run, an executedAt stamp). See docs/agentic-audit-procedures.md, Re-performance.',
+                },
+                {
+                    selector:
+                        "CallExpression[callee.object.property.name='finding'][callee.property.name=/^(create|createMany|update|updateMany|upsert|delete|deleteMany)$/]",
+                    message: 'An audit procedure writes no Finding; it raises a propose_finding proposal.',
+                },
+                {
+                    selector: "Literal[value=/^(propose_risks|propose_controls|draft_policy)$/]",
+                    message: 'The auditor proposes findings and nothing else.',
+                },
+            ],
+        },
+    },
+    {
         // ── The agentic path only ──
         //
         // `no-raw-prompt-logging` is the digest-only rule the AI-feature path

@@ -131,6 +131,26 @@ export interface AutomationHandlerResult {
     notes?: string;
     /** Optional severity override for the auto-Finding on FAIL. */
     findingSeverity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    /**
+     * WHO RAISES THE FINDING ON A FAIL (#3676). Absent, the runner creates one
+     * `Finding` per failed run, as it always has. `'PROPOSALS'` says the handler
+     * already raised every exception as a finding PROPOSAL through an agent's
+     * `propose_finding`, which a person decides — so the runner writes no
+     * Finding of its own. The audit procedures run as the registered auditor
+     * agent, whose only write is a proposal; a runner Finding beside the
+     * proposals would be a second, direct path to a Finding that the auditor's
+     * grants never allowed, and it would put every exception in front of a
+     * person twice.
+     */
+    findingsRaisedAs?: 'PROPOSALS';
+    /**
+     * Called once the run's evidence row exists and is linked, inside the same
+     * transaction, with that evidence's id. A handler that keeps a record of the
+     * run citing its evidence — the auditor's workpaper (#3676), whose frozen id
+     * list the evidence carries — writes it here. A throw propagates: the run is
+     * not recorded without the record its handler said it would write.
+     */
+    afterEvidence?: (evidenceId: string) => Promise<void>;
 }
 
 /**
@@ -147,6 +167,12 @@ export interface AutomationHandlerInput {
     automationType: 'SCRIPT' | 'INTEGRATION';
     automationConfig: unknown;
     scheduledFor: Date;
+    /**
+     * The `ControlTestRun` this execution is, created PLANNED in the runner's
+     * transaction before the handler is called. A handler that records
+     * something about the run names it by this id (#3676).
+     */
+    runId: string;
     /**
      * The tenant transaction the runner has ALREADY opened, with `app_user` and
      * `app.tenant_id` set. A handler reads through this rather than opening its
@@ -296,35 +322,51 @@ export async function runControlTestRunner(
 
             const ctx = buildRunnerCtx(plan, jobRunId);
 
-            return runInTenantContext(ctx, async (db) => {
-                // 1. Create the run (PLANNED for both branches; SCRIPT
-                //    and INTEGRATION transition to COMPLETED below).
-                const run = await TestRunRepository.create(db, ctx, {
-                    testPlanId: plan.id,
-                    controlId: plan.controlId,
-                });
-                await emitTestRunCreated(db, ctx, {
-                    id: run.id,
-                    testPlanId: plan.id,
-                });
+            return runInTenantContext(
+                ctx,
+                async (db) => {
+                    // 1. Create the run (PLANNED for both branches; SCRIPT
+                    //    and INTEGRATION transition to COMPLETED below).
+                    const run = await TestRunRepository.create(db, ctx, {
+                        testPlanId: plan.id,
+                        controlId: plan.controlId,
+                    });
+                    await emitTestRunCreated(db, ctx, {
+                        id: run.id,
+                        testPlanId: plan.id,
+                    });
 
-                // 2. Branch on automation type.
-                if (plan.automationType === 'MANUAL') {
-                    return await handleManualPlan(db, ctx, plan, run.id, scheduledFor, jobRunId);
-                }
-                return await handleAutomatedPlan(
-                    db,
-                    ctx,
-                    plan,
-                    run.id,
-                    scheduledFor,
-                    jobRunId,
-                );
-            });
+                    // 2. Branch on automation type.
+                    if (plan.automationType === 'MANUAL') {
+                        return await handleManualPlan(db, ctx, plan, run.id, scheduledFor, jobRunId);
+                    }
+                    return await handleAutomatedPlan(
+                        db,
+                        ctx,
+                        plan,
+                        run.id,
+                        scheduledFor,
+                        jobRunId,
+                    );
+                },
+                plan.automationType === 'MANUAL' ? undefined : { timeout: AUTOMATED_RUN_TX_TIMEOUT_MS },
+            );
         },
         { tenantId: payload.tenantId },
     );
 }
+
+/**
+ * The transaction budget of an AUTOMATED run. Above the 5 s tenant default
+ * because the handler runs inside this transaction, and an audit procedure
+ * (#3676) re-performs from raw rows, verifies the audit chain and raises each
+ * exception as a finding proposal through the tool funnel before it records
+ * its workpaper — on a FAIL with many exceptions, several seconds of work. A
+ * ceiling, not a target: a run that needs it is a database in trouble, and
+ * failing that run loudly (the next tick retries the plan) is better than
+ * holding a pooled connection open. MANUAL runs keep the default.
+ */
+export const AUTOMATED_RUN_TX_TIMEOUT_MS = 120_000;
 
 // ─── MANUAL branch ─────────────────────────────────────────────────
 
@@ -436,6 +478,7 @@ async function handleAutomatedPlan(
             automationType: plan.automationType,
             automationConfig: plan.automationConfig,
             scheduledFor,
+            runId,
             db,
         });
         if (declared === null) {
@@ -508,6 +551,7 @@ async function handleAutomatedPlan(
         evidenceId,
         note: 'Auto-attached by automation handler',
     });
+    if (outcome.afterEvidence) await outcome.afterEvidence(evidenceId);
 
     let findingId: string | undefined;
     if (outcome.result === 'FAIL') {
@@ -515,12 +559,16 @@ async function handleAutomatedPlan(
             id: runId,
             findingSummary: outcome.findingSummary ?? null,
         });
-        findingId = await createFindingForFailedRun(db, ctx, {
-            planName: plan.name,
-            evidenceId,
-            findingSummary: outcome.findingSummary ?? outcome.notes ?? null,
-            severity: outcome.findingSeverity ?? 'HIGH',
-        });
+        // A handler that raised its exceptions as proposals has already put each
+        // one in front of a person; see `findingsRaisedAs`.
+        if (outcome.findingsRaisedAs !== 'PROPOSALS') {
+            findingId = await createFindingForFailedRun(db, ctx, {
+                planName: plan.name,
+                evidenceId,
+                findingSummary: outcome.findingSummary ?? outcome.notes ?? null,
+                severity: outcome.findingSeverity ?? 'HIGH',
+            });
+        }
     }
 
     return {

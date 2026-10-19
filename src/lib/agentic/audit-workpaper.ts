@@ -138,8 +138,15 @@ export const RecordAuditWorkpaperSchema = z
         itemOutcomes: z
             .array(z.object({ unitId, outcome: z.enum(ITEM_OUTCOMES), code: code.nullable() }).strict())
             .max(MAX_POPULATION_UNITS),
+        /**
+         * Each exception names the finding PROPOSAL it was raised as, when one
+         * was (#3676): every exception becomes one proposal, and naming it here
+         * is what lets a reader check that one-to-one, and a later run of the
+         * same procedure and period recognise an exception already raised
+         * rather than raise it again. Absent when the proposal was refused.
+         */
         exceptions: z
-            .array(z.object({ unitId: unitId.nullable(), code }).strict())
+            .array(z.object({ unitId: unitId.nullable(), code, proposalId: recordId.optional() }).strict())
             .max(MAX_POPULATION_UNITS * 4),
         conclusion: z.enum(WORKPAPER_CONCLUSIONS),
         conclusionBasis: code,
@@ -192,6 +199,12 @@ export const RecordAuditWorkpaperSchema = z
         if (v.conclusion === 'FAIL' && v.exceptions.length === 0) {
             issue(['conclusion'], 'a FAIL names at least one exception');
         }
+        const proposals = new Set(v.proposalIds);
+        v.exceptions.forEach((e, i) => {
+            if (e.proposalId !== undefined && !proposals.has(e.proposalId)) {
+                issue(['exceptions', i, 'proposalId'], 'an exception names a proposal listed in proposalIds');
+            }
+        });
     });
 
 export type RecordAuditWorkpaperInput = z.infer<typeof RecordAuditWorkpaperSchema>;

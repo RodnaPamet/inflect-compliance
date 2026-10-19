@@ -60,6 +60,7 @@ import { assertAgentGovernanceWrite } from '../policies/agent-governance.policie
 import { logEvent } from '../events/audit';
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
+import { assertGrantWithinAuditorRemit } from './auditor-remit';
 // PURE DATA, and that is why this import is safe here: `runtime-tools.ts`
 // holds no value import of `@flue/runtime`, which is ESM-only and would not
 // load in this Prisma-reaching graph. Same discipline as
@@ -88,6 +89,8 @@ async function assertAgentGrantable(db: PrismaTx, ctx: RequestContext, agentId: 
             riskTier: true,
             dataAccessScope: true,
             autonomyLevel: true,
+            // An auditor holds only read tools and `propose_finding` (#3676).
+            isAuditor: true,
         },
     });
     // Same shape whether absent or foreign, so a caller learns nothing about
@@ -377,6 +380,7 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
         }
 
         const agent = await assertAgentGrantable(db, ctx, agentId);
+        assertGrantWithinAuditorRemit(agent, toolName);
         assertGrantWithinTier(agent, toolName);
         assertGrantWithinDeclaredDataScope(agent, toolName);
         // `assertAgentGrantable` read the status unlocked, so a retirement can
