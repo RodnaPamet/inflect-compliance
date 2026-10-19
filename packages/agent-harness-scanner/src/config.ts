@@ -246,6 +246,14 @@ const McpSourceConfigSchema = z
     })
     .strict();
 
+/**
+ * The scanner's own tenant's register (#3686, part c). No field: it is read from
+ * `inflect.baseUrl`'s `/api/mcp` with the ingest key `inflect.apiKeyEnv` names,
+ * which must also carry `mcp:read` (owner decision 3), by the one tool the
+ * scanner may call.
+ */
+const InflectRegisterSourceConfigSchema = z.object({ kind: z.literal('inflect-register') }).strict();
+
 export const SourceConfigSchema = z.discriminatedUnion('kind', [
     EntraSourceConfigSchema,
     OktaSourceConfigSchema,
@@ -253,6 +261,7 @@ export const SourceConfigSchema = z.discriminatedUnion('kind', [
     CodeSourceConfigSchema,
     LangSmithSourceConfigSchema,
     McpSourceConfigSchema,
+    InflectRegisterSourceConfigSchema,
 ]);
 
 export const ScannerConfigSchema = z
@@ -339,7 +348,7 @@ export function parseScannerConfig(json: unknown): ScannerConfig {
  * source holds none, and the `mcp` source one per server at most
  * (`mcpTokenEnvNames`).
  */
-export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code' | 'mcp' }>): string {
+export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code' | 'mcp' | 'inflect-register' }>): string {
     switch (source.kind) {
         case 'entra-sp':
             return source.clientSecretEnv;
@@ -360,7 +369,11 @@ export function mcpTokenEnvNames(source: Extract<SourceConfig, { kind: 'mcp' }>)
 /** The environment variables a configuration names, every one of them. */
 export function credentialEnvNames(config: ScannerConfig): string[] {
     const fromSources = config.sources.flatMap((s) =>
-        s.kind === 'code' ? [] : s.kind === 'mcp' ? mcpTokenEnvNames(s) : [sourceCredentialEnv(s)],
+        s.kind === 'code' || s.kind === 'inflect-register'
+            ? []
+            : s.kind === 'mcp'
+                ? mcpTokenEnvNames(s)
+                : [sourceCredentialEnv(s)],
     );
     return [config.scanner.signingKeyEnv, config.inflect.apiKeyEnv, ...fromSources];
 }

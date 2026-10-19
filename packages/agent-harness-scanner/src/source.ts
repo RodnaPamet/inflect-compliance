@@ -11,11 +11,14 @@
  *
  *   • Issue anything but a GET to the inventory it reads. It is handed a
  *     `ReadOnlyHttp`, whose only verb is `getJson`; there is no method
- *     parameter to pass. An OAuth token exchange is the one POST a source may
- *     make, through `oauth.ts`, to its identity provider and nowhere else.
- *   • Decide that the agent it found is registered. `registeredAgentId` is not
- *     a member of `Observation`: linking a principal to the register is the
- *     register's own source, never a label in the estate being scanned, which
+ *     parameter to pass. The other requests a source can make are fixed by
+ *     the wire: the OAuth token exchange to its identity provider, the MCP
+ *     listing (`initialize`, the notification, `tools/list`), and the one
+ *     register read (`tools/call` of `get_harness_register`) — see `http.ts`.
+ *   • Decide that the agent it found is registered. Only the `inflect-register`
+ *     source's `registeredAgentId` reaches the report — the builder drops it
+ *     from every other kind: linking a principal to the register is the
+ *     register's own record, never a label in the estate being scanned, which
  *     an estate administrator could write to hide a shadow agent.
  *   • Carry a credential value. An observation names a credential by a
  *     `scheme://locator` reference, and the runner refuses to sign a report in
@@ -28,7 +31,7 @@ import type {
     SOURCE_KINDS_V2,
 } from '@/lib/agentic/harness-contract';
 
-import type { McpListingWire, ReadOnlyHttp, TokenExchange } from './http';
+import type { McpListingWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from './http';
 
 /** The scanner speaks `inflect-agent-harness/2`, so its kinds and reasons are `/2`'s. */
 export type SourceKind = (typeof SOURCE_KINDS_V2)[number];
@@ -69,6 +72,12 @@ export interface Observation {
     readonly tools?: readonly ObservedToolUse[];
     /** Model endpoints the principal calls, by reference. Only the `code` source reports any today. */
     readonly models?: readonly ObservedModel[];
+    /**
+     * The register row this principal is, from the `inflect-register` source
+     * ONLY: the report builder ignores it from any other kind, because a label in
+     * the estate is something the estate's administrator could write.
+     */
+    readonly registeredAgentId?: string;
 }
 
 /** How far one source got, and what it saw on the way. */
@@ -109,6 +118,8 @@ export interface SourceContext {
     readonly tokens: TokenExchange;
     /** The MCP listing — `initialize`, the initialized notification, `tools/list` — for the `mcp` source. */
     readonly mcp: McpListingWire;
+    /** The one register read, for the `inflect-register` source. */
+    readonly register: RegisterReadWire;
 }
 
 /**

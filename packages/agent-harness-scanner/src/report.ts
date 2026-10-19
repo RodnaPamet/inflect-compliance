@@ -30,9 +30,11 @@
  *     is cut deterministically and every source that contributed to what was
  *     cut is marked INCOMPLETE `BYTE_CAP`. A report that silently held the
  *     first 5,000 agents would describe a slice as the estate.
- *   • `registeredAgentId` IS ALWAYS NULL from these sources. Linking a
- *     principal to the register is the register source's job, never a label in
- *     the estate (see `source.ts`).
+ *   • `registeredAgentId` COMES FROM THE REGISTER SOURCE ALONE. The
+ *     `inflect-register` source's link is taken, the first for a principal in
+ *     source order; the same member from any other kind is dropped, because a
+ *     label in the estate is something its administrator could write (see
+ *     `source.ts`).
  *   • The scanner's own `findings` are INCOMPLETE_SOURCE only. The ingest
  *     derives its findings and does not act on this member; the scanner raises
  *     only what it alone knows, which is where it could not read.
@@ -96,6 +98,7 @@ const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 interface MergedAgent {
     discoveredId: string;
     via: Set<SourceKind>;
+    registeredAgentId: string | null;
     owner: ObservedOwner | null;
     credentials: Map<string, { credential: ObservedCredential; via: SourceKind }>;
     tools: Map<string, { tool: ObservedTool; via: SourceKind }>;
@@ -133,6 +136,7 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
             const agent: MergedAgent = merged.get(o.discoveredId) ?? {
                 discoveredId: o.discoveredId,
                 via: new Set<SourceKind>(),
+                registeredAgentId: null,
                 owner: null,
                 credentials: new Map(),
                 tools: new Map(),
@@ -140,6 +144,9 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
                 verdicts: [],
             };
             agent.via.add(read.kind);
+            if (read.kind === 'inflect-register' && agent.registeredAgentId === null && o.registeredAgentId !== undefined) {
+                agent.registeredAgentId = o.registeredAgentId;
+            }
             if (agent.owner === null && o.owner !== null) agent.owner = o.owner;
             for (const c of o.credentials) if (!agent.credentials.has(c.ref)) agent.credentials.set(c.ref, { credential: c, via: read.kind });
             for (const { tool } of o.tools ?? []) if (!agent.tools.has(toolKey(tool))) agent.tools.set(toolKey(tool), { tool, via: read.kind });
@@ -178,7 +185,7 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
         return {
             discoveredId: a.discoveredId,
             discoveredVia: [...a.via].sort((x, y) => kindOrder(x) - kindOrder(y)),
-            registeredAgentId: null,
+            registeredAgentId: a.registeredAgentId,
             owner: a.owner,
             credentials: creds.slice(0, MAX_CREDENTIALS_PER_AGENT).map((c) => c.credential),
             tools: tools.slice(0, MAX_TOOLS_PER_AGENT).map((t) => t.tool),

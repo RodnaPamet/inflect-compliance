@@ -158,6 +158,54 @@ export function mcpFixtures(): Record<string, McpServerFixture> {
     };
 }
 
+// ─── The scanner's own tenant's register, on the ingest host (#3686) ───
+
+/** What `get_harness_register` answers in the fixture tenant. */
+export interface RegisterFixture {
+    asOf: string;
+    truncated: boolean;
+    agents: Array<{
+        registeredAgentId: string;
+        status: string;
+        ownerUserId: string;
+        axesDeclared: boolean;
+        tierFresh: boolean;
+        policyCardInForce: boolean;
+        apiKeys: Array<{ id: string; createdAt: string; expiresAt: string | null }>;
+        confirmedPrincipals: string[];
+    }>;
+}
+
+/** The fixture register: the scanner itself with its ingest key, and an agent a person confirmed as an Entra principal. */
+export function registerFixture(): RegisterFixture {
+    return {
+        asOf: '2026-10-19T03:00:00.000Z',
+        truncated: false,
+        agents: [
+            {
+                registeredAgentId: 'agt_scanner_acme',
+                status: 'ACTIVE',
+                ownerUserId: 'usr_owner_acme',
+                axesDeclared: true,
+                tierFresh: true,
+                policyCardInForce: true,
+                apiKeys: [{ id: 'key_ingest_acme', createdAt: '2026-10-09T00:00:00.000Z', expiresAt: '2027-01-01T00:00:00.000Z' }],
+                confirmedPrincipals: [],
+            },
+            {
+                registeredAgentId: 'agt_support_acme',
+                status: 'ACTIVE',
+                ownerUserId: 'usr_jane_acme',
+                axesDeclared: true,
+                tierFresh: false,
+                policyCardInForce: false,
+                apiKeys: [],
+                confirmedPrincipals: ['entra:sp:a0000001-0000-4000-8000-000000003686'],
+            },
+        ],
+    };
+}
+
 export interface GraphFixture {
     applications: unknown[][];
     servicePrincipals: unknown[][];
@@ -549,6 +597,8 @@ export function createSourceFakes(opts: {
     graph?: GraphFixture;
     /** MCP servers by endpoint URL; `mcpFixtures()` unless replaced. */
     mcp?: Record<string, McpServerFixture>;
+    /** What the tenant's own `get_harness_register` answers; `registerFixture()` unless replaced. */
+    register?: RegisterFixture;
     okta?: OktaFixture;
     /** Further Okta orgs by origin, beside `OKTA_ORG`. */
     oktaOrgs?: Record<string, OktaFixture>;
@@ -559,6 +609,7 @@ export function createSourceFakes(opts: {
     const oktas: Record<string, OktaFixture> = { [OKTA_ORG]: opts.okta ?? oktaFixture(), ...opts.oktaOrgs };
     const graph = opts.graph ?? graphFixture();
     const mcpServers = opts.mcp ?? mcpFixtures();
+    const register = opts.register ?? registerFixture();
     /** Per server: whether the initialized notification has arrived. */
     const mcpInitialized = new Set<string>();
     const vaults = opts.vaults ?? { [VAULT]: vaultFixture() };
@@ -576,7 +627,9 @@ export function createSourceFakes(opts: {
         fetchImpl: async (url: string, init: RequestInit) => {
             const u = new URL(url);
             const method = (init.method ?? 'GET').toUpperCase();
-            const isMcp = mcpServers[`${u.origin}${u.pathname}`] !== undefined && method === 'POST';
+            const isMcp =
+                method === 'POST' &&
+                (mcpServers[`${u.origin}${u.pathname}`] !== undefined || (u.origin === INGEST && u.pathname === '/api/mcp'));
             let rpc: string | undefined;
             if (isMcp) {
                 try {
@@ -689,6 +742,7 @@ export function createSourceFakes(opts: {
         if (ls) return langSmith(ls, u, method, headers);
         // ── The Inflect ingest ──
         if (u.origin === INGEST) {
+            if (method === 'POST' && u.pathname === '/api/mcp') return inflectMcp(headers, body);
             if (method === 'POST' && /^\/api\/t\/[^/]+\/admin\/agents\/harness-scans$/.test(u.pathname)) {
                 posted.push(String(body));
                 ingestAuth.push(headers.get('authorization') ?? '');
@@ -782,6 +836,32 @@ export function createSourceFakes(opts: {
             return json(page);
         }
         return json({ detail: 'Not Found' }, 404);
+    }
+
+    /**
+     * Inflect's own `/api/mcp` for the scanner's tenant: session-less, JSON,
+     * one text block of payload and one provenance block — as the real route
+     * answers. It serves `get_harness_register`, and any other tool with a
+     * marker a scanner must never receive.
+     */
+    function inflectMcp(headers: Headers, body: unknown): Answer {
+        ingestAuth.push(headers.get('authorization') ?? '');
+        const message = JSON.parse(String(body)) as { id?: number; method?: string; params?: { name?: string } };
+        const reply = (result: unknown) => json({ jsonrpc: '2.0', id: message.id, result });
+        if (message.method === 'initialize') {
+            return reply({ protocolVersion: '2025-06-18', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'inflect', version: '1' } });
+        }
+        if (message.method === 'notifications/initialized') return { status: 202 };
+        if (message.method === 'tools/call' && message.params?.name === 'get_harness_register') {
+            return reply({
+                content: [
+                    { type: 'text', text: JSON.stringify(register) },
+                    { type: 'text', text: JSON.stringify({ kind: 'content-provenance', tool: 'get_harness_register', provenance: 'THIRD_PARTY_INGESTED' }) },
+                ],
+            });
+        }
+        if (message.method === 'tools/call') return reply({ content: [{ type: 'text', text: MCP_MARKERS.toolCallResult }] });
+        return json({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } });
     }
 
     /**

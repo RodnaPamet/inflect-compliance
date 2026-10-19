@@ -16,6 +16,12 @@
  * spell `tools/call` with it (DPIA conditions 1 and 2, owner decisions 5 and 6
  * on #3686, 2026-10-19).
  *
+ * `RegisterReadWire` is the one place a `tools/call` is sent, and it names its
+ * tool itself: `read` calls `get_harness_register` with no arguments on the
+ * Inflect endpoint the caller hands it, and can call nothing else (DPIA
+ * condition 2 as amended by owner decision 7: one named tool, the scanner's own
+ * tenant).
+ *
  * Every request is held to four rules, each of which ends the source's read
  * with the contract's reason rather than an exception the runner has to guess
  * about:
@@ -79,6 +85,15 @@ export interface McpListingWire {
     /** One page of `tools/list`. Throws `SourceReadError`. */
     listTools(session: McpSession, cursor: string | null): Promise<{ readonly tools: readonly unknown[]; readonly nextCursor: string | null }>;
 }
+
+/** The register read, over the scanner's own tenant's Inflect MCP endpoint. */
+export interface RegisterReadWire {
+    /** `initialize`, the notification, then `tools/call` of `HARNESS_REGISTER_TOOL`; the tool's JSON payload. */
+    read(target: McpTarget): Promise<unknown>;
+}
+
+/** The one tool the scanner may call, on its own tenant's `/api/mcp`, and no other. */
+export const HARNESS_REGISTER_TOOL = 'get_harness_register';
 
 /** The protocol revision the scanner speaks. A server may answer with another it supports. */
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
@@ -251,7 +266,12 @@ const MCP_PROTOCOL = /^\d{4}-\d{2}-\d{2}$/;
 export function createSourceWire(
     t: Transport,
     caps: { readonly response?: number; readonly source?: number } = {},
-): { readonly http: ReadOnlyHttp; readonly tokens: TokenExchange; readonly mcp: McpListingWire } {
+): {
+    readonly http: ReadOnlyHttp;
+    readonly tokens: TokenExchange;
+    readonly mcp: McpListingWire;
+    readonly register: RegisterReadWire;
+} {
     const responseCap = caps.response ?? MAX_RESPONSE_BYTES;
     const charge = budget(caps.source ?? MAX_SOURCE_BYTES);
 
@@ -318,7 +338,7 @@ export function createSourceWire(
     /** POST one JSON-RPC message from `MCP_MESSAGES` to the target. The method is never a parameter of the wire. */
     async function post(
         target: McpTarget,
-        method: (typeof MCP_MESSAGES)[number],
+        method: (typeof MCP_MESSAGES)[number] | 'tools/call',
         params: Record<string, unknown> | undefined,
         session: { sessionId: string | null; protocolVersion: string | null },
     ): Promise<{ res: Response; id: number | null }> {
@@ -361,7 +381,7 @@ export function createSourceWire(
 
     async function call(
         target: McpTarget,
-        method: 'initialize' | 'tools/list',
+        method: 'initialize' | 'tools/list' | 'tools/call',
         params: Record<string, unknown>,
         session: { sessionId: string | null; protocolVersion: string | null },
     ): Promise<{ result: Record<string, unknown>; headers: Headers }> {
@@ -422,7 +442,23 @@ export function createSourceWire(
         },
     };
 
-    return { http, tokens, mcp };
+    const register: RegisterReadWire = {
+        async read(target) {
+            const session = await mcp.open(target);
+            const { result } = await call(target, 'tools/call', { name: HARNESS_REGISTER_TOOL, arguments: {} }, session);
+            // Inflect's tool result: a JSON payload in the first text block. A
+            // tool-level error is the server declining, never a register.
+            if (result.isError === true) throw new SourceReadError('AUTH_FAILED', 'the register read was refused');
+            const content = result.content;
+            const first = Array.isArray(content) ? (content[0] as { type?: unknown; text?: unknown } | undefined) : undefined;
+            if (first?.type !== 'text' || typeof first.text !== 'string') {
+                throw new SourceReadError('PAGINATION_TORN', 'the register read returned no payload');
+            }
+            return parseJson(first.text);
+        },
+    };
+
+    return { http, tokens, mcp, register };
 }
 
 /**

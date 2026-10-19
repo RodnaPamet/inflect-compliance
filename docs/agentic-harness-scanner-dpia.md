@@ -364,6 +364,14 @@ Inflect's own `/api/mcp` is a key holding `mcp:read` alone. Each server is a hos
 the customer names, checked at configuration and again before every request, as
 the self-hosted LangSmith is.
 
+The register source (#3686) reads the scanner's own tenant's register through
+one MCP read tool, `get_harness_register`, on that tenant's `/api/mcp`, with the
+ingest key. It sends `initialize`, the initialized notification and one
+`tools/call` naming that tool, and the request log asserts it. The tool returns
+ids, statuses, dates and flags: no agent name, no key name or prefix, no free
+text. The owner it reports is an Inflect user id, the `agents[].owner` member
+above, and a person's identifier as that row records.
+
 #3686's hardening checklist carries condition 1 and the write-credential half
 of condition 2. The assessment holds for the scanner only when #3686 meets all
 four of its conditions, and for the evidence emitted from a scan only when
@@ -373,9 +381,11 @@ four of its conditions, and for the evidence emitted from a scan only when
    `notifications/initialized` the protocol requires, and `tools/list` only,
    asserted
    by its request log.
-2. The scanner holds no write credential and never calls `tools/call`. An MCP
-   server's read token, where the server takes one, is sent with the messages
-   condition 1 names and nothing else.
+2. The scanner holds no write credential and never calls `tools/call` on an
+   estate's MCP server. An MCP server's read token, where the server takes one,
+   is sent with the messages condition 1 names and nothing else. The one tool
+   the scanner calls is `get_harness_register`, on its own tenant's Inflect
+   `/api/mcp`, with its ingest key; its wire names no other tool.
 3. The vault reader lists secret names, references and metadata, and never
    reads a secret's value.
 4. The scanner sends nothing anywhere except, over HTTPS, the ingest route of
@@ -527,7 +537,6 @@ owns it:
 | Gap | Owner |
 |---|---|
 | The scanner package and container | #3686 |
-| A read of the register for the scanner. No tool in `src/lib/mcp/tools/` and no resource in `src/lib/mcp/resources.ts` returns `RegisteredAgent` rows. | Step `1a` |
 | The harness matrix, and the evidence emitted from a scan | #3687 |
 | A person confirming a discovered agent's owner | Step `2a` |
 | The controller's answers to the two lawful-basis questions | Open; recorded on #3664 when given |
@@ -587,3 +596,13 @@ with condition 1's messages and nothing else (owner decision 6). Neither adds a
 data category: the notification carries no content, and the token is a
 credential of the estate's that never reaches the report. The merge of the pull
 request that carries this paragraph signs the amendment.
+
+#3686 reopened it once more on condition 2, and on where scan data comes from:
+the register source reads the scanner's own tenant's register through an MCP
+read tool, which is a `tools/call`. Condition 2 now says the scanner never calls
+`tools/call` on an estate's server and calls exactly one tool,
+`get_harness_register`, on its own tenant's Inflect (owner decision 7 on #3686,
+2026-10-19). No data category is added: the tool returns the register's ids,
+dates and flags, and the owner it reports is an Inflect user id, already a
+member this assessment classifies. The merge of the pull request that carries
+this paragraph signs the amendment.

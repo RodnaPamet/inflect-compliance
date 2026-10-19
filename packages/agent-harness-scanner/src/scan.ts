@@ -25,6 +25,7 @@ import { buildReportBody, signReport } from './report';
 import { sourceResult, SourceReadError, toolCallsOf, type HarnessSource, type SourceRead } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
+import { inflectRegisterSource } from './sources/inflect-register';
 import { langchainCodeSource } from './sources/langchain';
 import { langSmithSource } from './sources/langsmith';
 import { mcpSource } from './sources/mcp';
@@ -68,6 +69,18 @@ export function buildSources(
         if (s.kind === 'code') {
             // Reads files under its roots and holds no credential.
             sources.push(langchainCodeSource({ roots: s.roots }));
+            continue;
+        }
+        if (s.kind === 'inflect-register') {
+            // Read with the ingest key, from the tenant the report is posted to.
+            const apiKey = env[config.inflect.apiKeyEnv];
+            if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+                unreadable.push(sourceResult(s.kind, 0, [], new SourceReadError('AUTH_FAILED', 'the ingest key is not set')));
+            } else {
+                sources.push(
+                    inflectRegisterSource({ baseUrl: config.inflect.baseUrl, tenantSlug: config.inflect.tenantSlug, apiKey: apiKey.trim() }),
+                );
+            }
             continue;
         }
         if (s.kind === 'mcp') {
@@ -157,9 +170,9 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
 
     const reads = await Promise.all(
         sources.map(async (source) => {
-            const { http, tokens, mcp } = createSourceWire({ fetchImpl, deadline, now });
+            const { http, tokens, mcp, register } = createSourceWire({ fetchImpl, deadline, now });
             try {
-                return await source.read({ asOf, http, tokens, mcp, deadline, now });
+                return await source.read({ asOf, http, tokens, mcp, register, deadline, now });
             } catch (err) {
                 return sourceResult(source.kind, 0, [], err);
             }

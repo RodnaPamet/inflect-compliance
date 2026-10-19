@@ -22,7 +22,8 @@ import { HARNESS_CONTRACT_V2 } from '@/lib/agentic/harness-contract';
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
-import { MCP_MESSAGES } from './http';
+import { HARNESS_REGISTER_TOOL, MCP_MESSAGES } from './http';
+import { INFLECT_MCP_PATH } from './sources/inflect-register';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
 
@@ -31,9 +32,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * Raised with any change to what the scanner reads or reports. 0.2.0: the
  * LangSmith source (#3738). 0.3.0: reports under `inflect-agent-harness/2`
  * (#3754). 0.4.0: the `code` source, LangChain and LangGraph (#3737). 0.5.0:
- * the Entra source (#3686). 0.6.0: the MCP source (#3686).
+ * the Entra source (#3686). 0.6.0: the MCP source (#3686). 0.7.0: the register
+ * source (#3686).
  */
-export const SCANNER_VERSION = '0.6.0';
+export const SCANNER_VERSION = '0.7.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -84,6 +86,17 @@ export const SCANNER_SURFACE = {
     // it the scanner POSTs these JSON-RPC messages and no other (DPIA
     // condition 1, owner decision 5 on #3686): never `tools/call`.
     lists: [{ source: 'mcp', method: 'POST', host: 'configured', jsonRpc: [...MCP_MESSAGES] }],
+    // The scanner's own tenant's register: the handshake, then ONE tool call,
+    // of ONE named read tool (DPIA condition 2, owner decision 7 on #3686).
+    readsRegister: [
+        {
+            source: 'inflect-register',
+            method: 'POST',
+            path: INFLECT_MCP_PATH,
+            jsonRpc: ['initialize', 'notifications/initialized', 'tools/call'],
+            tool: HARNESS_REGISTER_TOOL,
+        },
+    ],
     sends: [{ method: 'POST', path: INGEST_PATH_TEMPLATE }],
 } as const;
 
@@ -112,6 +125,22 @@ export function isDeclaredMcpMessage(body: string): boolean {
     return typeof method === 'string' && (MCP_MESSAGES as readonly string[]).includes(method);
 }
 
+/**
+ * Whether one message to the scanner's own tenant's `/api/mcp` is on the
+ * declared surface: the handshake, or a `tools/call` naming
+ * `get_harness_register` and nothing else.
+ */
+export function isDeclaredRegisterMessage(body: string): boolean {
+    let message: { method?: unknown; params?: { name?: unknown } } | null;
+    try {
+        message = JSON.parse(body) as typeof message;
+    } catch {
+        return false;
+    }
+    if (message?.method === 'initialize' || message?.method === 'notifications/initialized') return true;
+    return message?.method === 'tools/call' && message.params?.name === HARNESS_REGISTER_TOOL;
+}
+
 export function isDeclaredRequest(method: string, url: string): boolean {
     const { origin, pathname } = new URL(url);
     if (method === 'GET') {
@@ -122,5 +151,8 @@ export function isDeclaredRequest(method: string, url: string): boolean {
     }
     if (method !== 'POST') return false;
     if (origin === AZURE_LOGIN_ORIGIN) return /^\/[^/]+\/oauth2\/v2\.0\/token$/.test(pathname);
+    // The register read posts to the tenant's `/api/mcp`; its messages are held
+    // by `isDeclaredRegisterMessage`.
+    if (pathname === INFLECT_MCP_PATH) return true;
     return /^\/api\/t\/[^/]+\/admin\/agents\/harness-scans$/.test(pathname);
 }

@@ -1559,7 +1559,10 @@ rules in it are easy to undo:
 - **Whose reports count is the register's decision, never the scanner's.**
   Registering a key takes `admin.agent_registry`; posting a report takes
   `admin.agent_harness_ingest`, which an API key gets from the
-  `admin:harness_ingest` scope. Do not let the ingest key register keys: a
+  `admin:harness_ingest` scope. The same key, with `mcp:read`, reads the
+  register through `get_harness_register` (#3686), the one MCP tool a scanner
+  calls; its `resourceScope` is the only non-view scope a read tool takes, and
+  the read-suite guardrail names it. Do not let the ingest key register keys: a
   scanner that could would vouch for any report it liked.
 - **The report's claims are inputs, not facts.** The level is derived by the
   ladder; `registeredAgentId` links only to a row the register holds; the

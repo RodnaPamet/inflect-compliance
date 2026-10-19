@@ -237,7 +237,11 @@ tables.
 **Who may post.** The route requires `admin.agent_harness_ingest`. OWNER and
 ADMIN hold it; a scanner holds it through an API key with the
 `admin:harness_ingest` scope, which grants that one key and nothing else. A
-scanner key does not need, and should not have, any other scope.
+scanner that reads the tenant's register (its `inflect-register` source, #3686)
+also needs `mcp:read`, the capability `/api/mcp` takes, and its agent must be
+granted the one tool it calls, `get_harness_register`. That tool is authorized on
+`admin.agent_harness_ingest` and returns ids, statuses, dates and flags. A
+scanner key needs no other scope, and should have none.
 
 **Whose reports count.** The tenant registers the scanner's public key with
 `POST /api/t/{tenantSlug}/admin/agents/harness-scanner-keys`

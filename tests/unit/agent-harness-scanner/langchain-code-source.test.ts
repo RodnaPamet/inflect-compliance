@@ -41,7 +41,7 @@ import type { CodeFs } from '../../../packages/agent-harness-scanner/src/sources
 import { MAX_FILE_BYTES } from '../../../packages/agent-harness-scanner/src/sources/code/files';
 import type { DetectedAgent } from '../../../packages/agent-harness-scanner/src/sources/code/recognize';
 import { langchainCodeSource, scanLangChainCode } from '../../../packages/agent-harness-scanner/src/sources/langchain';
-import type { McpListingWire, ReadOnlyHttp, TokenExchange } from '../../../packages/agent-harness-scanner/src/http';
+import type { McpListingWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from '../../../packages/agent-harness-scanner/src/http';
 import type { SourceRead } from '../../../packages/agent-harness-scanner/src/source';
 
 const REAL_FS: CodeFs = { lstat: (p) => lstat(p), readdir: (p) => readdir(p), readFile: (p) => readFile(p) };
@@ -63,7 +63,7 @@ async function agentsIn(...trees: Readonly<Record<string, string>>[]) {
 }
 
 /** A wire that fails the test if the code source ever touches it. */
-const NO_WIRE: { http: ReadOnlyHttp; tokens: TokenExchange; mcp: McpListingWire } = {
+const NO_WIRE: { http: ReadOnlyHttp; tokens: TokenExchange; mcp: McpListingWire; register: RegisterReadWire } = {
     http: {
         getJson: async () => {
             throw new Error('the code source makes no request');
@@ -80,6 +80,11 @@ const NO_WIRE: { http: ReadOnlyHttp; tokens: TokenExchange; mcp: McpListingWire 
         },
         listTools: async () => {
             throw new Error('the code source speaks to no MCP server');
+        },
+    },
+    register: {
+        read: async () => {
+            throw new Error('the code source reads no register');
         },
     },
 };

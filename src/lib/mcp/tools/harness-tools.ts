@@ -38,6 +38,7 @@
 import { z } from 'zod';
 
 import { getDiscoveredAgentFacts } from '@/app-layer/usecases/agent-harness-facts';
+import { readHarnessRegisterForScanner } from '@/app-layer/usecases/agent-harness-register-read';
 import type { RequestContext } from '@/app-layer/types';
 
 import type { McpReadTool } from './types';
@@ -80,4 +81,39 @@ export const getDiscoveredAgentTool: McpReadTool<z.infer<typeof getDiscoveredAge
         mirrors: 'GET /api/t/:slug/admin/agents/harness-scans (listHarnessScans: admin.agent_registry_view)',
     },
     run: async (ctx: RequestContext, args) => getDiscoveredAgentFacts(ctx, args.discoveredAgentId),
+};
+
+// ─── The register, for a harness scanner (#3686, part c) ────────────────────
+//
+// The read behind the scanner's `inflect-register` source: the live registered
+// agents, their own API keys by id, the flags the register decides, and the
+// service principals a person confirmed as each (owner decisions 3, 4 and 7 on
+// #3686, 2026-10-19). The scanner calls this one tool on its own tenant's
+// `/api/mcp` and no other (DPIA condition 2, as amended).
+//
+// THE KEY IS THE INGEST KEY. `resourceScope` names `admin:harness_ingest`, the
+// scope a scanner's API key carries, and `authorize` names
+// `admin.agent_harness_ingest`, the key the ingest route takes. The key that may
+// post a report may read what the report's register source carries, and nothing
+// else: the payload holds ids, statuses, dates and flags — no name, no free text.
+
+const noArgs = z.object({}).strict();
+
+export const getHarnessRegisterTool: McpReadTool<z.infer<typeof noArgs>> = {
+    name: 'get_harness_register',
+    description:
+        'For a harness scanner: the live registered agents of this tenant, as the ' +
+        "scanner's inflect-register source reports them. Per agent: its id, status and " +
+        'owner user id; whether its axes are declared, its risk tier is scored and fresh, ' +
+        'and a policy card is in force; its live API keys by id and date; and the service ' +
+        'principals a person confirmed as it. No names and no free text. Read-only, tenant-scoped.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    argsSchema: noArgs,
+    resourceScope: { resource: 'admin', action: 'harness_ingest' },
+    authorize: {
+        keys: ['admin.agent_harness_ingest'],
+        basis: 'effective',
+        mirrors: 'POST /api/t/:slug/admin/agents/harness-scans (ingestHarnessReport: admin.agent_harness_ingest)',
+    },
+    run: async (ctx: RequestContext) => readHarnessRegisterForScanner(ctx),
 };

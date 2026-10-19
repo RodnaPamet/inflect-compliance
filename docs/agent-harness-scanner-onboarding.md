@@ -22,8 +22,11 @@ scanner signed it, so each estate has a scanner of its own.
 2. **Trust its signing key.** Generate an Ed25519 key in the estate, print its
    public half with `public-key`, and register it at
    `POST /api/t/{slug}/admin/agents/harness-scanner-keys` (`admin.agent_registry`).
-3. **Issue the ingest key**: an API key with the `admin:harness_ingest` scope
-   and no other, bound to the scanner agent.
+3. **Issue the ingest key**: an API key with the `admin:harness_ingest` scope,
+   bound to the scanner agent. If the estate reads the register (the
+   `inflect-register` source, which the pilot does), give the key `mcp:read` as
+   well and grant the scanner agent the tool `get_harness_register`. The key
+   holds no other scope.
 4. **Declare the estate** at `POST /api/t/{slug}/admin/agents/harness-estates`
    (`admin.agent_registry`): its name, the scanner agent, the cadence in hours
    (1 to 720), and each source kind with its owner. Every owner must be an
