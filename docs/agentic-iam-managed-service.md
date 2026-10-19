@@ -83,6 +83,8 @@ checks each step against it.
    - It may add `audits.workpaper_view` when the client's second line asks PwC to
      support the auditor agent, and never where PwC is the client's external
      auditor.
+   - It may add `admin.agent_skill_author` when the client asks PwC to write
+     skills. That key authors and submits, and never approves (#3778).
    - It carries no decision key: none of the keys in
      [Who holds which right](#4-who-holds-which-right) that the PwC operator
      column marks "no".
@@ -111,9 +113,10 @@ checks each step against it.
      PwC reads the DRY_RUN records and recommends; the OWNER widens.
 8. **A2A, where peers are in scope.**
    - The OWNER generates the tenant's A2A signing key (`admin.tenant_lifecycle`).
-   - Inbound A2A is refused until the tenant has set both
-     `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns`. No product surface
-     sets either today (#3777).
+   - Inbound A2A is refused until the tenant has set both run caps. A holder of
+     `admin.agent_registry` sets both on the agents page: the concurrency cap
+     (`…/admin/agents/concurrency`) and the monthly token budget
+     (`…/admin/agents/budget`, #3777).
 
 **Evidence.** Each step leaves a hash-chained audit row: the membership and
 role changes, the custom role, each line-of-defence write, each registration
@@ -199,8 +202,9 @@ marks a rule the product does not enforce says so.
 | Engage or lift a kill: one agent, the whole tenant, or a peer | `admin.agent_kill_switch` | OWNER, ADMIN, `AI_ADMIN` | No | No |
 | Accept an external tool definition | `admin.agent_external_tools` | OWNER, ADMIN, `AI_ADMIN` | No | No |
 | Move an agent's accountable owner | `admin.agent_ownership` | OWNER, `AI_ADMIN` | No | No |
-| Author a tenant skill | `admin.agent_skill_review` | OWNER, ADMIN, `AI_ADMIN` | Yes, where the client asks PwC to author (below) | No |
-| Approve, reject or retire a tenant skill | `admin.agent_skill_review`, never the version's author | OWNER, ADMIN, `AI_ADMIN` | **No.** A rule of this methodology the product does not hold beyond the author's own version (#3778) | No |
+| Author a tenant skill: create, version, attach its record, submit | `admin.agent_skill_author` | OWNER, ADMIN, `AI_ADMIN` | Yes, where the client asks PwC to author (below) | No |
+| Approve, reject or retire a tenant skill | `admin.agent_skill_review`, never the version's author | OWNER, ADMIN, `AI_ADMIN` | No | No |
+| Set the monthly token budget and the concurrent-run cap | `admin.agent_registry` | OWNER, ADMIN, `AI_ADMIN` | No | No |
 | Accept a harness shortfall | The agent's accountable owner, under `admin.agent_registry` | The agent's owner | No | No |
 | Confirm an agent's service-principal link | `admin.agent_registry` | OWNER, ADMIN, `AI_ADMIN` | No | No |
 | Classify a provisional AI-system entry | `assertCanWrite` | Writers | No | No |
@@ -216,15 +220,13 @@ marks a rule the product does not enforce says so.
 | Issue or revoke an API key | `admin.manage` | OWNER, ADMIN | No | No |
 | Stop every agent on the deployment | `PLATFORM_ADMIN_API_KEY` | Inflect | No | No |
 
-**PwC authoring a skill.** Authoring in the product takes
-`admin.agent_skill_review`, so a PwC author holds that key through a custom
-role. The product refuses a version's approval by its author, in the usecase
-and by a CHECK. It does not refuse an approval by another PwC member, because
-one key gates both acts (#3778). Until that changes, the client holds the rule
-by review:
-- every skill approval's audit row names its approver;
-- at each monthly report the client checks that each approver is a client
-  member.
+**PwC authoring a skill.** Authoring takes its own key,
+`admin.agent_skill_author`, separate from approval since #3778. A PwC author
+holds it through the operator's custom role. The product refuses every
+approval, rejection and retirement to that role, which does not carry
+`admin.agent_skill_review`. Separately, it refuses a version's approval by its
+own author, in the usecase and by a CHECK, whoever holds both keys. Each
+approval's audit row names its approver, and the monthly report lists them.
 
 ## 5. Escalation
 
@@ -306,7 +308,8 @@ this methodology where it cannot.
     content hash, and an edit is a new version that serves nothing until it is
     approved.
   - Every run pins the hash it was taught with.
-- **Held by this methodology:** the approver is a client member (#3778).
+  - Approving takes `admin.agent_skill_review`, which the PwC operator role does
+    not carry; writing a skill takes `admin.agent_skill_author` alone (#3778).
 - **Licensing:** PwC's methodology enters as tenant skill text under PwC's own
   licence and source fields. The repository corpus stays Inflect-original
   (decision 5 of the plan).
@@ -370,11 +373,6 @@ What the product holds here, and what it does not:
 
 ## What the product does not hold
 
-- **Skill authoring and approval share one key** (#3778). The client holds the
-  rule that a PwC author is never an approver by reviewing the approval audit
-  rows.
-- **The tenant run caps have no product writer** (#3777). Inbound A2A refuses
-  until both are set, and today only a database edit sets them.
 - **Nothing schedules a recertification campaign.** PwC keeps the calendar, and
   a person starts each campaign.
 - **No source reads CI/CD identities, or a cloud project's own service

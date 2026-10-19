@@ -1111,9 +1111,9 @@ is its methodology, version 1, and it does four things:
   activity leaves.
 
 It lists what PwC does not operate where it is also the client's external
-auditor. It names two product gaps it found:
-- tenant skill authoring and approval share one key (#3778);
-- the tenant run caps that inbound A2A requires have no product writer (#3777).
+auditor. Drafting it found two product gaps, both now closed: tenant skill
+authoring and approval are separate keys (#3778), and the monthly token budget
+that inbound A2A requires is set beside the concurrency cap (#3777).
 
 The repository owner's merge adopts it for this repository. PwC's practice
 lead's acceptance is open and is recorded on #3682 when given.
