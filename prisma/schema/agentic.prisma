@@ -542,6 +542,9 @@ model WorkflowRun {
   agent             RegisteredAgent?  @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
   steps             WorkflowStep[]
   proposals         AgentProposal[]
+  /// The owner suggestion a `discovered-agent-review` run's answer parsed into
+  /// (#3728) — at most one, and only for that workflow.
+  reviewAttributions DiscoveredAgentAttribution[]
 
   @@index([tenantId, status, startedAt])
   @@index([tenantId, agentId])
@@ -2484,6 +2487,10 @@ model DiscoveredAgent {
   items           AgentHarnessScanItem[]
   acceptances     AgentHarnessAcceptance[]
   servicePrincipalConfirmations AgentServicePrincipalConfirmation[]
+  /// The newest parsed owner suggestion of a review run (#3728) — at most one,
+  /// held by `@@unique([tenantId, discoveredAgentId])` on that model. A
+  /// suggestion, never the owner: `ownerRef` above is what the SOURCE records.
+  attributions    DiscoveredAgentAttribution[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, discoveredId])
@@ -2666,6 +2673,66 @@ model AgentServicePrincipalConfirmation {
   @@unique([id, tenantId])
   @@index([tenantId, registeredAgentId])
   @@index([tenantId, discoveredAgentId])
+}
+
+/// Step 1d follow-up (#3728): the newest PARSED owner suggestion of a
+/// `discovered-agent-review` run, one row per discovered agent — what the
+/// harness tab's Register dialog shows a person before they choose the owner.
+///
+/// A SUGGESTION, NEVER AN OWNER. Nothing reads an owner out of this row: the
+/// registration intake records the person a request CONFIRMS, and a request may
+/// only name this row (by its `runId`) to have it recorded as provenance.
+///
+/// ONE WRITER — `usecases/agent-harness-attribution.ts`
+/// (`tests/guards/agent-harness-single-write-seam.test.ts`). It writes only an
+/// answer that parsed through the skill's output contract
+/// (`parseOwnershipAttribution`), read from the run's own settled answer — the
+/// Art 12 summary, the one place a Flue run's model output lands — and only for
+/// a COMPLETED Flue run that mounted `nhi-ownership-attribution` and was asked
+/// about THIS agent. A newer run replaces an older one; an older one never
+/// replaces a newer.
+///
+/// THE PERSON STAYS SERVER-SIDE. `proposedOwnerRef` (the source's reference for
+/// the person a SUGGESTED answer named — an e-mail address or a directory id) is
+/// encrypted at rest and selected by exactly one reader, the intake, which
+/// compares it with the confirmed owner and records only the boolean.
+/// `signalsJson` is person-free by construction: kind, evidence pointer and
+/// whether the signal named somebody — never whom. Both are model output, so
+/// both are encrypted (Epic B) and the evidence pointers are rendered as text.
+///
+/// `status`, `grade` and `unmatchedReason` are closed vocabularies held by a
+/// CHECK in the migration, with the shape rules (a grade only on SUGGESTED, a
+/// reason only on UNMATCHED, an owner reference only on SUGGESTED).
+/// Operational: derived, replaced by the next review, and cascades with its run
+/// and its agent.
+model DiscoveredAgentAttribution {
+  id                String   @id @default(cuid())
+  tenantId          String
+  discoveredAgentId String
+  /// The `discovered-agent-review` run whose answer this is.
+  runId             String
+  /// `SUGGESTED` | `AMBIGUOUS` | `UNMATCHED` (CHECK).
+  status            String
+  /// `STRONG` | `WEAK` on a SUGGESTED answer; NULL otherwise (CHECK).
+  grade             String?
+  /// `NO_OWNER_SIGNAL` | `OWNER_DEPARTED` on an UNMATCHED answer; NULL otherwise (CHECK).
+  unmatchedReason   String?
+  /// `[{ kind, evidence, namesPerson }]`, person-free. Encrypted (Epic B).
+  signalsJson       String
+  /// The person a SUGGESTED answer named, in the source's namespace. Encrypted
+  /// (Epic B), read only by the intake, never selected for a client.
+  proposedOwnerRef  String?
+  /// When the run completed — the order "newest review wins" is decided by.
+  runCompletedAt    DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  discoveredAgent DiscoveredAgent @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  run             WorkflowRun     @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, discoveredAgentId])
+  @@index([tenantId, runId])
 }
 
 /// Step 2a (#3698): a TWO-STEP handover of one agent's accountability. Step one

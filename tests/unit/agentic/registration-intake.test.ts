@@ -13,8 +13,10 @@ import {
 import { parseOwnershipAttribution, type OwnershipAttribution } from '@/lib/agentic/iam-skill-outputs';
 import {
     REGISTRATION_INTAKE_REFUSALS,
+    storedSuggestionProvenance,
     suggestionNamesOwner,
     suggestionProvenance,
+    type StoredSuggestion,
 } from '@/lib/agentic/registration-intake';
 
 /** A stand-in for `hashForLookup`: same normalisation, a fixed key. */
@@ -73,6 +75,8 @@ describe('suggestionProvenance — what the intake records about a suggestion', 
                 { kind: 'TEAM_TAG', evidence: 'entra-sp:servicePrincipals/9f1c#tags', namesPerson: false },
             ],
             confirmedOwnerIsSuggested: true,
+            // An answer the request carried names no run.
+            runId: null,
         });
         expect(suggestionProvenance(suggested('john@example.com'), owner, lookupHash).confirmedOwnerIsSuggested).toBe(false);
     });
@@ -116,6 +120,49 @@ describe('suggestionProvenance — what the intake records about a suggestion', 
     });
 });
 
+describe('storedSuggestionProvenance — a suggestion the server stored, named by its run (#3728)', () => {
+    const stored = (over: Partial<StoredSuggestion> = {}): StoredSuggestion => ({
+        runId: 'run_review_1',
+        status: 'SUGGESTED',
+        grade: 'WEAK',
+        unmatchedReason: null,
+        signals: [{ kind: 'DEPLOYMENT_OWNER', evidence: 'github:org/repo#codeowners', namesPerson: true }],
+        proposedOwnerRef: 'Jane@Example.com',
+        ...over,
+    });
+
+    it('records the same provenance as a carried answer, with the run it came from', () => {
+        expect(storedSuggestionProvenance(stored(), owner, lookupHash)).toEqual({
+            status: 'SUGGESTED',
+            grade: 'WEAK',
+            unmatchedReason: null,
+            signals: [{ kind: 'DEPLOYMENT_OWNER', evidence: 'github:org/repo#codeowners', namesPerson: true }],
+            confirmedOwnerIsSuggested: true,
+            runId: 'run_review_1',
+        });
+        expect(storedSuggestionProvenance(stored({ proposedOwnerRef: 'john@example.com' }), owner, lookupHash).confirmedOwnerIsSuggested).toBe(false);
+    });
+
+    it('compares the stored person and records only the boolean', () => {
+        const recorded = JSON.stringify(storedSuggestionProvenance(stored({ proposedOwnerRef: 'john@example.com' }), owner, lookupHash));
+        expect(recorded).not.toContain('john@example.com');
+        expect(recorded).not.toContain('proposedOwnerRef');
+    });
+
+    it('has nobody to agree with for AMBIGUOUS and UNMATCHED, and keeps only the reason that applies', () => {
+        expect(
+            storedSuggestionProvenance(stored({ status: 'AMBIGUOUS', grade: null, proposedOwnerRef: null }), owner, lookupHash),
+        ).toMatchObject({ status: 'AMBIGUOUS', grade: null, unmatchedReason: null, confirmedOwnerIsSuggested: null });
+        expect(
+            storedSuggestionProvenance(
+                stored({ status: 'UNMATCHED', grade: 'STRONG', unmatchedReason: 'NO_OWNER_SIGNAL', proposedOwnerRef: 'jane@example.com' }),
+                owner,
+                lookupHash,
+            ),
+        ).toMatchObject({ status: 'UNMATCHED', grade: null, unmatchedReason: 'NO_OWNER_SIGNAL', confirmedOwnerIsSuggested: null });
+    });
+});
+
 describe('a SHADOW_AGENT finding names its discovered agent', () => {
     it('round-trips a discovered id, colons included', () => {
         const id = 'entra:sp:9f1c-44aa';
@@ -134,7 +181,7 @@ describe('the refusals are a closed, named set', () => {
     it('lists each reason once', () => {
         expect(new Set(REGISTRATION_INTAKE_REFUSALS).size).toBe(REGISTRATION_INTAKE_REFUSALS.length);
         expect(REGISTRATION_INTAKE_REFUSALS).toEqual(
-            expect.arrayContaining(['FINDING_NOT_FOUND', 'NOT_A_SHADOW_AGENT_FINDING', 'ALREADY_REGISTERED', 'ALREADY_REGISTERED_BY_INTAKE', 'OWNER_NOT_CONFIRMED', 'OWNER_NOT_ACTIVE_MEMBER']),
+            expect.arrayContaining(['FINDING_NOT_FOUND', 'NOT_A_SHADOW_AGENT_FINDING', 'ALREADY_REGISTERED', 'ALREADY_REGISTERED_BY_INTAKE', 'OWNER_NOT_CONFIRMED', 'OWNER_NOT_ACTIVE_MEMBER', 'SUGGESTION_NOT_STORED']),
         );
     });
 });

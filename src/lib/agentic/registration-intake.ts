@@ -25,6 +25,13 @@
  * is not needed to say it. A signal's evidence pointer is kept: it is what the
  * suggestion rested on, and the contract refuses one that looks like a secret.
  *
+ * A STORED SUGGESTION (#3728). The dialog never holds the suggested person's
+ * reference, so it cannot send the raw answer; it sends `{ runId }` naming the
+ * review run whose parsed answer the server stored
+ * (`DiscoveredAgentAttribution`, `lib/agentic/review-attribution.ts`), and the
+ * intake reads that row — person reference included, server-side — and records
+ * the same provenance, with the run it came from.
+ *
  * PURE: the e-mail comparison takes the lookup hash as a function, so nothing
  * here reads a key or a clock.
  */
@@ -50,6 +57,12 @@ export const REGISTRATION_INTAKE_REFUSALS = [
     'SUGGESTION_INVALID',
     /** The attribution is about a different discovered agent. */
     'SUGGESTION_FOR_ANOTHER_AGENT',
+    /**
+     * The request named a stored suggestion by its review run, and that is not
+     * the suggestion held for this agent now: a newer review replaced it, or
+     * none was ever stored (#3728).
+     */
+    'SUGGESTION_NOT_STORED',
 ] as const;
 export type RegistrationIntakeRefusal = (typeof REGISTRATION_INTAKE_REFUSALS)[number];
 
@@ -77,6 +90,19 @@ export interface IntakeSuggestionProvenance {
      * different person.
      */
     readonly confirmedOwnerIsSuggested: boolean | null;
+    /**
+     * The `discovered-agent-review` run the suggestion came from, when the
+     * request named a STORED suggestion (#3728); `null` when it carried the
+     * answer itself.
+     */
+    readonly runId: string | null;
+}
+
+/** The person-free projection of an answer's signals: kind, pointer, and whether anybody was named. */
+export function toSignalProvenance(
+    signals: readonly { readonly kind: OwnerSignalKind; readonly evidence: string; readonly personRef: string | null }[],
+): IntakeSignalProvenance[] {
+    return signals.map((s) => ({ kind: s.kind, evidence: s.evidence, namesPerson: s.personRef !== null }));
 }
 
 /** The confirmed owner, as the membership read found them. */
@@ -106,11 +132,7 @@ export function suggestionProvenance(
     owner: ConfirmedOwner,
     hashForLookup: (value: string) => string,
 ): IntakeSuggestionProvenance {
-    const signals = attribution.signals.map((s) => ({
-        kind: s.kind,
-        evidence: s.evidence,
-        namesPerson: s.personRef !== null,
-    }));
+    const signals = toSignalProvenance(attribution.signals);
     if (attribution.status === 'SUGGESTED') {
         return {
             status: 'SUGGESTED',
@@ -118,6 +140,7 @@ export function suggestionProvenance(
             unmatchedReason: null,
             signals,
             confirmedOwnerIsSuggested: suggestionNamesOwner(attribution.proposedOwnerRef, owner, hashForLookup),
+            runId: null,
         };
     }
     return {
@@ -126,5 +149,40 @@ export function suggestionProvenance(
         unmatchedReason: attribution.status === 'UNMATCHED' ? attribution.reason : null,
         signals,
         confirmedOwnerIsSuggested: null,
+        runId: null,
+    };
+}
+
+/** A stored suggestion, as the server read it: the person reference is present here and nowhere client-side. */
+export interface StoredSuggestion {
+    readonly runId: string;
+    readonly status: OwnershipAttribution['status'];
+    readonly grade: 'STRONG' | 'WEAK' | null;
+    readonly unmatchedReason: 'NO_OWNER_SIGNAL' | 'OWNER_DEPARTED' | null;
+    readonly signals: readonly IntakeSignalProvenance[];
+    readonly proposedOwnerRef: string | null;
+}
+
+/**
+ * The provenance an intake records for a STORED suggestion (#3728): the same
+ * shape as for an answer the request carried, plus the run it came from. The
+ * comparison with the confirmed owner is made here, server-side, and only its
+ * boolean leaves.
+ */
+export function storedSuggestionProvenance(
+    stored: StoredSuggestion,
+    owner: ConfirmedOwner,
+    hashForLookup: (value: string) => string,
+): IntakeSuggestionProvenance {
+    return {
+        status: stored.status,
+        grade: stored.status === 'SUGGESTED' ? stored.grade : null,
+        unmatchedReason: stored.status === 'UNMATCHED' ? stored.unmatchedReason : null,
+        signals: stored.signals,
+        confirmedOwnerIsSuggested:
+            stored.status === 'SUGGESTED' && stored.proposedOwnerRef !== null
+                ? suggestionNamesOwner(stored.proposedOwnerRef, owner, hashForLookup)
+                : null,
+        runId: stored.runId,
     };
 }

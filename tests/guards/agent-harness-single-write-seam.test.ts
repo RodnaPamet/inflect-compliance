@@ -26,6 +26,15 @@ const SEAMS = {
     discoveredAgent: { table: 'DiscoveredAgent', seam: 'src/app-layer/usecases/agent-harness-scans.ts' },
     agentHarnessScannerKey: { table: 'AgentHarnessScannerKey', seam: 'src/app-layer/usecases/agent-harness-scanner-keys.ts' },
     agentHarnessAcceptance: { table: 'AgentHarnessAcceptance', seam: 'src/app-layer/usecases/agent-harness-acceptance.ts' },
+    // A review run's parsed owner suggestion (#3728). One writer, because it is
+    // the only place the run's answer is held to the skill's output contract and
+    // to the agent the run was asked about: a second writer could put a
+    // suggestion on screen that no review gave, and the Register dialog would
+    // show it to the person choosing the owner.
+    discoveredAgentAttribution: {
+        table: 'DiscoveredAgentAttribution',
+        seam: 'src/app-layer/usecases/agent-harness-attribution.ts',
+    },
     // The estate declarations (#3678): which scanner covers which estate, at what
     // cadence and with whom accountable for each source. A second writer could
     // point an estate at a scanner that scans something else, and its health
@@ -120,6 +129,7 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/a2a-peer-kill.ts',
             'src/app-layer/usecases/a2a-signing-key.ts',
             'src/app-layer/usecases/agent-harness-acceptance.ts',
+            'src/app-layer/usecases/agent-harness-attribution.ts',
             'src/app-layer/usecases/agent-harness-estates.ts',
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
@@ -152,6 +162,10 @@ describe('the detector is not vacuous', () => {
         ]);
         expect(findWrites('await db.agentHarnessScanItem.createMany({ data })').map((w) => w.delegate)).toEqual([
             'agentHarnessScanItem',
+        ]);
+        // A delegate whose name EXTENDS another's is its own table, not its prefix's.
+        expect(findWrites('await db.discoveredAgentAttribution.updateMany({ data })').map((w) => w.delegate)).toEqual([
+            'discoveredAgentAttribution',
         ]);
     });
 

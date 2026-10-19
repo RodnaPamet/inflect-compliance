@@ -212,10 +212,28 @@ one read and one synthesis, no proposal and no checkpoint.
   reconcile engine's outcomes minus `LINKED` (`SUGGESTED`, `AMBIGUOUS` or
   `UNMATCHED`), so a confirmed or linked owner cannot be expressed, and the
   grade and the outcome are checked against the answer's own signals. The
-  workflow engine does not apply the contracts to a run. The attribution
-  contract has one consumer, the registration intake (below), which parses an
-  answer a request carries and records it as provenance; nothing on `main`
-  calls the assessment contract outside its tests.
+  workflow engine applies no contract to a run in general. The attribution
+  contract has two consumers: the registration intake (below), which parses an
+  answer a request carries and records it as provenance, and the review
+  attribution capture (#3728, below). Nothing on `main` calls the assessment
+  contract outside its tests.
+- **A completed review's owner suggestion is stored (#3728).** When a
+  `discovered-agent-review` run completes, `executeFrom` hands it to
+  `captureReviewAttribution` (`src/app-layer/usecases/agent-harness-attribution.ts`),
+  the one writer of `DiscoveredAgentAttribution`. It acts only on a COMPLETED
+  Flue run that pinned `nhi-ownership-attribution`. It reads the agent the run
+  was asked about from the sealed context, and the answer from the run's last
+  Art 12 row, which is where a Flue run's model output lands. It parses the
+  answer through the contract and stores status, grade, person-free signals and
+  the run id, one row per discovered agent. A newer run replaces an older one,
+  and an older run never replaces a newer one. The person a SUGGESTED answer
+  named is stored apart, encrypted, and is read only by the intake. Every other
+  outcome is named and stores nothing, and is counted by
+  `agentic.review_attribution.capture`. The outcomes are prose, an answer the
+  contract refuses, two different answers, an answer about another agent, a
+  static run and no answer. Today the skill answers in prose, so a run stores a
+  suggestion only when the model also gives the contract's JSON in a fenced
+  block.
 
 #3710 closed the two gaps that kept a Flue run of the review from reading the
 agent it names:
@@ -578,7 +596,11 @@ and the intake row already made from the agent, and a person holding the
 intake's own permission (`canRunRegistrationIntake`) gets a Register action on
 a row with a finding and no intake row. The dialog's owner picker is the ACTIVE
 roster, starts empty, and needs a confirmation that names the chosen person;
-no exposure axis is pre-selected.
+no exposure axis is pre-selected. Since #3728 a shadow row also carries the
+stored review suggestion for its agent: status, grade, signals and run id, and
+never the person it named. The dialog shows it as text above the picker. The
+suggestion is kept by default, and the person can discard it. While it is kept
+the request carries `attribution: { runId }`.
 
 - **The owner is confirmed by a person.** The request names `ownerUserId`, who
   must be an `ACTIVE` member of the tenant, and sets `confirmOwner: true`.
@@ -587,7 +609,10 @@ no exposure axis is pre-selected.
   1d contract and records it in the agent's audit row as provenance: the signals
   it rested on, by kind and evidence pointer, and whether the confirmed owner is
   the person it suggested. The suggested person's reference is not recorded.
-  The suggestion never supplies the owner.
+  The suggestion never supplies the owner. Instead of the answer, the request
+  may name a stored suggestion by its run, `{ runId }` (#3728). The intake then
+  reads the stored row, compares the person it named with the confirmed owner on
+  the server, and records the same provenance with the run id.
 - **One discovered agent, at most one register row.** The new row carries the
   discovered agent's id in `RegisteredAgent.intakeDiscoveredAgentId`, under a
   unique index on `(tenantId, intakeDiscoveredAgentId)`. A second intake is
@@ -597,9 +622,10 @@ no exposure axis is pre-selected.
 - **Each refusal is named** in `error.details.reason`: `FINDING_NOT_FOUND`,
   `NOT_A_SHADOW_AGENT_FINDING`, `DISCOVERED_AGENT_NOT_FOUND`,
   `ALREADY_REGISTERED`, `ALREADY_REGISTERED_BY_INTAKE`, `OWNER_NOT_CONFIRMED`,
-  `OWNER_NOT_ACTIVE_MEMBER`, `SUGGESTION_INVALID` and
-  `SUGGESTION_FOR_ANOTHER_AGENT`. Another tenant's finding is not found, and
-  another tenant's member is not an active member here.
+  `OWNER_NOT_ACTIVE_MEMBER`, `SUGGESTION_INVALID`,
+  `SUGGESTION_FOR_ANOTHER_AGENT` and `SUGGESTION_NOT_STORED` (#3728: the named
+  run is not the suggestion stored for this agent now). Another tenant's finding
+  is not found, and another tenant's member is not an active member here.
 - **The finding and the discovered agent are not written.** The harness ingest
   is the only writer of `DiscoveredAgent`, so the new row is linked to the
   discovered agent by the next scan that sees it. A scan that reports the row's

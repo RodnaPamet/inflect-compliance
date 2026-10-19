@@ -388,6 +388,32 @@ export function recordHarnessScanOutcome(attrs:
         : { outcome: attrs.outcome, reason: attrs.reason });
 }
 
+let _agentReviewAttribution: Counter | null = null;
+
+/**
+ * One attempt to store a `discovered-agent-review` run's owner suggestion
+ * (#3728), by how it ended.
+ *
+ * Emitted on every completed run of that workflow, because the quiet failure
+ * here is a Register dialog that never shows a suggestion: `no_answer` (no Art
+ * 12 row, or the static engine), `no_attribution_in_answer` (the model answered
+ * in prose) and `answer_invalid` (an answer the contract refused) all look the
+ * same from the tab. `recorded` is the only outcome that changed a row.
+ *
+ * ALERT ON — a steady `answer_invalid` or `answer_for_another_agent`: the model
+ * is producing suggestions nothing can use, or about agents it was not asked
+ * about. No tenant label and no identifier of any kind.
+ */
+export function recordAgentReviewAttribution(attrs: { outcome: string }): void {
+    if (!_agentReviewAttribution) {
+        _agentReviewAttribution = getMeter().createCounter('agentic.review_attribution.capture', {
+            description: 'Discovered-agent review runs by what became of their owner suggestion',
+            unit: '1',
+        });
+    }
+    _agentReviewAttribution.add(1, { outcome: attrs.outcome.toLowerCase() });
+}
+
 export function recordScannerFindingsTruncated(attrs: { source: string; dropped: number }): void {
     if (attrs.dropped <= 0) return;
     if (!_scannerFindingsTruncated) _scannerFindingsTruncated = getMeter().createCounter('scanner.findings.truncated', { description: 'Above-threshold scanner findings dropped at the materialisation cap', unit: '1' });
