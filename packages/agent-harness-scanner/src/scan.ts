@@ -24,6 +24,7 @@ import { postReport, type PostResult } from './post';
 import { buildReportBody, signReport } from './report';
 import { sourceResult, SourceReadError, toolCallsOf, type HarnessSource, type SourceRead } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
+import { entraSource } from './sources/entra';
 import { langchainCodeSource } from './sources/langchain';
 import { langSmithSource } from './sources/langsmith';
 import { oktaSource } from './sources/okta';
@@ -73,7 +74,16 @@ export function buildSources(
             unreadable.push(sourceResult(s.kind, 0, [], new SourceReadError('AUTH_FAILED', 'credential not set')));
             continue;
         }
-        if (s.kind === 'okta-app') {
+        if (s.kind === 'entra-sp') {
+            sources.push(
+                entraSource({
+                    directoryId: s.directoryId,
+                    clientId: s.clientId,
+                    clientSecret: secret.trim(),
+                    includeThirdPartyApplications: s.includeThirdPartyApplications,
+                }),
+            );
+        } else if (s.kind === 'okta-app') {
             sources.push(oktaSource({ orgUrl: s.orgUrl, apiToken: secret.trim(), ownerProfileKey: s.ownerProfileKey }));
         } else if (s.kind === 'runtime') {
             sources.push(

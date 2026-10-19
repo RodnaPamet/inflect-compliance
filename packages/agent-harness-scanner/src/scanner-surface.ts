@@ -21,6 +21,7 @@ import { HARNESS_CONTRACT_V2 } from '@/lib/agentic/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
+import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
 
@@ -28,9 +29,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
 /**
  * Raised with any change to what the scanner reads or reports. 0.2.0: the
  * LangSmith source (#3738). 0.3.0: reports under `inflect-agent-harness/2`
- * (#3754). 0.4.0: the `code` source, LangChain and LangGraph (#3737).
+ * (#3754). 0.4.0: the `code` source, LangChain and LangGraph (#3737). 0.5.0:
+ * the Entra source (#3686).
  */
-export const SCANNER_VERSION = '0.4.0';
+export const SCANNER_VERSION = '0.5.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -40,6 +42,7 @@ export const SCANNER_SURFACE = {
     version: SCANNER_VERSION,
     contract: HARNESS_CONTRACT_V2,
     reads: [
+        { source: 'entra-sp', product: 'entra', method: 'GET', origin: GRAPH_ORIGIN, paths: [...ENTRA_READ_PATHS] },
         { source: 'okta-app', product: 'okta', method: 'GET', paths: [...OKTA_READ_PATHS] },
         {
             source: 'vault',
@@ -61,6 +64,7 @@ export const SCANNER_SURFACE = {
     ],
     authenticates: [
         { product: 'azure-key-vault', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryTenantId}/oauth2/v2.0/token' },
+        { product: 'entra', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryId}/oauth2/v2.0/token' },
     ],
     // No request: the `code` source reads local files, and never runs them.
     // Declared all the same, so reading code shows in the manifest hash.
@@ -90,7 +94,10 @@ export function scannerManifestHash(): string {
 export function isDeclaredRequest(method: string, url: string): boolean {
     const { origin, pathname } = new URL(url);
     if (method === 'GET') {
-        return SCANNER_SURFACE.reads.some((r) => (r.paths as readonly string[]).includes(pathname));
+        // A read that names its origin (one whose host is fixed by kind) is held to it.
+        return SCANNER_SURFACE.reads.some(
+            (r) => (r.paths as readonly string[]).includes(pathname) && (!('origin' in r) || r.origin === origin),
+        );
     }
     if (method !== 'POST') return false;
     if (origin === AZURE_LOGIN_ORIGIN) return /^\/[^/]+\/oauth2\/v2\.0\/token$/.test(pathname);

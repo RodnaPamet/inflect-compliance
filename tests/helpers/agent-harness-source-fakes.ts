@@ -1,7 +1,7 @@
 /**
- * HTTP fakes for the scanner's sources (#3678, #3738): an Okta org, the
- * Microsoft identity platform, Azure Key Vault, LangSmith, and the Inflect
- * ingest — no network.
+ * HTTP fakes for the scanner's sources (#3678, #3738, #3686): an Okta org, the
+ * Microsoft identity platform, Microsoft Graph, Azure Key Vault, LangSmith, and
+ * the Inflect ingest — no network.
  *
  * Each fake answers the way the real API does for the requests the scanner is
  * meant to make, and ALSO answers the requests it must never make (an Okta
@@ -34,6 +34,200 @@ export const VAULT = 'https://acme-agents.vault.azure.net';
 export const VAULT_SECRET_VALUE = 'fake-vault-secret-value-never-read-4a';
 export const OKTA_CLIENT_SECRET_VALUE = 'fake-okta-client-secret-never-read-4a';
 export const INGEST = 'https://inflect.example.com';
+
+// ─── Microsoft Graph, for the Entra source (#3686) ───
+
+export const GRAPH = 'https://graph.microsoft.com';
+/** The Entra source compares application ownership with a directory GUID, never a domain. */
+export const ENTRA_DIRECTORY_ID = '0d1e2c3b-0000-4000-8000-000000003686';
+/** The token the identity platform issues for the Graph scope: a different audience from Key Vault's. */
+export const GRAPH_ACCESS_TOKEN_VALUE = 'fake-graph-access-token-value-3686';
+const MICROSOFT_TENANT = 'f8cdef31-a31e-4b4a-93e4-5f571e91255a';
+const THIRD_PARTY_TENANT = '9e9e9e9e-0000-4000-8000-000000003686';
+
+/**
+ * Strings Graph returns beside the members the Entra source asks for, which it
+ * must drop with the page: each is searched for in the report and the log.
+ */
+export const ENTRA_MARKERS = {
+    /**
+     * `passwordCredentials[].hint`: the first characters of a client secret.
+     * Graph's is three characters; the fake's is long enough to search for.
+     */
+    secretHint: 'marker-entra-secret-hint-3686',
+    credentialName: 'marker-entra-credential-display-name-3686',
+    principalName: 'marker-entra-principal-display-name-3686',
+    applicationNotes: 'marker-entra-application-notes-3686',
+} as const;
+
+/** Object ids in the fixture directory. */
+export const ENTRA = {
+    /** Own app, enabled, a secret and a verify certificate on the registration, a SAML signing cert on the SP. */
+    spSupport: 'a0000001-0000-4000-8000-000000003686',
+    appSupport: 'b0000001-0000-4000-8000-000000003686',
+    /** Own app, no credential anywhere: reported, H2.credential_bound unanswered. */
+    spReporting: 'a0000002-0000-4000-8000-000000003686',
+    appReporting: 'b0000002-0000-4000-8000-000000003686',
+    /** Own app, disabled: counted, not reported. */
+    spDisabled: 'a0000003-0000-4000-8000-000000003686',
+    appDisabled: 'b0000003-0000-4000-8000-000000003686',
+    /** A managed identity. */
+    spManaged: 'a0000004-0000-4000-8000-000000003686',
+    /** Microsoft first-party. */
+    spGraph: 'a0000005-0000-4000-8000-000000003686',
+    /** A third-party SaaS app consented into the directory. */
+    spThirdParty: 'a0000006-0000-4000-8000-000000003686',
+    /** An app registration with no service principal here: its secret is unbound. */
+    appOrphan: 'b0000007-0000-4000-8000-000000003686',
+    /** Owners. */
+    userJane: 'c0000001-0000-4000-8000-000000003686',
+    userZed: 'c0000009-0000-4000-8000-000000003686',
+    spOwnerPrincipal: 'c0000002-0000-4000-8000-000000003686',
+    /** Credential key ids. */
+    keySupportPasswordCred: 'd0000001-0000-4000-8000-000000003686',
+    keySupportCert: 'd0000002-0000-4000-8000-000000003686',
+    keySupportSaml: 'd0000003-0000-4000-8000-000000003686',
+    keyDisabledPasswordCred: 'd0000004-0000-4000-8000-000000003686',
+    keyOrphanPasswordCred: 'd0000005-0000-4000-8000-000000003686',
+    keyThirdPartyPasswordCred: 'd0000006-0000-4000-8000-000000003686',
+} as const;
+
+export interface GraphFixture {
+    applications: unknown[][];
+    servicePrincipals: unknown[][];
+}
+
+const user = (id: string) => ({ '@odata.type': '#microsoft.graph.user', id, userPrincipalName: 'someone@contoso.example' });
+
+/** The fixture directory: every row the Entra source reads, with the members Graph adds that it must drop. */
+export function graphFixture(): GraphFixture {
+    const secret = (keyId: string, start: string, end: string | null) => ({
+        keyId,
+        startDateTime: start,
+        endDateTime: end,
+        hint: ENTRA_MARKERS.secretHint,
+        displayName: ENTRA_MARKERS.credentialName,
+        customKeyIdentifier: null,
+        secretText: null,
+    });
+    const cert = (keyId: string, usage: string, start: string) => ({
+        keyId,
+        usage,
+        type: 'AsymmetricX509Cert',
+        startDateTime: start,
+        endDateTime: '2027-09-01T00:00:00Z',
+        displayName: ENTRA_MARKERS.credentialName,
+        customKeyIdentifier: 'AAAA',
+        key: null,
+    });
+    return {
+        applications: [
+            [
+                {
+                    id: ENTRA.appSupport,
+                    appId: 'e0000001-0000-4000-8000-000000003686',
+                    displayName: ENTRA_MARKERS.principalName,
+                    notes: ENTRA_MARKERS.applicationNotes,
+                    passwordCredentials: [secret(ENTRA.keySupportPasswordCred, '2026-07-01T00:00:00Z', '2027-01-01T00:00:00Z')],
+                    keyCredentials: [cert(ENTRA.keySupportCert, 'Verify', '2026-09-01T00:00:00Z')],
+                    // Two users and a principal; the lower user id is the owner.
+                    owners: [user(ENTRA.userZed), { '@odata.type': '#microsoft.graph.servicePrincipal', id: ENTRA.spOwnerPrincipal }, user(ENTRA.userJane)],
+                },
+                {
+                    id: ENTRA.appReporting,
+                    appId: 'e0000002-0000-4000-8000-000000003686',
+                    passwordCredentials: [],
+                    keyCredentials: [],
+                    owners: [],
+                },
+            ],
+            [
+                {
+                    id: ENTRA.appDisabled,
+                    appId: 'e0000003-0000-4000-8000-000000003686',
+                    passwordCredentials: [secret(ENTRA.keyDisabledPasswordCred, '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z')],
+                    keyCredentials: [],
+                    owners: [],
+                },
+                {
+                    id: ENTRA.appOrphan,
+                    appId: 'e0000007-0000-4000-8000-000000003686',
+                    passwordCredentials: [secret(ENTRA.keyOrphanPasswordCred, '2026-03-01T00:00:00Z', null)],
+                    keyCredentials: [],
+                    owners: [user(ENTRA.userJane)],
+                },
+            ],
+        ],
+        servicePrincipals: [
+            [
+                {
+                    id: ENTRA.spSupport,
+                    appId: 'e0000001-0000-4000-8000-000000003686',
+                    displayName: ENTRA_MARKERS.principalName,
+                    servicePrincipalType: 'Application',
+                    appOwnerOrganizationId: ENTRA_DIRECTORY_ID,
+                    accountEnabled: true,
+                    passwordCredentials: [],
+                    keyCredentials: [cert(ENTRA.keySupportSaml, 'Sign', '2026-09-01T00:00:00Z')],
+                    owners: [],
+                },
+                {
+                    id: ENTRA.spReporting,
+                    appId: 'e0000002-0000-4000-8000-000000003686',
+                    servicePrincipalType: 'Application',
+                    appOwnerOrganizationId: ENTRA_DIRECTORY_ID,
+                    accountEnabled: true,
+                    passwordCredentials: [],
+                    keyCredentials: [],
+                    // No owner on the registration: the principal's own owner stands.
+                    owners: [user(ENTRA.userZed)],
+                },
+                {
+                    id: ENTRA.spDisabled,
+                    appId: 'e0000003-0000-4000-8000-000000003686',
+                    servicePrincipalType: 'Application',
+                    appOwnerOrganizationId: ENTRA_DIRECTORY_ID,
+                    accountEnabled: false,
+                    passwordCredentials: [],
+                    keyCredentials: [],
+                    owners: [],
+                },
+            ],
+            [
+                {
+                    id: ENTRA.spManaged,
+                    appId: 'e0000004-0000-4000-8000-000000003686',
+                    servicePrincipalType: 'ManagedIdentity',
+                    appOwnerOrganizationId: null,
+                    accountEnabled: true,
+                    passwordCredentials: [],
+                    keyCredentials: [],
+                    owners: [],
+                },
+                {
+                    id: ENTRA.spGraph,
+                    appId: '00000003-0000-0000-c000-000000000000',
+                    servicePrincipalType: 'Application',
+                    appOwnerOrganizationId: MICROSOFT_TENANT,
+                    accountEnabled: true,
+                    passwordCredentials: [],
+                    keyCredentials: [],
+                    owners: [],
+                },
+                {
+                    id: ENTRA.spThirdParty,
+                    appId: 'e0000006-0000-4000-8000-000000003686',
+                    servicePrincipalType: 'Application',
+                    appOwnerOrganizationId: THIRD_PARTY_TENANT,
+                    accountEnabled: true,
+                    passwordCredentials: [secret(ENTRA.keyThirdPartyPasswordCred, '2026-10-01T00:00:00Z', '2027-10-01T00:00:00Z')],
+                    keyCredentials: [],
+                    owners: [],
+                },
+            ],
+        ],
+    };
+}
 
 type Answer = { status: number; body?: unknown; headers?: Record<string, string>; raw?: string };
 /** Override one request's answer: return an Answer, `'throw'` for a network failure, or undefined to fall through. */
@@ -285,6 +479,8 @@ export interface Fakes {
  * header with an `after` cursor, Key Vault by `nextLink` in the body.
  */
 export function createSourceFakes(opts: {
+    /** The Graph directory the Entra source reads; `graphFixture()` unless replaced. */
+    graph?: GraphFixture;
     okta?: OktaFixture;
     /** Further Okta orgs by origin, beside `OKTA_ORG`. */
     oktaOrgs?: Record<string, OktaFixture>;
@@ -293,6 +489,7 @@ export function createSourceFakes(opts: {
     langsmith?: Record<string, LangSmithFixture>;
 } = {}): Fakes {
     const oktas: Record<string, OktaFixture> = { [OKTA_ORG]: opts.okta ?? oktaFixture(), ...opts.oktaOrgs };
+    const graph = opts.graph ?? graphFixture();
     const vaults = opts.vaults ?? { [VAULT]: vaultFixture() };
     const langsmiths = opts.langsmith ?? { [LANGSMITH_US]: langSmithFixture() };
     const log: RequestLogEntry[] = [];
@@ -347,12 +544,39 @@ export function createSourceFakes(opts: {
         }
         // ── Microsoft identity platform ──
         if (u.origin === 'https://login.microsoftonline.com') {
-            if (method !== 'POST' || u.pathname !== `/${AZURE_TENANT}/oauth2/v2.0/token`) return json({ error: 'invalid_request' }, 400);
+            const tenants = [`/${AZURE_TENANT}/oauth2/v2.0/token`, `/${ENTRA_DIRECTORY_ID}/oauth2/v2.0/token`];
+            if (method !== 'POST' || !tenants.includes(u.pathname)) return json({ error: 'invalid_request' }, 400);
             const form = new URLSearchParams(String(body ?? ''));
             if (form.get('client_id') !== AZURE_CLIENT_ID || form.get('client_secret') !== AZURE_CLIENT_SECRET_VALUE) {
                 return json({ error: 'invalid_client' }, 401);
             }
-            return json({ token_type: 'Bearer', expires_in: 3599, access_token: AZURE_ACCESS_TOKEN_VALUE });
+            // One token per audience, as the platform issues them: a Key Vault
+            // token is refused by Graph, and the reverse.
+            const graphScope = form.get('scope') === 'https://graph.microsoft.com/.default';
+            return json({
+                token_type: 'Bearer',
+                expires_in: 3599,
+                access_token: graphScope ? GRAPH_ACCESS_TOKEN_VALUE : AZURE_ACCESS_TOKEN_VALUE,
+            });
+        }
+        // ── Microsoft Graph ──
+        if (u.origin === GRAPH) {
+            if (headers.get('authorization') !== `Bearer ${GRAPH_ACCESS_TOKEN_VALUE}`) {
+                return json({ error: { code: 'InvalidAuthenticationToken' } }, 401);
+            }
+            if (method !== 'GET') return json({ error: { code: 'Request_BadRequest' } }, 405);
+            const collection =
+                u.pathname === '/v1.0/applications' ? graph.applications : u.pathname === '/v1.0/servicePrincipals' ? graph.servicePrincipals : null;
+            if (collection) {
+                const at = Number(u.searchParams.get('$skiptoken') ?? '0');
+                const next = at + 1 < collection.length ? `${GRAPH}${u.pathname}?$top=100&$skiptoken=${at + 1}` : undefined;
+                return json({
+                    '@odata.context': `${GRAPH}/v1.0/$metadata#${u.pathname.slice(6)}`,
+                    value: collection[at] ?? [],
+                    ...(next ? { '@odata.nextLink': next } : {}),
+                });
+            }
+            return json({ error: { code: 'Request_ResourceNotFound' } }, 404);
         }
         // ── Azure Key Vault ──
         const vault = vaults[u.origin];
@@ -479,6 +703,11 @@ export const NEVER_REPORTED = [
     OKTA_TOKEN_VALUE,
     AZURE_CLIENT_SECRET_VALUE,
     AZURE_ACCESS_TOKEN_VALUE,
+    GRAPH_ACCESS_TOKEN_VALUE,
+    ENTRA_MARKERS.secretHint,
+    ENTRA_MARKERS.credentialName,
+    ENTRA_MARKERS.principalName,
+    ENTRA_MARKERS.applicationNotes,
     VAULT_SECRET_VALUE,
     OKTA_CLIENT_SECRET_VALUE,
     LANGSMITH_API_KEY_VALUE,
