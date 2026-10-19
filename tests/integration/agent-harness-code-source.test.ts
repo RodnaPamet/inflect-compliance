@@ -39,7 +39,7 @@ import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { ingestHarnessReport } from '@/app-layer/usecases/agent-harness-scans';
 import { addHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
 import { createHarnessEstate, getHarnessEstateHealth } from '@/app-layer/usecases/agent-harness-estates';
-import { parseStoredHarnessSources, parseStoredHarnessTools } from '@/lib/agentic/harness-contract';
+import { parseStoredHarnessModels, parseStoredHarnessSources, parseStoredHarnessTools } from '@/lib/agentic/harness-contract';
 import { runInTenantContext } from '@/lib/db-context';
 import { parseScannerConfig } from '../../packages/agent-harness-scanner/src/config';
 import { jsonLineLog } from '../../packages/agent-harness-scanner/src/log';
@@ -183,14 +183,21 @@ describe('1. the detector\'s report verifies and ingests through the existing pa
         }
         expect(refs.some((r) => r.startsWith('INCOMPLETE_SOURCE:'))).toBe(false);
 
-        // The model endpoints were in the signed report and verified with it;
-        // no stored field holds one (#3754).
-        const stored = JSON.stringify([
+        // The model endpoints were in the signed report, verified with it, and
+        // are kept on the agent's scan item and nowhere else (#3759).
+        const models = await prisma.agentHarnessScanItem.findFirstOrThrow({
+            where: { tenantId: T, scanId: result.scanId, discoveredAgent: { discoveredId: 'code:acme/support/agent.py#support_executor' } },
+            select: { modelsJson: true },
+        });
+        expect(parseStoredHarnessModels(models.modelsJson)).toEqual({
+            state: 'REPORTED',
+            endpoints: [{ endpoint: 'https://llm-gateway.acme.example/v1', model: 'gpt-4o-mini' }],
+        });
+        const elsewhere = JSON.stringify([
             await prisma.agentHarnessScan.findMany({ where: { tenantId: T } }),
-            await prisma.agentHarnessScanItem.findMany({ where: { tenantId: T } }),
             await prisma.discoveredAgent.findMany({ where: { tenantId: T } }),
         ]);
-        expect(stored).not.toContain('https://llm-gateway.acme.example/v1');
+        expect(elsewhere).not.toContain('https://llm-gateway.acme.example/v1');
     });
 });
 

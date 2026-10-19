@@ -1547,8 +1547,12 @@ state a level, cannot carry a credential value, and cannot declare
 completeness; all three are derived or refused.
 `tests/helpers/agent-harness-fake-scanner.ts` is the reference implementation,
 and produces both ids. `/2`'s optional per-tool `calls`/`windowDays` are stored
-with the tool in `toolsJson`; its optional `models[]` endpoints are verified and
-NOT stored — no column holds them, so a reader looking for one will not find it.
+with the tool in `toolsJson`; its optional `models[]` endpoints are stored in
+`AgentHarnessScanItem.modelsJson` (#3759). That column has THREE states, and
+`parseStoredHarnessModels` keeps them apart: NULL is NOT REPORTED (a `/1` scan,
+or a `/2` agent without `models`), `[]` is reported empty, and a value that
+fails the strict re-read is UNREADABLE. Write NULL as `Prisma.DbNull`, never as
+`JsonNull` or `[]`.
 
 **The harness ingest** (`usecases/agent-harness-scans.ts`, since #3665) is the
 only writer of `AgentHarnessScan`, `DiscoveredAgent` and `AgentHarnessScanItem`;

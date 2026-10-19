@@ -344,12 +344,14 @@ every harness finding.
 
 **Call counts and model endpoints (`/2`).** A tool's `calls` and `windowDays`
 are stored with the tool on the scan item (`AgentHarnessScanItem.toolsJson`), so
-they round-trip and read back with it. No stored field holds a model endpoint:
-`models[]` is verified with the rest of the report — schema, then the secret
-scan over every string — and is not stored. That is the owner's answer of
-2026-10-19: endpoints stay verify-only under this contract, and a column on the
-scan item to hold them is a separate follow-up issue's change. Neither raises
-or closes a finding.
+they round-trip and read back with it. `models[]` is verified with the rest of
+the report — schema, then the secret scan over every string — and, since #3759,
+kept on the same scan item (`AgentHarnessScanItem.modelsJson`) exactly as
+reported. NULL there means NOT REPORTED — a `/1` report, or a `/2` agent
+without `models` — which is not the same as `[]`, reported empty. The matrix
+reads the column back against the contract's strict model schema and shows a
+value that fails it as unreadable, never as either of the other two. Neither
+raises or closes a finding.
 
 **Accepting a shortfall.** A `HARNESS_SHORTFALL` closes when a later scan shows
 the agent at the bar, or when the agent's owner records a time-limited
