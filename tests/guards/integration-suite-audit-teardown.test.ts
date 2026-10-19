@@ -200,7 +200,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'search-usecase.test.ts',
     'task-evidence-usecase.test.ts',
     'tenant-lifecycle.test.ts',
-    'traceability-graph-usecase.test.ts',
     'workflow-context-integrity.test.ts',
 ]);
 
