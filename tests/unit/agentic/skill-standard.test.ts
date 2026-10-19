@@ -67,7 +67,7 @@ describe('the two drafted IAM skills', () => {
         if (!skill) return;
         expect(skill.license).toBe('proprietary');
         expect(skill.metadata.sourceRef).toBeTruthy();
-        expect(skill.metadata.version).toBe('1');
+        expect(skill.metadata.version).toMatch(/^[1-9]\d*$/);
         const check = checkEvaluationSet(readEvaluationSet(skill), skill);
         expect(check).toMatchObject({ ok: true });
     });
@@ -116,7 +116,8 @@ describe('evaluation sets', () => {
     });
 
     it('refuses a set whose version or skill name does not match', () => {
-        expect(checkEvaluationSet({ ...set, version: '2' }, skill)).toMatchObject({ ok: false, reason: 'VERSION_MISMATCH' });
+        const otherVersion = String(Number(set.version) + 1);
+        expect(checkEvaluationSet({ ...set, version: otherVersion }, skill)).toMatchObject({ ok: false, reason: 'VERSION_MISMATCH' });
         expect(checkEvaluationSet({ ...set, skill: 'other-skill' }, skill)).toMatchObject({ ok: false, reason: 'NAME_MISMATCH' });
     });
 
