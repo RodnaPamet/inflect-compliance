@@ -31,6 +31,7 @@ import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { RelianceSnapshotBlock } from '@/components/audits/RelianceSnapshotBlock';
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../../_lib/status-variants';
 import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
 
@@ -672,6 +673,8 @@ export default function PackDetailPage() {
                                         <div className="flex-1 min-w-0">
                                             <span className="font-medium truncate block">{name}</span>
                                             {snap.description && <span className="text-xs text-content-subtle truncate block">{snap.description}</span>}
+                                            {/* #3681 — an agent-audit reliance item; nothing for any other. */}
+                                            <RelianceSnapshotBlock snapshot={snap} itemId={item.id} />
                                         </div>
                                         <div className="flex items-center gap-tight ml-4">
                                             {status && <StatusBadge variant="neutral">{localizeEnum('packs.itemStatus', status)}</StatusBadge>}

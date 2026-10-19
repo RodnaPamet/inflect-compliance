@@ -452,7 +452,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['POST'],
         permission: 'admin.agent_harness_ingest',
         note:
-            'Submit a signed inflect-agent-harness/1 report. The key alone ' +
+            'Submit a signed inflect-agent-harness/1 or /2 report. The key alone ' +
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
@@ -1437,6 +1437,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'queue; the usecase admits only the assigned reviewer, a person, still ' +
             'ACTIVE and third-line, never the auditor agent\'s owner (403 + ' +
             'AUTHZ_DENIED with a named reason), and the answer is write-once.',
+    },
+    // Step 4d (#3681) — the agent-audit reliance pack. Assembling it freezes
+    // it, so the key is the freeze population's, as for the auditor routes.
+    {
+        path: new RegExp(`^${T}\\/audits\\/cycles\\/[^/]+\\/reliance-pack$`),
+        methods: ['POST'],
+        permission: ['audits.manage', 'admin.manage'],
+        mode: 'all',
+        note:
+            'Assembles and freezes the agent-audit reliance pack for one audit cycle: per ' +
+            'control a library v1 procedure audits, the auditor agent\'s workpapers of the ' +
+            'period, internal audit\'s sampling record of each and the agreement figures. ' +
+            'audits.manage because it reads workpapers (the roadmap\'s key for that), and ' +
+            'admin.manage because it freezes the pack and assertCanFreezePack admits ' +
+            'OWNER+ADMIN by ctx.role, the population this key carries.',
     },
     {
         path: new RegExp(`^${T}\\/audits\\/auditors\\/[^/]+$`),

@@ -6,19 +6,30 @@
  * finding opens on the condition it names; and a scan closes a finding only on
  * positive evidence.
  */
-import { validReportBody, validIncompleteReportBody } from '../../helpers/agent-harness-fake-scanner';
 import {
+    UNBOUND_VAULT_REF,
+    validIncompleteReportBody,
+    validReportBody,
+    validV2CompleteReportBody,
+    validV2ReportBody,
+} from '../../helpers/agent-harness-fake-scanner';
+import {
+    IDENTITY_BEARING_SOURCE,
     firstSecretShapedMember,
     intakeClaimsByDiscoveredId,
     isHarnessShortfall,
+    isIdentityBearingSource,
     isIntakeClaimLinkable,
+    orphanCredentialRefOf,
     planHarnessScan,
     reachOf,
     shortfallFinding,
+    toolEvidenceSource,
+    toolEvidenceSourcesOf,
     type IntakeClaim,
     type PriorHarnessState,
 } from '@/lib/agentic/harness-findings';
-import type { HarnessReportBody } from '@/lib/agentic/harness-contract';
+import { SOURCE_KINDS, type HarnessReportBody, type HarnessReportBodyV2 } from '@/lib/agentic/harness-contract';
 import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
 
 function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
@@ -27,6 +38,7 @@ function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
         registeredAgentIds: new Set(['agt_registered_1']),
         acceptedShortfalls: new Set<string>(),
         intakeClaims: new Map<string, IntakeClaim>(),
+        openOrphanCredentials: new Set<string>(),
         ...over,
     };
 }
@@ -165,6 +177,95 @@ describe('a scan closes a finding only on positive evidence', () => {
         body.agents = [body.agents[0]];
         const plan = planHarnessScan(body, prior());
         expect(plan.resolve.some((r) => r.includes('shadow-1'))).toBe(false);
+    });
+});
+
+describe('"no unpinned write tool" is judged by the read that would have seen the tool (#3754, owner answer 2026-10-19)', () => {
+    type Agent = HarnessReportBodyV2['agents'][number];
+    type Tool = Agent['tools'][number];
+    type Status = 'COMPLETE' | 'INCOMPLETE' | 'ABSENT';
+    const HASH = `sha256:${'c'.repeat(64)}`;
+    /** A tool the agent defines in its own code. Declared read-only, so not a write. */
+    const codeTool: Tool = { server: 'code://app/agents/support.py#L12', name: 'lookup_order', manifestHash: null, pinned: false, readOnlyHint: true };
+    /** A tool an MCP server serves. A write, but pinned. */
+    const mcpTool: Tool = { server: 'https://mcp.internal.example/crm', name: 'update_opportunity', manifestHash: HASH, pinned: true, readOnlyHint: false };
+    const agent = (discoveredVia: Agent['discoveredVia'], tools: Tool[]): Agent => ({
+        discoveredId: 'code:app/agents/support.py#agent',
+        discoveredVia,
+        registeredAgentId: null,
+        owner: null,
+        credentials: [],
+        tools,
+        skills: [],
+        verdicts: [],
+    });
+    const REF = 'UNPINNED_WRITE_TOOL:code:app/agents/support.py#agent';
+    /** A complete `/2` body reporting only `a`, with the code and mcp sources as given. */
+    const scan = (a: Agent, sources: { code: Status; mcp: Status }): HarnessReportBodyV2 => {
+        const body = validV2CompleteReportBody();
+        body.agents = [a];
+        body.unboundCredentials = [];
+        body.population.sources = body.population.sources.filter((s) => s.kind !== 'code' && s.kind !== 'mcp');
+        for (const kind of ['code', 'mcp'] as const) {
+            const status = sources[kind];
+            if (status === 'COMPLETE') body.population.sources.push({ kind, status, rows: 3 });
+            if (status === 'INCOMPLETE') body.population.sources.push({ kind, status, reason: 'TIME_BOX', rows: 1 });
+        }
+        return body;
+    };
+    const closes = (a: Agent, sources: { code: Status; mcp: Status }) => {
+        const plan = planHarnessScan(scan(a, sources), prior());
+        expect(refs(plan.assert)).not.toContain(REF);
+        return plan.resolve.includes(REF);
+    };
+
+    it('a tool is judged by its server: a code:// locator by the code source, anything else by mcp', () => {
+        expect(toolEvidenceSource(codeTool)).toBe('code');
+        expect(toolEvidenceSource({ server: 'code://app/mcp.json#L4' })).toBe('code');
+        expect(toolEvidenceSource(mcpTool)).toBe('mcp');
+        expect(toolEvidenceSource({ server: 'langsmith://api.smith.langchain.com/projects/p1' })).toBe('mcp');
+        // A tool left out is judged where it would have been.
+        expect([...toolEvidenceSourcesOf(agent(['code'], []))]).toEqual(['code']);
+        expect([...toolEvidenceSourcesOf(agent(['entra-sp', 'vault'], []))]).toEqual(['mcp']);
+        expect([...toolEvidenceSourcesOf(agent(['code'], [codeTool, mcpTool]))].sort()).toEqual(['code', 'mcp']);
+    });
+
+    it('a code-defined agent\'s tools close on a complete code read, with no mcp source at all', () => {
+        expect(closes(agent(['code'], [codeTool]), { code: 'COMPLETE', mcp: 'ABSENT' })).toBe(true);
+        // …and with no tools left in its definition.
+        expect(closes(agent(['code'], []), { code: 'COMPLETE', mcp: 'ABSENT' })).toBe(true);
+    });
+
+    it('a code-defined tool is not closed when code is INCOMPLETE, even with mcp read in full', () => {
+        expect(closes(agent(['code'], [codeTool]), { code: 'INCOMPLETE', mcp: 'COMPLETE' })).toBe(false);
+        expect(closes(agent(['code'], [codeTool]), { code: 'ABSENT', mcp: 'COMPLETE' })).toBe(false);
+        expect(closes(agent(['code'], []), { code: 'INCOMPLETE', mcp: 'COMPLETE' })).toBe(false);
+    });
+
+    it('an MCP-served tool is NOT closed by a complete code read', () => {
+        // On a code-defined agent: the code read sees the reference, not the server's tools.
+        expect(closes(agent(['code'], [mcpTool]), { code: 'COMPLETE', mcp: 'ABSENT' })).toBe(false);
+        expect(closes(agent(['code'], [mcpTool]), { code: 'COMPLETE', mcp: 'INCOMPLETE' })).toBe(false);
+        // On any other agent, whose left-out tools would be on an MCP server.
+        expect(closes(agent(['entra-sp'], [mcpTool]), { code: 'COMPLETE', mcp: 'INCOMPLETE' })).toBe(false);
+        expect(closes(agent(['entra-sp'], []), { code: 'COMPLETE', mcp: 'ABSENT' })).toBe(false);
+        // The pair proves the branch: the same reports with mcp read in full close.
+        expect(closes(agent(['code'], [mcpTool]), { code: 'COMPLETE', mcp: 'COMPLETE' })).toBe(true);
+        expect(closes(agent(['entra-sp'], [mcpTool]), { code: 'ABSENT', mcp: 'COMPLETE' })).toBe(true);
+    });
+
+    it('an agent with both kinds of tool closes only when both sources were read in full', () => {
+        const both = agent(['code'], [codeTool, mcpTool]);
+        expect(closes(both, { code: 'COMPLETE', mcp: 'INCOMPLETE' })).toBe(false);
+        expect(closes(both, { code: 'INCOMPLETE', mcp: 'COMPLETE' })).toBe(false);
+        expect(closes(both, { code: 'COMPLETE', mcp: 'COMPLETE' })).toBe(true);
+    });
+
+    it('an unpinned write tool still opens the finding, whatever was read', () => {
+        const unpinned = agent(['code'], [{ ...codeTool, readOnlyHint: null }]);
+        const plan = planHarnessScan(scan(unpinned, { code: 'COMPLETE', mcp: 'COMPLETE' }), prior());
+        expect(refs(plan.assert)).toContain(REF);
+        expect(plan.resolve).not.toContain(REF);
     });
 });
 
@@ -312,5 +413,170 @@ describe('the shortfall finding is described one way', () => {
         expect(f.sourceRef).toBe('HARNESS_SHORTFALL:entra:sp:x');
         expect(f.title).toBe('Agent entra:sp:x is below the harness bar (H1, bar H3)');
         expect(f.description).toMatch(/never blocks the agent/);
+    });
+});
+
+describe('ORPHAN_CREDENTIAL is derived from unboundCredentials[], on positive evidence only (#3754)', () => {
+    const SCANNER = 'agt_scanner';
+    const VAULT_ORPHAN = orphanCredentialRefOf(SCANNER, 'vault', UNBOUND_VAULT_REF);
+    const orphans = (plan: ReturnType<typeof planHarnessScan>) =>
+        plan.assert.filter((f) => f.code === 'ORPHAN_CREDENTIAL').map((f) => f.sourceRef);
+    const resolvedOrphans = (plan: ReturnType<typeof planHarnessScan>) => plan.resolve.filter((r) => r.startsWith('ORPHAN_CREDENTIAL:'));
+    const withOpen = (...refs: string[]) => prior({ openOrphanCredentials: new Set(refs) });
+    /**
+     * The `/2` body with every other source read in full and the vault's
+     * status replaced, or the vault removed.
+     */
+    const vault = (status: 'COMPLETE' | 'INCOMPLETE' | 'ABSENT', unbound = true): HarnessReportBodyV2 => {
+        const body = validV2CompleteReportBody();
+        if (status === 'ABSENT') {
+            body.population.sources = body.population.sources.filter((s) => s.kind !== 'vault');
+            body.agents.forEach((a) => (a.discoveredVia = a.discoveredVia.filter((k) => k !== 'vault')));
+            body.unboundCredentials = [];
+            return body;
+        }
+        if (status === 'INCOMPLETE') {
+            body.population.sources = body.population.sources.map((s) =>
+                s.kind === 'vault' ? { kind: 'vault', status: 'INCOMPLETE', reason: 'TIME_BOX', rows: 12 } : s,
+            );
+        }
+        if (!unbound) body.unboundCredentials = [];
+        return body;
+    };
+
+    it('opens for a credential its source, read in full, saw bound to no agent — keyed by scanner, source and reference', () => {
+        const plan = planHarnessScan(vault('COMPLETE'), prior());
+        expect(orphans(plan)).toEqual([`ORPHAN_CREDENTIAL:${SCANNER}:vault:${UNBOUND_VAULT_REF}`]);
+        expect(plan.assert.find((f) => f.code === 'ORPHAN_CREDENTIAL')).toMatchObject({
+            severity: 'MEDIUM',
+            type: 'OBSERVATION',
+            title: `Credential ${UNBOUND_VAULT_REF} is bound to no agent`,
+        });
+    });
+
+    it('does not open when the source that saw it stopped early', () => {
+        const plan = planHarnessScan(vault('INCOMPLETE'), prior());
+        expect(orphans(plan)).toEqual([]);
+        // The source's own incompleteness is still a finding.
+        expect(plan.assert.map((f) => f.sourceRef)).toContain(`INCOMPLETE_SOURCE:${SCANNER}:vault`);
+    });
+
+    it('closes only when the same source, read in full, no longer sees it unbound', () => {
+        const fixed = planHarnessScan(vault('COMPLETE', false), withOpen(VAULT_ORPHAN));
+        expect(resolvedOrphans(fixed)).toEqual([VAULT_ORPHAN]);
+        // Still unbound: asserted again, never resolved.
+        const still = planHarnessScan(vault('COMPLETE'), withOpen(VAULT_ORPHAN));
+        expect(orphans(still)).toEqual([VAULT_ORPHAN]);
+        expect(resolvedOrphans(still)).toEqual([]);
+    });
+
+    it('an absent source closes nothing, and neither does an incomplete one', () => {
+        expect(resolvedOrphans(planHarnessScan(vault('ABSENT'), withOpen(VAULT_ORPHAN)))).toEqual([]);
+        expect(resolvedOrphans(planHarnessScan(vault('INCOMPLETE', false), withOpen(VAULT_ORPHAN)))).toEqual([]);
+        // The pair proves the branch: the same scan with the vault read in full closes it.
+        expect(resolvedOrphans(planHarnessScan(vault('COMPLETE', false), withOpen(VAULT_ORPHAN)))).toEqual([VAULT_ORPHAN]);
+    });
+
+    it('a /1 report opens and closes nothing, its vault read in full or not', () => {
+        const v1 = validReportBody();
+        expect(v1.population.sources.find((s) => s.kind === 'vault')?.status).toBe('COMPLETE');
+        const plan = planHarnessScan(v1, withOpen(VAULT_ORPHAN));
+        expect(orphans(plan)).toEqual([]);
+        expect(resolvedOrphans(plan)).toEqual([]);
+    });
+
+    it('the report\'s own ORPHAN_CREDENTIAL finding is not acted on', () => {
+        const body = validReportBody();
+        body.findings = [{ code: 'ORPHAN_CREDENTIAL', discoveredId: null, severity: 'CRITICAL', evidence: 'kv://prod/agents/x' }];
+        expect(orphans(planHarnessScan(body, prior()))).toEqual([]);
+        const v2 = vault('COMPLETE', false);
+        v2.findings = body.findings;
+        expect(orphans(planHarnessScan(v2, prior()))).toEqual([]);
+    });
+
+    it('another scanner\'s open finding is never this scanner\'s to close, even for the same source and reference', () => {
+        const theirs = orphanCredentialRefOf('agt_other_scanner', 'vault', UNBOUND_VAULT_REF);
+        expect(resolvedOrphans(planHarnessScan(vault('COMPLETE', false), withOpen(theirs)))).toEqual([]);
+    });
+
+    it('one source read in full closes only its own kind\'s findings', () => {
+        const codeOrphan = orphanCredentialRefOf(SCANNER, 'code', 'env://OPENAI_API_KEY');
+        // The code source is INCOMPLETE (UNPARSEABLE) in the /2 fixture.
+        const body = validV2ReportBody();
+        body.unboundCredentials = [];
+        const plan = planHarnessScan(body, withOpen(VAULT_ORPHAN, codeOrphan));
+        expect(resolvedOrphans(plan)).toEqual([VAULT_ORPHAN]);
+    });
+
+    it('a reference that holds colons is keyed and closed whole', () => {
+        const ref = 'azure-kv://acme.vault.azure.net/secrets/a:b:c';
+        const body = vault('COMPLETE', false);
+        body.unboundCredentials = [{ ref, sourceKind: 'vault' }];
+        expect(orphans(planHarnessScan(body, prior()))).toEqual([orphanCredentialRefOf(SCANNER, 'vault', ref)]);
+        expect(resolvedOrphans(planHarnessScan(vault('COMPLETE', false), withOpen(orphanCredentialRefOf(SCANNER, 'vault', ref))))).toEqual([
+            orphanCredentialRefOf(SCANNER, 'vault', ref),
+        ]);
+    });
+
+    describe('opening also needs every identity-bearing source in the scan read in full (owner answer, 2026-10-19)', () => {
+        /** The complete body with one more source, or one of its own, stopped early. */
+        const withIncomplete = (kind: (typeof SOURCE_KINDS)[number]): HarnessReportBodyV2 => {
+            const body = vault('COMPLETE');
+            const stopped = { kind, status: 'INCOMPLETE' as const, reason: 'TIME_BOX' as const, rows: 1 };
+            body.population.sources = body.population.sources.some((s) => s.kind === kind)
+                ? body.population.sources.map((s) => (s.kind === kind ? stopped : s))
+                : [...body.population.sources, stopped];
+            return body;
+        };
+
+        it('an incomplete identity source holds it back though the credential\'s own source was read in full; with both read it opens', () => {
+            // The fixture: the vault read in full lists the credential, the code source stopped early.
+            const held = validV2ReportBody();
+            expect(held.population.sources.find((s) => s.kind === 'vault')?.status).toBe('COMPLETE');
+            expect(held.population.sources.find((s) => s.kind === 'code')?.status).toBe('INCOMPLETE');
+            expect(held.unboundCredentials).toEqual([{ ref: UNBOUND_VAULT_REF, sourceKind: 'vault' }]);
+            const plan = planHarnessScan(held, prior());
+            expect(orphans(plan)).toEqual([]);
+            expect(refs(plan.assert)).toContain(`INCOMPLETE_SOURCE:${SCANNER}:code`);
+            // The same report with code read in full opens it.
+            expect(orphans(planHarnessScan(validV2CompleteReportBody(), prior()))).toEqual([VAULT_ORPHAN]);
+        });
+
+        it('every identity-bearing kind holds it back when stopped early; mcp does not', () => {
+            for (const kind of SOURCE_KINDS) {
+                if (kind === 'vault') continue;
+                const expected = IDENTITY_BEARING_SOURCE[kind] ? [] : [VAULT_ORPHAN];
+                expect({ kind, orphans: orphans(planHarnessScan(withIncomplete(kind), prior())) }).toEqual({ kind, orphans: expected });
+            }
+        });
+
+        it('an identity-bearing kind the scan does not list holds nothing back', () => {
+            const body = vault('COMPLETE');
+            const listed = body.population.sources.map((s) => s.kind);
+            for (const kind of ['okta-app', 'runtime', 'cicd'] as const) expect(listed).not.toContain(kind);
+            expect(orphans(planHarnessScan(body, prior()))).toEqual([VAULT_ORPHAN]);
+        });
+
+        it('a credential the source still lists is neither reopened nor closed while an identity source is incomplete', () => {
+            const plan = planHarnessScan(validV2ReportBody(), withOpen(VAULT_ORPHAN));
+            expect(orphans(plan)).toEqual([]);
+            expect(resolvedOrphans(plan)).toEqual([]);
+        });
+
+        it('closing is unchanged: the source read in full that no longer lists it closes it, whatever else stopped early', () => {
+            const body = validV2ReportBody();
+            body.unboundCredentials = [];
+            expect(resolvedOrphans(planHarnessScan(body, withOpen(VAULT_ORPHAN)))).toEqual([VAULT_ORPHAN]);
+        });
+
+        it('the classification covers every source kind, and only mcp is not identity-bearing', () => {
+            expect(Object.keys(IDENTITY_BEARING_SOURCE).sort()).toEqual([...SOURCE_KINDS].sort());
+            expect(Object.entries(IDENTITY_BEARING_SOURCE).filter(([, bearing]) => !bearing).map(([kind]) => kind)).toEqual(['mcp']);
+            expect(isIdentityBearingSource('mcp')).toBe(false);
+            expect(isIdentityBearingSource('entra-sp')).toBe(true);
+            // A kind the table does not name is treated as identity-bearing: the side that opens nothing.
+            expect(isIdentityBearingSource('a-kind-added-later')).toBe(true);
+            expect(isIdentityBearingSource('constructor')).toBe(true);
+        });
     });
 });

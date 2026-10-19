@@ -265,7 +265,7 @@ describe('3. no content, and no key, in the report or the log', () => {
             expect(raw).not.toContain(marker);
             expect(logs).not.toContain(marker);
         }
-        // Counts reach the log as a total, which is the one place the contract leaves them.
+        // Counts reach the log as a total: `/2`'s `calls` member is filled by a follow-up of #3738.
         expect(lines.find((l) => l.includes('"source read"'))).toContain('"toolCalls":7');
     });
 
@@ -472,6 +472,7 @@ describe('5. an empty window is EMPTY_SCAN, not a clean bill', () => {
             registeredAgentIds: new Set(),
             acceptedShortfalls: new Set(),
             intakeClaims: new Map(),
+            openOrphanCredentials: new Set(),
         });
         expect(plan.assert.map((f) => f.code)).toEqual(['EMPTY_SCAN']);
         expect(plan.resolve).not.toContain('EMPTY_SCAN:agt_scanner');

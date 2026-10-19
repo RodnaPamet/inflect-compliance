@@ -10,6 +10,7 @@ import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@inflect/ui/lib/cn';
+import { RelianceSnapshotBlock } from '@/components/audits/RelianceSnapshotBlock';
 
 type ReturnChannelKind = 'COMMENT' | 'EVIDENCE_REQUEST' | 'FINDING' | 'QUESTION';
 const KINDS: ReturnChannelKind[] = ['COMMENT', 'EVIDENCE_REQUEST', 'FINDING', 'QUESTION'];
@@ -210,6 +211,8 @@ export default function SharedPackPage() {
                                             )}
                                             {snap.severity && <span>{t('severityLabel', { severity: snap.severity })}</span>}
                                         </div>
+                                        {/* #3681 — an agent-audit reliance item; nothing for any other. */}
+                                        <RelianceSnapshotBlock snapshot={snap} itemId={item.id} />
                                     </div>
                                 );
                             })}

@@ -65,13 +65,67 @@
  *   HARNESS_SHORTFALL:<discoveredId>         below the report-only bar
  *   EMPTY_SCAN:<scannerAgentId>              the scanner found no agents at all
  *   INCOMPLETE_SOURCE:<scannerAgentId>:<kind> a source it could not read in full
+ *   ORPHAN_CREDENTIAL:<scannerAgentId>:<kind>:<ref>
+ *                                            `/2` only: a credential that source
+ *                                            saw bound to no discovered agent
  *
  * A scan closes a finding only on POSITIVE evidence: an agent now in the
  * register, a level now at the bar, a source now read in full, a population now
- * non-empty, and "no unpinned write tool" only when the `mcp` source was read
- * in full. An agent ABSENT from a scan closes nothing — a tenant may run more
+ * non-empty, and "no unpinned write tool" only when every source that could
+ * have reported the agent's tools was read in full (`toolEvidenceSourcesOf`,
+ * below). An agent ABSENT from a scan closes nothing — a tenant may run more
  * than one scanner, and one scanner not seeing an agent is not evidence that
  * the agent is gone.
+ *
+ * ── "NO UNPINNED WRITE TOOL": WHICH READ IS THE EVIDENCE (#3754) ────────────
+ *
+ * Owner answer, 2026-10-19: a tool defined in code is judged by a complete
+ * `code` read, and an MCP-served tool by a complete `mcp` read, as before.
+ * Which a tool is follows its `server`: a `code://` locator is the contract's
+ * name for a tool the agent's code defines or constructs, or for an MCP server
+ * the code starts as a local command (`docs/agent-harness-contract.md`, The
+ * `code` source); any other `server` is an MCP server's URL. The finding closes
+ * only when EVERY source the agent's tools are judged by was read in full:
+ *
+ *   • each tool the report lists, by its own `server`;
+ *   • a tool the report LEFT OUT, by where it would have been: in the
+ *     definition a `code` source read, for an agent discovered via `code`, and
+ *     on an MCP server, for an agent discovered via any other kind. An agent
+ *     reported with no tools at all is therefore never closed on nothing.
+ *
+ * So a complete `code` read never closes an MCP-served tool, and a complete
+ * `mcp` read never closes a code-defined one. Reach is unchanged by this: an
+ * agent is READ_ONLY only when the `mcp` source was read in full.
+ *
+ * ── ORPHAN_CREDENTIAL, DERIVED FROM `unboundCredentials[]` (#3754) ──────────
+ *
+ * The report's own `findings` member is never acted on, so a scanner cannot
+ * raise this finding by saying so. A `/2` report lists the credentials each
+ * source saw bound to no agent, and the planner decides:
+ *
+ *   • IT OPENS ONLY WHEN THAT SOURCE, AND EVERY IDENTITY-BEARING SOURCE IN THE
+ *     SAME SCAN, WAS READ IN FULL (owner answer, 2026-10-19). "Unbound" means
+ *     no agent in the report holds the reference, and the agent that holds it
+ *     may be one a source that stopped early never reported. An
+ *     identity-bearing source is one that can report the agent a credential is
+ *     bound to (`IDENTITY_BEARING_SOURCE`, below); a kind the scan does not
+ *     list is not read at all, and does not hold the finding back.
+ *   • IT CLOSES ONLY WHEN THE SAME SCANNER READ THE SAME SOURCE IN FULL AND NO
+ *     LONGER SEES IT UNBOUND — unchanged by the tightening. The key carries the
+ *     scanner and the source kind, because two scanners' `vault` sources can be
+ *     two different vaults: one scanner's complete read is no evidence about
+ *     the other's. An incomplete identity source cannot make a credential look
+ *     BOUND, only unbound, so it does not hold a close back; but a credential
+ *     the source still lists is never closed, whether or not this scan could
+ *     open it.
+ *   • AN ABSENT OR INCOMPLETE SOURCE CLOSES NOTHING, and neither does a `/1`
+ *     report: it has no member to say anything about unbound credentials, and
+ *     its silence is not a statement that there are none. An incomplete
+ *     identity source therefore opens nothing and closes nothing.
+ *
+ * The open findings it may close are the ingest's to read
+ * (`PriorHarnessState.openOrphanCredentials`), because closing is about rows the
+ * report does not mention.
  *
  * ── THE BAR IS REPORT-ONLY ──────────────────────────────────────────────────
  *
@@ -90,8 +144,8 @@ import {
     type HarnessLevel,
     type HarnessReach,
 } from './harness-ladder';
-import type { HarnessReportAgent, HarnessReportBody } from './harness-contract';
-import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
+import type { HarnessReportAgent, HarnessReportBody, HarnessUnboundCredential, SOURCE_KINDS } from './harness-contract';
+import { HARNESS_CONTRACT_V2, isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
  * The path of the first string member of a verified body whose value is
@@ -135,6 +189,7 @@ export const HARNESS_FINDING_CODES = [
     'HARNESS_SHORTFALL',
     'EMPTY_SCAN',
     'INCOMPLETE_SOURCE',
+    'ORPHAN_CREDENTIAL',
 ] as const;
 export type HarnessFindingCode = (typeof HARNESS_FINDING_CODES)[number];
 
@@ -236,6 +291,13 @@ export interface PriorHarnessState {
     readonly acceptedShortfalls: ReadonlySet<string>;
     /** The intake row each known discovered agent was registered into, by `discoveredId` (#3712). */
     readonly intakeClaims: ReadonlyMap<string, IntakeClaim>;
+    /**
+     * The `sourceRef`s of this scanner's ORPHAN_CREDENTIAL findings that are not
+     * CLOSED (#3754). The planner closes one only on a complete read of its
+     * source that no longer sees it unbound; a ref of another scanner's is
+     * ignored, whoever passed it.
+     */
+    readonly openOrphanCredentials: ReadonlySet<string>;
 }
 
 /**
@@ -267,6 +329,82 @@ export function isWriteCapable(tool: { readOnlyHint: boolean | null }): boolean 
 export function reachOf(agent: Pick<HarnessReportAgent, 'tools'>, mcpReadInFull: boolean): StoredReach {
     if (agent.tools.some(isWriteCapable)) return 'WRITE_OR_EXTERNAL';
     return mcpReadInFull ? 'READ_ONLY' : 'UNKNOWN';
+}
+
+/** A source kind any accepted contract id can carry. */
+export type HarnessSourceKind = (typeof SOURCE_KINDS)[number];
+
+/** The source a tool is judged by: its definition in code, or the MCP server that serves it. */
+export type ToolEvidenceSource = Extract<HarnessSourceKind, 'code' | 'mcp'>;
+
+/** How the contract names a tool defined in code: its `server` is the `code://` locator of that definition. */
+const CODE_LOCATOR_PREFIX = 'code://';
+
+/**
+ * The source whose complete read is evidence about one tool (#3754, owner
+ * answer 2026-10-19): `code` for a tool whose `server` is a `code://` locator,
+ * `mcp` for any other.
+ */
+export function toolEvidenceSource(tool: { readonly server: string }): ToolEvidenceSource {
+    return tool.server.startsWith(CODE_LOCATOR_PREFIX) ? 'code' : 'mcp';
+}
+
+/**
+ * Every source that must have been read in full before this agent's report is
+ * evidence that it has no unpinned write tool: each listed tool's own, and,
+ * for a tool the report left out, where it would have been — the definition
+ * for an agent discovered via `code`, an MCP server for one discovered via any
+ * other kind. Never empty: `discoveredVia` holds at least one kind.
+ */
+export function toolEvidenceSourcesOf(
+    agent: Pick<HarnessReportAgent, 'tools' | 'discoveredVia'>,
+): ReadonlySet<ToolEvidenceSource> {
+    const sources = new Set<ToolEvidenceSource>(agent.tools.map(toolEvidenceSource));
+    for (const via of agent.discoveredVia) sources.add(via === 'code' ? 'code' : 'mcp');
+    return sources;
+}
+
+/**
+ * Which source kinds are IDENTITY-BEARING (#3754, owner answer 2026-10-19):
+ * a source that can report the agent a credential is bound to, by reporting
+ * the credential among that agent's `credentials[]`. An `ORPHAN_CREDENTIAL`
+ * opens only when every one of these the scan lists was read in full, because
+ * the agent that binds the credential may be the part an incomplete one did
+ * not read.
+ *
+ * A `Record` over every kind, so a kind added to the contract is a compile
+ * error here until somebody decides which it is — never a silent default.
+ *
+ *   entra-sp          a service principal, and the password and key credentials it holds
+ *   okta-app          an app, and its client credentials and API tokens
+ *   vault             a credential, tagged with the principal it belongs to
+ *   runtime           a deployment, and the secrets it runs with: LangSmith's
+ *                     deployment listing carries them, and the reference reader
+ *                     declining to read them is that reader's choice, not the
+ *                     kind's limit
+ *   cicd              a pipeline identity, and the secrets its jobs receive
+ *   inflect-register  a registered agent, and the API keys that speak for it
+ *   code              an agent definition, and the credential references it reads
+ *
+ * Exactly one kind is not: `mcp`. A scanner sends an MCP server `initialize`
+ * and `tools/list` and nothing else (DPIA condition 1), and neither answer
+ * names a caller or holds a credential: an `mcp` read reports servers and the
+ * tools they serve, never who binds what.
+ */
+export const IDENTITY_BEARING_SOURCE: Readonly<Record<HarnessSourceKind, boolean>> = Object.freeze({
+    'entra-sp': true,
+    'okta-app': true,
+    vault: true,
+    mcp: false,
+    runtime: true,
+    cicd: true,
+    'inflect-register': true,
+    code: true,
+});
+
+/** Is this source kind identity-bearing? A kind the table does not name is — the side that opens nothing. */
+export function isIdentityBearingSource(kind: string): boolean {
+    return Object.hasOwn(IDENTITY_BEARING_SOURCE, kind) ? IDENTITY_BEARING_SOURCE[kind as HarnessSourceKind] : true;
 }
 
 export function shortfallRefOf(discoveredId: string): string {
@@ -333,15 +471,40 @@ export function shortfallFinding(
     };
 }
 
-function sourceComplete(body: HarnessReportBody, kind: string): boolean {
-    return body.population.sources.some((s) => s.kind === kind && s.status === 'COMPLETE');
+const ORPHAN_REF_PREFIX = 'ORPHAN_CREDENTIAL:';
+
+/** Every ORPHAN_CREDENTIAL `sourceRef` one scanner can raise starts with this. */
+export function orphanCredentialRefPrefix(scannerAgentId: string): string {
+    return `${ORPHAN_REF_PREFIX}${scannerAgentId}:`;
+}
+
+/** The `sourceRef` of the ORPHAN_CREDENTIAL one scanner's source raised for one reference. */
+export function orphanCredentialRefOf(scannerAgentId: string, sourceKind: string, ref: string): string {
+    return `${orphanCredentialRefPrefix(scannerAgentId)}${sourceKind}:${ref}`;
+}
+
+function orphanCredentialFinding(scanRef: string, scanner: string, u: HarnessUnboundCredential): PlannedFinding {
+    return {
+        code: 'ORPHAN_CREDENTIAL',
+        sourceRef: orphanCredentialRefOf(scanner, u.sourceKind, u.ref),
+        severity: 'MEDIUM',
+        type: 'OBSERVATION',
+        title: `Credential ${u.ref} is bound to no agent`,
+        description:
+            `Harness scan ${scanRef} (scanner ${scanner}) read source ${u.sourceKind} in full and saw credential `
+            + `${u.ref} bound to no discovered agent, and read in full every source it listed that can report the `
+            + 'agent a credential is bound to. A credential no agent uses is one nobody rotates or revokes: '
+            + 'retire it, or bind it to the agent that needs it. This finding closes when a complete read of that '
+            + 'source no longer sees it unbound.',
+    };
 }
 
 /** Plan what one verified report means for the tenant. */
 export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessState): HarnessPlan {
     const scanRef = body.scan.id;
     const scanner = body.scan.scanner.agentId;
-    const mcpReadInFull = sourceComplete(body, 'mcp');
+    const readInFull = new Set<string>(body.population.sources.filter((s) => s.status === 'COMPLETE').map((s) => s.kind));
+    const mcpReadInFull = readInFull.has('mcp');
     const scanComplete = isScanComplete(body);
     const assert: PlannedFinding[] = [];
     const resolve: string[] = [];
@@ -390,8 +553,9 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             resolve.push(shadowRef);
         }
 
-        // UNPINNED WRITE TOOLS. Absence is evidence only when every MCP
-        // server was read.
+        // UNPINNED WRITE TOOLS. Absence is evidence only when every source
+        // the agent's tools are judged by was read: `code` for a tool defined
+        // in code, `mcp` for one an MCP server serves.
         const unpinnedRef = `UNPINNED_WRITE_TOOL:${id}`;
         const unpinned = a.tools.filter((t) => isWriteCapable(t) && !t.pinned);
         if (unpinned.length > 0) {
@@ -408,7 +572,7 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
                     + `definition on agent ${id}: ${named.join('; ')}${more}. A tool the agent may call with `
                     + 'a definition nobody reviewed can change under it without anyone noticing.',
             });
-        } else if (mcpReadInFull) {
+        } else if ([...toolEvidenceSourcesOf(a)].every((k) => readInFull.has(k))) {
             resolve.push(unpinnedRef);
         }
 
@@ -483,6 +647,35 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             });
         } else {
             resolve.push(ref);
+        }
+    }
+
+    // ORPHAN CREDENTIALS — `/2` only, and only on positive evidence.
+    if (body.contract === HARNESS_CONTRACT_V2) {
+        // Opening needs the credential's own source read in full AND every
+        // identity-bearing source the scan lists: the agent that binds it may
+        // be one an incomplete identity source never reported.
+        const everyIdentitySourceRead = body.population.sources.every(
+            (s) => s.status === 'COMPLETE' || !isIdentityBearingSource(s.kind),
+        );
+        // Everything a source still lists, opened or not: a credential a
+        // source still sees unbound is never closed, even by a scan that may
+        // not open it.
+        const stillListed = new Set<string>();
+        for (const u of body.unboundCredentials) {
+            const finding = orphanCredentialFinding(scanRef, scanner, u);
+            stillListed.add(finding.sourceRef);
+            if (everyIdentitySourceRead && readInFull.has(u.sourceKind)) assert.push(finding);
+        }
+        const ownPrefix = orphanCredentialRefPrefix(scanner);
+        for (const open of prior.openOrphanCredentials) {
+            if (!open.startsWith(ownPrefix) || stillListed.has(open)) continue;
+            // Source kinds hold no colon, so the kind is the text before the
+            // first one. A ref whose kind this scan did not read in full —
+            // absent, or incomplete — is left as it is.
+            const rest = open.slice(ownPrefix.length);
+            const kind = rest.slice(0, Math.max(rest.indexOf(':'), 0));
+            if (readInFull.has(kind)) resolve.push(open);
         }
     }
 

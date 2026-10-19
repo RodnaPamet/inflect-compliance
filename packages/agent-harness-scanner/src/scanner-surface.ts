@@ -16,15 +16,19 @@
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@/lib/canonical-json';
-import { HARNESS_CONTRACT_ID } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V2 } from '@/lib/agentic/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
 
 export const SCANNER_NAME = 'inflect-agent-harness-scanner';
-/** Raised with any change to what the scanner reads or reports. 0.2.0: the LangSmith source (#3738). */
-export const SCANNER_VERSION = '0.2.0';
+/**
+ * Raised with any change to what the scanner reads or reports. 0.2.0: the
+ * LangSmith source (#3738). 0.3.0: reports under `inflect-agent-harness/2`
+ * (#3754).
+ */
+export const SCANNER_VERSION = '0.3.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -32,7 +36,7 @@ export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-sc
 export const SCANNER_SURFACE = {
     name: SCANNER_NAME,
     version: SCANNER_VERSION,
-    contract: HARNESS_CONTRACT_ID,
+    contract: HARNESS_CONTRACT_V2,
     reads: [
         { source: 'okta-app', product: 'okta', method: 'GET', paths: [...OKTA_READ_PATHS] },
         {

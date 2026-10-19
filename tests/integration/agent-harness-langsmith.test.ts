@@ -198,7 +198,7 @@ describe('1. a fixture estate ingests unchanged', () => {
         expect(byId.get(`langsmith:deployment:${LS.deploymentSupport}`)?.reach).toBe('WRITE_OR_EXTERNAL');
         expect(byId.get(`langsmith:deployment:${LS.deploymentIdle}`)?.reach).toBe('UNKNOWN');
 
-        // The counts the contract cannot carry reached the log as a total.
+        // The counts reached the log as a total; `/2`'s `calls` member is filled by a follow-up of #3738.
         expect(lines.find((l) => l.includes('"source read"'))).toContain('"toolCalls":7');
     });
 });
