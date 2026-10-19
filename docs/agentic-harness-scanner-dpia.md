@@ -260,6 +260,53 @@ reference to a person, the owner of each source of a client estate
 (`AgentHarnessEstateSource.ownerUserId`), a tenant member chosen by the tenant's
 own staff, and its `docs/data-retention.md` row names it DSAR-relevant.
 
+### The LangSmith source (#3738)
+
+#3738 adds a third source, LangSmith, as the `runtime` kind, under the owner's
+decisions of 2026-10-19 on that issue. It reads the customer's LangSmith
+workspace with a key holding the workspace Viewer role, by GET only, on one of
+two cloud hosts (`api.smith.langchain.com`, `eu.api.smith.langchain.com`) or on
+the customer's own self-hosted LangSmith. Conditions 2 and 4 hold for it and are
+tested by request log: every request is a GET to one of its three declared paths
+on the configured host, and no field of the configuration takes a write
+credential. Condition 3 concerns vaults; how LangSmith's own secret-bearing
+member is treated is below.
+
+| | From LangSmith |
+|---|---|
+| **Read** | The tracing projects (`GET /api/v1/sessions`, experiments excluded): each one's id, and its stats over a bounded window of 7 days by default and 30 at most, filtered to tool runs — the number of tool calls and the same number split by tool name. Only for an estate that opts in (`readDeployments`, off by default): the deployments (`GET /v2/deployments`, `/api-host/v2/deployments` self-hosted), each one's id and the id of the tracing project it writes to. |
+| **Reported** | One agent per tool-calling project (`langsmith:project:<id>`) and, for an estate that opts in, per deployment (`langsmith:deployment:<id>`, which then stands for its tracing project), with the names of the tools it called. No owner, no credential, no register link. A tool name that is not a plain identifier is reported as a digest. The call counts are not reported: the contract has no member for them, and the scanner's log carries their total. |
+| **Never read** | Runs. No run input, output, trace or event, and no run of any kind, is requested: neither `GET /api/v1/runs/{id}` nor `POST /api/v1/runs/query` is on the declared surface. |
+| **Received and not kept** | Both listings return more than the source reads. A project carries its name, description and `extra` metadata, and its facets cover run tags and run metadata as well as names. A deployment carries its `secrets`, which LangSmith's published schema documents with their values, and its source configuration — and that listing is requested only for an estate that opts in (owner decision, 2026-10-19), so by default none of it reaches the scanner. The source reads only the members in the first row; the rest is parsed with the page and dropped with it, and reaches no observation, no report and no log line. A test holds a marker string in every one of these members, and in the run content, out of the whole signed report and the log. |
+
+The run content and the metadata a run carries are the customer's data and may
+be personal data. Reading aggregates rather than runs is what keeps them in the
+estate. The one channel by which run content could reach a member the source
+does keep is a tool name, since a run's name can be set at call time; a name
+that is not an identifier (`[A-Za-z0-9_.:-]`, at most 128 characters) is
+therefore replaced by `tool-sha256:<16 hex>`.
+
+**The self-hosted host** is the one host in the configuration a person types. It
+is checked as the application checks any customer-named host, after the
+`publicOrigin` rule kind and `checkWebhookUrl`: a bare https origin, not a
+literal private, loopback, link-local or metadata address, not a blocked name,
+and not a `.local` or `.internal` name. Before every request the scanner
+resolves the name again and sends nothing if any address is private, which is
+the half of `safeFetch` that defeats a name repointed after the file was
+written. The other half, pinning the connection to the checked address, needs a
+dependency the scanner does not take, so a resolver that answers differently
+between the check and the request is a residual (R16).
+
+A self-hosted LangSmith on the estate's own network names the private ranges
+its host may resolve into (`egressPrivateCidrAllowlist`, owner decision
+2026-10-19). It mirrors the application's self-hosted egress allowlist (#3328):
+it lives in the estate's own scanner configuration, which no tenant column,
+form or route reaches; metadata, loopback and link-local stay refused inside it,
+checked before the allowlist, so even `0.0.0.0/0` cannot reach
+`169.254.169.254`; and it removes no other check, so the host is still resolved
+before every request and an address outside the listed ranges sends nothing.
+Both checks, at configuration and before each request, apply it.
+
 #3686's hardening checklist carries condition 1 and the write-credential half
 of condition 2. The assessment holds for the scanner only when #3686 meets all
 four of its conditions, and for the evidence emitted from a scan only when
@@ -366,8 +413,8 @@ is listed, and its row names this data category (condition 12, met; see [A model
 
 - The scanner is to run on the client's infrastructure, under the client's
   control, and read the client's own systems. The identity provider, vault, MCP
-  servers and CI/CD it reads are services the client has chosen; they are the
-  client's processors, not Inflect's.
+  servers, agent runtime (LangSmith, #3738) and CI/CD it reads are services the
+  client has chosen; they are the client's processors, not Inflect's.
 - The ingest runs in the existing `app` service on the existing Google Cloud
   hosting, which `docs/sub-processors.md` already lists.
 - The ingest is deterministic: verify, parse, `scoreHarness`, reconcile,
@@ -388,7 +435,7 @@ including its 30-day notice window, before that data moves.
 | | Risk to the people concerned | Mitigation | Held by |
 |---|---|---|---|
 | R1 | A credential value reaches Inflect inside a report and is stored in the tenant. | Credentials travel as references, and a secret-shaped value is refused inside a credential reference. The contract checks no other member, so condition 10 requires the ingest to check every string member, which it does since #3692. Residual: a secret in a shape `SECRET_SHAPES` does not list passes both checks. | `credentialRef`, `looksLikeSecret`; condition 10 (#3692) |
-| R2 | The scanner collects content written by or about staff: tool descriptions, prompts, payloads. | The contract has no member for content and refuses unknown members; the scanner sends `initialize` and `tools/list` only. | `.strict()` schemas; condition 1 |
+| R2 | The scanner collects content written by or about staff: tool descriptions, prompts, payloads. | The contract has no member for content and refuses unknown members; the scanner sends `initialize` and `tools/list` only, and its LangSmith source requests aggregates and never a run (R15). | `.strict()` schemas; condition 1 |
 | R3 | The scanner reads secret values in the client's estate while listing a vault. | The vault reader lists metadata and references only. | Condition 3 |
 | R4 | A forged report attributes an agent to the wrong person, or invents an owner. | The signature by a tenant-trusted key is checked before the body is read. The report's owner is a claim: intake has a person confirm it before it becomes the register's owner. | `verifyAndParseHarnessReport`; step `2a` intake |
 | R5 | Scan rows become visible in another tenant. | Row-level security, a tenant-leading index and a two-tenant test on every new table. The route is tenant-scoped, and an API key for another tenant is refused (`getTenantCtx`, `src/app-layer/context.ts`). | Step `1a` checklist; `getTenantCtx` |
@@ -401,6 +448,8 @@ including its 30-day notice window, before that data moves.
 | R14 | An owner reference is kept in an append-only record. | `AiDecisionLog.outputSummary` is bounded and sanitised and named DSAR-relevant. Residual: no erasure path for one person, as for the other append-only records. Accepted pending the retention answer `docs/data-retention.md` records as open. | Condition 14 |
 | R10 | A shortfall finding names the owner of an agent below the bar, and colleagues read it. | Findings carry identifiers only and stay in the controller's own tenant, read by its own staff. Residual: accepted. | Step `1a` findings |
 | R11 | An acceptance's justification names or describes a person, and is read beyond its purpose. | Encrypted at rest, sanitised at the write seam, and kept in the controller's own tenant. Residual: free text can still mention a person. Accepted, as it is for `ControlException`. | Condition 11 |
+| R15 | The LangSmith source receives run metadata, project text or a deployment's secret values inside a listing it calls, and passes them on. | It requests aggregates and never a run. The secrets-bearing deployments listing is requested only when an estate opts in (`readDeployments`, off by default), and the default is tested by request log. Of each listing it reads ids, a deployment's tracing project, and a project's tool-call count and tool-name facets; every other member is dropped with the page, and markers in each of them are absent from the signed report and the log (`tests/unit/agent-harness-scanner/langsmith-source.test.ts`). A tool name that is not an identifier is reported as a digest. Residual: for an estate that opts in, each page of the deployments listing — every deployment's secret names and values and its source configuration — is held in the scanner process's memory, in the client's estate, until the page is parsed and dropped. That is the client's own processing. | The LangSmith source (#3738) |
+| R16 | A self-hosted LangSmith host is repointed at an internal address, and the scanner sends the API key there. | Checked at configuration as a customer-named host, and resolved again before every request; a private, loopback, link-local or metadata address stops the read before the key is sent. An estate's private-range allowlist admits only the ranges it lists, never metadata, loopback or link-local, and both checks apply it. Residual, unchanged by the allowlist: the connection is not pinned to the checked address. | `packages/agent-harness-scanner/src/customer-host.ts` (#3738) |
 
 ## Gaps
 
@@ -443,3 +492,9 @@ Okta and Azure Key Vault. The owner accepted the paragraph that records them
 under [Conditions on step 1a](#conditions-on-step-1a) on 2026-10-19, and that
 answer is the decision that extends this sign-off to the two new sources; the
 merge of the pull request that carries it (#3740) signs the amendment.
+
+#3738 reopened it on the sources the scanner reads: it adds LangSmith as the
+`runtime` source, and [The LangSmith source](#the-langsmith-source-3738)
+records what is and is not read from it, with risks R15 and R16. The owner
+decided on 2026-10-19 that merging the pull request that adds LangSmith to this
+assessment re-signs it, as with step `4a`, so that merge signs this amendment.
