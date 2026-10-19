@@ -581,10 +581,27 @@ describe('a workpaper review stamp is set once and cannot change, enforced by th
         ).rejects.toThrow(/AuditWorkpaper_review_stamp_pairing/);
     });
 
-    it('only internal audit stamps, never the auditor\'s owner, never a credential', async () => {
+    it('a SECOND-line member who does not own the auditor stamps a workpaper (#3735)', async () => {
         const stored = await recordAuditWorkpaper(fx[T1].job, workpaperFor(T1, freshPeriod()));
-        expect(await refusal(stampAuditWorkpaperReview(fx[T1].contexts.first, stored.id))).toBe('REVIEWER_NOT_THIRD_LINE');
-        expect(await refusal(stampAuditWorkpaperReview(fx[T1].contexts.second, stored.id))).toBe('REVIEWER_NOT_THIRD_LINE');
+        const third = fx[T1].memberships.third;
+        await setMembershipLineOfDefence(fx[T1].contexts.ownerA, third, { lineOfDefence: 'SECOND' });
+        try {
+            const stamped = await stampAuditWorkpaperReview(fx[T1].contexts.third, stored.id);
+            expect(stamped).toMatchObject({ id: stored.id, reviewedByUserId: fx[T1].users.third });
+        } finally {
+            await setMembershipLineOfDefence(fx[T1].contexts.ownerA, third, { lineOfDefence: 'THIRD' });
+        }
+        const row = await prisma.auditWorkpaper.findUniqueOrThrow({ where: { id: stored.id } });
+        expect(row.reviewedByUserId).toBe(fx[T1].users.third);
+        expect(row.reviewedAt).not.toBeNull();
+    });
+
+    it('only the second or third line stamps, never the auditor\'s owner, never a credential', async () => {
+        const stored = await recordAuditWorkpaper(fx[T1].job, workpaperFor(T1, freshPeriod()));
+        expect(await refusal(stampAuditWorkpaperReview(fx[T1].contexts.first, stored.id))).toBe('REVIEWER_LINE_NOT_ELIGIBLE');
+        // `second` is SECOND line, an eligible line, AND the auditor's owner: the
+        // owner refusal is what stops them (#3735 widened the line, not the owner).
+        expect(await refusal(stampAuditWorkpaperReview(fx[T1].contexts.second, stored.id))).toBe('REVIEWER_OWNS_AUDITOR');
         expect(await refusal(stampAuditWorkpaperReview(fx[T1].contexts.undeclared, stored.id))).toBe(
             'REVIEWER_LINE_UNDECLARED',
         );

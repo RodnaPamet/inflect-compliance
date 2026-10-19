@@ -38,8 +38,13 @@ export const LINES_OF_DEFENCE: readonly LineOfDefenceValue[] = ['FIRST', 'SECOND
 /** The line that owns and operates an auditor agent (decision 3). */
 export const AUDITOR_OWNER_LINE: LineOfDefenceValue = 'SECOND';
 
-/** The line that samples workpapers and stamps their review: internal audit. */
-export const WORKPAPER_REVIEWER_LINE: LineOfDefenceValue = 'THIRD';
+/**
+ * The lines that may stamp a workpaper reviewed: risk and compliance, or
+ * internal audit (owner decision, 2026-10-18, #3735). The auditor agent's owner
+ * is refused whatever their line, by a separate check. Who is ASSIGNED a sample
+ * to review is step 3d's, and that stays internal audit.
+ */
+export const WORKPAPER_STAMP_LINES: readonly LineOfDefenceValue[] = ['SECOND', 'THIRD'];
 
 /**
  * Why an auditor is not independent, in the order the check asks. The trigger

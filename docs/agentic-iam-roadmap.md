@@ -682,8 +682,10 @@ auditee (rule 8).
   auditor, a row born reviewed, and a sample that differs from the first one
   drawn for the procedure and period, which is binding. Every column is fixed at
   insert apart from the review stamp, `reviewedAt` and `reviewedByUserId`, which
-  `stampAuditWorkpaperReview` sets once. Only an ACTIVE THIRD-line member who
-  does not own the auditor may set it. A trigger refuses any other UPDATE from
+  `stampAuditWorkpaperReview` sets once. Only an ACTIVE SECOND- or THIRD-line
+  member who does not own the auditor may set it (owner decision 2026-10-18,
+  #3735; 3b shipped THIRD only). Which workpapers a reviewer is assigned stays
+  internal audit's, in `3d`. A trigger refuses any other UPDATE from
   every role, and `app_user` holds no DELETE. Findings are linked through
   `AuditWorkpaperFinding`, which is insert-only, and nothing on the workpaper's
   path writes a finding. Reading workpapers takes `audits.manage`. There is no

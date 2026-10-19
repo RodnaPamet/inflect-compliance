@@ -1864,8 +1864,9 @@ auditor is not the auditee". Five rules, each held by a test:
   trigger takes the same key.
 - **A workpaper is one-way and the auditor's.** Only a job or a context whose
   `agentId` is the ACTIVE, independent auditor writes one; every column is
-  frozen at insert apart from a review stamp set once by a THIRD-line member who
-  does not own the auditor (trigger, every role; no `app_user` DELETE); the first
+  frozen at insert apart from a review stamp set once by a SECOND- or THIRD-line
+  member who does not own the auditor (`WORKPAPER_STAMP_LINES`, #3735; the
+  trigger freezes the rest for every role; no `app_user` DELETE); the first
   sample per (procedure, period) is binding (trigger). No free-text column: a
   new one is a decision in `encrypted-fields.ts`, not an addition.
 - **A workpaper links findings and never closes one.** `AuditWorkpaperFinding` is
