@@ -266,6 +266,13 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/audits/auditors/access',
         why: 'Granting / revoking one auditor\'s access to one audit pack — admin.manage, the population assertCanManageAuditors (OWNER+ADMIN by ctx.role) admits. Narrow leaf root: the auditors/ COLLECTION route one level up (list + invite) is NOT in scope and stays on usecase-layer authorization.',
     },
+    // Step 3d (#3677) — the roadmap's "Permission keys" names this directory:
+    // a workpaper route under `audits/` sits under no other root, so without
+    // it layer 1 would check nothing about the route.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/audits/workpaper-reviews',
+        why: 'Internal audit\'s review of the auditor agent\'s sampled workpapers — audits.view on the queue, the read and the write-once answer, narrowed in the usecase to the assigned third-line reviewer who does not own the auditor agent, each refusal audited.',
+    },
     {
         relPath: 'src/app/api/t/[tenantSlug]/audits/auditors/[auditorId]',
         why: 'Account-level auditor revoke (REVOKED + every pack grant dropped) — admin.manage, same assertCanManageAuditors as its access sibling.',

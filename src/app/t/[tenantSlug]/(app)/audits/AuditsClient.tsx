@@ -392,6 +392,12 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                         <Link href={`/t/${tenantSlug}/audits/auditors`} className={cn(buttonVariants({ variant: 'secondary' }))} id="audits-auditors-manage-link">
                             {tx('hub.auditorManagement')}
                         </Link>
+                        {/* #3677 — internal audit's queue of the auditor agent's
+                            sampled workpapers. Every role may open it; it shows
+                            only the reviews assigned to the viewer. */}
+                        <Link href={`/t/${tenantSlug}/audits/workpaper-reviews`} className={cn(buttonVariants({ variant: 'secondary' }))} id="audits-workpaper-reviews-link">
+                            {tx('hub.workpaperReviews')}
+                        </Link>
                     </div>
                 </div>
 

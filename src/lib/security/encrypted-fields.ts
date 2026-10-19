@@ -315,6 +315,14 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // that is tenant prose. A future free-text column on this model is added
     // HERE, sanitised at `recordAuditWorkpaper`, and classified in
     // `tests/guardrails/sanitize-rich-text-coverage.test.ts`.
+    //
+    // `AuditWorkpaperSampleReview` (#3677) is deliberately NOT here either,
+    // for the same reason one level up: internal audit's answer on a sampled
+    // workpaper is CONCURRED / DISSENTED / INDETERMINATE plus stable dissent
+    // CODES that a CHECK pins to their vocabulary, and every other text column
+    // is an identifier, an epoch or a digest. There is no free-text column to
+    // encrypt, by design — a note field is where a reviewer would quote the
+    // workpaper's units into plaintext. A future free-text column is added HERE.
 
     // ─── Control test runs ─────────────────────────────
     ControlTestRun: ['notes', 'findingSummary'],

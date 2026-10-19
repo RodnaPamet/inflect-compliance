@@ -130,7 +130,7 @@ export function validIncompleteReportBody(): HarnessReportBodyV1 {
     return body;
 }
 
-/** The unbound credential `validV2ReportBody` reports: in the vault, read in full, held by no agent. */
+/** The unbound credential both `/2` bodies report: in the vault, read in full, held by no agent. */
 export const UNBOUND_VAULT_REF = 'kv://prod/agents/retired-reporting';
 
 /** The model endpoints `validV2ReportBody` reports for its registered agent: a URL, and a host. */
@@ -144,6 +144,11 @@ export const V2_MODEL_ENDPOINTS = [
  * source that could not resolve one definition (INCOMPLETE `UNPARSEABLE`), one
  * credential the vault, read in full, saw bound to no agent, a call count over
  * a 30-day window on the registered agent's tool, and its model endpoints.
+ *
+ * The planner opens no ORPHAN_CREDENTIAL from it: `code` is identity-bearing,
+ * and it stopped early, so the agent that binds the vault's credential may be
+ * the definition it could not read. `validV2CompleteReportBody` is the same
+ * report with `code` read in full, which opens it.
  */
 export function validV2ReportBody(): HarnessReportBodyV2 {
     const v1 = validReportBody();
@@ -169,6 +174,19 @@ export function validV2ReportBody(): HarnessReportBodyV2 {
         ],
         unboundCredentials: [{ ref: UNBOUND_VAULT_REF, sourceKind: 'vault' }],
     };
+}
+
+/**
+ * `validV2ReportBody` with its `code` source read in full: every source it
+ * lists is COMPLETE, so the vault's unbound credential opens ORPHAN_CREDENTIAL.
+ */
+export function validV2CompleteReportBody(): HarnessReportBodyV2 {
+    const body = validV2ReportBody();
+    body.population.sources = body.population.sources.map((s) =>
+        s.kind === 'code' ? { kind: 'code', status: 'COMPLETE', rows: 4 } : s,
+    );
+    body.findings = body.findings.filter((f) => f.code !== 'INCOMPLETE_SOURCE');
+    return body;
 }
 
 /** A credential-shaped string, built at runtime. Never a real credential. */

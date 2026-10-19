@@ -685,6 +685,7 @@ describe('every number carries a written definition', () => {
         const pack = await buildAgentGovernancePack(ctxFor(T1));
         const reports = [
             pack.inventory, pack.asiCoverage, pack.approvals, pack.incidents, pack.thirdParty,
+            pack.workpaperReview,
         ];
 
         expect(reports.map((r) => r.reportId).sort()).toEqual([...REPORT_IDS].sort());
@@ -1378,7 +1379,7 @@ describe('third-party agent assessments', () => {
 });
 
 describe('the pack as one artefact', () => {
-    it('stamps one tenant and one generation instant across all five reports', async () => {
+    it('stamps one tenant and one generation instant across all six reports', async () => {
         const pack = await buildAgentGovernancePack(ctxFor(T1));
         expect(pack.tenantId).toBe(T1);
         expect(pack.generatedAt).toBeInstanceOf(Date);
@@ -1387,6 +1388,24 @@ describe('the pack as one artefact', () => {
         expect(pack.approvals.reportId).toBe('approval-statistics');
         expect(pack.incidents.reportId).toBe('incident-history');
         expect(pack.thirdParty.reportId).toBe('third-party-assessments');
+        expect(pack.workpaperReview.reportId).toBe('workpaper-review');
+    });
+
+    it('reports no re-performance rate for a tenant whose internal audit has concluded nothing (#3677)', async () => {
+        // No workpaper was ever drawn here, so the agreement rate has no base:
+        // NOT_ASSESSED, never "100% agreement" and never "0% disagreement".
+        const pack = await buildAgentGovernancePack(ctxFor(T1));
+        expectMeasured(pack.workpaperReview.metrics['assurance.workpaper_reviews_drawn'], 0);
+        expectAbsent(
+            pack.workpaperReview.metrics['assurance.workpaper_reperformance_agreement_rate'],
+            'NOT_ASSESSED',
+            'NO_CONCLUDED_WORKPAPER_REVIEWS',
+        );
+        expectAbsent(
+            pack.workpaperReview.metrics['assurance.workpaper_reperformance_disagreement_rate'],
+            'NOT_ASSESSED',
+            'NO_CONCLUDED_WORKPAPER_REVIEWS',
+        );
     });
 
     it('agrees with itself about how many agents the tenant runs', async () => {

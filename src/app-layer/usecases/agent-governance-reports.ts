@@ -12,8 +12,10 @@
  *   3. WHETHER the human approvals on what they propose mean anything.
  *   4. WHAT has gone wrong, and whether the stop control has been proven.
  *   5. WHICH of them somebody else wrote, and what assurance we hold on them.
+ *   6. WHETHER the auditor agent's workpapers hold up when internal audit
+ *      re-performs them (#3677).
  *
- * This module is those five reports. It stores nothing, writes nothing and adds
+ * This module is those six reports. It stores nothing, writes nothing and adds
  * no authority — every figure is derived from rows the earlier prompts already
  * landed. That is deliberate: a governance report that needed its own table
  * would be a second copy of the register, and two copies can disagree about
@@ -89,6 +91,8 @@ import { assertCanRead } from '../policies/common';
 import { computeTenantAgentRiskCoverage } from './agent-coverage';
 import { computeAgentReviewQuality } from './agent-review-quality';
 import { getSampleAuditDisagreementRate } from './agent-proposal-sample-audit';
+import { getWorkpaperReviewRate } from './audit-workpaper-sample-review';
+import { effectiveSamplePercent } from '@/lib/agentic/workpaper-review-sampling';
 import { listToolManifests } from './mcp-tool-manifest';
 import type { RequestContext } from '../types';
 
@@ -102,13 +106,14 @@ export const AGENT_ROW_CAP = 500;
 /** How many history rows (kills, drills) one pack describes. */
 export const HISTORY_ROW_CAP = 500;
 
-/** The five reports, by stable id. Cited in a finding, so authored not derived. */
+/** The six reports, by stable id. Cited in a finding, so authored not derived. */
 export const REPORT_IDS = [
     'agent-inventory',
     'asi-coverage',
     'approval-statistics',
     'incident-history',
     'third-party-assessments',
+    'workpaper-review',
 ] as const;
 
 export type ReportId = (typeof REPORT_IDS)[number];
@@ -1101,6 +1106,86 @@ export async function buildThirdPartyAssessmentReport(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// 6 — INTERNAL AUDIT'S RE-PERFORMANCE OF THE AUDITOR (#3677, step 3d)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface WorkpaperReviewBody {
+    /** The four states of a drawn workpaper, which sum to `drawn`, and the rates' denominator. */
+    counts: {
+        drawn: number;
+        unassigned: number;
+        awaiting: number;
+        concurred: number;
+        dissented: number;
+        indeterminate: number;
+        concluded: number;
+    };
+    /** The tenant's sampling rate NOW, in percent. Each drawn row records its own. */
+    samplePercent: number;
+}
+
+/**
+ * The check on the auditor agent: how often internal audit's re-performance of
+ * a sampled workpaper reached the auditor's result. Its own report rather than
+ * three more figures in report 3, because report 3 is about whether HUMANS
+ * approving AGENT proposals mean anything, and this is about whether an
+ * AGENT's audit work holds up when a human repeats it.
+ *
+ * The rates are over CONCLUDED reviews only (`workpaperReviewRate`); the other
+ * three states are reported beside them, and a window with no concluded review
+ * reports NOT_ASSESSED for both rates — never "100% agreement".
+ */
+export async function buildWorkpaperReviewReport(
+    ctx: RequestContext,
+    opts: { windowDays?: number } = {},
+): Promise<ReportEnvelope<WorkpaperReviewBody>> {
+    assertCanRead(ctx);
+    const generatedAt = new Date();
+    const window = resolveWindow(opts.windowDays);
+    const rate = await getWorkpaperReviewRate(ctx, { sinceDays: window.days });
+    const settings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: { workpaperReviewSamplePercent: true },
+        }),
+    );
+
+    return envelope(
+        'workpaper-review',
+        generatedAt,
+        window,
+        false,
+        {
+            'assurance.workpaper_reviews_drawn': measured(rate.drawn),
+            'assurance.workpaper_reviews_unassigned': measured(rate.unassigned),
+            'assurance.workpaper_reviews_awaiting': measured(rate.awaiting),
+            'assurance.workpaper_reviews_indeterminate': measured(rate.indeterminate),
+            'assurance.workpaper_reviews_concluded': measured(rate.concluded),
+            'assurance.workpaper_reperformance_agreement_rate':
+                rate.agreementRate === null
+                    ? notAssessed('NO_CONCLUDED_WORKPAPER_REVIEWS')
+                    : measured(rate.agreementRate),
+            'assurance.workpaper_reperformance_disagreement_rate':
+                rate.disagreementRate === null
+                    ? notAssessed('NO_CONCLUDED_WORKPAPER_REVIEWS')
+                    : measured(rate.disagreementRate),
+        },
+        {
+            counts: {
+                drawn: rate.drawn,
+                unassigned: rate.unassigned,
+                awaiting: rate.awaiting,
+                concurred: rate.concurred,
+                dissented: rate.dissented,
+                indeterminate: rate.indeterminate,
+                concluded: rate.concluded,
+            },
+            samplePercent: effectiveSamplePercent(settings?.workpaperReviewSamplePercent),
+        },
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // The pack
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1112,10 +1197,11 @@ export interface AgentGovernancePack {
     approvals: ReportEnvelope<ApprovalStatisticsBody>;
     incidents: ReportEnvelope<IncidentHistoryBody>;
     thirdParty: ReportEnvelope<ThirdPartyBody>;
+    workpaperReview: ReportEnvelope<WorkpaperReviewBody>;
 }
 
 /**
- * All five, as one artefact. Sequential rather than `Promise.all`: each report
+ * All six, as one artefact. Sequential rather than `Promise.all`: each report
  * opens its own tenant transaction, and five concurrent ones per assessor click
  * is a pool exhaustion nobody asked for on a read that runs once a quarter.
  */
@@ -1133,6 +1219,7 @@ export async function buildAgentGovernancePack(
     const approvals = await buildApprovalStatisticsReport(ctx, opts);
     const incidents = await buildIncidentHistoryReport(ctx, opts);
     const thirdParty = await buildThirdPartyAssessmentReport(ctx);
+    const workpaperReview = await buildWorkpaperReviewReport(ctx, opts);
 
     return {
         generatedAt: inventory.generatedAt,
@@ -1142,6 +1229,7 @@ export async function buildAgentGovernancePack(
         approvals,
         incidents,
         thirdParty,
+        workpaperReview,
     };
 }
 

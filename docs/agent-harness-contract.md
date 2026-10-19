@@ -66,7 +66,10 @@ output, no prompt — a model entry or a tool with any other member is refused.
   silence is not a statement that there are none.
 - The ids the verifier accepts are `HARNESS_CONTRACT_IDS` in
   `src/lib/agentic/harness-contract-rules.ts`. Retiring `/1` is removing it from
-  that list, a reviewed change made once no deployed scanner sends it.
+  that list, a reviewed change made once no deployed scanner sends it. The
+  owner set the moment on 2026-10-19: `/1` is retired at the release of the
+  scanner container (#3686), the first deployment of the reference scanner,
+  which emits `/2`.
 
 ## Signing and verification
 
@@ -127,7 +130,9 @@ is left out. How it fills the members every source shares:
   library tool it constructs there — has as its `server` the `code://` locator
   of that definition or construction: a URL that names where the tool is, which
   nothing on the receiving side follows. Its `readOnlyHint` is `null` unless
-  the definition declares one: an undeclared hint counts as a write.
+  the definition declares one: an undeclared hint counts as a write. A tool
+  whose `server` is a `code://` locator is judged by a complete `code` read, not
+  an `mcp` one (see **Transport**).
 - A tool set the code fetches from an MCP server at run time is one entry per
   server: `server` is the server's URL (or, for a server the code starts as a
   local command, the `code://` locator of its configuration) and `name` is
@@ -179,7 +184,9 @@ itself MUST be refused (`SCHEMA`):
   agent's credential" cannot both be true.
 
 An entry from a source that stopped early is allowed — what was read is real —
-but the receiving side acts only on entries whose source is `COMPLETE`.
+but the receiving side acts only on entries whose source is `COMPLETE`, and opens
+a finding only when every identity-bearing source the report lists is
+`COMPLETE` too (see Transport).
 
 ### Findings
 
@@ -272,17 +279,61 @@ findings, with `sourceKind = 'AGENT_HARNESS'`, from what it derived —
 only on positive evidence. An agent absent from a scan resolves nothing about
 it.
 
+**`UNPINNED_WRITE_TOOL`: which read closes it.** A scan in which an agent has
+no unpinned write tool closes the finding only when every source that could
+have reported a missing tool was read in full (owner answer, 2026-10-19).
+Which source that is follows the tool's `server`:
+
+| A tool whose `server` is | Is judged by a complete read of |
+|---|---|
+| a `code://` locator: defined or constructed in the agent's code, or an MCP server the code starts as a local command (see [Sources](#sources)) | `code` |
+| anything else: an MCP server's URL | `mcp` |
+
+The finding closes only when the source of EVERY tool the report lists for the
+agent was read in full, and, for a tool the report may have left out, the
+source where it would have been: `code` for an agent discovered via `code`, and
+`mcp` for an agent discovered via any other kind. So a complete `code` read
+never closes an MCP-served tool, a complete `mcp` read never closes a
+code-defined one, and an agent reported with no tools is not closed on nothing.
+The derived reach is unaffected: an agent is `READ_ONLY` only when the `mcp`
+source was read in full.
+
 **`ORPHAN_CREDENTIAL` (`/2`).** Derived from `unboundCredentials[]` by the
 planner (`src/lib/agentic/harness-findings.ts`), never from the report's
 `findings`, and keyed by the scanner, the source kind and the reference
 (`ORPHAN_CREDENTIAL:<scanner>:<kind>:<ref>`):
 
-- it OPENS only when the source that saw the credential was read in full;
+- it OPENS only when the source that saw the credential AND every
+  identity-bearing source the report lists were read in full (owner answer,
+  2026-10-19). "Unbound" means that no agent in the report holds the
+  reference, and the agent that does hold it may be the part an incomplete
+  identity-bearing source did not read. A kind the report does not list was not
+  read at all, and holds nothing back;
 - it CLOSES only when the same scanner read the same source in full and no
   longer saw the credential unbound — two scanners' `vault` sources can be two
-  different vaults, so one scanner's read says nothing about the other's;
+  different vaults, so one scanner's read says nothing about the other's. An
+  incomplete identity-bearing source can make a credential look unbound, never
+  bound, so it does not hold a close back; but a credential the source still
+  lists is never closed, whether or not that scan could open it;
 - an absent or `INCOMPLETE` source closes nothing, and neither does a `/1`
-  report.
+  report. An incomplete identity-bearing source therefore opens nothing and
+  closes nothing.
+
+A source kind is **identity-bearing** when it can report the agent a credential
+is bound to, by listing the credential among that agent's `credentials[]`. The
+classification is `IDENTITY_BEARING_SOURCE` in the planner, a table over every
+kind, so a kind added to the contract fails to compile until it is classified:
+
+| Kind | Identity-bearing | Why |
+|---|---|---|
+| `entra-sp` | Yes | A service principal, and the password and key credentials it holds |
+| `okta-app` | Yes | An app, and its client credentials and API tokens |
+| `vault` | Yes | A credential, tagged with the principal it belongs to |
+| `runtime` | Yes | A deployment, and the secrets it runs with. LangSmith's deployment listing carries them; a reader that declines to read them does not change what the kind can report |
+| `cicd` | Yes | A pipeline identity, and the secrets its jobs receive |
+| `inflect-register` | Yes | A registered agent, and the API keys that speak for it |
+| `code` | Yes | An agent definition, and the credential references it reads |
+| `mcp` | **No** | A scanner sends an MCP server `initialize` and `tools/list` only, and neither answer names a caller or holds a credential |
 
 It is an `OBSERVATION` of `MEDIUM` severity, written through the same seam as
 every harness finding.
@@ -291,7 +342,10 @@ every harness finding.
 are stored with the tool on the scan item (`AgentHarnessScanItem.toolsJson`), so
 they round-trip and read back with it. No stored field holds a model endpoint:
 `models[]` is verified with the rest of the report — schema, then the secret
-scan over every string — and is not stored. Neither raises or closes a finding.
+scan over every string — and is not stored. That is the owner's answer of
+2026-10-19: endpoints stay verify-only under this contract, and a column on the
+scan item to hold them is a separate follow-up issue's change. Neither raises
+or closes a finding.
 
 **Accepting a shortfall.** A `HARNESS_SHORTFALL` closes when a later scan shows
 the agent at the bar, or when the agent's owner records a time-limited
@@ -309,4 +363,6 @@ strict schema, under the [transition rule](#the-two-ids). Stored scans do not
 record the id they arrived under, so a stored source is re-read against every
 kind and reason any accepted id can carry (`SOURCE_KINDS`,
 `INCOMPLETE_REASONS`), and a client estate may declare exactly those kinds: the
-database CHECK on `AgentHarnessEstateSource.kind` lists the same eight.
+database CHECK on `AgentHarnessEstateSource.kind` lists the same eight. The
+migration that widened it for `code` (`20261019070000`) was kept as built by
+the owner on 2026-10-19.

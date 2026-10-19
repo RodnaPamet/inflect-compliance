@@ -61,6 +61,13 @@ const MIGRATED_PAGES = [
     // that has nothing to migrate.
     'agents/compose/page.tsx',
     'agents/compose/ComposeClient.tsx',
+    // #3677 — internal audit's review of the auditor's sampled workpapers.
+    // PROMOTED ON LANDING, as #3301 did above: built from the design system
+    // throughout (EntityListPage, Sheet, FormField, RadioGroup, Combobox,
+    // StatusBadge, InlineNotice, EmptyState) with semantic tokens only, so it
+    // has nothing to migrate and does not raise the shared ceiling.
+    'audits/workpaper-reviews/page.tsx',
+    'audits/workpaper-reviews/WorkpaperReviewsClient.tsx',
     'agents/review-quality/page.tsx',
     // Asset CSV import wizard; design-system-native from birth
     // (semantic tokens + Card/Button/DataTable/StatusBadge only).
