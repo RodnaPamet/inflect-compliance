@@ -49,7 +49,7 @@ Freshness is measured from `min(asOf, ingestedAt)`.
 | --- | --- |
 | `packages/agent-harness-scanner/` | the scanner: source interface, read-only wire, Okta and Azure Key Vault sources, report builder and signer, config, schedule, CLI |
 | `prisma/schema/agentic.prisma`, `auth.prisma` | `AgentHarnessEstate`, `AgentHarnessEstateSource` and their back-relations |
-| `prisma/migrations/20261019010000_agent_harness_estates/` | both tables, the cadence and kind CHECKs, RLS triple |
+| `prisma/migrations/20261019035000_agent_harness_estates/` | both tables, the cadence and kind CHECKs, RLS triple |
 | `src/app-layer/usecases/agent-harness-estates.ts` | the one writer of both tables; the health read |
 | `src/lib/agentic/harness-estate-health.ts` | the freshness rules (pure) |
 | `src/app/api/t/[tenantSlug]/admin/agents/harness-estates/**` | GET (inventory key), POST, PATCH, DELETE (register key) |
