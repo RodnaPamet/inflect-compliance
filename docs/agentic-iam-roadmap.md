@@ -1139,7 +1139,9 @@ is its methodology, version 1, and it does four things:
 - It sets out the engagement setup, the scanner deployment, the cadence of
   scans, campaigns and audit programmes, and the escalation paths.
 - It states who holds each right, with the PwC operator on a custom role that
-  adds only the inventory view key. The client's ownership of the register, the
+  adds the inventory view key and, at the client's request, the skill authoring
+  key or the workpaper view key, and never a key that decides. The client's
+  ownership of the register, the
   approved skills and the kill switch is stated, and each is held by the
   product or, where the product cannot hold it, by the methodology.
 - It maps every activity to its product surface and the evidence that
