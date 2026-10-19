@@ -49,8 +49,9 @@ workpapers (the last section). You read and you propose; you change nothing.
   the agent (`TOOL_UNEXERCISABLE`); A4 the agent was ACTIVE when it called
   (`AGENT_NOT_ACTIVE`).
 
-Name each exception by its code above, exactly. Never invent a code or a label
-of your own.
+Name each exception by its code above, exactly, and write a code only for an
+exception you raise: an attribute that is met is said to be met, without its
+code. Never invent a code or a label of your own.
 
 ## How you conclude, in this order
 

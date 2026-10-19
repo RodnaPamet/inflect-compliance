@@ -296,10 +296,10 @@ describe('the sheet shows the record and takes the answer as codes', () => {
         expect(within(sheet).getByTestId('workpaper-review-answer-form')).toBeInTheDocument();
     });
 
-    it('says when no narrative has been drafted, rather than leaving a gap', async () => {
+    it('says when no narrative has been drafted yet, rather than leaving a gap', async () => {
         render(<WorkpaperReviewsClient tenantSlug="acme" />);
         const sheet = await openRow();
-        expect(within(sheet).getByTestId('workpaper-review-narrative')).toHaveTextContent('No narrative has been drafted');
+        expect(within(sheet).getByTestId('workpaper-review-narrative')).toHaveTextContent('No narrative yet');
         expect(within(sheet).queryByTestId('workpaper-review-narrative-text')).toBeNull();
     });
 
