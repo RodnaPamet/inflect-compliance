@@ -35,10 +35,20 @@ scanner signed it, so each estate has a scanner of its own.
 |---|---|---|
 | `okta-app` | An SSWS API token for a read-only administrator | `*.okta.com`, `*.oktapreview.com` |
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
+| `code` (LangChain and LangGraph) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
 credential is supplied through an environment variable that the configuration
 names; none is ever written in the configuration file.
+
+The `code` source reads the repositories that define the estate's LangChain and
+LangGraph agents. Mount each one read-only into the scanner's container and name
+it as a root with a label: the label, never the path, is what reports and
+findings carry. The source reads `.py`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`,
+`.mts`, `.cts` and `.tsx` files that mention the framework; it does not enter
+dependency or build directories (`node_modules`, virtual environments, `dist`,
+`build`), and it does not follow a symbolic link, which it reports as a location
+it could not read. It never imports or runs what it reads.
 
 ## 3. Labelling the estate's principals
 
@@ -69,6 +79,10 @@ What the scanner deliberately does not take from these labels:
 - **Anything untagged.** A vault item with no `inflect-principal` tag is counted
   and reported as nothing; which of a vault's secrets belong to agents is the
   estate's statement to make.
+- **An owner for a coded agent.** The `code` source reports each agent
+  definition as `code:<label>/<path>#<name>`, where the name is the variable the
+  definition is bound to, with no owner: code names no accountable person. It
+  raises `SHADOW_AGENT` until somebody registers it.
 
 Every Okta API token is reported as a principal acting for the administrator who
 created it, and so raises `SHADOW_AGENT` until it is registered, except the token
@@ -94,4 +108,8 @@ and it read every source the estate declares with at least one row. A source
 read in full that returned nothing is **EMPTY**, not complete. A source the
 scanner could not read appears with its reason: `AUTH_FAILED` for a credential
 the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
-`TIME_BOX`, `BYTE_CAP` or `PAGINATION_TORN` for the rest.
+`TIME_BOX`, `BYTE_CAP` or `PAGINATION_TORN` for the rest. The `code` source adds
+`UNPARSEABLE`: it read a file that does not parse, or an agent definition built
+from something it cannot resolve statically — a tool list returned by a
+function, a model passed in as a parameter, `**kwargs`. The agent is still
+reported with what did resolve, and the source line names the reason.

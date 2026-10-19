@@ -17,17 +17,52 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 |---|---|---|---|
 | `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile.owner`, a token's `userId`. Every token is reported except the scanner's own, identified by id from `/api-tokens/current` | `GET /api/v1/apps`, `GET /api/v1/api-tokens/current`, `GET /api/v1/api-tokens` |
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
+| `code` | LangChain and LangGraph (#3737) | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference | None. Local reads only (`lstat`, `readdir`, `readFile`) |
 
 Azure Key Vault is the only vault adapter. The `vault` kind and the `product`
 field keep the interface generic for the next one.
+
+### The `code` source
+
+`src/sources/langchain.ts` reads the roots it is given and recognises:
+
+- LangChain's agent factories (`create_tool_calling_agent`, `create_react_agent`,
+  `initialize_agent`, `createToolCallingAgent`, …) and the `AgentExecutor` that
+  wraps one, reported once;
+- LangGraph's prebuilt `create_react_agent` / `createReactAgent`, and a
+  compiled `StateGraph` that has a `ToolNode` or binds tools to a model;
+- their tools — `@tool` functions, `Tool(...)`, `tool()`,
+  `DynamicStructuredTool`, prebuilt tool and toolkit classes, and an MCP
+  client's servers (`MultiServerMCPClient`), each as `<server>:*`;
+- their chat models (`ChatOpenAI`, `ChatAnthropic`, `init_chat_model`, a
+  `provider:model` string, …) with the endpoint each calls;
+- the credentials those take, as `env://NAME` or, for a value written into the
+  code, `code://<label>/<path>#L<line>` — never the value.
+
+Every name is resolved through the file's own imports: only what is imported
+from a `langchain` or `langgraph` module counts. Python is read by a bounded
+tokenizer and expression reader (`src/sources/code/python.ts`); JavaScript and
+TypeScript by TypeScript's syntax-only parser (`src/sources/code/javascript.ts`).
+Neither imports, evaluates or spawns anything, and `eslint.config.mjs` refuses
+`child_process`, `vm`, `worker_threads`, `require()`, `import()` and `eval` in
+those files. A file that does not parse, or a definition built from something the
+reader cannot see — a tool list returned by a function, a model passed in as a
+parameter, `**kwargs` — makes the source `INCOMPLETE` `UNPARSEABLE`, and the
+agent is still reported with what resolved.
+
+Each agent's model endpoints go into `/2`'s optional `models[]`: the https URL,
+the `env://` reference it is read from, or, when neither is knowable, the
+`code://` locator of the model's construction. The ingest verifies them and
+stores none.
 
 **Unbound credentials.** `/2`'s `unboundCredentials[]` lists credential
 references a source saw bound to no principal, from which the ingest derives
 `ORPHAN_CREDENTIAL`. A source returns them on its read
 (`SourceRead.unboundCredentials`), and the report builder drops any reference a
-principal in the merged population holds. Both sources above report every
-credential against the principal it belongs to, so neither returns one, and
-the list is empty from them.
+principal in the merged population holds. Okta and Key Vault report every
+credential against the principal it belongs to, so neither returns one. Nor
+does the `code` source: a reference in code that no agent uses is not evidence
+that a credential exists. The list is empty from all three.
 
 ### The labelling conventions
 
@@ -56,6 +91,9 @@ What the sources never do:
 - **Leave their origin.** Every request is https, on the configured host, with
   redirects refused; a next-page link anywhere else ends the read as
   `PAGINATION_TORN`. Each source has a time box and a byte budget.
+- **Run what they read.** The `code` source parses text. It follows no symbolic
+  link, caps each file at 1 MiB and the whole read at 20,000 files and 128 MiB,
+  and stops at the scan's deadline, reporting each as its reason.
 
 `src/scanner-surface.ts` declares every request the scanner can make, and its
 hash is the report's `scan.scanner.manifestHash`. The tests hold every request
@@ -63,7 +101,10 @@ the HTTP fakes see to that declaration.
 
 ## What it may import
 
-Itself; Node's built-ins; `zod`; and the wire contract from the application —
+Itself; Node's built-ins; `zod`; `typescript`, whose syntax-only parser the
+`code` source reads JavaScript and TypeScript with (already the repository's own
+dependency, and needed by `tsx`, which runs the scanner); and the wire contract
+from the application —
 `@/lib/agentic/harness-contract`, `@/lib/agentic/harness-findings`,
 `@/lib/agentic/harness-ladder` and `@/lib/canonical-json`. Nothing else:
 `eslint.config.mjs` refuses any other `@/` import from `src/`, and any
@@ -91,6 +132,10 @@ secret-shaped string anywhere in the file is refused by path.
       "vaultUrls": ["https://acme-agents.vault.azure.net"],
       "directoryTenantId": "<Entra tenant id>", "clientId": "<app id>",
       "clientSecretEnv": "AZURE_CLIENT_SECRET"
+    },
+    {
+      "kind": "code", "product": "langchain",
+      "roots": [{ "label": "support-bot", "path": "/estate/repos/support-bot" }]
     }
   ]
 }
@@ -106,7 +151,8 @@ secret-shaped string anywhere in the file is refused by path.
   vault, which reads metadata and cannot read a secret's contents.
 
 Okta orgs must be on `*.okta.com` or `*.oktapreview.com`, vaults on
-`*.vault.azure.net`, and the ingest on https.
+`*.vault.azure.net`, and the ingest on https. A `code` root is an absolute path
+with no `..` segment, reported only by its label; it takes no credential.
 
 ## Running
 

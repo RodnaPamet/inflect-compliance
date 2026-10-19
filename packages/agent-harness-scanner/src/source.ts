@@ -1,7 +1,7 @@
 /**
  * THE SOURCE INTERFACE — one shape every reader of an estate implements.
  *
- * A source reads one kind of inventory (`okta-app`, `vault`, …) and returns
+ * A source reads one kind of inventory (`okta-app`, `vault`, `code`, …) and returns
  * what it saw of each principal plus how far it got. It never throws for a
  * read that went wrong: it returns `INCOMPLETE` with a named reason, and the
  * scan runner turns an unexpected throw into the same thing. A source that
@@ -36,12 +36,22 @@ export type IncompleteReason = (typeof INCOMPLETE_REASONS_V2)[number];
 
 export type ObservedCredential = HarnessReportAgent['credentials'][number];
 export type ObservedOwner = NonNullable<HarnessReportAgent['owner']>;
+export type ObservedTool = HarnessReportAgent['tools'][number];
+export type ObservedModel = NonNullable<HarnessReportAgent['models']>[number];
 
 /** What one source saw of one principal. Merged across sources by `discoveredId`. */
 export interface Observation {
     readonly discoveredId: string;
     readonly owner: ObservedOwner | null;
     readonly credentials: readonly ObservedCredential[];
+    /**
+     * Tools the principal binds, as the source saw them. Only the `code`
+     * source reports any today: an identity provider or a vault does not know
+     * an agent's tools.
+     */
+    readonly tools?: readonly ObservedTool[];
+    /** Model endpoints the principal calls, by reference. Only the `code` source reports any today. */
+    readonly models?: readonly ObservedModel[];
     /** Only verdicts the source holds evidence for; unanswered counts as no. */
     readonly verdicts: readonly CriterionVerdict[];
 }
@@ -69,6 +79,13 @@ export interface SourceRead {
 export interface SourceContext {
     /** The moment the scan describes. Ages are measured from it. */
     readonly asOf: Date;
+    /**
+     * The scan's deadline (epoch ms) and its clock. The wire enforces both on
+     * every request; a source that reads no network — the `code` source —
+     * checks them itself.
+     */
+    readonly deadline: number;
+    readonly now: () => number;
     /** GET only. The one verb a source has against the inventory it reads. */
     readonly http: ReadOnlyHttp;
     /** The OAuth client-credentials exchange, for a source whose API takes a bearer token. */

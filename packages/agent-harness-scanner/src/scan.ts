@@ -23,6 +23,7 @@ import { postReport, type PostResult } from './post';
 import { buildReportBody, signReport } from './report';
 import { sourceResult, SourceReadError, type HarnessSource, type SourceRead } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
+import { langchainCodeSource } from './sources/langchain';
 import { oktaSource } from './sources/okta';
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -54,6 +55,11 @@ export function buildSources(config: ScannerConfig, env: Env): { sources: Harnes
     const sources: HarnessSource[] = [];
     const unreadable: SourceRead[] = [];
     for (const s of config.sources) {
+        if (s.kind === 'code') {
+            // Reads files under its roots and holds no credential.
+            sources.push(langchainCodeSource({ roots: s.roots }));
+            continue;
+        }
         const secretName = s.kind === 'okta-app' ? s.apiTokenEnv : s.clientSecretEnv;
         const secret = env[secretName];
         if (typeof secret !== 'string' || secret.trim() === '') {
@@ -98,7 +104,7 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
         sources.map(async (source) => {
             const { http, tokens } = createSourceWire({ fetchImpl, deadline, now });
             try {
-                return await source.read({ asOf, http, tokens });
+                return await source.read({ asOf, http, tokens, deadline, now });
             } catch (err) {
                 return sourceResult(source.kind, 0, [], err);
             }

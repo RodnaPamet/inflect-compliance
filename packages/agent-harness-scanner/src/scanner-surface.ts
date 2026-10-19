@@ -5,8 +5,9 @@
  * surface (`scan.scanner.manifestHash`). This scanner calls no MCP tool; its
  * surface is the requests it can make. So the manifest is that list — each
  * source's GET endpoints, the one token exchange, and the one POST to the
- * ingest — and the hash is SHA-256 over its canonical JSON, the construction
- * the report's own signature uses.
+ * ingest — plus the local files the `code` source reads, and the hash is
+ * SHA-256 over its canonical JSON, the construction the report's own signature
+ * uses.
  *
  * Two things follow. A change to what the scanner can call changes the hash
  * the tenant sees on every scan, so a widened surface cannot ship silently;
@@ -20,10 +21,11 @@ import { HARNESS_CONTRACT_V2 } from '@/lib/agentic/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
+import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 
 export const SCANNER_NAME = 'inflect-agent-harness-scanner';
 /** Raised with any change to what the scanner reads or reports. */
-export const SCANNER_VERSION = '0.2.0';
+export const SCANNER_VERSION = '0.3.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -43,6 +45,19 @@ export const SCANNER_SURFACE = {
     ],
     authenticates: [
         { product: 'azure-key-vault', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryTenantId}/oauth2/v2.0/token' },
+    ],
+    // No request: the `code` source reads local files, and never runs them.
+    // Declared all the same, so reading code shows in the manifest hash.
+    readsFiles: [
+        {
+            source: 'code',
+            product: 'langchain',
+            operations: ['lstat', 'readdir', 'readFile'],
+            extensions: [...SOURCE_EXTENSIONS],
+            skips: [...SKIPPED_DIRECTORIES],
+            followsSymlinks: false,
+            executes: false,
+        },
     ],
     sends: [{ method: 'POST', path: INGEST_PATH_TEMPLATE }],
 } as const;

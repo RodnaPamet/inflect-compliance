@@ -22,6 +22,41 @@ import localPlugin from './eslint-rules/index.js';
 // lint scope and the swept population cannot drift apart.
 import { AGENTIC_PATH_GLOBS } from './eslint-rules/agentic-path.js';
 
+// The platform-wide `no-restricted-syntax` bans. A const, because a later
+// block that sets `no-restricted-syntax` for its own files REPLACES this list
+// there rather than adding to it, so such a block spreads it back in.
+const PLATFORM_SYNTAX_BANS = [
+    {
+        // Was tests/guards/no-inline-clipboard.test.ts (Epic 56).
+        selector:
+            "CallExpression[callee.object.object.name='navigator'][callee.object.property.name='clipboard'][callee.property.name=/^(writeText|write)$/]",
+        message:
+            'Copy through the shared primitives — useCopyToClipboard, <CopyButton> or <CopyText>. Bespoke clipboard calls lose SSR safety, the execCommand fallback, typed error reporting and the shared toast contract. See docs/tooltip-and-copy-strategy.md',
+    },
+    {
+        // Was tests/guardrails/date-input-rollout.test.ts (Epic 58).
+        selector:
+            "JSXOpeningElement[name.name=/^[iI]nput$/]:has(JSXAttribute[name.name='type'][value.value=/^(date|datetime-local)$/])",
+        message:
+            'Use <DatePicker> (single date) or <DateRangePicker> (range) instead of a native date input — native pickers differ per browser and bypass the shared formatting. See docs/date-picker.md',
+    },
+];
+
+// The harness scanner package's import boundary (#3678), shared by the
+// package block and the stricter block for its `code` source (#3737), which
+// would otherwise replace it.
+const HARNESS_SCANNER_IMPORT_PATTERNS = [
+    {
+        regex: '^@/(?!lib/agentic/harness-(contract|findings|ladder)$|lib/canonical-json$)',
+        message:
+            'The harness scanner imports the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json) and nothing else of the application. See packages/agent-harness-scanner/README.md.',
+    },
+    {
+        group: ['@prisma/*', 'next', 'next/*', '@inflect/ui', '@inflect/ui/*'],
+        message: 'The harness scanner runs in a client estate: no database client, no Next.js, no UI.',
+    },
+];
+
 const config = [
     ...nextCoreWebVitals,
     {
@@ -171,23 +206,7 @@ const config = [
             // Allowlists are `files:` override blocks further down rather
             // than in-rule arrays, so an exemption is scoped to the file it
             // is granted to instead of being matched by path string.
-            'no-restricted-syntax': [
-                'error',
-                {
-                    // Was tests/guards/no-inline-clipboard.test.ts (Epic 56).
-                    selector:
-                        "CallExpression[callee.object.object.name='navigator'][callee.object.property.name='clipboard'][callee.property.name=/^(writeText|write)$/]",
-                    message:
-                        'Copy through the shared primitives — useCopyToClipboard, <CopyButton> or <CopyText>. Bespoke clipboard calls lose SSR safety, the execCommand fallback, typed error reporting and the shared toast contract. See docs/tooltip-and-copy-strategy.md',
-                },
-                {
-                    // Was tests/guardrails/date-input-rollout.test.ts (Epic 58).
-                    selector:
-                        "JSXOpeningElement[name.name=/^[iI]nput$/]:has(JSXAttribute[name.name='type'][value.value=/^(date|datetime-local)$/])",
-                    message:
-                        'Use <DatePicker> (single date) or <DateRangePicker> (range) instead of a native date input — native pickers differ per browser and bypass the shared formatting. See docs/date-picker.md',
-                },
-            ],
+            'no-restricted-syntax': ['error', ...PLATFORM_SYNTAX_BANS],
         },
     },
     {
@@ -286,21 +305,43 @@ const config = [
         // `!@/lib/agentic/harness-contract` would refuse the contract too.
         files: ['packages/agent-harness-scanner/src/**/*.ts'],
         rules: {
+            'no-restricted-imports': ['error', { patterns: HARNESS_SCANNER_IMPORT_PATTERNS }],
+        },
+    },
+    {
+        // ── The `code` source READS an estate's code and never runs it (#3737) ──
+        //
+        // The LangChain and LangGraph detector parses files it did not write,
+        // from a repository a client controls. Loading one — a `require`, a
+        // dynamic `import()`, an interpreter, `eval` — would hand that
+        // repository code execution inside the scanner, beside its signing key.
+        // So nothing in the source's files can reach any of them; the
+        // side-effect test in tests/unit/agent-harness-scanner/
+        // langchain-code-source.test.ts is the behavioural half.
+        files: [
+            'packages/agent-harness-scanner/src/sources/code/**/*.ts',
+            'packages/agent-harness-scanner/src/sources/langchain.ts',
+        ],
+        rules: {
             'no-restricted-imports': [
                 'error',
                 {
-                    patterns: [
-                        {
-                            regex: '^@/(?!lib/agentic/harness-(contract|findings|ladder)$|lib/canonical-json$)',
-                            message:
-                                'The harness scanner imports the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json) and nothing else of the application. See packages/agent-harness-scanner/README.md.',
-                        },
-                        {
-                            group: ['@prisma/*', 'next', 'next/*', '@inflect/ui', '@inflect/ui/*'],
-                            message: 'The harness scanner runs in a client estate: no database client, no Next.js, no UI.',
-                        },
-                    ],
+                    paths: ['child_process', 'vm', 'worker_threads', 'module', 'cluster', 'inspector'].flatMap((name) =>
+                        [name, `node:${name}`].map((n) => ({
+                            name: n,
+                            message: 'The code source reads code and never runs it: no subprocess, VM, worker or module loader.',
+                        })),
+                    ),
+                    patterns: HARNESS_SCANNER_IMPORT_PATTERNS,
                 },
+            ],
+            'no-restricted-syntax': [
+                'error',
+                ...PLATFORM_SYNTAX_BANS,
+                { selector: 'ImportExpression', message: 'The code source never loads a module at run time.' },
+                { selector: "CallExpression[callee.name='require']", message: 'The code source never loads a module at run time.' },
+                { selector: "CallExpression[callee.name='eval']", message: 'The code source never evaluates text.' },
+                { selector: "NewExpression[callee.name='Function'], CallExpression[callee.name='Function']", message: 'The code source never evaluates text.' },
             ],
         },
     },

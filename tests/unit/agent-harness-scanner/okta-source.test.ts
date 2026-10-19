@@ -31,7 +31,7 @@ async function read(fakes: Fakes, opts: { token?: string; now?: () => number; ca
     const now = opts.now ?? (() => ASOF.getTime());
     const wire = createSourceWire({ fetchImpl: fakes.fetchImpl, deadline: ASOF.getTime() + 60_000, now }, opts.caps);
     const source = oktaSource({ orgUrl: OKTA_ORG, apiToken: opts.token ?? OKTA_TOKEN_VALUE, ownerProfileKey: 'owner' });
-    return source.read({ asOf: ASOF, ...wire });
+    return source.read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
 }
 
 describe('1. what the Okta source finds', () => {
@@ -169,7 +169,7 @@ describe('3. an org it cannot read is INCOMPLETE with a reason', () => {
             return inner(url, init);
         };
         const wire = createSourceWire({ fetchImpl: slow, deadline: ASOF.getTime() + 60_000, now: () => t });
-        const result = await oktaSource({ orgUrl: OKTA_ORG, apiToken: OKTA_TOKEN_VALUE, ownerProfileKey: 'owner' }).read({ asOf: ASOF, ...wire });
+        const result = await oktaSource({ orgUrl: OKTA_ORG, apiToken: OKTA_TOKEN_VALUE, ownerProfileKey: 'owner' }).read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'TIME_BOX', rows: 3 });
     });
 

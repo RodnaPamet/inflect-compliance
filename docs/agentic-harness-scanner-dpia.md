@@ -258,7 +258,7 @@ Where each condition stands:
 | 7 and 10 | The ingest, #3692 | Met; #3692 merged on 2026-10-17, with the no-cascade rule under [Retention](#retention) |
 | 1, 2, 3 and 4 | The scanner, #3686 | Open |
 | 8 | The scan evidence, #3687 | Open |
-| 15 | The `code` source, #3737 | Open |
+| 15 | The `code` source, #3737 | Met by #3737 |
 
 For the two sources step `4a` built (#3678), Okta and Azure Key Vault,
 conditions 2 to 4 hold and are tested by request log: each source sends only
@@ -270,6 +270,15 @@ which neither reads, so it stays with #3686. Step `4a` also stores one new
 reference to a person, the owner of each source of a client estate
 (`AgentHarnessEstateSource.ownerUserId`), a tenant member chosen by the tenant's
 own staff, and its `docs/data-retention.md` row names it DSAR-relevant.
+
+For the `code` source #3737 built, condition 15 holds and is tested: a test
+plants definitions whose import would write a file and set a global, the source
+reads and recognises them, and neither happens; `eslint.config.mjs` refuses a
+subprocess, a VM, a module loader, `require()`, `import()` and `eval` in the
+source's files; and a fixture with a literal credential yields a signed report
+in which neither that value nor the root's absolute path appears. The source
+reports a file by the root's configured label and the path below it, so an
+absolute path that names a person (`/home/<user>/…`) is not carried.
 
 #3686's hardening checklist carries condition 1 and the write-credential half
 of condition 2. The assessment holds for the scanner only when #3686 meets all

@@ -15,7 +15,9 @@
  *     the reads, and a source that stopped is INCOMPLETE with its reason. The
  *     scan's completeness is not stated anywhere: the ingest derives it.
  *   • AGENTS MERGE BY `discoveredId`. A principal seen by two sources is one
- *     agent `discoveredVia` both, with both sources' credentials. The owner is
+ *     agent `discoveredVia` both, with both sources' credentials, tools (once
+ *     per server and name) and model endpoints (once per endpoint and model).
+ *     The owner is
  *     the first one found in source order — the identity source before the
  *     vault — and a disagreement is not resolved by inventing a third answer.
  *   • VERDICTS COLLAPSE TO THE LEAST FAVOURABLE per criterion, the ladder's
@@ -47,6 +49,8 @@ import {
     HarnessReportBodyV2Schema,
     MAX_AGENTS,
     MAX_CREDENTIALS_PER_AGENT,
+    MAX_MODELS_PER_AGENT,
+    MAX_TOOLS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
     SOURCE_KINDS_V2,
     harnessSignedMessage,
@@ -58,7 +62,7 @@ import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type CriterionVerdict } from '@/lib/agentic/harness-ladder';
 
 import { SCANNER_VERSION, scannerManifestHash } from './scanner-surface';
-import type { IncompleteReason, ObservedCredential, ObservedOwner, SourceKind, SourceRead } from './source';
+import type { IncompleteReason, ObservedCredential, ObservedModel, ObservedOwner, ObservedTool, SourceKind, SourceRead } from './source';
 
 export interface ScanIdentity {
     /** The scanner's id for this run; unique per tenant, or the ingest refuses it as a REPLAY. */
@@ -76,8 +80,13 @@ interface MergedAgent {
     via: Set<SourceKind>;
     owner: ObservedOwner | null;
     credentials: Map<string, { credential: ObservedCredential; via: SourceKind }>;
+    tools: Map<string, { tool: ObservedTool; via: SourceKind }>;
+    models: Map<string, { model: ObservedModel; via: SourceKind }>;
     verdicts: CriterionVerdict[];
 }
+
+const toolKey = (t: ObservedTool) => `${t.server}\u0000${t.name}`;
+const modelKey = (m: ObservedModel) => `${m.endpoint}\u0000${m.model ?? ''}`;
 
 /** Build the report body. Pure: no clock, no I/O. */
 export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRead[]): HarnessReportBodyV2 {
@@ -98,11 +107,15 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
                 via: new Set<SourceKind>(),
                 owner: null,
                 credentials: new Map(),
+                tools: new Map(),
+                models: new Map(),
                 verdicts: [],
             };
             agent.via.add(read.kind);
             if (agent.owner === null && o.owner !== null) agent.owner = o.owner;
             for (const c of o.credentials) if (!agent.credentials.has(c.ref)) agent.credentials.set(c.ref, { credential: c, via: read.kind });
+            for (const t of o.tools ?? []) if (!agent.tools.has(toolKey(t))) agent.tools.set(toolKey(t), { tool: t, via: read.kind });
+            for (const m of o.models ?? []) if (!agent.models.has(modelKey(m))) agent.models.set(modelKey(m), { model: m, via: read.kind });
             agent.verdicts.push(...o.verdicts);
             merged.set(o.discoveredId, agent);
         }
@@ -115,13 +128,19 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
     const agents: HarnessReportAgent[] = kept.map((a) => {
         const creds = [...a.credentials.values()].sort((x, y) => byString(x.credential.ref, y.credential.ref));
         for (const cut of creds.slice(MAX_CREDENTIALS_PER_AGENT)) capped(cut.via);
+        const tools = [...a.tools.entries()].sort(([x], [y]) => byString(x, y)).map(([, t]) => t);
+        for (const cut of tools.slice(MAX_TOOLS_PER_AGENT)) capped(cut.via);
+        const models = [...a.models.entries()].sort(([x], [y]) => byString(x, y)).map(([, m]) => m);
+        for (const cut of models.slice(MAX_MODELS_PER_AGENT)) capped(cut.via);
         return {
             discoveredId: a.discoveredId,
             discoveredVia: [...a.via].sort((x, y) => kindOrder(x) - kindOrder(y)),
             registeredAgentId: null,
             owner: a.owner,
             credentials: creds.slice(0, MAX_CREDENTIALS_PER_AGENT).map((c) => c.credential),
-            tools: [],
+            tools: tools.slice(0, MAX_TOOLS_PER_AGENT).map((t) => t.tool),
+            // Optional in `/2`: left out when no source reported a model.
+            ...(models.length > 0 ? { models: models.slice(0, MAX_MODELS_PER_AGENT).map((m) => m.model) } : {}),
             skills: [],
             verdicts: [...collapseVerdicts(a.verdicts).values()].sort((x, y) => byString(x.criterion, y.criterion)),
         };
