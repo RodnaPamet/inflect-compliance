@@ -139,6 +139,21 @@ function pack(over: Partial<PackView> = {}): PackView {
                 },
             ],
         }),
+        workpaperReview: {
+            ...envelope('workpaper-review', ['assurance.workpaper_reviews_concluded'], { samplePercent: 100 }),
+            metrics: {
+                'assurance.workpaper_reviews_concluded': { state: 'MEASURED' as const, value: 0, basis: null },
+                'assurance.workpaper_reperformance_agreement_rate': {
+                    state: 'NOT_ASSESSED' as const,
+                    value: null,
+                    basis: 'NO_CONCLUDED_WORKPAPER_REVIEWS',
+                },
+            },
+            definitions: [
+                def('assurance.workpaper_reviews_concluded'),
+                def('assurance.workpaper_reperformance_agreement_rate'),
+            ] as never[],
+        },
         ...over,
     } as PackView;
 }
@@ -155,7 +170,7 @@ const renderPack = (over: Partial<PackView> = {}, enforcing = true) =>
         />,
     );
 
-describe('all five reports render', () => {
+describe('all six reports render', () => {
     it('each section is present', () => {
         renderPack();
         expect(screen.getByTestId('reports-stamp')).toBeInTheDocument();
@@ -163,6 +178,22 @@ describe('all five reports render', () => {
         expect(screen.getByTestId('reports-kills')).toBeInTheDocument();
         expect(screen.getByTestId('reports-third-party')).toBeInTheDocument();
         expect(screen.getByTestId('reports-approvals-unobservable')).toBeInTheDocument();
+        expect(screen.getByTestId('reports-workpaper-review-scope')).toBeInTheDocument();
+    });
+
+    it("report 6 states what the agreement rate leaves out, and shows no rate over nothing concluded (#3677)", () => {
+        renderPack();
+        const scope = screen.getByTestId('reports-workpaper-review-scope');
+        expect(scope.textContent).toContain('100%');
+        expect(scope.textContent).toMatch(/never counted as agreement/);
+        // NOT a 100 and not a 0: the basis, in words.
+        const rate = screen.getByTestId('metric-absent-assurance.workpaper_reperformance_agreement_rate');
+        expect(rate.textContent).toMatch(/This is not 100% agreement/);
+        expect(screen.queryByTestId('metric-value-assurance.workpaper_reperformance_agreement_rate')).not.toBeInTheDocument();
+        // The definition is on screen beside the figure.
+        expect(screen.getByTestId('metric-definition-assurance.workpaper_reperformance_agreement_rate').textContent).toContain(
+            'CONCURRED over (CONCURRED + DISSENTED)',
+        );
     });
 
     it('the stamp carries workspace, moment and population', () => {

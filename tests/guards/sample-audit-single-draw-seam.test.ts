@@ -19,12 +19,19 @@
  * (`tests/guards/agent-proposal-single-write-seam.test.ts`). This is the same
  * invariant for a table where the stake is the honesty of a metric.
  *
+ * The same invariant holds for internal audit's review of the auditor agent's
+ * sampled workpapers (`AuditWorkpaperSampleReview`, #3677), with a second seam
+ * for the answer: the sweep draws and assigns and never answers, the review
+ * usecase answers and never draws or assigns. It lives here rather than in a
+ * guard of its own because it is this rule — a sample is drawn, never chosen —
+ * applied to the second table that samples.
+ *
  * Named for the invariant, not the epic.
  */
 import { readFileSync } from 'fs';
 
 import { repoFiles, repoRelative } from '../helpers/repo-files';
-import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+import { allCallExpressionsOf, braceBlockAfter, codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 /** The one file allowed to open a sample audit, and the selector it must use. */
 const SEAM = 'src/app-layer/jobs/agent-proposal-sample-audit.ts';
@@ -75,5 +82,102 @@ describe('AgentProposalSampleAudit has exactly one draw seam', () => {
         const body = functionBodyOf(codeOf(readFileSync(abs, 'utf8')), 'runAgentProposalSampleAudit');
         expect(body.length).toBeGreaterThan(0);
         expect(body).toContain(SELECTOR);
+    });
+});
+
+// ─── AuditWorkpaperSampleReview (#3677) ──────────────────────────────
+
+const DRAW_SEAM = 'src/app-layer/jobs/audit-workpaper-sample-review.ts';
+const ANSWER_SEAM = 'src/app-layer/usecases/audit-workpaper-sample-review.ts';
+
+const WRITE_VERBS = ['create', 'createMany', 'createManyAndReturn', 'update', 'updateMany', 'updateManyAndReturn', 'upsert', 'delete', 'deleteMany'];
+const WRITE_CALL = new RegExp(`\\bauditWorkpaperSampleReview\\s*\\.\\s*(${WRITE_VERBS.join('|')})\\s*\\(`, 'g');
+const RAW_METHOD = /\$(?:executeRawUnsafe|executeRaw|queryRawUnsafe|queryRaw)/;
+const RAW_MUTATION_OF_TABLE = /\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE|MERGE\s+INTO)\s+"?AuditWorkpaperSampleReview\b/i;
+
+/** The columns an answer is made of, and the columns an assignment is made of. */
+const ANSWER_COLUMNS = ['outcome', 'dissentCodes', 'reviewedByUserId', 'reviewedAt', 'findingProposalId'];
+const ASSIGNMENT_COLUMNS = ['assignedToUserId', 'unassignedReason', 'assignmentPoolSize', 'assignmentPoolDigest', 'assignedAt'];
+
+const read = (rel: string): string => {
+    const abs = repoFiles({ under: 'src' }).find((p) => repoRelative(p) === rel);
+    if (!abs) throw new Error(`seam not found: ${rel}`);
+    return codeOf(readFileSync(abs, 'utf8'));
+};
+
+/** The `data: { … }` object of every write call of `verb` in `code`. */
+function dataBlocksOf(code: string, verb: string): string[] {
+    return allCallExpressionsOf(code, `auditWorkpaperSampleReview\\s*\\.\\s*${verb}`).map((call) => braceBlockAfter(call, 'data\\s*:'));
+}
+
+const keysOf = (block: string, keys: readonly string[]) => keys.filter((k) => new RegExp(`\\b${k}\\s*[:,}]`).test(block));
+
+describe('AuditWorkpaperSampleReview: drawn and assigned by the sweep, answered by its reviewer — and by nothing else', () => {
+    const sources = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] });
+
+    it('scans a real population', () => {
+        expect(sources.length).toBeGreaterThan(500);
+        const rels = sources.map(repoRelative);
+        expect(rels.includes(DRAW_SEAM)).toBe(true);
+        expect(rels.includes(ANSWER_SEAM)).toBe(true);
+    });
+
+    it('is written by the sweep and the review usecase only, with the verbs each needs', () => {
+        const writers: Record<string, string[]> = {};
+        for (const abs of sources) {
+            const code = codeOf(readFileSync(abs, 'utf8'));
+            const verbs = new Set<string>();
+            let m: RegExpExecArray | null;
+            WRITE_CALL.lastIndex = 0;
+            while ((m = WRITE_CALL.exec(code)) !== null) verbs.add(m[1]);
+            if (verbs.size > 0) writers[repoRelative(abs)] = [...verbs].sort();
+        }
+        // Exact equality: a third writer is a finding to fix, never an entry to add.
+        expect(writers).toStrictEqual({
+            [DRAW_SEAM]: ['createMany', 'updateMany'],
+            [ANSWER_SEAM]: ['updateMany'],
+        });
+    });
+
+    it('is never mutated by raw SQL from application code', () => {
+        const raw = sources
+            .filter((abs) => {
+                const code = codeOf(readFileSync(abs, 'utf8'));
+                return RAW_METHOD.test(code) && RAW_MUTATION_OF_TABLE.test(code);
+            })
+            .map(repoRelative);
+        expect(raw).toEqual([]);
+    });
+
+    it('the sweep draws and assigns by the keyed draw, and never writes an answer', () => {
+        const code = read(DRAW_SEAM);
+        const body = functionBodyOf(code, 'runAuditWorkpaperSampleReview');
+        expect(body).toContain('drawWorkpapersForReview(');
+        expect(body).toContain('assignReviewer(');
+        const created = allCallExpressionsOf(code, 'auditWorkpaperSampleReview\\s*\\.\\s*createMany');
+        const moved = dataBlocksOf(code, 'updateMany');
+        expect(created.length).toBe(1);
+        expect(moved.length).toBe(1);
+        for (const block of [...created, ...moved]) expect(keysOf(block, ANSWER_COLUMNS)).toEqual([]);
+        // The re-draw is conditional on the row still being unanswered.
+        const reassign = allCallExpressionsOf(code, 'auditWorkpaperSampleReview\\s*\\.\\s*updateMany')[0];
+        expect(braceBlockAfter(reassign, 'where\\s*:')).toMatch(/outcome:\s*'PENDING'/);
+    });
+
+    it('the review usecase answers and links, and never moves an assignment', () => {
+        const code = read(ANSWER_SEAM);
+        const blocks = dataBlocksOf(code, 'updateMany');
+        expect(blocks.length).toBe(2);
+        for (const block of blocks) expect(keysOf(block, ASSIGNMENT_COLUMNS)).toEqual([]);
+        // The answer is a conditional claim on a PENDING row assigned to the caller.
+        const answer = functionBodyOf(code, 'recordWorkpaperReview');
+        const claim = allCallExpressionsOf(answer, 'auditWorkpaperSampleReview\\s*\\.\\s*updateMany')[0];
+        const where = braceBlockAfter(claim, 'where\\s*:');
+        expect(where).toMatch(/outcome:\s*'PENDING'/);
+        expect(where).toMatch(/assignedToUserId:\s*ctx\.userId/);
+        // The link is set once, only on a dissent.
+        const raise = functionBodyOf(code, 'raiseDissentFindingProposal');
+        const link = allCallExpressionsOf(raise, 'auditWorkpaperSampleReview\\s*\\.\\s*updateMany')[0];
+        expect(braceBlockAfter(link, 'where\\s*:')).toMatch(/outcome:\s*'DISSENTED',\s*findingProposalId:\s*null/);
     });
 });
