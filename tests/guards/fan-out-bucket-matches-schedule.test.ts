@@ -93,6 +93,12 @@ const NOT_FAN_OUT_DISPATCHERS: Readonly<Record<string, string>> = {
         'tenant list comes from a `groupBy` that is empty on almost every deployment, so one ' +
         'job loops them in-process rather than enqueueing a job per tenant to do nothing. There ' +
         'is no bucket constant and therefore no bucket-vs-cron relationship to check.',
+    'audit-narrative-dispatch':
+        'a dispatcher by name only — `audit-narrative-dispatch.ts` calls neither `fanOut` nor ' +
+        '`dispatchJobId`. Its per-tenant work is one `startWorkflowRun`, which queues the run on ' +
+        'its own job, so one job loops the tenants in-process. What keeps a tenant to one run a ' +
+        'day is `NARRATIVE_RUN_SPACING_HOURS`, read against the runs table, not a BullMQ bucket, ' +
+        'so there is no bucket-vs-cron relationship to check.',
     'notification-dispatch':
         'a dispatcher by name only — `notification-dispatch.ts` calls neither `fanOut` nor ' +
         '`dispatchJobId` and uses no bucket constant, so there is no bucket-vs-cron ' +

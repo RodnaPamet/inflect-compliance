@@ -1849,6 +1849,17 @@ executorRegistry.register('agent-proposal-sample-audit', async (payload) => {
     );
 });
 
+// ── audit-narrative-dispatch ────────────────────────────────────────
+//
+// #3749. Start one audit-narrative run per tenant, for the period of its
+// oldest un-narrated workpaper, as the auditor agent that wrote it, under its
+// owner's permissions. `tenantId` NAMED — an absent one is the scheduled
+// system-wide sweep.
+executorRegistry.register('audit-narrative-dispatch', async (payload) => {
+    const { runAuditNarrativeDispatchJob } = await import('./audit-narrative-dispatch');
+    return runAuditNarrativeDispatchJob({ tenantId: payload.tenantId });
+});
+
 // ── audit-workpaper-sample-review ───────────────────────────────────
 //
 // #3677, step 3d. Internal audit samples the auditor agent's workpapers: draw

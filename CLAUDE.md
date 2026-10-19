@@ -2191,6 +2191,12 @@ write-once and encrypted, and its insert trigger re-checks the codes. The skill
 names every code in `EXCEPTION_SEVERITY` (a unit test fails when the library
 gains one it does not name), and the answer is one JSON block because the
 capture reads it back from the 4000-character decision-log summary.
+The daily `audit-narrative-dispatch` keeps a tenant to one run a day by
+`NARRATIVE_RUN_SPACING_HOURS` read against `WorkflowRun`, not by a BullMQ
+bucket, so it is a dispatcher by name only; it starts runs as a JOB context
+carrying the auditor's `agentId` and its owner's permissions resolved that day,
+and refuses `engine_not_flue` rather than start a static run that can narrate
+nothing.
 
 **Tenant-authored skills** (#3680) pass the same gate, and four rules in it are
 easy to undo. A `TenantSkillVersion` mounts only when APPROVED by someone other
