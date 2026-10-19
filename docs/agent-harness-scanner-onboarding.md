@@ -37,6 +37,7 @@ scanner signed it, so each estate has a scanner of its own.
 | `okta-app` | An SSWS API token for a read-only administrator | `*.okta.com`, `*.oktapreview.com` |
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
+| `code` (LangChain and LangGraph) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
 credential is supplied through an environment variable that the configuration
@@ -68,6 +69,32 @@ keeps the read read-only.
   resolved address is still checked before every request, so a name that
   resolves outside the listed ranges sends nothing. With an allowlist, an
   internal name such as `langsmith.corp.internal` is accepted.
+
+The `code` source reads the repositories that define the estate's LangChain and
+LangGraph agents. Mount each one read-only into the scanner's container and name
+it as a root with a label: the label, never the path, is what reports and
+findings carry. The source reads `.py`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`,
+`.mts`, `.cts` and `.tsx` files that mention the framework; it does not enter
+dependency or build directories (`node_modules`, virtual environments, `dist`,
+`build`), and it does not follow a symbolic link, which it reports as a location
+it could not read. It never imports or runs what it reads.
+
+Two consequences, both kept by the owner on 2026-10-19:
+
+- **A symbolic link leaves the source `INCOMPLETE` (`UNREACHABLE`).** If a
+  repository relies on one, mount its target and name it as a root of its own;
+  until then the source cannot read in full, so its scans neither close a
+  finding on the absence of a tool nor let an `ORPHAN_CREDENTIAL` open.
+- **`dist` and `build` are not read.** They hold generated output, and the
+  definitions they were built from are what the source reads. An agent that
+  exists only as built output is not reported.
+
+A complete read is what closes `UNPINNED_WRITE_TOOL` for the tools an agent
+defines in its code: the source reports every tool a definition binds, so a
+definition read in full with no unpinned write tool left is evidence that none
+remains, with no `mcp` source in the scan (owner answer, 2026-10-19,
+`docs/agent-harness-contract.md`, Transport). A tool set the code fetches from
+an MCP server at run time is still judged by a complete `mcp` read.
 
 ## 3. Labelling the estate's principals
 
@@ -112,6 +139,10 @@ What the scanner deliberately does not take from these labels:
 - **Anything untagged.** A vault item with no `inflect-principal` tag is counted
   and reported as nothing; which of a vault's secrets belong to agents is the
   estate's statement to make.
+- **An owner for a coded agent.** The `code` source reports each agent
+  definition as `code:<label>/<path>#<name>`, where the name is the variable the
+  definition is bound to, with no owner: code names no accountable person. It
+  raises `SHADOW_AGENT` until somebody registers it.
 
 Every Okta API token is reported as a principal acting for the administrator who
 created it, and so raises `SHADOW_AGENT` until it is registered, except the token
@@ -152,7 +183,11 @@ and it read every source the estate declares with at least one row. A source
 read in full that returned nothing is **EMPTY**, not complete. A source the
 scanner could not read appears with its reason: `AUTH_FAILED` for a credential
 the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
-`TIME_BOX`, `BYTE_CAP` or `PAGINATION_TORN` for the rest.
+`TIME_BOX`, `BYTE_CAP` or `PAGINATION_TORN` for the rest. The `code` source adds
+`UNPARSEABLE`: it read a file that does not parse, or an agent definition built
+from something it cannot resolve statically — a tool list returned by a
+function, a model passed in as a parameter, `**kwargs`. The agent is still
+reported with what did resolve, and the source line names the reason.
 
 A LangSmith source's rows are the deployments and projects it listed, so a
 workspace whose window held no tool call and no deployment is read in full with

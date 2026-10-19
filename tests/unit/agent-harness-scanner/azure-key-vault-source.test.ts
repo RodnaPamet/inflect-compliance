@@ -40,7 +40,7 @@ async function read(fakes: Fakes, opts: { secret?: string; vaultUrls?: string[] 
         principalTag: 'inflect-principal',
         ownerTag: 'owner',
     });
-    return source.read({ asOf: ASOF, ...wire });
+    return source.read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
 }
 
 describe('1. what the vault source reports', () => {

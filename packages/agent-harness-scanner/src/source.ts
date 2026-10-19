@@ -1,7 +1,7 @@
 /**
  * THE SOURCE INTERFACE — one shape every reader of an estate implements.
  *
- * A source reads one kind of inventory (`okta-app`, `vault`, …) and returns
+ * A source reads one kind of inventory (`okta-app`, `vault`, `code`, …) and returns
  * what it saw of each principal plus how far it got. It never throws for a
  * read that went wrong: it returns `INCOMPLETE` with a named reason, and the
  * scan runner turns an unexpected throw into the same thing. A source that
@@ -37,17 +37,20 @@ export type IncompleteReason = (typeof INCOMPLETE_REASONS_V2)[number];
 export type ObservedCredential = HarnessReportAgent['credentials'][number];
 export type ObservedOwner = NonNullable<HarnessReportAgent['owner']>;
 export type ObservedTool = HarnessReportAgent['tools'][number];
+export type ObservedModel = NonNullable<HarnessReportAgent['models']>[number];
 
 /**
- * One tool a source saw a principal CALL, and how many calls it counted in the
- * source's window. The report carries the tool. `inflect-agent-harness/2` has a
- * member for the count (`calls`, with `windowDays`); until a follow-up of #3738
- * fills it, the count reaches the scanner's log as a per-source total and goes
- * no further.
+ * One tool a source saw a principal use, and — for a source that counts calls —
+ * how many calls it counted in the source's window. The report carries the
+ * tool. `inflect-agent-harness/2` has a member for the count (`calls`, with
+ * `windowDays`); until a follow-up of #3738 fills it, the count reaches the
+ * scanner's log as a per-source total and goes no further. A source that reads
+ * definitions rather than calls — the `code` source — counts none and leaves
+ * `calls` out.
  */
 export interface ObservedToolUse {
     readonly tool: ObservedTool;
-    readonly calls: number;
+    readonly calls?: number;
 }
 
 /** What one source saw of one principal. Merged across sources by `discoveredId`. */
@@ -57,8 +60,15 @@ export interface Observation {
     readonly credentials: readonly ObservedCredential[];
     /** Only verdicts the source holds evidence for; unanswered counts as no. */
     readonly verdicts: readonly CriterionVerdict[];
-    /** Tools the source saw this principal use. A source that reads no tools leaves it out. */
+    /**
+     * Tools the source saw this principal use or bind: the `runtime` source the
+     * tools it called, the `code` source the tools its definition binds. An
+     * identity provider or a vault does not know an agent's tools, and leaves
+     * it out.
+     */
     readonly tools?: readonly ObservedToolUse[];
+    /** Model endpoints the principal calls, by reference. Only the `code` source reports any today. */
+    readonly models?: readonly ObservedModel[];
 }
 
 /** How far one source got, and what it saw on the way. */
@@ -84,6 +94,13 @@ export interface SourceRead {
 export interface SourceContext {
     /** The moment the scan describes. Ages are measured from it. */
     readonly asOf: Date;
+    /**
+     * The scan's deadline (epoch ms) and its clock. The wire enforces both on
+     * every request; a source that reads no network — the `code` source —
+     * checks them itself.
+     */
+    readonly deadline: number;
+    readonly now: () => number;
     /** GET only. The one verb a source has against the inventory it reads. */
     readonly http: ReadOnlyHttp;
     /** The OAuth client-credentials exchange, for a source whose API takes a bearer token. */
@@ -92,7 +109,7 @@ export interface SourceContext {
 
 /** The total of the calls a read's observations counted: what the log line reports for a source that reads tools. */
 export function toolCallsOf(read: Pick<SourceRead, 'observations'>): number {
-    return read.observations.reduce((sum, o) => sum + (o.tools ?? []).reduce((s, t) => s + t.calls, 0), 0);
+    return read.observations.reduce((sum, o) => sum + (o.tools ?? []).reduce((s, t) => s + (t.calls ?? 0), 0), 0);
 }
 
 /** Most pages one source follows. A listing longer than this is reported, not read forever. */

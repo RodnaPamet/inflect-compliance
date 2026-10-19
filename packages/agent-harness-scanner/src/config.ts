@@ -8,19 +8,20 @@
  *     with a secret's shape is refused outright. A configuration that is safe
  *     to commit, diff and attach to a ticket is one nobody has to remember to
  *     scrub.
- *   • NO WRITE CREDENTIAL HAS A FIELD. The sources take one READ credential
- *     each — an Okta SSWS token for a read-only administrator, an Entra client
- *     that holds `Key Vault Reader`, a LangSmith workspace Viewer key — and the
- *     only other credential is the Inflect API key that posts the report,
- *     which needs the `admin:harness_ingest` scope and nothing else (contract,
- *     Transport).
+ *   • NO WRITE CREDENTIAL HAS A FIELD. The network sources take one READ
+ *     credential each — an Okta SSWS token for a read-only administrator, an
+ *     Entra client that holds `Key Vault Reader`, a LangSmith workspace Viewer
+ *     key — the `code` source takes none, and the only other credential is the
+ *     Inflect API key that posts the report, which needs the
+ *     `admin:harness_ingest` scope and nothing else (contract, Transport).
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
  *     on the public cloud's, LangSmith on its US or EU cloud host, the ingest on
  *     https. A typo cannot send a token somewhere new, because there is no
  *     free-form host to type into — with ONE exception, which says so in its
  *     name: a self-hosted LangSmith (`endpoint.selfHosted`), the customer's own
  *     host, checked as any customer-named host is (`customer-host.ts`) here and
- *     re-resolved before every request.
+ *     re-resolved before every request. The `code` source has no host: it
+ *     reads absolute local paths, each reported only by the label it is given.
  *
  * Strict objects throughout: an unknown key is an error, so a misspelt
  * `ownerTag` is a refused file rather than a default silently used.
@@ -71,6 +72,35 @@ const AzureKeyVaultSourceConfigSchema = z
         clientSecretEnv: envName,
         principalTag: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/).default('inflect-principal'),
         ownerTag: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/).default('owner'),
+    })
+    .strict();
+
+/** An absolute local path: no `..` segment, no control character. */
+const absolutePath = z
+    .string()
+    .max(1024)
+    .refine(
+        (v) => v.startsWith('/') && !v.split('/').includes('..') && ![...v].some((ch) => ch.charCodeAt(0) < 0x20),
+        'an absolute path with no .. segment',
+    );
+
+const CodeSourceConfigSchema = z
+    .object({
+        kind: z.literal('code'),
+        /** The framework the detector recognises. One today (#3737); the field keeps the kind generic. */
+        product: z.literal('langchain'),
+        /**
+         * The directories to read. Each is reported by its `label` alone, never
+         * its path, which can name a person (`/home/<user>/…`).
+         */
+        roots: z
+            .array(z.object({ label: slug, path: absolutePath }).strict())
+            .min(1)
+            .max(20)
+            .superRefine((roots, ctx) => {
+                const labels = roots.map((r) => r.label);
+                if (new Set(labels).size !== labels.length) ctx.addIssue({ code: 'custom', message: 'each root label appears once' });
+            }),
     })
     .strict();
 
@@ -127,6 +157,7 @@ const LangSmithSourceConfigSchema = z
 export const SourceConfigSchema = z.discriminatedUnion('kind', [
     OktaSourceConfigSchema,
     AzureKeyVaultSourceConfigSchema,
+    CodeSourceConfigSchema,
     LangSmithSourceConfigSchema,
 ]);
 
@@ -209,8 +240,8 @@ export function parseScannerConfig(json: unknown): ScannerConfig {
     return parsed.data;
 }
 
-/** The environment variable holding one source's read credential. */
-export function sourceCredentialEnv(source: SourceConfig): string {
+/** The environment variable holding one source's read credential. The `code` source holds none. */
+export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code' }>): string {
     switch (source.kind) {
         case 'okta-app':
             return source.apiTokenEnv;
@@ -223,5 +254,6 @@ export function sourceCredentialEnv(source: SourceConfig): string {
 
 /** The environment variables a configuration names, every one of them. */
 export function credentialEnvNames(config: ScannerConfig): string[] {
-    return [config.scanner.signingKeyEnv, config.inflect.apiKeyEnv, ...config.sources.map(sourceCredentialEnv)];
+    const fromSources = config.sources.flatMap((s) => (s.kind === 'code' ? [] : [sourceCredentialEnv(s)]));
+    return [config.scanner.signingKeyEnv, config.inflect.apiKeyEnv, ...fromSources];
 }

@@ -1638,8 +1638,9 @@ through their own routes. Rules that are easy to undo:
   and the level never decides the status: the ladder is report-only.
 
 **The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
-client's estate and posts what the ingest above verifies. Okta and Azure Key
-Vault today; Entra, MCP, the register and the container are #3686.
+client's estate and posts what the ingest above verifies. Okta, Azure Key Vault,
+LangSmith (the `runtime` source, #3738) and the `code` source (LangChain and
+LangGraph, #3737) today; Entra, MCP, the register and the container are #3686.
 
 - **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
   verb is GET — do not give `getJson` a method parameter. The OAuth token
@@ -1666,6 +1667,13 @@ Vault today; Entra, MCP, the register and the container are #3686.
 - **The labels are documented defaults** (`profile.owner`, the tags
   `inflect-principal` and `owner`), overridable per estate in the configuration;
   `docs/agent-harness-scanner-onboarding.md` is where a client is told them.
+- **The `code` source reads code and never runs it.** Static parsing only
+  (`sources/code/`): a scanned repository must not be able to run anything
+  beside the signing key. `eslint.config.mjs` refuses `child_process`, `vm`, a
+  module loader, `require()`, `import()` and `eval` there, and the side-effect
+  test proves it. An agent counts only when its names resolve through the
+  file's imports to a `langchain`/`langgraph` module, and anything that does not
+  resolve is `UNPARSEABLE` — never dropped, and never guessed into a value.
 
 **Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
 `AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure

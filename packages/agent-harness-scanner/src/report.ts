@@ -15,12 +15,13 @@
  *     the reads, and a source that stopped is INCOMPLETE with its reason. The
  *     scan's completeness is not stated anywhere: the ingest derives it.
  *   • AGENTS MERGE BY `discoveredId`. A principal seen by two sources is one
- *     agent `discoveredVia` both, with both sources' credentials and tools. The
- *     owner is the first one found in source order — the identity source before
- *     the vault — and a disagreement is not resolved by inventing a third
- *     answer. A tool is one per (`server`, `name`); its call count stays with
- *     the source for now. `/2` has a member for it (`calls`, with
- *     `windowDays`), and filling it is a follow-up of #3738's.
+ *     agent `discoveredVia` both, with both sources' credentials, tools (once
+ *     per server and name) and model endpoints (once per endpoint and model).
+ *     The owner is the first one found in source order — the identity source
+ *     before the vault — and a disagreement is not resolved by inventing a
+ *     third answer. A tool's call count stays with the source for now: `/2`
+ *     has a member for it (`calls`, with `windowDays`), and filling it is a
+ *     follow-up of #3738's.
  *   • VERDICTS COLLAPSE TO THE LEAST FAVOURABLE per criterion, the ladder's
  *     own rule (`collapseVerdicts`), so the report never says more than the
  *     most cautious source did.
@@ -50,6 +51,7 @@ import {
     HarnessReportBodyV2Schema,
     MAX_AGENTS,
     MAX_CREDENTIALS_PER_AGENT,
+    MAX_MODELS_PER_AGENT,
     MAX_TOOLS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
     SOURCE_KINDS_V2,
@@ -62,7 +64,7 @@ import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type CriterionVerdict } from '@/lib/agentic/harness-ladder';
 
 import { SCANNER_VERSION, scannerManifestHash } from './scanner-surface';
-import type { IncompleteReason, ObservedCredential, ObservedOwner, ObservedTool, SourceKind, SourceRead } from './source';
+import type { IncompleteReason, ObservedCredential, ObservedModel, ObservedOwner, ObservedTool, SourceKind, SourceRead } from './source';
 
 export interface ScanIdentity {
     /** The scanner's id for this run; unique per tenant, or the ingest refuses it as a REPLAY. */
@@ -81,8 +83,12 @@ interface MergedAgent {
     owner: ObservedOwner | null;
     credentials: Map<string, { credential: ObservedCredential; via: SourceKind }>;
     tools: Map<string, { tool: ObservedTool; via: SourceKind }>;
+    models: Map<string, { model: ObservedModel; via: SourceKind }>;
     verdicts: CriterionVerdict[];
 }
+
+const toolKey = (t: ObservedTool) => `${t.server}\u0000${t.name}`;
+const modelKey = (m: ObservedModel) => `${m.endpoint}\u0000${m.model ?? ''}`;
 
 /** Build the report body. Pure: no clock, no I/O. */
 export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRead[]): HarnessReportBodyV2 {
@@ -104,15 +110,14 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
                 owner: null,
                 credentials: new Map(),
                 tools: new Map(),
+                models: new Map(),
                 verdicts: [],
             };
             agent.via.add(read.kind);
             if (agent.owner === null && o.owner !== null) agent.owner = o.owner;
             for (const c of o.credentials) if (!agent.credentials.has(c.ref)) agent.credentials.set(c.ref, { credential: c, via: read.kind });
-            for (const { tool } of o.tools ?? []) {
-                const key = `${tool.server}\n${tool.name}`;
-                if (!agent.tools.has(key)) agent.tools.set(key, { tool, via: read.kind });
-            }
+            for (const { tool } of o.tools ?? []) if (!agent.tools.has(toolKey(tool))) agent.tools.set(toolKey(tool), { tool, via: read.kind });
+            for (const m of o.models ?? []) if (!agent.models.has(modelKey(m))) agent.models.set(modelKey(m), { model: m, via: read.kind });
             agent.verdicts.push(...o.verdicts);
             merged.set(o.discoveredId, agent);
         }
@@ -125,10 +130,10 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
     const agents: HarnessReportAgent[] = kept.map((a) => {
         const creds = [...a.credentials.values()].sort((x, y) => byString(x.credential.ref, y.credential.ref));
         for (const cut of creds.slice(MAX_CREDENTIALS_PER_AGENT)) capped(cut.via);
-        const tools = [...a.tools.values()].sort(
-            (x, y) => byString(x.tool.server, y.tool.server) || byString(x.tool.name, y.tool.name),
-        );
+        const tools = [...a.tools.entries()].sort(([x], [y]) => byString(x, y)).map(([, t]) => t);
         for (const cut of tools.slice(MAX_TOOLS_PER_AGENT)) capped(cut.via);
+        const models = [...a.models.entries()].sort(([x], [y]) => byString(x, y)).map(([, m]) => m);
+        for (const cut of models.slice(MAX_MODELS_PER_AGENT)) capped(cut.via);
         return {
             discoveredId: a.discoveredId,
             discoveredVia: [...a.via].sort((x, y) => kindOrder(x) - kindOrder(y)),
@@ -136,6 +141,8 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
             owner: a.owner,
             credentials: creds.slice(0, MAX_CREDENTIALS_PER_AGENT).map((c) => c.credential),
             tools: tools.slice(0, MAX_TOOLS_PER_AGENT).map((t) => t.tool),
+            // Optional in `/2`: left out when no source reported a model.
+            ...(models.length > 0 ? { models: models.slice(0, MAX_MODELS_PER_AGENT).map((m) => m.model) } : {}),
             skills: [],
             verdicts: [...collapseVerdicts(a.verdicts).values()].sort((x, y) => byString(x.criterion, y.criterion)),
         };

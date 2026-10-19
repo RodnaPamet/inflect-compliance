@@ -93,7 +93,7 @@ async function read(fakes: Fakes, o: ReadOpts = {}): Promise<SourceRead> {
         readDeployments: o.readDeployments ?? true,
         resolveHost: o.resolveHost ?? publicDns,
     });
-    return source.read({ asOf: ASOF, ...wire });
+    return source.read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
 }
 
 const toolsOf = (r: SourceRead, id: string) =>
@@ -380,7 +380,7 @@ describe('4. INCOMPLETE, each with a reason of its own', () => {
             windowDays: 7,
             readDeployments: true,
         });
-        expect(await source.read({ asOf: ASOF, ...wire })).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
+        expect(await source.read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire })).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
     });
 
     it('a project listed twice across offsets — the listing shifted under the reader — is PAGINATION_TORN', async () => {
@@ -403,7 +403,7 @@ describe('4. INCOMPLETE, each with a reason of its own', () => {
             workspaceId: null,
             windowDays: 7,
             readDeployments: false,
-        }).read({ asOf: ASOF, ...wire });
+        }).read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
     });
 
@@ -420,7 +420,7 @@ describe('4. INCOMPLETE, each with a reason of its own', () => {
         };
         const wire = createSourceWire({ fetchImpl: noAdvance, deadline: ASOF.getTime() + 60_000, now: () => ASOF.getTime() });
         const source = langSmithSource({ endpoint: { cloud: 'us' }, apiKey: LANGSMITH_API_KEY_VALUE, workspaceId: null, windowDays: 7, readDeployments: true });
-        expect(await source.read({ asOf: ASOF, ...wire })).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
+        expect(await source.read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire })).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
 
         const shapeless = createSourceFakes();
         shapeless.override = (r) => (r.path === '/v2/deployments' ? { status: 200, body: [] } : undefined);
@@ -446,7 +446,7 @@ describe('4. INCOMPLETE, each with a reason of its own', () => {
             workspaceId: null,
             windowDays: 7,
             readDeployments: true,
-        }).read({ asOf: ASOF, ...wire });
+        }).read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'TIME_BOX', rows: 2 });
     });
 });
@@ -631,7 +631,7 @@ describe('6b. a private-range allowlist for a self-hosted LangSmith', () => {
             readDeployments: true,
             // Inside the range when the file was written; outside it tonight.
             resolveHost: async () => ['10.99.0.3'],
-        }).read({ asOf: ASOF, ...wire });
+        }).read({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNREACHABLE', rows: 0 });
         expect(sent).toEqual([]);
         expect(fakes.log).toHaveLength(0);

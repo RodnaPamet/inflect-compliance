@@ -28,5 +28,7 @@ export {
     type SourceRead,
 } from './source';
 export { azureKeyVaultSource, type AzureKeyVaultSourceOptions } from './sources/azure-key-vault';
+export { langchainCodeSource, scanLangChainCode, type LangChainCodeSourceOptions } from './sources/langchain';
+export type { DetectedAgent, DetectedCredential, DetectedModel, DetectedTool } from './sources/code/recognize';
 export { langSmithSource, LANGSMITH_CLOUD_ORIGINS, LANGSMITH_READ_PATHS, type LangSmithSourceOptions } from './sources/langsmith';
 export { oktaSource, type OktaSourceOptions } from './sources/okta';
