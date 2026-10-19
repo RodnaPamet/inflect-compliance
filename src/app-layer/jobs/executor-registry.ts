@@ -1848,3 +1848,15 @@ executorRegistry.register('agent-proposal-sample-audit', async (payload) => {
         { tenants: r.tenants },
     );
 });
+
+// ── audit-workpaper-sample-review ───────────────────────────────────
+//
+// #3677, step 3d. Internal audit samples the auditor agent's workpapers: draw
+// at the tenant's rate, assign each to a third-line member who does not own the
+// auditor, re-draw what nobody can answer, raise any dissent proposal a failed
+// answer left behind. `tenantId` NAMED, never forwarded opaquely — an absent
+// one is the scheduled system-wide sweep.
+executorRegistry.register('audit-workpaper-sample-review', async (payload) => {
+    const { runAuditWorkpaperSampleReviewJob } = await import('./audit-workpaper-sample-review');
+    return runAuditWorkpaperSampleReviewJob({ tenantId: payload.tenantId });
+});

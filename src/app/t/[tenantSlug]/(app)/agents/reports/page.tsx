@@ -23,7 +23,7 @@ import { ReportsClient } from './ReportsClient';
  * deliberate, and this page is a decision to supersede it — so it answers the
  * objection rather than ignoring it:
  *
- *   · IT HAS NO FILTERS. The pack is fixed: five reports, one window. There is
+ *   · IT HAS NO FILTERS. The pack is fixed: six reports, one window. There is
  *     nothing here to keep in step with the register's own filters, because
  *     there is nothing to steer.
  *   · IT RENDERS NOTHING THE SUBSYSTEM PAGES RENDER. Those show rows; this shows

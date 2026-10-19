@@ -33,12 +33,12 @@
  *
  * ## `?section=` and `?days=`
  *
- * `section` narrows to one of the five reports, so a caller that wants the
+ * `section` narrows to one of the six reports, so a caller that wants the
  * inventory does not pay for the coverage matrix. An unknown value is a 400
  * rather than a silent fallback to the whole pack — answering a different
  * question from the one asked is the failure mode this whole subsystem is about.
  *
- * `days` is the lookback for the two window-scoped reports, 1..365, default 90.
+ * `days` is the lookback for the three window-scoped reports, 1..365, default 90.
  * Validated in the usecase so an HTTP caller and any future scheduled caller
  * are refused by the same rule.
  */
@@ -51,6 +51,7 @@ import {
     buildAsiCoverageReport,
     buildIncidentHistoryReport,
     buildThirdPartyAssessmentReport,
+    buildWorkpaperReviewReport,
     REPORT_IDS,
     type ReportId,
 } from '@/app-layer/usecases/agent-governance-reports';
@@ -89,6 +90,8 @@ export const GET = withApiErrorHandling(
                     return jsonResponse(await buildIncidentHistoryReport(ctx, { windowDays }));
                 case 'third-party-assessments':
                     return jsonResponse(await buildThirdPartyAssessmentReport(ctx));
+                case 'workpaper-review':
+                    return jsonResponse(await buildWorkpaperReviewReport(ctx, { windowDays }));
                 default:
                     return jsonResponse(await buildAgentGovernancePack(ctx, { windowDays }));
             }

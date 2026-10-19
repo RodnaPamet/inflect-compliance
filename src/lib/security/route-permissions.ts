@@ -1398,6 +1398,46 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'EDITOR-based custom role, which the ctx.role assert then refuses ' +
             'with no row — the hole this closes.',
     },
+    // Step 3d (#3677) — internal audit's review of sampled workpapers. The
+    // key decided in step 0e (`docs/agentic-iam-roadmap.md`, "Permission
+    // keys"): audits.view, which every role holds, so an internal auditor on
+    // the AUDITOR role (no audits.manage) is admitted. The usecase narrows
+    // every verb to the ASSIGNED reviewer — a person, an ACTIVE third-line
+    // member, not the auditor agent's owner — and audits each refusal.
+    {
+        path: new RegExp(`^${T}\\/audits\\/workpaper-reviews$`),
+        methods: ['GET'],
+        permission: 'audits.view',
+        note:
+            'Internal audit\'s queue of sampled workpapers (#3677). audits.view, ' +
+            'held by every role, because an internal auditor is often an AUDITOR, ' +
+            'which holds no audits.manage; listWorkpaperReviews returns every ' +
+            'assignment read-only to internal audit (an ACTIVE third-line member who ' +
+            'owns no auditor agent), only the caller\'s own to any other third-line ' +
+            'member, and none to anybody else. Nothing here draws or assigns: the sweep does.',
+    },
+    {
+        path: new RegExp(`^${T}\\/audits\\/workpaper-reviews\\/sample-rate$`),
+        methods: ['PUT'],
+        permission: 'audits.view',
+        note:
+            'Internal audit\'s sampling rate (#3677, owner decision 2026-10-19). The ' +
+            'review page\'s key, because internal audit is often an AUDITOR and holds ' +
+            'no admin key; setWorkpaperReviewSamplePercent admits only a person who is ' +
+            'an ACTIVE third-line member and owns no auditor agent (403 + AUTHZ_DENIED ' +
+            'with a named reason otherwise), and audits the change before and after. ' +
+            'Ahead of the [^/]+ rule below, which would otherwise match this path.',
+    },
+    {
+        path: new RegExp(`^${T}\\/audits\\/workpaper-reviews\\/[^/]+$`),
+        methods: ['GET', 'POST'],
+        permission: 'audits.view',
+        note:
+            'Reading and answering one sampled workpaper (#3677). Same key as the ' +
+            'queue; the usecase admits only the assigned reviewer, a person, still ' +
+            'ACTIVE and third-line, never the auditor agent\'s owner (403 + ' +
+            'AUTHZ_DENIED with a named reason), and the answer is write-once.',
+    },
     {
         path: new RegExp(`^${T}\\/audits\\/auditors\\/[^/]+$`),
         methods: ['DELETE'],

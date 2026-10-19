@@ -111,6 +111,7 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'agent-run-reaper',
     'agentic-evidence-emission',
     'audit-outbox-flush',
+    'audit-workpaper-sample-review',
     'automation-runner',
     'calendar-push-dispatch',
     'cloud-posture-collect-dispatch',

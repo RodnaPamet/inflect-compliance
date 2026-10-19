@@ -247,6 +247,18 @@ export interface AgentProposalSampleAuditPayload {
     tenantId?: string;
 }
 
+/**
+ * audit-workpaper-sample-review (#3677, step 3d) — draw the auditor agent's
+ * workpapers for internal audit at the tenant's rate, assign each to a
+ * third-line member who does not own the auditor (or record it UNASSIGNED with
+ * a reason), re-draw what nobody can answer, and raise any dissent proposal a
+ * failed answer left unraised.
+ */
+export interface AuditWorkpaperSampleReviewPayload {
+    /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
+    tenantId?: string;
+}
+
 /** Evidence retention sweep */
 export interface RetentionSweepPayload {
     tenantId?: string;
@@ -850,6 +862,7 @@ export interface JobPayloadMap {
     'agent-proposal-expiry': AgentProposalExpiryPayload;
     'external-write-dispatch': ExternalWriteDispatchPayload;
     'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
+    'audit-workpaper-sample-review': AuditWorkpaperSampleReviewPayload;
     'agentic-evidence-emission': AgenticEvidenceEmissionPayload;
     'integration-passport-sweep': IntegrationPassportSweepPayload;
     'agent-owner-orphan-pass': AgentOwnerOrphanPassPayload;
@@ -1763,6 +1776,20 @@ export const JOB_DEFAULTS: Record<JobName, {
         // week is recoverable; a silently doubled draw is not detectable.
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'audit-workpaper-sample-review': {
+        // RETRIED, unlike the ASI09 sampler above, because here a retry cannot
+        // enlarge anything. Each workpaper's draw is a pure function of (seed,
+        // epoch, id, rate) and its row is keyed (tenantId, workpaperId), so a
+        // second attempt re-decides every workpaper the same way and inserts
+        // nothing twice; a re-assignment moves only a row nobody can answer;
+        // and a dissent's proposal is raised once per review whatever calls it.
+        // A monthly job that gives up on one transient error leaves internal
+        // audit a month without a queue.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60_000 },
         removeOnComplete: 50,
         removeOnFail: 200,
     },

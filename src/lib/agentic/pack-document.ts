@@ -108,6 +108,10 @@ const BASIS_SENTENCE: Record<MeasureBasis, string> = {
     NO_MONTHLY_BUDGET_CONFIGURED:
         'No monthly token budget is set for this workspace, so agent runs are ' +
         'not refused on spend. An absent budget means unlimited, never zero.',
+    NO_CONCLUDED_WORKPAPER_REVIEWS:
+        'Internal audit has concluded no review of a sampled auditor workpaper in ' +
+        'the window, so the re-performance rates have no base. This is not 100% ' +
+        'agreement: an unreviewed workpaper agrees with nothing.',
 };
 
 /**
@@ -305,6 +309,7 @@ export interface PackDocumentInput {
         approvals: Envelope;
         incidents: Envelope;
         thirdParty: Envelope;
+        workpaperReview: Envelope;
     };
     /** `requireRegisteredAgent`. FALSE turns every count into a voluntary sample. */
     enforcing: boolean;
@@ -656,6 +661,35 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
     }
     section('5 — THIRD-PARTY ASSURANCE', pack.thirdParty, tpLines);
 
+    // ── 6 — internal audit's re-performance of the auditor (#3677) ──────────
+    const wr = pack.workpaperReview.body as {
+        counts: {
+            drawn: number;
+            unassigned: number;
+            awaiting: number;
+            concurred: number;
+            dissented: number;
+            indeterminate: number;
+            concluded: number;
+        };
+        samplePercent: number;
+    };
+    const wrLines: string[] = [];
+    wrLines.push(
+        `Internal audit re-performs ${wr.samplePercent}% of the auditor agent's workpapers, drawn by a`,
+    );
+    wrLines.push('keyed sample and each assigned to a third-line member who does not own the auditor.');
+    wrLines.push(
+        `  drawn ${wr.counts.drawn} · concluded ${wr.counts.concluded} · indeterminate ` +
+            `${wr.counts.indeterminate} · awaiting ${wr.counts.awaiting} · unassigned ${wr.counts.unassigned}`,
+    );
+    wrLines.push(`  concurred ${wr.counts.concurred} · dissented ${wr.counts.dissented}`);
+    wrLines.push('');
+    wrLines.push('The rates count CONCLUDED reviews only. A drawn but unreviewed workpaper,');
+    wrLines.push('an INDETERMINATE answer and an UNASSIGNED workpaper are excluded and listed');
+    wrLines.push('above, never counted as agreement. Each dissent queued a finding proposal.');
+    section("6 — INTERNAL AUDIT'S RE-PERFORMANCE OF THE AUDITOR", pack.workpaperReview, wrLines);
+
     // ── definitions ─────────────────────────────────────────────────────────
     L.push(RULE);
     L.push('APPENDIX — WHAT EVERY FIGURE COUNTS');
@@ -667,7 +701,14 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
     L.push('');
     const seen = new Set<string>();
     const allDefs: MetricDefinition[] = [];
-    for (const env of [pack.inventory, pack.asiCoverage, pack.approvals, pack.incidents, pack.thirdParty]) {
+    for (const env of [
+        pack.inventory,
+        pack.asiCoverage,
+        pack.approvals,
+        pack.incidents,
+        pack.thirdParty,
+        pack.workpaperReview,
+    ]) {
         for (const d of env.definitions) {
             if (seen.has(d.id)) continue;
             seen.add(d.id);

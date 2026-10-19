@@ -618,6 +618,39 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'audit-workpaper-sample-review',
+        // DAILY at 09:40 UTC (owner decision, 2026-10-19). Every day, so an item
+        // recorded UNASSIGNED — drawn before anybody was declared third-line, or
+        // whose only third-line member owns the auditor — is assigned within a
+        // day of somebody becoming eligible, rather than waiting for a monthly
+        // run; and so a reviewer who left internal audit is replaced within a day.
+        //
+        // Daily does NOT enlarge the sample. Whether a workpaper is drawn is a
+        // fixed function of its own keyed score, the rate and the epoch its
+        // period fixes, so deciding it again gives the same answer; and the
+        // (tenantId, workpaperId) unique index holds one row per workpaper, so
+        // a drawn one is never drawn twice. A day with no new workpaper and no
+        // rate change draws nothing, and a second run on the same day changes
+        // nothing (a valid assignment is never moved, an unchanged UNASSIGNED
+        // reason is not rewritten). That is the difference from the ASI09
+        // sampler, whose draw is a rank over a population and would creep if
+        // re-run.
+        //
+        // After the auditor agent's runs: the pilot's procedure plans run at
+        // 06:17 UTC on the 2nd (`scripts/audit-pilot-setup.ts`, `CRON`), so the
+        // same day's sweep draws them three hours later, and a run the
+        // control-test runner retried, or a re-run the second line started by
+        // hand, is drawn the next morning.
+        //
+        // 09:40: working hours, when internal audit reads the queue, and off the
+        // busy minutes — nothing else runs at :40 in this hour, and the ASI09
+        // sampler's Monday 09:30 is ten minutes clear.
+        pattern: '40 9 * * *',     // daily at 09:40 UTC
+        description:
+            "#3677 — internal audit's sampling of the auditor agent's workpapers, daily. Draws each workpaper not yet drawn by its HMAC-keyed score against the tenant's rate (TenantSecuritySettings.workpaperReviewSamplePercent, 100% in the pilot), with the epoch fixed by the workpaper's period, and assigns it by a keyed draw from the same epoch to an ACTIVE third-line member who does not own the auditor agent — or records it UNASSIGNED with a named reason. Re-draws, every day, only a PENDING row nobody can answer (an UNASSIGNED one, or one whose reviewer is no longer eligible), and raises any dissent finding proposal a failed answer left unraised. Idempotent by the (tenantId, workpaperId) unique index and the per-review proposal origin.",
+        defaultPayload: {},
+    },
+    {
         name: 'incident-notification-deadlines',
         pattern: '0 * * * *',     // hourly — a 24h Article 23 deadline needs sub-day granularity
         description:
