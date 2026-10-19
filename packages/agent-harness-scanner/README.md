@@ -109,7 +109,7 @@ agent is still reported with what resolved.
 Each agent's model endpoints go into `/2`'s optional `models[]`: the https URL,
 the `env://` reference it is read from, or, when neither is knowable, the
 `code://` locator of the model's construction. The ingest verifies them and
-stores none.
+keeps them on the agent's scan item (#3759), and the harness matrix lists them.
 
 **Unbound credentials.** `/2`'s `unboundCredentials[]` lists credential
 references a source saw bound to no principal, from which the ingest derives
