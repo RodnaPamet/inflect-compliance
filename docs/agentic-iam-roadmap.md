@@ -794,42 +794,60 @@ both as open, and every evidence row and finding proposal says so.
 Step `3d` (#3677) is the check on the auditor that decision 3 and rule 8 call
 for: internal audit re-performs the auditor agent's workpapers, and the rate at
 which it agrees is a reported figure with its definition. The owner's decisions
-of 2026-10-19 are on the issue.
+of 2026-10-19 are on the issue, including the answers to the five questions the
+first version raised: who sets the rate, whether the dissenter may decide their
+own dissent's proposal, how often the sweep runs, whether internal audit sees
+the whole queue, and whether an expired dissent proposal is raised again.
 
-- **The draw.** A scheduled sweep, `audit-workpaper-sample-review`, runs on the
-  3rd of each month at 09:40 UTC, a day after the pilot's procedure plans run on
-  the 2nd. It decides each workpaper not yet drawn with the ASI09 sampler's
-  keyed score against the tenant's rate, `TenantSecuritySettings.workpaperReviewSamplePercent`:
+- **The draw.** A scheduled sweep, `audit-workpaper-sample-review`, runs daily at
+  09:40 UTC, so the pilot's procedure plans, which run at 06:17 UTC on the 2nd,
+  are drawn the same morning. It decides each workpaper not yet drawn with the
+  ASI09 sampler's keyed score against the tenant's rate, `TenantSecuritySettings.workpaperReviewSamplePercent`:
   100 by default and in the pilot, a per-tenant setting so it can be lowered
   without a code change. The epoch is fixed by the workpaper's period
   (`audit-workpaper-review@<periodLabel>`), so the draw re-derives from the
   seed, the epoch, the workpaper and the rate; each row records the epoch, the
   seed's fingerprint and the rate. Each workpaper is decided on its own, so a
-  later sweep never re-draws one it passed over at the same rate. One row per
-  workpaper, `AuditWorkpaperSampleReview`, a Regulatory artefact the tenant
-  purge keeps.
+  later sweep never re-draws one it passed over at the same rate, and running
+  daily cannot enlarge the sample: a second run on the same day changes
+  nothing. One row per workpaper, `AuditWorkpaperSampleReview`, a Regulatory
+  artefact the tenant purge keeps.
+- **The rate is internal audit's.** Only a person who is an ACTIVE third-line
+  member and owns no auditor agent changes it, at
+  `PUT …/audits/workpaper-reviews/sample-rate` or inline on the review page;
+  an API key, an agent, a job, anybody off the third line and the auditor's
+  owner are each refused with a named reason and an `AUTHZ_DENIED` row. The
+  change is audited before and after, held to 1..100 by the schema and a CHECK,
+  and the next sweep draws at it.
 - **The assignment.** A keyed draw from the same epoch among the tenant's ACTIVE
   members whose line of defence is THIRD, minus the auditor agent's current
   owner, even when that owner is third-line. With nobody eligible the row is
   UNASSIGNED with a named reason (`NO_THIRD_LINE_MEMBER`,
-  `ONLY_THIRD_LINE_MEMBER_OWNS_AUDITOR`, `AUDITOR_OWNER_UNKNOWN`). A later sweep
-  re-draws only an unanswered row nobody can answer, never a valid assignment,
-  and a trigger refuses an ineligible assignee for any writer.
+  `ONLY_THIRD_LINE_MEMBER_OWNS_AUDITOR`, `AUDITOR_OWNER_UNKNOWN`). The next
+  day's sweep re-draws only an unanswered row nobody can answer, never a valid
+  assignment, and a trigger refuses an ineligible assignee for any writer.
 - **The answer.** Only the assigned reviewer answers, a person, still ACTIVE and
   third-line, and not the auditor's current owner; each other caller is a 403
   with a named reason and an `AUTHZ_DENIED` row, and the trigger refuses the
   same answerer below the usecase. The answer is CONCURRED, DISSENTED or
   INDETERMINATE, once, with stable dissent codes pinned by a CHECK and no free
   text, and it sets the workpaper's review stamp. The page is
-  `/t/:slug/audits/workpaper-reviews`: the reviewer's own queue and a sheet with
-  the workpaper and an inline form, behind `audits.view`.
+  `/t/:slug/audits/workpaper-reviews`, behind `audits.view`: internal audit
+  sees every assignment in the tenant and its status, and anybody else only
+  their own; a sheet shows the workpaper, with the inline answer form only on
+  the viewer's own row. The auditor's owner never sees the overview.
 - **A dissent queues a finding proposal.** Each DISSENTED answer queues one
   FINDING proposal through `createAgentProposal`, under the reviewer's session
   with no agent, so the queue tiers it `HUMAN_AUTHOR` and a person decides it
   with the ordinary approval. It names the workpaper, the codes and the
   reviewer. A per-review lock, a write-once link on the review and the
   proposal's origin ref (`proposedBySessionRef`) raise it once across retries;
-  the sweep raises one the answer could not.
+  the sweep raises one the answer could not. The person who dissented never
+  decides it: approval, approval with edits, rejection and bulk rejection all
+  refuse the review's `reviewedByUserId` (`DISSENT_AUTHOR_MAY_NOT_DECIDE`),
+  keyed off the origin ref, so the bar holds when the sweep raised it. A
+  proposal that expires undecided is not raised again: the link is write-once,
+  and the expiry is the record that nobody decided.
 - **The number.** Report 6 of the governance pack (`workpaper-review`), on
   `/agents/reports` and in the filed document: drawn, unassigned, awaiting,
   indeterminate and concluded counts, and the re-performance agreement and
@@ -883,7 +901,7 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 | Skills | Nine original, licensed skills. Eight have a committed evaluation record that passes the mount gate; `iam-audit-procedures` ships its evaluation set and no record, and no workflow declares it (#3749). The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
-| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; `scripts/audit-pilot-setup.ts` sets the pilot up with its agreed parameters. Internal audit samples the workpapers: a monthly keyed draw at the tenant's rate (100% in the pilot), each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, every dissent a finding proposal a person decides, and the re-performance agreement rate in the governance pack with its definition. | Internal audit's approval and PwC's agreement of the catalogue are open; procedures 6 to 8 have no handler; the auditor's skill has no evaluation record and no workflow declares it (#3749); nothing but the database sets a tenant's workpaper sampling rate. |
+| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; `scripts/audit-pilot-setup.ts` sets the pilot up with its agreed parameters. Internal audit samples the workpapers: a daily keyed draw at the tenant's rate (100% in the pilot), which only internal audit sets, each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, where internal audit sees every assignment, every dissent a finding proposal somebody other than the dissenter decides, and the re-performance agreement rate in the governance pack with its definition. | Internal audit's approval and PwC's agreement of the catalogue are open; procedures 6 to 8 have no handler; the auditor's skill has no evaluation record and no workflow declares it (#3749). |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | — |
 
 ## Roadmap (future direction)
@@ -1200,7 +1218,7 @@ and one new key:
 | Set a membership's line of defence (`3b`) | `admin.owner_management` | OWNER-only; see below. Shipped by `3b` (#3675) at `PUT …/admin/members/[membershipId]/line-of-defence`, with its rule above the members catch-all. |
 | Register or activate an auditor agent (`3b`) | `admin.agent_registry` | The existing routes. The independence check is a refusal inside `registerAgent` and `activateRegisteredAgent`. Shipped by `3b` (#3675), which also asks it of an amend that makes an agent an auditor (`PATCH …/admin/agents/[agentId]`, `isAuditor`). |
 | Read workpapers (`3b`, `3c`) | `audits.manage` | `3b` (#3675) ships the read usecases (`listAuditWorkpapers`, `getAuditWorkpaper`) under this gate and no route. A workpaper on leaver timeliness or privileged access lists exceptions about named people's access, and `audits.view` is held by every role, READER included (`src/lib/permissions.ts`). OWNER and ADMIN hold `audits.manage`. A THIRD-line reviewer reads the workpapers assigned to them through `3d`'s review route, and the external auditor reads them in a pack (`4d`). An internal-audit member who needs every workpaper gets a custom role carrying `audits.manage`. `3b` places `AuditWorkpaper` in `prisma/schema/audit-workflow.prisma`, beside `Audit`. |
-| Read and record the outcome of a sampled workpaper (`3d`) | `audits.view` | Shipped in #3677 at `GET …/audits/workpaper-reviews` and `GET`/`POST …/audits/workpaper-reviews/[reviewId]`, with `audits/workpaper-reviews` a root of `PRIVILEGED_ROOTS`. Every role holds it, so the usecase admits only the workpaper's assigned reviewer, who must be an ACTIVE THIRD-line member and must not own the auditor agent, as `decide` narrows to the assigned reviewer. Requiring `audits.manage` would shut out an internal auditor on the AUDITOR role, which does not hold it; the edge's AUDITOR rules apply only under `/admin/`, so nothing there is widened. The draw and the assignment are a scheduled sweep, with no route. |
+| Read and record the outcome of a sampled workpaper (`3d`) | `audits.view` | Shipped in #3677 at `GET …/audits/workpaper-reviews`, `GET`/`POST …/audits/workpaper-reviews/[reviewId]` and `PUT …/audits/workpaper-reviews/sample-rate`, with `audits/workpaper-reviews` a root of `PRIVILEGED_ROOTS`. Every role holds it, so the usecase admits only the workpaper's assigned reviewer to answer, who must be an ACTIVE THIRD-line member and must not own the auditor agent, as `decide` narrows to the assigned reviewer; internal audit (the same standing, owning no auditor agent) reads every assignment and alone sets the rate. Requiring `audits.manage` would shut out an internal auditor on the AUDITOR role, which does not hold it; the edge's AUDITOR rules apply only under `/admin/`, so nothing there is widened. The draw and the assignment are a scheduled sweep, with no route. |
 | Show the scan health per estate and per source (`4a`) | `admin.agent_registry_view`, or `admin.agent_registry` | It reads scans, under the key their list takes. Shipped by #3678 at `GET …/admin/agents/harness-estates` and as a card on the harness tab. |
 | Declare, change or remove a client estate (`4a`) | `admin.agent_registry` | Which scanner covers which estate, at what cadence and with whom accountable for each source, is the register's decision and never the scanner's: the ingest key cannot reach it. Shipped by #3678 at `POST …/admin/agents/harness-estates` and `PATCH`/`DELETE …/harness-estates/[estateId]`. |
 | Kill an A2A peer, and lift the kill (`4b`) | `admin.agent_kill_switch` | The key that stops an agent stops a peer: there is no second authority model (decision 4). `*` does not carry it. |

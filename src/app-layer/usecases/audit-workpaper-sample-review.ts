@@ -16,7 +16,8 @@
  * is here, and it is the same rule the sweep drew the reviewer by
  * (`isEligibleReviewer`), asked again at the moment of the request:
  *
- *   • a PERSON — a context speaking for an API key, an agent or a job is a 403;
+ *   • a PERSON — a context speaking for an API key, an agent or a job is a 403
+ *     (`NOT_A_PERSON`);
  *   • the ASSIGNED reviewer of that row, and nobody else;
  *   • still an ACTIVE member whose line of defence is THIRD;
  *   • not the auditor agent's CURRENT owner (ownership may have moved since the
@@ -26,6 +27,18 @@
  * hash-chained `AUTHZ_DENIED` row: they are statements about who holds the
  * authority to answer, not about the request's shape. The database refuses the
  * same answerer below this (`audit_workpaper_sample_review_assert_reviewer`).
+ *
+ * ── Internal audit sees the whole queue, and sets the rate ───────────
+ *
+ * Owner decisions, 2026-10-19. "Internal audit" is one rule, `isInternalAudit`:
+ * a person, an ACTIVE member whose line of defence is THIRD, who owns no agent
+ * that is or has been the auditor. Such a member sees EVERY assignment in the
+ * tenant and its status (the overview) and answers only their own; and only
+ * such a member changes the sampling rate. Everybody else holding `audits.view`
+ * sees their own assignments only. The auditor's owner never sees the overview
+ * and never sets the rate, even on the third line: the second line operates
+ * the auditor, and the check on it must not be steerable by whoever answers
+ * for it.
  *
  * ── The answer is write-once ─────────────────────────────────────────
  *
@@ -66,6 +79,7 @@ import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import {
     dissentFindingProposal,
     dissentProposalOriginRef,
+    effectiveSamplePercent,
     isEligibleReviewer,
     WORKPAPER_REVIEWER_LINE,
     workpaperReviewRate,
@@ -74,7 +88,10 @@ import {
 } from '@/lib/agentic/workpaper-review-sampling';
 import { assertCanRead } from '../policies/common';
 import { AuditWorkpaperRepository } from '../repositories/AuditWorkpaperRepository';
-import { RecordWorkpaperReviewSchema } from '../schemas/audit-workpaper-sample-review.schemas';
+import {
+    RecordWorkpaperReviewSchema,
+    SetWorkpaperReviewSamplePercentSchema,
+} from '../schemas/audit-workpaper-sample-review.schemas';
 import type { RequestContext } from '../types';
 import { createAgentProposal } from './agent-proposals';
 import { stampWorkpaperReviewedInTx } from './audit-workpaper';
@@ -89,11 +106,18 @@ type ReviewerStanding =
     | { eligible: true; reason: null }
     | { eligible: false; reason: Extract<WorkpaperReviewRefusal, 'REVIEWER_NOT_ACTIVE_MEMBER' | 'REVIEWER_LINE_NOT_THIRD'> };
 
+/** True when the context speaks for a person — not an API key, an agent or a job. */
+function isPersonContext(ctx: RequestContext): boolean {
+    return ctx.apiKeyId === undefined && ctx.agentId === undefined && ctx.actorType !== 'JOB';
+}
+
 /** A person, holding `audits.view`. Everything else about who may answer is per row. */
 function assertPersonWithAuditsView(ctx: RequestContext): void {
     assertCanRead(ctx);
-    if (ctx.apiKeyId !== undefined || ctx.agentId !== undefined || ctx.actorType === 'JOB') {
-        throw forbidden('A sampled workpaper is reviewed by a person, never by a credential, an agent or a job.');
+    if (!isPersonContext(ctx)) {
+        throw forbidden('A sampled workpaper is reviewed by a person, never by a credential, an agent or a job.', {
+            reason: 'NOT_A_PERSON' satisfies WorkpaperReviewRefusal,
+        });
     }
     if (ctx.appPermissions?.audits?.view !== true) {
         throw forbidden('You do not have permission to review audit workpapers.');
@@ -132,12 +156,70 @@ function standingOf(member: { status: string; lineOfDefence: string | null } | n
     return { eligible: true, reason: null };
 }
 
+type Db = Parameters<Parameters<typeof runInTenantContext>[1]>[0];
+
+/** Agents one person can own before "owns the auditor" stops being provable by one read. */
+const OWNED_AGENT_READ_CAP = 200;
+
+/**
+ * Whether the caller owns an agent that IS the auditor or HAS BEEN one — marked
+ * `isAuditor`, or the author of any workpaper in this tenant. The second half
+ * matters: unmarking the auditor must not hand its owner the overview of the
+ * workpapers it wrote. A caller who owns more agents than one read can show is
+ * treated as an owner — the answer that cannot be proved fails closed.
+ */
+async function ownsAnAuditorAgent(db: Db, ctx: RequestContext): Promise<boolean> {
+    const owned = await db.registeredAgent.findMany({
+        where: { tenantId: ctx.tenantId, ownerUserId: ctx.userId },
+        select: { id: true, isAuditor: true },
+        orderBy: { id: 'asc' },
+        take: OWNED_AGENT_READ_CAP + 1,
+    });
+    if (owned.length === 0) return false;
+    if (owned.length > OWNED_AGENT_READ_CAP || owned.some((a) => a.isAuditor)) return true;
+    const wrote = await db.auditWorkpaper.findFirst({
+        where: { tenantId: ctx.tenantId, auditorAgentId: { in: owned.map((a) => a.id) } },
+        select: { id: true },
+    });
+    return wrote !== null;
+}
+
+/**
+ * The caller's standing as INTERNAL AUDIT — the one rule behind the overview
+ * and the rate: an ACTIVE third-line member who owns no auditor agent. The
+ * `refusal` names the first condition that fails, for the page and the 403.
+ */
+interface InternalAuditStanding {
+    reviewer: ReviewerStanding;
+    ownsAuditor: boolean;
+    isInternalAudit: boolean;
+    refusal: Extract<
+        WorkpaperReviewRefusal,
+        'REVIEWER_NOT_ACTIVE_MEMBER' | 'REVIEWER_LINE_NOT_THIRD' | 'REVIEWER_OWNS_AUDITOR'
+    > | null;
+}
+
+async function readInternalAuditStanding(db: Db, ctx: RequestContext): Promise<InternalAuditStanding> {
+    const [member, ownsAuditor] = await Promise.all([
+        db.tenantMembership.findFirst({
+            where: { tenantId: ctx.tenantId, userId: ctx.userId },
+            select: { status: true, lineOfDefence: true },
+        }),
+        ownsAnAuditorAgent(db, ctx),
+    ]);
+    const reviewer = standingOf(member);
+    const refusal = reviewer.eligible ? (ownsAuditor ? 'REVIEWER_OWNS_AUDITOR' : null) : reviewer.reason;
+    return { reviewer, ownsAuditor, isInternalAudit: refusal === null, refusal };
+}
+
 const listSelect = {
     id: true,
     workpaperId: true,
     samplingEpoch: true,
     samplePercent: true,
     sampledAt: true,
+    assignedToUserId: true,
+    unassignedReason: true,
     assignedAt: true,
     outcome: true,
     dissentCodes: true,
@@ -160,58 +242,146 @@ const listSelect = {
 } as const;
 
 /**
- * The caller's assigned sampled workpapers, oldest first — an unanswered one
- * is the failure mode, so the list leads with the one that has waited longest.
- * A caller who is not an ACTIVE third-line member gets no rows and the reason,
- * which the page shows instead of an empty queue that reads as "nothing to do".
+ * Whose rows a list holds: `ALL` for internal audit (owner decision,
+ * 2026-10-19 — every assignment and its status, answerable only where it is
+ * the viewer's own), `OWN` for everybody else holding `audits.view`.
  */
-export async function listMyWorkpaperReviews(ctx: RequestContext) {
+export type WorkpaperReviewScope = 'ALL' | 'OWN';
+
+/** The sampling rate as the page shows it, and whether this viewer may change it. */
+export interface WorkpaperReviewSampleRateView {
+    percent: number;
+    canChange: boolean;
+    /** Why not, when `canChange` is false. */
+    refusal: WorkpaperReviewRefusal | null;
+}
+
+/**
+ * The sampled workpapers this caller may see, oldest unanswered first — an
+ * unanswered one is the failure mode, so the list leads with the one that has
+ * waited longest.
+ *
+ *   • Internal audit (`isInternalAudit`) sees EVERY row in the tenant, with
+ *     who it is assigned to; it answers only its own (`mine`).
+ *   • Anybody else on the third line — the auditor's owner, in practice — sees
+ *     only the rows assigned to them.
+ *   • Somebody who is not an ACTIVE third-line member gets no rows and the
+ *     reason, which the page shows instead of an empty queue that reads as
+ *     "nothing to do".
+ */
+export async function listWorkpaperReviews(ctx: RequestContext) {
     assertPersonWithAuditsView(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const member = await db.tenantMembership.findFirst({
-            where: { tenantId: ctx.tenantId, userId: ctx.userId },
-            select: { status: true, lineOfDefence: true },
-        });
-        const reviewer = standingOf(member);
-        if (!reviewer.eligible) return { reviewer, rows: [], truncated: false };
+        const [standing, settings] = await Promise.all([
+            readInternalAuditStanding(db, ctx),
+            db.tenantSecuritySettings.findFirst({
+                where: { tenantId: ctx.tenantId },
+                select: { workpaperReviewSamplePercent: true },
+            }),
+        ]);
+        const { reviewer } = standing;
+        const sampleRate: WorkpaperReviewSampleRateView = {
+            percent: effectiveSamplePercent(settings?.workpaperReviewSamplePercent),
+            canChange: standing.isInternalAudit,
+            refusal: standing.refusal,
+        };
+        const scope: WorkpaperReviewScope = standing.isInternalAudit ? 'ALL' : 'OWN';
+        if (!reviewer.eligible) return { reviewer, scope, sampleRate, rows: [], truncated: false };
 
         const rows = await db.auditWorkpaperSampleReview.findMany({
-            where: { tenantId: ctx.tenantId, assignedToUserId: ctx.userId },
-            orderBy: [{ sampledAt: 'asc' }, { id: 'asc' }],
+            where: { tenantId: ctx.tenantId, ...(scope === 'OWN' ? { assignedToUserId: ctx.userId } : {}) },
+            // PENDING sorts first: the enum's declaration order is the column's.
+            orderBy: [{ outcome: 'asc' }, { sampledAt: 'asc' }, { id: 'asc' }],
             select: listSelect,
             take: REVIEW_LIST_CAP + 1,
         });
         const shown = rows.slice(0, REVIEW_LIST_CAP);
         const auditorIds = [...new Set(shown.map((r) => r.workpaper.auditorAgentId))];
-        const owners =
+        const assigneeIds = [
+            ...new Set(shown.map((r) => r.assignedToUserId).filter((id): id is string => id !== null)),
+        ];
+        const [owners, assignees] = await Promise.all([
             auditorIds.length === 0
                 ? []
-                : await db.registeredAgent.findMany({
+                : db.registeredAgent.findMany({
                       where: { tenantId: ctx.tenantId, id: { in: auditorIds } },
                       select: { id: true, ownerUserId: true },
                       take: auditorIds.length,
-                  });
+                  }),
+            assigneeIds.length === 0
+                ? []
+                : db.tenantMembership.findMany({
+                      where: { tenantId: ctx.tenantId, userId: { in: assigneeIds } },
+                      select: { userId: true, user: { select: { name: true, email: true } } },
+                      take: assigneeIds.length,
+                  }),
+        ]);
         const ownerOf = new Map(owners.map((o) => [o.id, o.ownerUserId]));
+        const nameOf = new Map(assignees.map((a) => [a.userId, a.user.name ?? a.user.email ?? a.userId]));
         return {
             reviewer,
+            scope,
+            sampleRate,
             truncated: rows.length > REVIEW_LIST_CAP,
             rows: shown.map((r) => {
+                const mine = r.assignedToUserId === ctx.userId;
                 const owner = ownerOf.get(r.workpaper.auditorAgentId) ?? null;
                 // Answerable now — the same rule the answer path asks. A row
                 // assigned before its reviewer came to own the auditor stays
                 // listed and cannot be answered; the next sweep re-draws it.
+                // Somebody else's row is never answerable here: the overview
+                // is read-only.
                 const refusal: WorkpaperReviewRefusal | null =
                     r.outcome !== 'PENDING'
                         ? 'ALREADY_REVIEWED'
-                        : owner === null
-                          ? 'AUDITOR_OWNER_UNKNOWN'
-                          : owner === ctx.userId
-                            ? 'REVIEWER_OWNS_AUDITOR'
-                            : null;
-                return { ...r, answerable: refusal === null, refusal };
+                        : !mine
+                          ? r.assignedToUserId === null
+                              ? 'UNASSIGNED'
+                              : 'NOT_ASSIGNED_REVIEWER'
+                          : owner === null
+                            ? 'AUDITOR_OWNER_UNKNOWN'
+                            : owner === ctx.userId
+                              ? 'REVIEWER_OWNS_AUDITOR'
+                              : null;
+                return {
+                    ...r,
+                    mine,
+                    assignee: r.assignedToUserId
+                        ? { userId: r.assignedToUserId, name: nameOf.get(r.assignedToUserId) ?? r.assignedToUserId }
+                        : null,
+                    answerable: refusal === null,
+                    refusal,
+                };
             }),
         };
     });
+}
+
+const reviewSelect = {
+    id: true,
+    workpaperId: true,
+    samplingEpoch: true,
+    samplePercent: true,
+    seedFingerprint: true,
+    sampledAt: true,
+    assignedToUserId: true,
+    unassignedReason: true,
+    assignedAt: true,
+    outcome: true,
+    dissentCodes: true,
+    reviewedAt: true,
+    reviewedByUserId: true,
+    findingProposalId: true,
+    workpaper: { select: { auditorAgentId: true } },
+} as const;
+
+/** One row for internal audit's read-only overview. The caller has established who may. */
+async function loadReadOnly(ctx: RequestContext, reviewId: string) {
+    const review = await runInTenantContext(ctx, (db) =>
+        db.auditWorkpaperSampleReview.findFirst({ where: { id: reviewId, tenantId: ctx.tenantId }, select: reviewSelect }),
+    );
+    if (!review) throw notFound('Sampled workpaper not found');
+    return review;
 }
 
 /**
@@ -226,23 +396,7 @@ async function loadForReviewer(ctx: RequestContext, reviewId: string) {
     const loaded = await runInTenantContext(ctx, async (db) => {
         const review = await db.auditWorkpaperSampleReview.findFirst({
             where: { id: reviewId, tenantId: ctx.tenantId },
-            select: {
-                id: true,
-                workpaperId: true,
-                samplingEpoch: true,
-                samplePercent: true,
-                seedFingerprint: true,
-                sampledAt: true,
-                assignedToUserId: true,
-                unassignedReason: true,
-                assignedAt: true,
-                outcome: true,
-                dissentCodes: true,
-                reviewedAt: true,
-                reviewedByUserId: true,
-                findingProposalId: true,
-                workpaper: { select: { auditorAgentId: true } },
-            },
+            select: reviewSelect,
         });
         if (!review) return null;
         const [member, auditor] = await Promise.all([
@@ -303,15 +457,55 @@ async function loadForReviewer(ctx: RequestContext, reviewId: string) {
     return review;
 }
 
-/** One assigned review with the whole workpaper it is about — what the reviewer re-performs. */
-export async function getMyWorkpaperReview(ctx: RequestContext, reviewId: string) {
+/** Whether the viewer of one review may answer it, and whose it is. */
+export interface WorkpaperReviewViewer {
+    mine: boolean;
+    answerable: boolean;
+    refusal: WorkpaperReviewRefusal | null;
+}
+
+/**
+ * One review with the whole workpaper it is about — what the reviewer
+ * re-performs. Its assignee reads it through every check the answer path runs
+ * (`loadForReviewer`), so a read that would be refused as an answer is refused
+ * as a read too. Internal audit reads anybody's row, READ-ONLY: `viewer`
+ * says so, and the answer path still refuses it as `NOT_ASSIGNED_REVIEWER`.
+ */
+export async function getWorkpaperReview(ctx: RequestContext, reviewId: string) {
     assertPersonWithAuditsView(ctx);
-    const review = await loadForReviewer(ctx, reviewId);
+    const overview = await runInTenantContext(ctx, async (db) => {
+        const row = await db.auditWorkpaperSampleReview.findFirst({
+            where: { id: reviewId, tenantId: ctx.tenantId },
+            select: { assignedToUserId: true },
+        });
+        if (!row || row.assignedToUserId === ctx.userId) return null;
+        return (await readInternalAuditStanding(db, ctx)).isInternalAudit;
+    });
+
+    let review: Awaited<ReturnType<typeof loadForReviewer>>;
+    let viewer: WorkpaperReviewViewer;
+    if (overview === true) {
+        review = await loadReadOnly(ctx, reviewId);
+        viewer = {
+            mine: false,
+            answerable: false,
+            refusal:
+                review.outcome !== 'PENDING'
+                    ? 'ALREADY_REVIEWED'
+                    : review.assignedToUserId === null
+                      ? 'UNASSIGNED'
+                      : 'NOT_ASSIGNED_REVIEWER',
+        };
+    } else {
+        review = await loadForReviewer(ctx, reviewId);
+        const pending = review.outcome === 'PENDING';
+        viewer = { mine: true, answerable: pending, refusal: pending ? null : 'ALREADY_REVIEWED' };
+    }
     const workpaper = await runInTenantContext(ctx, (db) =>
         AuditWorkpaperRepository.getById(db, ctx, review.workpaperId),
     );
     if (!workpaper) throw notFound('Workpaper not found');
-    return { review, workpaper };
+    return { review, workpaper, viewer };
 }
 
 export interface RecordWorkpaperReviewResult {
@@ -522,6 +716,135 @@ export async function raiseDissentFindingProposal(
         },
         { timeout: RAISE_TX_TIMEOUT_MS },
     );
+}
+
+export interface SetWorkpaperReviewSamplePercentResult {
+    samplePercent: number;
+    previous: number;
+    /** False when the rate already was the value asked for: nothing written, nothing audited. */
+    changed: boolean;
+}
+
+/**
+ * Change the share of the auditor agent's workpapers internal audit draws —
+ * `TenantSecuritySettings.workpaperReviewSamplePercent`, read by the next
+ * sweep. Owner decision, 2026-10-19: ONLY INTERNAL AUDIT changes it — a person,
+ * an ACTIVE third-line member, who owns no auditor agent. The second line runs
+ * the auditor; if it could lower the rate it would be choosing how closely its
+ * own agent is checked. Every refusal is a 403 with a named reason and an
+ * `AUTHZ_DENIED` row; the change is audited with the rate before and after.
+ *
+ * A lowered rate draws fewer of the workpapers the sweep has not decided yet
+ * and un-draws nothing; a raised one draws, on the next sweep, the not-yet-drawn
+ * workpapers of the lookback window that the higher rate now selects. Every row
+ * keeps the rate it was drawn at, so each re-derives from its own.
+ */
+export async function setWorkpaperReviewSamplePercent(
+    ctx: RequestContext,
+    input: unknown,
+): Promise<SetWorkpaperReviewSamplePercentResult> {
+    assertCanRead(ctx);
+    if (!isPersonContext(ctx)) {
+        await denySampleRate(ctx, 'NOT_A_PERSON', 'Internal audit’s sampling rate is set by a person, never by a credential, an agent or a job.');
+    }
+    // Authority before shape: a refused caller leaves its AUTHZ_DENIED row
+    // whatever it sent.
+    const standing = await runInTenantContext(ctx, (db) => readInternalAuditStanding(db, ctx));
+    if (!standing.isInternalAudit) await denySampleRateFor(ctx, standing.refusal ?? 'REVIEWER_LINE_NOT_THIRD');
+
+    const parsed = SetWorkpaperReviewSamplePercentSchema.safeParse(input);
+    if (!parsed.success) {
+        throw badRequest(`Invalid sampling rate: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
+    }
+    const next = parsed.data.samplePercent;
+
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        // One change at a time per tenant, so `previous` is the value this
+        // change replaced and two concurrent changes audit a true chain.
+        await db.$executeRawUnsafe(
+            `SELECT pg_advisory_xact_lock(hashtext($1))`,
+            `audit-workpaper-review-sample-rate:${ctx.tenantId}`,
+        );
+        // Asked again under the lock: the standing read above is a moment ago.
+        const now = await readInternalAuditStanding(db, ctx);
+        if (!now.isInternalAudit) {
+            return { kind: 'REFUSED', refused: now.refusal ?? 'REVIEWER_LINE_NOT_THIRD' } as const;
+        }
+        const settings = await db.tenantSecuritySettings.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: { workpaperReviewSamplePercent: true },
+        });
+        const previous = effectiveSamplePercent(settings?.workpaperReviewSamplePercent);
+        if (previous === next && settings !== null) return { kind: 'DONE', previous, changed: false } as const;
+        await db.tenantSecuritySettings.upsert({
+            where: { tenantId: ctx.tenantId },
+            create: { tenantId: ctx.tenantId, workpaperReviewSamplePercent: next },
+            update: { workpaperReviewSamplePercent: next },
+        });
+        return { kind: 'DONE', previous, changed: previous !== next } as const;
+    });
+
+    if (outcome.kind === 'REFUSED') return denySampleRateFor(ctx, outcome.refused);
+    if (!outcome.changed) return { samplePercent: next, previous: outcome.previous, changed: false };
+
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: 'USER',
+        entity: 'TenantSecuritySettings',
+        entityId: ctx.tenantId,
+        action: 'AUDIT_WORKPAPER_REVIEW_SAMPLE_RATE_CHANGED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            setting: 'workpaperReviewSamplePercent',
+            before: outcome.previous,
+            after: next,
+        },
+        metadataJson: { before: outcome.previous, after: next },
+    }).catch(() => undefined);
+    logger.info('workpaper review: sampling rate changed', {
+        component: 'audit-workpaper-sample-review',
+        tenantId: ctx.tenantId,
+        before: outcome.previous,
+        after: next,
+    });
+    return { samplePercent: next, previous: outcome.previous, changed: true };
+}
+
+function denySampleRateFor(
+    ctx: RequestContext,
+    reason: NonNullable<InternalAuditStanding['refusal']>,
+): Promise<never> {
+    return denySampleRate(
+        ctx,
+        reason,
+        reason === 'REVIEWER_OWNS_AUDITOR'
+            ? 'The owner of the auditor agent never sets how closely internal audit checks it.'
+            : reason === 'REVIEWER_NOT_ACTIVE_MEMBER'
+              ? 'Only an active member of this workspace sets internal audit’s sampling rate.'
+              : 'Internal audit’s sampling rate is set by internal audit: your line of defence is not THIRD.',
+    );
+}
+
+async function denySampleRate(ctx: RequestContext, reason: WorkpaperReviewRefusal, message: string): Promise<never> {
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : ctx.actorType === 'JOB' ? 'JOB' : 'USER',
+        entity: 'TenantSecuritySettings',
+        entityId: ctx.tenantId,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason,
+            attemptedAction: 'set_workpaper_review_sample_percent',
+        },
+        metadataJson: { role: ctx.role, reason, apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
+    }).catch(() => undefined);
+    throw forbidden(message, { reason });
 }
 
 /**

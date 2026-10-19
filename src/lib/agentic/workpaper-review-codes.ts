@@ -45,18 +45,36 @@ export const WORKPAPER_REVIEW_DISSENT_CODES = [
 ] as const;
 export type WorkpaperReviewDissentCode = (typeof WORKPAPER_REVIEW_DISSENT_CODES)[number];
 
+/**
+ * The share of workpapers drawn when a tenant has stated none: every one (owner
+ * decision 1, 2026-10-19 — the pilot reviews every workpaper). The live value is
+ * `TenantSecuritySettings.workpaperReviewSamplePercent`, a per-tenant setting
+ * whose column default is this number, so lowering it is a configuration change
+ * and not a code change. The default is the strictest value on purpose: a
+ * tenant with no settings row is reviewed in full, not at some lower rate
+ * nobody chose.
+ *
+ * Only internal audit changes it — an ACTIVE third-line member who does not own
+ * the auditor agent (owner decision, 2026-10-19). The bounds are the CHECK's.
+ */
+export const WORKPAPER_REVIEW_DEFAULT_SAMPLE_PERCENT = 100;
+export const WORKPAPER_REVIEW_MIN_SAMPLE_PERCENT = 1;
+export const WORKPAPER_REVIEW_MAX_SAMPLE_PERCENT = 100;
+
 /** The verdicts a reviewer may write. PENDING is the sweep's, never an answer. */
 export const WORKPAPER_REVIEW_ANSWERS = ['CONCURRED', 'DISSENTED', 'INDETERMINATE'] as const;
 export type WorkpaperReviewAnswer = (typeof WORKPAPER_REVIEW_ANSWERS)[number];
 
 /**
- * Why a review answer (or the read that precedes it) is refused, carried as
- * `details.reason`. Who-may-answer refusals (not the assignee, not an ACTIVE
- * third-line member, the auditor's owner) are 403s with an `AUTHZ_DENIED` row;
- * state refusals are 409s; a malformed answer is a 400. A caller who is not a
- * person is a 403 with no reason.
+ * Why a review answer, the read that precedes it, or a change to the sampling
+ * rate is refused, carried as `details.reason`. Who-may refusals (not a person,
+ * not the assignee, not an ACTIVE third-line member, the auditor's owner) are
+ * 403s with an `AUTHZ_DENIED` row; state refusals are 409s; a malformed body is
+ * a 400.
  */
 export type WorkpaperReviewRefusal =
+    /** A context speaking for an API key, an agent or a job: internal audit is people. */
+    | 'NOT_A_PERSON'
     | 'NOT_ASSIGNED_REVIEWER'
     | 'REVIEWER_NOT_ACTIVE_MEMBER'
     | 'REVIEWER_LINE_NOT_THIRD'

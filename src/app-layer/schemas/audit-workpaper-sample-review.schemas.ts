@@ -13,6 +13,8 @@ import { z } from 'zod';
 import {
     WORKPAPER_REVIEW_ANSWERS,
     WORKPAPER_REVIEW_DISSENT_CODES,
+    WORKPAPER_REVIEW_MAX_SAMPLE_PERCENT,
+    WORKPAPER_REVIEW_MIN_SAMPLE_PERCENT,
 } from '@/lib/agentic/workpaper-review-codes';
 
 export const RecordWorkpaperReviewSchema = z
@@ -45,3 +47,22 @@ export const RecordWorkpaperReviewSchema = z
         }
     });
 export type RecordWorkpaperReviewInput = z.infer<typeof RecordWorkpaperReviewSchema>;
+
+/**
+ * The body of `PUT /api/t/:slug/audits/workpaper-reviews/sample-rate` — the
+ * share of the auditor agent's workpapers internal audit draws. A whole number
+ * of percent, 1 to 100: the CHECK on the column holds the same bounds, and 0 is
+ * refused on purpose — switching internal audit's check on the auditor off is
+ * not a rate. `.strict()` and no coercion, so `"50"` and `50.5` are 400s rather
+ * than a value nobody typed.
+ */
+export const SetWorkpaperReviewSamplePercentSchema = z
+    .object({
+        samplePercent: z
+            .number()
+            .int()
+            .min(WORKPAPER_REVIEW_MIN_SAMPLE_PERCENT)
+            .max(WORKPAPER_REVIEW_MAX_SAMPLE_PERCENT),
+    })
+    .strict();
+export type SetWorkpaperReviewSamplePercentInput = z.infer<typeof SetWorkpaperReviewSamplePercentSchema>;

@@ -46,6 +46,7 @@ import {
     type ApprovalRequirement,
 } from '@/lib/agentic/approval-tiering';
 import { isProposalExpired, proposalExpiresAt } from '@/lib/agentic/proposal-expiry';
+import { reviewIdFromDissentOriginRef } from '@/lib/agentic/workpaper-review-sampling';
 import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
 import {
     CreateRiskSchema,
@@ -382,6 +383,118 @@ async function refuseExpired(
     }).catch(() => undefined);
 
     throw forbidden('agent_proposal_expired');
+}
+
+/**
+ * WHOSE DISSENT RAISED THIS PROPOSAL, when one did (#3677, owner decision
+ * 2026-10-19): internal audit's dissent from a sampled workpaper queues a
+ * finding proposal, and the person who dissented never decides it — approve,
+ * approve with edits, or reject. Somebody else does, through this same queue.
+ *
+ * Keyed off the origin ref the raise writes (`proposedBySessionRef`, a plain
+ * column) and the review it names, never off who CREATED the proposal: a
+ * dissent's proposal is raised under the reviewer's session on the answer path
+ * and under a system context when the sweep heals a failed raise, and the bar
+ * must hold for both. The review row is the authority on who dissented — it is
+ * write-once and never deleted.
+ *
+ * `null` means the proposal is not a dissent's. `reviewerUserId: null` means the
+ * ref names a review this tenant does not hold (only a forged ref or a lost row
+ * can do that): nobody can be shown not to be its author, so nobody decides it.
+ */
+type DissentAuthor = { reviewId: string; reviewerUserId: string | null };
+
+function dissentAuthorRefusal(
+    ctx: RequestContext,
+    author: DissentAuthor | null,
+): 'DISSENT_AUTHOR_MAY_NOT_DECIDE' | 'DISSENT_AUTHOR_UNKNOWN' | null {
+    if (!author) return null;
+    if (author.reviewerUserId === null) return 'DISSENT_AUTHOR_UNKNOWN';
+    return author.reviewerUserId === ctx.userId ? 'DISSENT_AUTHOR_MAY_NOT_DECIDE' : null;
+}
+
+/** The dissent authors of many proposals, in one read. Keyed by proposal id. */
+async function dissentAuthorsOf(
+    ctx: RequestContext,
+    proposals: ReadonlyArray<{ id: string; proposedBySessionRef: string | null }>,
+): Promise<Map<string, DissentAuthor>> {
+    const reviewIdOf = new Map<string, string>();
+    for (const p of proposals) {
+        const reviewId = reviewIdFromDissentOriginRef(p.proposedBySessionRef);
+        if (reviewId) reviewIdOf.set(p.id, reviewId);
+    }
+    if (reviewIdOf.size === 0) return new Map();
+    const reviewIds = [...new Set(reviewIdOf.values())];
+    const reviews = await runInTenantContext(ctx, (db) =>
+        db.auditWorkpaperSampleReview.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: reviewIds } },
+            select: { id: true, reviewedByUserId: true },
+            take: reviewIds.length,
+        }),
+    );
+    const reviewerOf = new Map(reviews.map((r) => [r.id, r.reviewedByUserId]));
+    return new Map(
+        [...reviewIdOf].map(([proposalId, reviewId]) => [
+            proposalId,
+            { reviewId, reviewerUserId: reviewerOf.get(reviewId) ?? null },
+        ]),
+    );
+}
+
+/**
+ * The refusal every DECIDING path shares for a dissent's own author. Same shape
+ * as `refuseQuarantined`: one hash-chained `AUTHZ_DENIED` row, then a 403 whose
+ * `details.reason` names the condition.
+ */
+interface DissentAuthorDenial {
+    refusal: 'DISSENT_AUTHOR_MAY_NOT_DECIDE' | 'DISSENT_AUTHOR_UNKNOWN';
+    attemptedAction: 'approve' | 'reject';
+}
+
+async function refuseDissentAuthor(
+    ctx: RequestContext,
+    proposal: { id: string; kind: string },
+    author: DissentAuthor,
+    denial: DissentAuthorDenial,
+): Promise<never> {
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'AgentProposal',
+        entityId: proposal.id,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        // Codes and ids only: both values of `denial` are closed unions.
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: 'agent_proposal_dissent_author',
+            refusal: denial.refusal,
+            attemptedAction: denial.attemptedAction,
+            kind: proposal.kind,
+            workpaperReviewId: author.reviewId,
+        },
+        metadataJson: { role: ctx.role, apiKeyId: ctx.apiKeyId ?? null, refusal: denial.refusal },
+    }).catch(() => undefined);
+
+    throw forbidden(
+        denial.refusal === 'DISSENT_AUTHOR_MAY_NOT_DECIDE'
+            ? 'You raised this finding proposal by dissenting from a sampled workpaper. Somebody else decides it.'
+            : 'This proposal names a workpaper review this workspace does not hold, so nobody can be shown not to have raised it.',
+        { reason: denial.refusal },
+    );
+}
+
+/** Refuse the dissent's own author, for a single-proposal decision. */
+async function assertNotDissentAuthor(
+    ctx: RequestContext,
+    proposal: { id: string; kind: string; proposedBySessionRef: string | null },
+    attemptedAction: 'approve' | 'reject',
+): Promise<void> {
+    const author = (await dissentAuthorsOf(ctx, [proposal])).get(proposal.id) ?? null;
+    const refusal = dissentAuthorRefusal(ctx, author);
+    if (author && refusal) await refuseDissentAuthor(ctx, proposal, author, { refusal, attemptedAction });
 }
 
 /**
@@ -1231,6 +1344,11 @@ export async function approveAgentProposal(
     if (isProposalExpired(proposal.expiresAt, new Date())) {
         await refuseExpired(ctx, proposal, 'approve');
     }
+    // ═══ THE DISSENTER DOES NOT DECIDE THEIR OWN DISSENT'S FINDING ═══
+    //
+    // Approval and approval-with-edits both arrive here. An authority refusal,
+    // so it sits with the two above and ahead of the PENDING check.
+    await assertNotDissentAuthor(ctx, proposal, 'approve');
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
@@ -1730,6 +1848,10 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
     if (isProposalExpired(proposal.expiresAt, new Date())) {
         await refuseExpired(ctx, proposal, 'reject');
     }
+    // And the person whose dissent raised it does not reject it either: a
+    // rejection is a decision, and "the finding I raised is not a finding" is
+    // the dissenter overruling themselves out of the record.
+    await assertNotDissentAuthor(ctx, proposal, 'reject');
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
@@ -1767,7 +1889,11 @@ export type BulkRejectSkipReason =
     /** Its review window closed — see `refuseExpired`. */
     | 'EXPIRED'
     /** Already decided (rejected, applied, awaiting a second signature, …). */
-    | 'NOT_PENDING';
+    | 'NOT_PENDING'
+    /** The caller's own workpaper dissent raised it — see `assertNotDissentAuthor`. */
+    | 'DISSENT_AUTHOR_MAY_NOT_DECIDE'
+    /** It names a workpaper review this tenant does not hold — see `dissentAuthorsOf`. */
+    | 'DISSENT_AUTHOR_UNKNOWN';
 
 export interface BulkRejectResult {
     /** The ids that MOVED to REJECTED, all in one transaction. */
@@ -1825,15 +1951,19 @@ export async function bulkRejectAgentProposals(
             where: { id: { in: requested }, tenantId: ctx.tenantId },
             select: {
                 id: true,
+                kind: true,
                 status: true,
                 guardVerdict: true,
                 guardRuleIds: true,
                 expiresAt: true,
                 guardInputDigest: true,
+                proposedBySessionRef: true,
             },
         }),
     );
     const byId = new Map(rows.map((r) => [r.id, r]));
+    // One read for every dissent the batch holds, not one per row.
+    const authors = await dissentAuthorsOf(ctx, rows);
 
     const now = new Date();
     const accepted: typeof rows = [];
@@ -1861,6 +1991,16 @@ export async function bulkRejectAgentProposals(
         if (isProposalExpired(row.expiresAt, now)) {
             await refuseExpired(ctx, row, 'reject').catch(() => undefined);
             skipped.push({ id, reason: 'EXPIRED' });
+            continue;
+        }
+        const author = authors.get(id) ?? null;
+        const authorRefusal = dissentAuthorRefusal(ctx, author);
+        if (author && authorRefusal) {
+            // Bulk must not be the way round the bar: the same audited refusal.
+            await refuseDissentAuthor(ctx, row, author, { refusal: authorRefusal, attemptedAction: 'reject' }).catch(
+                () => undefined,
+            );
+            skipped.push({ id, reason: authorRefusal });
             continue;
         }
         if (row.status !== 'PENDING') {

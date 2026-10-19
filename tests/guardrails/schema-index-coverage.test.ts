@@ -279,10 +279,11 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'AuditWorkpaperSampleReview',
         fields: ['tenantId', 'assignedToUserId', 'sampledAt'],
         justification:
-            'usecases/audit-workpaper-sample-review.ts::listMyWorkpaperReviews is the reviewer\'s '
-            + 'queue: equality on tenantId + assignedToUserId (the caller), ordered by sampledAt '
-            + 'ascending so the oldest unanswered review leads, bounded take 201. The rate\'s '
-            + 'groupBy is (tenantId, sampledAt >= since), served by @@index([tenantId, sampledAt]); '
+            'usecases/audit-workpaper-sample-review.ts::listWorkpaperReviews is the reviewer\'s '
+            + 'queue: equality on tenantId + assignedToUserId (the caller), unanswered first then '
+            + 'sampledAt ascending so the oldest unanswered review leads, bounded take 201. Internal '
+            + 'audit\'s overview drops the assignee and is served by @@index([tenantId, sampledAt]), '
+            + 'as is the rate\'s groupBy (tenantId, sampledAt >= since); '
             + 'the sweep reads system-wide by outcome and drains by id, and the idempotency key '
             + 'is the tenant-leading @@unique([tenantId, workpaperId]).',
     },

@@ -43,13 +43,15 @@ sampling of the workpapers.
   and `propose_finding` and nothing else.
 - **Internal audit is to approve this catalogue and to sample the auditor's
   workpapers.** A sampled workpaper must be re-checked by a person in internal
-  audit, never by the auditor agent's owner. On `main` a monthly sweep draws the
+  audit, never by the auditor agent's owner. On `main` a daily sweep draws the
   workpapers with a keyed sample at the tenant's rate (every workpaper in the
-  pilot) and assigns each to an ACTIVE member whose line of defence is THIRD and
-  who does not own the auditor agent, or records it UNASSIGNED with a reason.
-  That member alone re-performs it and answers CONCURRED, DISSENTED or
+  pilot; only internal audit changes the rate) and assigns each to an ACTIVE
+  member whose line of defence is THIRD and who does not own the auditor agent,
+  or records it UNASSIGNED with a reason and assigns it the day somebody is
+  eligible. That member alone re-performs it and answers CONCURRED, DISSENTED or
   INDETERMINATE, once, in stable dissent codes, which also sets the workpaper's
-  review stamp; a dissent becomes a finding proposal a person decides. The
+  review stamp; internal audit sees every assignment. A dissent becomes a
+  finding proposal that a person other than the dissenter decides. The
   re-performance agreement rate is reported in the agent governance pack with
   its definition (`usecases/audit-workpaper-sample-review.ts`,
   `jobs/audit-workpaper-sample-review.ts`).

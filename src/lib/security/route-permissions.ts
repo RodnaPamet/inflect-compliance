@@ -1378,9 +1378,22 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'Internal audit\'s queue of sampled workpapers (#3677). audits.view, ' +
             'held by every role, because an internal auditor is often an AUDITOR, ' +
-            'which holds no audits.manage; listMyWorkpaperReviews returns only the ' +
-            'caller\'s own assigned reviews, and none unless the caller is an ACTIVE ' +
-            'third-line member. Nothing here draws or assigns: the sweep does.',
+            'which holds no audits.manage; listWorkpaperReviews returns every ' +
+            'assignment read-only to internal audit (an ACTIVE third-line member who ' +
+            'owns no auditor agent), only the caller\'s own to any other third-line ' +
+            'member, and none to anybody else. Nothing here draws or assigns: the sweep does.',
+    },
+    {
+        path: new RegExp(`^${T}\\/audits\\/workpaper-reviews\\/sample-rate$`),
+        methods: ['PUT'],
+        permission: 'audits.view',
+        note:
+            'Internal audit\'s sampling rate (#3677, owner decision 2026-10-19). The ' +
+            'review page\'s key, because internal audit is often an AUDITOR and holds ' +
+            'no admin key; setWorkpaperReviewSamplePercent admits only a person who is ' +
+            'an ACTIVE third-line member and owns no auditor agent (403 + AUTHZ_DENIED ' +
+            'with a named reason otherwise), and audits the change before and after. ' +
+            'Ahead of the [^/]+ rule below, which would otherwise match this path.',
     },
     {
         path: new RegExp(`^${T}\\/audits\\/workpaper-reviews\\/[^/]+$`),

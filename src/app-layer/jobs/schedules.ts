@@ -588,27 +588,35 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     },
     {
         name: 'audit-workpaper-sample-review',
-        // MONTHLY, the 3rd at 09:40 UTC — AFTER the auditor agent's runs, which
-        // is the whole point: the pilot's procedure plans run at 06:17 UTC on
-        // the 2nd, monthly ones every month and quarterly ones in the first
-        // month of each quarter (`scripts/audit-pilot-setup.ts`, `CRON`). A
-        // sweep before them would draw last month's workpapers and miss this
-        // month's until the next one. A full day after them, rather than an
-        // hour, leaves room for a run the control-test runner retried and for a
-        // re-run the second line started by hand on the 2nd.
+        // DAILY at 09:40 UTC (owner decision, 2026-10-19). Every day, so an item
+        // recorded UNASSIGNED — drawn before anybody was declared third-line, or
+        // whose only third-line member owns the auditor — is assigned within a
+        // day of somebody becoming eligible, rather than waiting for a monthly
+        // run; and so a reviewer who left internal audit is replaced within a day.
         //
-        // NOT DAILY. A draw at any time would be correct — each workpaper is
-        // decided on its own, so a daily sweep would not enlarge the sample the
-        // way a daily ASI09 draw would — but the output is a human queue, and
-        // internal audit works it as a monthly batch. Monthly also bounds how
-        // often an UNASSIGNED item is re-tried; an OWNER who declares a
-        // third-line member mid-month can run the job for one tenant instead.
+        // Daily does NOT enlarge the sample. Whether a workpaper is drawn is a
+        // fixed function of its own keyed score, the rate and the epoch its
+        // period fixes, so deciding it again gives the same answer; and the
+        // (tenantId, workpaperId) unique index holds one row per workpaper, so
+        // a drawn one is never drawn twice. A day with no new workpaper and no
+        // rate change draws nothing, and a second run on the same day changes
+        // nothing (a valid assignment is never moved, an unchanged UNASSIGNED
+        // reason is not rewritten). That is the difference from the ASI09
+        // sampler, whose draw is a rank over a population and would creep if
+        // re-run.
         //
-        // 09:40, a working-hours slot for the same reason the ASI09 sampler
-        // lands on Monday 09:30, and off its minute.
-        pattern: '40 9 3 * *',
+        // After the auditor agent's runs: the pilot's procedure plans run at
+        // 06:17 UTC on the 2nd (`scripts/audit-pilot-setup.ts`, `CRON`), so the
+        // same day's sweep draws them three hours later, and a run the
+        // control-test runner retried, or a re-run the second line started by
+        // hand, is drawn the next morning.
+        //
+        // 09:40: working hours, when internal audit reads the queue, and off the
+        // busy minutes — nothing else runs at :40 in this hour, and the ASI09
+        // sampler's Monday 09:30 is ten minutes clear.
+        pattern: '40 9 * * *',     // daily at 09:40 UTC
         description:
-            "#3677 — internal audit's sampling of the auditor agent's workpapers. Draws each workpaper not yet drawn by its HMAC-keyed score against the tenant's rate (TenantSecuritySettings.workpaperReviewSamplePercent, 100% in the pilot), with the epoch fixed by the workpaper's period, and assigns it by a keyed draw from the same epoch to an ACTIVE third-line member who does not own the auditor agent — or records it UNASSIGNED with a named reason. Re-draws only a PENDING row nobody can answer, and raises any dissent finding proposal a failed answer left unraised. Idempotent by the (tenantId, workpaperId) unique index and the per-review proposal origin.",
+            "#3677 — internal audit's sampling of the auditor agent's workpapers, daily. Draws each workpaper not yet drawn by its HMAC-keyed score against the tenant's rate (TenantSecuritySettings.workpaperReviewSamplePercent, 100% in the pilot), with the epoch fixed by the workpaper's period, and assigns it by a keyed draw from the same epoch to an ACTIVE third-line member who does not own the auditor agent — or records it UNASSIGNED with a named reason. Re-draws, every day, only a PENDING row nobody can answer (an UNASSIGNED one, or one whose reviewer is no longer eligible), and raises any dissent finding proposal a failed answer left unraised. Idempotent by the (tenantId, workpaperId) unique index and the per-review proposal origin.",
         defaultPayload: {},
     },
     {

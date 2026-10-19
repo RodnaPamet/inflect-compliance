@@ -4,18 +4,26 @@
  * INTERNAL AUDIT'S SAMPLED WORKPAPERS (#3677, step 3d).
  *
  * The auditor agent re-performs audit procedures and writes workpapers; the
- * monthly sweep draws them (every one in the pilot) and assigns each to a
- * member of internal audit. This page is that member's queue: the workpapers
- * assigned to THEM, oldest first, and a sheet in which they re-perform one and
- * record their answer — CONCURRED, DISSENTED or INDETERMINATE — once.
+ * daily sweep draws them (every one in the pilot) and assigns each to a member
+ * of internal audit. This page is internal audit's queue: a sheet in which a
+ * reviewer re-performs a workpaper and records their answer — CONCURRED,
+ * DISSENTED or INDETERMINATE — once.
+ *
+ * ## Who sees what (owner decisions, 2026-10-19)
+ *
+ * Internal audit — an ACTIVE third-line member who owns no auditor agent —
+ * sees EVERY assignment in the workspace and its status, and answers only its
+ * own: somebody else's row opens read-only. Anybody else sees only the rows
+ * assigned to them; somebody who is not an ACTIVE third-line member is told so,
+ * rather than shown an empty queue that reads as "nothing to do". Internal
+ * audit also sets the sampling rate here, inline, with a secondary button.
  *
  * ## Nothing here chooses
  *
  * There is no control that opens a review, picks a workpaper or picks a
  * reviewer: the sweep does all three, and a page that could would be choosing
- * the sample. The list is the caller's own assignments only; somebody who is
- * not an ACTIVE third-line member is told so, rather than shown an empty queue
- * that reads as "nothing to do".
+ * the sample. The rate is not a choice of workpaper — every one is decided by
+ * its own keyed score against it.
  *
  * ## The answer is codes, never prose
  *
@@ -37,6 +45,7 @@ import { BadgeCheck } from '@inflect/ui/components/ui/icons/nucleo';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
+import { WorkpaperReviewSampleRate } from './WorkpaperReviewSampleRate';
 import { WorkpaperReviewSheet } from './WorkpaperReviewSheet';
 
 /** The tenant-relative endpoint. One data path — the page has no SSR twin. */
@@ -44,18 +53,23 @@ export const WORKPAPER_REVIEWS_ENDPOINT = '/audits/workpaper-reviews';
 
 export type ReviewOutcome = 'PENDING' | 'CONCURRED' | 'DISSENTED' | 'INDETERMINATE';
 
-/** One assigned review, as `GET /api/t/:slug/audits/workpaper-reviews` projects it. */
+/** One review, as `GET /api/t/:slug/audits/workpaper-reviews` projects it. */
 export interface WorkpaperReviewRow {
     id: string;
     workpaperId: string;
     samplingEpoch: string;
     samplePercent: number;
     sampledAt: string;
+    assignedToUserId: string | null;
+    unassignedReason: string | null;
     assignedAt: string;
     outcome: ReviewOutcome;
     dissentCodes: string[];
     reviewedAt: string | null;
     findingProposalId: string | null;
+    /** Assigned to the viewer. Only such a row is ever answerable here. */
+    mine: boolean;
+    assignee: { userId: string; name: string } | null;
     answerable: boolean;
     refusal: string | null;
     workpaper: {
@@ -74,6 +88,9 @@ export interface WorkpaperReviewRow {
 
 export interface WorkpaperReviewListPayload {
     reviewer: { eligible: boolean; reason: string | null };
+    /** `ALL`: internal audit's overview. `OWN`: the viewer's assignments only. */
+    scope: 'ALL' | 'OWN';
+    sampleRate: { percent: number; canChange: boolean; refusal: string | null };
     rows: WorkpaperReviewRow[];
     truncated: boolean;
 }
@@ -97,13 +114,18 @@ const ANSWERED_VARIANT: Record<Exclude<ReviewOutcome, 'PENDING'>, StatusBadgeVar
 };
 
 function outcomeBadge(row: WorkpaperReviewRow, t: ReturnType<typeof useTranslations>) {
-    const blocked = row.outcome === 'PENDING' && !row.answerable;
-    const variant: StatusBadgeVariant =
-        row.outcome === 'PENDING' ? (blocked ? 'neutral' : 'info') : ANSWERED_VARIANT[row.outcome];
-    const label = blocked
-        ? t(`workpaperReviews.refusal.${row.refusal ?? 'UNKNOWN'}`)
-        : t(`workpaperReviews.outcome.${row.outcome}`);
-    return <StatusBadge variant={variant}>{label}</StatusBadge>;
+    if (row.outcome !== 'PENDING') {
+        return <StatusBadge variant={ANSWERED_VARIANT[row.outcome]}>{t(`workpaperReviews.outcome.${row.outcome}`)}</StatusBadge>;
+    }
+    // Somebody else's unanswered row: waiting on its reviewer, or on the sweep.
+    const waitingOnOther = !row.mine && row.assignedToUserId !== null;
+    const blocked = !row.answerable && !waitingOnOther;
+    const label = waitingOnOther
+        ? t('workpaperReviews.awaitingReviewer')
+        : blocked
+          ? t(`workpaperReviews.refusal.${row.refusal ?? 'UNKNOWN'}`)
+          : t('workpaperReviews.outcome.PENDING');
+    return <StatusBadge variant={blocked ? 'neutral' : 'info'}>{label}</StatusBadge>;
 }
 
 function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
@@ -115,6 +137,8 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
     const allRows = useMemo(() => query.data?.rows ?? [], [query.data]);
     const reviewer = query.data?.reviewer ?? null;
     const truncated = query.data?.truncated ?? false;
+    const overview = query.data?.scope === 'ALL';
+    const sampleRate = query.data?.sampleRate ?? null;
 
     const needle = search.trim().toLowerCase();
     const rows = useMemo(
@@ -126,7 +150,7 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                 : allRows,
         [allRows, needle],
     );
-    const awaiting = allRows.filter((r) => r.outcome === 'PENDING' && r.answerable).length;
+    const awaiting = allRows.filter((r) => r.mine && r.outcome === 'PENDING' && r.answerable).length;
 
     const columns = useMemo(
         () =>
@@ -160,6 +184,27 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                         </span>
                     ),
                 },
+                // Who it is assigned to — only in internal audit's overview,
+                // where the rows are not all the viewer's own.
+                ...(overview
+                    ? [
+                          {
+                              id: 'assignee',
+                              header: t('workpaperReviews.colAssignee'),
+                              accessorFn: (r: WorkpaperReviewRow) => r.assignee?.name ?? '',
+                              cell: ({ row }: { row: { original: WorkpaperReviewRow } }) => (
+                                  <span
+                                      className="text-content-muted"
+                                      data-testid={`workpaper-review-assignee-${row.original.id}`}
+                                  >
+                                      {row.original.mine
+                                          ? t('workpaperReviews.assigneeYou')
+                                          : (row.original.assignee?.name ?? t('workpaperReviews.assigneeNobody'))}
+                                  </span>
+                              ),
+                          },
+                      ]
+                    : []),
                 {
                     id: 'sampledAt',
                     header: t('workpaperReviews.colDrawn'),
@@ -175,7 +220,7 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                     cell: ({ row }) => outcomeBadge(row.original, t),
                 },
             ]),
-        [t],
+        [t, overview],
     );
 
     const getRowId = useCallback((r: WorkpaperReviewRow) => r.id, []);
@@ -198,7 +243,9 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                         { label: t('workpaperReviews.crumb') },
                     ],
                     title: t('workpaperReviews.title'),
-                    count: t('workpaperReviews.count', { awaiting, total: allRows.length }),
+                    count: overview
+                        ? t('workpaperReviews.countOverview', { awaiting, total: allRows.length })
+                        : t('workpaperReviews.count', { awaiting, total: allRows.length }),
                 }}
                 filters={{
                     defs: [],
@@ -214,6 +261,19 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                             <InlineNotice variant="warning" data-testid="workpaper-reviews-not-eligible">
                                 {t(`workpaperReviews.notEligible.${reviewer.reason ?? 'UNKNOWN'}`)}
                             </InlineNotice>
+                        )}
+                        {overview && (
+                            <InlineNotice variant="info" icon={null} data-testid="workpaper-reviews-overview">
+                                {t('workpaperReviews.overview')}
+                            </InlineNotice>
+                        )}
+                        {sampleRate?.canChange && (
+                            <WorkpaperReviewSampleRate
+                                percent={sampleRate.percent}
+                                onSaved={() => {
+                                    void query.mutate();
+                                }}
+                            />
                         )}
                         {truncated && (
                             <InlineNotice variant="warning" data-testid="workpaper-reviews-truncated">
@@ -239,11 +299,13 @@ function WorkpaperReviewsInner({ tenantSlug }: { tenantSlug: string }) {
                     emptyState: (
                         <EmptyState
                             icon={BadgeCheck}
-                            title={t('workpaperReviews.emptyTitle')}
+                            title={overview ? t('workpaperReviews.emptyTitleOverview') : t('workpaperReviews.emptyTitle')}
                             description={
                                 reviewer && !reviewer.eligible
                                     ? t('workpaperReviews.emptyNotEligible')
-                                    : t('workpaperReviews.emptyDesc')
+                                    : overview
+                                      ? t('workpaperReviews.emptyDescOverview')
+                                      : t('workpaperReviews.emptyDesc')
                             }
                         />
                     ),

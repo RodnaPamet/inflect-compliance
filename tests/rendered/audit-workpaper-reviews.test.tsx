@@ -13,7 +13,11 @@
  *   • refuse to send a dissent with no code, and send exactly
  *     `{ outcome, dissentCodes? }` and nothing else;
  *   • offer no form at all on an answered review, which is set once;
- *   • carry no control that opens a review or picks a reviewer.
+ *   • carry no control that opens a review or picks a reviewer;
+ *   • show internal audit EVERY assignment, read-only but for its own, with
+ *     the answer form only on the viewer's own row (owner decision, 2026-10-19);
+ *   • offer the sampling-rate control to internal audit only, and send exactly
+ *     `{ samplePercent }`.
  */
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -91,11 +95,15 @@ function row(over: Partial<WorkpaperReviewRow> = {}): WorkpaperReviewRow {
         samplingEpoch: 'audit-workpaper-review@2026-09',
         samplePercent: 100,
         sampledAt: '2026-10-03T09:40:00.000Z',
+        assignedToUserId: 'user-me',
+        unassignedReason: null,
         assignedAt: '2026-10-03T09:40:00.000Z',
         outcome: 'PENDING',
         dissentCodes: [],
         reviewedAt: null,
         findingProposalId: null,
+        mine: true,
+        assignee: { userId: 'user-me', name: 'Me Myself' },
         answerable: true,
         refusal: null,
         workpaper: {
@@ -114,7 +122,14 @@ function row(over: Partial<WorkpaperReviewRow> = {}): WorkpaperReviewRow {
     };
 }
 
-function detail(over: Partial<WorkpaperReviewDetailPayload['review']> = {}): WorkpaperReviewDetailPayload {
+function detail(
+    over: Partial<WorkpaperReviewDetailPayload['review']> = {},
+    viewer: WorkpaperReviewDetailPayload['viewer'] = {
+        mine: true,
+        answerable: (over.outcome ?? 'PENDING') === 'PENDING',
+        refusal: (over.outcome ?? 'PENDING') === 'PENDING' ? null : 'ALREADY_REVIEWED',
+    },
+): WorkpaperReviewDetailPayload {
     return {
         review: {
             id: 'rev-1',
@@ -122,12 +137,15 @@ function detail(over: Partial<WorkpaperReviewDetailPayload['review']> = {}): Wor
             samplingEpoch: 'audit-workpaper-review@2026-09',
             samplePercent: 100,
             sampledAt: '2026-10-03T09:40:00.000Z',
+            assignedToUserId: 'user-me',
+            unassignedReason: null,
             outcome: 'PENDING',
             dissentCodes: [],
             reviewedAt: null,
             findingProposalId: null,
             ...over,
         },
+        viewer,
         workpaper: {
             id: 'wp-1',
             procedureId: 'iam.leaver_timeliness',
@@ -161,11 +179,24 @@ function detail(over: Partial<WorkpaperReviewDetailPayload['review']> = {}): Wor
 const listMutate = jest.fn();
 const detailMutate = jest.fn();
 
-function mockData(list: WorkpaperReviewListPayload, sheet: WorkpaperReviewDetailPayload = detail()) {
+type ListInput = Omit<WorkpaperReviewListPayload, 'scope' | 'sampleRate'> &
+    Partial<Pick<WorkpaperReviewListPayload, 'scope' | 'sampleRate'>>;
+
+function mockData(input: ListInput, sheet: WorkpaperReviewDetailPayload | ((key: string) => WorkpaperReviewDetailPayload) = detail()) {
+    const list: WorkpaperReviewListPayload = {
+        scope: 'OWN',
+        sampleRate: { percent: 100, canChange: false, refusal: 'REVIEWER_LINE_NOT_THIRD' },
+        ...input,
+    };
     swr.mockImplementation((key: string | null) => {
         if (key === WORKPAPER_REVIEWS_ENDPOINT) return { data: list, error: undefined, isLoading: false, mutate: listMutate };
         if (key && key.startsWith(`${WORKPAPER_REVIEWS_ENDPOINT}/`)) {
-            return { data: sheet, error: undefined, isLoading: false, mutate: detailMutate };
+            return {
+                data: typeof sheet === 'function' ? sheet(key) : sheet,
+                error: undefined,
+                isLoading: false,
+                mutate: detailMutate,
+            };
         }
         return { data: undefined, error: undefined, isLoading: false, mutate: jest.fn() };
     });
@@ -319,5 +350,152 @@ describe('the sheet shows the record and takes the answer as codes', () => {
         const recorded = within(sheet).getByTestId('workpaper-review-recorded');
         expect(recorded).toHaveTextContent(copy('codes.CONCLUSION_NOT_SUPPORTED'));
         expect(recorded).toHaveTextContent('prop-42');
+    });
+});
+
+describe('internal audit sees every assignment, and answers only its own (owner decision, 2026-10-19)', () => {
+    const overviewRows = [
+        row(),
+        row({
+            id: 'rev-2',
+            workpaperId: 'wp-2',
+            assignedToUserId: 'user-other',
+            mine: false,
+            assignee: { userId: 'user-other', name: 'Olga Other' },
+            answerable: false,
+            refusal: 'NOT_ASSIGNED_REVIEWER',
+        }),
+        row({
+            id: 'rev-3',
+            workpaperId: 'wp-3',
+            assignedToUserId: null,
+            unassignedReason: 'NO_THIRD_LINE_MEMBER',
+            mine: false,
+            assignee: null,
+            answerable: false,
+            refusal: 'UNASSIGNED',
+        }),
+    ];
+    const sheetFor = (key: string) =>
+        key.endsWith('/rev-2')
+            ? detail({ id: 'rev-2', workpaperId: 'wp-2', assignedToUserId: 'user-other' }, { mine: false, answerable: false, refusal: 'NOT_ASSIGNED_REVIEWER' })
+            : key.endsWith('/rev-3')
+              ? detail(
+                    { id: 'rev-3', workpaperId: 'wp-3', assignedToUserId: null, unassignedReason: 'NO_THIRD_LINE_MEMBER' },
+                    { mine: false, answerable: false, refusal: 'UNASSIGNED' },
+                )
+              : detail();
+
+    beforeEach(() => {
+        mockData(
+            {
+                reviewer: { eligible: true, reason: null },
+                scope: 'ALL',
+                sampleRate: { percent: 100, canChange: true, refusal: null },
+                truncated: false,
+                rows: overviewRows,
+            },
+            sheetFor,
+        );
+    });
+
+    it('lists other reviewers’ rows, with who each is assigned to and its status', async () => {
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        expect(await screen.findByTestId('workpaper-reviews-overview')).toHaveTextContent(copy('overview'));
+        expect(screen.getByTestId('workpaper-review-assignee-rev-1')).toHaveTextContent(copy('assigneeYou'));
+        expect(screen.getByTestId('workpaper-review-assignee-rev-2')).toHaveTextContent('Olga Other');
+        expect(screen.getByTestId('workpaper-review-assignee-rev-3')).toHaveTextContent(copy('assigneeNobody'));
+        expect(screen.getByText(copy('awaitingReviewer'))).toBeInTheDocument();
+        expect(screen.getByText(copy('refusal.UNASSIGNED'))).toBeInTheDocument();
+        // Only the viewer's own unanswered row counts as awaiting THEIR answer.
+        expect(screen.getByText(copy('outcome.PENDING'))).toBeInTheDocument();
+    });
+
+    it('opens somebody else’s row read-only — no form, no radio, no answer button', async () => {
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const sheet = await openRow('rev-2');
+        expect(within(sheet).getByTestId('workpaper-review-facts')).toBeInTheDocument();
+        expect(within(sheet).queryByTestId('workpaper-review-answer-form')).not.toBeInTheDocument();
+        expect(within(sheet).queryByRole('radio')).not.toBeInTheDocument();
+        expect(within(sheet).queryByRole('button', { name: copy('recordAnswer') })).not.toBeInTheDocument();
+        expect(within(sheet).getByTestId('workpaper-review-read-only')).toHaveTextContent(copy('readOnlyOther'));
+    });
+
+    it('opens an UNASSIGNED row read-only and says why nobody has it', async () => {
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const sheet = await openRow('rev-3');
+        expect(within(sheet).queryByTestId('workpaper-review-answer-form')).not.toBeInTheDocument();
+        expect(within(sheet).getByTestId('workpaper-review-read-only')).toHaveTextContent('NO_THIRD_LINE_MEMBER');
+    });
+
+    it('shows the answer form on the viewer’s own row', async () => {
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const sheet = await openRow('rev-1');
+        expect(within(sheet).getByTestId('workpaper-review-answer-form')).toBeInTheDocument();
+        expect(within(sheet).getAllByRole('radio')).toHaveLength(3);
+    });
+});
+
+describe('the sampling rate is internal audit’s to set (owner decision, 2026-10-19)', () => {
+    it('offers the control to internal audit and sends exactly { samplePercent }', async () => {
+        mockData({
+            reviewer: { eligible: true, reason: null },
+            scope: 'ALL',
+            sampleRate: { percent: 100, canChange: true, refusal: null },
+            truncated: false,
+            rows: [row()],
+        });
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ samplePercent: 99, previous: 100, changed: true }) });
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const control = await screen.findByTestId('workpaper-review-sample-rate');
+        const save = within(control).getByRole('button', { name: copy('rateSave') });
+        // Nothing to save until the value moves.
+        expect(save).toBeDisabled();
+        fireEvent.click(within(control).getByRole('button', { name: copy('rateDecrease') }));
+        expect(save).toBeEnabled();
+        fireEvent.click(save);
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; body: string }];
+        expect(url).toBe('/api/t/acme/audits/workpaper-reviews/sample-rate');
+        expect(init.method).toBe('PUT');
+        expect(JSON.parse(init.body)).toEqual({ samplePercent: 99 });
+        await waitFor(() => expect(listMutate).toHaveBeenCalled());
+    });
+
+    it('shows the server’s refusal inline', async () => {
+        mockData({
+            reviewer: { eligible: true, reason: null },
+            scope: 'ALL',
+            sampleRate: { percent: 100, canChange: true, refusal: null },
+            truncated: false,
+            rows: [row()],
+        });
+        fetchMock.mockResolvedValue({
+            ok: false,
+            json: async () => ({ error: { message: 'The owner of the auditor agent never sets how closely internal audit checks it.' } }),
+        });
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        const control = await screen.findByTestId('workpaper-review-sample-rate');
+        fireEvent.click(within(control).getByRole('button', { name: copy('rateDecrease') }));
+        fireEvent.click(within(control).getByRole('button', { name: copy('rateSave') }));
+        expect(await within(control).findByTestId('workpaper-review-sample-rate-error')).toHaveTextContent(
+            'The owner of the auditor agent never sets',
+        );
+        expect(listMutate).not.toHaveBeenCalled();
+    });
+
+    it('offers no control to anybody else — the auditor’s owner on the third line included', async () => {
+        mockData({
+            reviewer: { eligible: true, reason: null },
+            scope: 'OWN',
+            sampleRate: { percent: 100, canChange: false, refusal: 'REVIEWER_OWNS_AUDITOR' },
+            truncated: false,
+            rows: [row({ answerable: false, refusal: 'REVIEWER_OWNS_AUDITOR' })],
+        });
+        render(<WorkpaperReviewsClient tenantSlug="acme" />);
+        await screen.findByTestId('workpaper-review-row-rev-1');
+        expect(screen.queryByTestId('workpaper-review-sample-rate')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('workpaper-reviews-overview')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('workpaper-review-assignee-rev-1')).not.toBeInTheDocument();
     });
 });

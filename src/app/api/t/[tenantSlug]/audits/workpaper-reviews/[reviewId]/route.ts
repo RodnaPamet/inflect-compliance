@@ -1,8 +1,10 @@
 /**
- * Step 3d (#3677) — one sampled workpaper, for the reviewer it is assigned to.
+ * Step 3d (#3677) — one sampled workpaper, for the reviewer it is assigned to
+ * (and, read-only, for internal audit's overview).
  *
  *   GET  /api/t/:slug/audits/workpaper-reviews/:reviewId
- *        the review and the whole workpaper it is about
+ *        the review, the whole workpaper it is about, and whether this
+ *        viewer may answer it
  *   POST /api/t/:slug/audits/workpaper-reviews/:reviewId
  *        body: { "outcome": "CONCURRED" | "DISSENTED" | "INDETERMINATE",
  *                "dissentCodes"?: [...] }
@@ -18,7 +20,7 @@
  */
 import { NextRequest } from 'next/server';
 import {
-    getMyWorkpaperReview,
+    getWorkpaperReview,
     recordWorkpaperReview,
 } from '@/app-layer/usecases/audit-workpaper-sample-review';
 import { requirePermission } from '@/lib/security/permission-middleware';
@@ -28,7 +30,7 @@ import { jsonResponse } from '@/lib/api-response';
 export const GET = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; reviewId: string }>(
         'audits.view',
-        async (_req: NextRequest, { params }, ctx) => jsonResponse(await getMyWorkpaperReview(ctx, params.reviewId)),
+        async (_req: NextRequest, { params }, ctx) => jsonResponse(await getWorkpaperReview(ctx, params.reviewId)),
     ),
 );
 

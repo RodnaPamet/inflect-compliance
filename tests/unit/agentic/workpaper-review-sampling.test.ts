@@ -8,10 +8,12 @@ import {
     assignmentPoolDigest,
     drawWorkpapersForReview,
     dissentFindingProposal,
+    dissentProposalOriginRef,
     effectiveSamplePercent,
     isDrawnForReview,
     isEligibleReviewer,
     reviewerDrawEpoch,
+    reviewIdFromDissentOriginRef,
     WORKPAPER_REVIEW_DEFAULT_SAMPLE_PERCENT,
     WORKPAPER_REVIEW_DISSENT_CODES,
     WORKPAPER_REVIEW_FINDING_SOURCE_KIND,
@@ -20,7 +22,10 @@ import {
     workpaperReviewSeedFingerprint,
     type MemberFacts,
 } from '@/lib/agentic/workpaper-review-sampling';
-import { RecordWorkpaperReviewSchema } from '@/app-layer/schemas/audit-workpaper-sample-review.schemas';
+import {
+    RecordWorkpaperReviewSchema,
+    SetWorkpaperReviewSamplePercentSchema,
+} from '@/app-layer/schemas/audit-workpaper-sample-review.schemas';
 import { selectSample } from '@/lib/agentic/proposal-sampling';
 
 const SEED = 'unit-seed';
@@ -241,5 +246,25 @@ describe('the finding proposal a dissent raises', () => {
         }
         expect(proposal.rationale.startsWith('Internal audit dissented from sampled workpaper wp_1:')).toBe(true);
         expect(String(payload.title).length).toBeLessThanOrEqual(200);
+    });
+});
+
+describe('a dissent’s proposal is known by the origin ref its raise writes', () => {
+    it('reads the review back from that ref, and from nothing else', () => {
+        expect(reviewIdFromDissentOriginRef(dissentProposalOriginRef('rev_42'))).toBe('rev_42');
+        for (const other of [null, undefined, '', 'mcp-session:abc', 'audit-workpaper-review:', 'x-audit-workpaper-review:rev_1']) {
+            expect(reviewIdFromDissentOriginRef(other)).toBeNull();
+        }
+    });
+});
+
+describe('internal audit’s sampling rate is a whole percent from 1 to 100', () => {
+    it('accepts the bounds and refuses zero, more than all, fractions, strings and extra keys', () => {
+        for (const samplePercent of [1, 37, 100]) {
+            expect(SetWorkpaperReviewSamplePercentSchema.safeParse({ samplePercent }).success).toBe(true);
+        }
+        for (const body of [{ samplePercent: 0 }, { samplePercent: 101 }, { samplePercent: 12.5 }, { samplePercent: '50' }, {}, { samplePercent: 50, why: 'x' }]) {
+            expect(SetWorkpaperReviewSamplePercentSchema.safeParse(body).success).toBe(false);
+        }
     });
 });

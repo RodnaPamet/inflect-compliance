@@ -60,6 +60,11 @@
 import { createHash, createHmac } from 'node:crypto';
 
 import { sampleScore, selectSample } from './proposal-sampling';
+import {
+    WORKPAPER_REVIEW_DEFAULT_SAMPLE_PERCENT,
+    WORKPAPER_REVIEW_MAX_SAMPLE_PERCENT,
+    WORKPAPER_REVIEW_MIN_SAMPLE_PERCENT,
+} from './workpaper-review-codes';
 
 // ─── The epoch, the seed, the rate ──────────────────────────────────────────
 
@@ -94,18 +99,14 @@ export function workpaperReviewSeedFingerprint(seed: string): string {
     return createHmac('sha256', seed).update(WORKPAPER_REVIEW_SEED_FINGERPRINT_LABEL).digest('hex');
 }
 
-/**
- * The share of workpapers drawn when a tenant has stated none: every one (owner
- * decision 1, 2026-10-19 — the pilot reviews every workpaper). The live value is
- * `TenantSecuritySettings.workpaperReviewSamplePercent`, a per-tenant setting
- * whose column default is this number, so lowering it is a configuration change
- * and not a code change. The default is the strictest value on purpose: a
- * tenant with no settings row is reviewed in full, not at some lower rate
- * nobody chose.
- */
-export const WORKPAPER_REVIEW_DEFAULT_SAMPLE_PERCENT = 100;
-export const WORKPAPER_REVIEW_MIN_SAMPLE_PERCENT = 1;
-export const WORKPAPER_REVIEW_MAX_SAMPLE_PERCENT = 100;
+// The rate's default and bounds live in `workpaper-review-codes.ts`, so the
+// review page's rate control holds the same numbers the server and the CHECK
+// enforce. Re-exported here for the server side.
+export {
+    WORKPAPER_REVIEW_DEFAULT_SAMPLE_PERCENT,
+    WORKPAPER_REVIEW_MAX_SAMPLE_PERCENT,
+    WORKPAPER_REVIEW_MIN_SAMPLE_PERCENT,
+} from './workpaper-review-codes';
 
 /**
  * The rate to draw at. A stored value outside 1..100 (which the CHECK refuses,
@@ -340,7 +341,23 @@ export const WORKPAPER_REVIEW_FINDING_SOURCE_KIND = 'AUDIT_WORKPAPER_REVIEW';
  * The owner-orphan pass uses the column the same way.
  */
 export function dissentProposalOriginRef(reviewId: string): string {
-    return `audit-workpaper-review:${reviewId}`;
+    return `${DISSENT_PROPOSAL_ORIGIN_PREFIX}${reviewId}`;
+}
+
+const DISSENT_PROPOSAL_ORIGIN_PREFIX = 'audit-workpaper-review:';
+
+/**
+ * The review a proposal's origin ref names, or null when the proposal is not a
+ * workpaper dissent's. The inverse of `dissentProposalOriginRef`, read by every
+ * path that DECIDES a proposal: the person whose dissent raised a finding
+ * proposal never decides it (owner decision, 2026-10-19), and this ref — a
+ * plain column the raise writes and nothing rewrites — is how the queue knows
+ * whose dissent it was without decrypting the payload.
+ */
+export function reviewIdFromDissentOriginRef(ref: string | null | undefined): string | null {
+    if (typeof ref !== 'string' || !ref.startsWith(DISSENT_PROPOSAL_ORIGIN_PREFIX)) return null;
+    const id = ref.slice(DISSENT_PROPOSAL_ORIGIN_PREFIX.length);
+    return id.length > 0 ? id : null;
 }
 
 /**

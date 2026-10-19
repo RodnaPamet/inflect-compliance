@@ -14,6 +14,17 @@
  *   • The agreement rate counts concluded reviews only, and a window with none
  *     reports no rate rather than "100% agreement".
  *   • A second tenant sees, reads and answers none of it.
+ *
+ * And the owner's decisions of 2026-10-19 on the five questions 3d raised:
+ *
+ *   • only internal audit (an ACTIVE third-line member who owns no auditor
+ *     agent) sets the sampling rate, audited before and after, and the next
+ *     sweep draws at it;
+ *   • the person whose dissent raised a finding proposal never decides it;
+ *   • the sweep runs daily: an UNASSIGNED row is assigned the day after
+ *     somebody becomes eligible, and a second run the same day changes nothing;
+ *   • internal audit sees every assignment and answers only its own; the
+ *     auditor's owner never sees the overview.
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 
@@ -24,15 +35,17 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { setMembershipLineOfDefence } from '@/app-layer/usecases/membership-line-of-defence';
 import {
-    getMyWorkpaperReview,
+    getWorkpaperReview,
     getWorkpaperReviewRate,
-    listMyWorkpaperReviews,
+    listWorkpaperReviews,
     raiseDissentFindingProposal,
     recordWorkpaperReview,
+    setWorkpaperReviewSamplePercent,
 } from '@/app-layer/usecases/audit-workpaper-sample-review';
 import * as agentProposals from '@/app-layer/usecases/agent-proposals';
 import { buildWorkpaperReviewReport } from '@/app-layer/usecases/agent-governance-reports';
 import { runAuditWorkpaperSampleReview } from '@/app-layer/jobs/audit-workpaper-sample-review';
+import { SCHEDULED_JOBS } from '@/app-layer/jobs/schedules';
 import {
     assignReviewer,
     assignmentPoolDigest,
@@ -53,7 +66,9 @@ const T1 = 'wp-review-one';
 const T2 = 'wp-review-two';
 /** No third-line member to begin with. */
 const T3 = 'wp-review-three';
-const TENANTS = [T1, T2, T3];
+/** One internal auditor, who is an ADMIN: the rate and the dissent-author bar. */
+const T4 = 'wp-review-four';
+const TENANTS = [T1, T2, T3, T4];
 const SEED = 'test-seed-for-workpaper-review';
 const HEX = 'a'.repeat(64);
 
@@ -72,6 +87,7 @@ const LINES: Record<string, Partial<Record<Person, 'FIRST' | 'SECOND' | 'THIRD'>
     [T1]: { second: 'SECOND', thirdA: 'THIRD', thirdB: 'THIRD', first: 'FIRST' },
     [T2]: { second: 'SECOND', thirdA: 'THIRD', thirdB: 'THIRD', first: 'FIRST' },
     [T3]: { second: 'SECOND', first: 'FIRST' },
+    [T4]: { admin: 'THIRD', second: 'SECOND', first: 'FIRST' },
 };
 
 interface TenantFixture {
@@ -405,22 +421,35 @@ describe('only the assigned third-line reviewer, a person who does not own the a
         other = assignee === 'thirdA' ? 'thirdB' : 'thirdA';
     });
 
-    it('lists the review for its assignee only, and refuses the queue nothing but the reason to anyone outside internal audit', async () => {
-        const mine = await listMyWorkpaperReviews(fx[T1].contexts[assignee]);
+    it('lists the review as answerable for its assignee only, read-only to the rest of internal audit, and to nobody else', async () => {
+        const mine = await listWorkpaperReviews(fx[T1].contexts[assignee]);
         expect(mine.reviewer).toEqual({ eligible: true, reason: null });
-        expect(mine.rows.map((r) => r.id)).toContain(row.id);
-        const theirs = await listMyWorkpaperReviews(fx[T1].contexts[other]);
-        expect(theirs.rows.map((r) => r.id)).not.toContain(row.id);
-        const firstLine = await listMyWorkpaperReviews(fx[T1].contexts.first);
-        expect(firstLine).toEqual({ reviewer: { eligible: false, reason: 'REVIEWER_LINE_NOT_THIRD' }, rows: [], truncated: false });
+        expect(mine.rows.find((r) => r.id === row.id)).toMatchObject({ mine: true, answerable: true, refusal: null });
+        // The other internal auditor sees it in the overview, and cannot answer it.
+        const theirs = await listWorkpaperReviews(fx[T1].contexts[other]);
+        expect(theirs.scope).toBe('ALL');
+        expect(theirs.rows.find((r) => r.id === row.id)).toMatchObject({
+            mine: false,
+            answerable: false,
+            refusal: 'NOT_ASSIGNED_REVIEWER',
+            assignee: { userId: row.assignedToUserId },
+        });
+        const firstLine = await listWorkpaperReviews(fx[T1].contexts.first);
+        expect(firstLine).toEqual({
+            reviewer: { eligible: false, reason: 'REVIEWER_LINE_NOT_THIRD' },
+            scope: 'OWN',
+            sampleRate: { percent: 100, canChange: false, refusal: 'REVIEWER_LINE_NOT_THIRD' },
+            rows: [],
+            truncated: false,
+        });
     });
 
     it('refuses a credential, an agent and a job outright', async () => {
         const ctx = fx[T1].contexts[assignee];
         for (const variant of [{ apiKeyId: 'k-1' }, { agentId: fx[T1].auditorId }, { actorType: 'JOB' as const }]) {
-            await expect(recordWorkpaperReview({ ...ctx, ...variant }, row.id, { outcome: 'CONCURRED' })).rejects.toBeInstanceOf(
-                ForbiddenError,
-            );
+            expect(
+                await reasonOf(recordWorkpaperReview({ ...ctx, ...variant }, row.id, { outcome: 'CONCURRED' }), ForbiddenError),
+            ).toBe('NOT_A_PERSON');
         }
     });
 
@@ -430,7 +459,13 @@ describe('only the assigned third-line reviewer, a person who does not own the a
                 'NOT_ASSIGNED_REVIEWER',
             );
         }
-        expect(await reasonOf(getMyWorkpaperReview(fx[T1].contexts[other], row.id), ForbiddenError)).toBe('NOT_ASSIGNED_REVIEWER');
+        // Outside internal audit, even the read is refused; inside it, the read is read-only.
+        expect(await reasonOf(getWorkpaperReview(fx[T1].contexts.first, row.id), ForbiddenError)).toBe('NOT_ASSIGNED_REVIEWER');
+        expect((await getWorkpaperReview(fx[T1].contexts[other], row.id)).viewer).toEqual({
+            mine: false,
+            answerable: false,
+            refusal: 'NOT_ASSIGNED_REVIEWER',
+        });
         const denied = await prisma.auditLog.count({ where: { tenantId: T1, entityId: row.id, action: 'AUTHZ_DENIED' } });
         expect(denied).toBeGreaterThanOrEqual(6);
     });
@@ -442,8 +477,11 @@ describe('only the assigned third-line reviewer, a person who does not own the a
             expect(
                 await reasonOf(recordWorkpaperReview(fx[T1].contexts[assignee], row.id, { outcome: 'CONCURRED' }), ForbiddenError),
             ).toBe('REVIEWER_OWNS_AUDITOR');
-            const listed = await listMyWorkpaperReviews(fx[T1].contexts[assignee]);
+            const listed = await listWorkpaperReviews(fx[T1].contexts[assignee]);
             expect(listed.rows.find((r) => r.id === row.id)).toMatchObject({ answerable: false, refusal: 'REVIEWER_OWNS_AUDITOR' });
+            // Owning the auditor also takes the overview away: only their own rows.
+            expect(listed.scope).toBe('OWN');
+            expect(listed.rows.every((r) => r.mine)).toBe(true);
             // Below the usecase: an answer by the owner is refused for app_user.
             await expect(
                 asTenant(T1, (tx) =>
@@ -478,7 +516,8 @@ describe('only the assigned third-line reviewer, a person who does not own the a
     });
 
     it('accepts the assignee’s answer once, stamps the workpaper, and freezes the row for every role', async () => {
-        const detail = await getMyWorkpaperReview(fx[T1].contexts[assignee], row.id);
+        const detail = await getWorkpaperReview(fx[T1].contexts[assignee], row.id);
+        expect(detail.viewer).toEqual({ mine: true, answerable: true, refusal: null });
         expect(detail.workpaper.id).toBe(row.workpaperId);
         expect(detail.workpaper.sampledUnitIds).toEqual(['emp_1', 'emp_2']);
 
@@ -741,9 +780,10 @@ describe('a second tenant sees, reads and answers none of it', () => {
         expect(t1Ids.length).toBeGreaterThan(0);
 
         for (const who of ['thirdA', 'thirdB'] as Person[]) {
-            const listed = await listMyWorkpaperReviews(fx[T2].contexts[who]);
+            const listed = await listWorkpaperReviews(fx[T2].contexts[who]);
+            expect(listed.scope).toBe('ALL');
             expect(listed.rows.some((r) => t1Ids.includes(r.id))).toBe(false);
-            await expect(getMyWorkpaperReview(fx[T2].contexts[who], t1Ids[0])).rejects.toBeInstanceOf(NotFoundError);
+            await expect(getWorkpaperReview(fx[T2].contexts[who], t1Ids[0])).rejects.toBeInstanceOf(NotFoundError);
             await expect(recordWorkpaperReview(fx[T2].contexts[who], t1Ids[0], { outcome: 'CONCURRED' })).rejects.toBeInstanceOf(
                 NotFoundError,
             );
@@ -769,5 +809,338 @@ describe('a second tenant sees, reads and answers none of it', () => {
         // T2's rate is T2's.
         const t2 = await getWorkpaperReviewRate(fx[T2].contexts.admin);
         expect(t2.drawn).toBe(await prisma.auditWorkpaperSampleReview.count({ where: { tenantId: T2 } }));
+    });
+});
+
+// ─── Owner decisions, 2026-10-19 ────────────────────────────────────
+
+describe('internal audit sees every assignment and answers only its own', () => {
+    it('shows every row in the tenant to each ACTIVE third-line member, answerable only where it is theirs', async () => {
+        // Until each internal auditor holds an unanswered row of their own (the
+        // reviewer is a keyed draw, so the number of workpapers that takes varies).
+        const pendingFor = (who: Person) =>
+            prisma.auditWorkpaperSampleReview.count({
+                where: { tenantId: T1, outcome: 'PENDING', assignedToUserId: fx[T1].users[who] },
+            });
+        for (let i = 0; i < 40 && ((await pendingFor('thirdA')) === 0 || (await pendingFor('thirdB')) === 0); i++) {
+            await makeWorkpaper(T1, `2027-0${(i % 9) + 1}`);
+            await sweep(T1);
+        }
+        const all = await prisma.auditWorkpaperSampleReview.findMany({ where: { tenantId: T1 }, select: { id: true } });
+        for (const who of ['thirdA', 'thirdB'] as Person[]) {
+            const ctx = fx[T1].contexts[who];
+            const listed = await listWorkpaperReviews(ctx);
+            expect(listed.scope).toBe('ALL');
+            expect(listed.rows.map((r) => r.id).sort()).toEqual(all.map((r) => r.id).sort());
+            for (const r of listed.rows) {
+                expect(r.mine).toBe(r.assignedToUserId === ctx.userId);
+                if (!r.mine) expect(r.answerable).toBe(false);
+            }
+            // Somebody else's unanswered row opens, read-only, and refuses an answer.
+            const theirs = listed.rows.find((r) => !r.mine && r.outcome === 'PENDING' && r.assignedToUserId !== null);
+            expect(theirs).toBeDefined();
+            expect((await getWorkpaperReview(ctx, theirs!.id)).viewer).toEqual({
+                mine: false,
+                answerable: false,
+                refusal: 'NOT_ASSIGNED_REVIEWER',
+            });
+            expect(await reasonOf(recordWorkpaperReview(ctx, theirs!.id, { outcome: 'CONCURRED' }), ForbiddenError)).toBe(
+                'NOT_ASSIGNED_REVIEWER',
+            );
+            expect((await prisma.auditWorkpaperSampleReview.findUniqueOrThrow({ where: { id: theirs!.id } })).outcome).toBe('PENDING');
+        }
+    });
+
+    it('shows anybody else holding audits.view only their own, and the auditor’s owner never the overview', async () => {
+        for (const who of ['first', 'admin', 'ownerA', 'second'] as Person[]) {
+            const listed = await listWorkpaperReviews(fx[T1].contexts[who]);
+            expect(listed.scope).toBe('OWN');
+            expect(listed.rows).toEqual([]);
+        }
+        // The auditor's owner on the THIRD line: their own rows, nobody else's.
+        await prisma.registeredAgent.update({ where: { id: fx[T1].auditorId }, data: { ownerUserId: fx[T1].users.thirdB } });
+        try {
+            const listed = await listWorkpaperReviews(fx[T1].contexts.thirdB);
+            expect(listed.scope).toBe('OWN');
+            expect(listed.rows.every((r) => r.assignedToUserId === fx[T1].users.thirdB)).toBe(true);
+            expect(listed.sampleRate).toMatchObject({ canChange: false, refusal: 'REVIEWER_OWNS_AUDITOR' });
+            const othersRow = await prisma.auditWorkpaperSampleReview.findFirstOrThrow({
+                where: { tenantId: T1, assignedToUserId: fx[T1].users.thirdA },
+            });
+            expect(await reasonOf(getWorkpaperReview(fx[T1].contexts.thirdB, othersRow.id), ForbiddenError)).toBe(
+                'NOT_ASSIGNED_REVIEWER',
+            );
+        } finally {
+            await prisma.registeredAgent.update({ where: { id: fx[T1].auditorId }, data: { ownerUserId: fx[T1].users.second } });
+        }
+        // Unmarking the auditor does not hand its owner the overview: it wrote workpapers.
+        await prisma.registeredAgent.update({
+            where: { id: fx[T1].auditorId },
+            data: { ownerUserId: fx[T1].users.thirdB, isAuditor: false },
+        });
+        try {
+            expect((await listWorkpaperReviews(fx[T1].contexts.thirdB)).scope).toBe('OWN');
+        } finally {
+            await prisma.registeredAgent.update({
+                where: { id: fx[T1].auditorId },
+                data: { ownerUserId: fx[T1].users.second, isAuditor: true },
+            });
+        }
+    });
+});
+
+describe('only internal audit sets the sampling rate', () => {
+    const rateDenials = () =>
+        prisma.auditLog.findMany({
+            where: { tenantId: T4, entity: 'TenantSecuritySettings', action: 'AUTHZ_DENIED' },
+            select: { detailsJson: true },
+        });
+
+    it('lets an ACTIVE third-line member set it, audits before and after, and the next sweep draws at it', async () => {
+        const admin = fx[T4].contexts.admin;
+        expect((await listWorkpaperReviews(admin)).sampleRate).toEqual({ percent: 100, canChange: true, refusal: null });
+
+        expect(await setWorkpaperReviewSamplePercent(admin, { samplePercent: 50 })).toEqual({
+            samplePercent: 50,
+            previous: 100,
+            changed: true,
+        });
+        expect((await prisma.tenantSecuritySettings.findUniqueOrThrow({ where: { tenantId: T4 } })).workpaperReviewSamplePercent).toBe(50);
+        const changed = await prisma.auditLog.findMany({
+            where: { tenantId: T4, action: 'AUDIT_WORKPAPER_REVIEW_SAMPLE_RATE_CHANGED' },
+        });
+        expect(changed).toHaveLength(1);
+        expect(changed[0]).toMatchObject({ userId: admin.userId, actorType: 'USER', entity: 'TenantSecuritySettings' });
+        expect(changed[0].detailsJson).toMatchObject({ before: 100, after: 50 });
+
+        // The same value again writes and audits nothing.
+        expect(await setWorkpaperReviewSamplePercent(admin, { samplePercent: 50 })).toEqual({
+            samplePercent: 50,
+            previous: 50,
+            changed: false,
+        });
+        expect(await prisma.auditLog.count({ where: { tenantId: T4, action: 'AUDIT_WORKPAPER_REVIEW_SAMPLE_RATE_CHANGED' } })).toBe(1);
+
+        // The next sweep draws at 50%, exactly the pure rule's draw, and each row records it.
+        const papers = [];
+        for (let i = 0; i < 16; i++) papers.push(await makeWorkpaper(T4, i < 8 ? '2026-05' : '2026-06'));
+        await sweep(T4);
+        const rows = await prisma.auditWorkpaperSampleReview.findMany({ where: { tenantId: T4 } });
+        expect(rows.map((r) => r.workpaperId).sort()).toEqual(
+            drawWorkpapersForReview(papers, { seed: SEED, samplePercent: 50 })
+                .map((p) => p.id)
+                .sort(),
+        );
+        expect(rows.every((r) => r.samplePercent === 50)).toBe(true);
+        expect(rows.every((r) => r.assignedToUserId === admin.userId)).toBe(true);
+
+        await setWorkpaperReviewSamplePercent(admin, { samplePercent: 100 });
+    });
+
+    it('refuses the second line, the auditor’s owner even on the third line, and an API key — each with its reason', async () => {
+        const deniedBefore = (await rateDenials()).length;
+        for (const who of ['second', 'first', 'ownerA'] as Person[]) {
+            expect(
+                await reasonOf(setWorkpaperReviewSamplePercent(fx[T4].contexts[who], { samplePercent: 20 }), ForbiddenError),
+            ).toBe('REVIEWER_LINE_NOT_THIRD');
+        }
+        const admin = fx[T4].contexts.admin;
+        for (const variant of [{ apiKeyId: 'key-1' }, { agentId: fx[T4].auditorId }, { actorType: 'JOB' as const }]) {
+            expect(
+                await reasonOf(setWorkpaperReviewSamplePercent({ ...admin, ...variant }, { samplePercent: 20 }), ForbiddenError),
+            ).toBe('NOT_A_PERSON');
+        }
+        await prisma.registeredAgent.update({ where: { id: fx[T4].auditorId }, data: { ownerUserId: admin.userId } });
+        try {
+            expect(await reasonOf(setWorkpaperReviewSamplePercent(admin, { samplePercent: 20 }), ForbiddenError)).toBe(
+                'REVIEWER_OWNS_AUDITOR',
+            );
+            expect((await listWorkpaperReviews(admin)).sampleRate).toMatchObject({ canChange: false, refusal: 'REVIEWER_OWNS_AUDITOR' });
+        } finally {
+            await prisma.registeredAgent.update({ where: { id: fx[T4].auditorId }, data: { ownerUserId: fx[T4].users.second } });
+        }
+        // Every refusal left its row, with its reason; nothing changed.
+        const reasons = (await rateDenials())
+            .slice(deniedBefore)
+            .map((d) => (d.detailsJson as { reason?: string }).reason)
+            .sort();
+        expect(reasons).toEqual(
+            [
+                'NOT_A_PERSON',
+                'NOT_A_PERSON',
+                'NOT_A_PERSON',
+                'REVIEWER_LINE_NOT_THIRD',
+                'REVIEWER_LINE_NOT_THIRD',
+                'REVIEWER_LINE_NOT_THIRD',
+                'REVIEWER_OWNS_AUDITOR',
+            ].sort(),
+        );
+        expect((await prisma.tenantSecuritySettings.findUniqueOrThrow({ where: { tenantId: T4 } })).workpaperReviewSamplePercent).toBe(100);
+    });
+
+    it('holds the range in the usecase and in the database', async () => {
+        const admin = fx[T4].contexts.admin;
+        for (const body of [
+            { samplePercent: 0 },
+            { samplePercent: 101 },
+            { samplePercent: -5 },
+            { samplePercent: 50.5 },
+            { samplePercent: '50' },
+            {},
+            { samplePercent: 50, note: 'halve it' },
+        ]) {
+            await expect(setWorkpaperReviewSamplePercent(admin, body)).rejects.toMatchObject({ status: 400 });
+        }
+        for (const value of [0, 101]) {
+            await expect(
+                prisma.tenantSecuritySettings.update({ where: { tenantId: T4 }, data: { workpaperReviewSamplePercent: value } }),
+            ).rejects.toThrow(/TenantSecuritySettings_workpaper_review_sample_percent/);
+        }
+        expect((await prisma.tenantSecuritySettings.findUniqueOrThrow({ where: { tenantId: T4 } })).workpaperReviewSamplePercent).toBe(100);
+    });
+});
+
+describe('the person whose dissent raised a finding proposal never decides it', () => {
+    async function dissentIn(tenantId: string, period: string) {
+        const wp = await makeWorkpaper(tenantId, period);
+        await sweep(tenantId);
+        const row = await reviewOf(wp.id);
+        const reviewer = fx[tenantId].contexts[personOf(tenantId, row.assignedToUserId) as Person];
+        return { row, reviewer };
+    }
+
+    it('refuses the dissenter — a third-line ADMIN — every decision, each with its reason; another person approves', async () => {
+        const { row, reviewer } = await dissentIn(T4, '2026-08');
+        expect(reviewer.userId).toBe(fx[T4].users.admin);
+        expect(reviewer.role).toBe('ADMIN');
+        const answer = await recordWorkpaperReview(reviewer, row.id, { outcome: 'DISSENTED', dissentCodes: ['EXCEPTION_MISSED'] });
+        const proposalId = answer.findingProposal?.proposalId as string;
+        expect(proposalId).toBeTruthy();
+
+        const refused = 'DISSENT_AUTHOR_MAY_NOT_DECIDE';
+        expect(await reasonOf(agentProposals.approveAgentProposal(reviewer, proposalId), ForbiddenError)).toBe(refused);
+        expect(
+            await reasonOf(agentProposals.approveAgentProposal(reviewer, proposalId, { edits: { severity: 'LOW' } }), ForbiddenError),
+        ).toBe(refused);
+        expect(await reasonOf(agentProposals.rejectAgentProposal(reviewer, proposalId), ForbiddenError)).toBe(refused);
+        expect(await agentProposals.bulkRejectAgentProposals(reviewer, [proposalId])).toEqual({
+            rejected: [],
+            skipped: [{ id: proposalId, reason: refused }],
+        });
+        expect((await prisma.agentProposal.findUniqueOrThrow({ where: { id: proposalId } })).status).toBe('PENDING');
+        const denials = await prisma.auditLog.findMany({ where: { tenantId: T4, entityId: proposalId, action: 'AUTHZ_DENIED' } });
+        expect(denials).toHaveLength(4);
+        expect(denials.every((d) => (d.detailsJson as { refusal?: string }).refusal === refused)).toBe(true);
+
+        // Another person decides it, through the same queue.
+        const outcome = await agentProposals.approveAgentProposal(fx[T4].contexts.ownerA, proposalId);
+        expect(agentProposals.wasApplied(outcome)).toBe(true);
+        expect(
+            await prisma.finding.count({ where: { tenantId: T4, sourceKind: WORKPAPER_REVIEW_FINDING_SOURCE_KIND, sourceRef: row.id } }),
+        ).toBe(1);
+    });
+
+    it('holds when the sweep raised the proposal, and refuses everybody when the review it names is not held here', async () => {
+        const { row, reviewer } = await dissentIn(T4, '2026-09');
+        const spy = jest.spyOn(agentProposals, 'createAgentProposal').mockRejectedValueOnce(new Error('queue down'));
+        await recordWorkpaperReview(reviewer, row.id, { outcome: 'DISSENTED', dissentCodes: ['ITEM_OUTCOME_WRONG'] });
+        spy.mockRestore();
+        await sweep(T4);
+        const healedId = (await reviewOf(row.workpaperId)).findingProposalId as string;
+        expect(healedId).toBeTruthy();
+        // Raised by the JOB, not the reviewer — and still the reviewer's to stay out of.
+        const created = await prisma.auditLog.findFirst({ where: { tenantId: T4, entityId: healedId, action: 'AGENT_PROPOSAL_CREATED' } });
+        expect(created?.actorType).toBe('JOB');
+        expect(await reasonOf(agentProposals.approveAgentProposal(reviewer, healedId), ForbiddenError)).toBe(
+            'DISSENT_AUTHOR_MAY_NOT_DECIDE',
+        );
+        expect(await reasonOf(agentProposals.rejectAgentProposal(reviewer, healedId), ForbiddenError)).toBe(
+            'DISSENT_AUTHOR_MAY_NOT_DECIDE',
+        );
+        await agentProposals.rejectAgentProposal(fx[T4].contexts.ownerA, healedId);
+        expect((await prisma.agentProposal.findUniqueOrThrow({ where: { id: healedId } })).status).toBe('REJECTED');
+
+        // An origin naming a review this tenant does not hold: nobody can be
+        // shown not to have raised it, so nobody decides it.
+        const forged = await agentProposals.createAgentProposal(fx[T4].contexts.ownerA, {
+            kind: 'FINDING',
+            payload: { title: 'names a review that is not here', severity: 'MEDIUM', type: 'NONCONFORMITY' },
+            policyCardVersion: 0,
+            proposedBySessionRef: dissentProposalOriginRef('no-such-review'),
+        });
+        expect(await reasonOf(agentProposals.approveAgentProposal(fx[T4].contexts.ownerA, forged.id), ForbiddenError)).toBe(
+            'DISSENT_AUTHOR_UNKNOWN',
+        );
+        // A proposal that is not a dissent's is untouched by the bar.
+        const plain = await agentProposals.createAgentProposal(reviewer, {
+            kind: 'FINDING',
+            payload: { title: 'an ordinary proposal', severity: 'LOW', type: 'NONCONFORMITY' },
+            policyCardVersion: 0,
+        });
+        await agentProposals.rejectAgentProposal(reviewer, plain.id);
+        expect((await prisma.agentProposal.findUniqueOrThrow({ where: { id: plain.id } })).status).toBe('REJECTED');
+    });
+});
+
+describe('the sweep runs daily, re-assigns what nobody could answer, and never draws a workpaper twice', () => {
+    it('assigns an UNASSIGNED row on the next daily run once a third-line member exists; a second run that day changes nothing', async () => {
+        // T3 now: the auditor's owner is its only third-line member.
+        const base = new Date();
+        const HOUR = 60 * 60 * 1000;
+        const wp = await makeWorkpaper(T3, '2026-09');
+        const day1 = await sweep(T3, base);
+        expect(day1.drawn).toBe(1);
+        expect((await reviewOf(wp.id)).unassignedReason).toBe('ONLY_THIRD_LINE_MEMBER_OWNS_AUDITOR');
+
+        const snapshot = () => prisma.auditWorkpaperSampleReview.findMany({ where: { tenantId: T3 }, orderBy: { id: 'asc' } });
+        const before = await snapshot();
+        const auditBefore = await prisma.auditLog.count({ where: { tenantId: T3 } });
+        expect(await sweep(T3, new Date(base.getTime() + HOUR))).toMatchObject({
+            drawn: 0,
+            reassigned: 0,
+            proposalsRaised: 0,
+            tenantsErrored: 0,
+        });
+        expect(await snapshot()).toEqual(before);
+        expect(await prisma.auditLog.count({ where: { tenantId: T3 } })).toBe(auditBefore);
+
+        // Somebody eligible appears. Until the next run the row is UNASSIGNED,
+        // and internal audit's overview shows it as such.
+        await setMembershipLineOfDefence(fx[T3].contexts.ownerA, fx[T3].memberships.first, { lineOfDefence: 'THIRD' });
+        const listed = await listWorkpaperReviews(fx[T3].contexts.first);
+        expect(listed.scope).toBe('ALL');
+        expect(listed.rows.find((r) => r.workpaperId === wp.id)).toMatchObject({
+            assignee: null,
+            answerable: false,
+            refusal: 'UNASSIGNED',
+        });
+
+        const day2 = await sweep(T3, new Date(base.getTime() + 24 * HOUR));
+        expect(day2.drawn).toBe(0);
+        expect(day2.reassigned).toBeGreaterThanOrEqual(1);
+        const assigned = await reviewOf(wp.id);
+        expect(personOf(T3, assigned.assignedToUserId)).toBe('first');
+        expect(assigned.unassignedReason).toBeNull();
+
+        // And again that day: nothing.
+        const after = await snapshot();
+        const auditAfter = await prisma.auditLog.count({ where: { tenantId: T3 } });
+        expect(await sweep(T3, new Date(base.getTime() + 25 * HOUR))).toMatchObject({ drawn: 0, reassigned: 0 });
+        expect(await snapshot()).toEqual(after);
+        expect(await prisma.auditLog.count({ where: { tenantId: T3 } })).toBe(auditAfter);
+
+        // Never drawn twice: one row per workpaper, however many days ran.
+        const perWorkpaper = await prisma.auditWorkpaperSampleReview.groupBy({
+            by: ['workpaperId'],
+            where: { tenantId: T3 },
+            _count: { _all: true },
+        });
+        expect(perWorkpaper.every((g) => g._count._all === 1)).toBe(true);
+        expect(perWorkpaper.map((g) => g.workpaperId)).toContain(wp.id);
+    });
+
+    it('is scheduled daily, off the busy minutes', () => {
+        const entry = SCHEDULED_JOBS.find((j) => j.name === 'audit-workpaper-sample-review');
+        expect(entry?.pattern.split(/\s+/).slice(0, 5)).toEqual(['40', '9', '*', '*', '*']);
     });
 });

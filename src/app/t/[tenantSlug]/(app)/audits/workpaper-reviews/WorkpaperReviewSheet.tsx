@@ -15,6 +15,10 @@
  * The answer is set once. The server refuses a second one, refuses anybody but
  * the assigned reviewer, and refuses the auditor agent's owner; each refusal
  * arrives as the server's sentence, shown inline. Nothing here decides.
+ *
+ * Internal audit opens anybody's row from its overview, READ-ONLY: the form
+ * renders only when the server says this viewer may answer (`viewer`), which
+ * is only ever on the viewer's own row.
  */
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -62,11 +66,15 @@ export interface WorkpaperReviewDetailPayload {
         samplingEpoch: string;
         samplePercent: number;
         sampledAt: string;
+        assignedToUserId: string | null;
+        unassignedReason: string | null;
         outcome: ReviewOutcome;
         dissentCodes: string[];
         reviewedAt: string | null;
         findingProposalId: string | null;
     };
+    /** Whether THIS viewer may answer — only ever on their own row. */
+    viewer: { mine: boolean; answerable: boolean; refusal: string | null };
     workpaper: {
         id: string;
         procedureId: string;
@@ -168,6 +176,7 @@ export function WorkpaperReviewSheet({
 
     const wp = data?.workpaper;
     const review = data?.review;
+    const viewer = data?.viewer;
 
     return (
         <Sheet open onOpenChange={(open) => { if (!open && !busy) onClose(); }} size="lg" title={t('workpaperReviews.sheetTitle')}>
@@ -288,7 +297,18 @@ export function WorkpaperReviewSheet({
                                 )}
                             </section>
 
-                            {review.outcome === 'PENDING' ? (
+                            {review.outcome === 'PENDING' && !viewer?.answerable ? (
+                                <section className="space-y-tight" data-testid="workpaper-review-read-only">
+                                    <Heading level={3} as="h3">{t('workpaperReviews.sectionAnswer')}</Heading>
+                                    <InlineNotice variant="info" icon={null}>
+                                        {review.assignedToUserId === null
+                                            ? t('workpaperReviews.readOnlyUnassigned', {
+                                                  reason: review.unassignedReason ?? '—',
+                                              })
+                                            : t('workpaperReviews.readOnlyOther')}
+                                    </InlineNotice>
+                                </section>
+                            ) : review.outcome === 'PENDING' ? (
                                 <section className="space-y-default" data-testid="workpaper-review-answer-form">
                                     <Heading level={3} as="h3">{t('workpaperReviews.sectionAnswer')}</Heading>
                                     <InlineNotice variant="info" icon={null}>
@@ -354,7 +374,11 @@ export function WorkpaperReviewSheet({
                                 </section>
                             ) : (
                                 <section className="space-y-tight" data-testid="workpaper-review-recorded">
-                                    <Heading level={3} as="h3">{t('workpaperReviews.sectionRecorded')}</Heading>
+                                    <Heading level={3} as="h3">
+                                        {viewer?.mine === false
+                                            ? t('workpaperReviews.sectionRecordedOther')
+                                            : t('workpaperReviews.sectionRecorded')}
+                                    </Heading>
                                     <dl className="space-y-tight">
                                         <Field label={t('workpaperReviews.fieldYourAnswer')}>
                                             {t(`workpaperReviews.outcome.${review.outcome}`)}

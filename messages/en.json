@@ -3928,7 +3928,7 @@
       "title": "Auditor workpaper reviews",
       "count": "{awaiting} awaiting your answer · {total} assigned",
       "searchPlaceholder": "Search workpaper reviews…",
-      "about": "Each month the auditor agent’s workpapers are drawn for internal audit, and each is assigned to a third-line member who does not own the auditor agent. Re-perform the workpaper and record whether you concur. Your answer is recorded once.",
+      "about": "The auditor agent’s workpapers are drawn for internal audit, and each is assigned to a third-line member who does not own the auditor agent. Re-perform the workpaper and record whether you concur. Your answer is recorded once.",
       "notEligible": {
         "REVIEWER_NOT_ACTIVE_MEMBER": "Your membership of this workspace is not active, so no sampled workpaper is assigned to you.",
         "REVIEWER_LINE_NOT_THIRD": "Sampled workpapers are reviewed by internal audit, and your line of defence is not THIRD. An OWNER declares it.",
@@ -3938,7 +3938,7 @@
       "resourceSingular": "workpaper review",
       "resourcePlural": "workpaper reviews",
       "emptyTitle": "No workpapers assigned to you",
-      "emptyDesc": "When the monthly sweep draws a workpaper and assigns it to you, it appears here.",
+      "emptyDesc": "When the daily sweep draws a workpaper and assigns it to you, it appears here.",
       "emptyNotEligible": "Only an active member of internal audit is assigned sampled workpapers.",
       "loadFailed": "The workpaper reviews could not be loaded.",
       "colProcedure": "Procedure",
@@ -3962,7 +3962,9 @@
         "REVIEWER_OWNS_AUDITOR": "You own the auditor agent",
         "AUDITOR_OWNER_UNKNOWN": "Auditor agent not in the register",
         "ALREADY_REVIEWED": "Answered",
-        "UNKNOWN": "Cannot be answered"
+        "UNKNOWN": "Cannot be answered",
+        "UNASSIGNED": "Unassigned",
+        "NOT_ASSIGNED_REVIEWER": "Assigned to another reviewer"
       },
       "sheetTitle": "Sampled workpaper",
       "sheetDescription": "Re-perform the auditor agent’s workpaper, then record your answer.",
@@ -4015,7 +4017,25 @@
         "PARAMETERS_MISAPPLIED": "The parameters were not the ones the plan set, or were misapplied",
         "EVIDENCE_INSUFFICIENT": "The cited evidence does not support the recorded outcomes",
         "CONCLUSION_NOT_SUPPORTED": "The conclusion does not follow from the item outcomes"
-      }
+      },
+      "countOverview": "{awaiting} awaiting your answer · {total} drawn",
+      "overview": "You are in internal audit, so you see every assignment in this workspace and its status. You answer only the workpapers assigned to you; the others open read-only.",
+      "emptyTitleOverview": "No workpapers drawn yet",
+      "emptyDescOverview": "When the daily sweep draws the auditor agent’s workpapers, every assignment appears here.",
+      "colAssignee": "Assigned to",
+      "assigneeYou": "You",
+      "assigneeNobody": "Nobody yet",
+      "awaitingReviewer": "Awaiting the reviewer",
+      "readOnlyOther": "This workpaper is assigned to another member of internal audit. Only they can answer it.",
+      "readOnlyUnassigned": "Nobody can be asked to review this workpaper yet ({reason}). The daily sweep assigns it once a third-line member who does not own the auditor agent exists.",
+      "sectionRecordedOther": "The recorded answer",
+      "rateLabel": "Sampling rate",
+      "rateHint": "The share of the auditor agent’s workpapers drawn for review, from {min}% to {max}%. The next daily sweep draws at it; a workpaper already drawn stays drawn.",
+      "rateSave": "Save rate",
+      "rateSaved": "The sampling rate is now {percent}%.",
+      "rateFailed": "The sampling rate could not be saved.",
+      "rateDecrease": "Decrease the sampling rate",
+      "rateIncrease": "Increase the sampling rate"
     }
   },
   "findings": {

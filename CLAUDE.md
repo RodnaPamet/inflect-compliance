@@ -1957,10 +1957,11 @@ registered auditor agent. Six rules, each held by a test or a lint rule:
   for them (pilot values: `scripts/audit-pilot-setup.ts`).
 
 **Internal audit's sampling of the workpapers** (step 3d, #3677) is the check on
-the auditor. The monthly sweep (`jobs/audit-workpaper-sample-review.ts`) draws
+the auditor. The DAILY sweep (`jobs/audit-workpaper-sample-review.ts`) draws
 the auditor's workpapers into `AuditWorkpaperSampleReview` and assigns each to
 an ACTIVE THIRD-line member; that member answers on `/audits/workpaper-reviews`
-(`usecases/audit-workpaper-sample-review.ts`). Seven rules, each held by a test:
+(`usecases/audit-workpaper-sample-review.ts`). Ten rules, each held by a test —
+the last three, and the daily cadence, are owner decisions of 2026-10-19:
 
 - **Drawn and assigned by the sweep, answered by the assignee, and nothing
   else.** No route draws, opens or assigns a review; the review usecase never
@@ -1974,18 +1975,21 @@ an ACTIVE THIRD-line member; that member answers on `/audits/workpaper-reviews`
   (`audit-workpaper-review@<periodLabel>`), never the run date. A rank would
   re-draw a grown population and creep towards everything; a per-workpaper
   decision is re-derived identically by every sweep and is monotone in the
-  rate. The rate is the per-tenant `TenantSecuritySettings.workpaperReviewSamplePercent`
-  (100 — the pilot reviews every workpaper; an unreadable value reads as 100,
-  never less), and each row records the percent, epoch and seed fingerprint it
-  was drawn with.
+  rate — which is why the sweep can run DAILY: re-deciding a workpaper gives
+  the same answer and the `(tenantId, workpaperId)` unique holds one row, so a
+  second run the same day changes nothing. The rate is the per-tenant
+  `TenantSecuritySettings.workpaperReviewSamplePercent` (100 — the pilot
+  reviews every workpaper; an unreadable value reads as 100, never less), and
+  each row records the percent, epoch and seed fingerprint it was drawn with.
 - **Only an ACTIVE THIRD-line member who does not CURRENTLY own the auditor is
   ever asked or answers** — `isEligibleReviewer`, asked by the sweep's pool, by
   the read, by the answer, and again by the trigger
   `audit_workpaper_sample_review_assert_reviewer` on every assignment and every
   answer. The owner is excluded even when THIRD-line. Nobody eligible is
   `UNASSIGNED` with a named reason (CHECK-pinned), never dropped and never
-  given to somebody ineligible; a later sweep re-draws only a PENDING row that
-  nobody can answer, from the same epoch, and never moves a valid assignment.
+  given to somebody ineligible; the next day's sweep re-draws only a PENDING row
+  that nobody can answer, from the same epoch, and never moves a valid
+  assignment.
 - **The answer is write-once, codes not prose.** CONCURRED / DISSENTED /
   INDETERMINATE by the assignee (CHECK: `reviewedByUserId = assignedToUserId`),
   once; dissent is `WORKPAPER_REVIEW_DISSENT_CODES`, pinned by a CHECK to that
@@ -2002,7 +2006,9 @@ an ACTIVE THIRD-line member; that member answers on `/audits/workpaper-reviews`
   `findingProposalId`, and the origin ref in `AgentProposal.proposedBySessionRef`
   (`audit-workpaper-review:<reviewId>` — a plain column, the payload is
   encrypted) for a raise interrupted before the link. A raise that fails after
-  the answer committed is raised by the next sweep.
+  the answer committed is raised by the next sweep. A proposal that EXPIRES
+  undecided is NOT raised again (owner decision, 2026-10-19): the link is
+  write-once, and the expiry is itself the record that nobody decided.
 - **The agreement rate counts CONCLUDED reviews only** (`workpaperReviewRate`).
   A drawn but unreviewed workpaper is in neither the numerator nor the
   denominator; INDETERMINATE and UNASSIGNED are excluded and reported beside
@@ -2010,10 +2016,33 @@ an ACTIVE THIRD-line member; that member answers on `/audits/workpaper-reviews`
   (`NO_CONCLUDED_WORKPAPER_REVIEWS`) — never "100% agreement". The figures are
   report 6 of the governance pack (`workpaper-review`, metric ids
   `assurance.workpaper_*`), each with its definition.
-- **Reading a review's workpaper takes being its assignee, not `audits.manage`.**
-  The routes take `audits.view` (every role: an internal auditor is often an
-  AUDITOR); the usecase narrows every verb to the assigned reviewer and audits
-  each who-may-answer refusal as `AUTHZ_DENIED`.
+- **Reading a review's workpaper takes being its assignee or internal audit,
+  never `audits.manage`.** The routes take `audits.view` (every role: an
+  internal auditor is often an AUDITOR); the usecase narrows every verb and
+  audits each who-may refusal as `AUTHZ_DENIED`. "Internal audit" is ONE rule
+  (`readInternalAuditStanding`): a person, an ACTIVE THIRD-line member, who owns
+  no agent that is or has written as the auditor.
+- **Internal audit sees every assignment; everybody answers only their own.**
+  `listWorkpaperReviews` returns every row in the tenant to internal audit
+  (`scope: 'ALL'`), with the assignee and status, and only the caller's own to
+  anybody else; somebody else's row opens read-only (`viewer.answerable` is
+  false) and its answer is still refused `NOT_ASSIGNED_REVIEWER`. The auditor's
+  owner never sees the overview, even on the third line.
+- **Only internal audit sets the sampling rate** (`setWorkpaperReviewSamplePercent`,
+  `PUT …/workpaper-reviews/sample-rate`): an API key, an agent or a job is
+  `NOT_A_PERSON`, anybody off the third line `REVIEWER_LINE_NOT_THIRD`, the
+  auditor's owner `REVIEWER_OWNS_AUDITOR`, each a 403 with an `AUTHZ_DENIED`
+  row; the change is audited before and after; 1..100 in the schema and in the
+  CHECK — 0 is not a rate. The second line operates the auditor, so it must not
+  be able to steer how closely the auditor is checked.
+- **The dissenter never decides their own dissent's proposal** — approve,
+  approve with edits, reject or bulk reject. `assertNotDissentAuthor` in
+  `agent-proposals.ts` reads the review named by the proposal's origin ref and
+  refuses its `reviewedByUserId` with `DISSENT_AUTHOR_MAY_NOT_DECIDE`, keyed off
+  the REVIEW rather than who created the proposal, because the sweep's heal
+  raises it under a system context. A ref naming a review the tenant does not
+  hold refuses everybody (`DISSENT_AUTHOR_UNKNOWN`). Every deciding path calls
+  it; a new one must, or the bar has a way round.
 
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,

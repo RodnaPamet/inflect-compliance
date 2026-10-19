@@ -1,7 +1,8 @@
 /**
  * DRAW THE AUDITOR'S WORKPAPERS FOR INTERNAL AUDIT, AND ASSIGN EACH (#3677,
- * step 3d). Scheduled monthly, after the procedures' runs — `schedules.ts`
- * says why.
+ * step 3d). Scheduled DAILY (owner decision, 2026-10-19), so an UNASSIGNED
+ * item is assigned within a day of somebody becoming eligible — `schedules.ts`
+ * says why daily cannot enlarge the sample.
  *
  * The rules live in `src/lib/agentic/workpaper-review-sampling.ts` — read that
  * first; this file is the plumbing around them. Three passes, each over every
@@ -64,9 +65,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * How far back a workpaper is a candidate, by its creation. Every workpaper is
- * seen by the first monthly sweep after it is written, so this bound only
- * stops a workpaper that a lowered rate passed over from being re-read, and
- * re-decided the same way, every month for ever.
+ * seen by the first daily sweep after it is written, so this bound only stops a
+ * workpaper that a rate below 100 passed over from being re-read, and
+ * re-decided the same way, every day for ever. It is also how far back a RAISED
+ * rate reaches: the next sweep draws the not-yet-drawn workpapers of this window
+ * that the higher rate selects.
  */
 export const CANDIDATE_LOOKBACK_DAYS = 400;
 
