@@ -724,6 +724,26 @@ model RegisteredAgent {
   /// a discovered agent of the same tenant. Nothing reads it to authorize.
   intakeDiscoveredAgentId String?
 
+  /// Step 3b (#3675): this agent is an AUDITOR — it re-performs audit
+  /// procedures and writes `AuditWorkpaper` rows (step 3c runs it). Every other
+  /// registered agent is an AUDITED agent while it is not RETIRED.
+  ///
+  /// The rule it carries is "the auditor is not the auditee" (roadmap rule 8,
+  /// decision 3): the auditor's owner must hold a SECOND-line membership and
+  /// must own no audited agent. It is checked whenever an agent BECOMES an
+  /// auditor (registration, an amend that sets this column) and whenever an
+  /// auditor goes ACTIVE — in the usecase with a named refusal, and by the
+  /// trigger `registered_agent_auditor_independence` for any writer that
+  /// skips it. A LATER change that breaks the rule (an ownership transfer, a
+  /// new agent registered to the auditor's owner, the owner's line moved off
+  /// SECOND) raises a finding and does not suspend the auditor.
+  ///
+  /// Only `registerAgent` and `updateRegisteredAgent` write it. The
+  /// registration intake cannot (its schema is strict and has no such field),
+  /// and `createRegisteredAgent` does not take it. Unsetting it does not touch
+  /// a workpaper: each one names its author for good.
+  isAuditor Boolean @default(false)
+
   createdByUserId String?
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())

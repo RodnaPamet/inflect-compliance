@@ -138,6 +138,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'FK — Finding id, not content (heuristic matched "finding").',
     'FindingAsset.findingId':
         'FK — Finding id, not content (heuristic matched "finding").',
+    'AuditWorkpaperFinding.findingId':
+        'A Finding id a workpaper links (#3675) — an identifier bound by an insert trigger, not content (heuristic matched "finding").',
     'Task.findingId':
         'FK — Finding id (TP-3 remediation-task relation), not content (heuristic matched "finding").',
     'VendorPostureEvent.createdFindingId':

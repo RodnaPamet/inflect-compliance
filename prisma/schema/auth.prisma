@@ -211,6 +211,8 @@ model Tenant {
   agentHarnessAcceptances           AgentHarnessAcceptance[]
   agentOwnershipTransfers           AgentOwnershipTransfer[]
   agentServicePrincipalConfirmations AgentServicePrincipalConfirmation[]
+  auditWorkpapers                   AuditWorkpaper[]
+  auditWorkpaperFindings            AuditWorkpaperFinding[]
   agentBehaviourWindows             AgentBehaviourWindow[]
   agentCircuitBreakers              AgentCircuitBreaker[]
   agenticEvidenceArtefacts          AgenticEvidenceArtefact[]
@@ -810,6 +812,18 @@ model TenantMembership {
   /// (The deprovision usecase is the canonical cleanup path; the FK
   /// rule is referential-integrity defence-in-depth.)
   provisionedByOrgId    String?
+  /// The line of defence this member sits in (#3675). NULL means NOT DECLARED,
+  /// and a NULL never satisfies a check that asks for a line: the auditor
+  /// independence check requires the auditor agent's owner to be SECOND, and an
+  /// undeclared owner is refused, not presumed.
+  ///
+  /// Written by ONE seam, `setMembershipLineOfDefence`
+  /// (`src/app-layer/usecases/membership-line-of-defence.ts`): an OWNER, on a
+  /// membership that is not their own, behind a literal
+  /// `requirePermission('admin.owner_management')`, and every change writes an
+  /// audit row. A line its holder declared would be a claim, not a control.
+  /// Every membership-creating path leaves it NULL.
+  lineOfDefence         LineOfDefence?
   customRole            TenantCustomRole?      @relation(fields: [customRoleId, tenantId], references: [id, tenantId])
   invitedBy             User?                  @relation("MembershipInviter", fields: [invitedByUserId], references: [id])
   tenant                Tenant                 @relation(fields: [tenantId], references: [id])

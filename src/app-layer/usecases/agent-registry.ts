@@ -65,6 +65,11 @@ import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { listKillSwitches } from './agent-kill-switch';
 import { authorAiSystemEntry } from './ai-system';
+import {
+    assertAuditorIndependentInTx,
+    lockAuditorIndependence,
+    reconcileAuditorIndependenceInTx,
+} from './auditor-independence';
 import { assertOwnerInTenant } from './vendor-link-targets';
 import {
     CreateRegisteredAgentSchema,
@@ -752,6 +757,15 @@ export async function getRegisteredAgent(ctx: RequestContext, id: string) {
  * the vendor: each caller validates those BEFORE it writes anything, so a
  * refused registration leaves no half-authored AI-system entry behind, and the
  * intake names its own refusal for an owner who is not an active member.
+ *
+ * AUDITOR INDEPENDENCE IS THE RECIPE'S OWN (#3675), so no caller can insert
+ * around it. It takes the tenant's independence lock first; an auditor
+ * (`isAuditor`, which only `registerAgent` passes) is refused unless its owner
+ * is independent; and any OTHER agent is an audited agent, so after the insert
+ * it raises a finding against every ACTIVE auditor the same owner already owns
+ * — registering an agent to an auditor's owner is a later change that breaks
+ * the rule. The intake reaches this with `isAuditor` absent, so an intake agent
+ * is never an auditor.
  */
 export async function insertRegisteredAgentInTx(
     db: PrismaTx,
@@ -769,9 +783,16 @@ export async function insertRegisteredAgentInTx(
         vendorId?: string | null;
         /** The registration intake's claim; every other caller leaves it out. */
         intakeDiscoveredAgentId?: string;
+        /** `registerAgent` alone (#3675); checked here before the insert. */
+        isAuditor?: boolean;
     },
 ) {
-    return RegisteredAgentRepository.create(db, ctx, {
+    await lockAuditorIndependence(db, ctx);
+    const isAuditor = input.isAuditor === true;
+    if (isAuditor) {
+        await assertAuditorIndependentInTx(db, ctx, { ownerUserId: input.ownerUserId, agentId: null });
+    }
+    const created = await RegisteredAgentRepository.create(db, ctx, {
         aiSystemId: input.aiSystemId,
         name: input.name,
         description: input.description ? sanitizePlainText(input.description) : null,
@@ -785,7 +806,19 @@ export async function insertRegisteredAgentInTx(
         ...(input.intakeDiscoveredAgentId !== undefined
             ? { intakeDiscoveredAgentId: input.intakeDiscoveredAgentId }
             : {}),
+        ...(isAuditor ? { isAuditor: true } : {}),
     });
+    const reconciled = isAuditor
+        ? { opened: [] as string[], reopened: [] as string[] }
+        : await reconcileAuditorIndependenceInTx(db, ctx, {
+              trigger: 'AGENT_REGISTERED',
+              ownerUserIds: [input.ownerUserId],
+          });
+    return {
+        ...created,
+        isAuditor,
+        independenceFindingIds: [...reconciled.opened, ...reconciled.reopened],
+    };
 }
 
 export async function createRegisteredAgent(ctx: RequestContext, input: unknown) {
@@ -887,6 +920,14 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
     const parsed = UpdateRegisteredAgentSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
+        // THE AUDITOR MARK (#3675), decided first and under the tenant's
+        // independence lock, which is taken before this transaction locks any
+        // row. Setting it is BECOMING an auditor, so the agent's current owner
+        // must be independent; removing it is never refused. Either way the
+        // workpapers the agent wrote keep naming it.
+        const auditorMark =
+            parsed.isAuditor === undefined ? null : await planAuditorMark(db, ctx, id, parsed.isAuditor);
+
         // The supplier check applies to an UPDATE as much as a create. The
         // OWNER is not amendable at all: the schema refuses `ownerUserId` by
         // name, because ownership moves only by a two-step transfer (#3698,
@@ -955,6 +996,8 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
         // Reported as notFound, never as a silent success.
         if (count === 0) throw notFound('Registered agent not found');
 
+        const independenceFindingIds = auditorMark ? await applyAuditorMark(db, ctx, auditorMark) : [];
+
         await logEvent(db, ctx, {
             action: 'AGENT_UPDATED',
             entityType: 'RegisteredAgent',
@@ -988,8 +1031,84 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
         // against a transaction-mode pooler.
         const staleness = await reassessAgentAfterChangeInTx(db, ctx, id);
 
-        return { id, updated: true, staleness };
+        return { id, updated: true, staleness, independenceFindingIds };
     });
+}
+
+/** What an amend of `isAuditor` will do, decided before anything is written. */
+interface AuditorMarkPlan {
+    readonly agentId: string;
+    readonly ownerUserId: string;
+    readonly from: boolean;
+    readonly to: boolean;
+}
+
+/**
+ * Read the agent and decide the mark change, under the independence lock.
+ * Becoming an auditor is refused unless the current owner is independent, and a
+ * RETIRED agent's mark does not move: retirement is terminal.
+ */
+async function planAuditorMark(
+    db: PrismaTx,
+    ctx: RequestContext,
+    id: string,
+    to: boolean,
+): Promise<AuditorMarkPlan> {
+    await lockAuditorIndependence(db, ctx);
+    const agent = await RegisteredAgentRepository.getLifecycleState(db, ctx, id);
+    if (!agent) throw notFound('Registered agent not found');
+    if (agent.status === 'RETIRED') {
+        throw conflict(
+            'This agent is retired, and retirement is permanent, so whether it is an auditor no ' +
+                'longer changes. Register a new agent instead.',
+        );
+    }
+    if (to && !agent.isAuditor) {
+        await assertAuditorIndependentInTx(db, ctx, { ownerUserId: agent.ownerUserId, agentId: id });
+    }
+    return { agentId: id, ownerUserId: agent.ownerUserId, from: agent.isAuditor, to };
+}
+
+/**
+ * Write the mark, audit it, and — when an auditor stops being one — raise a
+ * finding against any other ACTIVE auditor of the same owner, which now owns
+ * one more audited agent. Returns the finding ids.
+ */
+async function applyAuditorMark(
+    db: PrismaTx,
+    ctx: RequestContext,
+    plan: AuditorMarkPlan,
+): Promise<string[]> {
+    if (plan.from === plan.to) return [];
+    const count = await RegisteredAgentRepository.setAuditorMark(db, ctx, plan.agentId, plan.to);
+    if (count === 0) {
+        throw conflict(
+            'This agent was retired or removed while this request was in flight. Nothing was ' +
+                'changed; reload it to see its state.',
+        );
+    }
+    await logEvent(db, ctx, {
+        action: plan.to ? 'AGENT_AUDITOR_MARKED' : 'AGENT_AUDITOR_UNMARKED',
+        entityType: 'RegisteredAgent',
+        entityId: plan.agentId,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'RegisteredAgent',
+            operation: 'updated',
+            changedFields: ['isAuditor'],
+            before: { isAuditor: plan.from },
+            after: { isAuditor: plan.to },
+            summary: plan.to
+                ? `Registered agent ${plan.agentId} is now an auditor agent; its owner passed the independence check`
+                : `Registered agent ${plan.agentId} is no longer an auditor agent; its workpapers keep naming it`,
+        },
+    });
+    if (plan.to) return [];
+    const reconciled = await reconcileAuditorIndependenceInTx(db, ctx, {
+        trigger: 'AUDITOR_UNMARKED',
+        ownerUserIds: [plan.ownerUserId],
+    });
+    return [...reconciled.opened, ...reconciled.reopened];
 }
 
 /**
@@ -1251,7 +1370,7 @@ export async function activateRegisteredAgent(ctx: RequestContext, id: string) {
  * The named reasons an agent is refused activation, carried as
  * `details.reason` beside a sentence written for the operator.
  */
-export type AgentActivationRefusal = 'AI_SYSTEM_UNCLASSIFIED' | 'UNSCORED';
+export type AgentActivationRefusal = 'AI_SYSTEM_UNCLASSIFIED' | 'UNSCORED' | 'AUDITOR_NOT_INDEPENDENT';
 
 /**
  * What an agent must have before it goes into service, in the order it is
@@ -1269,6 +1388,16 @@ export type AgentActivationRefusal = 'AI_SYSTEM_UNCLASSIFIED' | 'UNSCORED';
  *      an INSERT of a new entry, `aiSystemId` is not amendable, and the one move
  *      an existing entry makes is OUT of the value.
  *   2. A SCORED operational tier — see `activateRegisteredAgent`.
+ *   3. For an AUDITOR agent (#3675), an INDEPENDENT owner: an ACTIVE
+ *      SECOND-line member who owns none of the agents it audits. Asked LAST,
+ *      because the first two are facts about the agent and this one is a fact
+ *      about its owner, and asked on EVERY move to ACTIVE — a suspended auditor
+ *      whose owner has since taken on an audited agent does not come back into
+ *      service on the strength of the check it passed before.
+ *      `AUDITOR_NOT_INDEPENDENT`, with the failing terms in
+ *      `details.independenceReasons`. The trigger
+ *      `registered_agent_auditor_independence` refuses the same move for any
+ *      writer that skips this.
  */
 async function assertActivatable(db: PrismaTx, ctx: RequestContext, id: string) {
     const entry = await RegisteredAgentRepository.getAiActClassification(db, ctx, id);
@@ -1298,6 +1427,12 @@ async function assertActivatable(db: PrismaTx, ctx: RequestContext, id: string) 
             { reason: 'UNSCORED' satisfies AgentActivationRefusal },
         );
     }
+
+    const lifecycle = await RegisteredAgentRepository.getLifecycleState(db, ctx, id);
+    if (!lifecycle) throw notFound('Registered agent not found');
+    if (lifecycle.isAuditor) {
+        await assertAuditorIndependentInTx(db, ctx, { ownerUserId: lifecycle.ownerUserId, agentId: id });
+    }
 }
 
 /**
@@ -1325,6 +1460,16 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
         // semantics were ever to change under us.
         await assertAgentOwner(db, ctx, parsed.ownerUserId);
         if (parsed.vendorId) await assertVendorInTenant(db, ctx, parsed.vendorId);
+        // An AUDITOR is refused here, before the AI-system entry is authored,
+        // for the same reason (#3675). The write recipe asks again under the
+        // same lock, so this is the early answer, not the only one.
+        const isAuditor = parsed.isAuditor === true;
+        if (isAuditor) {
+            await assertAuditorIndependentInTx(db, ctx, {
+                ownerUserId: parsed.ownerUserId,
+                agentId: null,
+            });
+        }
 
         const { created: aiSystem, classification, obligationsLinked } =
             await authorAiSystemEntry(db, ctx, {
@@ -1348,6 +1493,7 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
             modelRef: parsed.modelRef,
             ownerUserId: parsed.ownerUserId,
             vendorId: parsed.vendorId,
+            isAuditor,
         });
 
         await logEvent(db, ctx, {
@@ -1359,7 +1505,7 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
                 entityName: 'RegisteredAgent',
                 operation: 'create',
                 summary:
-                    `Registered agent "${parsed.name}" — autonomy ${parsed.autonomyLevel}, ` +
+                    `Registered ${isAuditor ? 'auditor ' : ''}agent "${parsed.name}" — autonomy ${parsed.autonomyLevel}, ` +
                     `${parsed.dataAccessScope}, ${parsed.reversibility}; ` +
                     `AI Act ${classification.tier} (${classification.clauseId})`,
                 after: {
@@ -1377,6 +1523,7 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
                     aiActRiskTier: classification.tier,
                     aiActClauseId: classification.clauseId,
                     obligationsLinked,
+                    isAuditor: parsed.isAuditor === true,
                 },
             },
         });
@@ -1385,6 +1532,11 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
             id: agent.id,
             status: agent.status,
             riskTier: agent.riskTier,
+            isAuditor,
+            // Findings raised against auditors this registration broke (an
+            // audited agent registered to an auditor's owner). Empty for an
+            // auditor, which was refused instead if it was not independent.
+            independenceFindingIds: agent.independenceFindingIds,
             aiSystemId: aiSystem.id,
             aiActRiskTier: classification.tier,
             aiActClauseId: classification.clauseId,

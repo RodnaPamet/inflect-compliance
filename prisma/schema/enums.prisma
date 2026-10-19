@@ -119,6 +119,21 @@ enum MembershipStatus {
   REMOVED
 }
 
+/// The three lines of defence a tenant member may be declared to sit in
+/// (agentic IAM step 3b, #3675; decision 3 of docs/agentic-iam-roadmap.md):
+/// FIRST runs the business and owns its risks, SECOND oversees them (risk,
+/// compliance, IAM governance), THIRD assures both (internal audit).
+///
+/// Stored on `TenantMembership.lineOfDefence`, NULLABLE: NULL means "not
+/// declared", and a NULL never satisfies a check that asks for a line. Only an
+/// OWNER sets it, and never on their own membership
+/// (`setMembershipLineOfDefence`).
+enum LineOfDefence {
+  FIRST
+  SECOND
+  THIRD
+}
+
 /// Epic 41 — configurable org dashboard widget categories.
 ///
 /// Drives the React component dispatched on the org overview page.

@@ -221,10 +221,11 @@ supply internal audit's approval or PwC's agreement: neither is recorded on
 #3663, each is recorded there when given, and while both are open library v1 is
 proposed to them, not approved or agreed. The catalogue records the ownership
 rule of decision 3: the second line is to own and operate the auditor agent, and
-internal audit is to approve its procedures and sample its workpapers. No
-auditor agent, workpaper or line-of-defence value exists on `main`, no handler
-runs any procedure, and each procedure's PwC methodology reference is open: PwC
-supplies it, and it is recorded on #3663 when given.
+internal audit is to approve its procedures and sample its workpapers. The
+line-of-defence value, the auditor independence check and the workpaper record
+are on `main` (step `3b`, below). No handler runs any procedure, so no auditor
+agent writes a workpaper yet, and each procedure's PwC methodology reference is
+open: PwC supplies it, and it is recorded on #3663 when given.
 
 ### Agent retirement and ownership transfer
 
@@ -625,6 +626,70 @@ each agent's application. A principal it does not own is read, then the disable
 is refused by Graph with `Authorization_RequestDenied`, and the journal row
 settles `INDETERMINATE` for a person to finish in the customer's directory.
 
+### Line of defence, auditor independence and workpapers
+
+Step `3b` (#3675) carries decision 3: the second line owns and operates the
+auditor agent, internal audit samples its workpapers, and the auditor is not the
+auditee (rule 8).
+
+- **A membership's line of defence.** `TenantMembership.lineOfDefence` is
+  FIRST, SECOND, THIRD or NULL, and NULL means not declared, which never
+  satisfies a check. It is set at
+  `PUT /api/t/:slug/admin/members/:membershipId/line-of-defence`, behind a
+  literal `requirePermission('admin.owner_management')` whose rule sits above
+  the members catch-all. `setMembershipLineOfDefence` also requires the caller's
+  built-in role to be OWNER, so a custom role carrying the key does not make an
+  ADMIN an OWNER. It refuses an API key or agent context, and refuses a member
+  setting their own line. Every change writes a hash-chained
+  `MEMBER_LINE_OF_DEFENCE_CHANGED` row with the line before and after; setting
+  the same value writes nothing. ADMIN and `AI_ADMIN` are refused, and no API
+  key carries the key. Every membership-creating path leaves the line NULL. It
+  is API surface only: the members page does not show it.
+- **An auditor agent.** `RegisteredAgent.isAuditor` marks an agent that
+  re-performs procedures. Every other agent that is not RETIRED and not
+  soft-deleted is an audited agent, DRAFT and SUSPENDED included. An agent is
+  refused as an auditor, with `details.reason` `AUDITOR_NOT_INDEPENDENT` and the
+  failing terms in `details.independenceReasons`, unless its owner holds an
+  ACTIVE membership, has a declared line, that line is SECOND, and owns no
+  audited agent. The refusal is asked when the agent is registered as one
+  (`registerAgent`), when an amend makes it one (`updateRegisteredAgent`), and on
+  every move to ACTIVE (`assertActivatable`, the status writer). The trigger
+  `registered_agent_auditor_independence` refuses the same rows for any writer
+  that skips the usecase. The registration intake's schema is strict and has no
+  such field, and `createRegisteredAgent` does not take it, so neither can make
+  an auditor. Unmarking is never refused, and every workpaper keeps naming its
+  author.
+- **A later break raises a finding.** A completed ownership transfer,
+  registering an agent (through any path, the intake included) to an auditor's
+  owner, unmarking another auditor of the same owner, and an OWNER moving the
+  owner's line each reconcile the ACTIVE auditors of the owner concerned. A
+  break opens one HIGH `NONCONFORMITY` finding per auditor (`sourceKind`
+  `AUDITOR_INDEPENDENCE`, `sourceRef` the agent id), or reopens a closed one. It
+  does not suspend the auditor or refuse the change, and it closes nothing when
+  the break is fixed: closing is a person's act. Every path that can make or
+  break independence takes a per-tenant advisory lock first, and the trigger
+  takes the same key, so a concurrent activation and registration serialise.
+  An owner who leaves is the owner-orphan pass's case, not this one.
+- **The workpaper record.** `AuditWorkpaper`, in
+  `prisma/schema/audit-workflow.prisma`, holds what the catalogue says a
+  workpaper records, as codes, identifiers and counts, with no free-text
+  column; that is its encryption decision. `recordAuditWorkpaper` takes a job
+  context or one that speaks for the auditor agent, never a person. The agent
+  must be an ACTIVE, independent auditor of the tenant, and every evidence,
+  proposal, finding and run reference must resolve in the tenant. CHECKs hold
+  that a PASS needs a non-empty population, a drawn sample and no exception, and
+  that a FAIL names an exception. A trigger refuses an author that is not an
+  auditor, a row born reviewed, and a sample that differs from the first one
+  drawn for the procedure and period, which is binding. Every column is fixed at
+  insert apart from the review stamp, `reviewedAt` and `reviewedByUserId`, which
+  `stampAuditWorkpaperReview` sets once. Only an ACTIVE THIRD-line member who
+  does not own the auditor may set it. A trigger refuses any other UPDATE from
+  every role, and `app_user` holds no DELETE. Findings are linked through
+  `AuditWorkpaperFinding`, which is insert-only, and nothing on the workpaper's
+  path writes a finding. Reading workpapers takes `audits.manage`. There is no
+  workpaper route: the writer is step `3c`'s auditor, and the review route is
+  step `3d`'s.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
@@ -634,7 +699,7 @@ settles `INDETERMINATE` for a person to finish in the customer's directory.
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
-| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
+| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, so no workpaper is written; no sampling of workpapers. |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | — |
 
 ## Roadmap (future direction)
@@ -946,9 +1011,9 @@ and one new key:
 | Create, decide, close and read an `AGENT` campaign (`3a`) | `access_reviews.create`, `.decide`, `.close`, `.view` | The existing access-review routes and keys. |
 | Read an `AGENT` campaign's reviewer packs (`3a`) | `access_reviews.view` | Every role holds it, and a pack carries register data, so the usecase narrows the read to the campaign's assigned reviewer or a holder of `admin.agent_registry`, as `decide` narrows to the assigned reviewer. |
 | Accept or reject a narrowing in a campaign (`3a`) | `access_reviews.decide` | The effect is a grant delete, which only narrows, so it does not also need `admin.agent_tool_exposure`. |
-| Set a membership's line of defence (`3b`) | `admin.owner_management` | OWNER-only; see below. |
-| Register or activate an auditor agent (`3b`) | `admin.agent_registry` | The existing routes. The independence check is a refusal inside `registerAgent` and `activateRegisteredAgent`. |
-| Read workpapers (`3b`, `3c`) | `audits.manage` | A workpaper on leaver timeliness or privileged access lists exceptions about named people's access, and `audits.view` is held by every role, READER included (`src/lib/permissions.ts`). OWNER and ADMIN hold `audits.manage`. A THIRD-line reviewer reads the workpapers assigned to them through `3d`'s review route, and the external auditor reads them in a pack (`4d`). An internal-audit member who needs every workpaper gets a custom role carrying `audits.manage`. `3b` places `AuditWorkpaper` in `prisma/schema/audit-workflow.prisma`, beside `Audit`. |
+| Set a membership's line of defence (`3b`) | `admin.owner_management` | OWNER-only; see below. Shipped by `3b` (#3675) at `PUT …/admin/members/[membershipId]/line-of-defence`, with its rule above the members catch-all. |
+| Register or activate an auditor agent (`3b`) | `admin.agent_registry` | The existing routes. The independence check is a refusal inside `registerAgent` and `activateRegisteredAgent`. Shipped by `3b` (#3675), which also asks it of an amend that makes an agent an auditor (`PATCH …/admin/agents/[agentId]`, `isAuditor`). |
+| Read workpapers (`3b`, `3c`) | `audits.manage` | `3b` (#3675) ships the read usecases (`listAuditWorkpapers`, `getAuditWorkpaper`) under this gate and no route. A workpaper on leaver timeliness or privileged access lists exceptions about named people's access, and `audits.view` is held by every role, READER included (`src/lib/permissions.ts`). OWNER and ADMIN hold `audits.manage`. A THIRD-line reviewer reads the workpapers assigned to them through `3d`'s review route, and the external auditor reads them in a pack (`4d`). An internal-audit member who needs every workpaper gets a custom role carrying `audits.manage`. `3b` places `AuditWorkpaper` in `prisma/schema/audit-workflow.prisma`, beside `Audit`. |
 | Read and record the outcome of a sampled workpaper (`3d`) | `audits.view` | Every role holds it, so the usecase admits only the workpaper's assigned reviewer, who must be THIRD-line and must not own the auditor agent, as `decide` narrows to the assigned reviewer. Requiring `audits.manage` would shut out an internal auditor on the AUDITOR role, which does not hold it. The draw and the assignment are a scheduled sweep, with no route. |
 | Show the scan health per estate and per source (`4a`) | `admin.agent_registry_view`, or `admin.agent_registry` | It reads scans, under the key their list takes. |
 | Kill an A2A peer, and lift the kill (`4b`) | `admin.agent_kill_switch` | The key that stops an agent stops a peer: there is no second authority model (decision 4). `*` does not carry it. |
@@ -1058,6 +1123,7 @@ a legal decision, as that document records.
 | `AgentServicePrincipalConfirmation` (`2c`) | Business record | A person's one-way confirmation that a discovered Entra service principal is a registered agent's own, invalidated when a scan re-links either side. Kept as long as `RegisteredAgent`, for the same incident-review question. Added by #3671 under the owner's 2026-10-18 decision that an unattended disable needs a confirmed link. Everything else `2c` writes goes to existing tables: `ExternalWriteJournal` rows, `EXTERNAL_WRITE` proposals, and an OWNER-nominated `ExternalToolPriorStateRead` pairing. |
 | `PeerAgent` (`2e`) | Business record | An A2A peer registered as a principal: an owner, an endpoint, a signing-key reference, and a pinned card hash with who approved it and when. The class `RegisteredAgent` has, for the same reason: an incident review months later asks which peers agents could reach and who was accountable. |
 | `AuditWorkpaper` (`3b`) | Regulatory artefact | The auditor agent's re-performance of one procedure for one period, with a one-way review stamp. An audit relies on it, so it is not pruned by age. |
+| `AuditWorkpaperFinding` (`3b`) | Regulatory artefact | Added by `3b` (#3675), which this table did not plan: one finding a workpaper links, insert-only. Kept as long as its workpaper, because which findings a workpaper raised is part of the record. The finding is a plain id, bound at insert, so the link outlives a purged finding and nothing retained cascades from a table the purge deletes. |
 | The sampled-workpaper review (`3d`) | Regulatory artefact | One row per sampled workpaper: the reviewer's outcome and stable dissent codes, with no free text. `AgentProposalSampleAudit` is the pattern; it cannot be reused, because every row of it requires a proposal. It is classed Business record since 2026-10-18 because it cascades from its proposal and goes with it in a tenant purge, so this review keeps the regulatory class only while nothing it cascades from is purged. Kept as long as the workpaper it judges, because a disagreement rate whose history can be pruned cannot be trended. |
 | The A2A task receipt, sent and received (`4b`) | Regulatory artefact | Signed evidence of an agent action, the class `AgentActionReceipt` has. That model holds receipts from an external mediator and fits neither a receipt Inflect signs nor a peer's, so `4b` either adds a model under this class or states why it reuses one. |
 | `TenantSkill` (`4c`) | Configuration | The mutable head of one tenant skill: its status and which version is current. The class `AgentPolicyCard` has, for the same shape. |

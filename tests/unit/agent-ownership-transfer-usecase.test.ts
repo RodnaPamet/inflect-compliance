@@ -86,6 +86,8 @@ const AGENT_ROW = { id: 'agent-1', status: 'ACTIVE', name: 'n', ownerUserId: 'ow
 
 function useDb(f: Fixture = {}) {
     const db: any = {
+        // `lockAuditorIndependence` (#3675) — the tenant's advisory lock.
+        $executeRawUnsafe: jest.fn(async () => 0),
         // `lockLifecycleStateForShare` — the locking read of the same row.
         $queryRaw: jest.fn(async () => {
             const agent = f.agent === undefined ? AGENT_ROW : f.agent;
@@ -104,6 +106,9 @@ function useDb(f: Fixture = {}) {
         },
         registeredAgent: {
             findFirst: jest.fn(async () => (f.agent === undefined ? AGENT_ROW : f.agent)),
+            // The independence reconcile's read of the new owner's auditors
+            // (#3675): none here, so it raises nothing.
+            findMany: jest.fn(async () => []),
             updateMany: jest.fn(async () => ({ count: f.moved ?? 1 })),
         },
         tenantMembership: {
@@ -199,6 +204,20 @@ describe('the owner move precedes the completion claim', () => {
         expect(order(db.registeredAgent.updateMany)).toBeLessThan(order(claim));
         expect(mockLogEvent).toHaveBeenCalledTimes(1);
         expect(order(mockLogEvent as unknown as jest.Mock)).toBeGreaterThan(order(claim));
+    });
+
+    it('takes the auditor-independence lock FIRST, then reconciles the new owner after the move (#3675)', async () => {
+        const db = useDb();
+        await completeAgentOwnershipTransfer(ctxFor('owner-b'), 'agent-1', { transferId: 'transfer-1' });
+        const lock = db.$executeRawUnsafe as jest.Mock;
+        expect(lock).toHaveBeenCalledWith(expect.stringContaining('pg_advisory_xact_lock'), 'auditor-independence:tenant-1');
+        // Before any row is read or locked: the transfer row, then the agent row.
+        expect(order(lock)).toBeLessThan(order(db.agentOwnershipTransfer.findFirst));
+        expect(order(lock)).toBeLessThan(order(db.registeredAgent.updateMany));
+        // The reconcile asks about the NEW owner's ACTIVE auditors, after the move.
+        const reconcile = (db.registeredAgent.findMany as jest.Mock).mock.calls[0][0];
+        expect(reconcile.where).toMatchObject({ ownerUserId: { in: ['owner-b'] }, isAuditor: true, status: 'ACTIVE' });
+        expect(order(db.registeredAgent.findMany)).toBeGreaterThan(order(db.registeredAgent.updateMany));
     });
 
     it('a lost claim throws INSIDE the transaction, so the owner move rolls back with it', async () => {

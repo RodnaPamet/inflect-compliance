@@ -92,6 +92,7 @@ import {
     ProposeAgentOwnershipTransferSchema,
 } from '../schemas/agent-ownership-transfer.schemas';
 import type { RequestContext } from '../types';
+import { lockAuditorIndependence, reconcileAuditorIndependenceInTx } from './auditor-independence';
 
 type TransferRow = NonNullable<Awaited<ReturnType<typeof AgentOwnershipTransferRepository.findById>>>;
 
@@ -303,6 +304,13 @@ export async function completeAgentOwnershipTransfer(
     const now = new Date();
 
     const outcome = await runInTenantContext(ctx, async (db) => {
+        // AUDITOR INDEPENDENCE (#3675) can break here — an auditor passing to
+        // somebody who is not independent, or an audited agent passing to an
+        // auditor's owner — so the tenant's independence lock is the FIRST
+        // thing this transaction takes, before the agent row's lock and the
+        // transfer row's (see `auditor-independence.ts`, "The lock").
+        await lockAuditorIndependence(db, ctx);
+
         const transfer = await AgentOwnershipTransferRepository.findById(
             db,
             ctx,
@@ -406,12 +414,23 @@ export async function completeAgentOwnershipTransfer(
             },
         });
 
+        // A completed transfer is a LATER change: it is never refused for
+        // independence, and a break it causes raises a finding against the
+        // auditor rather than undoing an accountability handover two people
+        // agreed. Only the new owner's auditors can have broken — the previous
+        // owner's standing can only improve.
+        const reconciled = await reconcileAuditorIndependenceInTx(db, ctx, {
+            trigger: 'OWNERSHIP_TRANSFER',
+            ownerUserIds: [transfer.toOwnerUserId],
+        });
+
         return {
             refused: null,
             transferId: transfer.id,
             agentId: agent.id,
             ownerUserId: transfer.toOwnerUserId,
             previousOwnerUserId: transfer.fromOwnerUserId,
+            independenceFindingIds: [...reconciled.opened, ...reconciled.reopened],
         };
     });
 
@@ -426,6 +445,7 @@ export async function completeAgentOwnershipTransfer(
         agentId: outcome.agentId,
         ownerUserId: outcome.ownerUserId,
         previousOwnerUserId: outcome.previousOwnerUserId,
+        independenceFindingIds: outcome.independenceFindingIds,
     };
 }
 

@@ -8,6 +8,8 @@
 //    • AuditPackShare + …Comment    — the share link and its comment thread
 //    • AuditorAccount + AuditorPackAccess — external-auditor RBAC tier
 //    • ReadinessSnapshot            — the readiness trend time-series
+//    • AuditWorkpaper + …Finding    — the auditor agent's re-performance of
+//                                     one procedure for one period (#3675)
 //
 //  THIS IS NOT THE PLATFORM AUDIT TRAIL. The hash-chained immutable
 //  event log (AuditLog / OrgAuditLog) lives in `audit-trail.prisma`.
@@ -491,4 +493,154 @@ model AccessReviewDecisionSampleAudit {
   @@unique([tenantId, decisionId])
   @@index([tenantId, accessReviewId])
   @@index([tenantId, outcome, sampledAt])
+}
+
+/// Step 3b (#3675) — ONE AUDIT WORKPAPER: the auditor agent's re-performance of
+/// one audit procedure for one period, as `docs/agentic-audit-procedures.md`
+/// ("What a workpaper records") defines it. Step 3c's handlers write these;
+/// step 3d samples them; step 4d hands them to the external auditor.
+///
+/// ## A one-way record
+///
+/// Every column is fixed at insert. The ONLY later write is the review stamp —
+/// `reviewedAt` + `reviewedByUserId`, set together, once, NULL to a value — and
+/// the trigger `audit_workpaper_one_way` refuses every other UPDATE from every
+/// role, including the table owner. `app_user` holds no DELETE: a workpaper
+/// leaves only with its tenant. An audit relies on it, so nothing prunes it by
+/// age (Regulatory artefact, `docs/data-retention.md`).
+///
+/// ## Codes, identifiers and counts — never prose
+///
+/// The catalogue binds every fact on a workpaper to a code, an identifier or a
+/// count: no names, no e-mail addresses, no tool arguments, no proposal
+/// payloads. So the CONCLUSION is `TestResult` plus a basis code pinned by a
+/// CHECK, and there is no free-text conclusion column to encrypt — that is the
+/// encryption decision (`src/lib/security/encrypted-fields.ts` records it). The
+/// one text column, `populationDefinition`, is the catalogue's own definition,
+/// bounded and sanitised at the write seam.
+///
+/// ## The first sample is binding
+///
+/// The first workpaper that draws a sample for a (procedure, period) fixes it;
+/// a later run reuses that sample, and the trigger
+/// `audit_workpaper_insert_guard` refuses a different one. So a re-run cannot
+/// look for a more favourable sample.
+///
+/// ## Findings
+///
+/// Linked through `AuditWorkpaperFinding`, insert-only. No workpaper path
+/// writes a finding's status: a workpaper links findings and never closes one.
+model AuditWorkpaper {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The catalogue's stable procedure id (`iam.leaver_timeliness`, …) and the
+  /// catalogue version it was run under. A procedure id is never renamed and
+  /// never reused, so the pair names the definition for good.
+  procedureId      String
+  catalogueVersion Int
+
+  /// `YYYY-MM` or `YYYY-Qn`, UTC, CHECK-pinned. No start/end columns: the label
+  /// is the period, and a second encoding of it could disagree.
+  periodLabel String
+
+  /// The population as the catalogue defines it, its frozen count, and the
+  /// SHA-256 over the procedure id, the period label and the sorted unit ids.
+  populationDefinition String
+  populationCount      Int
+  populationDigest     String
+
+  /// The sample — all NULL/empty when a precondition stopped the run before
+  /// one was drawn, all set otherwise (a CHECK). `sampleEpoch` is
+  /// `<procedureId>@<periodLabel>`; `seedFingerprint` tells a verifier whether
+  /// the seed they hold drew it, and is not the seed.
+  sampleEpoch     String?
+  seedFingerprint String?
+  sampleSize      Int?
+  sampledUnitIds  String[] @default([])
+
+  /// The parameters the second line set (`leaverWindowHours`, …), as codes and
+  /// numbers.
+  parametersJson   Json?
+  /// The attribute ids tested (`L1`, `L2`, …).
+  attributesTested String[] @default([])
+  /// One `{ unitId, outcome, code }` per sampled unit.
+  itemOutcomesJson Json
+  /// One `{ unitId, code }` per exception; `exceptionCount` is its length (a
+  /// CHECK).
+  exceptionsJson   Json
+  exceptionCount   Int
+
+  /// PASS, FAIL or INCONCLUSIVE, and the basis code. A PASS needs a non-empty
+  /// population, a drawn sample and no exception; a FAIL needs an exception
+  /// (CHECKs): an empty population can never pass.
+  conclusion      TestResult
+  conclusionBasis String
+
+  /// Evidence ids and finding-proposal (`AgentProposal`) ids the run produced.
+  /// Plain identifiers: evidence and proposals are soft-deleted and purged on
+  /// their own schedules, and a regulatory record must not vanish with them.
+  evidenceRefs String[] @default([])
+  proposalIds  String[] @default([])
+
+  /// The auditor agent that wrote it. A plain id with NO foreign key, as
+  /// `AgentKillSwitch.agentId` and `AgentActionReceipt.agentId` are: the tenant
+  /// purge keeps this Regulatory artefact and deletes the register, so a
+  /// foreign key would either fail every purge (NO ACTION) or take the
+  /// workpaper with the agent (CASCADE). The insert trigger refuses an id that
+  /// is not an auditor agent of the same tenant, so it is tenant-bound and
+  /// true when written. Never moved: unmarking an auditor does not
+  /// re-attribute its workpapers.
+  auditorAgentId   String
+  /// The control-test run that produced it. A plain id, no FK: runs are
+  /// hard-purged with their soft-deleted test plan, and the workpaper outlives
+  /// them.
+  controlTestRunId String
+
+  /// THE ONE-WAY REVIEW STAMP. Set together, once (CHECK + trigger). The
+  /// reviewer is a plain user id with no FK, as `AgentProposalApproval`'s
+  /// signer is: the signature must survive the account's deletion.
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+
+  createdAt DateTime @default(now())
+
+  // No `updatedAt`: the row is append-only apart from the stamp.
+
+  tenant       Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  findingLinks AuditWorkpaperFinding[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, procedureId, periodLabel])
+  @@index([tenantId, auditorAgentId])
+  @@index([tenantId, createdAt])
+}
+
+/// A finding a workpaper links (#3675). INSERT-ONLY: `app_user` holds neither
+/// UPDATE nor DELETE, and a trigger refuses an UPDATE from any role. A link is
+/// a reference, never an act on the finding — nothing that writes this table
+/// writes `Finding.status`.
+///
+/// `findingId` is a plain id with NO foreign key. This table is a Regulatory
+/// artefact the tenant purge retains, and `Finding` is a Business record it
+/// deletes (as does the 90-day purge of a soft-deleted finding): a CASCADE key
+/// would delete the record that a workpaper raised the finding, and a NO ACTION
+/// one would fail the purge. The insert trigger
+/// `audit_workpaper_finding_insert_guard` refuses an id that is not a finding
+/// of the same tenant, so the reference is tenant-bound and true when written.
+/// The only foreign keys are to the tenant and the workpaper, which the purge
+/// both retains.
+model AuditWorkpaperFinding {
+  id          String   @id @default(cuid())
+  tenantId    String
+  workpaperId String
+  findingId   String
+  createdAt   DateTime @default(now())
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workpaper AuditWorkpaper @relation(fields: [workpaperId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([workpaperId, findingId])
+  @@index([tenantId, workpaperId])
+  @@index([tenantId, findingId])
 }
