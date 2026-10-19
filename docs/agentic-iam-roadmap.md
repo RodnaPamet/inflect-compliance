@@ -1144,6 +1144,33 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
   workspace's skills beside it, with authoring and review for holders of the
   key.
 
+### The managed-service methodology
+
+Step `4e` (#3682) hands the six use cases to PwC's IAM practice as a managed
+service. [`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)
+is its methodology, version 1, and it does four things:
+
+- It rests on one division: PwC prepares and watches, and the client admits,
+  widens, accepts, approves and stops.
+- It sets out the engagement setup, the scanner deployment, the cadence of
+  scans, campaigns and audit programmes, and the escalation paths.
+- It states who holds each right, with the PwC operator on a custom role that
+  adds the inventory view key and, at the client's request, the skill authoring
+  key or the workpaper view key, and never a key that decides. The client's
+  ownership of the register, the
+  approved skills and the kill switch is stated, and each is held by the
+  product or, where the product cannot hold it, by the methodology.
+- It maps every activity to its product surface and the evidence that
+  activity leaves.
+
+It lists what PwC does not operate where it is also the client's external
+auditor. Drafting it found two product gaps, both now closed: tenant skill
+authoring and approval are separate keys (#3778), and the monthly token budget
+that inbound A2A requires is set beside the concurrency cap (#3777).
+
+The repository owner's merge adopts it for this repository. PwC's practice
+lead's acceptance is open and is recorded on #3682 when given.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
