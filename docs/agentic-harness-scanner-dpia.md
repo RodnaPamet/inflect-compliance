@@ -188,13 +188,23 @@ Regulatory artefact in [`docs/data-retention.md`](data-retention.md), whose row
 names it DSAR-relevant for that feature (condition 7), and it has no erasure path
 for one person.
 
+Since #3728 a completed Flue run's answer is also parsed through the contract
+and stored, one row per discovered agent, in `DiscoveredAgentAttribution`, so
+the Register dialog can show it. Only a parsed answer is stored. The person a
+SUGGESTED answer named is kept in `proposedOwnerRef`, apart from the person-free
+signals and encrypted at rest. The intake reads it only to compare it with the
+owner a person confirms, and records the boolean. It never reaches a page. The
+row is Operational in [`docs/data-retention.md`](data-retention.md), named
+DSAR-relevant there, and replaced by the agent's next review. It is deleted with
+its run, its agent and its tenant.
+
 ### Conditions on #3710
 
 | Condition | Status |
 |---|---|
 | 12. Before a tenant's Flue runs of `discovered-agent-review` send the owner reference to an external model provider, [`docs/sub-processors.md`](sub-processors.md) names that data in the provider's row and the notice [`docs/sub-processor-change-policy.md`](sub-processor-change-policy.md) requires is given, or the repository owner records why it is not required. | **Met** — the Anthropic row and its section (c) in `docs/sub-processors.md` name an agent run's payload, the owner reference included. The repository owner recorded on 2026-10-18 that the note on the existing row is enough and that no separate notice window or code gate is required before these runs ship. |
 | 13. A model reads the owner reference only through `get_discovered_agent`, under the named scope and a tool grant, and labelled untrusted. | Met by #3710 (`tests/integration/agent-registry-view-key.test.ts`) |
-| 14. Every stored column the model's answer can reach that names a person is named DSAR-relevant, as condition 7 requires of the ingest's. | Met by #3710 for `AiDecisionLog.outputSummary` |
+| 14. Every stored column the model's answer can reach that names a person is named DSAR-relevant, as condition 7 requires of the ingest's. | Met by #3710 for `AiDecisionLog.outputSummary`, and by #3728 for `DiscoveredAgentAttribution.proposedOwnerRef` |
 
 ## Lawful basis
 

@@ -16,6 +16,11 @@
  *      supplier.
  *   4. THE BODY IS EXACTLY WHAT THE STRICT SCHEMA TAKES, and the API's refusal
  *      is shown in the dialog, which stays open.
+ *   5. THE STORED REVIEW SUGGESTION (#3728) reaches the dialog from the shadow
+ *      row, shows its status, grade, signals and run, and NAMES NOBODY — not
+ *      even when a person reference is smuggled into the object it is handed.
+ *      It is kept by default and travels as `attribution: { runId }` only while
+ *      kept; discarding it sends no `attribution` at all.
  *
  * The real `<UserCombobox>`, `<Combobox>`, `<Checkbox>` and `<RadioGroup>` are
  * driven; only `fetch` answers.
@@ -134,6 +139,7 @@ const shadowRow = (over: Partial<ShadowRow> = {}): ShadowRow => ({
     reason: 'UNREGISTERED',
     findingId: 'fnd_open',
     intake: null,
+    suggestion: null,
     ...over,
 });
 
@@ -192,6 +198,8 @@ const renderTab = (canRegisterShadow?: boolean) =>
     );
 
 const SUGGESTION: IntakeSuggestionView = {
+    runId: 'run_review_open',
+    runCompletedAt: '2026-10-18T05:00:00.000Z',
     status: 'SUGGESTED',
     grade: 'STRONG',
     unmatchedReason: null,
@@ -454,7 +462,8 @@ describe('the request is exactly what the strict schema takes', () => {
         await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1));
         const post = calls.find((c) => c.method === 'POST')!;
         expect(post.url).toBe('/api/t/acme/admin/agents/intake');
-        // No tier, no questionnaire, no attribution: exactly these keys.
+        // No tier, no questionnaire: exactly these keys. The kept suggestion
+        // travels as its run id, never as whom it named.
         expect(post.body).toEqual({
             findingId: 'fnd_open',
             ownerUserId: 'u_bob',
@@ -465,9 +474,122 @@ describe('the request is exactly what the strict schema takes', () => {
             reversibility: 'COMPENSABLE',
             provenance: 'FIRST_PARTY',
             deploymentRole: 'DEPLOYER',
+            attribution: { runId: 'run_review_open' },
         });
         await waitFor(() => expect(mockRefresh).toHaveBeenCalledTimes(1));
         expect(onClose).toHaveBeenCalled();
         expect(mockToast.success.mock.calls[0][0]).toBe(R.saved);
+    });
+});
+
+// ─── 5. The stored review suggestion (#3728) ────────────────────────────────
+
+describe('the stored review suggestion shows in the dialog, names nobody, and is sent only while kept', () => {
+    /** A person reference, smuggled past the type into the object the dialog is handed. */
+    const SMUGGLED_REF = 'ada@acme.test';
+    const smuggled = {
+        ...SUGGESTION,
+        proposedOwnerRef: SMUGGLED_REF,
+        signals: SUGGESTION.signals.map((s) => ({ ...s, personRef: SMUGGLED_REF })),
+    } as unknown as IntakeSuggestionView;
+
+    const renderTabWith = (rows: ShadowRow[]) =>
+        render(
+            <Providers>
+                <ReportsClient
+                    tab="harness"
+                    tenantSlug="acme"
+                    harness={view(rows)}
+                    scannerKeys={{ keys: { rows: [], truncated: false }, candidates: { rows: [], truncated: false } }}
+                    estateHealth={{ generatedAt: '2026-10-19T00:00:00.000Z', scanWindow: 500, windowTruncated: false, estates: { rows: [], truncated: false } }}
+                    canRegisterShadow
+                    canReviewProposals
+                    canInvestigate
+                    canExport={false}
+                />
+            </Providers>,
+        );
+
+    it('reaches the dialog from the shadow row, with its status, grade, signals and run', async () => {
+        const user = userEvent.setup();
+        renderTabWith([shadowRow({ suggestion: SUGGESTION })]);
+        await user.click(screen.getByTestId('harness-shadow-register-da_open'));
+
+        const shown = screen.getByTestId('harness-register-suggestion');
+        expect(shown.textContent).toContain(R.suggestionSuggested.replace('{grade}', R.gradeStrong));
+        const signals = within(screen.getByTestId('harness-register-suggestion-signals')).getAllByRole('listitem');
+        expect(signals.map((li) => li.textContent)).toEqual([
+            `IDENTITY_OWNER — entra-sp:servicePrincipals/open#owners (${R.signalNamesPerson})`,
+            'NAMING_PATTERN — entra-sp:servicePrincipals/open#displayName',
+        ]);
+        expect(screen.getByTestId('harness-register-suggestion-from').textContent).toContain('run_review_open');
+        // Kept by default, as provenance.
+        expect(document.getElementById('harness-register-keep-suggestion')?.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('names nobody — a smuggled person reference is never rendered, and the owner is not pre-filled', async () => {
+        renderModal(smuggled);
+        const shown = screen.getByTestId('harness-register-suggestion');
+        // Positive anchor: the suggestion rendered, signals and all.
+        expect(shown.textContent).toContain('entra-sp:servicePrincipals/open#owners');
+        const dialog = screen.getByTestId('harness-register-modal');
+        expect(dialog.textContent).not.toContain(SMUGGLED_REF);
+        // Nor anybody on the roster the picker reads: nothing chose a person.
+        await waitFor(() => expect(calls.some((c) => c.url === '/api/t/acme/users/assignable')).toBe(true));
+        for (const m of MEMBERS) expect(shown.textContent).not.toContain(m.name);
+        expect(document.getElementById('harness-register-owner')?.textContent).toContain(NEW.ownerPlaceholder);
+        expect(confirmBox()).toBeDisabled();
+    });
+
+    it('sends only the run id while kept, and no attribution once discarded — the owner is the chosen one either way', async () => {
+        const user = userEvent.setup();
+        renderModal(smuggled);
+        await fillAgent(user);
+        await choose(user, 'harness-register-owner', /Bob Active/);
+        await user.click(confirmBox());
+        await user.click(document.getElementById('harness-register-keep-suggestion')!);
+        expect(document.getElementById('harness-register-keep-suggestion')?.getAttribute('aria-checked')).toBe('false');
+        await user.click(submit());
+
+        await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1));
+        const body = calls.find((c) => c.method === 'POST')!.body as Record<string, unknown>;
+        expect(body).not.toHaveProperty('attribution');
+        expect(body.ownerUserId).toBe('u_bob');
+        expect(JSON.stringify(body)).not.toContain(SMUGGLED_REF);
+    });
+
+    it('the body builder carries a kept suggestion as its run id alone, and nothing for none', () => {
+        const draft: IntakeDraft = {
+            ownerUserId: 'u_ada',
+            confirmOwner: true,
+            name: 'Sales bot',
+            description: '',
+            autonomyLevel: 3,
+            dataAccessScope: 'WRITE_TENANT_DATA',
+            reversibility: 'COMPENSABLE',
+            provenance: 'FIRST_PARTY',
+            vendorId: null,
+            deploymentRole: 'DEPLOYER',
+            purpose: '',
+        };
+        expect(intakeRequestBody('fnd_open', { ...draft, keptSuggestionRunId: 'run_review_open' })).toMatchObject({
+            ownerUserId: 'u_ada',
+            attribution: { runId: 'run_review_open' },
+        });
+        expect(intakeRequestBody('fnd_open', { ...draft, keptSuggestionRunId: null })).not.toHaveProperty('attribution');
+        expect(intakeRequestBody('fnd_open', draft)).not.toHaveProperty('attribution');
+        // A kept suggestion never stands in for the owner or the confirmation.
+        expect(intakeRequestBody('fnd_open', { ...draft, ownerUserId: null, keptSuggestionRunId: 'run_review_open' })).toBeNull();
+        expect(intakeRequestBody('fnd_open', { ...draft, confirmOwner: false, keptSuggestionRunId: 'run_review_open' })).toBeNull();
+    });
+
+    it('a row with no stored suggestion shows none, and offers nothing to keep', async () => {
+        const user = userEvent.setup();
+        renderTabWith([shadowRow()]);
+        await user.click(screen.getByTestId('harness-shadow-register-da_open'));
+        // Positive anchor: the dialog is open.
+        expect(screen.getByTestId('harness-register-modal')).toBeInTheDocument();
+        expect(screen.queryByTestId('harness-register-suggestion')).not.toBeInTheDocument();
+        expect(document.getElementById('harness-register-keep-suggestion')).toBeNull();
     });
 });

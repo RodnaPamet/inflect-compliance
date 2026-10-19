@@ -150,7 +150,13 @@ export function HarnessTab({
 
             {accepting && <AcceptShortfallModal target={accepting} onClose={() => setAccepting(null)} />}
             {registering && canRegisterShadow && (
-                <RegisterShadowAgentModal target={registering} onClose={() => setRegistering(null)} />
+                <RegisterShadowAgentModal
+                    target={registering}
+                    // The stored review suggestion (#3728): status, grade and
+                    // signals, never the person it named.
+                    suggestion={registering.suggestion}
+                    onClose={() => setRegistering(null)}
+                />
             )}
         </>
     );

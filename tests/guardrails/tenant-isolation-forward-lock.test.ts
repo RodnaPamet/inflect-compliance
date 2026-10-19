@@ -79,6 +79,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AgentHarnessEstateSource: "tests/integration/agent-harness-estates.test.ts",
     AgentOwnershipTransfer: "tests/integration/agent-ownership-transfer.test.ts",
     AgentServicePrincipalConfirmation: "tests/integration/agent-service-principal-link-confirmation.test.ts",
+    DiscoveredAgentAttribution: "tests/integration/agent-review-attribution.test.ts",
     PeerAgent: "tests/integration/peer-agents.test.ts",
     AuditWorkpaper: "tests/integration/audit-workpaper.test.ts",
     AuditWorkpaperFinding: "tests/integration/audit-workpaper.test.ts",

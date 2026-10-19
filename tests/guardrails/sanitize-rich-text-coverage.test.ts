@@ -193,6 +193,9 @@ const RICH_TEXT_COVERAGE: Readonly<
     RiskScoreEvent: { usecases: ['src/app-layer/usecases/risk-score-events.ts'], sanitizer: 'sanitizePlainText' },
     // #3665 — harness shortfall acceptance rationale; one write seam.
     AgentHarnessAcceptance: { usecases: ['src/app-layer/usecases/agent-harness-acceptance.ts'], sanitizer: 'sanitizePlainText' },
+    // A review run's owner suggestion (#3728): model output, parsed through the
+    // skill's contract and sanitised by its one writer before it is stored.
+    DiscoveredAgentAttribution: { usecases: ['src/app-layer/usecases/agent-harness-attribution.ts'], sanitizer: 'sanitizePlainText' },
     RiskTreatmentPlan: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
     TreatmentMilestone: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
     // NIS2 Article 23 incident response — incident narrative, the filed

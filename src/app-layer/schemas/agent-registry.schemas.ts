@@ -319,7 +319,13 @@ export const RegistrationIntakeSchema = z
         provider: z.string().max(200).optional().nullable(),
         deploymentRole: z.enum(['PROVIDER', 'DEPLOYER']).default('DEPLOYER'),
 
-        /** The `nhi-ownership-attribution` answer — provenance, never the owner. */
+        /**
+         * The `nhi-ownership-attribution` answer — provenance, never the owner.
+         * Either the answer itself (parsed through the skill's contract), or
+         * `{ runId }` naming the review run whose answer the server STORED
+         * (`StoredSuggestionRefSchema`, #3728) — the form the harness tab's
+         * dialog sends, since it never holds the person the answer named.
+         */
         attribution: z.unknown().optional(),
     })
     .strict()
@@ -332,3 +338,11 @@ export const RegistrationIntakeSchema = z
         });
     });
 export type RegistrationIntakeInput = z.infer<typeof RegistrationIntakeSchema>;
+
+/**
+ * A reference to a STORED owner suggestion (#3728): the review run whose parsed
+ * answer `DiscoveredAgentAttribution` holds for the agent being registered.
+ * Strict, so an answer the request carries — which always has a `status` — can
+ * never be read as one.
+ */
+export const StoredSuggestionRefSchema = z.object({ runId: z.string().trim().min(1).max(64) }).strict();

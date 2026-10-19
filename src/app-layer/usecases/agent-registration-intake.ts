@@ -32,6 +32,14 @@
  * person it suggested (`lib/agentic/registration-intake.ts`). No line here reads
  * an owner out of it.
  *
+ * Or `attribution` is `{ runId }` (#3728): the harness tab's dialog holds no
+ * person reference, so it names the review run whose parsed answer the server
+ * STORED (`DiscoveredAgentAttribution`), and this reads that row — the person
+ * included, server-side — and records the same provenance with the run id. A
+ * run that is not the one stored for this agent now refuses
+ * `SUGGESTION_NOT_STORED`: the person kept a suggestion that has since been
+ * replaced, and recording a different one in its name would be false.
+ *
  * ── ONE DISCOVERED AGENT, AT MOST ONE REGISTER ROW ──────────────────────────
  *
  * Refused as `ALREADY_REGISTERED` when a scan has already linked the
@@ -76,11 +84,13 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { AiSystemRepository } from '../repositories/AiSystemRepository';
 import { RegisteredAgentRepository } from '../repositories/RegisteredAgentRepository';
-import { RegistrationIntakeSchema } from '../schemas/agent-registry.schemas';
+import { RegistrationIntakeSchema, StoredSuggestionRefSchema } from '../schemas/agent-registry.schemas';
 import { assertVendorInTenant, insertRegisteredAgentInTx } from './agent-registry';
+import { readStoredSuggestion } from './agent-harness-attribution';
 import { discoveredIdOfShadowFinding } from '@/lib/agentic/harness-findings';
 import { parseOwnershipAttribution, type OwnershipAttribution } from '@/lib/agentic/iam-skill-outputs';
 import {
+    storedSuggestionProvenance,
     suggestionProvenance,
     type IntakeSuggestionProvenance,
     type RegistrationIntakeRefusal,
@@ -98,6 +108,7 @@ const REFUSAL_STATUS: Record<RegistrationIntakeRefusal, 400 | 404 | 409> = {
     OWNER_NOT_ACTIVE_MEMBER: 400,
     SUGGESTION_INVALID: 400,
     SUGGESTION_FOR_ANOTHER_AGENT: 400,
+    SUGGESTION_NOT_STORED: 409,
 };
 
 /**
@@ -213,7 +224,11 @@ export async function registerShadowAgent(
     }
 
     let attribution: OwnershipAttribution | null = null;
-    if (parsed.attribution !== undefined) {
+    let storedRunId: string | null = null;
+    const storedRef = parsed.attribution === undefined ? null : StoredSuggestionRefSchema.safeParse(parsed.attribution);
+    if (storedRef?.success) {
+        storedRunId = storedRef.data.runId;
+    } else if (parsed.attribution !== undefined) {
         const verdict = parseOwnershipAttribution(parsed.attribution);
         if (!verdict.ok) {
             throw refuse(
@@ -253,6 +268,16 @@ export async function registerShadowAgent(
                     'finding names.',
             );
         }
+        // The STORED suggestion the request kept, read with the person it named
+        // — which stays here, server-side, and is only ever compared.
+        const stored = storedRunId === null ? null : await readStoredSuggestion(db, ctx, discovered.id);
+        if (storedRunId !== null && stored?.runId !== storedRunId) {
+            throw refuse(
+                'SUGGESTION_NOT_STORED',
+                'The owner suggestion you kept is no longer the one held for this agent: a newer ' +
+                    'review replaced it, or it was never stored. Reopen the dialog to see the current one.',
+            );
+        }
 
         // The confirmed owner, from the membership row and nothing the caller
         // said about them. `User` is global, so a user of another tenant
@@ -269,13 +294,12 @@ export async function registerShadowAgent(
         }
         if (parsed.vendorId) await assertVendorInTenant(db, ctx, parsed.vendorId);
 
+        const confirmed = { userId: membership.user.id, emailHash: membership.user.emailHash ?? null };
         const suggestion = attribution
-            ? suggestionProvenance(
-                  attribution,
-                  { userId: membership.user.id, emailHash: membership.user.emailHash ?? null },
-                  hashForLookup,
-              )
-            : null;
+            ? suggestionProvenance(attribution, confirmed, hashForLookup)
+            : stored
+                ? storedSuggestionProvenance(stored, confirmed, hashForLookup)
+                : null;
 
         const aiSystem = await AiSystemRepository.createProvisional(db, ctx, {
             name: parsed.name,
@@ -376,6 +400,9 @@ export async function registerShadowAgent(
                               unmatchedReason: suggestion.unmatchedReason,
                               signals: suggestion.signals,
                               confirmedOwnerIsSuggested: suggestion.confirmedOwnerIsSuggested,
+                              // The review run a stored suggestion came from
+                              // (#3728); null for an answer the request carried.
+                              runId: suggestion.runId,
                           }
                         : 'NONE',
                 },
