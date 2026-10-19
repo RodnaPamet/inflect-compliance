@@ -420,5 +420,64 @@ than one and a half cadences.
 The log is one JSON line per event on stderr, with kinds and counts only. A
 string with a secret's shape is replaced before it is written.
 
-The container that runs this in a client's estate is #3686. The container installs a pinned `typescript`,
-which the `code` source parses with at run time (owner answer, 2026-10-19).
+## Container
+
+The scanner runs in a client's estate as a container (#3686). It is built and
+smoke-tested in CI and **not published** (owner decision, 2026-10-19): a client
+builds it from a checkout of this repository, at its root.
+
+```bash
+docker build -f packages/agent-harness-scanner/Dockerfile -t agent-harness-scanner .
+
+docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -e SCANNER_SIGNING_KEY -v /etc/agent-harness-scanner:/etc/agent-harness-scanner:ro \
+  agent-harness-scanner public-key --config /etc/agent-harness-scanner/config.json
+
+docker run -d --name agent-harness-scanner --restart unless-stopped \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --env-file /etc/agent-harness-scanner/scanner.env \
+  -v /etc/agent-harness-scanner:/etc/agent-harness-scanner:ro \
+  -v /srv/repos/support-bot:/estate/repos/support-bot:ro \
+  agent-harness-scanner
+```
+
+With no command the container runs `schedule --config
+/etc/agent-harness-scanner/config.json`; `scan --dry-run` and `public-key` are
+given as the command. Mount the configuration and each `code` root read-only, at
+the paths the configuration names, and supply every environment variable it
+names (the signing key, the ingest key, each source's credential) from the
+estate's own secret store, such as an `--env-file` readable only by the
+operator. The image holds no credential and no configuration. It runs as uid
+1000, so each mounted file and directory must be readable by that user.
+`public-key` needs no network.
+
+What the image is, and why:
+
+- **What it holds.** The scanner's source, the eight application modules it
+  imports (the wire contract and what that imports), and three packages pinned
+  exactly in its own manifest, `container/package.json`, with its own lockfile:
+  `tsx`, which runs it; `typescript`, whose parser the `code` source reads
+  JavaScript and TypeScript with (owner answer, 2026-10-19); and `zod`. No npm,
+  no npx, no corepack. The build context is an allowlist,
+  `Dockerfile.dockerignore`, so a file kept beside the checkout, such as an
+  environment file holding the signing key, never reaches the build.
+  `tests/unit/agent-harness-scanner/scanner-image.test.ts` holds the COPY lines
+  and the allowlist to the import closure of `src/cli.ts`, and the packages to
+  the manifest and its lockfile.
+- **Its base is pinned by digest**, so the image a client builds is the image CI
+  scanned. Dependabot proposes the digest's and the packages' updates.
+- **It runs as the image's `node` user**, never root, with nothing under `/app`
+  writable, and works with a read-only root filesystem: tsx compiles each start
+  rather than caching (`TSX_DISABLE_CACHE`).
+- **The scanner is process 1** (`node --import tsx`, no wrapper), and stops at
+  once on `SIGTERM` or `SIGINT`. A scan cut short posts nothing.
+
+CI's `Scanner image` job builds it on every pull request, runs
+`container/smoke.sh` against it, and gates on Trivy at `CRITICAL,HIGH`. The
+smoke test runs the image as above, with no network: it checks the user and the
+absence of npm, that `public-key` prints the given key, that `scan --dry-run`
+over an estate of one Python and one TypeScript agent prints a report that
+verifies against that key through the image's own contract module and holds
+both agents, and that a scan with nowhere to post exits non-zero. Run it against
+an image you built with `packages/agent-harness-scanner/container/smoke.sh
+agent-harness-scanner`.

@@ -6,7 +6,7 @@
  *   public-key  --config <file>               print the raw public key to register in the tenant
  *
  * Run with `npx tsx packages/agent-harness-scanner/src/cli.ts …` from the
- * repository; the container that runs it in a client's estate is #3686.
+ * repository, or as the container's entrypoint (`../Dockerfile`, #3686).
  * Credentials come from the environment variables the configuration names.
  * The CLI passes no `fetchImpl`: that seam belongs to the tests.
  */
@@ -64,6 +64,13 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Pro
 }
 
 if (require.main === module) {
+    // In the container the scanner is process 1, and process 1 is not stopped
+    // by a signal it has no handler for: `docker stop` would wait out its grace
+    // period and kill it. A scan cut short posts nothing, and a post cut short
+    // either landed or did not, so stopping at once loses nothing.
+    for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130]] as const) {
+        process.once(signal, () => process.exit(code));
+    }
     main(process.argv.slice(2), process.env).then(
         (code) => process.exit(code),
         (err: unknown) => {

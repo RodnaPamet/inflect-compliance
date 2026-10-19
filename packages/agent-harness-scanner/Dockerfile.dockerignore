@@ -1,0 +1,20 @@
+# The scanner image's build context (#3686): an allowlist. Everything in the
+# checkout is left out, and only what the image COPYs is let back in, so a
+# file a client keeps beside their checkout (a scanner configuration, an
+# environment file holding the signing key) never reaches the build.
+# BuildKit reads this file in place of the root `.dockerignore` because it sits
+# beside the Dockerfile with the Dockerfile's name.
+# tests/unit/agent-harness-scanner/scanner-image.test.ts holds it to the COPY lines.
+*
+!packages/agent-harness-scanner/container/package.json
+!packages/agent-harness-scanner/container/package-lock.json
+!packages/agent-harness-scanner/container/tsconfig.json
+!packages/agent-harness-scanner/src
+!src/lib/agentic/harness-contract.ts
+!src/lib/agentic/harness-contract-rules.ts
+!src/lib/agentic/harness-findings.ts
+!src/lib/agentic/harness-ladder.ts
+!src/lib/audit-redact.ts
+!src/lib/canonical-json.ts
+!src/lib/mcp/receipt-verification.ts
+!src/lib/security/cidr.ts
