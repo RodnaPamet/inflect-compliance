@@ -73,6 +73,21 @@ function input(over: Partial<PackDocumentInput> = {}): PackDocumentInput {
             thirdParty: env('third-party-assessments', {
                 body: { agents: [], toolManifests: [] },
             }),
+            workpaperReview: env('workpaper-review', {
+                window: { days: 90, since: new Date('2026-02-03T09:30:00.000Z') },
+                body: {
+                    counts: {
+                        drawn: 0,
+                        unassigned: 0,
+                        awaiting: 0,
+                        concurred: 0,
+                        dissented: 0,
+                        indeterminate: 0,
+                        concluded: 0,
+                    },
+                    samplePercent: 100,
+                },
+            }),
         },
         enforcing: true,
         unboundCredentials: 0,
@@ -609,5 +624,39 @@ describe('the register names whose code each agent is', () => {
 describe('the title', () => {
     it('carries the generation instant, because two exports are two documents', () => {
         expect(packExportTitle(GENERATED)).toBe('Agent governance pack — 2026-05-04 09:30 UTC');
+    });
+});
+
+describe("report 6 — internal audit's re-performance of the auditor (#3677)", () => {
+    it('states the rate, every excluded state beside it, and no rate over nothing concluded', () => {
+        const doc = renderGovernancePackDocument(
+            input({
+                pack: {
+                    ...input().pack,
+                    workpaperReview: env('workpaper-review', {
+                        metrics: {
+                            'assurance.workpaper_reperformance_agreement_rate': notAssessed('NO_CONCLUDED_WORKPAPER_REVIEWS'),
+                        },
+                        definitions: [METRIC_DEFINITIONS['assurance.workpaper_reperformance_agreement_rate']],
+                        body: {
+                            counts: { drawn: 5, unassigned: 2, awaiting: 1, concurred: 0, dissented: 0, indeterminate: 2, concluded: 0 },
+                            samplePercent: 100,
+                        },
+                    }),
+                },
+            }),
+        );
+        const section = doc.slice(doc.indexOf("6 — INTERNAL AUDIT'S RE-PERFORMANCE OF THE AUDITOR"), doc.indexOf('APPENDIX'));
+        expect(section).toContain('re-performs 100% of the auditor agent');
+        expect(section).toContain('drawn 5 · concluded 0 · indeterminate 2 · awaiting 1 · unassigned 2');
+        expect(section).toContain('never counted as agreement');
+        // NOT_ASSESSED with its sentence — never 100%, never 0.
+        expect(section).toContain('NO_CONCLUDED_WORKPAPER_REVIEWS');
+        expect(section).toContain('This is not 100%');
+        expect(section).not.toMatch(/agreement_rate:\s*1\b/);
+        // Its definition reaches the appendix with the exclusions spelled out.
+        const appendix = doc.slice(doc.indexOf('APPENDIX'));
+        expect(appendix).toContain('assurance.workpaper_reperformance_agreement_rate');
+        expect(appendix).toContain('Excludes: INDETERMINATE answers, which are neither agreement nor disagreement');
     });
 });

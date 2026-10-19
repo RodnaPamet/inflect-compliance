@@ -758,6 +758,116 @@ export const METRIC_DEFINITIONS = {
         ],
     },
 
+    // ── Internal audit's re-performance of the auditor (#3677, step 3d) ──
+    //
+    // The auditor agent re-performs audit procedures and writes workpapers;
+    // internal audit draws them (100% in the pilot) and re-performs each one.
+    // These figures are the check on the auditor. Every one counts rows of
+    // AuditWorkpaperSampleReview drawn inside the window, so the four states
+    // below sum to `drawn`, and the two rates share one denominator.
+    'assurance.workpaper_reviews_drawn': {
+        id: 'assurance.workpaper_reviews_drawn',
+        label: 'Auditor workpapers drawn for internal audit review',
+        population:
+            'rows in AuditWorkpaperSampleReview for this tenant whose sampledAt is inside ' +
+            'the window — one per AuditWorkpaper the scheduled sweep drew at the ' +
+            'tenant\u2019s rate (TenantSecuritySettings.workpaperReviewSamplePercent)',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'every state: awaiting an answer, UNASSIGNED, and answered',
+            'workpapers of every procedure, period and auditor agent',
+        ],
+        excludes: [
+            'workpapers the keyed draw passed over at a rate below 100% (at the ' +
+                'pilot\u2019s 100% there are none)',
+            'workpapers written since the last monthly sweep, which are not drawn yet',
+        ],
+    },
+    'assurance.workpaper_reviews_unassigned': {
+        id: 'assurance.workpaper_reviews_unassigned',
+        label: 'Drawn workpapers nobody in internal audit can be asked to review',
+        population:
+            'the drawn rows above still PENDING with an unassignedReason: no ACTIVE ' +
+            'third-line member, only the auditor agent\u2019s owner is third-line, or the ' +
+            'auditor agent is no longer in the register',
+        moment: 'OVER_WINDOW',
+        includes: ['rows a later sweep may still assign, once somebody is eligible'],
+        excludes: [
+            'rows with an assigned reviewer, awaiting an answer — counted by ' +
+                'assurance.workpaper_reviews_awaiting',
+            'answered rows',
+        ],
+    },
+    'assurance.workpaper_reviews_awaiting': {
+        id: 'assurance.workpaper_reviews_awaiting',
+        label: 'Drawn workpapers awaiting their assigned reviewer',
+        population: 'the drawn rows still PENDING with an assigned third-line reviewer',
+        moment: 'OVER_WINDOW',
+        includes: ['rows however long they have waited — an unanswered review is the failure this counts'],
+        excludes: ['UNASSIGNED rows', 'answered rows'],
+    },
+    'assurance.workpaper_reviews_indeterminate': {
+        id: 'assurance.workpaper_reviews_indeterminate',
+        label: 'Reviews that could not conclude',
+        population: 'the drawn rows answered INDETERMINATE',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'answers where the reviewer could not judge the workpaper from the record — ' +
+                'a finding about the record, not a vote either way',
+        ],
+        excludes: ['every other answer — INDETERMINATE is neither agreement nor disagreement'],
+    },
+    'assurance.workpaper_reviews_concluded': {
+        id: 'assurance.workpaper_reviews_concluded',
+        label: 'Reviews that concluded',
+        population:
+            'the drawn rows answered CONCURRED or DISSENTED — the denominator of both ' +
+            're-performance rates',
+        moment: 'OVER_WINDOW',
+        includes: ['CONCURRED and DISSENTED answers, each recorded once by the assigned reviewer'],
+        excludes: [
+            'INDETERMINATE answers',
+            'UNASSIGNED rows, which nobody could be asked to answer',
+            'drawn but unreviewed rows',
+        ],
+    },
+    'assurance.workpaper_reperformance_agreement_rate': {
+        id: 'assurance.workpaper_reperformance_agreement_rate',
+        label: 'Share of concluded reviews that concurred with the auditor agent',
+        population: 'CONCURRED over (CONCURRED + DISSENTED), among the rows drawn inside the window',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'a value in 0..1 — how often internal audit\u2019s re-performance reached the ' +
+                'auditor agent\u2019s result',
+        ],
+        excludes: [
+            'drawn but unreviewed workpapers, in neither the numerator nor the ' +
+                'denominator — counting them as agreement would improve the rate every ' +
+                'time the sweep ran and nobody did the work',
+            'INDETERMINATE answers, which are neither agreement nor disagreement',
+            'UNASSIGNED workpapers, which nobody could be asked to review',
+            'any figure at all when no review concluded — zero concluded reviews is ' +
+                'not "100% agreement"',
+        ],
+    },
+    'assurance.workpaper_reperformance_disagreement_rate': {
+        id: 'assurance.workpaper_reperformance_disagreement_rate',
+        label: 'Share of concluded reviews that dissented from the auditor agent',
+        population: 'DISSENTED over (CONCURRED + DISSENTED), among the rows drawn inside the window',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'a value in 0..1, the complement of the agreement rate over the same ' +
+                'denominator; each dissent queued one finding proposal for a person to decide',
+        ],
+        excludes: [
+            'drawn but unreviewed workpapers',
+            'INDETERMINATE answers',
+            'UNASSIGNED workpapers',
+            'any figure at all when no review concluded — a tenant whose internal ' +
+                'audit concluded nothing and one that never disagreed both have zero dissents',
+        ],
+    },
+
     // ── Third-party agent assessments ────────────────────────────────
     'thirdparty.agents': {
         id: 'thirdparty.agents',

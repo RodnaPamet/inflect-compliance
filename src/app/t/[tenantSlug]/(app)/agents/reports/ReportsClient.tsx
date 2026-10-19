@@ -96,6 +96,7 @@ export interface PackView {
     approvals: EnvelopeView<{ unobservable: readonly string[] }>;
     incidents: EnvelopeView<{ kills: KillHistoryRow[]; drills: unknown[] }>;
     thirdParty: EnvelopeView<{ agents: ThirdPartyAgentRow[] }>;
+    workpaperReview: EnvelopeView<{ samplePercent: number }>;
 }
 
 /**
@@ -243,7 +244,7 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps) {
     );
 }
 
-/** The five reports of the assessor pack, unchanged by the tab that now sits above them. */
+/** The six reports of the assessor pack, unchanged by the tab that now sits above them. */
 function PackReports({ tenantSlug, pack, enforcing }: { tenantSlug: string; pack: PackView; enforcing: boolean }) {
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
@@ -473,6 +474,22 @@ function PackReports({ tenantSlug, pack, enforcing }: { tenantSlug: string; pack
                         </li>
                     ))}
                 </ul>
+            </Card>
+
+            {/* ── REPORT 6 — INTERNAL AUDIT'S RE-PERFORMANCE OF THE AUDITOR ── */}
+            <Card>
+                <Heading level={2}>{t('reports.workpaperReviewHeading')}</Heading>
+                {/* The rates count concluded reviews only; the notice says what is
+                    left out, beside the figures rather than only in a tooltip,
+                    because "agreement" is the number most likely to be quoted
+                    without its denominator. */}
+                <InlineNotice variant="info" icon={null} data-testid="reports-workpaper-review-scope">
+                    {t('reports.workpaperReviewScope', {
+                        percent: pack.workpaperReview.body.samplePercent,
+                    })}
+                </InlineNotice>
+                <Metrics envelope={pack.workpaperReview} />
+                <Truncated envelope={pack.workpaperReview} />
             </Card>
         </>
     );

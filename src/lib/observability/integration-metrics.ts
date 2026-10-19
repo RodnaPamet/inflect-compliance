@@ -1434,6 +1434,52 @@ export function recordAgentCredentialHygiene(attrs: {
     if (attrs.resolved > 0) _credentialHygieneFindings.add(attrs.resolved, { transition: 'resolved' });
 }
 
+// ── Internal audit's sampling of the auditor's workpapers (#3677) ──────────
+
+let _workpaperReviewSweep: Counter | null = null;
+let _workpaperReviewRows: Counter | null = null;
+
+/**
+ * One workpaper-review sweep, by how it ended, and the rows it moved, by kind.
+ *
+ * `no_workpapers` is a run that found nothing in scope — no workpaper to draw,
+ * no review to re-assign, no dissent to raise — recorded as such and never as a
+ * clean pass. `partial` is a run in which some tenant's write was refused (the
+ * next run retries it).
+ *
+ * ALERT ON — `outcome="error"`; the absence of any outcome for two scheduled
+ * intervals; and a non-zero `kind="unassigned"` that does not fall, which is a
+ * tenant whose workpapers nobody in internal audit can be asked to review.
+ *
+ * No tenant label, and no identifier of any kind.
+ */
+export function recordWorkpaperReviewSweep(attrs: {
+    outcome: 'completed' | 'partial' | 'no_workpapers' | 'error';
+    drawn: number;
+    assigned: number;
+    unassigned: number;
+    reassigned: number;
+    proposalsRaised: number;
+}): void {
+    if (!_workpaperReviewSweep) {
+        _workpaperReviewSweep = getMeter().createCounter('agentic.workpaper_review.sweep', {
+            description: "Internal audit's workpaper-sampling sweeps by terminal outcome",
+            unit: '1',
+        });
+    }
+    _workpaperReviewSweep.add(1, { outcome: attrs.outcome });
+    if (!_workpaperReviewRows) {
+        _workpaperReviewRows = getMeter().createCounter('agentic.workpaper_review.rows', {
+            description: 'Sampled-workpaper review rows a sweep moved, by kind',
+            unit: '1',
+        });
+    }
+    if (attrs.assigned > 0) _workpaperReviewRows.add(attrs.assigned, { kind: 'drawn_assigned' });
+    if (attrs.unassigned > 0) _workpaperReviewRows.add(attrs.unassigned, { kind: 'unassigned' });
+    if (attrs.reassigned > 0) _workpaperReviewRows.add(attrs.reassigned, { kind: 'reassigned' });
+    if (attrs.proposalsRaised > 0) _workpaperReviewRows.add(attrs.proposalsRaised, { kind: 'proposal_raised' });
+}
+
 // ── Agent behavioural circuit breaker (OWASP ASI08 / ASI10) ────────────────
 
 let _breakerVerdict: Counter | null = null;

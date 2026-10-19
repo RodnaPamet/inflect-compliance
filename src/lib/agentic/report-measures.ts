@@ -123,6 +123,13 @@ export const MEASURE_BASES = [
      * exact opposite of what NULL means.
      */
     'NO_MONTHLY_BUDGET_CONFIGURED',
+    /**
+     * No sampled auditor workpaper has a concluded review (CONCURRED or
+     * DISSENTED) in the window, so the re-performance agreement rate has no
+     * base (#3677). NOT "100% agreement": a review nobody concluded agrees with
+     * nothing, and a drawn but unreviewed workpaper is not a concurrence.
+     */
+    'NO_CONCLUDED_WORKPAPER_REVIEWS',
 ] as const;
 
 export type MeasureBasis = (typeof MEASURE_BASES)[number];
