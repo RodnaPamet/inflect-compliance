@@ -76,8 +76,9 @@ identifier, a flag, a count or a bounded pointer.
 
 **What the ingest stores.** The owner reference is stored on
 `DiscoveredAgent` (`ownerKind`, `ownerRef`), which each scan updates in place.
-An unbound credential is not stored as such: when its source was read in full,
-the ingest raises an `ORPHAN_CREDENTIAL` finding whose title and description
+An unbound credential is not stored as such: when its source, and every source
+in the scan that can report the agent a credential is bound to, were read in
+full, the ingest raises an `ORPHAN_CREDENTIAL` finding whose title and description
 name the reference, which carries a person's name only if the client's own
 locator does (the description is in the field-encryption manifest, as for
 every finding).
@@ -463,7 +464,8 @@ tool, stored with the tool; and optional model endpoints, references verified
 and not stored. None of them adds a data category or carries content; the `code`
 kind brings a reader of source code and configuration into the estate, held by
 condition 15 and owned by #3737. No stored column that names a person was added.
-The merge of the pull request that carries this paragraph signs the amendment.
+The owner accepted this amendment and condition 15 on 2026-10-19, and the merge
+of the pull request that carries this paragraph signs it.
 
 Step `4a` (#3678) reopened it on a stored column that holds a person's
 identifier, the owner of each source of a client estate, and added two sources,

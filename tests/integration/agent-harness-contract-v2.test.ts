@@ -10,7 +10,8 @@
  *      fake scanner names is also driven through the ingest by
  *      `agent-harness-ingest.test.ts`.)
  *   3. ORPHAN_CREDENTIAL IS DERIVED, ON POSITIVE EVIDENCE. It opens when the
- *      source that saw the credential was read in full; it closes only when a
+ *      source that saw the credential AND every identity-bearing source in the
+ *      scan were read in full (owner answer, 2026-10-19); it closes only when a
  *      complete read of that source no longer sees it unbound; an incomplete or
  *      absent source closes nothing, and neither does a `/1` report.
  *   4. TWO TENANTS. One tenant's report opens and closes nothing in the other.
@@ -120,15 +121,26 @@ function v1For(tenantId: string, edit?: (b: HarnessReportBodyV1) => void): Harne
     return body;
 }
 
-/** The fake scanner's `/2` body, pointed at this tenant's register rows. */
-function v2For(tenantId: string, edit?: (b: HarnessReportBodyV2) => void): HarnessReportBodyV2 {
+/**
+ * The fake scanner's `/2` body, pointed at this tenant's register rows. Its
+ * `code` source stopped early (UNPARSEABLE) unless an edit says otherwise.
+ */
+function v2For(tenantId: string, ...edits: Array<(b: HarnessReportBodyV2) => void>): HarnessReportBodyV2 {
     const body = validV2ReportBody();
     body.scan.id = `scan_v2_${++scanSeq}`;
     body.scan.scanner.agentId = seeded[tenantId].scannerAgentId;
     body.agents[0].registeredAgentId = seeded[tenantId].targetAgentId;
-    edit?.(body);
+    for (const edit of edits) edit(body);
     return body;
 }
+
+/**
+ * Read the `code` source in full. It is identity-bearing, so while it stops
+ * early no ORPHAN_CREDENTIAL opens, whatever the vault saw.
+ */
+const codeReadInFull = (b: HarnessReportBodyV2) => {
+    b.population.sources = b.population.sources.map((s) => (s.kind === 'code' ? { kind: 'code', status: 'COMPLETE', rows: 4 } : s));
+};
 
 /** Set the vault source of a `/2` body: read in full, stopped early, or not reported at all. */
 const vault = (status: 'COMPLETE' | 'INCOMPLETE' | 'ABSENT') => (b: HarnessReportBodyV2) => {
@@ -224,12 +236,10 @@ describe('1. both ids verify and ingest through the one path', () => {
         );
         expect(incomplete.description).toContain('read source code incompletely (UNPARSEABLE)');
 
-        // And the vault, read in full, saw one credential bound to no agent.
-        expect(await findingStatus(T1, orphanRef(T1))).toBe('OPEN');
-        const audit = await prisma.auditLog.count({
-            where: { tenantId: T1, action: 'CREATE', entity: 'Finding', details: { contains: 'raised ORPHAN_CREDENTIAL' } },
-        });
-        expect(audit).toBe(1);
+        // The vault, read in full, saw one credential bound to no agent — but
+        // the code source, which can report the agent that binds it, stopped
+        // early, so no orphan opens (section 3).
+        expect(await findingStatus(T1, orphanRef(T1))).toBeNull();
     });
 });
 
@@ -298,9 +308,25 @@ describe('2. a refused report writes nothing', () => {
 });
 
 describe('3. ORPHAN_CREDENTIAL opens and closes on positive evidence only', () => {
+    const raisedAudits = () =>
+        prisma.auditLog.count({
+            where: { tenantId: T1, action: 'CREATE', entity: 'Finding', details: { contains: 'raised ORPHAN_CREDENTIAL' } },
+        });
+
+    it('an incomplete identity source holds it back though the vault was read in full; with both read in full it opens', async () => {
+        // The vault lists the credential and was read in full; code stopped early.
+        await ingest(T1, v2For(T1));
+        expect(await findingStatus(T1, orphanRef(T1))).toBeNull();
+        expect(await raisedAudits()).toBe(0);
+
+        await ingest(T1, v2For(T1, codeReadInFull));
+        expect(await findingStatus(T1, orphanRef(T1))).toBe('OPEN');
+        expect(await raisedAudits()).toBe(1);
+    });
+
     it('a source that stopped early opens nothing, and closes nothing', async () => {
         const halfRead = 'kv://prod/agents/half-read';
-        await ingest(T1, v2For(T1, (b) => {
+        await ingest(T1, v2For(T1, codeReadInFull, (b) => {
             vault('INCOMPLETE')(b);
             b.unboundCredentials = [{ ref: halfRead, sourceKind: 'vault' }];
         }));
@@ -309,7 +335,7 @@ describe('3. ORPHAN_CREDENTIAL opens and closes on positive evidence only', () =
     });
 
     it('an absent source closes nothing', async () => {
-        await ingest(T1, v2For(T1, (b) => {
+        await ingest(T1, v2For(T1, codeReadInFull, (b) => {
             vault('ABSENT')(b);
             b.unboundCredentials = [];
         }));
@@ -321,7 +347,15 @@ describe('3. ORPHAN_CREDENTIAL opens and closes on positive evidence only', () =
         expect(await findingStatus(T1, orphanRef(T1))).toBe('OPEN');
     });
 
+    it('an incomplete identity source neither closes a credential the vault still lists, nor reopens one', async () => {
+        await ingest(T1, v2For(T1));
+        expect(await findingStatus(T1, orphanRef(T1))).toBe('OPEN');
+    });
+
     it('a complete read of the same source that no longer sees it unbound closes it; seeing it again reopens it', async () => {
+        // Closing is unchanged by the tightening: the vault read in full no
+        // longer lists the credential, and the code source stopping early
+        // does not hold that back.
         await ingest(T1, v2For(T1, (b) => (b.unboundCredentials = [])));
         expect(await findingStatus(T1, orphanRef(T1))).toBe('CLOSED');
         const closed = await prisma.finding.findFirstOrThrow({
@@ -330,7 +364,11 @@ describe('3. ORPHAN_CREDENTIAL opens and closes on positive evidence only', () =
         });
         expect(closed.verifiedAt).not.toBeNull();
 
+        // Listed again while code stopped early: not reopened.
         await ingest(T1, v2For(T1));
+        expect(await findingStatus(T1, orphanRef(T1))).toBe('CLOSED');
+        // Listed again with every identity source read in full: reopened.
+        await ingest(T1, v2For(T1, codeReadInFull));
         expect(await findingStatus(T1, orphanRef(T1))).toBe('OPEN');
     });
 });
@@ -342,7 +380,7 @@ describe('4. two tenants', () => {
         expect(await prisma.finding.count({ where: { tenantId: T2 } })).toBe(0);
 
         // T2's own report opens T2's own finding, keyed by T2's scanner.
-        await ingest(T2, v2For(T2));
+        await ingest(T2, v2For(T2, codeReadInFull));
         expect(await findingStatus(T2, orphanRef(T2))).toBe('OPEN');
         expect(orphanRef(T2)).not.toBe(orphanRef(T1));
 

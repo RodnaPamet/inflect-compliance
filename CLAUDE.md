@@ -1576,13 +1576,21 @@ rules in it are easy to undo:
   confirmation, which stays its own act on the service-principal-link route.
 - **A scan closes a finding only on positive evidence.** An agent absent from a
   scan resolves nothing about it, and "no unpinned write tool" counts only when
-  the `mcp` source was read in full. An empty scan is `EMPTY_SCAN`, not a clean
-  bill (invariant 5 of the recertification section, applied here).
+  the source each tool is judged by was read in full: `code` for a tool whose
+  server is a `code://` locator, `mcp` for any other, and — for a tool the
+  report may have left out — `code` for an agent discovered via `code`, `mcp`
+  otherwise (`toolEvidenceSourcesOf`). Do not reduce that to the listed tools:
+  an agent reported with no tools would then close on nothing. An empty scan is
+  `EMPTY_SCAN`, not a clean bill (invariant 5 of the recertification section,
+  applied here).
   `ORPHAN_CREDENTIAL` is derived from a `/2` report's `unboundCredentials[]`,
   keyed by scanner, source kind and reference: it opens only when that source
-  was read in full, and closes only when the SAME scanner reads the SAME source
-  in full and no longer sees it unbound. An absent or incomplete source closes
-  nothing, and a `/1` report — which has no member to say it — closes nothing.
+  AND every identity-bearing source the scan lists were read in full
+  (`IDENTITY_BEARING_SOURCE`, every kind but `mcp`), and closes only when the
+  SAME scanner reads the SAME source in full and no longer sees it unbound. A
+  credential the source still lists is never closed, even by a scan that may
+  not open it. An absent or incomplete source closes nothing, and a `/1`
+  report — which has no member to say it — closes nothing.
 - **The scanner's findings are written through `FindingRepository`, not
   `createFinding`**, because the principal is a key that holds the ingest
   permission and nothing else. Every write is still sanitised and audited.
