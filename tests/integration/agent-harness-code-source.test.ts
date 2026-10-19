@@ -12,6 +12,10 @@
  *   3. An estate may declare the `code` source with an owner, and its health
  *      reads that source from the scans.
  *   4. No literal written into the scanned code reaches a stored row.
+ *   5. A coded agent's UNPINNED_WRITE_TOOL is judged by the `code` read (owner
+ *      answer on #3754, 2026-10-19): a complete read whose definition has no
+ *      unpinned write tool left closes it with no `mcp` source in the scan,
+ *      and an incomplete one closes nothing.
  */
 import { generateKeyPairSync } from 'crypto';
 import { rmSync } from 'fs';
@@ -235,5 +239,38 @@ describe('4. no literal written into the scanned code reaches a stored row', () 
         const text = JSON.stringify([scans, items, agents, findings, audits]);
         expect(text).toContain('code:acme/hardcoded/agent.py#hardcoded_py');
         for (const literal of [fakeOpenAiKey(), PLAIN_LITERAL_KEY]) expect(text).not.toContain(literal);
+    });
+});
+
+describe('5. a coded agent\'s UNPINNED_WRITE_TOOL is judged by the code read (owner answer on #3754)', () => {
+    const SUPPORT = 'code:acme/support/agent.py#support_executor';
+    /** The support agent's definition with its tool list emptied. */
+    const withoutTools = {
+        'support/agent.py': LANGCHAIN_PYTHON['support/agent.py'].replace(
+            'tools = [lookup_order, refund, escalate, TavilySearchResults(max_results=3)]',
+            'tools = []',
+        ),
+    };
+    const status = async (sourceRef: string) =>
+        (await prisma.finding.findFirst({ where: { tenantId: T, sourceKind: 'AGENT_HARNESS', sourceRef, deletedAt: null }, select: { status: true } }))
+            ?.status ?? null;
+
+    it('an incomplete code read closes nothing; a complete one with no unpinned write tool left closes it, with no mcp source', async () => {
+        expect(withoutTools['support/agent.py']).not.toEqual(LANGCHAIN_PYTHON['support/agent.py']);
+        expect(await status(`UNPINNED_WRITE_TOOL:${SUPPORT}`)).toBe('OPEN');
+
+        // The tools are gone from the definition, but another definition did
+        // not resolve: the code source is INCOMPLETE, and is no evidence.
+        const partial = await scanAndIngest(NOW - 200_000, withoutTools, UNPARSEABLE);
+        expect(partial.complete).toBe(false);
+        expect(await status(`UNPINNED_WRITE_TOOL:${SUPPORT}`)).toBe('OPEN');
+
+        // Read in full: the definition, which the code source alone reports,
+        // has no unpinned write tool, and the scan lists no mcp source at all.
+        const full = await scanAndIngest(NOW - 100_000, withoutTools);
+        expect(full.complete).toBe(true);
+        const scan = await prisma.agentHarnessScan.findUniqueOrThrow({ where: { id: full.scanId }, select: { sourcesJson: true } });
+        expect(parseStoredHarnessSources(scan.sourcesJson)?.map((x) => x.kind)).toEqual(['code']);
+        expect(await status(`UNPINNED_WRITE_TOOL:${SUPPORT}`)).toBe('CLOSED');
     });
 });

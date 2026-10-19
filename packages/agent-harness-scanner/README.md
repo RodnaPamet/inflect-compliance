@@ -103,7 +103,8 @@ the HTTP fakes see to that declaration.
 
 Itself; Node's built-ins; `zod`; `typescript`, whose syntax-only parser the
 `code` source reads JavaScript and TypeScript with (already the repository's own
-dependency, and needed by `tsx`, which runs the scanner); and the wire contract
+dependency, and needed by `tsx`, which runs the scanner; the scanner container,
+#3686, installs a pinned version of it, owner answer 2026-10-19); and the wire contract
 from the application —
 `@/lib/agentic/harness-contract`, `@/lib/agentic/harness-findings`,
 `@/lib/agentic/harness-ladder` and `@/lib/canonical-json`. Nothing else:
@@ -174,4 +175,5 @@ The log is one JSON line per event on stderr, with kinds and counts only. A
 string with a secret's shape is replaced before it is written.
 
 The container that runs this in a client's estate, and the Entra, MCP and
-register sources, are #3686.
+register sources, are #3686. The container installs a pinned `typescript`,
+which the `code` source parses with at run time (owner answer, 2026-10-19).

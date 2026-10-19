@@ -50,6 +50,23 @@ dependency or build directories (`node_modules`, virtual environments, `dist`,
 `build`), and it does not follow a symbolic link, which it reports as a location
 it could not read. It never imports or runs what it reads.
 
+Two consequences, both kept by the owner on 2026-10-19:
+
+- **A symbolic link leaves the source `INCOMPLETE` (`UNREACHABLE`).** If a
+  repository relies on one, mount its target and name it as a root of its own;
+  until then the source cannot read in full, so its scans neither close a
+  finding on the absence of a tool nor let an `ORPHAN_CREDENTIAL` open.
+- **`dist` and `build` are not read.** They hold generated output, and the
+  definitions they were built from are what the source reads. An agent that
+  exists only as built output is not reported.
+
+A complete read is what closes `UNPINNED_WRITE_TOOL` for the tools an agent
+defines in its code: the source reports every tool a definition binds, so a
+definition read in full with no unpinned write tool left is evidence that none
+remains, with no `mcp` source in the scan (owner answer, 2026-10-19,
+`docs/agent-harness-contract.md`, Transport). A tool set the code fetches from
+an MCP server at run time is still judged by a complete `mcp` read.
+
 ## 3. Labelling the estate's principals
 
 The scanner reports what the estate itself records, and nothing it would have to

@@ -89,3 +89,25 @@ roots (label, absolute path)
   The ingest verifies them and stores none.
 - **The manifest declares the file reads.** No request is made, but reading code
   is a capability, so `SCANNER_SURFACE.readsFiles` names it and the hash moves.
+
+## Owner answers (2026-10-19)
+
+The pull request asked four questions; the owner answered them the same day.
+
+6. **A complete `code` read is evidence for tools defined in code.**
+   Implemented in #3754's planner, not here: `UNPINNED_WRITE_TOOL` is judged
+   per tool — a `code://` server by a complete `code` read, any other by a
+   complete `mcp` read — and a tool the report may have left out by where it
+   would have been, the definition for an agent discovered via `code`. So a
+   coded agent whose definition, read in full, has no unpinned write tool left
+   closes the finding with no `mcp` source in the scan, and the `<server>:*`
+   entry for an MCP server the code reaches by URL still needs `mcp`. Merged
+   into this branch; the integration suite's section 5 drives it through the
+   real scanner.
+7. **Symbolic links stay `UNREACHABLE`**, as built: a repository that relies on
+   one stays `INCOMPLETE` until its target is configured as a root of its own.
+8. **`dist` and `build` stay skipped**: generated output, read through the
+   definitions it was built from.
+9. **The scanner container (#3686) installs a pinned `typescript`**, which the
+   `code` source needs at run time beside `tsx`.
+
