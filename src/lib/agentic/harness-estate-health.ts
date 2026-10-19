@@ -47,6 +47,21 @@ export function staleAfterHours(cadenceHours: number): number {
     return Math.ceil(cadenceHours * STALE_AFTER_CADENCES);
 }
 
+/**
+ * The earliest moment a scan may count from and still keep an estate of this
+ * cadence FRESH at `now`. `computeEstateHealth` judges freshness against it, so
+ * the window lives here and nowhere else.
+ *
+ * A scan counts from `min(asOf, ingestedAt)`, and a minimum is at or after this
+ * bound exactly when BOTH operands are. So a read filtered on `asOf >= bound AND
+ * ingestedAt >= bound` selects precisely the scans that could make the estate
+ * fresh, and loses none of them — which is how the staleness pass (#3741) reads
+ * a bounded set without a second copy of the rule.
+ */
+export function freshnessWindowStart(cadenceHours: number, now: Date): Date {
+    return new Date(now.getTime() - staleAfterHours(cadenceHours) * 3_600_000);
+}
+
 export type EstateHealthStatus = 'FRESH' | 'STALE';
 
 /** How one source fared in one scan. */
@@ -156,8 +171,9 @@ export function computeEstateHealth(
             (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
     );
     const staleAfter = staleAfterHours(estate.cadenceHours);
+    const windowStart = freshnessWindowStart(estate.cadenceHours, now).getTime();
     const freshness = (p: ScanPointer | null): EstateHealthStatus =>
-        p !== null && now.getTime() - Date.parse(p.at) <= staleAfter * 3_600_000 ? 'FRESH' : 'STALE';
+        p !== null && Date.parse(p.at) >= windowStart ? 'FRESH' : 'STALE';
 
     const declared = estate.sources.map((s) => s.kind);
     // `declared.length > 0` is in the expression on purpose: an estate that

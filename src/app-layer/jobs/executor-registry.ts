@@ -1516,6 +1516,14 @@ executorRegistry.register('agent-credential-hygiene', async (payload) => {
     return runAgentCredentialHygieneJob({ tenantId: payload.tenantId });
 });
 
+// agent-harness-estate-staleness (#3741): one finding per client estate whose
+// last complete scan is older than the health rule allows, closed only when a
+// complete scan arrives. Findings only. `tenantId` named, as above.
+executorRegistry.register('agent-harness-estate-staleness', async (payload) => {
+    const { runHarnessEstateStalenessJob } = await import('./agent-harness-estate-staleness');
+    return runHarnessEstateStalenessJob({ tenantId: payload.tenantId });
+});
+
 // agentic-evidence-emission: turn receipts + AI decision records into evidence
 // attached to the agentic controls they discharge. Payload passed THROUGH, both
 // fields NAMED: an absent tenantId is the scheduled sweep and an absent asOf is

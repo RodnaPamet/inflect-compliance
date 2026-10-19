@@ -103,6 +103,7 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'access-review-overdue-escalation',
     'access-review-reminder',
     'agent-credential-hygiene',
+    'agent-harness-estate-staleness',
     'agent-kill-switch-drill',
     'agent-owner-orphan-pass',
     'agent-proposal-expiry',

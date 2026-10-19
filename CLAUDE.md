@@ -1576,6 +1576,15 @@ rules in it are easy to undo:
   `createFinding`**, because the principal is a key that holds the ingest
   permission and nothing else. Every write is still sanitised and audited.
 
+**The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
+daily job since #3741) judges each estate with `computeEstateHealth` and nothing
+else; `tests/unit/agentic/harness-estate-alert-uses-the-health-rule.test.ts`
+refuses a local copy of the threshold or the window. Its `STALE_ESTATE:<estateId>` finding
+closes only on a complete scan that ARRIVED after the estate's declaration last
+changed (`declarationChangedAt`). An edit that turns the card FRESH (a wider
+cadence, a dropped source) and a removal of the estate both HOLD it. Do not
+"simplify" the close to `status === 'FRESH'`, because that closes on an edit.
+
 **The harness matrix** (`usecases/agent-harness-matrix.ts`,
 `/agents/reports?tab=harness`, #3687) reads the harness tables and writes none of
 them; the tab's only mutations are the owner's acceptance and the key register,

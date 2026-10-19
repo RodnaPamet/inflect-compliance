@@ -95,3 +95,15 @@ read in full that returned nothing is **EMPTY**, not complete. A source the
 scanner could not read appears with its reason: `AUTH_FAILED` for a credential
 the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
 `TIME_BOX`, `BYTE_CAP` or `PAGINATION_TORN` for the rest.
+
+A stale estate also raises a finding (#3741, owner decision 2026-10-19). The
+`agent-harness-estate-staleness` job runs daily at 06:47 UTC, judges every
+estate with the same rule the card uses, and opens one `HIGH` observation per
+stale estate (`sourceKind = AGENT_HARNESS`, `sourceRef = STALE_ESTATE:<estate
+id>`). The finding names the estate, its scanner and each declared source that
+no scan in the window read in full, and is assigned to the scanner agent's
+owner. A second run leaves it as it is; an estate that goes stale again reopens
+the same finding. It closes only when a complete scan of every declared source
+arrives. Raising the cadence or dropping a source does not close it, even
+though the card then reads FRESH, and removing the estate leaves it open for a
+person to close.
