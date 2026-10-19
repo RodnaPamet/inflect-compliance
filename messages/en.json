@@ -3445,7 +3445,12 @@
       "statusChanged": "Cycle status changed to {status}.",
       "loadError": "Could not load the audit cycle.",
       "retry": "Retry",
-      "defaultPackName": "{framework} Default Pack"
+      "defaultPackName": "{framework} Default Pack",
+      "relianceTitle": "Agent-audit reliance",
+      "reliancePack": "Reliance pack",
+      "relianceAssembling": "Assembling…",
+      "relianceHelp": "Assembles and freezes a pack for the external auditor: for each control a library v1 audit procedure covers, the auditor agent's workpapers of this cycle's period, internal audit's sampling record of each and the agreement rate with its definition. Share it like any frozen pack.",
+      "relianceError": "The reliance pack could not be assembled."
     },
     "readiness": {
       "cycleFallback": "Cycle",
@@ -9398,7 +9403,8 @@
         "AUTH_FAILED": "authentication failed",
         "UNREACHABLE": "unreachable",
         "PAGINATION_TORN": "pagination torn",
-        "RATE_LIMITED": "rate limited"
+        "RATE_LIMITED": "rate limited",
+        "UNPARSEABLE": "a definition could not be resolved"
       },
       "shadowHeading": "Shadow agents",
       "shadowIntro": "Agents a scan found with no live row in the agent register: never registered, or whose register row was deleted. They have no accountable owner, risk tier or grants on record.",
@@ -12168,6 +12174,39 @@
         "submitError": "Could not send. Please try again.",
         "submittedTitle": "Your submissions",
         "submittedEmpty": "No submissions yet in this session."
+      },
+      "reliance": {
+        "rateAbsent": "No agreement rate: internal audit has concluded no review of these workpapers. This is not 100% agreement.",
+        "rate": "Agreement {agreement}: {concurred} of {concluded} concluded re-performances concurred with the auditor agent.",
+        "counts": "{workpapers} workpaper(s); not drawn {notDrawn}, awaiting {awaiting}, unassigned {unassigned}, indeterminate {indeterminate}, dissented {dissented}.",
+        "procedures": "Audit procedures: {list}",
+        "workpaper": "{period} · {procedure} · {conclusion}, {exceptions} exception(s) · internal audit: {state}",
+        "period": "{framework} · {count} month(s) and quarter(s) wholly inside the cycle",
+        "scopeLine": "{procedure}: {controls} control(s)",
+        "excludes": "Excludes: {list}",
+        "limit": {
+          "NO_WORKPAPERS_IN_PERIOD": "No workpaper in the period",
+          "NO_CONCLUDED_REVIEW": "No concluded review",
+          "WORKPAPERS_NOT_DRAWN": "Workpapers not drawn for review",
+          "REVIEWS_AWAITING": "Reviews awaiting an answer",
+          "REVIEWS_UNASSIGNED": "Reviews nobody could be asked to answer",
+          "REVIEWS_INDETERMINATE": "Indeterminate reviews",
+          "DISSENT_RECORDED": "Internal audit dissented",
+          "CONCLUSION_FAIL": "A procedure concluded FAIL",
+          "CONCLUSION_INCONCLUSIVE": "A procedure was inconclusive",
+          "ATTRIBUTED_BY_CURRENT_PLAN": "Attributed by the current plan (test run purged)",
+          "CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT": "Procedure catalogue not approved by internal audit",
+          "CATALOGUE_NOT_AGREED_BY_PWC": "Procedure catalogue not agreed by PwC",
+          "PROCEDURE_WITHOUT_CONTROL": "A library procedure is on no control"
+        },
+        "state": {
+          "NOT_DRAWN": "not drawn",
+          "UNASSIGNED": "unassigned",
+          "AWAITING": "awaiting",
+          "CONCURRED": "concurred",
+          "DISSENTED": "dissented",
+          "INDETERMINATE": "indeterminate"
+        }
       }
     }
   },

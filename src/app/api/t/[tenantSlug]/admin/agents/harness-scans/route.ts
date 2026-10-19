@@ -2,7 +2,7 @@
  * `/api/t/:slug/admin/agents/harness-scans` — submit and list harness scans
  * (#3665, UC1).
  *
- * POST takes a signed `inflect-agent-harness/1` report as the raw body
+ * POST takes a signed `inflect-agent-harness/1` or `/2` report as the raw body
  * (docs/agent-harness-contract.md). The gate is `admin.agent_harness_ingest`,
  * the one key a scanner's API key carries; the usecase then refuses any report
  * not signed by a scanner key this tenant registered. GET lists the scans,

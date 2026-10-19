@@ -1,13 +1,14 @@
 /**
- * HTTP fakes for the scanner's sources (#3678): an Okta org, the Microsoft
- * identity platform, Azure Key Vault, and the Inflect ingest — no network.
+ * HTTP fakes for the scanner's sources (#3678, #3738): an Okta org, the
+ * Microsoft identity platform, Azure Key Vault, LangSmith, and the Inflect
+ * ingest — no network.
  *
  * Each fake answers the way the real API does for the requests the scanner is
  * meant to make, and ALSO answers the requests it must never make (an Okta
- * app's client secrets, a Key Vault secret's value) with the dangerous thing,
- * so a scanner that strayed would visibly receive it. Every request is
- * recorded — method, host, path, query — in `log`, which is what the
- * read-only assertions read.
+ * app's client secrets, a Key Vault secret's value, a LangSmith run's inputs
+ * and outputs) with the dangerous thing, so a scanner that strayed would
+ * visibly receive it. Every request is recorded — method, host, path, query —
+ * in `log`, which is what the read-only assertions read.
  *
  * Credential-shaped values here are deliberately NOT secret-shaped (no `ghp_`,
  * no JWT): they are distinctive strings the tests search the report and the
@@ -138,6 +139,130 @@ export function vaultFixture(origin = VAULT): VaultFixture {
     };
 }
 
+// ─── LangSmith (#3738) ───
+
+export const LANGSMITH_US = 'https://api.smith.langchain.com';
+export const LANGSMITH_EU = 'https://eu.api.smith.langchain.com';
+export const LANGSMITH_SELF_HOSTED = 'https://langsmith.acme.example';
+export const LANGSMITH_API_KEY_VALUE = 'fake-langsmith-api-key-value-3738';
+export const LANGSMITH_WORKSPACE_ID = '7a1b0000-0000-4000-8000-000000003738';
+
+/**
+ * Strings that live only where the LangSmith source must never look, or in
+ * members it receives and must never keep. Each is searched for in the whole
+ * signed report and in every log line.
+ */
+export const LANGSMITH_MARKERS = {
+    runInput: 'marker-run-input-3738-customer-question',
+    runOutput: 'marker-run-output-3738-model-answer',
+    traceEvent: 'marker-trace-event-3738-token-stream',
+    projectName: 'marker-project-name-3738',
+    projectDescription: 'marker-project-description-3738',
+    projectExtra: 'marker-project-extra-metadata-3738',
+    facetMetadata: 'marker-facet-metadata-value-3738',
+    facetTag: 'marker-facet-tag-3738',
+    deploymentName: 'marker-deployment-name-3738',
+    deploymentSecretValue: 'marker-deployment-secret-value-3738',
+    deploymentSource: 'marker-deployment-source-repo-3738',
+    /** A run name set at call time, carrying content: reported by digest, never verbatim. */
+    dynamicRunName: 'look up order for marker-run-name-3738',
+} as const;
+
+export interface LangSmithRun {
+    readonly id: string;
+    readonly runType: 'tool' | 'llm' | 'chain';
+    readonly name: string;
+    readonly startTime: string;
+}
+
+export interface LangSmithProjectFixture {
+    readonly id: string;
+    readonly startTime: string;
+    /** Set for an experiment: `reference_free=true` leaves it out. */
+    readonly referenceDatasetId?: string;
+    readonly runs: LangSmithRun[];
+}
+
+export interface LangSmithDeploymentFixture {
+    readonly id: string;
+    readonly tracerSessionId: string | null;
+}
+
+export interface LangSmithFixture {
+    projects: LangSmithProjectFixture[];
+    deployments: LangSmithDeploymentFixture[];
+    /** Serves the control plane under `/api-host`, as a self-hosted LangSmith does. */
+    selfHosted?: boolean;
+    /** The key the workspace accepts; any other is answered 401, as an expired key is. */
+    acceptedKey?: string;
+}
+
+export const LS = {
+    /** Deployed support agent; its tracing project is `projectSupport`. */
+    deploymentSupport: 'd0000001-0000-4000-8000-000000000001',
+    /** Deployed, and idle over the window. */
+    deploymentIdle: 'd0000002-0000-4000-8000-000000000002',
+    projectSupport: 'p0000001-0000-4000-8000-000000000001',
+    projectIdle: 'p0000004-0000-4000-8000-000000000004',
+    /** Traced from outside LangSmith Deployment, and calls tools: a project agent. */
+    projectResearch: 'p0000002-0000-4000-8000-000000000002',
+    /** Calls a model and no tool: counted, reported as nothing. */
+    projectChat: 'p0000003-0000-4000-8000-000000000003',
+    /** An evaluation experiment. */
+    projectExperiment: 'p0000005-0000-4000-8000-000000000005',
+} as const;
+
+const daysBefore = (iso: string, days: number) => new Date(Date.parse(iso) - days * 86_400_000).toISOString();
+
+/** The fixture workspace as of `asOf`. Runs older than the seven-day window must not count. */
+export function langSmithFixture(asOf = '2026-10-19T03:00:00.000Z'): LangSmithFixture {
+    const run = (id: string, runType: LangSmithRun['runType'], name: string, daysAgo: number): LangSmithRun => ({
+        id,
+        runType,
+        name,
+        startTime: daysBefore(asOf, daysAgo),
+    });
+    return {
+        deployments: [
+            { id: LS.deploymentSupport, tracerSessionId: LS.projectSupport },
+            { id: LS.deploymentIdle, tracerSessionId: LS.projectIdle },
+        ],
+        projects: [
+            {
+                id: LS.projectSupport,
+                startTime: daysBefore(asOf, 90),
+                runs: [
+                    run('r-1', 'chain', 'support_agent', 1),
+                    run('r-2', 'llm', 'ChatAnthropic', 1),
+                    run('r-3', 'tool', 'search_orders', 1),
+                    run('r-4', 'tool', 'search_orders', 2),
+                    run('r-5', 'tool', 'search_orders', 3),
+                    run('r-6', 'tool', 'refund_order', 2),
+                    // Outside the window: never counted, never named.
+                    run('r-7', 'tool', 'legacy_lookup', 12),
+                ],
+            },
+            { id: LS.projectIdle, startTime: daysBefore(asOf, 60), runs: [run('r-8', 'tool', 'idle_tool', 20)] },
+            {
+                id: LS.projectResearch,
+                startTime: daysBefore(asOf, 30),
+                runs: [
+                    run('r-9', 'tool', 'web_search', 1),
+                    run('r-10', 'tool', 'web_search', 4),
+                    run('r-11', 'tool', LANGSMITH_MARKERS.dynamicRunName, 2),
+                ],
+            },
+            { id: LS.projectChat, startTime: daysBefore(asOf, 20), runs: [run('r-12', 'llm', 'ChatOpenAI', 1)] },
+            {
+                id: LS.projectExperiment,
+                startTime: daysBefore(asOf, 5),
+                referenceDatasetId: 'ds000001-0000-4000-8000-000000000001',
+                runs: [run('r-13', 'tool', 'eval_tool', 1)],
+            },
+        ],
+    };
+}
+
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Answer {
     return { status, body, headers: { 'content-type': 'application/json', ...headers } };
 }
@@ -164,9 +289,12 @@ export function createSourceFakes(opts: {
     /** Further Okta orgs by origin, beside `OKTA_ORG`. */
     oktaOrgs?: Record<string, OktaFixture>;
     vaults?: Record<string, VaultFixture>;
+    /** LangSmith workspaces by origin; `LANGSMITH_US` holds `langSmithFixture()` unless replaced. */
+    langsmith?: Record<string, LangSmithFixture>;
 } = {}): Fakes {
     const oktas: Record<string, OktaFixture> = { [OKTA_ORG]: opts.okta ?? oktaFixture(), ...opts.oktaOrgs };
     const vaults = opts.vaults ?? { [VAULT]: vaultFixture() };
+    const langsmiths = opts.langsmith ?? { [LANGSMITH_US]: langSmithFixture() };
     const log: RequestLogEntry[] = [];
     const posted: string[] = [];
     const ingestAuth: string[] = [];
@@ -243,6 +371,9 @@ export function createSourceFakes(opts: {
             if (/^\/secrets\/[^/]+(\/[^/]+)?$/.test(u.pathname)) return json({ value: VAULT_SECRET_VALUE, id: `${u.origin}${u.pathname}` });
             return json({ error: { code: 'NotFound' } }, 404);
         }
+        // ── LangSmith ──
+        const ls = langsmiths[u.origin];
+        if (ls) return langSmith(ls, u, method, headers);
         // ── The Inflect ingest ──
         if (u.origin === INGEST) {
             if (method === 'POST' && /^\/api\/t\/[^/]+\/admin\/agents\/harness-scans$/.test(u.pathname)) {
@@ -255,6 +386,91 @@ export function createSourceFakes(opts: {
         return json({ error: 'unknown host' }, 502);
     }
 
+    /**
+     * One LangSmith workspace. The projects listing computes its stats the way
+     * the service does — tool runs in the window, by name — and carries every
+     * member the source must not keep, each holding a marker. The run
+     * endpoints answer with the runs' content: a source that called one would
+     * hand the test its marker.
+     */
+    function langSmith(ls: LangSmithFixture, u: URL, method: string, headers: Headers): Answer {
+        if (headers.get('x-api-key') !== (ls.acceptedKey ?? LANGSMITH_API_KEY_VALUE)) {
+            return json({ detail: 'Invalid token' }, 401);
+        }
+        const runBody = (r: LangSmithRun) => ({
+            id: r.id,
+            name: r.name,
+            run_type: r.runType,
+            start_time: r.startTime,
+            inputs: { question: LANGSMITH_MARKERS.runInput },
+            outputs: { answer: LANGSMITH_MARKERS.runOutput },
+            events: [{ name: 'new_token', kwargs: { token: LANGSMITH_MARKERS.traceEvent } }],
+        });
+        const allRuns = ls.projects.flatMap((p) => p.runs);
+        if (u.pathname.startsWith('/api/v1/runs') || u.pathname.startsWith('/api/v2/runs')) {
+            const one = allRuns.find((r) => u.pathname.endsWith(`/${r.id}`));
+            return json(one ? runBody(one) : allRuns.map(runBody));
+        }
+        if (method !== 'GET') return json({ detail: 'Method Not Allowed' }, 405);
+        const limit = Number(u.searchParams.get('limit') ?? '100');
+        const offset = Number(u.searchParams.get('offset') ?? '0');
+
+        const deploymentsPath = ls.selfHosted ? '/api-host/v2/deployments' : '/v2/deployments';
+        if (u.pathname === deploymentsPath) {
+            const page = ls.deployments.slice(offset, offset + limit).map((d) => ({
+                id: d.id,
+                name: LANGSMITH_MARKERS.deploymentName,
+                tenant_id: LANGSMITH_WORKSPACE_ID,
+                source: 'github',
+                source_config: { integration_id: null, repo_url: `https://github.com/acme/${LANGSMITH_MARKERS.deploymentSource}` },
+                source_revision_config: { repo_ref: 'main', langgraph_config_path: 'langgraph.json' },
+                secrets: [{ name: 'OPENAI_API_KEY', value: LANGSMITH_MARKERS.deploymentSecretValue }],
+                status: 'READY',
+                tracer_session_id: d.tracerSessionId,
+                created_at: '2026-06-01T00:00:00Z',
+                updated_at: '2026-06-01T00:00:00Z',
+                latest_revision_id: null,
+                active_revision_id: null,
+            }));
+            return json({ resources: page, offset: offset + page.length });
+        }
+
+        if (u.pathname === '/api/v1/sessions') {
+            const since = Date.parse(u.searchParams.get('stats_start_time') ?? '');
+            const filter = u.searchParams.get('stats_filter');
+            const listed = ls.projects
+                .filter((p) => u.searchParams.get('reference_free') !== 'true' || !p.referenceDatasetId)
+                .sort((a, b) => Date.parse(b.startTime) - Date.parse(a.startTime));
+            const page = listed.slice(offset, offset + limit).map((p) => {
+                const counted = p.runs.filter(
+                    (r) => Date.parse(r.startTime) >= since && (filter !== 'eq(run_type, "tool")' || r.runType === 'tool'),
+                );
+                const byName = new Map<string, number>();
+                for (const r of counted) byName.set(r.name, (byName.get(r.name) ?? 0) + 1);
+                return {
+                    id: p.id,
+                    tenant_id: LANGSMITH_WORKSPACE_ID,
+                    name: LANGSMITH_MARKERS.projectName,
+                    description: LANGSMITH_MARKERS.projectDescription,
+                    extra: { metadata: { note: LANGSMITH_MARKERS.projectExtra } },
+                    start_time: p.startTime,
+                    reference_dataset_id: p.referenceDatasetId ?? null,
+                    run_count: counted.length,
+                    run_facets: counted.length === 0
+                        ? []
+                        : [
+                            { key: 'run_type', value: 'tool', query: 'eq(run_type, "tool")', n: counted.length },
+                            ...[...byName].map(([value, n]) => ({ key: 'name', value, query: `eq(name, "${value}")`, n })),
+                            { key: 'metadata_value', value: LANGSMITH_MARKERS.facetMetadata, n: 1 },
+                            { key: 'tag', value: LANGSMITH_MARKERS.facetTag, n: 1 },
+                        ],
+                };
+            });
+            return json(page);
+        }
+        return json({ detail: 'Not Found' }, 404);
+    }
+
     return fakes;
 }
 
@@ -265,4 +481,6 @@ export const NEVER_REPORTED = [
     AZURE_ACCESS_TOKEN_VALUE,
     VAULT_SECRET_VALUE,
     OKTA_CLIENT_SECRET_VALUE,
+    LANGSMITH_API_KEY_VALUE,
+    ...Object.values(LANGSMITH_MARKERS),
 ] as const;

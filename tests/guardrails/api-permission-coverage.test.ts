@@ -273,6 +273,13 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/audits/workpaper-reviews',
         why: 'Internal audit\'s review of the auditor agent\'s sampled workpapers — audits.view on the queue, the read and the write-once answer, narrowed in the usecase to the assigned third-line reviewer who does not own the auditor agent, each refusal audited.',
     },
+    // Step 4d (#3681) — assembling the reliance pack freezes it, so it sits
+    // at the freeze population. A leaf root: the cycle route above it and its
+    // readiness sibling stay on usecase-layer authorization.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/audits/cycles/[cycleId]/reliance-pack',
+        why: 'Assembling and freezing the agent-audit reliance pack for one cycle — audits.manage (it reads workpapers, the roadmap\'s key for that) AND admin.manage, the population assertCanFreezePack (OWNER+ADMIN by ctx.role) admits, as for the auditor-access routes.',
+    },
     {
         relPath: 'src/app/api/t/[tenantSlug]/audits/auditors/[auditorId]',
         why: 'Account-level auditor revoke (REVOKED + every pack grant dropped) — admin.manage, same assertCanManageAuditors as its access sibling.',

@@ -298,12 +298,14 @@ describe('the key space it shares with the ingest', () => {
             registeredAgentIds: new Set(),
             acceptedShortfalls: new Set(),
             intakeClaims: new Map(),
+            openOrphanCredentials: new Set(),
         });
         const empty = planHarnessScan(body, {
             previousLevels: new Map(),
             registeredAgentIds: new Set(),
             acceptedShortfalls: new Set(),
             intakeClaims: new Map(),
+            openOrphanCredentials: new Set(),
         });
         const refs = [...plan.assert, ...empty.assert].map((f) => f.sourceRef).concat(plan.resolve, empty.resolve);
         expect(refs.length).toBeGreaterThan(0);

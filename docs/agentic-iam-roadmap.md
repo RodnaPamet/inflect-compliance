@@ -59,13 +59,22 @@ Three rules hold in that module:
 
 ### The scanner's report contract
 
-`docs/agent-harness-contract.md` defines `inflect-agent-harness/1`, the signed
-report a scanner returns from a client environment. The schemas are
-`src/lib/agentic/harness-contract.ts` and the executable reference is
-`tests/helpers/agent-harness-fake-scanner.ts`. The verifier checks size, then
-JSON, then the Ed25519 signature by a trusted key, and only then the schema. A
-report cannot state its own level, cannot carry a credential value, and cannot
-declare completeness: completeness is derived from its sources.
+`docs/agent-harness-contract.md` defines the signed report a scanner returns
+from a client environment, under two ids. `inflect-agent-harness/1` is the
+first. `inflect-agent-harness/2` (#3754, owner decisions 2026-10-19) is `/1`
+plus the source kind `code`, the INCOMPLETE reason `UNPARSEABLE`, an
+`unboundCredentials[]` member, and, optionally per agent, a call count over a
+window on each tool (stored with the tool) and the model endpoints it calls
+(verified, not stored); it is what the reference scanner emits. The
+schemas are `src/lib/agentic/harness-contract.ts` and the executable reference
+is `tests/helpers/agent-harness-fake-scanner.ts`, which produces both. The
+verifier checks size, then JSON, then the Ed25519 signature by a trusted key,
+and only then the strict schema of the id the report names, so a deployed `/1`
+scanner keeps working and a `/1` report carrying a `/2` member is refused. The
+owner decided on 2026-10-19 that `/1` is retired at the release of the scanner
+container (#3686). A report cannot state its own level, cannot carry a
+credential value, and cannot declare completeness: completeness is derived from
+its sources.
 
 ### The harness ingest
 
@@ -76,7 +85,17 @@ the scanner, and the scanner posts signed reports with an API key scoped to
 the discovered agents and the per-agent items. What a verified report means is
 decided by the pure planner `src/lib/agentic/harness-findings.ts`: the level is
 derived, the register decides whether an agent is shadow, and a finding closes
-only on positive evidence. A shortfall below the bar (H3 for an agent that can
+only on positive evidence. "No unpinned write tool" closes `UNPINNED_WRITE_TOOL`
+only when the source each tool is judged by was read in full: `code` for a tool
+whose server is a `code://` locator, `mcp` for any other, and, for a tool the
+report may have left out, `code` for an agent discovered via `code` and `mcp`
+for any other (owner answer, 2026-10-19). From a `/2` report the planner also
+derives `ORPHAN_CREDENTIAL` from `unboundCredentials[]`, never from the
+report's `findings`: it opens only when the source that saw the credential and
+every identity-bearing source the scan lists were read in full (every kind but
+`mcp`, owner answer 2026-10-19), and closes only when the same scanner reads
+that source in full and no longer sees the credential unbound. An absent or
+incomplete source closes nothing, and neither does a `/1` report. A shortfall below the bar (H3 for an agent that can
 write or whose reach is unknown, H2 for a read-only one) is a finding that never
 gates the agent; its owner may accept it for at most a year, and the nightly
 exception expiry monitor reopens it when the acceptance lapses.
@@ -92,7 +111,7 @@ signature (decision 9).
 
 Step `4a` (#3678) built the scanner the ingest was waiting for, as the owner
 decided on 2026-10-18: `packages/agent-harness-scanner`, a CLI that reads an
-estate's sources, signs an `inflect-agent-harness/1` report with a key the
+estate's sources, signs an `inflect-agent-harness/2` report with a key the
 tenant registered, and posts it unchanged to the ingest. It reads two sources
 behind one interface. `okta-app` is Okta's service apps and API tokens with
 their owners, and `vault` is Azure Key Vault's secrets and certificates tagged
@@ -105,6 +124,44 @@ including one whose credential is missing. The scanner checks its report with
 the ingest's own schema and secret scan before it signs, and never reads a
 register link from the estate's own labels: `registeredAgentId` is `null` from
 both sources. The Entra, MCP and register sources and the container are #3686.
+
+#3738 added a third source behind the same interface: LangSmith, as the
+`runtime` kind (owner decisions of 2026-10-19). It reads, by GET only, the
+tracing projects of a workspace on LangSmith's US or EU cloud host or the
+customer's self-hosted LangSmith, and reports each project that called a tool in
+a bounded window, with the tool names its runs carried. Deployments are listed
+and reported too only for an estate that opts in, because LangSmith's
+deployments listing carries their secrets. Tool usage is read as the projects
+listing's aggregates over the window; no run is fetched, so no run input,
+output or trace leaves the estate, and a run name that is not an identifier is
+reported by digest. The aggregates must account for every tool call they count
+or the source is `PAGINATION_TORN`. LangSmith records no tool pin or hint, so
+each agent that called a tool raises `UNPINNED_WRITE_TOOL` at the ingest, by the
+owner's decision that a tool seen only there is unpinned and undeclared until an
+MCP read or a registration proves otherwise. A self-hosted host is checked as a
+customer-named host when the configuration is read and resolved again before
+every request; one on the estate's own network names the private ranges it may
+resolve into, after the application's egress allowlist, with metadata, loopback
+and link-local refused inside them. The scanner reports under
+`inflect-agent-harness/2` (#3754), which has a member for the call counts and
+one for the agents' model endpoints; the LangSmith source fills both in a
+follow-up (owner, 2026-10-19), and until then the counts reach only the
+scanner's log. The scanner DPIA names the
+source and what is and is not read from it.
+
+The scanner also reads code. Its `code` source (#3737, owner decision
+2026-10-19: LangChain-built agents are governed as things the product discovers,
+and LangChain is no dependency of the platform) recognises LangChain and
+LangGraph agent definitions in Python, JavaScript and TypeScript, and reports
+each as a discovered agent with the tools it binds, the model endpoints it calls
+and the credentials those reference, as `env://` or `code://` references and
+never values. It parses
+statically — Python with a bounded tokenizer, JavaScript and TypeScript with
+TypeScript's syntax-only parser — and never imports or runs what it reads. A
+location it cannot read, or a definition it cannot resolve, makes the source
+`INCOMPLETE` with its reason (`UNPARSEABLE` for the latter), and the agent is
+still reported. Each agent's model endpoints go into `/2`'s optional
+`models[]`, which the ingest verifies and does not store.
 
 A tenant declares each client ESTATE it scans (`AgentHarnessEstate`): a name,
 the registered scanner agent whose signed reports are the estate's, the cadence
@@ -120,6 +177,8 @@ the owner schedules them as step `0e` names them, and the view is proven on
 three fixture estates. Putting a client estate under the scanner, with the
 labels it reads owners and principals from, is
 [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
+An estate may declare any source kind a report can carry, `code` included; a
+database CHECK holds the same list as the contract.
 
 A stale estate alerts, not only shows on the card (#3741, owner decision
 2026-10-19). The `agent-harness-estate-staleness` job runs daily at 06:47 UTC
@@ -908,6 +967,44 @@ the whole queue, and whether an expired dissent proposal is raised again.
   shown beside the rates, and with nothing concluded both rates are
   NOT_ASSESSED, never 100%.
 
+### External reliance on the auditor's workpapers
+
+Step `4d` (#3681) packages the basis for an external auditor's reliance in the
+product. The owner's decisions of 2026-10-19 are on the issue: ISO/IEC 42001 as
+the first framework, every control the five library v1 procedures are on, a
+pack built in the product and shared through pack-scoped access, and Inflect's
+ISO/IEC 27001 certification body as the auditor.
+
+- **The pack.** `assembleAgentAuditReliancePack`
+  (`usecases/agent-audit-reliance.ts`) assembles and freezes an ordinary audit
+  pack for one audit cycle, at `POST …/audits/cycles/:cycleId/reliance-pack` or
+  **Reliance pack** on the cycle page. It holds one CONTROL item per control in
+  scope and one FRAMEWORK_COVERAGE summary. A control's item carries every
+  workpaper of the period, internal audit's sampling record of each, the
+  agreement figures and every limit that applies. The summary carries the scope,
+  the catalogue version and its standing, and the pack's agreement rate with its
+  two definitions (`assurance.reliance_reperformance_agreement_rate` and the
+  disagreement rate). The rules live in the pure planner
+  `lib/agentic/audit-reliance.ts`.
+- **Zero is never reliance.** The pack is refused, with a named reason and an
+  audit row, for a cycle with no period, a period holding no whole month or
+  quarter, no workpaper in the period, more than 2,000 workpapers, or a
+  workpaper it cannot attribute to a control. A control in scope with no
+  workpaper is listed with `NO_WORKPAPERS_IN_PERIOD`, never left out, and no
+  concluded review is no rate.
+- **Access.** The pack is shared like any frozen pack: a share link scoped to the
+  one pack, with expiry and revocation, and the auditor's grant naming it. The
+  shared page and the pack page render the reliance block
+  (`components/audits/RelianceSnapshotBlock.tsx`). The pack carries no personal
+  identifiers.
+- **The memo.** `docs/agentic-audit-reliance-memo.md` states the basis
+  (internal audit's re-performance) and the limits: library v1 not approved by
+  internal audit nor agreed by PwC, and only `agent.authority_conformance`
+  citing an ISO/IEC 42001 Annex A identifier.
+- **Open, and outside the code.** The external auditor's conclusion on reliance
+  is recorded on #3681 and as Evidence against each control it covers once
+  given; none is recorded.
+
 ### Tenant-authored skills
 
 Step `4c` (#3680) lets a tenant teach its own agents with a skill it wrote, which
@@ -948,7 +1045,7 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678), and a stale estate raises a finding and a metric every day (#3741); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested under `inflect-agent-harness/1` or `/2`, levels derived and stored per scan, shadow and below-bar agents raised as findings, credentials a `/2` report saw bound to no agent raised as `ORPHAN_CREDENTIAL` when their source and every identity-bearing source in the scan were read in full, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. The reference scanner reads Okta and Azure Key Vault, and a tenant declares the client estates it scans, with a schedule health view per estate and per source (#3678), and a stale estate raises a finding and a metric every day (#3741); it reads LangSmith tool usage, and deployments where an estate opts in, as the `runtime` source (#3738), and LangChain and LangGraph agent definitions in code as the `code` source (#3737); its Entra, MCP and register sources and its container are #3686, so nothing scans the pilot estate and no client estate is scheduled. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. A2A with a pinned peer in both directions: an inbound task becomes a labelled, scanned run input for one registered agent, an outbound task is an external write on the ladder, every message is signed with the tenant's own key and kept, a per-peer kill stops both directions, and the peers page shows all of it. | No real vendor's agent has exchanged an A2A task: both directions are built and tested against an in-process fake peer, and the pilot stays open on #3752. Inflect publishes no agent card of its own (R19). |
 | Skills | Nine original, licensed skills. Eight have a committed evaluation record that passes the mount gate; `iam-audit-procedures` ships its evaluation set and no record, and no workflow declares it (#3749). The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
@@ -1304,7 +1401,7 @@ and one new key:
 | Set a peer's inbound quota (`4b`) | `admin.agent_registry` | The key that registers the peer (decision 25). |
 | Issue, read and revoke a peer's inbound credential; read a peer's kept messages (`4b`) | `admin.agent_registry` | Binding a peer to a receiving agent and a workflow allowlist is configuration of whom the tenant talks to, as registering and pinning are (decision 12). Issuing also refuses an API key. The send itself is an external tool call under `admin.agent_external_tools`. |
 | Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/admin/agents/skills/tenant/**`; see above. |
-| Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | The existing gates, and `audits.manage` for workpapers | No new route. Packs go through the pack usecases behind `assertCanManageAuditPacks`, which admits EDITOR; putting workpapers into a pack reads them, so that part also requires `audits.manage`, which EDITOR does not hold. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
+| Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | `audits.manage` and `admin.manage`, both | One route, `POST …/audits/cycles/:cycleId/reliance-pack` (#3681), because a reliance item's snapshot is built from the workpapers server-side and the existing item route takes a client-supplied snapshot. `audits.manage` because assembling reads every workpaper of the period, and `admin.manage` because assembling also freezes the pack, which `assertCanFreezePack` admits for OWNER and ADMIN by role; requiring both leaves no custom role that passes the route and fails the usecase without an `AUTHZ_DENIED` row. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
 
 Steps `1b`, `1c`, `1d`, `3c` and `4e` plan no route of their own. `1b` extends
 the run detail page that the existing run routes serve, and `3c`'s handlers run
@@ -1492,9 +1589,9 @@ What this means for Phase 1:
   `4a` built the vault reader for Azure Key Vault, the only vault product
   (owner decision, 2026-10-18), proven on fixtures.
 - **Okta and runtime readers have no pilot population either.** Neither kind
-  is in the pilot. Step `4a` (#3678) built an Okta reader and no step builds a
-  `runtime` reader; a reader for either is proven on fixtures only, because
-  Inflect's estate has none named.
+  is in the pilot. Step `4a` (#3678) built an Okta reader and #3738 a LangSmith
+  reader for `runtime`; each is proven on fixtures only, because Inflect's
+  estate has none named.
 - **`cicd` is in the pilot and no step builds its reader.** #3686 reads the
   four kinds above and #3678 built the Okta and Azure Key Vault readers, so the pilot scan
   does not read the three CI/CD identities in the table. Which step builds a

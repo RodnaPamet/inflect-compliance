@@ -49,6 +49,7 @@ import { jsonLineLog } from '../../packages/agent-harness-scanner/src/log';
 import { rawPublicKeyHex } from '../../packages/agent-harness-scanner/src/report';
 import { runScan } from '../../packages/agent-harness-scanner/src/scan';
 import type { RequestContext } from '@/app-layer/types';
+import { SOURCE_KINDS } from '@/lib/agentic/harness-contract';
 import type { EstateHealthRow } from '@/lib/agentic/harness-estate-health';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -501,5 +502,39 @@ describe('6. the database holds the bounds below the usecase', () => {
                 seeded[T1].ownerUserId,
             ),
         ).rejects.toThrow(/kind_known/);
+    });
+
+    it('admits every kind a report can carry, the `code` source /2 added included (#3754)', async () => {
+        const [estate] = await prisma.agentHarnessEstate.findMany({ where: { tenantId: T1, name: 'Initech secrets' } });
+        // Through the usecase: an owner for the code source a /2 scanner reads.
+        await updateHarnessEstate(ctxFor(T1), estate.id, {
+            sources: [
+                { kind: 'vault', ownerUserId: seeded[T1].secretsOwnerId },
+                { kind: 'code', ownerUserId: seeded[T1].identityOwnerId },
+            ],
+        });
+        const kinds = await prisma.agentHarnessEstateSource.findMany({ where: { estateId: estate.id }, orderBy: { kind: 'asc' } });
+        expect(kinds.map((k) => k.kind)).toEqual(['code', 'vault']);
+
+        // And below it: the CHECK admits each of SOURCE_KINDS. Inserted and
+        // rolled back, so the estate is left as declared.
+        const ROLLBACK = 'rolled back on purpose';
+        await expect(
+            prisma.$transaction(async (tx) => {
+                await tx.agentHarnessEstateSource.deleteMany({ where: { estateId: estate.id } });
+                for (const kind of SOURCE_KINDS) {
+                    await tx.$executeRawUnsafe(
+                        `INSERT INTO "AgentHarnessEstateSource" (id, "tenantId", "estateId", kind, "ownerUserId", "updatedAt") VALUES ($1, $2, $3, $4, $5, now())`,
+                        `x-3754-${kind}`,
+                        T1,
+                        estate.id,
+                        kind,
+                        seeded[T1].secretsOwnerId,
+                    );
+                }
+                throw new Error(ROLLBACK);
+            }),
+        ).rejects.toThrow(ROLLBACK);
+        expect(await prisma.agentHarnessEstateSource.count({ where: { estateId: estate.id } })).toBe(2);
     });
 });

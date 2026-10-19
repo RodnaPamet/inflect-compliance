@@ -1,19 +1,34 @@
 /**
- * The two rules of `inflect-agent-harness/1` that need no hashing (#3726):
- * whether a value has the shape of a secret, and whether a scan was complete.
+ * The rules of the harness report contract that need no hashing (#3726): the
+ * contract ids, whether a value has the shape of a secret, and whether a scan
+ * was complete.
  *
  * They live apart from `harness-contract.ts` because the findings planner
- * (`harness-findings.ts`) needs both, and a client component reaches the
+ * (`harness-findings.ts`) needs them, and a client component reaches the
  * planner through `harness-acceptance-rules.ts`. The contract verifies
  * signatures with `crypto`, so importing these from it shipped the
  * crypto-browserify polyfill to the agents reports page. `harness-contract.ts`
- * re-exports both, and the ingest, the scanner and the tests may import them
- * from either module.
+ * re-exports all of them, and the ingest, the scanner and the tests may import
+ * them from either module.
  *
  * Keep this module free of Node built-ins: a client reaches it.
  * `tests/guards/client-reachable-modules-import-no-node-builtins.test.ts`
  * fails if it, or anything it imports, gains one.
  */
+
+/** The first contract (#3660). Still verified: a deployed `/1` scanner keeps working. */
+export const HARNESS_CONTRACT_V1 = 'inflect-agent-harness/1';
+
+/**
+ * `/1` plus the `code` source kind, the `UNPARSEABLE` reason and the
+ * `unboundCredentials[]` member (#3754, owner decision 2026-10-19). What a
+ * scanner built today emits.
+ */
+export const HARNESS_CONTRACT_V2 = 'inflect-agent-harness/2';
+
+/** Every id the verifier accepts, each against its own strict schema. */
+export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V1, HARNESS_CONTRACT_V2] as const;
+export type HarnessContractId = (typeof HARNESS_CONTRACT_IDS)[number];
 
 /**
  * Shapes that are a secret wherever they appear, including inside something

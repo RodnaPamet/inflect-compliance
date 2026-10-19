@@ -3,11 +3,13 @@
  * AgentHarnessScan and AgentHarnessScanItem.
  *
  * A scanner in the client's environment posts a signed `inflect-agent-harness/1`
- * report. This usecase:
+ * or `/2` report. This usecase:
  *
  *   1. reads the scanner keys the tenant trusts (unrevoked rows only);
  *   2. verifies, in the contract's order — size, JSON, signature BY ONE OF
- *      THOSE KEYS, then the strict schema — and writes NOTHING on a refusal;
+ *      THOSE KEYS, then the strict schema of the id the report names — and
+ *      writes NOTHING on a refusal. Both ids take the same path, so a deployed
+ *      `/1` scanner keeps working (#3754);
  *   3. holds the signer to its identity: the key belongs to one registered
  *      agent, the report must name that agent as its scanner, and an API key
  *      bound to an agent may submit only that agent's reports;
@@ -43,8 +45,10 @@ import { recordHarnessScanOutcome } from '@/lib/observability/integration-metric
 import { FindingRepository } from '../repositories/FindingRepository';
 import { invalidateRelinkedConfirmations } from './agent-service-principal-confirmation';
 import {
+    HARNESS_CONTRACT_V2,
     harnessKeyFingerprint,
     harnessSignedMessage,
+    MAX_UNBOUND_CREDENTIALS,
     verifyAndParseHarnessReport,
     type HarnessReportBody,
 } from '@/lib/agentic/harness-contract';
@@ -52,6 +56,7 @@ import {
     firstSecretShapedMember,
     HARNESS_FINDING_SOURCE_KIND,
     intakeClaimsByDiscoveredId,
+    orphanCredentialRefPrefix,
     planHarnessScan,
     type PlannedFinding,
 } from '@/lib/agentic/harness-findings';
@@ -59,6 +64,14 @@ import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
 
 /** How many scanner keys a tenant may hold. Far above any real estate. */
 const MAX_SCANNER_KEYS = 200;
+
+/**
+ * How many of one scanner's open ORPHAN_CREDENTIAL findings one ingest reads
+ * as candidates to close: two full reports' worth. Past it, the rest stay open
+ * until a later scan — the direction that never closes a finding on evidence
+ * nobody read.
+ */
+const MAX_OPEN_ORPHANS_READ = 2 * MAX_UNBOUND_CREDENTIALS;
 
 export interface HarnessIngestResult {
     scanId: string;
@@ -197,6 +210,24 @@ async function record(
             select: { id: true, status: true, deletedAt: true, intakeDiscoveredAgentId: true },
             take: known.length,
         });
+    // This scanner's open ORPHAN_CREDENTIAL findings, which a complete read of
+    // their source may close (#3754). A `/1` report can close none, so none is
+    // read for one. Scoped by the scanner's prefix: another scanner's sources
+    // are not this one's to vouch for.
+    const openOrphans = body.contract !== HARNESS_CONTRACT_V2
+        ? []
+        : await db.finding.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                sourceKind: HARNESS_FINDING_SOURCE_KIND,
+                sourceRef: { startsWith: orphanCredentialRefPrefix(body.scan.scanner.agentId) },
+                status: { not: 'CLOSED' },
+                deletedAt: null,
+            },
+            select: { sourceRef: true },
+            orderBy: { createdAt: 'asc' },
+            take: MAX_OPEN_ORPHANS_READ,
+        });
     const knownById = new Map(known.map((k) => [k.id, k]));
 
     const plan = planHarnessScan(body, {
@@ -206,6 +237,7 @@ async function record(
             accepted.map((a) => knownById.get(a.discoveredAgentId)?.discoveredId).filter((v): v is string => !!v),
         ),
         intakeClaims: intakeClaimsByDiscoveredId(known, intake),
+        openOrphanCredentials: new Set(openOrphans.map((f) => f.sourceRef).filter((r): r is string => r !== null)),
     });
 
     // The signed body, without its signature, is what the signature covers.

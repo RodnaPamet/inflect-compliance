@@ -2,8 +2,8 @@
 
 This assessment covers two processing operations. The **scanner** is to run
 in a client's environment and read the agent-shaped principals there. The
-**ingest** receives the scanner's signed `inflect-agent-harness/1` report into
-that client's own Inflect tenant. The report format is
+**ingest** receives the scanner's signed `inflect-agent-harness/1` or `/2`
+report into that client's own Inflect tenant. The report format is
 [`docs/agent-harness-contract.md`](agent-harness-contract.md) and its schemas
 and verifier are `src/lib/agentic/harness-contract.ts`.
 
@@ -61,6 +61,9 @@ pointers. Exactly one member is personal data by design:
 | `agents[].registeredAgentId` | The Inflect register id, or `null` | No |
 | `agents[].credentials[]` | `ref`, a `scheme://locator` reference; age in days; whether it expires; whether it is bound to the agent; the grant kind | No by design. A locator carries a person's name only if the client's own paths do. |
 | `agents[].tools[]`, `agents[].skills[]` | Server URL, tool name, manifest hash, pin flag, read-only hint; skill name, licence, declared flag | No |
+| `unboundCredentials[]` (`/2` only) | `ref`, a `scheme://locator` reference to a credential no discovered agent holds, and the source kind that saw it | No by design; the same caveat as an agent's credential locator |
+| `agents[].tools[].calls`, `windowDays` (`/2` only, optional) | How many times the agent called the tool, and over how many days | No: a count of an agent's calls, carrying nothing of what it sent or received |
+| `agents[].models[]` (`/2` only, optional) | `endpoint`, a `scheme://locator` or a host, and the model's id | No by design; the same caveat as a locator. Verified with the report and not stored |
 | `agents[].verdicts[].evidence`, `findings[].evidence` | A pointer of at most 512 characters | No by design; the same caveat as a locator |
 | `scan.scanner` | The scanner's own register id, version and manifest hash | No |
 | `signature` | Algorithm, public key, signature | No |
@@ -73,6 +76,12 @@ identifier, a flag, a count or a bounded pointer.
 
 **What the ingest stores.** The owner reference is stored on
 `DiscoveredAgent` (`ownerKind`, `ownerRef`), which each scan updates in place.
+An unbound credential is not stored as such: when its source, and every source
+in the scan that can report the agent a credential is bound to, were read in
+full, the ingest raises an `ORPHAN_CREDENTIAL` finding whose title and description
+name the reference, which carries a person's name only if the client's own
+locator does (the description is in the field-encryption manifest, as for
+every finding).
 A scan item holds one agent's derived level, reach, criterion verdicts and tool
 names with manifest digests; a scan holds its signer, the digest of the signed
 body, the signature and the per-source completeness. The schema is
@@ -221,8 +230,10 @@ Enforced on `main` by the contract, `src/lib/agentic/harness-contract.ts`:
   shape (`scheme://locator`) and refuses any value that `looksLikeSecret`
   matches against `SECRET_SHAPES`: GitHub, AWS, Slack and `sk-` token shapes,
   private-key blocks and JWTs, including inside a reference. The contract runs
-  that check on credential references only. Condition 10 requires the ingest to
-  run it on every other string, which it does since #3692.
+  that check on credential references only — an agent's, and in `/2` each of
+  `unboundCredentials[]`. Condition 10 requires the ingest to run it on every
+  other string, which it does since #3692, and its walk reaches the `/2`
+  member like any other.
 - **Bounded members.** `MAX_ID_CHARS` (256) for ids, names, owner and licence
   fields and the two signature fields. A credential reference is bounded by the
   `REFERENCE` pattern instead: a scheme of at most 32 characters and a locator
@@ -248,6 +259,7 @@ Where each condition stands:
 | 7 and 10 | The ingest, #3692 | Met; #3692 merged on 2026-10-17, with the no-cascade rule under [Retention](#retention) |
 | 1, 2, 3 and 4 | The scanner, #3686 | Open |
 | 8 | The scan evidence, #3687 | Open |
+| 15 | The `code` source, #3737 | Met by #3737 |
 
 For the two sources step `4a` built (#3678), Okta and Azure Key Vault,
 conditions 2 to 4 hold and are tested by request log: each source sends only
@@ -259,6 +271,62 @@ which neither reads, so it stays with #3686. Step `4a` also stores one new
 reference to a person, the owner of each source of a client estate
 (`AgentHarnessEstateSource.ownerUserId`), a tenant member chosen by the tenant's
 own staff, and its `docs/data-retention.md` row names it DSAR-relevant.
+
+For the `code` source #3737 built, condition 15 holds and is tested: a test
+plants definitions whose import would write a file and set a global, the source
+reads and recognises them, and neither happens; `eslint.config.mjs` refuses a
+subprocess, a VM, a module loader, `require()`, `import()` and `eval` in the
+source's files; and a fixture with a literal credential yields a signed report
+in which neither that value nor the root's absolute path appears. The source
+reports a file by the root's configured label and the path below it, so an
+absolute path that names a person (`/home/<user>/…`) is not carried.
+
+### The LangSmith source (#3738)
+
+#3738 adds a third source, LangSmith, as the `runtime` kind, under the owner's
+decisions of 2026-10-19 on that issue. It reads the customer's LangSmith
+workspace with a key holding the workspace Viewer role, by GET only, on one of
+two cloud hosts (`api.smith.langchain.com`, `eu.api.smith.langchain.com`) or on
+the customer's own self-hosted LangSmith. Conditions 2 and 4 hold for it and are
+tested by request log: every request is a GET to one of its three declared paths
+on the configured host, and no field of the configuration takes a write
+credential. Condition 3 concerns vaults; how LangSmith's own secret-bearing
+member is treated is below.
+
+| | From LangSmith |
+|---|---|
+| **Read** | The tracing projects (`GET /api/v1/sessions`, experiments excluded): each one's id, and its stats over a bounded window of 7 days by default and 30 at most, filtered to tool runs — the number of tool calls and the same number split by tool name. Only for an estate that opts in (`readDeployments`, off by default): the deployments (`GET /v2/deployments`, `/api-host/v2/deployments` self-hosted), each one's id and the id of the tracing project it writes to. |
+| **Reported** | One agent per tool-calling project (`langsmith:project:<id>`) and, for an estate that opts in, per deployment (`langsmith:deployment:<id>`, which then stands for its tracing project), with the names of the tools it called. No owner, no credential, no register link. A tool name that is not a plain identifier is reported as a digest. The call counts are not reported: `inflect-agent-harness/2` has a member for them, which a follow-up of #3738 fills, and until then the scanner's log carries their total. |
+| **Never read** | Runs. No run input, output, trace or event, and no run of any kind, is requested: neither `GET /api/v1/runs/{id}` nor `POST /api/v1/runs/query` is on the declared surface. |
+| **Received and not kept** | Both listings return more than the source reads. A project carries its name, description and `extra` metadata, and its facets cover run tags and run metadata as well as names. A deployment carries its `secrets`, which LangSmith's published schema documents with their values, and its source configuration — and that listing is requested only for an estate that opts in (owner decision, 2026-10-19), so by default none of it reaches the scanner. The source reads only the members in the first row; the rest is parsed with the page and dropped with it, and reaches no observation, no report and no log line. A test holds a marker string in every one of these members, and in the run content, out of the whole signed report and the log. |
+
+The run content and the metadata a run carries are the customer's data and may
+be personal data. Reading aggregates rather than runs is what keeps them in the
+estate. The one channel by which run content could reach a member the source
+does keep is a tool name, since a run's name can be set at call time; a name
+that is not an identifier (`[A-Za-z0-9_.:-]`, at most 128 characters) is
+therefore replaced by `tool-sha256:<16 hex>`.
+
+**The self-hosted host** is the one host in the configuration a person types. It
+is checked as the application checks any customer-named host, after the
+`publicOrigin` rule kind and `checkWebhookUrl`: a bare https origin, not a
+literal private, loopback, link-local or metadata address, not a blocked name,
+and not a `.local` or `.internal` name. Before every request the scanner
+resolves the name again and sends nothing if any address is private, which is
+the half of `safeFetch` that defeats a name repointed after the file was
+written. The other half, pinning the connection to the checked address, needs a
+dependency the scanner does not take, so a resolver that answers differently
+between the check and the request is a residual (R16).
+
+A self-hosted LangSmith on the estate's own network names the private ranges
+its host may resolve into (`egressPrivateCidrAllowlist`, owner decision
+2026-10-19). It mirrors the application's self-hosted egress allowlist (#3328):
+it lives in the estate's own scanner configuration, which no tenant column,
+form or route reaches; metadata, loopback and link-local stay refused inside it,
+checked before the allowlist, so even `0.0.0.0/0` cannot reach
+`169.254.169.254`; and it removes no other check, so the host is still resolved
+before every request and an address outside the listed ranges sends nothing.
+Both checks, at configuration and before each request, apply it.
 
 #3686's hardening checklist carries condition 1 and the write-credential half
 of condition 2. The assessment holds for the scanner only when #3686 meets all
@@ -294,6 +362,13 @@ four of its conditions, and for the evidence emitted from a scan only when
 11. `AgentHarnessAcceptance`'s free-text columns are in the field-encryption
     manifest and pass through `sanitizePlainText` at the write seam, as
     `ControlException`'s do.
+
+Condition 15 is on the `code` source that `inflect-agent-harness/2` added
+(#3754), numbered after #3710's conditions 12 to 14:
+
+15. A `code` source reads files and never imports or executes what it reads,
+    and reports a credential written into the code by its location (`code://…`)
+    or by the environment variable it names (`env://…`), never by its value.
 
 ## Retention
 
@@ -366,8 +441,8 @@ is listed, and its row names this data category (condition 12, met; see [A model
 
 - The scanner is to run on the client's infrastructure, under the client's
   control, and read the client's own systems. The identity provider, vault, MCP
-  servers and CI/CD it reads are services the client has chosen; they are the
-  client's processors, not Inflect's.
+  servers, agent runtime (LangSmith, #3738) and CI/CD it reads are services the
+  client has chosen; they are the client's processors, not Inflect's.
 - The ingest runs in the existing `app` service on the existing Google Cloud
   hosting, which `docs/sub-processors.md` already lists.
 - The ingest is deterministic: verify, parse, `scoreHarness`, reconcile,
@@ -388,7 +463,7 @@ including its 30-day notice window, before that data moves.
 | | Risk to the people concerned | Mitigation | Held by |
 |---|---|---|---|
 | R1 | A credential value reaches Inflect inside a report and is stored in the tenant. | Credentials travel as references, and a secret-shaped value is refused inside a credential reference. The contract checks no other member, so condition 10 requires the ingest to check every string member, which it does since #3692. Residual: a secret in a shape `SECRET_SHAPES` does not list passes both checks. | `credentialRef`, `looksLikeSecret`; condition 10 (#3692) |
-| R2 | The scanner collects content written by or about staff: tool descriptions, prompts, payloads. | The contract has no member for content and refuses unknown members; the scanner sends `initialize` and `tools/list` only. | `.strict()` schemas; condition 1 |
+| R2 | The scanner collects content written by or about staff: tool descriptions, prompts, payloads. | The contract has no member for content and refuses unknown members; the scanner sends `initialize` and `tools/list` only, and its LangSmith source requests aggregates and never a run (R15). | `.strict()` schemas; condition 1 |
 | R3 | The scanner reads secret values in the client's estate while listing a vault. | The vault reader lists metadata and references only. | Condition 3 |
 | R4 | A forged report attributes an agent to the wrong person, or invents an owner. | The signature by a tenant-trusted key is checked before the body is read. The report's owner is a claim: intake has a person confirm it before it becomes the register's owner. | `verifyAndParseHarnessReport`; step `2a` intake |
 | R5 | Scan rows become visible in another tenant. | Row-level security, a tenant-leading index and a two-tenant test on every new table. The route is tenant-scoped, and an API key for another tenant is refused (`getTenantCtx`, `src/app-layer/context.ts`). | Step `1a` checklist; `getTenantCtx` |
@@ -401,6 +476,8 @@ including its 30-day notice window, before that data moves.
 | R14 | An owner reference is kept in an append-only record. | `AiDecisionLog.outputSummary` is bounded and sanitised and named DSAR-relevant. Residual: no erasure path for one person, as for the other append-only records. Accepted pending the retention answer `docs/data-retention.md` records as open. | Condition 14 |
 | R10 | A shortfall finding names the owner of an agent below the bar, and colleagues read it. | Findings carry identifiers only and stay in the controller's own tenant, read by its own staff. Residual: accepted. | Step `1a` findings |
 | R11 | An acceptance's justification names or describes a person, and is read beyond its purpose. | Encrypted at rest, sanitised at the write seam, and kept in the controller's own tenant. Residual: free text can still mention a person. Accepted, as it is for `ControlException`. | Condition 11 |
+| R15 | The LangSmith source receives run metadata, project text or a deployment's secret values inside a listing it calls, and passes them on. | It requests aggregates and never a run. The secrets-bearing deployments listing is requested only when an estate opts in (`readDeployments`, off by default), and the default is tested by request log. Of each listing it reads ids, a deployment's tracing project, and a project's tool-call count and tool-name facets; every other member is dropped with the page, and markers in each of them are absent from the signed report and the log (`tests/unit/agent-harness-scanner/langsmith-source.test.ts`). A tool name that is not an identifier is reported as a digest. Residual: for an estate that opts in, each page of the deployments listing — every deployment's secret names and values and its source configuration — is held in the scanner process's memory, in the client's estate, until the page is parsed and dropped. That is the client's own processing. | The LangSmith source (#3738) |
+| R16 | A self-hosted LangSmith host is repointed at an internal address, and the scanner sends the API key there. | Checked at configuration as a customer-named host, and resolved again before every request; a private, loopback, link-local or metadata address stops the read before the key is sent. An estate's private-range allowlist admits only the ranges it lists, never metadata, loopback or link-local, and both checks apply it. Residual, unchanged by the allowlist: the connection is not pinned to the checked address. | `packages/agent-harness-scanner/src/customer-host.ts` (#3738) |
 
 ## Gaps
 
@@ -431,11 +508,22 @@ The signature covers the assessment as written, including the two
 them; their answers are recorded on #3664 when given.
 
 The assessment is reopened, and signed again the same way, when any of these
-changes: the contract id (`inflect-agent-harness/2`), the source kinds in
-`SOURCE_KINDS`, a stored column that holds a person's identifier, a condition
+changes: the contract ids the ingest accepts (`HARNESS_CONTRACT_IDS`), the
+source kinds in `SOURCE_KINDS`, a stored column that holds a person's identifier, a condition
 on step `1a`, or where scan data goes. #3710 reopened it on the last of those —
 a model became a reader of the owner reference — and the merge of the pull
 request that carries the amendment signs it again, with condition 12 met.
+
+#3754 reopened it on two of those: the contract id, `inflect-agent-harness/2`,
+and the source kinds in `SOURCE_KINDS`, which gained `code`. `/2` adds
+`unboundCredentials[]`, which carries credential references under the rules an
+agent's credential already had; an optional call count with its window on each
+tool, stored with the tool; and optional model endpoints, references verified
+and not stored. None of them adds a data category or carries content; the `code`
+kind brings a reader of source code and configuration into the estate, held by
+condition 15 and owned by #3737. No stored column that names a person was added.
+The owner accepted this amendment and condition 15 on 2026-10-19, and the merge
+of the pull request that carries this paragraph signs it.
 
 Step `4a` (#3678) reopened it on a stored column that holds a person's
 identifier, the owner of each source of a client estate, and added two sources,
@@ -443,3 +531,9 @@ Okta and Azure Key Vault. The owner accepted the paragraph that records them
 under [Conditions on step 1a](#conditions-on-step-1a) on 2026-10-19, and that
 answer is the decision that extends this sign-off to the two new sources; the
 merge of the pull request that carries it (#3740) signs the amendment.
+
+#3738 reopened it on the sources the scanner reads: it adds LangSmith as the
+`runtime` source, and [The LangSmith source](#the-langsmith-source-3738)
+records what is and is not read from it, with risks R15 and R16. The owner
+decided on 2026-10-19 that merging the pull request that adds LangSmith to this
+assessment re-signs it, as with step `4a`, so that merge signs this amendment.
