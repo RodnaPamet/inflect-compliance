@@ -1,11 +1,22 @@
 /**
- * The wire contract `inflect-agent-harness/1` (#3660).
+ * The wire contracts `inflect-agent-harness/1` (#3660) and `/2` (#3754).
  *
  * ONE SOURCE OF TRUTH, three readers. `docs/agent-harness-contract.md` is what a
  * scanner is built against, `tests/helpers/agent-harness-fake-scanner.ts` is the
  * executable reference, and these schemas are what the ingest enforces. The suite
  * validates the fake scanner's output against these schemas, so the three cannot
  * drift apart silently. Same arrangement as `src/lib/mcp/client/contract.ts`.
+ *
+ * ‾‾‾ TWO IDS, TWO STRICT SCHEMAS ‾‾‾
+ *
+ * `/2` is `/1` plus the `code` source kind, the `UNPARSEABLE` reason, the
+ * `unboundCredentials[]` member, and per agent an optional call count on each
+ * tool and optional `models[]` endpoints (owner decisions, 2026-10-19). The verifier
+ * accepts both, so a deployed `/1` scanner keeps working, and holds each report
+ * to the schema of the id it names: a `/1` report carrying any of `/2`'s
+ * additions is refused, never read as a `/2` report that forgot to say so. The
+ * schemas are built by one function over each id's member lists, so the shared
+ * part cannot drift between them.
  *
  * ‾‾‾ THE REPORT ARRIVES FROM OUTSIDE ‾‾‾
  *
@@ -21,9 +32,11 @@
  * `verifyAndParseHarnessReport` checks the byte cap, then that the body is JSON,
  * then the SIGNATURE, and only then the schema. Nothing about the report's
  * content is trusted, or even interpreted, before a trusted key has vouched for
- * it. The signed message is SHA-256 over the canonical JSON of the report with
- * its `signature` member removed: the construction `receipt-verification.ts`
- * already uses for mediator receipts, through the same `canonicalJson`.
+ * it — the contract id included: which schema applies is read only after the
+ * signature verified. The signed message is SHA-256 over the canonical JSON of
+ * the report with its `signature` member removed: the construction
+ * `receipt-verification.ts` already uses for mediator receipts, through the
+ * same `canonicalJson`.
  *
  * ‾‾‾ WHAT THE REPORT DELIBERATELY CANNOT SAY ‾‾‾
  *
@@ -32,10 +45,14 @@
  *     would be trusted for the one number the product exists to compute.
  *   • A CREDENTIAL. Only a reference — a scheme-prefixed locator such as
  *     `kv://prod/agents/sales-bot` — is accepted, and a value with the shape of
- *     a secret is refused even inside one.
+ *     a secret is refused even inside one. That holds for an unbound
+ *     credential exactly as for an agent's.
  *   • COMPLETENESS IT DID NOT ESTABLISH. Each source says COMPLETE or
  *     INCOMPLETE; INCOMPLETE must name a reason and COMPLETE may not carry one.
  *     Whether the scan as a whole was complete is derived, never declared.
+ *   • A FINDING THE INGEST ACTS ON. `findings[]` is the scanner's own view and
+ *     is not acted on. `/2`'s `unboundCredentials[]` is an observation, and the
+ *     planner decides whether it is an ORPHAN_CREDENTIAL.
  *
  * PURE apart from `node:crypto`: no database, no clock, no network.
  */
@@ -45,7 +62,13 @@ import { z } from 'zod';
 import { canonicalJson } from '@/lib/canonical-json';
 import { ed25519PublicKeyFromMaterial } from '@/lib/mcp/receipt-verification';
 
-import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
+import {
+    HARNESS_CONTRACT_V1,
+    HARNESS_CONTRACT_V2,
+    isScanComplete,
+    looksLikeSecret,
+    type HarnessContractId,
+} from './harness-contract-rules';
 import {
     ALL_HARNESS_CRITERIA,
     isHarnessCriterionId,
@@ -54,9 +77,14 @@ import {
 } from './harness-ladder';
 import type { StoredSource } from './harness-read-model';
 
-export { isScanComplete, looksLikeSecret } from './harness-contract-rules';
-
-export const HARNESS_CONTRACT_ID = 'inflect-agent-harness/1';
+export {
+    HARNESS_CONTRACT_IDS,
+    HARNESS_CONTRACT_V1,
+    HARNESS_CONTRACT_V2,
+    isScanComplete,
+    looksLikeSecret,
+    type HarnessContractId,
+} from './harness-contract-rules';
 
 // ─── Bounds. Stated here and enforced at the ingest's transport too. ───
 
@@ -68,13 +96,20 @@ export const MAX_CREDENTIALS_PER_AGENT = 100;
 export const MAX_TOOLS_PER_AGENT = 500;
 export const MAX_SKILLS_PER_AGENT = 100;
 export const MAX_FINDINGS = 20_000;
+/** `/2`: credentials seen bound to no agent, across every source. */
+export const MAX_UNBOUND_CREDENTIALS = 10_000;
+/** `/2`: model endpoints per agent. */
+export const MAX_MODELS_PER_AGENT = 50;
+/** `/2`: a tool's call count, and the window it is counted over. */
+export const MAX_TOOL_CALLS = 1_000_000_000;
+export const MAX_WINDOW_DAYS = 366;
 /** Identifiers, names and references. */
 export const MAX_ID_CHARS = 256;
 /** An evidence pointer: a path, a query, a resource locator. */
 export const MAX_EVIDENCE_CHARS = 512;
 
-/** Where the scanner looked. Stable ids: the report and the matrix carry them. */
-export const SOURCE_KINDS = [
+/** Where a `/1` scanner looked. Stable ids: the report and the matrix carry them. */
+export const SOURCE_KINDS_V1 = [
     'entra-sp',
     'okta-app',
     'vault',
@@ -84,8 +119,19 @@ export const SOURCE_KINDS = [
     'inflect-register',
 ] as const;
 
-/** Why a source could not be read completely. */
-export const INCOMPLETE_REASONS = [
+/** `/2` adds `code`: agent definitions read from source code and configuration (#3737). */
+export const SOURCE_KINDS_V2 = [...SOURCE_KINDS_V1, 'code'] as const;
+
+/**
+ * Every source kind a report this verifier accepts can carry: the union over
+ * the ids, which is `/2`'s because `/2` only adds. Stored scans are re-read
+ * against it, and an estate may declare exactly these (the database CHECKs the
+ * same list).
+ */
+export const SOURCE_KINDS = SOURCE_KINDS_V2;
+
+/** Why a `/1` source could not be read completely. */
+export const INCOMPLETE_REASONS_V1 = [
     'BYTE_CAP',
     'TIME_BOX',
     'AUTH_FAILED',
@@ -93,6 +139,12 @@ export const INCOMPLETE_REASONS = [
     'PAGINATION_TORN',
     'RATE_LIMITED',
 ] as const;
+
+/** `/2` adds `UNPARSEABLE`: a definition the scanner read but could not resolve. */
+export const INCOMPLETE_REASONS_V2 = [...INCOMPLETE_REASONS_V1, 'UNPARSEABLE'] as const;
+
+/** Every reason any accepted id can carry — `/2`'s, as for the kinds. */
+export const INCOMPLETE_REASONS = INCOMPLETE_REASONS_V2;
 
 export const FINDING_CODES = [
     'SHADOW_AGENT',
@@ -111,29 +163,39 @@ const REFERENCE = /^[a-z][a-z0-9+.-]{1,31}:\/\/\S{1,480}$/;
 
 
 const id = z.string().min(1).max(MAX_ID_CHARS);
-const sourceKind = z.enum(SOURCE_KINDS);
 
 const credentialRef = z
     .string()
     .regex(REFERENCE, 'a credential must be a scheme://locator reference, never a value')
     .refine((v) => !looksLikeSecret(v), 'a credential reference must not contain a secret-shaped value');
 
-export const HarnessSourceSchema = z
-    .object({
-        kind: sourceKind,
-        status: z.enum(['COMPLETE', 'INCOMPLETE']),
-        reason: z.enum(INCOMPLETE_REASONS).optional(),
-        rows: z.number().int().min(0),
-    })
-    .strict()
-    .superRefine((s, ctx) => {
-        if (s.status === 'INCOMPLETE' && s.reason === undefined) {
-            ctx.addIssue({ code: 'custom', message: 'an INCOMPLETE source must name its reason', path: ['reason'] });
-        }
-        if (s.status === 'COMPLETE' && s.reason !== undefined) {
-            ctx.addIssue({ code: 'custom', message: 'a COMPLETE source cannot carry an incompleteness reason', path: ['reason'] });
-        }
-    });
+type Members = readonly [string, ...string[]];
+
+/** One source, over one id's kinds and reasons. */
+function sourceSchemaOver<const K extends Members, const R extends Members>(kinds: K, reasons: R) {
+    return z
+        .object({
+            kind: z.enum(kinds),
+            status: z.enum(['COMPLETE', 'INCOMPLETE']),
+            reason: z.enum(reasons).optional(),
+            rows: z.number().int().min(0),
+        })
+        .strict()
+        .superRefine((s, ctx) => {
+            if (s.status === 'INCOMPLETE' && s.reason === undefined) {
+                ctx.addIssue({ code: 'custom', message: 'an INCOMPLETE source must name its reason', path: ['reason'] });
+            }
+            if (s.status === 'COMPLETE' && s.reason !== undefined) {
+                ctx.addIssue({ code: 'custom', message: 'a COMPLETE source cannot carry an incompleteness reason', path: ['reason'] });
+            }
+        });
+}
+
+/**
+ * A stored source, re-read against every kind and reason an accepted id can
+ * carry. Not a wire schema: a report is held to the schema of its own id.
+ */
+export const HarnessSourceSchema = sourceSchemaOver(SOURCE_KINDS, INCOMPLETE_REASONS);
 
 const OwnerSchema = z
     .object({
@@ -155,14 +217,62 @@ const CredentialSchema = z
     })
     .strict();
 
-const ToolSchema = z
+const toolMembers = {
+    server: z.string().url().max(MAX_EVIDENCE_CHARS),
+    name: id,
+    manifestHash: z.string().regex(SHA256_HEX).nullable(),
+    pinned: z.boolean(),
+    /** As the server declares it. Unknown counts as a write. */
+    readOnlyHint: z.boolean().nullable(),
+};
+
+/** `/1`'s tool. */
+const ToolSchemaV1 = z.object(toolMembers).strict();
+
+/**
+ * `/2`'s tool: `/1`'s, plus an optional call count over a window (owner
+ * decision, 2026-10-19). A count is a number of calls and nothing of what was
+ * called with — no input, no output, no prompt. It means something only beside
+ * its window, so the two come together or not at all.
+ */
+const ToolSchemaV2 = z
     .object({
-        server: z.string().url().max(MAX_EVIDENCE_CHARS),
-        name: id,
-        manifestHash: z.string().regex(SHA256_HEX).nullable(),
-        pinned: z.boolean(),
-        /** As the server declares it. Unknown counts as a write. */
-        readOnlyHint: z.boolean().nullable(),
+        ...toolMembers,
+        /** Calls of this tool by this agent over the last `windowDays`. */
+        calls: z.number().int().min(0).max(MAX_TOOL_CALLS).optional(),
+        windowDays: z.number().int().min(1).max(MAX_WINDOW_DAYS).optional(),
+    })
+    .strict()
+    .superRefine((t, ctx) => {
+        if ((t.calls === undefined) !== (t.windowDays === undefined)) {
+            ctx.addIssue({ code: 'custom', message: 'a call count and its window come together or not at all', path: ['calls'] });
+        }
+    });
+
+/**
+ * An endpoint as `/2` reports it: a `scheme://locator` (`https://api.openai.com/v1`,
+ * `env://AZURE_OPENAI_ENDPOINT`) or a bare host, never a credential. A URL that
+ * carries any userinfo is refused, not only one whose password has a known
+ * shape: a reference to an endpoint has no business naming an account.
+ */
+const HOST = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::\d{1,5})?$/;
+const endpointRef = z
+    .string()
+    .min(1)
+    .max(MAX_EVIDENCE_CHARS)
+    .refine((v) => REFERENCE.test(v) || HOST.test(v), 'an endpoint is a scheme://locator or a host')
+    .refine((v) => !/^[a-z][a-z0-9+.-]*:\/\/[^/?#\\]*@/i.test(v), 'an endpoint reference must not carry userinfo')
+    .refine((v) => !looksLikeSecret(v), 'an endpoint reference must not contain a secret-shaped value');
+
+/**
+ * `/2`: a model endpoint the agent calls (owner decision, 2026-10-19). A
+ * reference and a model id — never a prompt, an input or an output.
+ */
+const ModelEndpointSchema = z
+    .object({
+        endpoint: endpointRef,
+        /** The model's id at that endpoint, when the scanner knows it. */
+        model: id.nullable(),
     })
     .strict();
 
@@ -185,16 +295,27 @@ export const HarnessVerdictSchema = z
     })
     .strict();
 
-const AgentSchema = z
-    .object({
+/** The members every id's agent carries, over that id's kinds and tool. */
+function agentMembersOver<const K extends Members, T extends z.ZodType>(kinds: K, tool: T) {
+    return {
         discoveredId: id,
-        discoveredVia: z.array(sourceKind).min(1).max(SOURCE_KINDS.length),
+        discoveredVia: z.array(z.enum(kinds)).min(1).max(kinds.length),
         registeredAgentId: id.nullable(),
         owner: OwnerSchema.nullable(),
         credentials: z.array(CredentialSchema).max(MAX_CREDENTIALS_PER_AGENT),
-        tools: z.array(ToolSchema).max(MAX_TOOLS_PER_AGENT),
+        tools: z.array(tool).max(MAX_TOOLS_PER_AGENT),
         skills: z.array(SkillSchema).max(MAX_SKILLS_PER_AGENT),
         verdicts: z.array(HarnessVerdictSchema).max(ALL_HARNESS_CRITERIA.length * 2),
+    };
+}
+
+const AgentSchemaV1 = z.object(agentMembersOver(SOURCE_KINDS_V1, ToolSchemaV1)).strict();
+
+/** `/2`'s agent: `/1`'s over `/2`'s kinds and tool, and the optional `models[]`. */
+const AgentSchemaV2 = z
+    .object({
+        ...agentMembersOver(SOURCE_KINDS_V2, ToolSchemaV2),
+        models: z.array(ModelEndpointSchema).max(MAX_MODELS_PER_AGENT).optional(),
     })
     .strict();
 
@@ -208,46 +329,133 @@ const FindingSchema = z
     })
     .strict();
 
-/** The report body: everything the signature covers. */
-export const HarnessReportBodySchema = z
+const ScanSchema = z
     .object({
-        contract: z.literal(HARNESS_CONTRACT_ID),
-        scan: z
+        id,
+        asOf: z.string().datetime(),
+        scanner: z
             .object({
-                id,
-                asOf: z.string().datetime(),
-                scanner: z
-                    .object({
-                        agentId: id,
-                        version: id,
-                        manifestHash: z.string().regex(SHA256_HEX),
-                    })
-                    .strict(),
+                agentId: id,
+                version: id,
+                manifestHash: z.string().regex(SHA256_HEX),
             })
             .strict(),
-        population: z
-            .object({ sources: z.array(HarnessSourceSchema).min(1).max(MAX_SOURCES) })
-            .strict(),
-        agents: z.array(AgentSchema).max(MAX_AGENTS),
+    })
+    .strict();
+
+/** The members every id carries, over that id's kinds, reasons and agent. */
+function bodyMembersOver<const C extends string, const K extends Members, const R extends Members, A extends z.ZodType>(
+    contract: C,
+    kinds: K,
+    reasons: R,
+    agent: A,
+) {
+    return {
+        contract: z.literal(contract),
+        scan: ScanSchema,
+        population: z.object({ sources: z.array(sourceSchemaOver(kinds, reasons)).min(1).max(MAX_SOURCES) }).strict(),
+        agents: z.array(agent).max(MAX_AGENTS),
         findings: z.array(FindingSchema).max(MAX_FINDINGS),
+    };
+}
+
+/** The cross-member rules every id holds: one agent per `discoveredId`, one entry per source kind. */
+function checkReportInvariants(
+    r: {
+        readonly agents: readonly { readonly discoveredId: string }[];
+        readonly population: { readonly sources: readonly { readonly kind: string }[] };
+    },
+    ctx: z.RefinementCtx,
+): void {
+    const seen = new Set<string>();
+    r.agents.forEach((a, i) => {
+        if (seen.has(a.discoveredId)) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'discoveredId must be unique within a report',
+                path: ['agents', i, 'discoveredId'],
+            });
+        }
+        seen.add(a.discoveredId);
+    });
+    const kinds = r.population.sources.map((s) => s.kind);
+    if (new Set(kinds).size !== kinds.length) {
+        ctx.addIssue({ code: 'custom', message: 'each source kind appears once', path: ['population', 'sources'] });
+    }
+}
+
+/**
+ * `/2`: a credential the scanner saw bound to NO discovered agent, by
+ * reference, with the source kind that saw it. The ingest derives
+ * ORPHAN_CREDENTIAL from these; the scanner does not raise it.
+ */
+const UnboundCredentialSchema = z
+    .object({
+        ref: credentialRef,
+        sourceKind: z.enum(SOURCE_KINDS_V2),
+    })
+    .strict();
+
+/**
+ * The `/2` rules on `unboundCredentials[]`. Each one refuses a report that
+ * contradicts itself, because a report that does is no ground for a finding:
+ *
+ *   • each (source, reference) pair once;
+ *   • the source that saw it is one the report lists — a credential seen by a
+ *     source the scanner did not report reading is a claim with no read behind it;
+ *   • it is held by no agent in the same report — "bound to no agent" and
+ *     "this agent's credential" cannot both be true.
+ */
+function checkUnboundCredentials(
+    r: {
+        readonly agents: readonly { readonly credentials: readonly { readonly ref: string }[] }[];
+        readonly population: { readonly sources: readonly { readonly kind: string }[] };
+        readonly unboundCredentials: readonly { readonly ref: string; readonly sourceKind: string }[];
+    },
+    ctx: z.RefinementCtx,
+): void {
+    const listed = new Set(r.population.sources.map((s) => s.kind));
+    const held = new Set(r.agents.flatMap((a) => a.credentials.map((c) => c.ref)));
+    const seen = new Set<string>();
+    r.unboundCredentials.forEach((u, i) => {
+        const key = `${u.sourceKind}\u0000${u.ref}`;
+        if (seen.has(key)) {
+            ctx.addIssue({ code: 'custom', message: 'each unbound credential appears once per source', path: ['unboundCredentials', i] });
+        }
+        seen.add(key);
+        if (!listed.has(u.sourceKind)) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'an unbound credential must name a source the report lists',
+                path: ['unboundCredentials', i, 'sourceKind'],
+            });
+        }
+        if (held.has(u.ref)) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'a credential an agent in this report holds is not unbound',
+                path: ['unboundCredentials', i, 'ref'],
+            });
+        }
+    });
+}
+
+/** `inflect-agent-harness/1`: everything the signature covers. */
+export const HarnessReportBodyV1Schema = z
+    .object(bodyMembersOver(HARNESS_CONTRACT_V1, SOURCE_KINDS_V1, INCOMPLETE_REASONS_V1, AgentSchemaV1))
+    .strict()
+    .superRefine((r, ctx) => checkReportInvariants(r, ctx));
+
+/** `inflect-agent-harness/2`: `/1`'s members over `/2`'s lists, and `unboundCredentials[]`. */
+export const HarnessReportBodyV2Schema = z
+    .object({
+        ...bodyMembersOver(HARNESS_CONTRACT_V2, SOURCE_KINDS_V2, INCOMPLETE_REASONS_V2, AgentSchemaV2),
+        unboundCredentials: z.array(UnboundCredentialSchema).max(MAX_UNBOUND_CREDENTIALS),
     })
     .strict()
     .superRefine((r, ctx) => {
-        const seen = new Set<string>();
-        r.agents.forEach((a, i) => {
-            if (seen.has(a.discoveredId)) {
-                ctx.addIssue({
-                    code: 'custom',
-                    message: 'discoveredId must be unique within a report',
-                    path: ['agents', i, 'discoveredId'],
-                });
-            }
-            seen.add(a.discoveredId);
-        });
-        const kinds = r.population.sources.map((s) => s.kind);
-        if (new Set(kinds).size !== kinds.length) {
-            ctx.addIssue({ code: 'custom', message: 'each source kind appears once', path: ['population', 'sources'] });
-        }
+        checkReportInvariants(r, ctx);
+        checkUnboundCredentials(r, ctx);
     });
 
 export const HarnessSignatureSchema = z
@@ -260,9 +468,33 @@ export const HarnessSignatureSchema = z
     })
     .strict();
 
-export type HarnessReportBody = z.infer<typeof HarnessReportBodySchema>;
-export type HarnessReportAgent = HarnessReportBody['agents'][number];
+export type HarnessReportBodyV1 = z.infer<typeof HarnessReportBodyV1Schema>;
+export type HarnessReportBodyV2 = z.infer<typeof HarnessReportBodyV2Schema>;
+/** A verified report of either id. Narrow on `contract` to reach `/2`'s members. */
+export type HarnessReportBody = HarnessReportBodyV1 | HarnessReportBodyV2;
+export type HarnessReportAgentV1 = HarnessReportBodyV1['agents'][number];
+export type HarnessReportAgentV2 = HarnessReportBodyV2['agents'][number];
+/** One agent of either id. `/2`'s agent is `/1`'s over a wider kind list, so it is the wider type. */
+export type HarnessReportAgent = HarnessReportAgentV2;
+export type HarnessUnboundCredential = HarnessReportBodyV2['unboundCredentials'][number];
+export type HarnessModelEndpoint = NonNullable<HarnessReportAgentV2['models']>[number];
 export type HarnessSignature = z.infer<typeof HarnessSignatureSchema>;
+
+/** The strict schema for each accepted id. A Map, so no prototype key can name one. */
+const BODY_SCHEMA_BY_ID: ReadonlyMap<HarnessContractId, z.ZodType<HarnessReportBody>> = new Map<
+    HarnessContractId,
+    z.ZodType<HarnessReportBody>
+>([
+    [HARNESS_CONTRACT_V1, HarnessReportBodyV1Schema],
+    [HARNESS_CONTRACT_V2, HarnessReportBodyV2Schema],
+]);
+
+/** The schema for the id a body names, or null when it names none this verifier accepts. */
+function bodySchemaFor(body: Record<string, unknown>): z.ZodType<HarnessReportBody> | null {
+    const contract = body.contract;
+    if (typeof contract !== 'string') return null;
+    return BODY_SCHEMA_BY_ID.get(contract as HarnessContractId) ?? null;
+}
 
 /** The bytes a scanner signs: SHA-256 over the canonical JSON of the body. */
 export function harnessSignedMessage(body: unknown): Buffer {
@@ -281,9 +513,12 @@ export function harnessSignedMessage(body: unknown): Buffer {
 
 /**
  * A scan's stored sources, re-validated against the contract (strict, each kind
- * once, at least one). `null` is "could not be read" — never an empty list,
- * because zero sources would read as a scan that looked nowhere and found it
- * clean.
+ * once, at least one). The row does not record which id the report spoke, so
+ * it is read against every kind and reason an accepted id can carry: a `/2`
+ * scan's `code` source and `UNPARSEABLE` reason read back as written, where a
+ * `/1`-only reader would call the whole scan unreadable. `null` is "could not
+ * be read" — never an empty list, because zero sources would read as a scan
+ * that looked nowhere and found it clean.
  */
 export function parseStoredHarnessSources(json: unknown): StoredSource[] | null {
     const parsed = z.array(HarnessSourceSchema).min(1).max(MAX_SOURCES).safeParse(json);
@@ -299,12 +534,18 @@ export function parseStoredHarnessVerdicts(json: unknown): CriterionVerdict[] | 
     return parsed.success ? parsed.data : null;
 }
 
-/** One tool as a scan item stores it: identifiers, a hash and two flags — never a description. */
-export type StoredHarnessTool = z.infer<typeof ToolSchema>;
+/**
+ * One tool as a scan item stores it: identifiers, a hash, two flags and, from a
+ * `/2` report, a call count with its window — never a description.
+ */
+export type StoredHarnessTool = z.infer<typeof ToolSchemaV2>;
 
-/** One scan item's stored tools, re-validated. `null` is "could not be read", never "no tools". */
+/**
+ * One scan item's stored tools, re-validated against `/2`'s tool, which every
+ * `/1` tool also is. `null` is "could not be read", never "no tools".
+ */
 export function parseStoredHarnessTools(json: unknown): StoredHarnessTool[] | null {
-    const parsed = z.array(ToolSchema).max(MAX_TOOLS_PER_AGENT).safeParse(json);
+    const parsed = z.array(ToolSchemaV2).max(MAX_TOOLS_PER_AGENT).safeParse(json);
     return parsed.success ? parsed.data : null;
 }
 
@@ -373,9 +614,11 @@ function describeSchemaIssue(issue: z.core.$ZodIssue): string {
 
 /**
  * Check a raw report against the contract, in the only safe order: size, JSON,
- * signature by a TRUSTED key, then schema. `trustedSignerKeys` are the public
- * keys of scanners registered for this tenant; a report signed by any other
- * key is refused even if its signature is mathematically valid.
+ * signature by a TRUSTED key, then the strict schema OF THE ID THE REPORT
+ * NAMES. `trustedSignerKeys` are the public keys of scanners registered for
+ * this tenant; a report signed by any other key is refused even if its
+ * signature is mathematically valid. `/1` and `/2` go through the same four
+ * steps in the same order: only the last step differs.
  */
 export function verifyAndParseHarnessReport(
     raw: string,
@@ -414,7 +657,14 @@ export function verifyAndParseHarnessReport(
     }
     if (!valid) return { ok: false, reason: 'BAD_SIGNATURE' };
 
-    const schema = HarnessReportBodySchema.safeParse(body);
+    // Which schema applies is itself body content, so it is read only now. An
+    // id this verifier does not accept is a SCHEMA refusal that names the
+    // member, never the value the signer put there.
+    const bodySchema = bodySchemaFor(body);
+    if (bodySchema === null) {
+        return { ok: false, reason: 'SCHEMA', issues: ['contract: not a contract id this verifier accepts'] };
+    }
+    const schema = bodySchema.safeParse(body);
     if (!schema.success) {
         return { ok: false, reason: 'SCHEMA', issues: schema.error.issues.map(describeSchemaIssue) };
     }

@@ -2,10 +2,11 @@
 
 The reference harness scanner (#3678, owner decision of 2026-10-18 on that
 issue). It runs inside a client's estate, reads that estate's sources
-**read-only**, builds an `inflect-agent-harness/1` report
+**read-only**, builds an `inflect-agent-harness/2` report
 ([`docs/agent-harness-contract.md`](../../docs/agent-harness-contract.md)),
 signs it with an Ed25519 key the tenant registered, and posts it unchanged to
-the tenant's ingest.
+the tenant's ingest. The ingest still accepts `/1`, so a scanner built before
+#3754 keeps working until it is upgraded.
 
 ## Sources
 
@@ -19,6 +20,14 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 
 Azure Key Vault is the only vault adapter. The `vault` kind and the `product`
 field keep the interface generic for the next one.
+
+**Unbound credentials.** `/2`'s `unboundCredentials[]` lists credential
+references a source saw bound to no principal, from which the ingest derives
+`ORPHAN_CREDENTIAL`. A source returns them on its read
+(`SourceRead.unboundCredentials`), and the report builder drops any reference a
+principal in the merged population holds. Both sources above report every
+credential against the principal it belongs to, so neither returns one, and
+the list is empty from them.
 
 ### The labelling conventions
 

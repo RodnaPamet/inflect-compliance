@@ -65,6 +65,9 @@
  *   HARNESS_SHORTFALL:<discoveredId>         below the report-only bar
  *   EMPTY_SCAN:<scannerAgentId>              the scanner found no agents at all
  *   INCOMPLETE_SOURCE:<scannerAgentId>:<kind> a source it could not read in full
+ *   ORPHAN_CREDENTIAL:<scannerAgentId>:<kind>:<ref>
+ *                                            `/2` only: a credential that source
+ *                                            saw bound to no discovered agent
  *
  * A scan closes a finding only on POSITIVE evidence: an agent now in the
  * register, a level now at the bar, a source now read in full, a population now
@@ -72,6 +75,27 @@
  * in full. An agent ABSENT from a scan closes nothing — a tenant may run more
  * than one scanner, and one scanner not seeing an agent is not evidence that
  * the agent is gone.
+ *
+ * ── ORPHAN_CREDENTIAL, DERIVED FROM `unboundCredentials[]` (#3754) ──────────
+ *
+ * The report's own `findings` member is never acted on, so a scanner cannot
+ * raise this finding by saying so. A `/2` report lists the credentials each
+ * source saw bound to no agent, and the planner decides:
+ *
+ *   • IT OPENS ONLY WHEN THAT SOURCE WAS READ IN FULL. A credential seen by a
+ *     source that stopped early is real, but the read that would show it bound
+ *     may be the part that was not read.
+ *   • IT CLOSES ONLY WHEN THE SAME SCANNER READ THE SAME SOURCE IN FULL AND NO
+ *     LONGER SEES IT UNBOUND. The key carries the scanner and the source kind,
+ *     because two scanners' `vault` sources can be two different vaults: one
+ *     scanner's complete read is no evidence about the other's.
+ *   • AN ABSENT OR INCOMPLETE SOURCE CLOSES NOTHING, and neither does a `/1`
+ *     report: it has no member to say anything about unbound credentials, and
+ *     its silence is not a statement that there are none.
+ *
+ * The open findings it may close are the ingest's to read
+ * (`PriorHarnessState.openOrphanCredentials`), because closing is about rows the
+ * report does not mention.
  *
  * ── THE BAR IS REPORT-ONLY ──────────────────────────────────────────────────
  *
@@ -90,8 +114,8 @@ import {
     type HarnessLevel,
     type HarnessReach,
 } from './harness-ladder';
-import type { HarnessReportAgent, HarnessReportBody } from './harness-contract';
-import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
+import type { HarnessReportAgent, HarnessReportBody, HarnessUnboundCredential } from './harness-contract';
+import { HARNESS_CONTRACT_V2, isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
  * The path of the first string member of a verified body whose value is
@@ -135,6 +159,7 @@ export const HARNESS_FINDING_CODES = [
     'HARNESS_SHORTFALL',
     'EMPTY_SCAN',
     'INCOMPLETE_SOURCE',
+    'ORPHAN_CREDENTIAL',
 ] as const;
 export type HarnessFindingCode = (typeof HARNESS_FINDING_CODES)[number];
 
@@ -236,6 +261,13 @@ export interface PriorHarnessState {
     readonly acceptedShortfalls: ReadonlySet<string>;
     /** The intake row each known discovered agent was registered into, by `discoveredId` (#3712). */
     readonly intakeClaims: ReadonlyMap<string, IntakeClaim>;
+    /**
+     * The `sourceRef`s of this scanner's ORPHAN_CREDENTIAL findings that are not
+     * CLOSED (#3754). The planner closes one only on a complete read of its
+     * source that no longer sees it unbound; a ref of another scanner's is
+     * ignored, whoever passed it.
+     */
+    readonly openOrphanCredentials: ReadonlySet<string>;
 }
 
 /**
@@ -330,6 +362,33 @@ export function shortfallFinding(
             + (blocking.length > 0 ? ` Criteria blocking the next rung: ${blocking.join(', ')}.` : '')
             + ' This finding never blocks the agent: it closes when a later scan shows the agent at the '
             + 'bar, or with a time-limited acceptance by the agent’s owner.',
+    };
+}
+
+const ORPHAN_REF_PREFIX = 'ORPHAN_CREDENTIAL:';
+
+/** Every ORPHAN_CREDENTIAL `sourceRef` one scanner can raise starts with this. */
+export function orphanCredentialRefPrefix(scannerAgentId: string): string {
+    return `${ORPHAN_REF_PREFIX}${scannerAgentId}:`;
+}
+
+/** The `sourceRef` of the ORPHAN_CREDENTIAL one scanner's source raised for one reference. */
+export function orphanCredentialRefOf(scannerAgentId: string, sourceKind: string, ref: string): string {
+    return `${orphanCredentialRefPrefix(scannerAgentId)}${sourceKind}:${ref}`;
+}
+
+function orphanCredentialFinding(scanRef: string, scanner: string, u: HarnessUnboundCredential): PlannedFinding {
+    return {
+        code: 'ORPHAN_CREDENTIAL',
+        sourceRef: orphanCredentialRefOf(scanner, u.sourceKind, u.ref),
+        severity: 'MEDIUM',
+        type: 'OBSERVATION',
+        title: `Credential ${u.ref} is bound to no agent`,
+        description:
+            `Harness scan ${scanRef} (scanner ${scanner}) read source ${u.sourceKind} in full and saw credential `
+            + `${u.ref} bound to no discovered agent. A credential no agent uses is one nobody rotates or revokes: `
+            + 'retire it, or bind it to the agent that needs it. This finding closes when a complete read of that '
+            + 'source no longer sees it unbound.',
     };
 }
 
@@ -483,6 +542,28 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             });
         } else {
             resolve.push(ref);
+        }
+    }
+
+    // ORPHAN CREDENTIALS — `/2` only, and only on positive evidence.
+    if (body.contract === HARNESS_CONTRACT_V2) {
+        const readInFull = new Set(body.population.sources.filter((s) => s.status === 'COMPLETE').map((s) => s.kind));
+        const stillUnbound = new Set<string>();
+        for (const u of body.unboundCredentials) {
+            if (!readInFull.has(u.sourceKind)) continue;
+            const finding = orphanCredentialFinding(scanRef, scanner, u);
+            stillUnbound.add(finding.sourceRef);
+            assert.push(finding);
+        }
+        const ownPrefix = orphanCredentialRefPrefix(scanner);
+        for (const open of prior.openOrphanCredentials) {
+            if (!open.startsWith(ownPrefix) || stillUnbound.has(open)) continue;
+            // Source kinds hold no colon, so the kind is the text before the
+            // first one. A ref whose kind this scan did not read in full —
+            // absent, or incomplete — is left as it is.
+            const rest = open.slice(ownPrefix.length);
+            const kind = rest.slice(0, Math.max(rest.indexOf(':'), 0));
+            if (readInFull.has(kind as HarnessUnboundCredential['sourceKind'])) resolve.push(open);
         }
     }
 

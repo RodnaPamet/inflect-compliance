@@ -356,7 +356,7 @@ The specification listed two gaps. Step 2d closed both.
    records the change, and a sentence when every cited change was made by the
    assignee. It never carries a secret, a tool description or schema, a
    parameter value or a prior-state payload. The hashes stand for the text, as
-   they do in the `inflect-agent-harness/1` report
+   they do in the `inflect-agent-harness` report
    (`docs/agent-harness-contract.md`). Titles and descriptions are sanitised at
    the write, and `Finding.description` is encrypted at rest.
 6. **Never silent.** A week whose passports are not emitted raises

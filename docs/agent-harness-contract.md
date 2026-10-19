@@ -1,17 +1,23 @@
-# The `inflect-agent-harness/1` report contract
+# The `inflect-agent-harness` report contract (`/1` and `/2`)
 
 How a harness scanner reports what it found in a client environment. A scanner
 runs inside the client's perimeter, enumerates agent-shaped principals and the
 harness each one runs under, and returns one signed report. This document is
 normative: `MUST`, `MUST NOT`, `SHOULD` and `MAY` carry their RFC 2119 meanings.
 
+Two contract ids are in force. `inflect-agent-harness/1` (#3660) is the first;
+`inflect-agent-harness/2` (#3754) is `/1` plus five additions, and is what a
+scanner built today emits. [The two ids](#the-two-ids) says what `/2` adds and
+how the ingest holds each report to its own id.
+
 `tests/helpers/agent-harness-fake-scanner.ts` is the **reference
 implementation**. Where this prose and that file disagree, the file is the one
 the suite validates against the schemas, so it is the one to copy. The schemas
 and the verifier are `src/lib/agentic/harness-contract.ts`; the ladder that
 scores the verdicts is `src/lib/agentic/harness-ladder.ts`.
-`packages/agent-harness-scanner` is the deployable scanner (#3678). It builds
-its report against those schemas and refuses to sign one they would refuse.
+`packages/agent-harness-scanner` is the deployable scanner (#3678). It emits
+`/2`, builds its report against those schemas and refuses to sign one they
+would refuse.
 Putting a client estate under it, and the labels it reads owners and principals
 from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
 
@@ -24,15 +30,55 @@ from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onbo
   whole is complete is derived from its sources and is never declared.
 - It carries **identifiers and pointers, not content**: no tool description
   text (the manifest hash stands for it), no prompt, no payload.
+- It raises **no finding the receiving side acts on**. Its `findings` member is
+  the scanner's own view. `/2`'s `unboundCredentials[]` is an observation, and
+  the receiving side decides whether it is an `ORPHAN_CREDENTIAL`.
+
+## The two ids
+
+`/2` is `/1` with exactly these additions (owner decisions, 2026-10-19):
+
+| Addition | Where | Why |
+|---|---|---|
+| The source kind `code` | `population.sources[].kind`, `agents[].discoveredVia[]`, `unboundCredentials[].sourceKind` | Agent definitions read from source code and configuration (#3737) |
+| The INCOMPLETE reason `UNPARSEABLE` | `population.sources[].reason` | A source read a definition it could not resolve |
+| The member `unboundCredentials[]` | the body | Credentials a source saw bound to no agent, from which the receiving side derives `ORPHAN_CREDENTIAL` (#3686) |
+| Optional `calls` and `windowDays` on a tool | `agents[].tools[]` | How often the agent called the tool over the scan window (#3738 fills them) |
+| Optional `models[]` | `agents[]` | The model endpoints the agent calls, by reference (#3737, #3738) |
+
+Nothing in `/1` is removed or reinterpreted, and every `/1` bound is unchanged.
+The two optional additions carry counts and references only: no input, no
+output, no prompt — a model entry or a tool with any other member is refused.
+
+**The transition rule.**
+
+- The ingest verifies BOTH ids, through the same four steps in the same order:
+  size, JSON, signature by a trusted key, then the strict schema. Only the last
+  step differs, and the id that picks the schema is itself read only after the
+  signature has verified. A deployed `/1` scanner keeps working.
+- Each id has its OWN strict schema. A `/1` report that carries any `/2`
+  addition — the member, the kind or the reason — MUST be refused (`SCHEMA`),
+  never read as a `/2` report that forgot to say so. A `/2` report MUST carry
+  `unboundCredentials`, empty when it saw none. An id the verifier does not
+  accept is refused as `SCHEMA` without the refusal repeating it.
+- A scanner SHOULD emit `/2`. A `/1` report has no member that speaks about
+  unbound credentials, so it opens no `ORPHAN_CREDENTIAL` and closes none: its
+  silence is not a statement that there are none.
+- The ids the verifier accepts are `HARNESS_CONTRACT_IDS` in
+  `src/lib/agentic/harness-contract-rules.ts`. Retiring `/1` is removing it from
+  that list, a reviewed change made once no deployed scanner sends it.
 
 ## Signing and verification
 
 The report is a JSON object: a body plus a `signature` member.
 
 ```json
-{ "contract": "inflect-agent-harness/1", "scan": {}, "population": {}, "agents": [], "findings": [],
+{ "contract": "inflect-agent-harness/2", "scan": {}, "population": {}, "agents": [], "findings": [],
+  "unboundCredentials": [],
   "signature": { "alg": "ed25519", "signerKey": "<hex or base64 raw public key>", "sig": "<hex or base64>" } }
 ```
+
+A `/1` report is the same without `unboundCredentials`.
 
 - The signed message MUST be SHA-256 over the canonical JSON of the report with
   the `signature` member removed. Canonical JSON sorts object keys recursively,
@@ -52,21 +98,46 @@ refusal.
 
 | Member | Meaning |
 |---|---|
-| `contract` | Exactly `inflect-agent-harness/1`. |
+| `contract` | Exactly `inflect-agent-harness/1` or `inflect-agent-harness/2`. The rest of the body is held to that id's schema. |
 | `scan.id` | The scanner's id for this run, unique per tenant. |
 | `scan.asOf` | ISO 8601 time the scan describes. |
 | `scan.scanner` | The scanner's own `agentId` in the register, its `version`, and the `sha256:` manifest hash of its own tool surface. |
 | `population.sources[]` | One entry per source kind read: `kind`, `status`, `rows`, and `reason` exactly when `status` is `INCOMPLETE`. Each kind appears once. |
 | `agents[]` | One entry per discovered agent, unique by `discoveredId`. |
 | `findings[]` | Coded findings the scanner raises itself. |
+| `unboundCredentials[]` | `/2` only, and required there: credentials a source saw bound to no discovered agent. See [Unbound credentials](#unbound-credentials). |
 
 ### Sources
 
 `kind` is one of `entra-sp`, `okta-app`, `vault`, `mcp`, `runtime`, `cicd`,
-`inflect-register`. An `INCOMPLETE` source MUST name one of `BYTE_CAP`,
-`TIME_BOX`, `AUTH_FAILED`, `UNREACHABLE`, `PAGINATION_TORN`, `RATE_LIMITED`. A
-`COMPLETE` source MUST NOT carry a reason. A scanner MUST NOT drop a source it
-could not read: an unread source is reported `INCOMPLETE`.
+`inflect-register`, and in `/2` also `code`. An `INCOMPLETE` source MUST name
+one of `BYTE_CAP`, `TIME_BOX`, `AUTH_FAILED`, `UNREACHABLE`, `PAGINATION_TORN`,
+`RATE_LIMITED`, and in `/2` also `UNPARSEABLE`. A `COMPLETE` source MUST NOT
+carry a reason. A scanner MUST NOT drop a source it could not read: an unread
+source is reported `INCOMPLETE`.
+
+**The `code` source (`/2`).** Agent definitions a scanner reads from source code
+and configuration, by static parsing only: it MUST NOT import or execute what it
+reads. A location it cannot read is `INCOMPLETE` with the matching reason, and a
+definition it read but could not resolve is `INCOMPLETE` `UNPARSEABLE`; neither
+is left out. How it fills the members every source shares:
+
+- `discoveredId` names where the definition is, e.g. `code:<path>#<name>`.
+- A tool served from no server — one the agent defines in its own code, or a
+  library tool it constructs there — has as its `server` the `code://` locator
+  of that definition or construction: a URL that names where the tool is, which
+  nothing on the receiving side follows. Its `readOnlyHint` is `null` unless
+  the definition declares one: an undeclared hint counts as a write.
+- A tool set the code fetches from an MCP server at run time is one entry per
+  server: `server` is the server's URL (or, for a server the code starts as a
+  local command, the `code://` locator of its configuration) and `name` is
+  `<server key>:*`, every tool that server lists.
+- A credential is a reference to where the value lives (`env://<NAME>` for an
+  environment variable, `code://<path>#L<line>` for a literal written into the
+  code). The value itself is never copied, whatever its shape.
+- A model the definition calls is a `models[]` entry: its endpoint as an https
+  URL, an `env://` reference to where the URL is configured, or, when neither is
+  knowable, the `code://` locator of the model's construction.
 
 ### Agents
 
@@ -77,7 +148,8 @@ could not read: an unread source is reported `INCOMPLETE`.
 | `registeredAgentId` | The register's id when the agent is registered, else `null`. |
 | `owner` | `{ kind: user \| group, id, source }`, or `null` when no owner is recorded anywhere. |
 | `credentials[]` | `ref` (a `scheme://locator` reference), `ageDays`, `expires`, `boundToAgent`, and `grant`: `delegated`, `app-only` or `unknown`. |
-| `tools[]` | `server` (URL), `name`, `manifestHash` (`sha256:` or `null`), `pinned`, and `readOnlyHint` as the server declares it. An undeclared hint counts as a write. |
+| `tools[]` | `server` (URL), `name`, `manifestHash` (`sha256:` or `null`), `pinned`, and `readOnlyHint` as the server declares it. An undeclared hint counts as a write. In `/2` a tool MAY carry `calls`, the number of times the agent called it, with `windowDays`, the days it was counted over (1 to 366): both or neither. |
+| `models[]` | `/2` only, optional. One entry per model endpoint the agent calls: `endpoint`, a `scheme://locator` (`https://api.openai.com/v1`, `env://AZURE_OPENAI_ENDPOINT`, `code://…`) or a bare host, and `model`, the model's id there or `null`. An endpoint MUST NOT carry userinfo or a secret's shape. |
 | `skills[]` | `name`, `license` (or `null`), `declared`. |
 | `verdicts[]` | `criterion` (an id from the harness ladder), `met`, and `evidence`: a pointer to where the scanner saw it, or `null`. |
 
@@ -88,6 +160,27 @@ contract checks credential references, and the ingest refuses a report in which
 any other string member has a secret's shape (`SECRET_IN_REPORT`, under
 Transport). A verdict with `met: true` and no evidence counts as not met.
 
+### Unbound credentials
+
+`/2` only. One entry per credential a source saw bound to no discovered agent:
+
+| Member | Meaning |
+|---|---|
+| `ref` | A `scheme://locator` reference, under the same rules as an agent's credential `ref`: never a value, and never a secret's shape inside one. |
+| `sourceKind` | The source kind that saw it. |
+
+Each is checked against the rest of the report, and a report that contradicts
+itself MUST be refused (`SCHEMA`):
+
+- each (`sourceKind`, `ref`) pair appears once — the same reference seen by two
+  sources is two entries;
+- `sourceKind` is a source the report lists in `population.sources`;
+- `ref` is held by no agent in the same report: "bound to no agent" and "this
+  agent's credential" cannot both be true.
+
+An entry from a source that stopped early is allowed — what was read is real —
+but the receiving side acts only on entries whose source is `COMPLETE`.
+
 ### Findings
 
 `code` is one of `SHADOW_AGENT`, `UNPINNED_WRITE_TOOL`, `ORPHAN_CREDENTIAL`,
@@ -95,7 +188,7 @@ Transport). A verdict with `met: true` and no evidence counts as not met.
 `discoveredId` and `evidence` are pointers or `null`. A scan that discovers no
 agents is not a clean scan; the receiving side treats an empty population as a
 finding in its own right. The receiving side does not act on this member: it
-derives its own findings (see **Transport**).
+derives its own findings (see **Transport**), `ORPHAN_CREDENTIAL` included.
 
 ## Bounds
 
@@ -106,6 +199,9 @@ derives its own findings (see **Transport**).
 | Agents | 5,000 |
 | Credentials, tools, skills per agent | 100, 500, 100 |
 | Findings | 20,000 |
+| Unbound credentials (`/2`) | 10,000 |
+| Model endpoints per agent (`/2`) | 50 |
+| A tool's `calls` (`/2`) | 1,000,000,000 |
 | Identifier or reference | 256 characters |
 | Evidence pointer | 512 characters |
 
@@ -172,10 +268,30 @@ disagreement audited as `AGENT_INTAKE_LINK_CONFLICT` on the intake row. The
 report's own `findings` member is not acted on: the ingest raises its own
 findings, with `sourceKind = 'AGENT_HARNESS'`, from what it derived —
 `SHADOW_AGENT`, `UNPINNED_WRITE_TOOL`, `HARNESS_SHORTFALL`, `LEVEL_DROP`,
-`EMPTY_SCAN` and `INCOMPLETE_SOURCE` — and resolves one only on positive
-evidence. An agent absent from a scan resolves nothing about it.
-`ORPHAN_CREDENTIAL` is not derived from the agents' credentials, so the ingest
-raises none.
+`EMPTY_SCAN`, `INCOMPLETE_SOURCE` and `ORPHAN_CREDENTIAL` — and resolves one
+only on positive evidence. An agent absent from a scan resolves nothing about
+it.
+
+**`ORPHAN_CREDENTIAL` (`/2`).** Derived from `unboundCredentials[]` by the
+planner (`src/lib/agentic/harness-findings.ts`), never from the report's
+`findings`, and keyed by the scanner, the source kind and the reference
+(`ORPHAN_CREDENTIAL:<scanner>:<kind>:<ref>`):
+
+- it OPENS only when the source that saw the credential was read in full;
+- it CLOSES only when the same scanner read the same source in full and no
+  longer saw the credential unbound — two scanners' `vault` sources can be two
+  different vaults, so one scanner's read says nothing about the other's;
+- an absent or `INCOMPLETE` source closes nothing, and neither does a `/1`
+  report.
+
+It is an `OBSERVATION` of `MEDIUM` severity, written through the same seam as
+every harness finding.
+
+**Call counts and model endpoints (`/2`).** A tool's `calls` and `windowDays`
+are stored with the tool on the scan item (`AgentHarnessScanItem.toolsJson`), so
+they round-trip and read back with it. No stored field holds a model endpoint:
+`models[]` is verified with the rest of the report — schema, then the secret
+scan over every string — and is not stored. Neither raises or closes a finding.
 
 **Accepting a shortfall.** A `HARNESS_SHORTFALL` closes when a later scan shows
 the agent at the bar, or when the agent's owner records a time-limited
@@ -186,6 +302,11 @@ report-only throughout: no level or acceptance gates an agent.
 
 ## Versioning
 
-A change that adds, removes or reinterprets a member is a new contract id
-(`inflect-agent-harness/2`). The verifier accepts exactly the id it was built
-for.
+A change that adds, removes or reinterprets a member is a new contract id.
+`inflect-agent-harness/2` is the first such change; the next one is `/3`. The
+verifier accepts exactly the ids in `HARNESS_CONTRACT_IDS`, each against its own
+strict schema, under the [transition rule](#the-two-ids). Stored scans do not
+record the id they arrived under, so a stored source is re-read against every
+kind and reason any accepted id can carry (`SOURCE_KINDS`,
+`INCOMPLETE_REASONS`), and a client estate may declare exactly those kinds: the
+database CHECK on `AgentHarnessEstateSource.kind` lists the same eight.

@@ -1537,12 +1537,18 @@ properties that are each one careless edit from being undone:
   block does not list.
 - **Order lives in one place** and comparison is ordinal (`levelAtLeast`).
 
-**The scanner report contract** (`inflect-agent-harness/1`,
+**The scanner report contract** (`inflect-agent-harness/1` and `/2`,
 `docs/agent-harness-contract.md`, `src/lib/agentic/harness-contract.ts`) is
 verified in one order: size, JSON, signature by a TRUSTED key, then the strict
-schema. The report cannot state a level, cannot carry a credential value, and
-cannot declare completeness; all three are derived or refused.
-`tests/helpers/agent-harness-fake-scanner.ts` is the reference implementation.
+schema OF THE ID THE REPORT NAMES. Both ids are accepted (#3754), each against
+its own schema, so a `/1` report carrying a `/2` member is refused rather than
+read as `/2`; do not collapse them into one lenient schema. The report cannot
+state a level, cannot carry a credential value, and cannot declare
+completeness; all three are derived or refused.
+`tests/helpers/agent-harness-fake-scanner.ts` is the reference implementation,
+and produces both ids. `/2`'s optional per-tool `calls`/`windowDays` are stored
+with the tool in `toolsJson`; its optional `models[]` endpoints are verified and
+NOT stored — no column holds them, so a reader looking for one will not find it.
 
 **The harness ingest** (`usecases/agent-harness-scans.ts`, since #3665) is the
 only writer of `AgentHarnessScan`, `DiscoveredAgent` and `AgentHarnessScanItem`;
@@ -1572,6 +1578,11 @@ rules in it are easy to undo:
   scan resolves nothing about it, and "no unpinned write tool" counts only when
   the `mcp` source was read in full. An empty scan is `EMPTY_SCAN`, not a clean
   bill (invariant 5 of the recertification section, applied here).
+  `ORPHAN_CREDENTIAL` is derived from a `/2` report's `unboundCredentials[]`,
+  keyed by scanner, source kind and reference: it opens only when that source
+  was read in full, and closes only when the SAME scanner reads the SAME source
+  in full and no longer sees it unbound. An absent or incomplete source closes
+  nothing, and a `/1` report — which has no member to say it — closes nothing.
 - **The scanner's findings are written through `FindingRepository`, not
   `createFinding`**, because the principal is a key that holds the ingest
   permission and nothing else. Every write is still sanitised and audited.

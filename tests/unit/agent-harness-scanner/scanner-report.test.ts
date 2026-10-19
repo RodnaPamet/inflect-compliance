@@ -1,6 +1,6 @@
 /**
  * The scanner end to end, over the fixture estate (#3678): config → both
- * sources → a signed `inflect-agent-harness/1` report → the ingest.
+ * sources → a signed `inflect-agent-harness/2` report (#3754) → the ingest.
  *
  *   1. The report verifies with the ingest's own verifier, under the key the
  *      tenant would register, and merges what the two sources saw.
@@ -26,7 +26,13 @@ import {
     SCANNER_OKTA_TOKEN_ID,
     VAULT,
 } from '../../helpers/agent-harness-source-fakes';
-import { isScanComplete, MAX_CREDENTIALS_PER_AGENT, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
+import {
+    HARNESS_CONTRACT_V2,
+    isScanComplete,
+    MAX_CREDENTIALS_PER_AGENT,
+    MAX_UNBOUND_CREDENTIALS,
+    verifyAndParseHarnessReport,
+} from '@/lib/agentic/harness-contract';
 import { parseScannerConfig, type ScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
 import { buildReportBody, rawPublicKeyHex, ReportRefusedLocally, signReport } from '../../../packages/agent-harness-scanner/src/report';
@@ -82,7 +88,10 @@ describe('1. a report the ingest verifies', () => {
         const { raw, body } = await runScan(deps);
 
         const verdict = verifyAndParseHarnessReport(raw, [key.publicKeyHex]);
-        expect(verdict).toMatchObject({ ok: true, complete: true });
+        expect(verdict).toMatchObject({ ok: true, complete: true, body: { contract: HARNESS_CONTRACT_V2 } });
+        // Both sources report every credential against the principal it
+        // belongs to, so neither sees one bound to no principal.
+        expect(body.unboundCredentials).toEqual([]);
         expect(body.scan).toMatchObject({
             asOf: '2026-10-19T03:00:00.000Z',
             scanner: { agentId: 'agt_scanner_acme', manifestHash: scannerManifestHash() },
@@ -256,5 +265,59 @@ describe('5. caps are reported, not absorbed', () => {
             },
         ]);
         expect(body.agents[0].verdicts).toEqual([{ criterion: 'H2.credential_bound', met: false, evidence: 'y' }]);
+    });
+});
+
+describe('6. unbound credentials: what a source saw bound to no principal, and held by none', () => {
+    const identity = { scanId: 's1', asOf: new Date(NOW), scannerAgentId: 'agt' };
+    const credential = (ref: string) => ({ ref, ageDays: 1, expires: true, boundToAgent: true, grant: 'unknown' as const });
+
+    it('lists each once per source, sorted, minus any reference a principal holds — and the report verifies', () => {
+        const body = buildReportBody(identity, [
+            {
+                kind: 'vault',
+                status: 'COMPLETE',
+                rows: 4,
+                observations: [{ discoveredId: 'entra:sp:a', owner: null, credentials: [credential('azure-kv://v/secrets/held')], verdicts: [] }],
+                unboundCredentials: ['azure-kv://v/secrets/zeta', 'azure-kv://v/secrets/alpha', 'azure-kv://v/secrets/alpha'],
+            },
+            {
+                kind: 'okta-app',
+                status: 'COMPLETE',
+                rows: 1,
+                observations: [],
+                // Untagged in one source, an agent's in another: it is that agent's.
+                unboundCredentials: ['azure-kv://v/secrets/held', 'okta://acme.okta.com/apps/0oa/oauth-client'],
+            },
+        ]);
+        expect(body.unboundCredentials).toEqual([
+            { ref: 'okta://acme.okta.com/apps/0oa/oauth-client', sourceKind: 'okta-app' },
+            { ref: 'azure-kv://v/secrets/alpha', sourceKind: 'vault' },
+            { ref: 'azure-kv://v/secrets/zeta', sourceKind: 'vault' },
+        ]);
+        const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+        const raw = signReport(body, { privateKey, publicKey });
+        expect(verifyAndParseHarnessReport(raw, [rawPublicKeyHex(publicKey)])).toMatchObject({ ok: true, complete: true });
+    });
+
+    it('a credential cut from an agent by the per-agent cap is still that agent\'s, never unbound', () => {
+        const many = Array.from({ length: MAX_CREDENTIALS_PER_AGENT + 1 }, (_, i) =>
+            credential(`azure-kv://v/secrets/c${String(i).padStart(3, '0')}`),
+        );
+        const cut = many[many.length - 1].ref;
+        const body = buildReportBody(identity, [
+            { kind: 'vault', status: 'COMPLETE', rows: 101, observations: [{ discoveredId: 'entra:sp:many', owner: null, credentials: many, verdicts: [] }], unboundCredentials: [cut] },
+        ]);
+        expect(body.agents[0].credentials.map((c) => c.ref)).not.toContain(cut);
+        expect(body.unboundCredentials).toEqual([]);
+    });
+
+    it('past the cap the overflow is cut and its source marked BYTE_CAP', () => {
+        const refs = Array.from({ length: MAX_UNBOUND_CREDENTIALS + 1 }, (_, i) => `azure-kv://v/secrets/u${String(i).padStart(5, '0')}`);
+        const body = buildReportBody(identity, [
+            { kind: 'vault', status: 'COMPLETE', rows: refs.length, observations: [], unboundCredentials: refs },
+        ]);
+        expect(body.unboundCredentials).toHaveLength(MAX_UNBOUND_CREDENTIALS);
+        expect(body.population.sources).toEqual([{ kind: 'vault', status: 'INCOMPLETE', reason: 'BYTE_CAP', rows: refs.length }]);
     });
 });

@@ -1,5 +1,5 @@
 /**
- * FROM SOURCE READS TO A SIGNED `inflect-agent-harness/1` REPORT.
+ * FROM SOURCE READS TO A SIGNED `inflect-agent-harness/2` REPORT.
  *
  * The report is built against the contract's own schemas
  * (`src/lib/agentic/harness-contract.ts`) rather than a copy of them, and the
@@ -32,18 +32,27 @@
  *   • The scanner's own `findings` are INCOMPLETE_SOURCE only. The ingest
  *     derives its findings and does not act on this member; the scanner raises
  *     only what it alone knows, which is where it could not read.
+ *   • AN UNBOUND CREDENTIAL IS ONE NO PRINCIPAL HOLDS, across every source.
+ *     `unboundCredentials[]` is what each source saw bound to no principal,
+ *     less any reference some merged principal holds — including one cut by a
+ *     cap, whose source is then INCOMPLETE anyway. A credential the vault sees
+ *     untagged and the identity source sees on an agent is that agent's, and
+ *     the contract refuses a report that says both. The ingest, not the
+ *     scanner, decides it is an ORPHAN_CREDENTIAL.
  */
 import { sign, type KeyObject } from 'crypto';
 
 import {
-    HARNESS_CONTRACT_ID,
-    HarnessReportBodySchema,
+    HARNESS_CONTRACT_V2,
+    HarnessReportBodyV2Schema,
     MAX_AGENTS,
     MAX_CREDENTIALS_PER_AGENT,
-    SOURCE_KINDS,
+    MAX_UNBOUND_CREDENTIALS,
+    SOURCE_KINDS_V2,
     harnessSignedMessage,
     type HarnessReportAgent,
-    type HarnessReportBody,
+    type HarnessReportBodyV2,
+    type HarnessUnboundCredential,
 } from '@/lib/agentic/harness-contract';
 import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type CriterionVerdict } from '@/lib/agentic/harness-ladder';
@@ -59,7 +68,7 @@ export interface ScanIdentity {
     readonly scannerAgentId: string;
 }
 
-const kindOrder = (k: SourceKind) => SOURCE_KINDS.indexOf(k);
+const kindOrder = (k: SourceKind) => SOURCE_KINDS_V2.indexOf(k);
 const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 interface MergedAgent {
@@ -71,7 +80,7 @@ interface MergedAgent {
 }
 
 /** Build the report body. Pure: no clock, no I/O. */
-export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRead[]): HarnessReportBody {
+export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRead[]): HarnessReportBodyV2 {
     const ordered = [...reads].sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind));
     const status = new Map<SourceKind, { status: 'COMPLETE' | 'INCOMPLETE'; reason?: IncompleteReason; rows: number }>(
         ordered.map((r) => [r.kind, { status: r.status, reason: r.reason, rows: r.rows }]),
@@ -118,6 +127,18 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
         };
     });
 
+    // Unbound: seen by a source against no principal, and held by no merged
+    // principal — kept or cut. One entry per (source, reference), in source
+    // then reference order; past the cap, the source that lost entries is
+    // INCOMPLETE BYTE_CAP like any other overflow.
+    const held = new Set(all.flatMap((a) => [...a.credentials.keys()]));
+    const unbound: HarnessUnboundCredential[] = [];
+    for (const read of ordered) {
+        const refs = [...new Set(read.unboundCredentials ?? [])].filter((ref) => !held.has(ref)).sort(byString);
+        for (const ref of refs) unbound.push({ ref, sourceKind: read.kind });
+    }
+    for (const cut of unbound.slice(MAX_UNBOUND_CREDENTIALS)) capped(cut.sourceKind);
+
     const sources = ordered.map((r) => {
         const s = status.get(r.kind)!;
         return s.status === 'COMPLETE'
@@ -126,7 +147,7 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
     });
 
     return {
-        contract: HARNESS_CONTRACT_ID,
+        contract: HARNESS_CONTRACT_V2,
         scan: {
             id: identity.scanId,
             asOf: identity.asOf.toISOString(),
@@ -142,6 +163,7 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
                 severity: 'MEDIUM' as const,
                 evidence: `source:${s.kind}#${'reason' in s ? s.reason : ''}`,
             })),
+        unboundCredentials: unbound.slice(0, MAX_UNBOUND_CREDENTIALS),
     };
 }
 
@@ -168,8 +190,8 @@ export function rawPublicKeyHex(publicKey: KeyObject): string {
  * never signed. A refusal names paths only: a message that quoted a value
  * could quote a secret.
  */
-export function signReport(body: HarnessReportBody, keys: { privateKey: KeyObject; publicKey: KeyObject }): string {
-    const parsed = HarnessReportBodySchema.safeParse(body);
+export function signReport(body: HarnessReportBodyV2, keys: { privateKey: KeyObject; publicKey: KeyObject }): string {
+    const parsed = HarnessReportBodyV2Schema.safeParse(body);
     if (!parsed.success) {
         throw new ReportRefusedLocally(parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.code}`));
     }

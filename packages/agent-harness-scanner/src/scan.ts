@@ -14,7 +14,7 @@
  */
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'crypto';
 
-import type { HarnessReportBody } from '@/lib/agentic/harness-contract';
+import type { HarnessReportBodyV2 } from '@/lib/agentic/harness-contract';
 
 import type { ScannerConfig } from './config';
 import { createSourceWire, type FetchLike } from './http';
@@ -84,7 +84,7 @@ function scanIdFor(estate: string, asOf: Date): string {
 }
 
 /** Read, build and sign. Returns the serialised report and the body it carries. */
-export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBody }> {
+export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV2 }> {
     const { config, env, log } = deps;
     const now = deps.now ?? Date.now;
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));

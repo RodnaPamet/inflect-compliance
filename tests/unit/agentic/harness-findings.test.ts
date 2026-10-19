@@ -6,19 +6,25 @@
  * finding opens on the condition it names; and a scan closes a finding only on
  * positive evidence.
  */
-import { validReportBody, validIncompleteReportBody } from '../../helpers/agent-harness-fake-scanner';
+import {
+    UNBOUND_VAULT_REF,
+    validIncompleteReportBody,
+    validReportBody,
+    validV2ReportBody,
+} from '../../helpers/agent-harness-fake-scanner';
 import {
     firstSecretShapedMember,
     intakeClaimsByDiscoveredId,
     isHarnessShortfall,
     isIntakeClaimLinkable,
+    orphanCredentialRefOf,
     planHarnessScan,
     reachOf,
     shortfallFinding,
     type IntakeClaim,
     type PriorHarnessState,
 } from '@/lib/agentic/harness-findings';
-import type { HarnessReportBody } from '@/lib/agentic/harness-contract';
+import type { HarnessReportBody, HarnessReportBodyV2 } from '@/lib/agentic/harness-contract';
 import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
 
 function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
@@ -27,6 +33,7 @@ function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
         registeredAgentIds: new Set(['agt_registered_1']),
         acceptedShortfalls: new Set<string>(),
         intakeClaims: new Map<string, IntakeClaim>(),
+        openOrphanCredentials: new Set<string>(),
         ...over,
     };
 }
@@ -312,5 +319,103 @@ describe('the shortfall finding is described one way', () => {
         expect(f.sourceRef).toBe('HARNESS_SHORTFALL:entra:sp:x');
         expect(f.title).toBe('Agent entra:sp:x is below the harness bar (H1, bar H3)');
         expect(f.description).toMatch(/never blocks the agent/);
+    });
+});
+
+describe('ORPHAN_CREDENTIAL is derived from unboundCredentials[], on positive evidence only (#3754)', () => {
+    const SCANNER = 'agt_scanner';
+    const VAULT_ORPHAN = orphanCredentialRefOf(SCANNER, 'vault', UNBOUND_VAULT_REF);
+    const orphans = (plan: ReturnType<typeof planHarnessScan>) =>
+        plan.assert.filter((f) => f.code === 'ORPHAN_CREDENTIAL').map((f) => f.sourceRef);
+    const resolvedOrphans = (plan: ReturnType<typeof planHarnessScan>) => plan.resolve.filter((r) => r.startsWith('ORPHAN_CREDENTIAL:'));
+    const withOpen = (...refs: string[]) => prior({ openOrphanCredentials: new Set(refs) });
+    /** The `/2` body with the vault's status replaced, or the vault removed. */
+    const vault = (status: 'COMPLETE' | 'INCOMPLETE' | 'ABSENT', unbound = true): HarnessReportBodyV2 => {
+        const body = validV2ReportBody();
+        if (status === 'ABSENT') {
+            body.population.sources = body.population.sources.filter((s) => s.kind !== 'vault');
+            body.agents.forEach((a) => (a.discoveredVia = a.discoveredVia.filter((k) => k !== 'vault')));
+            body.unboundCredentials = [];
+            return body;
+        }
+        if (status === 'INCOMPLETE') {
+            body.population.sources = body.population.sources.map((s) =>
+                s.kind === 'vault' ? { kind: 'vault', status: 'INCOMPLETE', reason: 'TIME_BOX', rows: 12 } : s,
+            );
+        }
+        if (!unbound) body.unboundCredentials = [];
+        return body;
+    };
+
+    it('opens for a credential its source, read in full, saw bound to no agent — keyed by scanner, source and reference', () => {
+        const plan = planHarnessScan(vault('COMPLETE'), prior());
+        expect(orphans(plan)).toEqual([`ORPHAN_CREDENTIAL:${SCANNER}:vault:${UNBOUND_VAULT_REF}`]);
+        expect(plan.assert.find((f) => f.code === 'ORPHAN_CREDENTIAL')).toMatchObject({
+            severity: 'MEDIUM',
+            type: 'OBSERVATION',
+            title: `Credential ${UNBOUND_VAULT_REF} is bound to no agent`,
+        });
+    });
+
+    it('does not open when the source that saw it stopped early', () => {
+        const plan = planHarnessScan(vault('INCOMPLETE'), prior());
+        expect(orphans(plan)).toEqual([]);
+        // The source's own incompleteness is still a finding.
+        expect(plan.assert.map((f) => f.sourceRef)).toContain(`INCOMPLETE_SOURCE:${SCANNER}:vault`);
+    });
+
+    it('closes only when the same source, read in full, no longer sees it unbound', () => {
+        const fixed = planHarnessScan(vault('COMPLETE', false), withOpen(VAULT_ORPHAN));
+        expect(resolvedOrphans(fixed)).toEqual([VAULT_ORPHAN]);
+        // Still unbound: asserted again, never resolved.
+        const still = planHarnessScan(vault('COMPLETE'), withOpen(VAULT_ORPHAN));
+        expect(orphans(still)).toEqual([VAULT_ORPHAN]);
+        expect(resolvedOrphans(still)).toEqual([]);
+    });
+
+    it('an absent source closes nothing, and neither does an incomplete one', () => {
+        expect(resolvedOrphans(planHarnessScan(vault('ABSENT'), withOpen(VAULT_ORPHAN)))).toEqual([]);
+        expect(resolvedOrphans(planHarnessScan(vault('INCOMPLETE', false), withOpen(VAULT_ORPHAN)))).toEqual([]);
+        // The pair proves the branch: the same scan with the vault read in full closes it.
+        expect(resolvedOrphans(planHarnessScan(vault('COMPLETE', false), withOpen(VAULT_ORPHAN)))).toEqual([VAULT_ORPHAN]);
+    });
+
+    it('a /1 report opens and closes nothing, its vault read in full or not', () => {
+        const v1 = validReportBody();
+        expect(v1.population.sources.find((s) => s.kind === 'vault')?.status).toBe('COMPLETE');
+        const plan = planHarnessScan(v1, withOpen(VAULT_ORPHAN));
+        expect(orphans(plan)).toEqual([]);
+        expect(resolvedOrphans(plan)).toEqual([]);
+    });
+
+    it('the report\'s own ORPHAN_CREDENTIAL finding is not acted on', () => {
+        const body = validReportBody();
+        body.findings = [{ code: 'ORPHAN_CREDENTIAL', discoveredId: null, severity: 'CRITICAL', evidence: 'kv://prod/agents/x' }];
+        expect(orphans(planHarnessScan(body, prior()))).toEqual([]);
+        const v2 = vault('COMPLETE', false);
+        v2.findings = body.findings;
+        expect(orphans(planHarnessScan(v2, prior()))).toEqual([]);
+    });
+
+    it('another scanner\'s open finding is never this scanner\'s to close, even for the same source and reference', () => {
+        const theirs = orphanCredentialRefOf('agt_other_scanner', 'vault', UNBOUND_VAULT_REF);
+        expect(resolvedOrphans(planHarnessScan(vault('COMPLETE', false), withOpen(theirs)))).toEqual([]);
+    });
+
+    it('one source read in full closes only its own kind\'s findings', () => {
+        const codeOrphan = orphanCredentialRefOf(SCANNER, 'code', 'env://OPENAI_API_KEY');
+        // The code source is INCOMPLETE (UNPARSEABLE) in the /2 fixture.
+        const plan = planHarnessScan(vault('COMPLETE', false), withOpen(VAULT_ORPHAN, codeOrphan));
+        expect(resolvedOrphans(plan)).toEqual([VAULT_ORPHAN]);
+    });
+
+    it('a reference that holds colons is keyed and closed whole', () => {
+        const ref = 'azure-kv://acme.vault.azure.net/secrets/a:b:c';
+        const body = vault('COMPLETE', false);
+        body.unboundCredentials = [{ ref, sourceKind: 'vault' }];
+        expect(orphans(planHarnessScan(body, prior()))).toEqual([orphanCredentialRefOf(SCANNER, 'vault', ref)]);
+        expect(resolvedOrphans(planHarnessScan(vault('COMPLETE', false), withOpen(orphanCredentialRefOf(SCANNER, 'vault', ref))))).toEqual([
+            orphanCredentialRefOf(SCANNER, 'vault', ref),
+        ]);
     });
 });
