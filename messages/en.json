@@ -4436,6 +4436,8 @@
       "clickToChangeRole": "Click to change role",
       "ownerOnlyRoleChange": "Only an owner can change the {role} role",
       "builtInScopeNoCustomRole": "{role} cannot carry a custom role. Remove this member's custom role and save, then change the role.",
+      "legacyCustomRoleOnBuiltInScope": "{role} cannot carry a custom role. This one predates that rule: remove it to restore the built-in {role} scope.",
+      "removeCustomRole": "Remove custom role",
       "customRoleTitle": "Custom role",
       "save": "Save",
       "colMember": "Member",

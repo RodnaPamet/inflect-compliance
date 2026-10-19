@@ -168,14 +168,14 @@ describe('access-review.schemas', () => {
             expect(r.success).toBe(true);
         });
 
-        it('accepts MODIFY with a modifiedToCustomRoleId', () => {
+        it('refuses MODIFY with a modifiedToCustomRoleId — a campaign sets a built-in role only (#3727)', () => {
             expect(
                 SubmitDecisionSchema.safeParse({
                     decision: 'MODIFY',
                     modifiedToRole: 'ADMIN',
                     modifiedToCustomRoleId: 'crole-1',
                 }).success,
-            ).toBe(true);
+            ).toBe(false);
         });
 
         it('accepts null modifiedToCustomRoleId', () => {

@@ -474,13 +474,17 @@ export class AccessReviewRepository {
                 /// Joined live membership state. SetNull cascade means
                 /// this can be `null` if the user has been offboarded
                 /// outside the campaign — the executor skips with a
-                /// "stale subject" audit annotation.
+                /// "stale subject" audit annotation. `customRoleId` is
+                /// read so a MODIFY into a role that carries no custom
+                /// role (OWNER, AI_ADMIN) is refused at close while the
+                /// member still carries one (#3720).
                 membership: {
                     select: {
                         id: true,
                         userId: true,
                         role: true,
                         status: true,
+                        customRoleId: true,
                     },
                 },
                 subjectUser: {

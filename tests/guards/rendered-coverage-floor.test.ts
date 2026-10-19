@@ -336,7 +336,9 @@ const ROOT = path.resolve(__dirname, '../..');
 // guard's own counter on this branch rebased onto main. Each PR that added
 // them stayed inside the slack of 8 alone; together they did not, which is how
 // a merge group found it.
-const RENDERED_TEST_FLOOR = 367;
+//   368 (#3720/#3727): + members-owner-custom-role.test.tsx, measured by this
+// guard's own counter on this branch rebased onto main (3.240.0).
+const RENDERED_TEST_FLOOR = 368;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

@@ -27,6 +27,7 @@ import { ValidationError, NotFoundError, ConflictError } from '@/lib/errors/type
 import { getBillingMode } from '@/lib/billing/entitlements';
 import { recordTenantCreated } from '@/lib/observability/business-metrics';
 import { assertProvisionedRegion } from '@/lib/regions';
+import { BUILT_IN_SCOPE_REFUSAL, builtInScopeRoleMessage, mayCarryCustomRole } from '@/lib/roles';
 import type { PrismaClient, TenantRegion } from '@prisma/client';
 
 // ─── createTenantWithOwner ──────────────────────────────────────────
@@ -228,6 +229,13 @@ export interface TransferTenantOwnershipResult {
  * The two-step sequence — promote new OWNER, then demote old OWNER —
  * satisfies the `tenant_membership_last_owner_guard` trigger because
  * the second OWNER exists before the first is removed.
+ *
+ * An OWNER never carries a custom role (#3720), so a new owner who carries
+ * one is refused before anything is written — 409,
+ * `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE` — and the custom role is
+ * removed on the members page first. Never cleared here on the caller's
+ * behalf. The outgoing owner becomes an ADMIN, which may carry one, so a
+ * legacy custom role on THAT membership does not block the transfer.
  */
 export async function transferTenantOwnership(
     input: TransferTenantOwnershipInput,
@@ -267,13 +275,18 @@ export async function transferTenantOwnership(
             userId: newOwnerUser.id,
             status: 'ACTIVE',
         },
-        select: { id: true, role: true },
+        select: { id: true, role: true, customRoleId: true },
     });
     if (!newMembership) {
         throw new ValidationError(
             'New owner must already be an active tenant member. ' +
             'Use the invite flow to add them first, then transfer ownership.',
         );
+    }
+    if (newMembership.customRoleId && !mayCarryCustomRole('OWNER')) {
+        throw new ConflictError(builtInScopeRoleMessage('OWNER', 'promote'), {
+            reason: BUILT_IN_SCOPE_REFUSAL,
+        });
     }
 
     if (newOwnerUser.id === input.currentOwnerUserId) {

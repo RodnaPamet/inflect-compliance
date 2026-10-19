@@ -210,6 +210,29 @@ describe('AccessReviewDetailClient', () => {
         expect(screen.getByTestId('decision-modal-modified-to-role')).toBeTruthy();
     });
 
+    it('the MODIFY target picker offers built-in roles only — never OWNER (#3727), never a custom role', () => {
+        render(
+            withClient(
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview()}
+                    currentUserId="usr_reviewer"
+                    isAdmin={false}
+                />,
+            ),
+        );
+        fireEvent.change(screen.getByTestId('decision-select-dec_1'), {
+            target: { value: 'MODIFY' },
+        });
+        const picker = screen.getByTestId('decision-modal-modified-to-role');
+        const offered = Array.from(picker.querySelectorAll('option')).map((o) => o.value).sort();
+        // The subject's own role (EDITOR) is left out, as before; every other
+        // role a campaign may set is offered — so an empty picker fails here.
+        expect(offered).toEqual(['ADMIN', 'AUDITOR', 'READER']);
+        // One control only: no custom-role picker beside it.
+        expect(screen.queryAllByRole('combobox').filter((el) => /custom/i.test(el.id))).toEqual([]);
+    });
+
     it('Close campaign button only renders for admins and is disabled while decisions are pending', () => {
         // Non-admin reviewer — no close button at all.
         const r1 = render(

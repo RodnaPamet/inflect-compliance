@@ -6,9 +6,13 @@
  * Body: discriminated union on `decision`
  *   { decision: 'CONFIRM', notes?: string }
  *   { decision: 'REVOKE',  notes?: string }
- *   { decision: 'MODIFY',  modifiedToRole: Role,
- *                          modifiedToCustomRoleId?: string,
+ *   { decision: 'MODIFY',  modifiedToRole: Role,   (never OWNER — #3727)
  *                          notes?: string }
+ *
+ * A MODIFY to OWNER, or one carrying `modifiedToCustomRoleId`, is refused by
+ * name (`CAMPAIGN_NEVER_PROMOTES_TO_OWNER`, `CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`)
+ * and the refusal writes an `ACCESS_REVIEW_DECISION_REFUSED` audit row —
+ * `recordDecisionSubmissionRefusal`, which rethrows the 400 unchanged.
  *
  * The reviewer-vs-admin gate, the CHECK-pair shape, and the
  * OPEN→IN_REVIEW transition all live in the usecase.
@@ -28,7 +32,7 @@
  * third argument `requirePermission` uses for `ctx`.
  */
 import { NextRequest } from 'next/server';
-import { submitDecision } from '@/app-layer/usecases/access-review';
+import { recordDecisionSubmissionRefusal, submitDecision } from '@/app-layer/usecases/access-review';
 import { SubmitDecisionSchema } from '@/app-layer/schemas/access-review.schemas';
 import { parseJsonBody } from '@/lib/validation/route';
 import { requirePermission } from '@/lib/security/permission-middleware';
@@ -41,7 +45,9 @@ export const PUT = withApiErrorHandling(
         reviewId: string;
         decisionId: string;
     }>('access_reviews.decide', async (req: NextRequest, { params }, ctx) => {
-        const body = await parseJsonBody(req, SubmitDecisionSchema);
+        const body = await parseJsonBody(req, SubmitDecisionSchema).catch((err: unknown) =>
+            recordDecisionSubmissionRefusal(ctx, params.decisionId, err),
+        );
         const result = await submitDecision(ctx, params.decisionId, body);
         return jsonResponse(result);
     }),

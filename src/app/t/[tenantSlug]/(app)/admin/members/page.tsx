@@ -23,7 +23,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
-import { mayCarryCustomRole } from '@/lib/roles';
+import { isOwnerManagedRole, mayCarryCustomRole } from '@/lib/roles';
 import {
     Users, UserPlus, ChevronDown, Shield, XCircle,
     MoreVertical, UserMinus, Mail, Monitor, Trash2,
@@ -315,6 +315,37 @@ export default function MembersAdminPage() {
         }
     }
 
+    /**
+     * Clear the custom role of a member whose role carries none (OWNER, AI_ADMIN
+     * — #3720, #3699). No writer can create that combination any more, so this
+     * only ever repairs a legacy row; for an OWNER it needs `admin.owner_management`,
+     * and only a viewer holding it can open that row's editor.
+     */
+    async function handleClearCustomRole(membershipId: string) {
+        setError(null);
+        setSuccess(null);
+        setChangingRole(true);
+        try {
+            const res = await fetch(apiUrl(`/admin/members/${membershipId}`), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customRoleId: null }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: t('members.roleChangeFailed') }));
+                setError(apiErrorMessage(err, t('members.roleChangeFailed')));
+                return;
+            }
+            setSuccess(t('members.roleUpdated'));
+            setEditingRoleId(null);
+            await fetchMembers();
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setChangingRole(false);
+        }
+    }
+
     async function handleRoleChange(membershipId: string) {
         setError(null);
         setSuccess(null);
@@ -602,11 +633,16 @@ export default function MembersAdminPage() {
                 accessorKey: 'role',
                 cell: ({ row }) => {
                     const m = row.original;
-                    // An AI_ADMIN carries no custom role (#3699): its scope is
-                    // always the built-in one. A member who has one is not
-                    // promoted until it is removed and saved on its own.
+                    // An OWNER or an AI_ADMIN carries no custom role (#3720,
+                    // #3699): its scope is always the built-in one. A member who
+                    // has one is not promoted until it is removed and saved on
+                    // its own.
                     const builtInScopeOnly = !mayCarryCustomRole(pendingRole);
                     const customRoleBlocksPromotion = builtInScopeOnly && Boolean(m.customRoleId);
+                    // A row that ALREADY holds such a role with a custom role
+                    // predates the rule. The only change it takes is the clear.
+                    const legacyCustomRole =
+                        !mayCarryCustomRole(m.role) && Boolean(m.customRoleId) && pendingRole === m.role;
                     if (editingRoleId === m.id) {
                         return (
                             <div className="space-y-1">
@@ -642,10 +678,26 @@ export default function MembersAdminPage() {
                                         icon={<XCircle className="w-3.5 h-3.5" />}
                                     />
                                 </div>
-                                {customRoleBlocksPromotion && (
+                                {customRoleBlocksPromotion && !legacyCustomRole && (
                                     <p id={`role-custom-role-conflict-${m.id}`} className="text-xs text-content-warning">
                                         {t('members.builtInScopeNoCustomRole', { role: roleLabel(pendingRole) })}
                                     </p>
+                                )}
+                                {legacyCustomRole && (
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                        <p id={`role-legacy-custom-role-${m.id}`} className="text-xs text-content-warning">
+                                            {t('members.legacyCustomRoleOnBuiltInScope', { role: roleLabel(m.role) })}
+                                        </p>
+                                        <Button
+                                            variant="secondary"
+                                            size="xs"
+                                            onClick={() => handleClearCustomRole(m.id)}
+                                            disabled={changingRole}
+                                            id={`role-remove-custom-role-${m.id}`}
+                                        >
+                                            {t('members.removeCustomRole')}
+                                        </Button>
+                                    </div>
                                 )}
                                 {customRoles.length > 0 && !builtInScopeOnly && (
                                     <Combobox
@@ -662,12 +714,11 @@ export default function MembersAdminPage() {
                             </div>
                         );
                     }
-                    // Only an OWNER moves a member out of AI_ADMIN (#3699), and
-                    // such a membership takes no custom role, so for anyone else
-                    // there is nothing to edit on the row.
-                    const editable =
-                        m.status === 'ACTIVE' &&
-                        (canManageOwnerRoles || !OWNER_ONLY_ROLE_CHANGE_ROLES.some((r) => r === m.role));
+                    // Only an OWNER changes an OWNER's or an AI_ADMIN's role
+                    // (`OWNER_MANAGED_ROLES`), and neither membership takes a
+                    // custom role (#3720, #3699), so for anyone else there is
+                    // nothing to edit on the row.
+                    const editable = m.status === 'ACTIVE' && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
                     return (
                         <div className="flex items-center gap-1 flex-wrap">
                             <Tooltip

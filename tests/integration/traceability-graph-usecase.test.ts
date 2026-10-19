@@ -20,6 +20,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 import { getTraceabilityGraph } from '@/app-layer/usecases/traceability-graph';
@@ -75,6 +76,10 @@ describeFn('getTraceabilityGraph (real DB)', () => {
         await prisma.control.deleteMany({ where: { tenantId: TENANT } });
         await prisma.risk.deleteMany({ where: { tenantId: TENANT } });
         await prisma.asset.deleteMany({ where: { tenantId: TENANT } });
+        // The usecase's DEK backfill writes audit rows for TENANT, and `AuditLog`
+        // holds a foreign key to the tenant: clear them first, or the delete
+        // fails whenever a sibling suite left their actor `User` behind.
+        await deleteAuditRowsForTenants(prisma, [TENANT]);
         await prisma.tenant.deleteMany({ where: { id: TENANT } });
         await prisma.$disconnect();
     });

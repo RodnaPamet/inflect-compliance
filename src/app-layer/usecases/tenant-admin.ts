@@ -179,6 +179,11 @@ export async function inviteTenantMember(
  * needs `admin.owner_management` (`OWNER_MANAGED_ROLES` — an ADMIN can neither
  * assign nor remove it), and a member carrying a custom role is not moved into
  * it (`mayCarryCustomRole` — refused, never cleared on the caller's behalf).
+ *
+ * The custom-role rule covers OWNER too since #3720: a member carrying a
+ * custom role is not promoted to OWNER until it is removed (409,
+ * `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`). An ADMIN never reaches that
+ * check — promoting to OWNER is refused to them first.
  */
 export async function updateTenantMemberRole(
     ctx: RequestContext,
@@ -229,8 +234,10 @@ export async function updateTenantMemberRole(
             throw forbidden(ownerManagedRoleMessage(membership.role));
         }
 
-        // A role whose scope is always the built-in one never sits under a
-        // custom role, which would replace it at resolution.
+        // A role whose scope is always the built-in one (OWNER, AI_ADMIN) never
+        // sits under a custom role, which would replace it at resolution. This
+        // also refuses a no-op OWNER → OWNER on a legacy row that carries one:
+        // the database CHECK would refuse that write anyway, without a reason.
         if (membership.customRoleId && !mayCarryCustomRole(input.role)) {
             throw new ConflictError(builtInScopeRoleMessage(input.role, 'promote'), {
                 reason: BUILT_IN_SCOPE_REFUSAL,
