@@ -108,7 +108,8 @@ export function observationOf(agent: DetectedAgent): Observation {
             boundToAgent: false,
             grant: 'unknown' as const,
         })),
-        tools: agent.tools.map((t) => ({ server: t.server, name: t.name, manifestHash: null, pinned: false, readOnlyHint: null })),
+        // A definition binds tools; it counts no calls, so none is given.
+        tools: agent.tools.map((t) => ({ tool: { server: t.server, name: t.name, manifestHash: null, pinned: false, readOnlyHint: null } })),
         models: agent.models.map((m) => ({ endpoint: m.endpoint ?? codeLocator(m.at), model: m.model })),
         verdicts: [],
     };

@@ -1,9 +1,10 @@
 # Onboarding a client estate to the harness scanner
 
 How a tenant puts one client estate under the reference harness scanner,
-`packages/agent-harness-scanner` (#3678): what to register in Inflect, what to
-prepare in the estate, how to label the estate's principals so the scanner can
-attribute them, and how the estate's schedule health is judged. The report the
+`packages/agent-harness-scanner` (#3678; its LangSmith source is #3738): what to
+register in Inflect, what to prepare in the estate, how to label the estate's
+principals so the scanner can attribute them, and how the estate's schedule
+health is judged. The report the
 scanner sends is specified in [`docs/agent-harness-contract.md`](agent-harness-contract.md);
 the scanner's own reference is `packages/agent-harness-scanner/README.md`.
 
@@ -35,11 +36,39 @@ scanner signed it, so each estate has a scanner of its own.
 |---|---|---|
 | `okta-app` | An SSWS API token for a read-only administrator | `*.okta.com`, `*.oktapreview.com` |
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
+| `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
 | `code` (LangChain and LangGraph) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
 credential is supplied through an environment variable that the configuration
 names; none is ever written in the configuration file.
+
+**LangSmith.** Name the workspace to read with `workspaceId` (sent as
+`X-Tenant-Id`) unless the key is scoped to one workspace. The scanner sends
+LangSmith GET requests only, and the Viewer role is what keeps the key read-only
+on LangSmith's side; where the workspace cannot assign a key that role, the key
+carries the rights of whoever issued it and only the scanner's GET-only wire
+keeps the read read-only.
+
+- **Deployments are opt-in.** By default the scanner reads tracing projects only.
+  LangSmith's deployments listing carries each deployment's secrets, names and
+  values, so the scanner requests it only for an estate whose configuration sets
+  `"readDeployments": true`. It then keeps each deployment's id and tracing
+  project, and drops the rest with the page. Leave it off for a self-hosted
+  LangSmith that runs no deployment control plane.
+- **A self-hosted LangSmith** is configured by its origin (`"endpoint":
+  { "selfHosted": "https://…" }`) and must be a bare https origin. The scanner
+  checks it when the file is read, resolves it again before every request, and
+  does not send the key to a private, loopback, link-local or metadata address.
+- **A self-hosted LangSmith on the estate's own network** lists the private
+  ranges its host may resolve into, beside its origin:
+  `"egressPrivateCidrAllowlist": ["10.20.0.0/16"]`. This mirrors the
+  application's self-hosted egress allowlist (`EGRESS_PRIVATE_CIDR_ALLOWLIST`).
+  Metadata, loopback and link-local (`169.254.0.0/16`, `127.0.0.0/8`,
+  `0.0.0.0/8`, `fe80::/10`, `::1`, `::`) stay refused even when listed. Every
+  resolved address is still checked before every request, so a name that
+  resolves outside the listed ranges sends nothing. With an allowlist, an
+  internal name such as `langsmith.corp.internal` is accepted.
 
 The `code` source reads the repositories that define the estate's LangChain and
 LangGraph agents. Mount each one read-only into the scanner's container and name
@@ -87,6 +116,20 @@ it, so the credential lands on the same agent:
 | An Okta service app | `okta:app:<appId>` |
 | An Okta API token | `okta:api-token:<tokenId>` |
 | An Entra service principal | `entra:sp:<objectId>` |
+| A LangSmith deployment | `langsmith:deployment:<deploymentId>` |
+| A LangSmith tracing project | `langsmith:project:<projectId>` |
+
+**LangSmith reads no label.** Its agents are identified by LangSmith's own ids,
+and LangSmith records no owner for a project or a deployment, so each is reported
+unowned. A tracing project is reported when it recorded a tool call in the
+window (`windowDays`, 7 by default, at most 30); one that only called a model is
+counted and reported as nothing. With `readDeployments`, every deployment is
+reported as well, and its tracing project is reported as the deployment rather
+than as a project of its own. Each agent's tools are the tool names its project's calls carry,
+summarised over the window, and nothing of any run is read. LangSmith records no
+tool definition, pin or read-only hint, and the contract counts an undeclared
+hint as a write, so every LangSmith agent that called a tool raises
+`UNPINNED_WRITE_TOOL` at the ingest.
 
 What the scanner deliberately does not take from these labels:
 
@@ -114,6 +157,21 @@ Inflect. Check the report with `scan --dry-run` first, then run `schedule`,
 which scans at once and then every `everyHours`, anchored to each run's start,
 and carries on after a failed run.
 
+**Before the first estate scans a real LangSmith workspace** (owner decision,
+2026-10-19), run one `scan --dry-run` against it and read the `runtime` entry
+of `population.sources`. The paths and query parameters the source uses are in
+LangSmith's published OpenAPI documents, but the members of one run facet
+(`key`, `value`, `n`) are not, and neither is whether the tool-run filter
+applies to the facets. The source fails closed on both, so the outcome answers
+the question:
+
+- **`COMPLETE`** with the agents and tool names the workspace is known to have:
+  the assumption holds, and the estate may be scheduled.
+- **`INCOMPLETE` `PAGINATION_TORN`** while the API answered (no `AUTH_FAILED`,
+  `UNREACHABLE` or `RATE_LIMITED`): the response did not read as assumed. Do not
+  schedule the estate. The shape is corrected in one place,
+  `packages/agent-harness-scanner/src/sources/langsmith.ts`.
+
 ## 5. Schedule health
 
 The harness tab on `/agents/reports` shows each estate's last complete scan, and
@@ -130,3 +188,8 @@ the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
 from something it cannot resolve statically — a tool list returned by a
 function, a model passed in as a parameter, `**kwargs`. The agent is still
 reported with what did resolve, and the source line names the reason.
+
+A LangSmith source's rows are the deployments and projects it listed, so a
+workspace whose window held no tool call and no deployment is read in full with
+rows and reports no agent. A scan that found no agent at all raises
+`EMPTY_SCAN` and never counts as the estate's complete scan.

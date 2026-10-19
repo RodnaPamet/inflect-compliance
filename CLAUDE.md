@@ -1638,9 +1638,9 @@ through their own routes. Rules that are easy to undo:
   and the level never decides the status: the ladder is report-only.
 
 **The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
-client's estate and posts what the ingest above verifies. Okta, Azure Key Vault
-and the `code` source (LangChain and LangGraph, #3737) today; Entra, MCP, the
-register and the container are #3686.
+client's estate and posts what the ingest above verifies. Okta, Azure Key Vault,
+LangSmith (the `runtime` source, #3738) and the `code` source (LangChain and
+LangGraph, #3737) today; Entra, MCP, the register and the container are #3686.
 
 - **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
   verb is GET — do not give `getJson` a method parameter. The OAuth token

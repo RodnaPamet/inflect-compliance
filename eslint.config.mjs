@@ -47,9 +47,9 @@ const PLATFORM_SYNTAX_BANS = [
 // would otherwise replace it.
 const HARNESS_SCANNER_IMPORT_PATTERNS = [
     {
-        regex: '^@/(?!lib/agentic/harness-(contract|findings|ladder)$|lib/canonical-json$)',
+        regex: '^@/(?!lib/agentic/harness-(contract|findings|ladder)$|lib/canonical-json$|lib/security/cidr$)',
         message:
-            'The harness scanner imports the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json) and nothing else of the application. See packages/agent-harness-scanner/README.md.',
+            'The harness scanner imports the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json) and the pure CIDR parser (lib/security/cidr), and nothing else of the application. See packages/agent-harness-scanner/README.md.',
     },
     {
         group: ['@prisma/*', 'next', 'next/*', '@inflect/ui', '@inflect/ui/*'],
@@ -298,7 +298,10 @@ const config = [
         // through the function the ingest verifies with — and nothing else of
         // the application: no database, no tenant, no Next.js, no usecase. A
         // scanner that could import `@/lib/prisma` is one refactor from a
-        // scanner that writes somewhere it should only read.
+        // scanner that writes somewhere it should only read. One exception,
+        // `@/lib/security/cidr` (#3738): the strict CIDR parser, pure and
+        // import-free, so the scanner's private-range allowlist parses ranges
+        // exactly as the application's egress allowlist does, not by a copy.
         //
         // A regex rather than a `group` with negations: gitignore semantics
         // cannot re-include a file under an excluded parent, so `@/*` with

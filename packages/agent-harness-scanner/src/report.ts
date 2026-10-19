@@ -17,17 +17,19 @@
  *   • AGENTS MERGE BY `discoveredId`. A principal seen by two sources is one
  *     agent `discoveredVia` both, with both sources' credentials, tools (once
  *     per server and name) and model endpoints (once per endpoint and model).
- *     The owner is
- *     the first one found in source order — the identity source before the
- *     vault — and a disagreement is not resolved by inventing a third answer.
+ *     The owner is the first one found in source order — the identity source
+ *     before the vault — and a disagreement is not resolved by inventing a
+ *     third answer. A tool's call count stays with the source for now: `/2`
+ *     has a member for it (`calls`, with `windowDays`), and filling it is a
+ *     follow-up of #3738's.
  *   • VERDICTS COLLAPSE TO THE LEAST FAVOURABLE per criterion, the ladder's
  *     own rule (`collapseVerdicts`), so the report never says more than the
  *     most cautious source did.
  *   • CAPS ARE REPORTED, NOT ABSORBED. When the merged population or one
- *     agent's credentials exceed what a report may carry, the overflow is cut
- *     deterministically and every source that contributed to what was cut is
- *     marked INCOMPLETE `BYTE_CAP`. A report that silently held the first 5,000
- *     agents would describe a slice as the estate.
+ *     agent's credentials or tools exceed what a report may carry, the overflow
+ *     is cut deterministically and every source that contributed to what was
+ *     cut is marked INCOMPLETE `BYTE_CAP`. A report that silently held the
+ *     first 5,000 agents would describe a slice as the estate.
  *   • `registeredAgentId` IS ALWAYS NULL from these sources. Linking a
  *     principal to the register is the register source's job, never a label in
  *     the estate (see `source.ts`).
@@ -114,7 +116,7 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
             agent.via.add(read.kind);
             if (agent.owner === null && o.owner !== null) agent.owner = o.owner;
             for (const c of o.credentials) if (!agent.credentials.has(c.ref)) agent.credentials.set(c.ref, { credential: c, via: read.kind });
-            for (const t of o.tools ?? []) if (!agent.tools.has(toolKey(t))) agent.tools.set(toolKey(t), { tool: t, via: read.kind });
+            for (const { tool } of o.tools ?? []) if (!agent.tools.has(toolKey(tool))) agent.tools.set(toolKey(tool), { tool, via: read.kind });
             for (const m of o.models ?? []) if (!agent.models.has(modelKey(m))) agent.models.set(modelKey(m), { model: m, via: read.kind });
             agent.verdicts.push(...o.verdicts);
             merged.set(o.discoveredId, agent);

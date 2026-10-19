@@ -17,10 +17,66 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 |---|---|---|---|
 | `okta-app` | Okta | Service apps (OAuth clients with `application_type: service`) and API tokens, with their owners: an app's `profile.owner`, a token's `userId`. Every token is reported except the scanner's own, identified by id from `/api-tokens/current` | `GET /api/v1/apps`, `GET /api/v1/api-tokens/current`, `GET /api/v1/api-tokens` |
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
+| `runtime` | LangSmith | Tracing projects that called a tool in a bounded window, and deployments when the estate opts in, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /api/v1/sessions`; with `readDeployments`, `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted) |
 | `code` | LangChain and LangGraph (#3737) | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference | None. Local reads only (`lstat`, `readdir`, `readFile`) |
 
-Azure Key Vault is the only vault adapter. The `vault` kind and the `product`
-field keep the interface generic for the next one.
+Azure Key Vault is the only vault adapter and LangSmith the only runtime
+adapter. The `vault` and `runtime` kinds and the `product` field keep the
+interface generic for the next one.
+
+### LangSmith
+
+Two kinds of agent, each identified by LangSmith's own id:
+
+| Agent | Id | Reported when |
+|---|---|---|
+| A tracing project | `langsmith:project:<id>` | it recorded at least one tool call in the window, and no listed deployment writes to it |
+| A deployment (LangSmith Deployment) | `langsmith:deployment:<id>` | the estate opted in with `"readDeployments": true`; then always, since a deployment is an agent server by existence |
+
+A project that only called a model is counted in `rows` and reported as nothing,
+and an evaluation experiment is not listed. A deployment's tools are those its
+tracing project recorded.
+
+**Deployments are opt-in** (owner decision, 2026-10-19). LangSmith's
+deployments listing carries each deployment's `secrets`, name and value, so by
+default the scanner never requests it and reads projects only. An estate that
+wants its deployments listed sets `"readDeployments": true`, and the scanner
+then receives that listing, keeps each deployment's id and tracing project, and
+drops the rest with the page.
+
+**Tool usage is an aggregate.** The projects listing is asked for its stats over
+the window (`windowDays`, 7 by default, at most 30), filtered to tool runs: the
+count of tool calls, and the run facets that split it by tool name. Each tool is
+reported with `server` set to the project its calls were traced in
+(`langsmith://<host>/projects/<id>`), `manifestHash: null`, `pinned: false` and
+`readOnlyHint: null`, because LangSmith records no definition, pin or hint. The
+contract counts an undeclared hint as a write, so the ingest raises
+`UNPINNED_WRITE_TOOL` for every agent that called a tool. The call counts are not
+in the report: `inflect-agent-harness/2` has a member for them (`calls`, with
+`windowDays`), which a follow-up of #3738 fills, and until then the log line
+reports their total (`toolCalls`). A tool name that is not a plain identifier, such as a run name set
+at call time, is reported as a digest (`tool-sha256:<16 hex>`).
+
+**Completeness is proven.** The facets must account for every call the count
+records, or the read is `PAGINATION_TORN`: a facet list cut short is never
+reported as the whole. So is a page cut short, absent stats, and a project listed
+twice across offsets. A rejected or expired key is `AUTH_FAILED`, a host that
+cannot be reached `UNREACHABLE`, and a refusal from LangSmith's rate limiter
+`RATE_LIMITED`. A window with no tool call and no deployment reports no agent,
+and the ingest raises `EMPTY_SCAN` for a scan that found none.
+
+**What is never kept.** Both listings return more than the source reads: a
+deployment's `secrets` and source configuration, a project's description and
+metadata, and facets over run tags and metadata. Only ids, a deployment's
+tracing project, and a project's tool-call count and tool-name facets are read.
+
+The endpoint paths are one table, `LANGSMITH_READ_PATHS` in
+`src/sources/langsmith.ts`. The paths and query parameters are in LangSmith's
+published OpenAPI documents. The members of one run facet (`key`, `value`, `n`)
+are not documented there, and a facet that does not read as a count stops the
+read rather than being skipped. Before the first estate scans a real workspace,
+one dry run confirms the outcome
+([onboarding, section 4](../../docs/agent-harness-scanner-onboarding.md#4-the-scanner-configuration-and-its-schedule)).
 
 ### The `code` source
 
@@ -85,6 +141,14 @@ What the sources never do:
 - **Read a secret's value.** Neither `GET /api/v1/apps/{id}/credentials/secrets`
   (Okta returns client secrets there) nor `GET {vault}/secrets/{name}` is
   called. Credentials are reported by reference (`okta://…`, `azure-kv://…`).
+  One listing the scanner can call carries values it never reads: LangSmith's
+  deployments listing documents each deployment's `secrets`, name and value. It
+  is requested only when the estate opts in (`readDeployments`); the source then
+  reads a deployment's id and tracing project and nothing else, and the tests
+  hold a marker in that member out of the report and the log.
+- **Read a run.** No LangSmith run, trace or run content is fetched: not
+  `GET /api/v1/runs/{id}`, not `POST /api/v1/runs/query`. Tool usage comes from
+  the projects listing's aggregates.
 - **Link to the register.** `registeredAgentId` is always `null` from these
   sources: a label in the estate being scanned is something its administrator can
   write. The register is the `inflect-register` source's (#3686).
@@ -104,10 +168,12 @@ the HTTP fakes see to that declaration.
 Itself; Node's built-ins; `zod`; `typescript`, whose syntax-only parser the
 `code` source reads JavaScript and TypeScript with (already the repository's own
 dependency, and needed by `tsx`, which runs the scanner; the scanner container,
-#3686, installs a pinned version of it, owner answer 2026-10-19); and the wire contract
-from the application —
+#3686, installs a pinned version of it, owner answer 2026-10-19); the wire
+contract from the application —
 `@/lib/agentic/harness-contract`, `@/lib/agentic/harness-findings`,
-`@/lib/agentic/harness-ladder` and `@/lib/canonical-json`. Nothing else:
+`@/lib/agentic/harness-ladder` and `@/lib/canonical-json`; and the application's
+pure CIDR parser, `@/lib/security/cidr`, so a private-range allowlist parses
+exactly as the application's egress allowlist does. Nothing else:
 `eslint.config.mjs` refuses any other `@/` import from `src/`, and any
 `@prisma/*`, `next` or `@inflect/ui` import, at error level. Sharing the contract
 is deliberate. The scanner checks its report against the ingest's own schema and
@@ -135,12 +201,25 @@ secret-shaped string anywhere in the file is refused by path.
       "clientSecretEnv": "AZURE_CLIENT_SECRET"
     },
     {
+      "kind": "runtime", "product": "langsmith",
+      "endpoint": { "cloud": "eu" },
+      "apiKeyEnv": "LANGSMITH_API_KEY",
+      "workspaceId": "<workspace id>", "windowDays": 7
+    },
+    {
       "kind": "code", "product": "langchain",
       "roots": [{ "label": "support-bot", "path": "/estate/repos/support-bot" }]
     }
   ]
 }
 ```
+
+A self-hosted LangSmith names its own host instead:
+`"endpoint": { "selfHosted": "https://langsmith.acme.example" }`, with
+`"egressPrivateCidrAllowlist": ["10.20.0.0/16"]` beside it when that host is on
+the estate's own network (below). Add `"readDeployments": true` to list
+deployments as well; leave it out for a LangSmith that runs no deployment
+control plane.
 
 - `SCANNER_SIGNING_KEY`: the Ed25519 private key, PKCS#8 PEM. Register its
   public half at `POST /api/t/{slug}/admin/agents/harness-scanner-keys`
@@ -150,10 +229,44 @@ secret-shaped string anywhere in the file is refused by path.
 - `OKTA_API_TOKEN`: an SSWS token for a read-only administrator.
 - `AZURE_CLIENT_SECRET`: an Entra application holding `Key Vault Reader` on each
   vault, which reads metadata and cannot read a secret's contents.
+- `LANGSMITH_API_KEY`: a LangSmith service key holding the workspace Viewer
+  role, where the workspace can assign one; otherwise the key carries its
+  issuer's rights and the GET-only wire is what keeps the read read-only.
+  `workspaceId` is sent as `X-Tenant-Id`; leave it out for a key scoped to one
+  workspace.
 
 Okta orgs must be on `*.okta.com` or `*.oktapreview.com`, vaults on
-`*.vault.azure.net`, and the ingest on https. A `code` root is an absolute path
-with no `..` segment, reported only by its label; it takes no credential.
+`*.vault.azure.net`, LangSmith on `api.smith.langchain.com` (`"cloud": "us"`) or
+`eu.api.smith.langchain.com` (`"cloud": "eu"`), and the ingest on https.
+A `code` root is an absolute path with no `..` segment, reported only by its
+label; it takes no credential.
+
+A self-hosted LangSmith is the one host the configuration lets a person type, so
+it is checked the way the application checks any customer-named host
+(`src/customer-host.ts`, after the `publicOrigin` rule kind): it must be a bare
+https origin, not a literal private, loopback or link-local address, not
+`localhost` or a metadata name, and not a `.local` or `.internal` name. Before
+every request the scanner resolves the host again and refuses to send the key
+if any address it resolves to is private, so a name repointed after the file was
+written stops the read as `UNREACHABLE`.
+
+**A self-hosted LangSmith on the estate's own network** names the private ranges
+its host may resolve into, in `egressPrivateCidrAllowlist` on the `selfHosted`
+endpoint. This mirrors the application's self-hosted egress allowlist
+(`EGRESS_PRIVATE_CIDR_ALLOWLIST`, #3328), and keeps its three properties:
+
+- It is the estate's own file. No tenant column, form or route reaches it.
+- Metadata, loopback and link-local stay refused inside it: `127.0.0.0/8`,
+  `0.0.0.0/8`, `169.254.0.0/16`, `::1`, `::` and `fe80::/10` are checked before
+  the allowlist, so even `0.0.0.0/0` cannot reach `169.254.169.254`. The blocked
+  names stay refused too.
+- It widens which addresses are acceptable and removes no other check. The host
+  is still resolved before every request with every address tested, so a name
+  that resolves outside the listed ranges sends nothing.
+
+With an allowlist, an internal name such as `langsmith.corp.internal` is
+accepted, because the question becomes the address rather than the name. Each
+entry must be a CIDR, or the configuration is refused.
 
 ## Running
 
