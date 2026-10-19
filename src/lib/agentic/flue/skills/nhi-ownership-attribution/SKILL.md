@@ -62,7 +62,7 @@ one fenced `json` block in this shape, with no other member:
 
 ```json
 {
-  "discoveredAgentId": "the agent's id, exactly as the input gives it",
+  "discoveredAgentId": "the input's discoveredAgentId, copied exactly",
   "status": "SUGGESTED",
   "proposedOwnerRef": "the person you propose",
   "grade": "STRONG",
@@ -72,6 +72,9 @@ one fenced `json` block in this shape, with no other member:
 }
 ```
 
+- `discoveredAgentId` is the input's `discoveredAgentId` member, not its
+  `discoveredId`. When the input has no such member, it is the id the input
+  gives the agent.
 - `status` is `SUGGESTED`, with `proposedOwnerRef` and `grade`; or `AMBIGUOUS`
   for a tie; or `UNMATCHED` with `reason` set to `NO_OWNER_SIGNAL` or
   `OWNER_DEPARTED`. `AMBIGUOUS` and `UNMATCHED` carry no `proposedOwnerRef` and

@@ -1,7 +1,7 @@
 {
     "skill": "nhi-ownership-attribution",
     "version": "2",
-    "contentHash": "sha256:60cd25a96d786750391acc8817ea74d477a3f600269952022727ad890b7d9af5",
+    "contentHash": "sha256:f445ec07a0a3a7a78791d6ef4bf81d639b0d055bfcb89dd8d050bbbad4a0488b",
     "thresholds": {
         "task": 0.9,
         "refusal": 1,
