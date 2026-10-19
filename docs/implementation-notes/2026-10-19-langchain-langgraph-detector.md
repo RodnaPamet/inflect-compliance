@@ -44,7 +44,7 @@ roots (label, absolute path)
 | `packages/agent-harness-scanner/src/sources/code/recognize.ts` | Agents, tools, models, endpoints, credentials; what did not resolve |
 | `packages/agent-harness-scanner/src/sources/code/files.ts` | The bounded, read-only walk and its problems |
 | `packages/agent-harness-scanner/src/sources/langchain.ts` | The `code` source behind the existing interface |
-| `packages/agent-harness-scanner/src/{source,report,scan,config,scanner-surface,index}.ts` | `Observation.tools`, `SourceContext.deadline/now`, tool merging and its cap, the `code` config, the declared file reads, version `0.3.0` |
+| `packages/agent-harness-scanner/src/{source,report,scan,config,scanner-surface,index}.ts` | `Observation.tools` (shared with the LangSmith source, #3738) and `Observation.models`, `SourceContext.deadline/now`, tool and model merging with their caps, the `code` config, the declared file reads, version `0.4.0` |
 | `eslint.config.mjs` | No subprocess, VM, module loader, `require`, `import()` or `eval` in the source's files; two shared consts so the new block does not drop the package's or the platform's rules |
 | `tests/helpers/agent-harness-code-fixtures.ts` | The LangChain Python, LangChain JS and LangGraph estates, and the ones that must not read clean |
 
@@ -89,6 +89,13 @@ roots (label, absolute path)
   The ingest verifies them and stores none.
 - **The manifest declares the file reads.** No request is made, but reading code
   is a capability, so `SCANNER_SURFACE.readsFiles` names it and the hash moves.
+- **One tool shape for two sources.** The LangSmith `runtime` source (#3738)
+  merged to `main` while this was open, and it had also given an observation
+  tools, as `{ tool, calls }`. This branch had added them as bare tools. They are
+  one field now, LangSmith's, with `calls` optional: a runtime counts calls, a
+  definition counts none, and a zero would have told the log a definition was
+  never used. The scanner version is `0.4.0`, after #3738's `0.2.0` and #3754's
+  `0.3.0`.
 
 ## Owner answers (2026-10-19)
 
