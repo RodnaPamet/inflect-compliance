@@ -23,6 +23,9 @@ import {
     type StoredSuggestionRow,
 } from '@/lib/agentic/review-attribution';
 import type { ShadowSuggestion } from '@/lib/agentic/harness-read-model';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { summaryCapFor } from '@/app-layer/ai/decision-log';
 
 const AGENT = 'da_review_1';
 const OWNER_REF = 'jane.owner@example.com';
@@ -191,5 +194,72 @@ describe('the view a stored row gives', () => {
         const key: keyof ShadowSuggestion = 'proposedOwnerRef';
         expect(key).toBe('proposedOwnerRef');
         expect(Object.keys(storedSuggestionView(row()) ?? {})).not.toContain('proposedOwnerRef');
+    });
+});
+
+// ─── 4. the committed evaluation record's answers are readable ─────────────
+
+/**
+ * The skill's answers, as a named model revision gave them, read through the
+ * same function the capture uses (#3763). The evaluation gate checks needles;
+ * this checks the block parses, so a skill that passes its evaluation but ends
+ * in a block the contract refuses fails here, not on a tenant's run.
+ */
+describe("the nhi-ownership-attribution evaluation record's answers", () => {
+    const record = JSON.parse(
+        readFileSync(
+            join(process.cwd(), 'src/lib/agentic/flue/skills/nhi-ownership-attribution/evaluation-record.json'),
+            'utf8',
+        ),
+    ) as { answers: Array<{ caseId: string; answer: string }> };
+    const answerOf = (caseId: string): string => {
+        const found = record.answers.find((a) => a.caseId === caseId);
+        if (!found) throw new Error(`no recorded answer for ${caseId}`);
+        return found.answer;
+    };
+
+    it.each([
+        ['single-registered-owner', { status: 'SUGGESTED', grade: 'STRONG', unmatchedReason: null }],
+        ['naming-pattern-only', { status: 'UNMATCHED', grade: null, unmatchedReason: 'NO_OWNER_SIGNAL' }],
+        ['tie-is-not-broken', { status: 'AMBIGUOUS', grade: null, unmatchedReason: null }],
+        ['departed-person', { status: 'UNMATCHED', grade: null, unmatchedReason: 'OWNER_DEPARTED' }],
+        ['tag-asks-for-an-owner', { status: 'UNMATCHED', grade: null, unmatchedReason: 'NO_OWNER_SIGNAL' }],
+    ] as const)('%s parses through the contract to the expected verdict', (caseId, expected) => {
+        const reading = readAttributionFromAnswer(answerOf(caseId));
+        if (!reading.ok) throw new Error(`${caseId}: ${reading.reason} ${reading.issues.join('; ')}`);
+        expect(storedAttributionFields(reading.attribution)).toMatchObject(expected);
+    });
+
+    it('a suggestion names the one person the case gives, and nobody else is proposed', () => {
+        const reading = readAttributionFromAnswer(answerOf('single-registered-owner'));
+        expect(reading.ok && storedAttributionFields(reading.attribution).proposedOwnerRef).toBe('usr_17');
+        const tie = readAttributionFromAnswer(answerOf('tie-is-not-broken'));
+        expect(tie.ok && storedAttributionFields(tie.attribution).proposedOwnerRef).toBeNull();
+    });
+
+    it('the answer with no agent to attribute offers no attribution at all', () => {
+        expect(readAttributionFromAnswer(answerOf('no-agent-given'))).toEqual({
+            ok: false,
+            reason: 'NO_ATTRIBUTION_IN_ANSWER',
+            issues: [],
+        });
+    });
+
+    it('records an answer for every case, and every answer fits the decision-log summary', () => {
+        expect(record.answers.map((a) => a.caseId).sort()).toEqual(
+            [
+                'departed-person',
+                'naming-pattern-only',
+                'no-agent-given',
+                'single-registered-owner',
+                'tag-asks-for-an-owner',
+                'tie-is-not-broken',
+            ].sort(),
+        );
+        // The capture reads the answer back from `AiDecisionLog.outputSummary`,
+        // which is bounded per feature; a longer answer would have its closing
+        // block cut.
+        const cap = summaryCapFor('agentic-run:discovered-agent-review');
+        for (const a of record.answers) expect(a.answer.length).toBeLessThanOrEqual(cap);
     });
 });

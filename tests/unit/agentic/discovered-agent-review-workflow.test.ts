@@ -66,7 +66,7 @@ describe('both IAM skills pass the evaluation gate and the load-time scan', () =
         const skill = skillOf(name);
         expect(checkSkillMountable(skill)).toEqual({
             ok: true,
-            pin: { name, version: '1', contentHash: skillContentHash(skill.instructions) },
+            pin: { name, version: skill.metadata.version, contentHash: skillContentHash(skill.instructions) },
         });
     });
 
@@ -97,7 +97,10 @@ describe('the workflow mounts exactly the two IAM skills', () => {
 
     it('and is pinned to exactly those two, by name, version and hash, in declaration order', () => {
         expect(resolveSkillPins(def?.skills)).toEqual(
-            IAM_SKILLS.map((name) => ({ name, version: '1', contentHash: skillContentHash(skillOf(name).instructions) })),
+            IAM_SKILLS.map((name) => {
+                const skill = skillOf(name);
+                return { name, version: skill.metadata.version, contentHash: skillContentHash(skill.instructions) };
+            }),
         );
     });
 
