@@ -274,10 +274,16 @@ export async function deleteCustomRole(ctx: RequestContext, roleId: string) {
             throw notFound('Custom role not found.');
         }
 
-        // Soft-delete: deactivate the role
+        // Soft-delete: deactivate the role. A legacy row built on OWNER or
+        // AI_ADMIN would fail `TenantCustomRole_base_role_not_built_in_scope`
+        // (#3734) on any UPDATE that keeps that base, so the deactivation also
+        // moves it to READER — the one write that lets a person remove it.
         const deleted = await db.tenantCustomRole.update({
             where: { id: roleId },
-            data: { isActive: false },
+            data: {
+                isActive: false,
+                ...(VALID_BASE_ROLES.includes(existing.baseRole) ? {} : { baseRole: 'READER' as Role }),
+            },
         });
 
         // Clear customRoleId on all affected memberships

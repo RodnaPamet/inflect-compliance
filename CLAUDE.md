@@ -836,7 +836,12 @@ new tenant-membership creation path).
   `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`). The DB backstop is the CHECK
   `TenantMembership_built_in_scope_role_no_custom_role`, added `NOT VALID` and
   validated only on a clean table: while an offending row exists it stays NOT
-  VALID, and that row refuses EVERY update except the clear.
+  VALID, and that row refuses EVERY update except the clear. Its twin, for the
+  same reason one layer down, is the CHECK
+  `TenantCustomRole_base_role_not_built_in_scope` (#3734): a custom role is
+  never BUILT on OWNER or AI_ADMIN either, because a carrier resolves to the
+  role's base. Same NOT VALID shape; `deleteCustomRole` moves a legacy row's
+  base to READER in the soft-delete write, or the deletion would fail it.
 - **An access-review campaign does no OWNER-tier work** (#3727). Closing one
   writes its decisions under `access_reviews.close`, which an ADMIN holds, so it
   holds the members page's rules itself: a MODIFY never sets OWNER

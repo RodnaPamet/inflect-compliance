@@ -69,6 +69,14 @@ Clearing a legacy one from an OWNER is an OWNER's change (403 for an ADMIN,
 `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`). The database enforces the same rule
 with the CHECK `TenantMembership_built_in_scope_role_no_custom_role`.
 
+For the same reason a custom role is never built on either role: a membership
+carrying a custom role resolves to the role's base, so one based on OWNER would
+make every carrier an OWNER. The usecases accept ADMIN, EDITOR, AUDITOR and
+READER as a base, and the database enforces it with the CHECK
+`TenantCustomRole_base_role_not_built_in_scope` (#3734). A legacy row built on
+OWNER or `AI_ADMIN` can be edited to a valid base, or deleted: the soft delete
+moves its base to READER in the same write.
+
 Custom roles are assigned on the members page only, under its grant check. An
 access-review MODIFY sets a built-in role only: one naming a custom role is
 refused at submission and at close (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`,
