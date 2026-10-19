@@ -734,8 +734,17 @@ export async function createAgentProposal(
         userId: ctx.userId,
         // JOB when a scheduled pass proposed it (#3671: the owner-orphan pass
         // proposing a service-principal disable), so the trail does not claim an
-        // API key that never existed. Every other caller keeps the label it had.
-        actorType: ctx.actorType === 'JOB' ? 'JOB' : 'API_KEY',
+        // API key that never existed. USER when a person's session proposed it
+        // with neither a credential nor an agent (#3677: internal audit's
+        // dissent on a sampled workpaper; the assistant and the conformity
+        // draft too) — for the same reason. Every caller holding a key or
+        // speaking for an agent keeps the label it had.
+        actorType:
+            ctx.actorType === 'JOB'
+                ? 'JOB'
+                : ctx.apiKeyId === undefined && ctx.agentId === undefined
+                  ? 'USER'
+                  : 'API_KEY',
         entity: 'AgentProposal',
         entityId: proposal.id,
         action: guard.quarantined ? 'AGENT_PROPOSAL_QUARANTINED' : 'AGENT_PROPOSAL_CREATED',

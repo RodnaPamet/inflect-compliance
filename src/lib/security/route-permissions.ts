@@ -1365,6 +1365,33 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'EDITOR-based custom role, which the ctx.role assert then refuses ' +
             'with no row — the hole this closes.',
     },
+    // Step 3d (#3677) — internal audit's review of sampled workpapers. The
+    // key decided in step 0e (`docs/agentic-iam-roadmap.md`, "Permission
+    // keys"): audits.view, which every role holds, so an internal auditor on
+    // the AUDITOR role (no audits.manage) is admitted. The usecase narrows
+    // every verb to the ASSIGNED reviewer — a person, an ACTIVE third-line
+    // member, not the auditor agent's owner — and audits each refusal.
+    {
+        path: new RegExp(`^${T}\\/audits\\/workpaper-reviews$`),
+        methods: ['GET'],
+        permission: 'audits.view',
+        note:
+            'Internal audit\'s queue of sampled workpapers (#3677). audits.view, ' +
+            'held by every role, because an internal auditor is often an AUDITOR, ' +
+            'which holds no audits.manage; listMyWorkpaperReviews returns only the ' +
+            'caller\'s own assigned reviews, and none unless the caller is an ACTIVE ' +
+            'third-line member. Nothing here draws or assigns: the sweep does.',
+    },
+    {
+        path: new RegExp(`^${T}\\/audits\\/workpaper-reviews\\/[^/]+$`),
+        methods: ['GET', 'POST'],
+        permission: 'audits.view',
+        note:
+            'Reading and answering one sampled workpaper (#3677). Same key as the ' +
+            'queue; the usecase admits only the assigned reviewer, a person, still ' +
+            'ACTIVE and third-line, never the auditor agent\'s owner (403 + ' +
+            'AUTHZ_DENIED with a named reason), and the answer is write-once.',
+    },
     {
         path: new RegExp(`^${T}\\/audits\\/auditors\\/[^/]+$`),
         methods: ['DELETE'],

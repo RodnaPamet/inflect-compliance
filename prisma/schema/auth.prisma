@@ -217,6 +217,7 @@ model Tenant {
   agentServicePrincipalConfirmations AgentServicePrincipalConfirmation[]
   auditWorkpapers                   AuditWorkpaper[]
   auditWorkpaperFindings            AuditWorkpaperFinding[]
+  auditWorkpaperSampleReviews       AuditWorkpaperSampleReview[]
   agentBehaviourWindows             AgentBehaviourWindow[]
   agentCircuitBreakers              AgentCircuitBreaker[]
   agenticEvidenceArtefacts          AgenticEvidenceArtefact[]
@@ -1759,6 +1760,23 @@ model TenantSecuritySettings {
   /// "probably shorter". It is a tenant setting precisely so that is cheap to
   /// revise.
   legacySnapshotUnconsumedRetentionDays Int @default(30)
+
+  /// THE SHARE OF THE AUDITOR AGENT'S WORKPAPERS INTERNAL AUDIT RE-PERFORMS,
+  /// in percent (#3677, step 3d). 100 — every workpaper — is the owner's
+  /// decision for the pilot (2026-10-19) and the column default, so a tenant
+  /// with no settings row is reviewed in full too
+  /// (`WORKPAPER_REVIEW_DEFAULT_SAMPLE_PERCENT`).
+  ///
+  /// A SETTING, NOT A SOURCE CONSTANT, so the rate can be lowered later
+  /// without a code change. The draw itself is keyed per workpaper
+  /// (`src/lib/agentic/workpaper-review-sampling.ts`) and each drawn row
+  /// records the percent it was drawn at, so lowering this re-decides nothing
+  /// already drawn and a draw stays reproducible after the rate moves.
+  ///
+  /// A CHECK holds it to 1..100: 0 would be a sampling plan that samples
+  /// nothing while looking configured, and a reader that met an out-of-range
+  /// value reads it as 100, never less.
+  workpaperReviewSamplePercent Int @default(100)
 
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt

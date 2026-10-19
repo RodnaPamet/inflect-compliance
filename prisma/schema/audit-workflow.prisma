@@ -607,8 +607,11 @@ model AuditWorkpaper {
 
   // No `updatedAt`: the row is append-only apart from the stamp.
 
-  tenant       Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  findingLinks AuditWorkpaperFinding[]
+  tenant        Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  findingLinks  AuditWorkpaperFinding[]
+  /// Internal audit's re-performance of this workpaper, when it was drawn
+  /// (3d). At most one: `@@unique([tenantId, workpaperId])` on the review.
+  sampleReviews AuditWorkpaperSampleReview[]
 
   @@unique([id, tenantId])
   @@index([tenantId, procedureId, periodLabel])
@@ -643,4 +646,95 @@ model AuditWorkpaperFinding {
   @@unique([workpaperId, findingId])
   @@index([tenantId, workpaperId])
   @@index([tenantId, findingId])
+}
+
+/// Step 3d (#3677) — INTERNAL AUDIT'S RE-PERFORMANCE OF ONE SAMPLED WORKPAPER.
+///
+/// The auditor agent writes workpapers (3b, 3c); this is the check on the
+/// auditor. A scheduled sweep (`jobs/audit-workpaper-sample-review.ts`) draws
+/// workpapers with the ASI09 sampler's keyed score against the tenant's rate
+/// (`TenantSecuritySettings.workpaperReviewSamplePercent`, 100 in the pilot) and
+/// assigns each, by a keyed draw from the same epoch, to an ACTIVE member whose
+/// line of defence is THIRD and who does not own the auditor agent. The
+/// assigned reviewer answers CONCURRED, DISSENTED or INDETERMINATE, once.
+///
+/// `AgentProposalSampleAudit` is the pattern and cannot be reused: every row of
+/// it requires a proposal, and a workpaper is not one.
+///
+/// ## One row per sampled workpaper, and every row has a state
+///
+/// `@@unique([tenantId, workpaperId])` is the sweep's durable idempotency key.
+/// A row is ASSIGNED (`assignedToUserId`) or UNASSIGNED with a named reason
+/// (`unassignedReason`), never neither (a CHECK): an item with nobody eligible
+/// to ask is recorded, not dropped, and never handed to somebody ineligible.
+/// While a row is PENDING a later sweep may re-draw its reviewer — an
+/// UNASSIGNED item once somebody is eligible, or an assignee who no longer is —
+/// and nothing else may change it.
+///
+/// ## Write-once answer, codes not prose
+///
+/// The answer is a one-way stamp: PENDING to an answer, once, by the assigned
+/// reviewer (a CHECK pins `reviewedByUserId = assignedToUserId`), and the
+/// trigger `audit_workpaper_sample_review_one_way` refuses every other UPDATE
+/// from every role. Dissent is stable codes (`WORKPAPER_REVIEW_DISSENT_CODES`),
+/// CHECK-pinned to the vocabulary; there is NO free-text column, which is the
+/// encryption decision (`src/lib/security/encrypted-fields.ts`).
+///
+/// ## A dissent queues a finding proposal
+///
+/// `findingProposalId` names the FINDING proposal a DISSENTED review raised
+/// through the ordinary queue (`createAgentProposal`). Set once, only on a
+/// DISSENTED row. A plain id, no foreign key: proposals are Business records the
+/// tenant purge deletes, and this row is a Regulatory artefact it keeps.
+///
+/// Reviewers and assignees are plain user ids with no foreign key, as
+/// `AuditWorkpaper.reviewedByUserId` is: the record outlives the account.
+model AuditWorkpaperSampleReview {
+  id          String @id @default(cuid())
+  tenantId    String
+  workpaperId String
+
+  /// `audit-workpaper-review@<periodLabel>` — fixed by the workpaper's period,
+  /// never the run date. With the seed, the workpaper id and `samplePercent`
+  /// the draw re-derives; the seed is never stored.
+  samplingEpoch   String
+  /// Which seed drew it; not the seed.
+  seedFingerprint String
+  /// The rate in force when it was drawn, 1..100.
+  samplePercent   Int
+  sampledAt       DateTime @default(now())
+
+  /// Who was asked, or why nobody was. Exactly one of the two is set.
+  assignedToUserId     String?
+  unassignedReason     String?
+  /// The eligible pool the reviewer was drawn from: its size and the SHA-256
+  /// over its sorted user ids, so the draw re-derives.
+  assignmentPoolSize   Int
+  assignmentPoolDigest String
+  assignedAt           DateTime @default(now())
+
+  /// PENDING until the assigned reviewer answers — a drawn but unreviewed
+  /// workpaper never reads as agreement.
+  outcome          AgentSampleAuditOutcome @default(PENDING)
+  dissentCodes     String[]                @default([])
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+
+  /// The finding proposal a DISSENTED review raised. Set once.
+  findingProposalId String?
+
+  createdAt DateTime @default(now())
+
+  // No `updatedAt`: every later write is one of three named, trigger-checked moves.
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workpaper AuditWorkpaper @relation(fields: [workpaperId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One review per workpaper, ever — the sweep's idempotency key, and the
+  /// tenant-leading construct that indexes the `workpaperId` FK.
+  @@unique([tenantId, workpaperId])
+  /// The reviewer's queue: this tenant, this assignee, oldest first.
+  @@index([tenantId, assignedToUserId, sampledAt])
+  /// The rate: this tenant, drawn inside the window.
+  @@index([tenantId, sampledAt])
 }

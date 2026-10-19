@@ -29,8 +29,8 @@ This catalogue binds whoever operates it to the rule below, which is decision 3
 of [`docs/agentic-iam-roadmap.md`](agentic-iam-roadmap.md). Step `3b` (#3675)
 put three parts of it on `main`: the line-of-defence value on a membership, the
 auditor independence check, and the workpaper record. Step `3c` (#3676) put the
-auditor agent's handlers on `main`. One part is not on `main`: no sampling of
-workpapers exists, which is a row in [Gaps](#gaps).
+auditor agent's handlers on `main`, and step `3d` (#3677) internal audit's
+sampling of the workpapers.
 
 - **The second line of defence is to own and operate the auditor agent.** It
   registers the agent, decides its grants and its policy card, holds its kill
@@ -43,10 +43,16 @@ workpapers exists, which is a row in [Gaps](#gaps).
   and `propose_finding` and nothing else.
 - **Internal audit is to approve this catalogue and to sample the auditor's
   workpapers.** A sampled workpaper must be re-checked by a person in internal
-  audit, never by the auditor agent's owner. On `main` a workpaper's review
-  stamp is set once, by an active member whose line of defence is THIRD and who
-  does not own the auditor agent (`stampAuditWorkpaperReview`). Choosing which
-  workpapers are sampled is step `3d`.
+  audit, never by the auditor agent's owner. On `main` a monthly sweep draws the
+  workpapers with a keyed sample at the tenant's rate (every workpaper in the
+  pilot) and assigns each to an ACTIVE member whose line of defence is THIRD and
+  who does not own the auditor agent, or records it UNASSIGNED with a reason.
+  That member alone re-performs it and answers CONCURRED, DISSENTED or
+  INDETERMINATE, once, in stable dissent codes, which also sets the workpaper's
+  review stamp; a dissent becomes a finding proposal a person decides. The
+  re-performance agreement rate is reported in the agent governance pack with
+  its definition (`usecases/audit-workpaper-sample-review.ts`,
+  `jobs/audit-workpaper-sample-review.ts`).
 - **The auditor is not the auditee.** The auditor agent's owner must be second
   line and must own none of the agents the procedures examine. On `main` an
   OWNER declares each member's line of defence (FIRST, SECOND, THIRD or not
@@ -976,7 +982,6 @@ names the step that builds it, or says that no step does.
 | Gap | Affects | Built by |
 |---|---|---|
 | No handler runs any procedure | 6 to 8 | no step; adding one is a change to this catalogue and a new step issue |
-| No sampling of workpapers by internal audit | ownership rule | step `3d` (#3677) |
 | No agent subjects in access reviews: `AccessReviewScope` has no agent value | procedure 2 | step `3a` (#3674) |
 | Internal audit's approval and PwC's agreement of version 1 are open; the repository owner's merge adopts the version and supplies neither | all | internal audit and PwC, each recorded on issue #3663 when given |
 | PwC's methodology reference for each procedure is open | all | PwC, recorded on issue #3663 when given |

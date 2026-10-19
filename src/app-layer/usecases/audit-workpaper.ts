@@ -352,8 +352,9 @@ export async function linkFindingsToAuditWorkpaper(
 /**
  * STAMP a workpaper reviewed — once. The reviewer is a person in the second or
  * third line (`WORKPAPER_STAMP_LINES`, #3735), who does not own the auditor
- * agent. Step 3d's sampling
- * decides WHICH workpapers a reviewer is assigned; this is the stamp they set.
+ * agent. Step 3d's sampling decides WHICH workpapers internal audit is
+ * assigned, and its review answer sets this same stamp
+ * (`stampWorkpaperReviewedInTx`).
  */
 export async function stampAuditWorkpaperReview(ctx: RequestContext, workpaperId: string) {
     assertCanRead(ctx);
@@ -411,25 +412,42 @@ export async function stampAuditWorkpaperReview(ctx: RequestContext, workpaperId
             refuse('REVIEWER_OWNS_AUDITOR', 'The owner of the auditor agent never reviews its workpapers.');
         }
 
-        const stamped = await AuditWorkpaperRepository.stampReview(db, ctx, workpaper.id, ctx.userId, now);
-        if (stamped === 0) {
+        if (!(await stampWorkpaperReviewedInTx(db, ctx, workpaper.id, now))) {
             refuse('ALREADY_REVIEWED', 'This workpaper was stamped reviewed while this request was in flight.');
         }
-        await logEvent(db, ctx, {
-            action: 'AUDIT_WORKPAPER_REVIEWED',
-            entityType: 'AuditWorkpaper',
-            entityId: workpaper.id,
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'AuditWorkpaper',
-                operation: 'updated',
-                changedFields: ['reviewedAt', 'reviewedByUserId'],
-                before: { reviewedAt: null },
-                after: { reviewedAt: now.toISOString(), reviewedByUserId: ctx.userId },
-            },
-        });
         return { id: workpaper.id, reviewedAt: now, reviewedByUserId: ctx.userId };
     });
+}
+
+/**
+ * The stamp itself, on the caller's transaction: conditional on the workpaper
+ * being unstamped, and audited when it lands. Returns whether it landed. Every
+ * eligibility rule is the CALLER's — `stampAuditWorkpaperReview` above, and the
+ * sampled review (#3677), whose assigned THIRD-line reviewer sets the stamp
+ * when they answer (`usecases/audit-workpaper-sample-review.ts`).
+ */
+export async function stampWorkpaperReviewedInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    workpaperId: string,
+    now: Date,
+): Promise<boolean> {
+    const stamped = await AuditWorkpaperRepository.stampReview(db, ctx, workpaperId, ctx.userId, now);
+    if (stamped === 0) return false;
+    await logEvent(db, ctx, {
+        action: 'AUDIT_WORKPAPER_REVIEWED',
+        entityType: 'AuditWorkpaper',
+        entityId: workpaperId,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'AuditWorkpaper',
+            operation: 'updated',
+            changedFields: ['reviewedAt', 'reviewedByUserId'],
+            before: { reviewedAt: null },
+            after: { reviewedAt: now.toISOString(), reviewedByUserId: ctx.userId },
+        },
+    });
+    return true;
 }
 
 /** The binding sample for a procedure and period, for the auditor's next run to reuse. */

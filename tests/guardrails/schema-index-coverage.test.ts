@@ -274,6 +274,18 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── Internal audit's sampling of the auditor's workpapers (#3677) ──
+    {
+        model: 'AuditWorkpaperSampleReview',
+        fields: ['tenantId', 'assignedToUserId', 'sampledAt'],
+        justification:
+            'usecases/audit-workpaper-sample-review.ts::listMyWorkpaperReviews is the reviewer\'s '
+            + 'queue: equality on tenantId + assignedToUserId (the caller), ordered by sampledAt '
+            + 'ascending so the oldest unanswered review leads, bounded take 201. The rate\'s '
+            + 'groupBy is (tenantId, sampledAt >= since), served by @@index([tenantId, sampledAt]); '
+            + 'the sweep reads system-wide by outcome and drains by id, and the idempotency key '
+            + 'is the tenant-leading @@unique([tenantId, workpaperId]).',
+    },
     // ── Legacy access retention sweep (#3317) ───────────────────────
     {
         model: 'LegacyAccessSnapshot',

@@ -587,6 +587,31 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'audit-workpaper-sample-review',
+        // MONTHLY, the 3rd at 09:40 UTC — AFTER the auditor agent's runs, which
+        // is the whole point: the pilot's procedure plans run at 06:17 UTC on
+        // the 2nd, monthly ones every month and quarterly ones in the first
+        // month of each quarter (`scripts/audit-pilot-setup.ts`, `CRON`). A
+        // sweep before them would draw last month's workpapers and miss this
+        // month's until the next one. A full day after them, rather than an
+        // hour, leaves room for a run the control-test runner retried and for a
+        // re-run the second line started by hand on the 2nd.
+        //
+        // NOT DAILY. A draw at any time would be correct — each workpaper is
+        // decided on its own, so a daily sweep would not enlarge the sample the
+        // way a daily ASI09 draw would — but the output is a human queue, and
+        // internal audit works it as a monthly batch. Monthly also bounds how
+        // often an UNASSIGNED item is re-tried; an OWNER who declares a
+        // third-line member mid-month can run the job for one tenant instead.
+        //
+        // 09:40, a working-hours slot for the same reason the ASI09 sampler
+        // lands on Monday 09:30, and off its minute.
+        pattern: '40 9 3 * *',
+        description:
+            "#3677 — internal audit's sampling of the auditor agent's workpapers. Draws each workpaper not yet drawn by its HMAC-keyed score against the tenant's rate (TenantSecuritySettings.workpaperReviewSamplePercent, 100% in the pilot), with the epoch fixed by the workpaper's period, and assigns it by a keyed draw from the same epoch to an ACTIVE third-line member who does not own the auditor agent — or records it UNASSIGNED with a named reason. Re-draws only a PENDING row nobody can answer, and raises any dissent finding proposal a failed answer left unraised. Idempotent by the (tenantId, workpaperId) unique index and the per-review proposal origin.",
+        defaultPayload: {},
+    },
+    {
         name: 'incident-notification-deadlines',
         pattern: '0 * * * *',     // hourly — a 24h Article 23 deadline needs sub-day granularity
         description:

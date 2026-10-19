@@ -263,6 +263,7 @@ export const SUBPAGES: readonly string[] = [
     '/audits/new',
     '/audits/packs/[packId]',
     '/audits/readiness',
+    '/audits/workpaper-reviews', // #3677 — internal audit's sampled-workpaper queue
 
     // Auth (in-app)
     '/auth/mfa',

@@ -154,6 +154,10 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'FK — Finding id, not content (heuristic matched "finding").',
     'AuditWorkpaperFinding.findingId':
         'A Finding id a workpaper links (#3675) — an identifier bound by an insert trigger, not content (heuristic matched "finding").',
+    'AuditWorkpaperSampleReview.findingProposalId':
+        'The AgentProposal id a dissenting review raised (#3677) — an identifier, set once, not content (heuristic matched "finding").',
+    'AuditWorkpaperSampleReview.unassignedReason':
+        "One of three fixed codes ('NO_THIRD_LINE_MEMBER' | 'ONLY_THIRD_LINE_MEMBER_OWNS_AUDITOR' | 'AUDITOR_OWNER_UNKNOWN'), CHECK-constrained in the migration and written only by the sampling sweep (#3677) — never user text.",
     'Task.findingId':
         'FK — Finding id (TP-3 remediation-task relation), not content (heuristic matched "finding").',
     'VendorPostureEvent.createdFindingId':
