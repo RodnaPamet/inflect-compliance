@@ -127,6 +127,12 @@ const RICH_TEXT_COVERAGE: Readonly<
     // agent-registry write seam before the Epic B middleware encrypts it — the
     // register export and the operator surface both decrypt and render it.
     RegisteredAgent: { usecases: ['src/app-layer/usecases/agent-registry.ts'], sanitizer: 'sanitizePlainText' },
+    // A tenant-authored skill (#3680): its instructions are prompt text a model
+    // trusts, and its evaluation record carries cases and answers written around
+    // them. Both are sanitised at the single write seam before they are
+    // scanned, hashed and encrypted — the hash is over the sanitised text, so
+    // what a reviewer approves is what is stored.
+    TenantSkillVersion: { usecases: ['src/app-layer/usecases/tenant-skills.ts'], sanitizer: 'sanitizePlainText' },
     // The kill switch's `reason` / `liftReason` — operator free text written
     // during an incident, sanitised at the single write seam (`requireReason`)
     // before the Epic B middleware encrypts it. Read back by the operator

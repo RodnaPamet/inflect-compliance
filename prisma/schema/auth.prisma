@@ -205,6 +205,8 @@ model Tenant {
   agentKillSwitchDrills             AgentKillSwitchDrill[]
   agentHarnessScannerKeys           AgentHarnessScannerKey[]
   peerAgents                        PeerAgent[]
+  tenantSkills                      TenantSkill[]
+  tenantSkillVersions               TenantSkillVersion[]
   agentHarnessScans                 AgentHarnessScan[]
   agentHarnessScanItems             AgentHarnessScanItem[]
   discoveredAgents                  DiscoveredAgent[]

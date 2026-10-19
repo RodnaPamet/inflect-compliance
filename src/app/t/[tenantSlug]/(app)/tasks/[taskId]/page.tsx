@@ -1216,10 +1216,15 @@ export default function TaskDetailPage() {
                         subscribes/unsubscribes the CURRENT user, which is a
                         personal notification preference rather than a change
                         to the task. Gating it on write rendered the watcher
-                        card for READERS with a permanently inert control. */}
+                        card for READERS with a permanently inert control.
+                        SECONDARY in both states (#3680): a personal preference
+                        is not the task's primary action, and the label and
+                        `aria-pressed` carry the state the variant used to. It
+                        pays for the tenant-skill editor's save under
+                        `primary-secondary-ratio`. */}
                     {(
                         <Button
-                            variant={isWatching ? 'secondary' : 'primary'}
+                            variant="secondary"
                             size="sm"
                             onClick={toggleWatch}
                             disabled={watchPending}

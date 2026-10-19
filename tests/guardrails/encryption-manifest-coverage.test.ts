@@ -71,6 +71,20 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'TenantSkillVersion.contentHash':
+        'A `sha256:` digest of the instructions, CHECKed to that format — an identifier, not content. ' +
+        'It must be plaintext: the evaluation set names it, the run pin records it, the approval ' +
+        'compares it and the mount gate recomputes it against the decrypted instructions.',
+    'TenantSkillVersion.approvedContentHash':
+        'The digest the reviewer approved, CHECKed equal to contentHash. An identifier, not content, ' +
+        'and plaintext for the same reason: the mount gate compares it on every run.',
+    'TenantSkillVersion.description':
+        'The catalogue line of a tenant skill (#3680): one sentence of routing text that every ' +
+        'run mounting the skill carries in its system prompt on every turn, shown on the Skills ' +
+        'tab beside the skill name. Plaintext so the version trigger can freeze it for EVERY ' +
+        'role — an encrypted column has to stay writable by the DEK rotation sweep, so it can ' +
+        'only be frozen against app_user. Sanitised at the write seam and scanned by the skill ' +
+        'text scan; the procedure itself, `instructions`, is the encrypted column.',
     'LegacyIdentityAlias.suspendedReason':
         'Why an alias was taken out of force. System-generated and operator-facing: a ' +
         'suspended alias is not offered to the engine, so the reason exists to tell a ' +

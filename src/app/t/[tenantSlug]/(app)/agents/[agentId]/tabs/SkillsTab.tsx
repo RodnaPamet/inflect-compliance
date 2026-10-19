@@ -12,14 +12,20 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
-import type { AgentTabProps } from './types';
+import { TenantSkillsSection, type TenantSkillRow } from './TenantSkillsSection';
+import type { SkillsTabProps } from './types';
 
 /**
- * WHAT THIS AGENT CAN BE TAUGHT — the Flue skill corpus (#3470).
+ * WHAT THIS AGENT CAN BE TAUGHT — the Flue skill corpus (#3470), and the
+ * skills this workspace authored (#3680).
  *
- * Read-only, and it takes no `onChanged`: nothing here writes. A skill is a
- * reviewed Markdown document in the repository; changing one is a pull
- * request, not a form.
+ * TWO SECTIONS, and only one of them writes. The REPOSITORY corpus is
+ * read-only: a skill the product ships is a reviewed Markdown document in the
+ * repository, and changing one is a pull request, not a form — its section
+ * renders no control, which `tests/rendered/agent-skills-tab.test.tsx` counts.
+ * The WORKSPACE section (`TenantSkillsSection`) carries authoring and review for
+ * holders of `admin.agent_skill_review`, resolved on the server and threaded in
+ * as `canReviewSkills`.
  *
  * ── THE CLAIM THIS PANEL MAKES, AND THE ONE IT REFUSES TO ───────────────────
  *
@@ -67,11 +73,13 @@ interface RefusedRow {
 interface Payload {
     skills: SkillRow[];
     refused?: RefusedRow[];
+    tenantSkills?: TenantSkillRow[];
+    attachableWorkflows?: { key: string; name: string }[];
     catalogBytes: number;
     catalogBudgetBytes: number;
 }
 
-export function SkillsTab({ agentId, refreshToken }: AgentTabProps) {
+export function SkillsTab({ agentId, refreshToken, canReviewSkills = false }: SkillsTabProps) {
     const t = useTranslations('agents.skills');
     const { data, error, isLoading, mutate } = useTenantSWR<Payload>('/admin/agents/skills');
     useEffect(() => { void mutate(); }, [refreshToken, mutate]);
@@ -81,7 +89,8 @@ export function SkillsTab({ agentId, refreshToken }: AgentTabProps) {
     if (!data) return <SkeletonCard />;
 
     const refused = data.refused ?? [];
-    if (data.skills.length === 0 && refused.length === 0) {
+    const tenantSkills = data.tenantSkills ?? [];
+    if (data.skills.length === 0 && refused.length === 0 && tenantSkills.length === 0 && !canReviewSkills) {
         return <InlineEmptyState title={t('empty.title')} description={t('empty.description')} />;
     }
 
@@ -95,51 +104,63 @@ export function SkillsTab({ agentId, refreshToken }: AgentTabProps) {
                 {t('catalogCost', { used: data.catalogBytes, budget: data.catalogBudgetBytes })}
             </p>
 
-            {refused.length > 0 ? (
-                <div className="space-y-compact" data-testid="agent-skills-refused">
-                    <InlineNotice variant="error" title={t('refused.title')}>
-                        {t('refused.description')}
-                    </InlineNotice>
-                    {refused.map((r) => (
-                        <Card key={r.name} className="space-y-tight p-4">
+            <section className="space-y-compact" data-testid="agent-skills-repository">
+                <Heading level={2} className="text-base">{t('repository.title')}</Heading>
+                <p className="text-content-muted text-xs">{t('repository.description')}</p>
+
+                {refused.length > 0 ? (
+                    <div className="space-y-compact" data-testid="agent-skills-refused">
+                        <InlineNotice variant="error" title={t('refused.title')}>
+                            {t('refused.description')}
+                        </InlineNotice>
+                        {refused.map((r) => (
+                            <Card key={r.name} className="space-y-tight p-4">
+                                <div className="flex items-start justify-between gap-compact">
+                                    <Heading level={3} className="text-sm">{r.name}</Heading>
+                                    <StatusBadge variant="error">{t('refused.badge')}</StatusBadge>
+                                </div>
+                                <dl className="text-content-muted grid grid-cols-2 gap-x-default gap-y-tight text-xs">
+                                    <dt>{t('refused.rules')}</dt>
+                                    <dd>{[...r.rules, ...r.guardRules].join(', ')}</dd>
+                                    <dt>{t('refused.stops')}</dt>
+                                    <dd>{r.declaredBy.length > 0 ? r.declaredBy.join(', ') : t('declaredByNone')}</dd>
+                                </dl>
+                            </Card>
+                        ))}
+                    </div>
+                ) : null}
+
+                <div className="space-y-compact">
+                    {data.skills.map((s) => (
+                        <Card key={s.name} className="space-y-tight p-4">
                             <div className="flex items-start justify-between gap-compact">
-                                <Heading level={3} className="text-sm">{r.name}</Heading>
-                                <StatusBadge variant="error">{t('refused.badge')}</StatusBadge>
+                                <Heading level={3} className="text-sm">{s.name}</Heading>
+                                <StatusBadge variant={s.declaredBy.length > 0 ? 'success' : 'neutral'}>
+                                    {s.declaredBy.length > 0
+                                        ? t('declaredBy', { keys: s.declaredBy.join(', ') })
+                                        : t('declaredByNone')}
+                                </StatusBadge>
                             </div>
+                            <p className="text-content-default text-sm">{s.description}</p>
                             <dl className="text-content-muted grid grid-cols-2 gap-x-default gap-y-tight text-xs">
-                                <dt>{t('refused.rules')}</dt>
-                                <dd>{[...r.rules, ...r.guardRules].join(', ')}</dd>
-                                <dt>{t('refused.stops')}</dt>
-                                <dd>{r.declaredBy.length > 0 ? r.declaredBy.join(', ') : t('declaredByNone')}</dd>
+                                <dt>{t('field.licence')}</dt>
+                                <dd>{s.license}</dd>
+                                {s.sourceRef ? (<><dt>{t('field.source')}</dt><dd>{s.sourceRef}</dd></>) : null}
+                                {s.version ? (<><dt>{t('field.version')}</dt><dd>{s.version}</dd></>) : null}
+                                <dt>{t('field.onActivation')}</dt>
+                                <dd>{t('bytes', { n: s.instructionBytes })}</dd>
                             </dl>
                         </Card>
                     ))}
                 </div>
-            ) : null}
+            </section>
 
-            <div className="space-y-compact">
-                {data.skills.map((s) => (
-                    <Card key={s.name} className="space-y-tight p-4">
-                        <div className="flex items-start justify-between gap-compact">
-                            <Heading level={3} className="text-sm">{s.name}</Heading>
-                            <StatusBadge variant={s.declaredBy.length > 0 ? 'success' : 'neutral'}>
-                                {s.declaredBy.length > 0
-                                    ? t('declaredBy', { keys: s.declaredBy.join(', ') })
-                                    : t('declaredByNone')}
-                            </StatusBadge>
-                        </div>
-                        <p className="text-content-default text-sm">{s.description}</p>
-                        <dl className="text-content-muted grid grid-cols-2 gap-x-default gap-y-tight text-xs">
-                            <dt>{t('field.licence')}</dt>
-                            <dd>{s.license}</dd>
-                            {s.sourceRef ? (<><dt>{t('field.source')}</dt><dd>{s.sourceRef}</dd></>) : null}
-                            {s.version ? (<><dt>{t('field.version')}</dt><dd>{s.version}</dd></>) : null}
-                            <dt>{t('field.onActivation')}</dt>
-                            <dd>{t('bytes', { n: s.instructionBytes })}</dd>
-                        </dl>
-                    </Card>
-                ))}
-            </div>
+            <TenantSkillsSection
+                skills={tenantSkills}
+                workflows={data.attachableWorkflows ?? []}
+                canReview={canReviewSkills}
+                onChanged={() => { void mutate(); }}
+            />
         </div>
     );
 }

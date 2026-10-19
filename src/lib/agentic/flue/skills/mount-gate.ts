@@ -54,14 +54,65 @@ import {
 /** The file `npm run skills:evaluate` writes beside a skill. */
 export const EVALUATION_RECORD_FILE = 'evaluation-record.json';
 
-export type MountRefusal = 'NOT_EVALUATED' | 'NO_RECORD' | 'SET_MISMATCH' | EvaluationRefusal;
+export type MountRefusal =
+    | 'NOT_EVALUATED'
+    | 'NO_RECORD'
+    | 'SET_MISMATCH'
+    | EvaluationRefusal
+    // A tenant-authored skill's own refusals (#3680, `tenant-skill.ts`).
+    | 'NOT_APPROVED'
+    | 'SELF_APPROVED'
+    | 'PIN_MISMATCH';
 
-/** What a run records about each skill it mounted: enough to say what it was taught. */
-export interface MountedSkillPin {
+/** What a run records about each repository skill it mounted: enough to say what it was taught. */
+export interface RepositorySkillPin {
     readonly name: string;
     readonly version: string;
     /** `sha256:` over the instructions exactly as the run received them. */
     readonly contentHash: string;
+}
+
+/**
+ * What a run records about each TENANT-AUTHORED skill it mounted (#3680): the
+ * same three facts, plus `origin: 'tenant'` and the version row's id, so the pin
+ * says which tenant version taught the run and can never be read as a
+ * repository skill. A repository pin carries neither key, which keeps every pin
+ * written before tenant skills existed byte-identical to what a run resuming
+ * today would compute.
+ */
+export interface TenantSkillPin extends RepositorySkillPin {
+    readonly origin: 'tenant';
+    readonly versionId: string;
+}
+
+export type MountedSkillPin = RepositorySkillPin | TenantSkillPin;
+
+export function isTenantSkillPin(p: MountedSkillPin): p is TenantSkillPin {
+    return (p as Partial<TenantSkillPin>).origin === 'tenant';
+}
+
+/**
+ * A pin as the row stores it. A type alias rather than an interface, so Prisma
+ * accepts it as a JSON value without a cast.
+ */
+export type StoredSkillPin =
+    | { readonly name: string; readonly version: string; readonly contentHash: string }
+    | {
+        readonly name: string;
+        readonly version: string;
+        readonly contentHash: string;
+        readonly origin: 'tenant';
+        readonly versionId: string;
+    };
+
+/**
+ * A pin exactly as `WorkflowRun.mountedSkills` stores it, and as the drift check
+ * compares it: the three repository keys, and the two tenant keys only on a
+ * tenant pin. Never an extra key a caller's object happened to carry.
+ */
+export function pinForRow(p: MountedSkillPin): StoredSkillPin {
+    const base = { name: p.name, version: p.version, contentHash: p.contentHash };
+    return isTenantSkillPin(p) ? { ...base, origin: 'tenant' as const, versionId: p.versionId } : base;
 }
 
 export type MountVerdict =
@@ -138,9 +189,17 @@ export function parseMountedSkillPins(value: unknown): MountedSkillPin[] | null 
     const pins: MountedSkillPin[] = [];
     for (const v of value) {
         if (!v || typeof v !== 'object') return null;
-        const { name, version, contentHash } = v as Record<string, unknown>;
+        const { name, version, contentHash, origin, versionId } = v as Record<string, unknown>;
         if (typeof name !== 'string' || typeof version !== 'string' || typeof contentHash !== 'string') return null;
-        pins.push({ name, version, contentHash });
+        if (origin === undefined && versionId === undefined) {
+            pins.push({ name, version, contentHash });
+            continue;
+        }
+        // A tenant pin carries both keys, and no other origin exists. A value
+        // claiming an origin this code does not know is malformed, not a
+        // repository pin with an extra key.
+        if (origin !== 'tenant' || typeof versionId !== 'string') return null;
+        pins.push({ name, version, contentHash, origin, versionId });
     }
     return pins;
 }
