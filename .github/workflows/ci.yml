@@ -2,6 +2,7 @@
 #  CI — Enterprise-grade pipeline
 #  Jobs: lint · typecheck · test · coverage · build · e2e
 #        load-smoke · security · codeql · docker · trivy
+#        scanner-image
 #
 #  Job graph:
 #    lint ─────────────┐
@@ -14,15 +15,17 @@
 #      └──→ docker ────┤
 #           └──→ trivy ┤
 #    security ─────────┤
-#    codeql ───────────┘
+#    codeql ───────────┤
+#    scanner-image ────┘
 #
 #  Runs on PRs, pushes to main, and merge-queue groups.
 #
 #  Merge-queue lean set (see docs/implementation-notes/2026-08-01-merge-queue.md):
 #    RUN  in the queue — changes · lint · typecheck · test · test-summary
 #                        · build · security   (the semantic-collision gate)
-#    SKIP in the queue — e2e · docker · trivy · codeql   (different failure
-#                        class; each already runs on the PR AND on push to main)
+#    SKIP in the queue — e2e · docker · trivy · codeql · scanner-image
+#                        (different failure class; each already runs on the
+#                        PR AND on push to main)
 #    Already push/schedule-only — coverage · load-smoke.
 # ───────────────────────────────────────────────────────────────
 name: CI
@@ -2785,3 +2788,52 @@ jobs:
         # or fail the job loudly. Silent upload failures were
         # showing up as "Code scanning configuration error" banners
         # on the Security tab without breaking CI.
+
+  # ═══════════════════════════════════════════════════════════════
+  #  Job 11: Scanner image — the harness scanner's container (#3686)
+  #  Builds packages/agent-harness-scanner/Dockerfile, smoke-tests the
+  #  image the way an estate runs it, and blocks on CRITICAL and HIGH
+  #  severity vulnerabilities. Built and checked, never published
+  #  (owner decision, 2026-10-19): a client builds it from source.
+  # ═══════════════════════════════════════════════════════════════
+  scanner-image:
+    name: "Scanner image"
+    # Runs on every pull request rather than behind a path filter. The image
+    # holds the scanner AND the application modules the scanner imports, so a
+    # filter would be a second hand-kept copy of that import closure, and a
+    # contract change it missed would ship an image nobody had started.
+    # Skipped in the merge queue with docker and trivy, for the same reason:
+    # it already ran on the PR, and runs again on push to main.
+    if: github.event_name != 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # NAMED EXPLICITLY, like the application image (#3418): the subject of
+      # the check is readable from the check. BuildKit is what reads the
+      # Dockerfile's own `Dockerfile.dockerignore` allowlist.
+      - name: Build the scanner image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build -f packages/agent-harness-scanner/Dockerfile -t "agent-harness-scanner:ci-${{ github.sha }}" .
+
+      - name: Smoke-test the scanner image
+        run: packages/agent-harness-scanner/container/smoke.sh "agent-harness-scanner:ci-${{ github.sha }}"
+
+      # The same gate as the application image's: CRITICAL,HIGH, blocking,
+      # fixed vulnerabilities only, with the repository's narrow exemptions.
+      - name: "Gate: Trivy scan of the scanner image (critical+high)"
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "agent-harness-scanner:ci-${{ github.sha }}"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          # Trivy's own 5m default has expired mid-scan here before (see the
+          # application image's gate above); 15m raises the patience and leaves
+          # the threshold alone.
+          timeout: "15m"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          trivyignores: ".trivyignore"

@@ -2,21 +2,20 @@
  * `inflect-agent-harness/2` through the real ingest, against a real database
  * (#3754).
  *
- *   1. BOTH IDS INGEST. A `/1` report from a deployed scanner still verifies and
- *      ingests unchanged; a `/2` report does too, and its `code` source and
- *      `UNPARSEABLE` reason round-trip into the stored scan and its readers.
+ *   1. `/2` INGESTS: its `code` source and `UNPARSEABLE` reason round-trip into
+ *      the stored scan and its readers.
  *   1c. MODEL ENDPOINTS ARE KEPT (#3759), on the scan item and nowhere else:
  *      NULL is NOT REPORTED, `[]` is reported empty, and a stored value that
  *      no longer re-validates reads UNREADABLE on the matrix.
- *   2. A REFUSED REPORT WRITES NOTHING: a `/1` report carrying a `/2` member,
- *      and an unbound credential with a secret's shape. (Every malformation the
+ *   2. A REFUSED REPORT WRITES NOTHING: a `/1` report, refused since `/1` was
+ *      retired (#3686), and an unbound credential with a secret's shape. (Every malformation the
  *      fake scanner names is also driven through the ingest by
  *      `agent-harness-ingest.test.ts`.)
  *   3. ORPHAN_CREDENTIAL IS DERIVED, ON POSITIVE EVIDENCE. It opens when the
  *      source that saw the credential AND every identity-bearing source in the
  *      scan were read in full (owner answer, 2026-10-19); it closes only when a
  *      complete read of that source no longer sees it unbound; an incomplete or
- *      absent source closes nothing, and neither does a `/1` report.
+ *      absent source closes nothing.
  *   4. TWO TENANTS. One tenant's report opens and closes nothing in the other.
  */
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
@@ -28,11 +27,12 @@ import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import {
     createFakeScanner,
+    retiredV1ReportBody,
     UNBOUND_VAULT_REF,
     V2_MODEL_ENDPOINTS,
-    validReportBody,
     validV2ReportBody,
     type FakeScanner,
+    type RetiredV1ReportBody,
 } from '../helpers/agent-harness-fake-scanner';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { ingestHarnessReport, listHarnessScans } from '@/app-layer/usecases/agent-harness-scans';
@@ -42,7 +42,6 @@ import {
     parseStoredHarnessModels,
     parseStoredHarnessSources,
     parseStoredHarnessTools,
-    type HarnessReportBodyV1,
     type HarnessReportBodyV2,
 } from '@/lib/agentic/harness-contract';
 import { orphanCredentialRefOf } from '@/lib/agentic/harness-findings';
@@ -116,13 +115,12 @@ async function seedTenant(tenantId: string): Promise<void> {
 
 let scanSeq = 0;
 
-/** The fake scanner's `/1` body, pointed at this tenant's register rows. */
-function v1For(tenantId: string, edit?: (b: HarnessReportBodyV1) => void): HarnessReportBodyV1 {
-    const body = validReportBody();
+/** A report as a `/1` scanner sent it, pointed at this tenant's register rows. */
+function v1For(tenantId: string): RetiredV1ReportBody {
+    const body = retiredV1ReportBody();
     body.scan.id = `scan_v1_${++scanSeq}`;
     body.scan.scanner.agentId = seeded[tenantId].scannerAgentId;
     body.agents[0].registeredAgentId = seeded[tenantId].targetAgentId;
-    edit?.(body);
     return body;
 }
 
@@ -159,7 +157,7 @@ const vault = (status: 'COMPLETE' | 'INCOMPLETE' | 'ABSENT') => (b: HarnessRepor
     }
 };
 
-const ingest = (tenantId: string, body: HarnessReportBodyV1 | HarnessReportBodyV2) =>
+const ingest = (tenantId: string, body: HarnessReportBodyV2 | RetiredV1ReportBody) =>
     ingestHarnessReport(ctxFor(tenantId), seeded[tenantId].scanner.serialise(body));
 
 const orphanRef = (tenantId: string, ref = UNBOUND_VAULT_REF) => orphanCredentialRefOf(seeded[tenantId].scannerAgentId, 'vault', ref);
@@ -200,14 +198,7 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
-describe('1. both ids verify and ingest through the one path', () => {
-    it('a /1 report from a deployed scanner ingests unchanged, and raises no orphan', async () => {
-        const result = await ingest(T1, v1For(T1, (b) => (b.findings = [])));
-        expect(result).toMatchObject({ complete: true, agentCount: 2, findingsOpened: 3 });
-        const orphans = await prisma.finding.count({ where: { tenantId: T1, sourceRef: { startsWith: 'ORPHAN_CREDENTIAL:' } } });
-        expect(orphans).toBe(0);
-    });
-
+describe('1. a /2 report verifies and ingests', () => {
     it('a /2 report ingests, and its code source and UNPARSEABLE reason round-trip into the stored scan', async () => {
         const body = v2For(T1);
         const result = await ingest(T1, body);
@@ -279,18 +270,6 @@ describe('1b. per-tool call counts and model endpoints (owner decision, 2026-10-
         expect(await harnessRowCounts(T1)).toEqual(before);
     });
 
-    it('a /1 report carrying a call count or a model endpoint is refused, and nothing is written', async () => {
-        const before = await harnessRowCounts(T1);
-        const withCalls = v1For(T1, (b) => {
-            Object.assign(b.agents[0].tools[0], { calls: 1, windowDays: 1 });
-        });
-        await expect(ingest(T1, withCalls)).rejects.toThrow('harness_report_refused: SCHEMA: agents.0.tools.0: 2 unrecognized keys');
-        const withModels = v1For(T1, (b) => {
-            Object.assign(b.agents[0], { models: [{ endpoint: 'https://api.openai.com/v1', model: null }] });
-        });
-        await expect(ingest(T1, withModels)).rejects.toThrow('harness_report_refused: SCHEMA: agents.0: 1 unrecognized key');
-        expect(await harnessRowCounts(T1)).toEqual(before);
-    });
 });
 
 describe('1c. stored model endpoints: not reported, reported empty, reported, unreadable (#3759)', () => {
@@ -317,12 +296,7 @@ describe('1c. stored model endpoints: not reported, reported empty, reported, un
         return row.models;
     }
 
-    it('a /1 scan and a /2 agent without models store SQL NULL and read NOT REPORTED; [] stores [] and reads reported empty', async () => {
-        const v1 = await ingest(T1, v1For(T1));
-        const v1Item = await itemOf(T1, v1.scanId, 'entra:sp:registered-1');
-        expect(await modelsColumn(v1Item.id)).toEqual({ isNull: true, type: null });
-        expect(await matrixModels(T1, v1Item.discoveredAgentId)).toEqual({ state: 'NOT_REPORTED' });
-
+    it('an agent reported without models stores SQL NULL and reads NOT REPORTED; [] stores [] and reads reported empty', async () => {
         // The fake scanner's /2 body gives its shadow agent no `models`.
         const absent = await ingest(T1, v2For(T1));
         const shadow = await itemOf(T1, absent.scanId, 'entra:sp:shadow-1');
@@ -363,13 +337,17 @@ describe('1c. stored model endpoints: not reported, reported empty, reported, un
 });
 
 describe('2. a refused report writes nothing', () => {
-    it('a /1 report carrying a /2 member is refused by the /1 schema', async () => {
+    it('a /1 report is refused since /1 was retired (SCHEMA), and nothing is written (#3686)', async () => {
+        // A report exactly as a /1 scanner sent it: signed by this tenant's
+        // registered scanner key, naming that scanner, and valid under the
+        // schema /1 had. Refused all the same, and refused before any write.
         const before = await harnessRowCounts(T1);
-        const body = { ...v1For(T1), unboundCredentials: [{ ref: 'kv://prod/agents/x', sourceKind: 'vault' }] };
-        await expect(ingest(T1, body as unknown as HarnessReportBodyV1)).rejects.toThrow(
-            'harness_report_refused: SCHEMA: (root): 1 unrecognized key',
+        const auditsBefore = await prisma.auditLog.count({ where: { tenantId: T1 } });
+        await expect(ingest(T1, v1For(T1))).rejects.toThrow(
+            'harness_report_refused: SCHEMA: contract: inflect-agent-harness/1 is retired; the scanner must speak inflect-agent-harness/2',
         );
         expect(await harnessRowCounts(T1)).toEqual(before);
+        expect(await prisma.auditLog.count({ where: { tenantId: T1 } })).toBe(auditsBefore);
     });
 
     it('an unbound credential with a secret\'s shape is refused, named by path, never by value', async () => {
@@ -415,11 +393,6 @@ describe('3. ORPHAN_CREDENTIAL opens and closes on positive evidence only', () =
             vault('ABSENT')(b);
             b.unboundCredentials = [];
         }));
-        expect(await findingStatus(T1, orphanRef(T1))).toBe('OPEN');
-    });
-
-    it('a /1 report closes nothing, though it read the vault in full', async () => {
-        await ingest(T1, v1For(T1));
         expect(await findingStatus(T1, orphanRef(T1))).toBe('OPEN');
     });
 

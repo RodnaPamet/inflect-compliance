@@ -571,7 +571,15 @@ const HIGH_MULTIPLICITY = 5;
 //   AnimatedSizeContainer uses the shared useResizeObserver matched any
 //   `from './hooks'` in the file; it now names the hook's own module, which
 //   only that import satisfies.
-const AMBIGUOUS_NEEDLE_BASELINE = 1164;
+//
+//   1164 -> 1163 (2026-10-19, #3686). Adding the scanner image's Trivy gate
+//   to ci.yml gave `security-gate-strictness`'s `exit-code: "1"` needle a
+//   second position, so deleting the application image's exit code would have
+//   left it green on the scanner's. Both of that test's ci.yml needles,
+//   severity and exit code, are now asserted inside each gate's own step,
+//   which takes the new site back out and the severity one (two positions
+//   before this diff) with it.
+const AMBIGUOUS_NEEDLE_BASELINE = 1163;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

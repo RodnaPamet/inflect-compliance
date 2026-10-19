@@ -2,14 +2,14 @@
  * Harness scans (#3665, UC1) — the ONLY writer of DiscoveredAgent,
  * AgentHarnessScan and AgentHarnessScanItem.
  *
- * A scanner in the client's environment posts a signed `inflect-agent-harness/1`
- * or `/2` report. This usecase:
+ * A scanner in the client's environment posts a signed `inflect-agent-harness/2`
+ * report. This usecase:
  *
  *   1. reads the scanner keys the tenant trusts (unrevoked rows only);
  *   2. verifies, in the contract's order — size, JSON, signature BY ONE OF
  *      THOSE KEYS, then the strict schema of the id the report names — and
- *      writes NOTHING on a refusal. Both ids take the same path, so a deployed
- *      `/1` scanner keeps working (#3754);
+ *      writes NOTHING on a refusal. A report naming the retired `/1` is such a
+ *      refusal (#3686);
  *   3. holds the signer to its identity: the key belongs to one registered
  *      agent, the report must name that agent as its scanner, and an API key
  *      bound to an agent may submit only that agent's reports;
@@ -45,7 +45,6 @@ import { recordHarnessScanOutcome } from '@/lib/observability/integration-metric
 import { FindingRepository } from '../repositories/FindingRepository';
 import { invalidateRelinkedConfirmations } from './agent-service-principal-confirmation';
 import {
-    HARNESS_CONTRACT_V2,
     harnessKeyFingerprint,
     harnessSignedMessage,
     MAX_UNBOUND_CREDENTIALS,
@@ -211,23 +210,20 @@ async function record(
             take: known.length,
         });
     // This scanner's open ORPHAN_CREDENTIAL findings, which a complete read of
-    // their source may close (#3754). A `/1` report can close none, so none is
-    // read for one. Scoped by the scanner's prefix: another scanner's sources
-    // are not this one's to vouch for.
-    const openOrphans = body.contract !== HARNESS_CONTRACT_V2
-        ? []
-        : await db.finding.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                sourceKind: HARNESS_FINDING_SOURCE_KIND,
-                sourceRef: { startsWith: orphanCredentialRefPrefix(body.scan.scanner.agentId) },
-                status: { not: 'CLOSED' },
-                deletedAt: null,
-            },
-            select: { sourceRef: true },
-            orderBy: { createdAt: 'asc' },
-            take: MAX_OPEN_ORPHANS_READ,
-        });
+    // their source may close (#3754). Scoped by the scanner's prefix: another
+    // scanner's sources are not this one's to vouch for.
+    const openOrphans = await db.finding.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            sourceKind: HARNESS_FINDING_SOURCE_KIND,
+            sourceRef: { startsWith: orphanCredentialRefPrefix(body.scan.scanner.agentId) },
+            status: { not: 'CLOSED' },
+            deletedAt: null,
+        },
+        select: { sourceRef: true },
+        orderBy: { createdAt: 'asc' },
+        take: MAX_OPEN_ORPHANS_READ,
+    });
     const knownById = new Map(known.map((k) => [k.id, k]));
 
     const plan = planHarnessScan(body, {

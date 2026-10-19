@@ -1,7 +1,7 @@
 /**
- * The `inflect-agent-harness/1` contract (#3660) and `/2` (#3754), validated
- * against their reference implementation,
- * `tests/helpers/agent-harness-fake-scanner.ts`.
+ * The `inflect-agent-harness/2` contract (#3754), validated against its
+ * reference implementation, `tests/helpers/agent-harness-fake-scanner.ts`; and
+ * the refusal of the retired `/1` (#3660, retired by #3686).
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -12,10 +12,8 @@ import {
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
     INCOMPLETE_REASONS,
-    INCOMPLETE_REASONS_V1,
     INCOMPLETE_REASONS_V2,
     SOURCE_KINDS,
-    SOURCE_KINDS_V1,
     SOURCE_KINDS_V2,
     harnessSignedMessage,
     isScanComplete,
@@ -36,6 +34,7 @@ import {
     V2_MODEL_ENDPOINTS,
     createFakeScanner,
     malformedReport,
+    retiredV1ReportBody,
     validIncompleteReportBody,
     validReportBody,
     validV2ReportBody,
@@ -72,7 +71,15 @@ describe('a valid report from the reference scanner', () => {
     it('verifies regardless of the key order on the wire, because the signed form is canonical', () => {
         const body = validReportBody();
         const signature = scanner.signBody(body);
-        const reordered = JSON.stringify({ signature, findings: body.findings, agents: body.agents, population: body.population, scan: body.scan, contract: body.contract });
+        const reordered = JSON.stringify({
+            signature,
+            unboundCredentials: body.unboundCredentials,
+            findings: body.findings,
+            agents: body.agents,
+            population: body.population,
+            scan: body.scan,
+            contract: body.contract,
+        });
         expect(verifyAndParseHarnessReport(reordered, [scanner.publicKeyHex]).ok).toBe(true);
     });
 
@@ -187,28 +194,31 @@ describe('inflect-agent-harness/2 (#3754)', () => {
         expect(verify(body)).toMatchObject({ ok: true, complete: true });
     });
 
-    it('a /1 report still verifies, and is held to /1 whatever it carries', () => {
-        expect(verify(validReportBody())).toMatchObject({ ok: true, body: { contract: HARNESS_CONTRACT_V1 } });
-        // Each /2 addition, on a /1 report, is refused by the /1 schema — never
-        // read as a /2 report that forgot to say so.
-        const unbound = { ...validReportBody(), unboundCredentials: [{ ref: UNBOUND_VAULT_REF, sourceKind: 'vault' }] };
-        expect(issuesOf(unbound)).toContain('(root): 1 unrecognized key');
-        const code = validReportBody() as unknown as { population: { sources: unknown[] } };
-        code.population.sources.push({ kind: 'code', status: 'COMPLETE', rows: 1 });
-        expect(issuesOf(code).some((i) => i.startsWith('population.sources.4.kind:'))).toBe(true);
-        const unparseable = validReportBody() as unknown as { population: { sources: unknown[] } };
-        unparseable.population.sources[2] = { kind: 'mcp', status: 'INCOMPLETE', reason: 'UNPARSEABLE', rows: 1 };
-        expect(issuesOf(unparseable).some((i) => i.startsWith('population.sources.2.reason:'))).toBe(true);
+    it('a /1 report is refused since /1 was retired, and the refusal says so (#3686)', () => {
+        // A report exactly as a /1 scanner sent it, signed by a trusted key.
+        expect(issuesOf(retiredV1ReportBody())).toEqual([
+            `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V2}`,
+        ]);
+        // The retirement refuses the id, not the content: the same body under
+        // /2, with /2's one required member, verifies.
+        expect(verify({ ...retiredV1ReportBody(), contract: HARNESS_CONTRACT_V2, unboundCredentials: [] })).toMatchObject({ ok: true });
+        // An id that never existed gets the plain refusal, naming nothing.
+        expect(issuesOf({ ...validReportBody(), contract: 'inflect-agent-harness/3' })).toEqual([
+            'contract: not a contract id this verifier accepts',
+        ]);
     });
 
-    it('a /2 report must carry its member, and is checked against /2, not /1', () => {
+    it('a /1 report still meets the signature check first: an unregistered signer is refused as such', () => {
+        const other = createFakeScanner();
+        expect(verifyAndParseHarnessReport(other.serialise(retiredV1ReportBody()), [scanner.publicKeyHex])).toEqual({
+            ok: false,
+            reason: 'UNTRUSTED_SIGNER',
+        });
+    });
+
+    it('a /2 report must carry its member', () => {
         const { unboundCredentials: _absent, ...missing } = validV2ReportBody();
         expect(issuesOf(missing).some((i) => i.startsWith('unboundCredentials:'))).toBe(true);
-        // The same body relabelled /1 fails on exactly what /1 lacks.
-        const relabelled = { ...validV2ReportBody(), contract: HARNESS_CONTRACT_V1 };
-        const issues = issuesOf(relabelled);
-        expect(issues).toContain('(root): 1 unrecognized key');
-        expect(issues.some((i) => i.startsWith('population.sources.4.'))).toBe(true);
     });
 
     it('the verify order holds for /2: the signature covers the new member and is checked before the schema', () => {
@@ -281,15 +291,6 @@ describe('inflect-agent-harness/2 (#3754)', () => {
             expect(shadow.tools[0]).not.toHaveProperty('calls');
         });
 
-        it('a /1 report carrying either is refused by the /1 schema', () => {
-            const calls = validReportBody() as unknown as { agents: Array<{ tools: Array<Record<string, unknown>> }> };
-            Object.assign(calls.agents[0].tools[0], { calls: 1, windowDays: 1 });
-            expect(issuesOf(calls)).toContain('agents.0.tools.0: 2 unrecognized keys');
-            const models = { ...validReportBody() } as unknown as { agents: Array<Record<string, unknown>> };
-            models.agents[0].models = [{ endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }];
-            expect(issuesOf(models)).toContain('agents.0: 1 unrecognized key');
-        });
-
         it('a count comes with its window, and both are bounded whole numbers', () => {
             const at = (tool: Record<string, unknown>) => {
                 const body = validV2ReportBody() as unknown as { agents: Array<{ tools: Array<Record<string, unknown>> }> };
@@ -338,10 +339,10 @@ describe('inflect-agent-harness/2 (#3754)', () => {
             expect(firstSecretShapedMember(body)).toBe('agents[0].models[0].model');
         });
 
-        it('a stored tool keeps its count and window, and a /1 tool still reads back', () => {
+        it('a stored tool keeps its count and window, and a tool stored from a /1 scan still reads back', () => {
             const v2Tools = JSON.parse(JSON.stringify(validV2ReportBody().agents[0].tools)) as unknown;
             expect(parseStoredHarnessTools(v2Tools)?.[0]).toMatchObject({ calls: 42, windowDays: 30 });
-            const v1Tools = JSON.parse(JSON.stringify(validReportBody().agents[0].tools)) as unknown;
+            const v1Tools = JSON.parse(JSON.stringify(retiredV1ReportBody().agents[0].tools)) as unknown;
             expect(parseStoredHarnessTools(v1Tools)?.[0]).not.toHaveProperty('calls');
             expect(parseStoredHarnessTools([{ ...(v1Tools as object[])[0], calls: 3 }])).toBeNull();
         });
@@ -384,12 +385,12 @@ describe('inflect-agent-harness/2 (#3754)', () => {
         });
     });
 
-    it('each id has its own lists, and the union is what stored rows are read against', () => {
-        expect(HARNESS_CONTRACT_IDS).toEqual([HARNESS_CONTRACT_V1, HARNESS_CONTRACT_V2]);
-        expect(SOURCE_KINDS_V2).toEqual([...SOURCE_KINDS_V1, 'code']);
-        expect(INCOMPLETE_REASONS_V2).toEqual([...INCOMPLETE_REASONS_V1, 'UNPARSEABLE']);
-        expect(new Set(SOURCE_KINDS)).toEqual(new Set([...SOURCE_KINDS_V1, ...SOURCE_KINDS_V2]));
-        expect(new Set(INCOMPLETE_REASONS)).toEqual(new Set([...INCOMPLETE_REASONS_V1, ...INCOMPLETE_REASONS_V2]));
+    it('/2 is the one accepted id, and stored rows, a /1 scan\'s included, are read against its lists', () => {
+        expect(HARNESS_CONTRACT_IDS).toEqual([HARNESS_CONTRACT_V2]);
+        expect(SOURCE_KINDS).toEqual(SOURCE_KINDS_V2);
+        expect(INCOMPLETE_REASONS).toEqual(INCOMPLETE_REASONS_V2);
+        const v1Sources = JSON.parse(JSON.stringify(retiredV1ReportBody().population.sources)) as unknown;
+        expect(parseStoredHarnessSources(v1Sources)?.map((s) => s.kind)).toEqual(['entra-sp', 'vault', 'mcp', 'inflect-register']);
     });
 
     it('every reason an accepted id can carry has a label in each locale the harness tab renders', () => {

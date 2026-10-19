@@ -1537,12 +1537,13 @@ properties that are each one careless edit from being undone:
   block does not list.
 - **Order lives in one place** and comparison is ordinal (`levelAtLeast`).
 
-**The scanner report contract** (`inflect-agent-harness/1` and `/2`,
+**The scanner report contract** (`inflect-agent-harness/2`,
 `docs/agent-harness-contract.md`, `src/lib/agentic/harness-contract.ts`) is
 verified in one order: size, JSON, signature by a TRUSTED key, then the strict
-schema OF THE ID THE REPORT NAMES. Both ids are accepted (#3754), each against
-its own schema, so a `/1` report carrying a `/2` member is refused rather than
-read as `/2`; do not collapse them into one lenient schema. The report cannot
+schema. `/2` is the one id accepted: `/1` was retired with the scanner
+container (#3686), and a report naming it is a `SCHEMA` refusal that writes
+nothing. A new id is a new strict schema beside `/2`, never a lenient one that
+reads either. The report cannot
 state a level, cannot carry a credential value, and cannot declare
 completeness; all three are derived or refused.
 `tests/helpers/agent-harness-fake-scanner.ts` is the reference implementation,

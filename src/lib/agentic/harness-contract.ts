@@ -1,5 +1,6 @@
 /**
- * The wire contracts `inflect-agent-harness/1` (#3660) and `/2` (#3754).
+ * The wire contract `inflect-agent-harness/2` (#3754), and the refusal of the
+ * retired `/1` (#3660, retired by #3686).
  *
  * ONE SOURCE OF TRUTH, three readers. `docs/agent-harness-contract.md` is what a
  * scanner is built against, `tests/helpers/agent-harness-fake-scanner.ts` is the
@@ -7,16 +8,16 @@
  * validates the fake scanner's output against these schemas, so the three cannot
  * drift apart silently. Same arrangement as `src/lib/mcp/client/contract.ts`.
  *
- * ‾‾‾ TWO IDS, TWO STRICT SCHEMAS ‾‾‾
+ * ‾‾‾ ONE ID, AND A RETIRED ONE ‾‾‾
  *
  * `/2` is `/1` plus the `code` source kind, the `UNPARSEABLE` reason, the
  * `unboundCredentials[]` member, and per agent an optional call count on each
- * tool and optional `models[]` endpoints (owner decisions, 2026-10-19). The verifier
- * accepts both, so a deployed `/1` scanner keeps working, and holds each report
- * to the schema of the id it names: a `/1` report carrying any of `/2`'s
- * additions is refused, never read as a `/2` report that forgot to say so. The
- * schemas are built by one function over each id's member lists, so the shared
- * part cannot drift between them.
+ * tool and optional `models[]` endpoints (owner decisions, 2026-10-19). `/1` was
+ * accepted beside it while a `/1` scanner could exist, and was retired at the
+ * scanner container's release (#3686, owner decision 2026-10-19): a report that
+ * names it is a `SCHEMA` refusal, and the ingest writes nothing. Scans already
+ * stored from `/1` reports still read, because `/2`'s kinds and reasons
+ * contain `/1`'s.
  *
  * ‾‾‾ THE REPORT ARRIVES FROM OUTSIDE ‾‾‾
  *
@@ -108,8 +109,12 @@ export const MAX_ID_CHARS = 256;
 /** An evidence pointer: a path, a query, a resource locator. */
 export const MAX_EVIDENCE_CHARS = 512;
 
-/** Where a `/1` scanner looked. Stable ids: the report and the matrix carry them. */
-export const SOURCE_KINDS_V1 = [
+/**
+ * Where a scanner looks. Stable ids: the report and the matrix carry them. The
+ * last, `code` (agent definitions read from source code and configuration,
+ * #3737), is the one `/2` added; the rest were `/1`'s.
+ */
+export const SOURCE_KINDS_V2 = [
     'entra-sp',
     'okta-app',
     'vault',
@@ -117,33 +122,32 @@ export const SOURCE_KINDS_V1 = [
     'runtime',
     'cicd',
     'inflect-register',
+    'code',
 ] as const;
 
-/** `/2` adds `code`: agent definitions read from source code and configuration (#3737). */
-export const SOURCE_KINDS_V2 = [...SOURCE_KINDS_V1, 'code'] as const;
-
 /**
- * Every source kind a report this verifier accepts can carry: the union over
- * the ids, which is `/2`'s because `/2` only adds. Stored scans are re-read
- * against it, and an estate may declare exactly these (the database CHECKs the
- * same list).
+ * Every source kind a report this verifier accepts can carry, which is also
+ * every kind a stored scan can hold, `/1` scans included. Stored scans are
+ * re-read against it, and an estate may declare exactly these (the database
+ * CHECKs the same list).
  */
 export const SOURCE_KINDS = SOURCE_KINDS_V2;
 
-/** Why a `/1` source could not be read completely. */
-export const INCOMPLETE_REASONS_V1 = [
+/**
+ * Why a source could not be read completely. The last, `UNPARSEABLE` (a
+ * definition the scanner read but could not resolve), is the one `/2` added.
+ */
+export const INCOMPLETE_REASONS_V2 = [
     'BYTE_CAP',
     'TIME_BOX',
     'AUTH_FAILED',
     'UNREACHABLE',
     'PAGINATION_TORN',
     'RATE_LIMITED',
+    'UNPARSEABLE',
 ] as const;
 
-/** `/2` adds `UNPARSEABLE`: a definition the scanner read but could not resolve. */
-export const INCOMPLETE_REASONS_V2 = [...INCOMPLETE_REASONS_V1, 'UNPARSEABLE'] as const;
-
-/** Every reason any accepted id can carry — `/2`'s, as for the kinds. */
+/** Every reason an accepted report, or a stored scan, can carry. */
 export const INCOMPLETE_REASONS = INCOMPLETE_REASONS_V2;
 
 export const FINDING_CODES = [
@@ -226,11 +230,8 @@ const toolMembers = {
     readOnlyHint: z.boolean().nullable(),
 };
 
-/** `/1`'s tool. */
-const ToolSchemaV1 = z.object(toolMembers).strict();
-
 /**
- * `/2`'s tool: `/1`'s, plus an optional call count over a window (owner
+ * A tool: `/1`'s members, plus `/2`'s optional call count over a window (owner
  * decision, 2026-10-19). A count is a number of calls and nothing of what was
  * called with — no input, no output, no prompt. It means something only beside
  * its window, so the two come together or not at all.
@@ -309,9 +310,7 @@ function agentMembersOver<const K extends Members, T extends z.ZodType>(kinds: K
     };
 }
 
-const AgentSchemaV1 = z.object(agentMembersOver(SOURCE_KINDS_V1, ToolSchemaV1)).strict();
-
-/** `/2`'s agent: `/1`'s over `/2`'s kinds and tool, and the optional `models[]`. */
+/** `/2`'s agent: `/1`'s members over `/2`'s kinds and tool, and the optional `models[]`. */
 const AgentSchemaV2 = z
     .object({
         ...agentMembersOver(SOURCE_KINDS_V2, ToolSchemaV2),
@@ -440,13 +439,7 @@ function checkUnboundCredentials(
     });
 }
 
-/** `inflect-agent-harness/1`: everything the signature covers. */
-export const HarnessReportBodyV1Schema = z
-    .object(bodyMembersOver(HARNESS_CONTRACT_V1, SOURCE_KINDS_V1, INCOMPLETE_REASONS_V1, AgentSchemaV1))
-    .strict()
-    .superRefine((r, ctx) => checkReportInvariants(r, ctx));
-
-/** `inflect-agent-harness/2`: `/1`'s members over `/2`'s lists, and `unboundCredentials[]`. */
+/** `inflect-agent-harness/2`, everything the signature covers: `/1`'s members over `/2`'s lists, and `unboundCredentials[]`. */
 export const HarnessReportBodyV2Schema = z
     .object({
         ...bodyMembersOver(HARNESS_CONTRACT_V2, SOURCE_KINDS_V2, INCOMPLETE_REASONS_V2, AgentSchemaV2),
@@ -468,13 +461,10 @@ export const HarnessSignatureSchema = z
     })
     .strict();
 
-export type HarnessReportBodyV1 = z.infer<typeof HarnessReportBodyV1Schema>;
 export type HarnessReportBodyV2 = z.infer<typeof HarnessReportBodyV2Schema>;
-/** A verified report of either id. Narrow on `contract` to reach `/2`'s members. */
-export type HarnessReportBody = HarnessReportBodyV1 | HarnessReportBodyV2;
-export type HarnessReportAgentV1 = HarnessReportBodyV1['agents'][number];
+/** A verified report. `/2` is the one id the verifier accepts. */
+export type HarnessReportBody = HarnessReportBodyV2;
 export type HarnessReportAgentV2 = HarnessReportBodyV2['agents'][number];
-/** One agent of either id. `/2`'s agent is `/1`'s over a wider kind list, so it is the wider type. */
 export type HarnessReportAgent = HarnessReportAgentV2;
 export type HarnessUnboundCredential = HarnessReportBodyV2['unboundCredentials'][number];
 export type HarnessModelEndpoint = NonNullable<HarnessReportAgentV2['models']>[number];
@@ -484,10 +474,7 @@ export type HarnessSignature = z.infer<typeof HarnessSignatureSchema>;
 const BODY_SCHEMA_BY_ID: ReadonlyMap<HarnessContractId, z.ZodType<HarnessReportBody>> = new Map<
     HarnessContractId,
     z.ZodType<HarnessReportBody>
->([
-    [HARNESS_CONTRACT_V1, HarnessReportBodyV1Schema],
-    [HARNESS_CONTRACT_V2, HarnessReportBodyV2Schema],
-]);
+>([[HARNESS_CONTRACT_V2, HarnessReportBodyV2Schema]]);
 
 /** The schema for the id a body names, or null when it names none this verifier accepts. */
 function bodySchemaFor(body: Record<string, unknown>): z.ZodType<HarnessReportBody> | null {
@@ -513,10 +500,10 @@ export function harnessSignedMessage(body: unknown): Buffer {
 
 /**
  * A scan's stored sources, re-validated against the contract (strict, each kind
- * once, at least one). The row does not record which id the report spoke, so
- * it is read against every kind and reason an accepted id can carry: a `/2`
- * scan's `code` source and `UNPARSEABLE` reason read back as written, where a
- * `/1`-only reader would call the whole scan unreadable. `null` is "could not
+ * once, at least one). The row does not record which id the report spoke, and
+ * rows from `/1` reports remain after its retirement, so it is read against
+ * `/2`'s kinds and reasons, which contain `/1`'s: either id's scan reads back
+ * as written. `null` is "could not
  * be read" — never an empty list, because zero sources would read as a scan
  * that looked nowhere and found it clean.
  */
@@ -555,8 +542,9 @@ export function parseStoredHarnessTools(json: unknown): StoredHarnessTool[] | nu
  * secret's shape, no member the contract does not define, and at most
  * `MAX_MODELS_PER_AGENT`.
  *
- * `null` — the column's NULL — is NOT_REPORTED: the ingest writes NULL for a
- * `/1` scan and for a `/2` agent without `models`. A value that does not
+ * `null` — the column's NULL — is NOT_REPORTED: the ingest writes NULL for an
+ * agent reported without `models`, and wrote it for every agent of a `/1`
+ * scan while that id was accepted. A value that does not
  * re-validate is UNREADABLE, never NOT_REPORTED and never an empty list: an
  * edited row must not read as "this agent calls no model".
  */
@@ -635,8 +623,8 @@ function describeSchemaIssue(issue: z.core.$ZodIssue): string {
  * signature by a TRUSTED key, then the strict schema OF THE ID THE REPORT
  * NAMES. `trustedSignerKeys` are the public keys of scanners registered for
  * this tenant; a report signed by any other key is refused even if its
- * signature is mathematically valid. `/1` and `/2` go through the same four
- * steps in the same order: only the last step differs.
+ * signature is mathematically valid. A report naming the retired `/1` passes
+ * the first three steps like any other, and is refused at the fourth.
  */
 export function verifyAndParseHarnessReport(
     raw: string,
@@ -677,10 +665,15 @@ export function verifyAndParseHarnessReport(
 
     // Which schema applies is itself body content, so it is read only now. An
     // id this verifier does not accept is a SCHEMA refusal that names the
-    // member, never the value the signer put there.
+    // member, never the value the signer put there. The retired `/1` is named,
+    // because the name is this module's constant rather than the signer's text,
+    // and it tells the operator what to do: upgrade the scanner.
     const bodySchema = bodySchemaFor(body);
     if (bodySchema === null) {
-        return { ok: false, reason: 'SCHEMA', issues: ['contract: not a contract id this verifier accepts'] };
+        const issue = body.contract === HARNESS_CONTRACT_V1
+            ? `contract: ${HARNESS_CONTRACT_V1} is retired; the scanner must speak ${HARNESS_CONTRACT_V2}`
+            : 'contract: not a contract id this verifier accepts';
+        return { ok: false, reason: 'SCHEMA', issues: [issue] };
     }
     const schema = bodySchema.safeParse(body);
     if (!schema.success) {

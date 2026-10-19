@@ -118,10 +118,10 @@
  *     BOUND, only unbound, so it does not hold a close back; but a credential
  *     the source still lists is never closed, whether or not this scan could
  *     open it.
- *   • AN ABSENT OR INCOMPLETE SOURCE CLOSES NOTHING, and neither does a `/1`
- *     report: it has no member to say anything about unbound credentials, and
- *     its silence is not a statement that there are none. An incomplete
- *     identity source therefore opens nothing and closes nothing.
+ *   • AN ABSENT OR INCOMPLETE SOURCE CLOSES NOTHING. An incomplete identity
+ *     source therefore opens nothing and closes nothing. (A `/1` report, which
+ *     had no member to say anything about unbound credentials, closed nothing
+ *     either; `/1` is retired, #3686, and the verifier no longer accepts one.)
  *
  * The open findings it may close are the ingest's to read
  * (`PriorHarnessState.openOrphanCredentials`), because closing is about rows the
@@ -151,7 +151,7 @@ import type {
     HarnessUnboundCredential,
     SOURCE_KINDS,
 } from './harness-contract';
-import { HARNESS_CONTRACT_V2, isScanComplete, looksLikeSecret } from './harness-contract-rules';
+import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
  * The path of the first string member of a verified body whose value is
@@ -663,33 +663,31 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
         }
     }
 
-    // ORPHAN CREDENTIALS — `/2` only, and only on positive evidence.
-    if (body.contract === HARNESS_CONTRACT_V2) {
-        // Opening needs the credential's own source read in full AND every
-        // identity-bearing source the scan lists: the agent that binds it may
-        // be one an incomplete identity source never reported.
-        const everyIdentitySourceRead = body.population.sources.every(
-            (s) => s.status === 'COMPLETE' || !isIdentityBearingSource(s.kind),
-        );
-        // Everything a source still lists, opened or not: a credential a
-        // source still sees unbound is never closed, even by a scan that may
-        // not open it.
-        const stillListed = new Set<string>();
-        for (const u of body.unboundCredentials) {
-            const finding = orphanCredentialFinding(scanRef, scanner, u);
-            stillListed.add(finding.sourceRef);
-            if (everyIdentitySourceRead && readInFull.has(u.sourceKind)) assert.push(finding);
-        }
-        const ownPrefix = orphanCredentialRefPrefix(scanner);
-        for (const open of prior.openOrphanCredentials) {
-            if (!open.startsWith(ownPrefix) || stillListed.has(open)) continue;
-            // Source kinds hold no colon, so the kind is the text before the
-            // first one. A ref whose kind this scan did not read in full —
-            // absent, or incomplete — is left as it is.
-            const rest = open.slice(ownPrefix.length);
-            const kind = rest.slice(0, Math.max(rest.indexOf(':'), 0));
-            if (readInFull.has(kind)) resolve.push(open);
-        }
+    // ORPHAN CREDENTIALS — only on positive evidence.
+    // Opening needs the credential's own source read in full AND every
+    // identity-bearing source the scan lists: the agent that binds it may
+    // be one an incomplete identity source never reported.
+    const everyIdentitySourceRead = body.population.sources.every(
+        (s) => s.status === 'COMPLETE' || !isIdentityBearingSource(s.kind),
+    );
+    // Everything a source still lists, opened or not: a credential a
+    // source still sees unbound is never closed, even by a scan that may
+    // not open it.
+    const stillListed = new Set<string>();
+    for (const u of body.unboundCredentials) {
+        const finding = orphanCredentialFinding(scanRef, scanner, u);
+        stillListed.add(finding.sourceRef);
+        if (everyIdentitySourceRead && readInFull.has(u.sourceKind)) assert.push(finding);
+    }
+    const ownPrefix = orphanCredentialRefPrefix(scanner);
+    for (const open of prior.openOrphanCredentials) {
+        if (!open.startsWith(ownPrefix) || stillListed.has(open)) continue;
+        // Source kinds hold no colon, so the kind is the text before the
+        // first one. A ref whose kind this scan did not read in full —
+        // absent, or incomplete — is left as it is.
+        const rest = open.slice(ownPrefix.length);
+        const kind = rest.slice(0, Math.max(rest.indexOf(':'), 0));
+        if (readInFull.has(kind)) resolve.push(open);
     }
 
     return { agents, assert, resolve, intakeConflicts };

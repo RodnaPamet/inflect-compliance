@@ -183,6 +183,15 @@ Inflect. Check the report with `scan --dry-run` first, then run `schedule`,
 which scans at once and then every `everyHours`, anchored to each run's start,
 and carries on after a failed run.
 
+The scanner runs in the estate as a container that the estate builds from a
+checkout of this repository (`packages/agent-harness-scanner/Dockerfile`; it is
+not published, owner decision 2026-10-19). Its default command is `schedule`.
+Run it read-only, with every capability dropped, as its own non-root user
+(uid 1000); mount the configuration and each `code` root read-only and readable
+by that user; and supply the environment variables the configuration names from
+the estate's secret store. The signing key is one of them, and the image holds
+none. The README's Container section has the commands.
+
 **Before the first estate scans a real LangSmith workspace** (owner decision,
 2026-10-19), run one `scan --dry-run` against it and read the `runtime` entry
 of `population.sources`. The paths and query parameters the source uses are in

@@ -62,7 +62,7 @@ describe('levels are derived by the ladder, never read', () => {
 });
 
 describe('model endpoints are carried as reported, and absence stays absence (#3759)', () => {
-    it('a /2 agent\'s models are planned as reported; a /2 agent without them, and every /1 agent, plan null', () => {
+    it('an agent\'s models are planned as reported, and an agent reported without them plans null', () => {
         const v2 = Object.fromEntries(planHarnessScan(validV2ReportBody(), prior()).agents.map((a) => [a.discoveredId, a]));
         expect(v2['entra:sp:registered-1'].models).toEqual(validV2ReportBody().agents[0].models);
         expect(v2['entra:sp:shadow-1'].models).toBeNull();
@@ -490,14 +490,6 @@ describe('ORPHAN_CREDENTIAL is derived from unboundCredentials[], on positive ev
         expect(resolvedOrphans(planHarnessScan(vault('INCOMPLETE', false), withOpen(VAULT_ORPHAN)))).toEqual([]);
         // The pair proves the branch: the same scan with the vault read in full closes it.
         expect(resolvedOrphans(planHarnessScan(vault('COMPLETE', false), withOpen(VAULT_ORPHAN)))).toEqual([VAULT_ORPHAN]);
-    });
-
-    it('a /1 report opens and closes nothing, its vault read in full or not', () => {
-        const v1 = validReportBody();
-        expect(v1.population.sources.find((s) => s.kind === 'vault')?.status).toBe('COMPLETE');
-        const plan = planHarnessScan(v1, withOpen(VAULT_ORPHAN));
-        expect(orphans(plan)).toEqual([]);
-        expect(resolvedOrphans(plan)).toEqual([]);
     });
 
     it('the report\'s own ORPHAN_CREDENTIAL finding is not acted on', () => {

@@ -16,18 +16,23 @@
  * fails if it, or anything it imports, gains one.
  */
 
-/** The first contract (#3660). Still verified: a deployed `/1` scanner keeps working. */
+/**
+ * The first contract (#3660), RETIRED at the scanner container's release
+ * (#3686, owner decision 2026-10-19): the verifier refuses a report that names
+ * it (`SCHEMA`) and writes nothing. No scanner but the reference one ever spoke
+ * it, and that one speaks `/2`. Kept only so the refusal can say why.
+ */
 export const HARNESS_CONTRACT_V1 = 'inflect-agent-harness/1';
 
 /**
  * `/1` plus the `code` source kind, the `UNPARSEABLE` reason and the
- * `unboundCredentials[]` member (#3754, owner decision 2026-10-19). What a
- * scanner built today emits.
+ * `unboundCredentials[]` member (#3754, owner decision 2026-10-19). The one id
+ * the verifier accepts.
  */
 export const HARNESS_CONTRACT_V2 = 'inflect-agent-harness/2';
 
-/** Every id the verifier accepts, each against its own strict schema. */
-export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V1, HARNESS_CONTRACT_V2] as const;
+/** Every id the verifier accepts. `/1` is retired and is not among them. */
+export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V2] as const;
 export type HarnessContractId = (typeof HARNESS_CONTRACT_IDS)[number];
 
 /**

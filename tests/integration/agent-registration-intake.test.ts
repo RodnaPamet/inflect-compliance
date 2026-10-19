@@ -41,7 +41,7 @@ import { classifyAiSystemEntry } from '@/app-layer/usecases/ai-system';
 import { RegisteredAgentRepository } from '@/app-layer/repositories/RegisteredAgentRepository';
 import { verifyAuditChain } from '@/lib/audit';
 import { POST as INTAKE } from '@/app/api/t/[tenantSlug]/admin/agents/intake/route';
-import type { HarnessReportAgentV1, HarnessReportBodyV1 } from '@/lib/agentic/harness-contract';
+import type { HarnessReportAgent, HarnessReportBody } from '@/lib/agentic/harness-contract';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -110,12 +110,12 @@ async function clearOwnRows(): Promise<void> {
     await prisma.tenant.deleteMany({ where: { id: { in: ALL_TENANTS } } });
 }
 
-function shadowAgent(template: HarnessReportAgentV1, s: Shadow): HarnessReportAgentV1 {
+function shadowAgent(template: HarnessReportAgent, s: Shadow): HarnessReportAgent {
     return { ...template, discoveredId: discoveredIdOf(s), registeredAgentId: null };
 }
 
 /** The fake scanner's valid body, pointed at this tenant's register, with every shadow in it. */
-function bodyFor(tenantId: string, scanId: string, registered: Partial<Record<Shadow, string>> = {}): HarnessReportBodyV1 {
+function bodyFor(tenantId: string, scanId: string, registered: Partial<Record<Shadow, string>> = {}): HarnessReportBody {
     const s = seeded[tenantId];
     const body = validReportBody();
     body.scan.id = scanId;

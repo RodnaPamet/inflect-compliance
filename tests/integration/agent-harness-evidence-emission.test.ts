@@ -62,7 +62,7 @@ import {
     isPerAgentKind,
 } from '@/lib/agentic/evidence-artefact';
 import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence';
-import type { HarnessReportAgentV1, HarnessReportBodyV1 } from '@/lib/agentic/harness-contract';
+import type { HarnessReportAgent, HarnessReportBody } from '@/lib/agentic/harness-contract';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -228,7 +228,7 @@ async function statusChangesOf(evidenceId: string) {
 }
 
 /** One agent of a report, carrying every canary the DPIA case looks for. */
-function reportAgent(discoveredId: string, opts: { registeredAgentId?: string | null } = {}): HarnessReportAgentV1 {
+function reportAgent(discoveredId: string, opts: { registeredAgentId?: string | null } = {}): HarnessReportAgent {
     return {
         discoveredId,
         discoveredVia: ['entra-sp'],
@@ -247,7 +247,7 @@ function reportAgent(discoveredId: string, opts: { registeredAgentId?: string | 
     };
 }
 
-type Source = HarnessReportBodyV1['population']['sources'][number];
+type Source = HarnessReportBody['population']['sources'][number];
 const ALL_COMPLETE: Source[] = [
     { kind: 'entra-sp', status: 'COMPLETE', rows: 10 },
     { kind: 'mcp', status: 'COMPLETE', rows: 2 },
@@ -261,9 +261,9 @@ function body(
     scannerAgentId: string,
     scanRef: string,
     asOf: string,
-    agents: HarnessReportAgentV1[],
+    agents: HarnessReportAgent[],
     sources: Source[] = ALL_COMPLETE,
-): HarnessReportBodyV1 {
+): HarnessReportBody {
     const b = validReportBody();
     b.scan = { id: scanRef, asOf, scanner: { ...b.scan.scanner, agentId: scannerAgentId } };
     b.population = { sources };
@@ -277,7 +277,7 @@ async function ingest(
     which: 'A' | 'B',
     scanRef: string,
     day: number,
-    opts: { sources?: Source[]; agents?: HarnessReportAgentV1[] } = {},
+    opts: { sources?: Source[]; agents?: HarnessReportAgent[] } = {},
 ) {
     const s = which === 'A' ? seeded.scannerA : seeded.scannerB;
     const agents = opts.agents ?? [

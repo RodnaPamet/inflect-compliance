@@ -1,0 +1,17 @@
+// The scanner image's tsconfig, copied to /app. tsx reads it from the working
+// directory for one thing: the `@/` alias the scanner's contract imports use.
+// See ../README.md, Container.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
