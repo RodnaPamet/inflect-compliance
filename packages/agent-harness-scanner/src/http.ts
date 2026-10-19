@@ -1,13 +1,15 @@
 /**
- * THE SCANNER'S ONLY WAY OUT — a GET-only reader, one OAuth token exchange, and
+ * THE SCANNER'S ONLY WAY OUT — a GET-only reader, the OAuth token exchange, and
  * an MCP listing.
  *
  * Read-only is a property of this module's SHAPE, not of the sources' good
  * behaviour. `ReadOnlyHttp` has one verb, `getJson`, and no method parameter,
- * so a source holding it has no way to spell a write. The OAuth client
- * credentials exchange is a POST by protocol; it lives behind its own interface
+ * so a source holding it has no way to spell a write. The OAuth token
+ * exchange is a POST by protocol; it lives behind its own interface
  * (`TokenExchange`), and it changes nothing in the estate — it asks the
- * source's identity provider for a token to READ with.
+ * source's identity provider for a token to READ with. It has two grants and
+ * no grant parameter: the client-credentials grant, and the JWT-bearer grant
+ * (RFC 7523) Google's service accounts use (#3785).
  *
  * MCP is JSON-RPC over POST, so an MCP server is the one place a source sends a
  * body. `McpListingWire` has two functions and no method parameter: `open`
@@ -120,7 +122,16 @@ export interface TokenExchange {
         readonly clientSecret: string;
         readonly scope: string;
     }): Promise<string>;
+    /**
+     * The OAuth 2.0 JWT-bearer grant (RFC 7523) against `tokenUrl`, which must
+     * be on `origin`: `assertion` is a JWT the caller signed. Returns the access
+     * token, or throws `SourceReadError`, as `clientCredentials` does.
+     */
+    jwtBearer(req: { readonly tokenUrl: string; readonly origin: string; readonly assertion: string }): Promise<string>;
 }
+
+/** RFC 7523's grant type, the one value `jwtBearer` sends. */
+export const JWT_BEARER_GRANT = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 
 /** One response body, in bytes. A listing page is far smaller. */
 export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -309,39 +320,45 @@ export function createSourceWire(
         },
     };
 
-    const tokens: TokenExchange = {
-        async clientCredentials({ tokenUrl, origin, clientId, clientSecret, scope }) {
-            if (!isOnOrigin(tokenUrl, origin)) {
-                throw new SourceReadError('AUTH_FAILED', 'the token endpoint is not on its configured origin');
-            }
-            const form = new URLSearchParams({
-                grant_type: 'client_credentials',
-                client_id: clientId,
-                client_secret: clientSecret,
-                scope,
+    /** POST one grant's form to a token endpoint on its origin; the access token, or the contract's reason. */
+    async function exchange(tokenUrl: string, origin: string, form: URLSearchParams): Promise<string> {
+        if (!isOnOrigin(tokenUrl, origin)) {
+            throw new SourceReadError('AUTH_FAILED', 'the token endpoint is not on its configured origin');
+        }
+        try {
+            const res = await t.fetchImpl(tokenUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+                body: form.toString(),
+                redirect: 'error',
+                signal: AbortSignal.timeout(remaining(t)),
             });
-            try {
-                const res = await t.fetchImpl(tokenUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-                    body: form.toString(),
-                    redirect: 'error',
-                    signal: AbortSignal.timeout(remaining(t)),
-                });
-                if (!res.ok) {
-                    await res.body?.cancel();
-                    // Any refusal of the exchange is a credential the source could not use.
-                    const reason = res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'UNREACHABLE' : 'AUTH_FAILED';
-                    throw new SourceReadError(reason, `the token endpoint answered HTTP ${res.status}`);
-                }
-                const body = parseJson(await readCapped(res, 64 * 1024, charge)) as { access_token?: unknown };
-                if (typeof body.access_token !== 'string' || body.access_token === '') {
-                    throw new SourceReadError('AUTH_FAILED', 'the token endpoint returned no access token');
-                }
-                return body.access_token;
-            } catch (err) {
-                throw classifyThrow(err);
+            if (!res.ok) {
+                await res.body?.cancel();
+                // Any refusal of the exchange is a credential the source could not use.
+                const reason = res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'UNREACHABLE' : 'AUTH_FAILED';
+                throw new SourceReadError(reason, `the token endpoint answered HTTP ${res.status}`);
             }
+            const body = parseJson(await readCapped(res, 64 * 1024, charge)) as { access_token?: unknown };
+            if (typeof body.access_token !== 'string' || body.access_token === '') {
+                throw new SourceReadError('AUTH_FAILED', 'the token endpoint returned no access token');
+            }
+            return body.access_token;
+        } catch (err) {
+            throw classifyThrow(err);
+        }
+    }
+
+    const tokens: TokenExchange = {
+        clientCredentials({ tokenUrl, origin, clientId, clientSecret, scope }) {
+            return exchange(
+                tokenUrl,
+                origin,
+                new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret, scope }),
+            );
+        },
+        jwtBearer({ tokenUrl, origin, assertion }) {
+            return exchange(tokenUrl, origin, new URLSearchParams({ grant_type: JWT_BEARER_GRANT, assertion }));
         },
     };
 

@@ -43,6 +43,7 @@ scanner signed it, so each estate has a scanner of its own.
 | `vault` (Azure Key Vault) | An Entra application holding `Key Vault Reader` on each vault, with a client secret | `*.vault.azure.net`, and the token from `login.microsoftonline.com` |
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
 | `cicd` (GitHub Actions) | A fine-grained token limited to the listed repositories, holding the repository permissions Contents: read and Secrets: read | `api.github.com` |
+| `gcp-sa` (Google Cloud IAM) | The JSON key of a service account holding `roles/iam.serviceAccountViewer` on the listed projects | `iam.googleapis.com`, and the token from `oauth2.googleapis.com` |
 | `code` (LangChain and LangGraph) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
@@ -133,6 +134,14 @@ scanner does not read and so reports as possibly writing, with
 is reported unbound and raises `ORPHAN_CREDENTIAL`. Organisation and environment
 secrets are not listed: a reference to one is reported with its age unknown.
 
+**Google Cloud.** List each project by its id under `projects`. Create a
+service account for the scanner that holds `roles/iam.serviceAccountViewer` on
+those projects and nothing else, give it one key, and supply the key file's JSON
+through the variable `keyEnv` names. The scanner reports every other enabled
+account in the projects with its user-managed keys, and not its own. Each
+account is keyed on its numeric id, so a principal's e-mail address never
+reaches Inflect; to recognise one on the matrix, look the id up in the project.
+
 ## 3. Labelling the estate's principals
 
 The scanner reports what the estate itself records, and nothing it would have to
@@ -157,6 +166,7 @@ it, so the credential lands on the same agent:
 | A LangSmith deployment | `langsmith:deployment:<deploymentId>` |
 | A LangSmith tracing project | `langsmith:project:<projectId>` |
 | A GitHub Actions workflow | `github:workflow:<owner>/<repo>/<file>` |
+| A Google Cloud service account | `gcp:sa:<uniqueId>` |
 
 **LangSmith reads no label.** Its agents are identified by LangSmith's own ids,
 and LangSmith records no owner for a project or a deployment, so each is reported
@@ -178,6 +188,8 @@ What the scanner deliberately does not take from these labels:
 - **Anything untagged.** A vault item with no `inflect-principal` tag is counted
   and reported as nothing; which of a vault's secrets belong to agents is the
   estate's statement to make.
+- **An owner for a service account.** Google records none, so each is reported
+  unowned and raises `SHADOW_AGENT` until somebody registers it.
 - **An owner for a workflow.** GitHub records none, and the scanner does not read
   CODEOWNERS, so each workflow is reported unowned and raises `SHADOW_AGENT`
   until somebody registers it.

@@ -344,7 +344,7 @@ describe('2. a refused report writes nothing', () => {
         const before = await harnessRowCounts(T1);
         const auditsBefore = await prisma.auditLog.count({ where: { tenantId: T1 } });
         await expect(ingest(T1, v1For(T1))).rejects.toThrow(
-            'harness_report_refused: SCHEMA: contract: inflect-agent-harness/1 is retired; the scanner must speak inflect-agent-harness/2',
+            'harness_report_refused: SCHEMA: contract: inflect-agent-harness/1 is retired; the scanner must speak inflect-agent-harness/3',
         );
         expect(await harnessRowCounts(T1)).toEqual(before);
         expect(await prisma.auditLog.count({ where: { tenantId: T1 } })).toBe(auditsBefore);

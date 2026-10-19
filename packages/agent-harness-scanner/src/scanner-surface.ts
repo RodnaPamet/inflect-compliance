@@ -17,11 +17,12 @@
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@/lib/canonical-json';
-import { HARNESS_CONTRACT_V2 } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V3 } from '@/lib/agentic/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
+import { GCP_IAM_ORIGIN, GCP_READ_PATHS, GOOGLE_OAUTH_ORIGIN, GOOGLE_TOKEN_PATH } from './sources/gcp-service-accounts';
 import { GITHUB_API_ORIGIN, GITHUB_READ_PATHS } from './sources/github-actions';
 import { HARNESS_REGISTER_TOOL, MCP_MESSAGES } from './http';
 import { INFLECT_MCP_PATH } from './sources/inflect-register';
@@ -34,9 +35,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * LangSmith source (#3738). 0.3.0: reports under `inflect-agent-harness/2`
  * (#3754). 0.4.0: the `code` source, LangChain and LangGraph (#3737). 0.5.0:
  * the Entra source (#3686). 0.6.0: the MCP source (#3686). 0.7.0: the register
- * source (#3686). 0.8.0: the GitHub Actions source (#3784).
+ * source (#3686). 0.8.0: the GitHub Actions source (#3784). 0.9.0: reports
+ * under `inflect-agent-harness/3`, and the GCP service-account source (#3785).
  */
-export const SCANNER_VERSION = '0.8.0';
+export const SCANNER_VERSION = '0.9.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -44,12 +46,13 @@ export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-sc
 export const SCANNER_SURFACE = {
     name: SCANNER_NAME,
     version: SCANNER_VERSION,
-    contract: HARNESS_CONTRACT_V2,
+    contract: HARNESS_CONTRACT_V3,
     reads: [
         { source: 'entra-sp', product: 'entra', method: 'GET', origin: GRAPH_ORIGIN, paths: [...ENTRA_READ_PATHS] },
         { source: 'okta-app', product: 'okta', method: 'GET', paths: [...OKTA_READ_PATHS] },
         // Templates: `{owner}`, `{repo}` and `{file}` each stand for one path segment.
         { source: 'cicd', product: 'github-actions', method: 'GET', origin: GITHUB_API_ORIGIN, paths: [...GITHUB_READ_PATHS] },
+        { source: 'gcp-sa', product: 'gcp-iam', method: 'GET', origin: GCP_IAM_ORIGIN, paths: [...GCP_READ_PATHS] },
         {
             source: 'vault',
             product: 'azure-key-vault',
@@ -71,6 +74,8 @@ export const SCANNER_SURFACE = {
     authenticates: [
         { product: 'azure-key-vault', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryTenantId}/oauth2/v2.0/token' },
         { product: 'entra', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryId}/oauth2/v2.0/token' },
+        // The JWT-bearer grant (RFC 7523): an assertion the scanner signed, for a token to read with.
+        { product: 'gcp-iam', method: 'POST', origin: GOOGLE_OAUTH_ORIGIN, path: GOOGLE_TOKEN_PATH },
     ],
     // No request: the `code` source reads local files, and never runs them.
     // Declared all the same, so reading code shows in the manifest hash.
@@ -161,6 +166,7 @@ export function isDeclaredRequest(method: string, url: string): boolean {
     }
     if (method !== 'POST') return false;
     if (origin === AZURE_LOGIN_ORIGIN) return /^\/[^/]+\/oauth2\/v2\.0\/token$/.test(pathname);
+    if (origin === GOOGLE_OAUTH_ORIGIN) return pathname === GOOGLE_TOKEN_PATH;
     // The register read posts to the tenant's `/api/mcp`; its messages are held
     // by `isDeclaredRegisterMessage`.
     if (pathname === INFLECT_MCP_PATH) return true;

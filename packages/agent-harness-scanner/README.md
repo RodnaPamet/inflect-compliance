@@ -2,12 +2,12 @@
 
 The reference harness scanner (#3678, owner decision of 2026-10-18 on that
 issue). It runs inside a client's estate, reads that estate's sources
-**read-only**, builds an `inflect-agent-harness/2` report
+**read-only**, builds an `inflect-agent-harness/3` report
 ([`docs/agent-harness-contract.md`](../../docs/agent-harness-contract.md)),
 signs it with an Ed25519 key the tenant registered, and posts it unchanged to
-the tenant's ingest. `/2` is the one id the ingest accepts: `/1` was retired
-with this scanner's container (#3686), so a scanner built before #3754 is
-refused and must be rebuilt from this package.
+the tenant's ingest. The ingest accepts `/2` and `/3`. `/3` adds the `gcp-sa`
+source kind (#3785). `/1` was retired with this scanner's container (#3686), so a
+scanner built before #3754 is refused and must be rebuilt from this package.
 
 ## Sources
 
@@ -23,6 +23,7 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 | `vault` | Azure Key Vault | Secrets and certificates tagged with the principal they belong to (`inflect-principal`), with an `owner` tag | `POST` the client-credentials token exchange to `login.microsoftonline.com`, then `GET /secrets`, `GET /certificates` |
 | `runtime` | LangSmith | Tracing projects that called a tool in a bounded window, and deployments when the estate opts in, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /api/v1/sessions`; with `readDeployments`, `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted) |
 | `cicd` | GitHub Actions (#3784) | Each workflow file on each configured repository's default branch that holds a secret, whose run token may write, or that reaches secrets dynamically; its secrets and run token by reference. The repository's Actions secrets by name, and each one no workflow references, as unbound | `GET /repos/{owner}/{repo}`, `GET /repos/{owner}/{repo}/contents/.github/workflows`, `GET …/contents/.github/workflows/{file}`, `GET /repos/{owner}/{repo}/actions/secrets` on `api.github.com` |
+| `gcp-sa` | Google Cloud IAM (#3785) | Each enabled service account in each configured project, by its numeric id, with its enabled user-managed keys by reference. Never its e-mail address, display name or description; never the scanner's own account | `POST` the JWT-bearer token exchange to `oauth2.googleapis.com`, then `GET /v1/projects/{project}/serviceAccounts` and `GET /v1/projects/{project}/serviceAccounts/{account}/keys?keyTypes=USER_MANAGED` on `iam.googleapis.com` |
 | `code` | LangChain and LangGraph (#3737) | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference | None. Local reads only (`lstat`, `readdir`, `readFile`) |
 
 ### Entra
@@ -260,6 +261,60 @@ at most 1,000 aliases, and 100 levels of nesting.
 workflow's owner is reported `null`, which the ingest reads as unowned), and
 GitHub Enterprise Server.
 
+### Google Cloud service accounts
+
+`/3`'s `gcp-sa` kind (#3785, owner decision 2026-10-19). A service account acts
+as itself: a workload attached to it, or anyone holding one of its keys, calls
+Google's APIs with its authority and no person in the loop. Every enabled
+account in each configured project is reported:
+
+| Agent | Id | Reported when |
+|---|---|---|
+| A service account | `gcp:sa:<uniqueId>` | it is enabled and is not the account the scanner authenticates as. The project's default accounts (Compute Engine's, App Engine's) are in the listing and are reported; Google-managed service agents are not in it |
+
+**Its credentials are its user-managed keys,** each
+`gcp-sa-key://<project>/<uniqueId>/<keyId>`:
+- bound to the account, app-only;
+- aged from `validAfterTime`;
+- expiring when `validBeforeTime` is not Google's `9999` "never".
+
+A disabled key authenticates nothing and is not reported. An account with no
+user-managed key reports none, because its tokens are minted by Google for the
+workload it is attached to and never leave Google. Google returns key metadata
+only: there is no read of a private key after it was created.
+
+**The scanner's own account** is identified by the `client_email` of the key it
+signs with, the account Google authenticated it as, and is not reported. This is
+the Okta source's rule for its own token.
+
+**What is never kept.** The listing returns each account's e-mail address,
+display name and description, any of which can name a person. A principal is
+its numeric id, so none of them reaches the report, and a test holds a marker in
+each out of the result.
+
+**Authentication** is the OAuth 2.0 JWT-bearer grant (RFC 7523):
+- The source signs a ten-minute RS256 assertion with the key, and exchanges it
+  at `oauth2.googleapis.com/token`.
+- That endpoint is a constant. The key file's own `token_uri` is never used: a
+  key file is the one input that names a host, and it is not trusted to.
+- The scope is `cloud-platform`, because the IAM API takes no read-only scope.
+  What keeps the read read-only is the account's role,
+  `roles/iam.serviceAccountViewer` (lists accounts and key metadata, changes
+  neither), and the GET-only wire.
+
+**Completeness.**
+- A key file that does not parse, or cannot sign, is `AUTH_FAILED` before any
+  request.
+- A refused assertion or a project the account cannot read is `AUTH_FAILED`.
+- An account with no usable id, an account listed twice, a key with no usable
+  id, or a key listing that claims to be paged is `PAGINATION_TORN`.
+- An empty project (Google omits the empty collection) is read in full with zero
+  rows.
+
+**Not read:** role bindings (`getIamPolicy` is a POST, and the wire has no verb
+for it), an owner (an account carries none, so each is reported unowned), and
+any project the configuration does not list.
+
 ### The `code` source
 
 `src/sources/langchain.ts` reads the roots it is given and recognises:
@@ -402,6 +457,11 @@ secret-shaped string anywhere in the file is refused by path.
       "tokenEnv": "GITHUB_READ_TOKEN"
     },
     {
+      "kind": "gcp-sa", "product": "gcp-iam",
+      "projects": ["acme-prod", "acme-data"],
+      "keyEnv": "GCP_SCANNER_KEY"
+    },
+    {
       "kind": "code", "product": "langchain",
       "roots": [{ "label": "support-bot", "path": "/estate/repos/support-bot" }]
     },
@@ -455,11 +515,14 @@ control plane.
 - `GITHUB_READ_TOKEN`: a fine-grained personal access token, or a GitHub App
   installation token, limited to the listed repositories and holding the
   repository permissions **Contents: read** and **Secrets: read**, and no other.
+- `GCP_SCANNER_KEY`: the JSON key file of a service account holding
+  `roles/iam.serviceAccountViewer` on the listed projects, and no other role.
 
 Entra is read from `graph.microsoft.com`, Okta orgs must be on `*.okta.com` or `*.oktapreview.com`, vaults on
 `*.vault.azure.net`, LangSmith on `api.smith.langchain.com` (`"cloud": "us"`) or
-`eu.api.smith.langchain.com` (`"cloud": "eu"`), GitHub on `api.github.com`, and
-the ingest on https.
+`eu.api.smith.langchain.com` (`"cloud": "eu"`), GitHub on `api.github.com`,
+Google Cloud on `iam.googleapis.com` with its token from `oauth2.googleapis.com`,
+and the ingest on https.
 A `code` root is an absolute path with no `..` segment, reported only by its
 label; it takes no credential.
 

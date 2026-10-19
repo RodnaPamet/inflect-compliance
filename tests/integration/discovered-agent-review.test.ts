@@ -54,7 +54,7 @@ import { getWorkflowRun, startWorkflowRun } from '@/app-layer/usecases/workflow-
 import { loadSkill } from '@/lib/agentic/flue/skills';
 import { skillContentHash } from '@/lib/agentic/flue/skills/evaluation-record';
 import { resetSkillCache } from '@/lib/agentic/flue/skills/resolve';
-import type { HarnessReportAgent } from '@/lib/agentic/harness-contract';
+import type { HarnessReportAgentV2 } from '@/lib/agentic/harness-contract';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -118,7 +118,7 @@ async function seedTenant(tenantId: string): Promise<void> {
 }
 
 /** One shadow agent, owner-tagged at its source, with one evidenced and one unevidenced observation. */
-function shadowAgent(): HarnessReportAgent {
+function shadowAgent(): HarnessReportAgentV2 {
     return {
         discoveredId: DISCOVERED_ID,
         discoveredVia: ['entra-sp', 'mcp'],

@@ -29,7 +29,13 @@ import {
     type IntakeClaim,
     type PriorHarnessState,
 } from '@/lib/agentic/harness-findings';
-import { SOURCE_KINDS, type HarnessReportBody, type HarnessReportBodyV2 } from '@/lib/agentic/harness-contract';
+import {
+    HARNESS_CONTRACT_V3,
+    SOURCE_KINDS,
+    type HarnessReportBody,
+    type HarnessReportBodyV2,
+    type HarnessReportBodyV3,
+} from '@/lib/agentic/harness-contract';
 import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
 
 function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
@@ -526,9 +532,13 @@ describe('ORPHAN_CREDENTIAL is derived from unboundCredentials[], on positive ev
     });
 
     describe('opening also needs every identity-bearing source in the scan read in full (owner answer, 2026-10-19)', () => {
-        /** The complete body with one more source, or one of its own, stopped early. */
-        const withIncomplete = (kind: (typeof SOURCE_KINDS)[number]): HarnessReportBodyV2 => {
-            const body = vault('COMPLETE');
+        /**
+         * The complete body with one more source, or one of its own, stopped
+         * early. Under `/3`, so every kind the contract has can be the one that
+         * stopped (`gcp-sa` is `/3`'s).
+         */
+        const withIncomplete = (kind: (typeof SOURCE_KINDS)[number]): HarnessReportBodyV3 => {
+            const body: HarnessReportBodyV3 = { ...vault('COMPLETE'), contract: HARNESS_CONTRACT_V3 };
             const stopped = { kind, status: 'INCOMPLETE' as const, reason: 'TIME_BOX' as const, rows: 1 };
             body.population.sources = body.population.sources.some((s) => s.kind === kind)
                 ? body.population.sources.map((s) => (s.kind === kind ? stopped : s))

@@ -1,6 +1,6 @@
 /**
  * The scanner end to end, over the fixture estate (#3678): config → both
- * sources → a signed `inflect-agent-harness/2` report (#3754) → the ingest.
+ * sources → a signed `inflect-agent-harness/3` report (#3754, #3785) → the ingest.
  *
  *   1. The report verifies with the ingest's own verifier, under the key the
  *      tenant would register, and merges what the two sources saw.
@@ -27,7 +27,7 @@ import {
     VAULT,
 } from '../../helpers/agent-harness-source-fakes';
 import {
-    HARNESS_CONTRACT_V2,
+    HARNESS_CONTRACT_V3,
     isScanComplete,
     MAX_CREDENTIALS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
@@ -88,7 +88,7 @@ describe('1. a report the ingest verifies', () => {
         const { raw, body } = await runScan(deps);
 
         const verdict = verifyAndParseHarnessReport(raw, [key.publicKeyHex]);
-        expect(verdict).toMatchObject({ ok: true, complete: true, body: { contract: HARNESS_CONTRACT_V2 } });
+        expect(verdict).toMatchObject({ ok: true, complete: true, body: { contract: HARNESS_CONTRACT_V3 } });
         // Both sources report every credential against the principal it
         // belongs to, so neither sees one bound to no principal.
         expect(body.unboundCredentials).toEqual([]);
