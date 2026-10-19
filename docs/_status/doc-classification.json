@@ -35,6 +35,9 @@
         "docs/agentic-harness-scanner-dpia.md": {
             "class": "authoritative"
         },
+        "docs/agentic-iam-managed-service.md": {
+            "class": "authoritative"
+        },
         "docs/agentic-iam-roadmap.md": {
             "class": "living"
         },
