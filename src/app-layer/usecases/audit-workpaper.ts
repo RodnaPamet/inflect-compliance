@@ -19,8 +19,11 @@
  *     member whose line of defence an OWNER has declared SECOND or THIRD
  *     (#3735), holding `audits.view`, and not the auditor agent's owner. Once, ever (usecase, conditional UPDATE and
  *     trigger).
- *   • READ: `audits.manage` (step 0e's table). A workpaper lists exceptions
- *     about named people's access, and `audits.view` is every role's.
+ *   • READ: `audits.manage` (step 0e's table), or its read half
+ *     `audits.workpaper_view` (#3749), which the auditor agent's key carries to
+ *     read a period's workpapers through `list_audit_workpapers`. A workpaper
+ *     lists exceptions about named people's access, and `audits.view` is every
+ *     role's.
  *
  * ## What is refused, by name
  *
@@ -37,7 +40,7 @@
  * (step 3c, `propose_finding`), which a person decides; their ids are recorded
  * in `proposalIds`.
  */
-import { ConflictError, forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, ConflictError, forbidden, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -49,6 +52,11 @@ import {
     sampleMatchesBinding,
     type AuditWorkpaperRefusal,
 } from '@/lib/agentic/audit-workpaper';
+import {
+    MAX_WORKPAPERS_PER_PERIOD_READ,
+    toWorkpaperView,
+    type PeriodWorkpapersView,
+} from '@/lib/agentic/audit-workpaper-view';
 import { WORKPAPER_STAMP_LINES, independenceReasonText } from '@/lib/agentic/auditor-independence';
 import { assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -464,10 +472,15 @@ export async function getBindingWorkpaperSample(
     );
 }
 
-/** Reading workpapers takes `audits.manage` (step 0e). */
+/**
+ * Reading workpapers takes `audits.manage` (step 0e) or `audits.workpaper_view`
+ * (#3749), the read half of it that a bearer token can carry without the key
+ * that manages, freezes and shares audits.
+ */
 function assertCanReadWorkpapers(ctx: RequestContext): void {
     assertCanRead(ctx);
-    if (ctx.appPermissions?.audits?.manage !== true) {
+    const audits = ctx.appPermissions?.audits;
+    if (audits?.manage !== true && audits?.workpaper_view !== true) {
         throw forbidden(
             "You do not have permission to read audit workpapers. They list exceptions about named " +
                 "people's access.",
@@ -481,6 +494,34 @@ export async function listAuditWorkpapers(
 ) {
     assertCanReadWorkpapers(ctx);
     return runInTenantContext(ctx, (db) => AuditWorkpaperRepository.list(db, ctx, filters, LIST_CAP));
+}
+
+/**
+ * One period's workpapers in full, bounded, for `list_audit_workpapers`
+ * (#3749): what the auditor workflow reads to explain a period's work. The
+ * view (`toWorkpaperView`) re-validates the per-unit columns and carries no
+ * person.
+ */
+export async function listAuditWorkpapersForPeriod(
+    ctx: RequestContext,
+    periodLabel: string,
+    limit: number = MAX_WORKPAPERS_PER_PERIOD_READ,
+): Promise<PeriodWorkpapersView> {
+    assertCanReadWorkpapers(ctx);
+    if (!PERIOD_LABEL.test(periodLabel)) throw badRequest('periodLabel must be YYYY-MM or YYYY-Qn');
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_WORKPAPERS_PER_PERIOD_READ) {
+        throw badRequest(`limit must be an integer from 1 to ${MAX_WORKPAPERS_PER_PERIOD_READ}`);
+    }
+    // One past the cap, so "exactly `limit`" and "the first `limit` of more"
+    // are told apart (invariant 5 of the recertification section).
+    const rows = await runInTenantContext(ctx, (db) =>
+        AuditWorkpaperRepository.listForPeriod(db, ctx, periodLabel, limit + 1),
+    );
+    return {
+        periodLabel,
+        workpapers: rows.slice(0, limit).map(toWorkpaperView),
+        truncated: rows.length > limit,
+    };
 }
 
 export async function getAuditWorkpaper(ctx: RequestContext, id: string) {

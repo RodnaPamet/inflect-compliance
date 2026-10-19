@@ -107,13 +107,16 @@ describe('API Key Scopes — Validation', () => {
 // ─── Scope to Permission Mapping ───
 
 describe('API Key Scopes — scopesToPermissions', () => {
-    it('full access (*) returns ADMIN permissions apart from the agent-governance flags', () => {
+    it('full access (*) returns ADMIN permissions apart from the agent-governance flags and the workpaper view key', () => {
         const perms = scopesToPermissions(['*']);
         const adminPerms = getPermissionsForRole('ADMIN');
-        // Every domain but `admin` is ADMIN exactly.
-        const { admin: starAdmin, ...starRest } = perms;
-        const { admin: adminAdmin, ...adminRest } = adminPerms;
+        // Every domain but `admin` and `audits` is ADMIN exactly.
+        const { admin: starAdmin, audits: starAudits, ...starRest } = perms;
+        const { admin: adminAdmin, audits: adminAudits, ...adminRest } = adminPerms;
         expect(starRest).toEqual(adminRest);
+        // `audits` differs in exactly one place: the workpaper view key (#3749),
+        // which only its own named scope grants.
+        expect(starAudits).toEqual({ ...adminAudits, workpaper_view: false });
         // And `admin` differs in exactly six places — asserted as a whole
         // object, so a SEVENTH divergence appearing later fails here rather than
         // slipping past the named checks below. The fifth is the inventory

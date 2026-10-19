@@ -880,7 +880,8 @@ auditee (rule 8).
   internal audit's, in `3d`. A trigger refuses any other UPDATE from
   every role, and `app_user` holds no DELETE. Findings are linked through
   `AuditWorkpaperFinding`, which is insert-only, and nothing on the workpaper's
-  path writes a finding. Reading workpapers takes `audits.manage`. The writer is
+  path writes a finding. Reading workpapers takes `audits.manage`, or its read
+  half `audits.workpaper_view` (#3749, [Permission keys](#permission-keys)). The writer is
   the auditor agent's procedure handler (below); the review route is step
   `3d`'s (below), whose assigned reviewer sets the stamp when they answer.
 
@@ -945,7 +946,8 @@ both as open, and every evidence row and finding proposal says so.
   the 2nd of each quarter's first month.
 - **The `iam-audit-procedures` skill** ships its evaluation set and no
   evaluation record, so no workflow declares it and no run mounts it. The
-  auditor workflow, a workpaper read tool and the record are #3749.
+  workpaper read tool it needs, `list_audit_workpapers`, shipped with #3749's
+  first part; the auditor workflow and the record are its second.
 
 ### Internal audit's sampling of the workpapers
 
@@ -1422,6 +1424,28 @@ and one new key:
   they sit under `src/app/api/t/[tenantSlug]/admin`, the first entry of
   `PRIVILEGED_ROOTS`.
 
+**One key of the `audits` domain**, which #3749 shipped:
+
+| Key | Gates | Granted by role | Bearer tokens |
+|---|---|---|---|
+| `audits.workpaper_view` | READING the auditor agent's workpapers, and nothing else: `listAuditWorkpapers`, `getAuditWorkpaper` and `listAuditWorkpapersForPeriod` (`src/app-layer/usecases/audit-workpaper.ts`), and the MCP read tool `list_audit_workpapers` over the last. Every read also admits `audits.manage`, so nobody who read workpapers before the split lost it. Read-only: it manages, freezes and shares no audit | OWNER, ADMIN: exactly the roles that hold `audits.manage`. A custom role may carry it. A custom role stored before it existed takes it from its own `audits.manage`, never from its base role (`DERIVED_FROM` in `src/lib/permissions.ts`), so a role that had switched `manage` off does not gain the read | The `audits:workpaper_view` scope grants it and nothing else. Neither `*` nor `audits:*` carries it (`WILDCARD_EXCLUDED_ACTIONS`), so every key issued before it resolves as it did. `audits:read` is every role's `audits.view` and does not reach a workpaper; `audits:write` would let the key manage, freeze and share audits |
+
+- **Why a key of its own.** The auditor agent's key reads a period's workpapers
+  to explain them (#3749). Before this key, the only scope that reached a
+  workpaper was `audits:write`, through `audits.manage`, which would also have
+  let that key manage, freeze and share audits (owner decision 5 on #3749).
+- **The tool reads one period, bounded.** `list_audit_workpapers` takes a
+  `periodLabel` and an optional `limit` (at most 50), returns the oldest first,
+  and reads one row past the bound so a capped read reports `truncated`. Per
+  workpaper it returns the procedure, the population as defined with its count
+  and digest, the sample size, the attributes, the outcome counts, the
+  exceptions by code and the first 50 in full, and the conclusion with its
+  basis. It returns no person: the review stamp is a boolean, and the
+  reviewer's id, the evidence ids and the proposal ids are left out. Each
+  per-unit column is re-validated on read, and one that no longer passes reads
+  `null` and is named in `unreadable` rather than read as "no exceptions"
+  (`src/lib/agentic/audit-workpaper-view.ts`).
+
 **Every other planned route, by step:**
 
 | Route (step) | Key | Why this key |
@@ -1442,7 +1466,7 @@ and one new key:
 | Accept or reject a narrowing in a campaign (`3a`) | `access_reviews.decide` | The effect is a grant delete, which only narrows, so it does not also need `admin.agent_tool_exposure`. |
 | Set a membership's line of defence (`3b`) | `admin.owner_management` | OWNER-only; see below. Shipped by `3b` (#3675) at `PUT …/admin/members/[membershipId]/line-of-defence`, with its rule above the members catch-all. |
 | Register or activate an auditor agent (`3b`) | `admin.agent_registry` | The existing routes. The independence check is a refusal inside `registerAgent` and `activateRegisteredAgent`. Shipped by `3b` (#3675), which also asks it of an amend that makes an agent an auditor (`PATCH …/admin/agents/[agentId]`, `isAuditor`). |
-| Read workpapers (`3b`, `3c`) | `audits.manage` | `3b` (#3675) ships the read usecases (`listAuditWorkpapers`, `getAuditWorkpaper`) under this gate and no route. A workpaper on leaver timeliness or privileged access lists exceptions about named people's access, and `audits.view` is held by every role, READER included (`src/lib/permissions.ts`). OWNER and ADMIN hold `audits.manage`. A THIRD-line reviewer reads the workpapers assigned to them through `3d`'s review route, and the external auditor reads them in a pack (`4d`). An internal-audit member who needs every workpaper gets a custom role carrying `audits.manage`. `3b` places `AuditWorkpaper` in `prisma/schema/audit-workflow.prisma`, beside `Audit`. |
+| Read workpapers (`3b`, `3c`) | `audits.manage`, or `audits.workpaper_view` (#3749) | `3b` (#3675) ships the read usecases (`listAuditWorkpapers`, `getAuditWorkpaper`) under this gate and no route; #3749 adds `listAuditWorkpapersForPeriod`, the read behind the MCP tool `list_audit_workpapers`, and admits the view key to all three (below). A workpaper on leaver timeliness or privileged access lists exceptions about named people's access, and `audits.view` is held by every role, READER included (`src/lib/permissions.ts`). OWNER and ADMIN hold `audits.manage`. A THIRD-line reviewer reads the workpapers assigned to them through `3d`'s review route, and the external auditor reads them in a pack (`4d`). An internal-audit member who needs every workpaper gets a custom role carrying `audits.manage`. `3b` places `AuditWorkpaper` in `prisma/schema/audit-workflow.prisma`, beside `Audit`. |
 | Read and record the outcome of a sampled workpaper (`3d`) | `audits.view` | Shipped in #3677 at `GET …/audits/workpaper-reviews`, `GET`/`POST …/audits/workpaper-reviews/[reviewId]` and `PUT …/audits/workpaper-reviews/sample-rate`, with `audits/workpaper-reviews` a root of `PRIVILEGED_ROOTS`. Every role holds it, so the usecase admits only the workpaper's assigned reviewer to answer, who must be an ACTIVE THIRD-line member and must not own the auditor agent, as `decide` narrows to the assigned reviewer; internal audit (the same standing, owning no auditor agent) reads every assignment and alone sets the rate. Requiring `audits.manage` would shut out an internal auditor on the AUDITOR role, which does not hold it; the edge's AUDITOR rules apply only under `/admin/`, so nothing there is widened. The draw and the assignment are a scheduled sweep, with no route. |
 | Show the scan health per estate and per source (`4a`) | `admin.agent_registry_view`, or `admin.agent_registry` | It reads scans, under the key their list takes. Shipped by #3678 at `GET …/admin/agents/harness-estates` and as a card on the harness tab. |
 | Declare, change or remove a client estate (`4a`) | `admin.agent_registry` | Which scanner covers which estate, at what cadence and with whom accountable for each source, is the register's decision and never the scanner's: the ingest key cannot reach it. Shipped by #3678 at `POST …/admin/agents/harness-estates` and `PATCH`/`DELETE …/harness-estates/[estateId]`. |

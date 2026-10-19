@@ -47,7 +47,7 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
     continuity: { edit: false },
     processes: { edit: false },
     frameworks: { view: true, install: false },
-    audits: { view: true, manage: false, freeze: false, share: false },
+    audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
     reports: { view: true, export: false, schedule_external: false },
     admin: {
         // ── tenant-wide: NONE ──
