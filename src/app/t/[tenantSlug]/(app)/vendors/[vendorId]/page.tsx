@@ -972,8 +972,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                             })()}
                         </div>
                         {canWrite && (
+                            // SECONDARY (#3712), the links tab's `add-link-btn`
+                            // precedent: a disclosure toggle that can read
+                            // "Cancel", on screen with the primary submit of the
+                            // form it reveals (`submit-doc-btn`). Pays for one of
+                            // the intake dialogs' primaries under
+                            // `primary-secondary-ratio`.
                             <Button
-                                variant="primary"
+                                variant="secondary"
                                 icon={showDocForm ? undefined : <Plus />}
                                 onClick={() => setShowDocForm(!showDocForm)}
                                 id="add-doc-btn"

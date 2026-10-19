@@ -407,6 +407,14 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // card trigger that opens the key dialog was written primary and is secondary
 // instead — a card action inside a tab, the agent-detail-tabs precedent above.
 // Net change to the measured total: zero.
+//
+// 2026-10-18 — #3712 intake and classify forms: 175 stays, PAID FOR. Two
+// primaries `modal-action-order` requires — the Register dialog's submit on the
+// harness tab and the Classify dialog's submit on the AI-system page — bought by
+// two demotions of disclosure toggles on screen with their own form's primary
+// submit: the vendor Documents tab's "add document" and the task Links tab's
+// "add link" (the vendor Links tab's toggle was demoted the same way for
+// #3301). The Classify trigger is a card action and is secondary. Net: zero.
 const MAX_PRIMARY_COUNT = 175;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

@@ -9,10 +9,13 @@
 import { validReportBody, validIncompleteReportBody } from '../../helpers/agent-harness-fake-scanner';
 import {
     firstSecretShapedMember,
+    intakeClaimsByDiscoveredId,
     isHarnessShortfall,
+    isIntakeClaimLinkable,
     planHarnessScan,
     reachOf,
     shortfallFinding,
+    type IntakeClaim,
     type PriorHarnessState,
 } from '@/lib/agentic/harness-findings';
 import type { HarnessReportBody } from '@/lib/agentic/harness-contract';
@@ -23,6 +26,7 @@ function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
         previousLevels: new Map<string, HarnessLevel>(),
         registeredAgentIds: new Set(['agt_registered_1']),
         acceptedShortfalls: new Set<string>(),
+        intakeClaims: new Map<string, IntakeClaim>(),
         ...over,
     };
 }
@@ -161,6 +165,118 @@ describe('a scan closes a finding only on positive evidence', () => {
         body.agents = [body.agents[0]];
         const plan = planHarnessScan(body, prior());
         expect(plan.resolve.some((r) => r.includes('shadow-1'))).toBe(false);
+    });
+});
+
+describe('the intake\'s own record links an agent the report links to nothing (#3712)', () => {
+    const SHADOW = 'entra:sp:shadow-1';
+    const REGISTERED = 'entra:sp:registered-1';
+    const claim = (over: Partial<IntakeClaim> = {}): IntakeClaim => ({
+        registeredAgentId: 'agt_intake',
+        status: 'DRAFT',
+        deleted: false,
+        ...over,
+    });
+    const withIntake = (discoveredId: string, c: IntakeClaim = claim()) =>
+        prior({ intakeClaims: new Map([[discoveredId, c]]) });
+    const agentOf = (plan: ReturnType<typeof planHarnessScan>, id: string) => {
+        const a = plan.agents.find((x) => x.discoveredId === id);
+        if (!a) throw new Error(`no planned agent ${id}`);
+        return a;
+    };
+
+    it('a complete scan with no claimed id links the intake\'s register row and closes the SHADOW_AGENT finding', () => {
+        const body = validReportBody();
+        expect(body.agents[1].registeredAgentId).toBeNull();
+        const plan = planHarnessScan(body, withIntake(SHADOW));
+        expect(agentOf(plan, SHADOW)).toMatchObject({ registeredAgentId: 'agt_intake', linkBasis: 'INTAKE' });
+        expect(plan.resolve).toContain(`SHADOW_AGENT:${SHADOW}`);
+        expect(refs(plan.assert)).not.toContain(`SHADOW_AGENT:${SHADOW}`);
+        expect(plan.intakeConflicts).toEqual([]);
+        // The pair proves the branch: the same scan without the intake row
+        // raises the finding and links nothing.
+        const bare = planHarnessScan(body, prior());
+        expect(agentOf(bare, SHADOW)).toMatchObject({ registeredAgentId: null, linkBasis: null });
+        expect(refs(bare.assert)).toContain(`SHADOW_AGENT:${SHADOW}`);
+    });
+
+    it('a claimed id the register does not hold is no link at all, so the intake\'s record links', () => {
+        const body = validReportBody();
+        body.agents[1].registeredAgentId = 'agt_not_in_register';
+        const plan = planHarnessScan(body, withIntake(SHADOW));
+        expect(agentOf(plan, SHADOW)).toMatchObject({ registeredAgentId: 'agt_intake', linkBasis: 'INTAKE' });
+        expect(plan.intakeConflicts).toEqual([]);
+    });
+
+    it('a report naming a different register row is not overridden by the intake link, and the conflict is returned', () => {
+        const plan = planHarnessScan(validReportBody(), withIntake(REGISTERED));
+        expect(agentOf(plan, REGISTERED)).toMatchObject({ registeredAgentId: 'agt_registered_1', linkBasis: 'REPORT' });
+        expect(plan.resolve).toContain(`SHADOW_AGENT:${REGISTERED}`);
+        expect(plan.intakeConflicts).toEqual([
+            { discoveredId: REGISTERED, reportedRegisteredAgentId: 'agt_registered_1', intakeRegisteredAgentId: 'agt_intake' },
+        ]);
+    });
+
+    it('a report naming the intake\'s own row is the report\'s link and no conflict', () => {
+        const plan = planHarnessScan(validReportBody(), withIntake(REGISTERED, claim({ registeredAgentId: 'agt_registered_1' })));
+        expect(agentOf(plan, REGISTERED)).toMatchObject({ registeredAgentId: 'agt_registered_1', linkBasis: 'REPORT' });
+        expect(plan.intakeConflicts).toEqual([]);
+    });
+
+    it('a retired intake row is never linked — nor a deleted one, nor a status the allowlist does not name', () => {
+        for (const c of [claim({ status: 'RETIRED' }), claim({ deleted: true }), claim({ status: 'ARCHIVED' })]) {
+            const plan = planHarnessScan(validReportBody(), withIntake(SHADOW, c));
+            expect(agentOf(plan, SHADOW)).toMatchObject({ registeredAgentId: null, linkBasis: null });
+            expect(refs(plan.assert)).toContain(`SHADOW_AGENT:${SHADOW}`);
+            expect(plan.resolve).not.toContain(`SHADOW_AGENT:${SHADOW}`);
+        }
+        // …and a retired intake row is no conflict with a report either.
+        const reported = planHarnessScan(validReportBody(), withIntake(REGISTERED, claim({ status: 'RETIRED' })));
+        expect(reported.intakeConflicts).toEqual([]);
+    });
+
+    it('every live, non-retired status links', () => {
+        for (const status of ['DRAFT', 'ACTIVE', 'SUSPENDED']) {
+            expect(isIntakeClaimLinkable({ status, deleted: false })).toBe(true);
+            expect(isIntakeClaimLinkable({ status, deleted: true })).toBe(false);
+        }
+        expect(isIntakeClaimLinkable({ status: 'RETIRED', deleted: false })).toBe(false);
+    });
+
+    it('an incomplete scan links the agent but neither raises nor resolves its SHADOW_AGENT finding', () => {
+        const plan = planHarnessScan(validIncompleteReportBody(), withIntake(SHADOW));
+        expect(agentOf(plan, SHADOW)).toMatchObject({ registeredAgentId: 'agt_intake', linkBasis: 'INTAKE' });
+        expect(plan.resolve).not.toContain(`SHADOW_AGENT:${SHADOW}`);
+        expect(refs(plan.assert)).not.toContain(`SHADOW_AGENT:${SHADOW}`);
+        // A link the REPORT claimed is still resolved on an incomplete scan,
+        // as before: that rule is unchanged.
+        expect(plan.resolve).toContain(`SHADOW_AGENT:${REGISTERED}`);
+    });
+
+    it('an agent absent from the scan is untouched by its intake row', () => {
+        const body = validReportBody();
+        body.agents = [body.agents[0]];
+        const plan = planHarnessScan(body, withIntake(SHADOW));
+        expect(plan.agents.map((a) => a.discoveredId)).toEqual([REGISTERED]);
+        expect([...plan.resolve, ...refs(plan.assert)].some((r) => r.includes('shadow-1'))).toBe(false);
+    });
+
+    it('keys intake rows by discovered id, and drops a row naming a discovered agent the scan did not load', () => {
+        const known = [
+            { id: 'da_1', discoveredId: SHADOW },
+            { id: 'da_2', discoveredId: REGISTERED },
+        ];
+        const claims = intakeClaimsByDiscoveredId(known, [
+            { id: 'agt_a', status: 'DRAFT', deletedAt: null, intakeDiscoveredAgentId: 'da_1' },
+            { id: 'agt_b', status: 'RETIRED', deletedAt: new Date(), intakeDiscoveredAgentId: 'da_2' },
+            // Another tenant's discovered agent, or one this scan does not report.
+            { id: 'agt_c', status: 'ACTIVE', deletedAt: null, intakeDiscoveredAgentId: 'da_other_tenant' },
+            { id: 'agt_d', status: 'ACTIVE', deletedAt: null, intakeDiscoveredAgentId: null },
+        ]);
+        expect([...claims.entries()]).toEqual([
+            [SHADOW, { registeredAgentId: 'agt_a', status: 'DRAFT', deleted: false }],
+            [REGISTERED, { registeredAgentId: 'agt_b', status: 'RETIRED', deleted: true }],
+        ]);
     });
 });
 

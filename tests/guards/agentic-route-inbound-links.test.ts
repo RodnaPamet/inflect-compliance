@@ -251,10 +251,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // orphans to; the pass itself runs on a schedule and needs no page to act.
     't/[tenantSlug]/admin/agents/owner-orphan-pass/route.ts',
     // #3669 — the registration intake: a SHADOW_AGENT finding becomes a DRAFT
-    // register row through a provisional UNCLASSIFIED AI-system entry. API-only
-    // until its action on the harness tab's shadow list ships; the shadow rows
-    // carry no finding id today, and the modal needs the register's owner and
-    // vendor lists, which the reports page does not load.
+    // register row through a provisional UNCLASSIFIED AI-system entry. Since
+    // #3712 the harness tab's shadow list calls it: each shadow row carries its
+    // finding id, and the Register dialog reads the owner picker's ACTIVE
+    // roster and the vendor list itself. The describe at the end of this file
+    // pins the caller.
     't/[tenantSlug]/admin/agents/intake/route.ts',
     // #3665 — the harness ingest. `harness-scans` is MACHINE surface: a
     // scanner POSTs a signed report with an API key scoped to
@@ -657,7 +658,7 @@ describe('the route list is complete — a new agentic page cannot land unlisted
     });
 });
 
-describe('the harness register half is called from the tab; the machine surface is not (#3687)', () => {
+describe('the harness register half is called from the tab; the machine surface is not (#3687, #3712)', () => {
     /**
      * Which files under `(app)/agents/` CALL a path, by a needle that only a
      * call writes: the path closed by a quote, or followed by an interpolated
@@ -675,6 +676,10 @@ describe('the harness register half is called from the tab; the machine surface 
     it('a key is registered from the register dialog, and revoked from the key card', () => {
         expect(callers("/admin/agents/harness-scanner-keys'")).toContain(`${HARNESS}/RegisterScannerKeyModal.tsx`);
         expect(callers('/admin/agents/harness-scanner-keys/${')).toContain(`${HARNESS}/ScannerKeysCard.tsx`);
+    });
+
+    it('a shadow agent is registered from the shadow list\'s Register dialog (#3712)', () => {
+        expect(callers("/admin/agents/intake'")).toEqual([`${HARNESS}/RegisterShadowAgentModal.tsx`]);
     });
 
     it('no page calls the scan ingest — it is a scanner\'s, behind its own API-key scope', () => {

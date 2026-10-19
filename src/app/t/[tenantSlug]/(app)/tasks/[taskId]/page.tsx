@@ -1403,7 +1403,12 @@ export default function TaskDetailPage() {
                 <div className="space-y-default">
                     {permissions.canWrite && (
                         <div className="flex justify-end">
-                            <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowLinkForm(!showLinkForm)} id="add-link-btn">
+                            {/* SECONDARY (#3712), as the vendor page's link
+                                toggle: a disclosure toggle on screen with the
+                                primary submit of the form it reveals
+                                (`submit-link-btn`). Pays for one of the intake
+                                dialogs' primaries under `primary-secondary-ratio`. */}
+                            <Button variant="secondary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowLinkForm(!showLinkForm)} id="add-link-btn">
                                 {t('detail.addLink')}
                             </Button>
                         </div>

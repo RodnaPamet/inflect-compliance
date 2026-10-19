@@ -97,7 +97,11 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // never on screen with the page-header CTAs. The legacy in-app "Start"
     // flow (a second primary) was retired when the assessments tab unified
     // on the single G-3 send path, so the budget drops back to 9.
-    "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 9,
+    // 9 -> 7 (#3712): the census was 8, and the Documents tab's "add document"
+    // disclosure toggle was demoted to secondary (it is on screen with its
+    // form's primary submit), paying for an intake dialog's primary under the
+    // product-wide ceiling. Lowered to the measurement.
+    "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 7,
     // NIS2 incident detail — four modal confirms, each its own dialog,
     // never on screen together: submit-report, add-timeline-entry,
     // confirm-mark-reportable, and link-forensic-evidence. The page-level
@@ -137,7 +141,11 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // 2026-10-04 census 6 -> 5, lowered to the measurement. The old
     // lazy counter could not see this file's real count, so the gap was never
     // visible; one-way down, per this map's own discipline.
-    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 5,
+    // 5 -> 4 (#3712): the Links tab's "add link" disclosure toggle was demoted
+    // to secondary — it is on screen with the form's primary submit, so the
+    // pair was one region with two primaries — paying for an intake dialog's
+    // primary under the product-wide ceiling.
+    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 4,
     // 2026-10-04 census 3 -> 4. Three ternary variant sites plus three literal
     // primaries; one ternary branch was invisible to the old regex.
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 4,

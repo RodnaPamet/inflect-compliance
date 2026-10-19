@@ -159,7 +159,12 @@ the signed body, signature, the per-source completeness), one `DiscoveredAgent`
 per agent keyed by `discoveredId`, and one `AgentHarnessScanItem` per agent.
 The ingest DERIVES each agent's level with the ladder and its reach from its
 tools, and links `registeredAgentId` only when the register holds that row; a
-claimed id the register does not hold is treated as no link at all. The
+claimed id the register does not hold is treated as no link at all. An agent the
+report links to nothing is linked by the register's own record when the
+registration intake registered a row from it (`RegisteredAgent.intakeDiscoveredAgentId`)
+and that row is live and not RETIRED; such a link resolves `SHADOW_AGENT` only
+on a complete scan, and a report that names a different live row wins, with the
+disagreement audited as `AGENT_INTAKE_LINK_CONFLICT` on the intake row. The
 report's own `findings` member is not acted on: the ingest raises its own
 findings, with `sourceKind = 'AGENT_HARNESS'`, from what it derived —
 `SHADOW_AGENT`, `UNPINNED_WRITE_TOOL`, `HARNESS_SHORTFALL`, `LEVEL_DROP`,

@@ -5,8 +5,14 @@
  * AI-Act / ISO 42001 obligations, and (for HIGH-risk systems) buttons to
  * generate DRAFT conformity artifacts. Generation is propose-not-commit: it
  * queues a proposal for human review; nothing is auto-published.
+ *
+ * A PROVISIONAL entry (UNCLASSIFIED) offers "Classify" to a caller who may
+ * write (`canWrite`, the classify usecase's own `assertCanWrite`), which opens
+ * the questionnaire answered in full (#3712). The dialog is loaded on demand:
+ * only an unclassified entry ever opens it.
  */
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -19,6 +25,8 @@ import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
+
+const ClassifyAiSystemModal = dynamic(() => import('./ClassifyAiSystemModal').then((m) => m.ClassifyAiSystemModal));
 
 export interface AiSystemDetail {
     id: string;
@@ -93,6 +101,8 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
     const [busy, setBusy] = useState<string | null>(null);
     const [queued, setQueued] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [classifying, setClassifying] = useState(false);
+    const canClassify = system.riskTier === 'UNCLASSIFIED' && canWrite;
 
     const generate = async (docType: string) => {
         setError(null);
@@ -145,6 +155,21 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                     <InlineNotice variant="warning" className="mb-2" id="ai-system-not-classified">
                         {tx('aiSystems.detail.notClassifiedNotice')}
                     </InlineNotice>
+                )}
+                {canClassify && (
+                    <div className="mb-2">
+                        {/* SECONDARY: a card action that opens a dialog, whose
+                            own submit is the primary (`primary-secondary-ratio`). */}
+                        <Button
+                            id="ai-system-classify"
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setClassifying(true)}
+                        >
+                            {tx('aiSystems.detail.classify')}
+                        </Button>
+                    </div>
                 )}
                 <Row label={tx('aiSystems.colRiskTier')}>
                     <StatusBadge variant={aiActTierTone(system.riskTier)}>{system.riskTier}</StatusBadge>
@@ -212,6 +237,14 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                         </p>
                     )}
                 </Card>
+            )}
+            {classifying && canClassify && (
+                <ClassifyAiSystemModal
+                    systemId={system.id}
+                    systemName={system.name}
+                    tenantSlug={tenantSlug}
+                    onClose={() => setClassifying(false)}
+                />
             )}
         </div>
     );

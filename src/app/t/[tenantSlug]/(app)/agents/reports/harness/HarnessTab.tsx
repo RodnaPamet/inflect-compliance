@@ -14,9 +14,11 @@
  * REPORT-ONLY. Levels are rendered, never acted on: nothing on this tab gates
  * an agent, and the notice at the top says so.
  *
- * THE TWO WRITES are the owner's shortfall acceptance and the scanner-key
- * register. Each posts to its own route and then refreshes this server read;
- * the tab holds no copy of either to keep in step.
+ * THE THREE WRITES are the owner's shortfall acceptance, the scanner-key
+ * register and the registration intake from the shadow list (#3712). Each posts
+ * to its own route and then refreshes this server read; the tab holds no copy
+ * of any of them to keep in step. The intake's dialog is imported here, inside
+ * the chunk `ReportsClient` loads on demand, so the pack tab never ships it.
  */
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -27,10 +29,12 @@ import type {
     HarnessMatrixView,
     HarnessScannerKeysView,
     MatrixRow,
+    ShadowRow,
 } from '@/lib/agentic/harness-read-model';
 
 import { AcceptShortfallModal, type AcceptTarget } from './AcceptShortfallModal';
 import { AcceptancesCard } from './AcceptancesCard';
+import { RegisterShadowAgentModal } from './RegisterShadowAgentModal';
 import { ScanHistory } from './ScanHistory';
 import { ScannerKeysCard } from './ScannerKeysCard';
 import { ScannerSection } from './ScannerSection';
@@ -39,6 +43,7 @@ import { ShadowList } from './ShadowList';
 export function HarnessTab({
     view,
     scannerKeys,
+    canRegisterShadow = false,
 }: {
     view: HarnessMatrixView;
     /**
@@ -47,10 +52,13 @@ export function HarnessTab({
      * no card rather than a list of controls that would be refused.
      */
     scannerKeys: HarnessScannerKeysView | null;
+    /** The intake usecase's own rule, decided on the server. */
+    canRegisterShadow?: boolean;
 }) {
     const t = useTranslations('agents');
     const hasScans = view.scans.rows.length > 0;
     const [accepting, setAccepting] = useState<AcceptTarget | null>(null);
+    const [registering, setRegistering] = useState<ShadowRow | null>(null);
 
     const acceptFromRow = useCallback((row: MatrixRow) => {
         setAccepting({
@@ -118,13 +126,21 @@ export function HarnessTab({
             {(hasScans || view.acceptances.rows.length > 0) && (
                 <AcceptancesCard acceptances={view.acceptances} onAccept={acceptFromCard} />
             )}
-            {hasScans && <ShadowList shadow={view.shadow} />}
+            {hasScans && (
+                <ShadowList
+                    shadow={view.shadow}
+                    onRegister={canRegisterShadow ? setRegistering : null}
+                />
+            )}
             {hasScans && <ScanHistory scans={view.scans} scanWindow={view.scanWindow} />}
             {/* Rendered with or without scans: a key is what lets the FIRST
                 report be accepted, so it cannot wait for one. */}
             {scannerKeys && <ScannerKeysCard view={scannerKeys} />}
 
             {accepting && <AcceptShortfallModal target={accepting} onClose={() => setAccepting(null)} />}
+            {registering && canRegisterShadow && (
+                <RegisterShadowAgentModal target={registering} onClose={() => setRegistering(null)} />
+            )}
         </>
     );
 }

@@ -1554,6 +1554,15 @@ rules in it are easy to undo:
   ladder; `registeredAgentId` links only to a row the register holds; the
   report's own `findings` member is not acted on. All of it is decided in the
   pure planner `src/lib/agentic/harness-findings.ts`, where it is unit-tested.
+  With no claim the register holds, the register's OWN record links the agent
+  (#3712): the intake row whose `intakeDiscoveredAgentId` names it, if live and
+  in `INTAKE_LINKABLE_STATUSES` — an allowlist, so RETIRED and any later status
+  never link. That link closes `SHADOW_AGENT` only on a complete scan (an
+  incomplete one links and holds the finding), and a report naming a different
+  live row still wins, audited as `AGENT_INTAKE_LINK_CONFLICT`. Both owner
+  decisions (2026-10-18): the asymmetry is deliberate — a REPORTED link still
+  closes on any scan — and an intake is never a service-principal link
+  confirmation, which stays its own act on the service-principal-link route.
 - **A scan closes a finding only on positive evidence.** An agent absent from a
   scan resolves nothing about it, and "no unpinned write tool" counts only when
   the `mcp` source was read in full. An empty scan is `EMPTY_SCAN`, not a clean

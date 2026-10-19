@@ -158,6 +158,11 @@ export type HarnessTabProps = ReportsCommonProps & {
     harness: HarnessMatrixView;
     /** `null` for a reader without `admin.agent_registry` (#3710): no key card. */
     scannerKeys: HarnessScannerKeysView | null;
+    /**
+     * `canRunRegistrationIntake` — the intake usecase's own rule (#3712). Absent
+     * is false: the Register action is hidden unless the server said yes.
+     */
+    canRegisterShadow?: boolean;
 };
 
 export function ReportsClient(props: PackTabProps | HarnessTabProps) {
@@ -222,7 +227,11 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps) {
                 />
             </div>
             {props.tab === 'harness' ? (
-                <HarnessTab view={props.harness} scannerKeys={props.scannerKeys} />
+                <HarnessTab
+                    view={props.harness}
+                    scannerKeys={props.scannerKeys}
+                    canRegisterShadow={props.canRegisterShadow === true}
+                />
             ) : (
                 <PackReports tenantSlug={tenantSlug} pack={props.pack} enforcing={props.enforcing} />
             )}
