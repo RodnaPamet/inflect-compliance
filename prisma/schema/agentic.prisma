@@ -522,6 +522,20 @@ model WorkflowRun {
   /// Names and hashes only — no skill text — so it is not in the Epic B
   /// encryption manifest; the hash points at the document in the repository.
   mountedSkills     Json?
+  /// THE A2A PEER WHOSE TASK STARTED THIS RUN (#3679), or NULL for every run
+  /// a peer did not start. A plain id with no FK, as `parentExecutionId` is:
+  /// the run must say who caused it after the peer is retired.
+  ///
+  /// Load-bearing, not attribution only. Two owner rules read it, through
+  /// `RequestContext.a2aInbound`, which `executeFrom` restores from this
+  /// column on every segment, a person's resume included: such a run
+  /// never dispatches an external write above `PROPOSE_ONLY` (threat-model
+  /// R17) and never sends an outbound A2A task (R14). WRITE-ONCE at the
+  /// database with `inboundMessageId`, so a later UPDATE cannot lift either.
+  inboundPeerId     String?
+  /// The `PeerAgentMessage` (INBOUND, TASK) whose verified, signed message
+  /// started this run. A plain id, for the reason above.
+  inboundMessageId  String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -792,6 +806,10 @@ model RegisteredAgent {
   /// People's confirmations that a discovered Entra service principal is this
   /// agent's own (#3671). Required before an unattended disable.
   servicePrincipalConfirmations AgentServicePrincipalConfirmation[]
+  /// Inbound A2A credentials that name this agent as the receiving agent
+  /// (#3679). The credential binds a peer to ONE agent; the agent's own grants
+  /// decide what a peer-started run may reach.
+  peerInboundCredentials PeerAgentInboundCredential[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -2726,6 +2744,16 @@ model PeerAgent {
   owner  User   @relation("PeerAgentOwner", fields: [ownerUserId], references: [id])
   vendor Vendor @relation("PeerAgentVendor", fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
+  /// Inbound A2A messages this peer may send in one hour (#3679). A LIMIT,
+  /// not authority: it only ever narrows what the peer can cause. Set with
+  /// the register key, as the rest of the peer is; a CHECK holds it to
+  /// 1..1000, so a typo can neither stop the peer silently (that is the
+  /// kill's job) nor lift the bound.
+  inboundMessagesPerHour Int @default(60)
+
+  /// The per-peer inbound credentials (#3679). At most one is live.
+  inboundCredentials PeerAgentInboundCredential[]
+
   @@unique([id, tenantId])
   @@unique([tenantId, cardUrl])
   @@index([tenantId, status])
@@ -2854,4 +2882,209 @@ model TenantSkillVersion {
   @@unique([tenantId, skillId, version])
   /// The mount read: a tenant's APPROVED versions.
   @@index([tenantId, status])
+}
+
+/// ONE SIGNED A2A MESSAGE, sent or received (#3679, step 4b; UC5): the receipt
+/// both sides keep.
+///
+/// Every task and every result that crosses the A2A boundary is signed by the
+/// party that sent it, with Ed25519 over the canonical JSON of a receipt
+/// statement (`inflect-a2a-receipt/1`, `src/lib/agentic/a2a/receipt.ts`). This
+/// row keeps the statement, the signature and the exact body the statement's
+/// digest covers, so a receipt stays re-verifiable long after the exchange:
+/// INBOUND rows were verified against the peer's registered key before they
+/// were written, and OUTBOUND rows were signed by Inflect before anything left.
+///
+/// ## Write-once, and kept
+///
+/// A trigger refuses every UPDATE and `app_user` holds no DELETE, so a receipt
+/// is never edited and never removed by the app. Classed a Regulatory artefact
+/// (`docs/data-retention.md`): it is signed evidence of an agent action, the
+/// class `AgentActionReceipt` has, and the tenant purge retains it.
+///
+/// ## Why `peerId`, `runId` and `journalId` carry no FK
+///
+/// A retained table must never be reached by a cascade from a purged one
+/// (`tests/guardrails/tenant-purge-retained-never-cascades.test.ts`), and a
+/// receipt must outlive the peer, the run and the journal row it was about. So
+/// they are plain ids, as `AgentKillSwitch.agentId` is; the signed statement
+/// itself names both parties.
+///
+/// ## Replay
+///
+/// `(tenantId, peerId, direction, messageId)` is unique. An inbound message
+/// whose id this tenant has seen from this peer is a replay, and the insert
+/// that would record it is what refuses it.
+model PeerAgentMessage {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  peerId               String
+  /// INBOUND (the peer signed it) or OUTBOUND (Inflect signed it). TEXT + CHECK.
+  direction            String
+  /// TASK (a request: `message/send` or `tasks/get`) or RESULT (the answer to
+  /// one). TEXT + CHECK.
+  kind                 String
+  /// The JSON-RPC method a TASK carried. NULL on a RESULT.
+  method               String?
+  /// The id its signer gave the message, as the receipt states it.
+  messageId            String
+  /// The TASK this RESULT answers, by its `messageId`. NULL on a TASK.
+  relatesToMessageId   String?
+  /// The signed statement, canonical JSON: ids, the body digest, timestamps and
+  /// the two parties. No content.
+  receiptJson          String
+  /// Ed25519, hex.
+  signature            String
+  /// SPKI SHA-256 of the key that signed it (the peer's, or the tenant's own
+  /// `TenantA2aSigningKey`) — the KEY ID. A rotation keeps the previous public
+  /// key, so a receipt signed before it stays verifiable by this id.
+  signerKeyFingerprint String
+  /// The raw Ed25519 public key (hex) the receipt verifies under, as it was
+  /// when the message was signed or verified. Kept on the row because the row
+  /// outlives both the peer and the tenant's key table in a tenant purge, and
+  /// a retained receipt nobody can check is not evidence. The fingerprint
+  /// binds it: a key that does not hash to `signerKeyFingerprint` is refused
+  /// by `verifyStoredA2aReceipt`.
+  signerPublicKey      String
+  /// SHA-256 (hex) of the exact body bytes the receipt covers.
+  bodyDigest           String
+  /// The exact body, verbatim — never sanitised, because a changed byte would
+  /// break the digest it is kept to prove. ENCRYPTED at rest (Epic B): it
+  /// carries task text from another organisation and tenant data sent to one.
+  body                 String
+  /// The registered agent that sent (OUTBOUND) or received (INBOUND) it.
+  agentId              String?
+  /// The run an inbound TASK started, or whose state a RESULT reports.
+  runId                String?
+  /// The `ExternalWriteJournal` row an outbound TASK was sent for.
+  journalId            String?
+  createdAt            DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, peerId, direction, messageId])
+  /// The per-peer quota count and the per-peer receipt list.
+  @@index([tenantId, peerId, direction, createdAt])
+  @@index([tenantId, runId])
+  @@index([tenantId, journalId])
+}
+
+/// A KILL FOR ONE A2A PEER (#3679): while one is in force, every message to or
+/// from that peer is refused at the next message, in both directions.
+///
+/// A sibling of `AgentKillSwitch` rather than a scope on it, and the reason is
+/// the scope derivation there: `agentId IS NULL` MEANS a tenant-wide kill, so a
+/// peer row with no agent would read as one to every container that predates
+/// this table. Stopping a peer must never stop the tenant's own agents.
+///
+/// `peerId` carries no FK, for `AgentKillSwitch.agentId`'s reasons: a kill is
+/// history that outlives its target, and the scheduled drill engages one
+/// against a canary id no peer can have. Engaged and lifted under
+/// `admin.agent_kill_switch` — the key that stops an agent stops a peer — and a
+/// lift needs a person and a reason (CHECK), and is final (trigger).
+model PeerAgentKillSwitch {
+  id       String @id @default(cuid())
+  tenantId String
+  peerId   String
+
+  reason          String
+  engagedByUserId String
+  engagedAt       DateTime @default(now())
+
+  liftedAt       DateTime?
+  liftedByUserId String?
+  liftReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// The read the inbound endpoint and the outbound send make on every
+  /// message. A partial unique index (in the migration) holds one in force per
+  /// peer.
+  @@index([tenantId, peerId, liftedAt])
+  @@index([tenantId, engagedAt])
+}
+
+/// THE CREDENTIAL ONE A2A PEER PRESENTS INBOUND (#3679), bound to the ONE
+/// registered agent its tasks start runs for.
+///
+/// Not authority. A peer is a principal for identity and attribution only
+/// (`docs/a2a-mapping.md`), so this row narrows and never grants: the run a
+/// peer starts is the receiving agent's, under the peer's accountable owner as
+/// principal, through the agent's own grants. `workflowKeys` is the allowlist
+/// of workflows the peer may ask for, as `TenantApiKey.scopes` narrows a key.
+///
+/// Stored as a SHA-256 hash, as `TenantApiKey.keyHash` is; the token is shown
+/// once at issue. Re-checked on every message and always paired with the
+/// peer's per-message signature, so a leaked bearer alone admits nothing. At
+/// most one is live per peer (partial unique index), and revocation is final
+/// (trigger). Its own `iflp_` prefix, so the edge's `iflk_` carve-out
+/// (`matchTenantApiKeyRequest`) never matches it and `verifyApiKey` never
+/// accepts it anywhere else.
+model PeerAgentInboundCredential {
+  id               String    @id @default(cuid())
+  tenantId         String
+  peerId           String
+  receivingAgentId String
+  workflowKeys     String[]
+  keyHash          String
+  /// The first characters of the token, for an operator to recognise it.
+  keyPrefix        String
+  createdByUserId  String
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+  revokedByUserId  String?
+  updatedAt        DateTime  @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  peer   PeerAgent       @relation(fields: [peerId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  agent  RegisteredAgent @relation(fields: [receivingAgentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, peerId, revokedAt])
+  @@index([tenantId, receivingAgentId])
+}
+
+/// THE TENANT'S OWN A2A SIGNING KEY (#3679, owner decision 2026-10-19): the
+/// Ed25519 key every task this tenant sends a peer, and every answer it gives
+/// one, is signed with. One per tenant, never shared across tenants and never
+/// held by the deployment.
+///
+/// `privateKeySeed` is ENCRYPTED at rest under the tenant's DEK through the
+/// Epic B manifest (`ENCRYPTED_FIELDS`), and it never leaves this table: no
+/// route, response or log carries it. The public key and its fingerprint are
+/// not secret; a peer is handed them.
+///
+/// Generated and rotated only by an OWNER-tier act (`admin.tenant_lifecycle`,
+/// the key that rotates the tenant's DEK), never by an API key, and audited.
+/// A rotation RETIRES the key in force — stamps `retiredAt` and nulls its
+/// seed, so a retired key can verify and can never sign again — and creates
+/// the next one, in one transaction. Retired rows are kept: a receipt names
+/// the key that signed it by fingerprint, and stays checkable after the key
+/// rotates. At most one key is in force per tenant (partial unique index),
+/// and a key's identity is fixed at birth (trigger). No key, no A2A: both
+/// directions refuse with `NO_SIGNING_KEY` for that tenant.
+model TenantA2aSigningKey {
+  id              String    @id @default(cuid())
+  tenantId        String
+  /// Raw 32-byte Ed25519 public key, hex.
+  publicKey       String
+  /// SPKI SHA-256, hex — the key id a receipt records.
+  fingerprint     String
+  /// The 32-byte seed, hex, ENCRYPTED (v2, tenant DEK). NULL once retired.
+  privateKeySeed  String?
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  retiredAt       DateTime?
+  retiredByUserId String?
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, fingerprint])
+  @@index([tenantId, retiredAt])
 }

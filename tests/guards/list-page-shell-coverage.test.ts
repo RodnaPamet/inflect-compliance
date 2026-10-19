@@ -73,6 +73,11 @@ const EXEMPTIONS: Record<string, string> = {
         'sub-table inside the multi-section /agents/reports dashboard (harness tab) — sibling cards above and below; not a viewport-clamped list page',
     'agents/reports/harness/ScanHistory.tsx':
         'sub-table inside the multi-section /agents/reports dashboard (harness tab) — sibling cards above and below; not a viewport-clamped list page',
+    // #3679 — the A2A peer detail page's two tab sub-tables (kill history,
+    // signed messages). The page is an <EntityDetailLayout>; the list page,
+    // /agents/peers, is an <EntityListPage> and needs no entry.
+    'agents/peers/[peerId]/PeerDetailClient.tsx':
+        'detail-page tab sub-tables (kill history, signed messages) inside <EntityDetailLayout> — not a viewport-clamped list page',
     'agents/reports/harness/ScannerKeysCard.tsx':
         'sub-table inside the multi-section /agents/reports dashboard (harness tab) — the scanner-key register, the last card below the scan history; not a viewport-clamped list page',
 

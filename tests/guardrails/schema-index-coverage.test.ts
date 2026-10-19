@@ -691,6 +691,16 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listAuditWorkpapers filters by tenantId (+ optional procedureId/periodLabel or auditorAgentId equality) and orders by createdAt desc — covered by @@index([tenantId, procedureId, periodLabel]), @@index([tenantId, auditorAgentId]) and @@index([tenantId, createdAt]); the binding-sample read is (tenantId, procedureId, periodLabel) ordered by createdAt, the first composite\'s exact prefix; bounded take ≤200.',
     // A2A peers (#3673) — listPeerAgents filters by tenantId alone and orders
     // by createdAt; a tenant registers a handful of partners.
+    // A2A messaging (#3679). Both read per (tenant, peer) with a bounded take.
+    PeerAgentMessage:
+        'listPeerMessages reads by (tenantId, peerId) ordered by createdAt desc — the tenantId-leading prefix of @@index([tenantId, peerId, direction, createdAt]); the quota count adds direction and createdAt to the same index; run and journal reads use @@index([tenantId, runId]) / @@index([tenantId, journalId]); bounded take ≤200.',
+    PeerAgentKillSwitch:
+        'listPeerKills reads by (tenantId, peerId) ordered by engagedAt desc, and the per-message boundary read adds liftedAt IS NULL — both the tenantId-leading prefix of @@index([tenantId, peerId, liftedAt]); a peer is killed a handful of times, bounded take ≤100.',
+    PeerAgentInboundCredential:
+        'getPeerInboundCredential lists a peer\'s revoked credentials by (tenantId, peerId, revokedAt not null) ordered by revokedAt desc — @@index([tenantId, peerId, revokedAt]); the retirement cascade lists one agent\'s live credentials by (tenantId, receivingAgentId) — @@index([tenantId, receivingAgentId]); a peer holds a handful, bounded take ≤20 / cap+1.',
+    // The tenant's own A2A signing key (#3679, owner decision 2026-10-19).
+    TenantA2aSigningKey:
+        'getTenantA2aSigningKeys lists the retired keys by (tenantId, retiredAt not null) ordered by retiredAt desc — @@index([tenantId, retiredAt]); the receipt re-verification reads by (tenantId, fingerprint IN …) — @@unique([tenantId, fingerprint]); a tenant rotates rarely, bounded take ≤200.',
     PeerAgent:
         'listPeerAgents filters by tenantId only and every other read is by (id, tenantId) or the tenantId-leading @@unique([tenantId, cardUrl]) — a tenant registers a handful of peers, covered by @@index([tenantId, status]); bounded take ≤200.',
     // Tenant-authored skills (#3680) — a workspace authors a handful of skills.

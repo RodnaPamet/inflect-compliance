@@ -135,6 +135,11 @@ export const CONTENT_SOURCE_PROVENANCE = {
     // instruction. Named rather than left to the default for the reason the
     // legacy row above gives: it reaches a model as the SUBJECT of the run.
     'agent.run-input': 'THIRD_PARTY_INGESTED',
+    // The text of a task an A2A PEER sent (#3679): another organisation's
+    // agent wrote it, and a valid signature says only WHICH peer sent it, not
+    // that what it asks for is benign. It enters a run's input inside an
+    // envelope carrying this label, and it is never the instruction.
+    'a2a.peer-task': 'THIRD_PARTY_INGESTED',
 } as const satisfies Readonly<Record<string, ContentProvenance>>;
 
 /**

@@ -1149,7 +1149,7 @@ export function recordToolManifestDrift(attrs: { tool: string; status: string })
  * resumes. A run of fetch failures for one tenant is a partner that went away
  * or a card that grew past the cap, and the peer is refused until it is read.
  */
-export function recordPeerCardCheck(attrs: { outcome: string; context: 'register' | 'read' | 'approve' | 'admission' }): void {
+export function recordPeerCardCheck(attrs: { outcome: string; context: 'register' | 'read' | 'approve' | 'admission' | 'message' }): void {
     if (!_peerCardCheck) {
         _peerCardCheck = getMeter().createCounter('agentic.peer_card.check', {
             description:
@@ -1201,6 +1201,39 @@ export function recordTenantSkillReview(attrs: { action: string; outcome: string
         });
     }
     _tenantSkillReview.add(1, { action: attrs.action, outcome: attrs.outcome });
+}
+
+// ── A2A messages (#3679) ─────────────────────────────────────────────────────
+
+let _a2aMessage: Counter | null = null;
+
+/**
+ * One A2A message, in either direction, and what became of it.
+ *
+ * `direction` is `INBOUND` (a peer's request to this deployment) or
+ * `OUTBOUND` (a send to a peer, counted by the dispatch pass or the tool).
+ * `outcome` is a closed vocabulary: `ADMITTED`, `ANSWERED`, a refusal reason
+ * (`PEER_KILLED`, `BAD_CREDENTIAL`, `SIGNATURE_INVALID`, `PEER_CARD_CHANGED`,
+ * `REPLAY`, `QUOTA`, `GUARD_REFUSED`, …), or a journal outcome for a send
+ * (`RECORDED_ONLY`, `PROPOSED`, `QUEUED`, `APPLIED`, `ACCEPTED`, `FAILED`,
+ * `INDETERMINATE`). The peer id is NOT a label: unbounded, and the receipt
+ * rows carry it.
+ *
+ * ALERT ON — `SIGNATURE_INVALID` or `REPLAY` inbound (somebody holds a peer's
+ * credential and not its key, or is replaying it), and any `INDETERMINATE`
+ * outbound (a send that may have arrived and could not be confirmed). Silence
+ * from a tenant with a live peer is the third signal: the traffic stopped.
+ */
+export function recordA2aMessage(attrs: { direction: 'INBOUND' | 'OUTBOUND'; outcome: string }): void {
+    if (!_a2aMessage) {
+        _a2aMessage = getMeter().createCounter('agentic.a2a.message', {
+            description:
+                'A2A messages exchanged with peer agents, by direction and outcome. Every refusal is '
+                + 'counted under its reason; a send that may have arrived and was not confirmed is INDETERMINATE.',
+            unit: '1',
+        });
+    }
+    _a2aMessage.add(1, { direction: attrs.direction, outcome: attrs.outcome });
 }
 
 // ── The kill switch, and its drill (OWASP ASI08 / ASI10) ───────────────────

@@ -299,6 +299,26 @@ export function coerceStoredMode(stored: string | null | undefined): ExternalWri
     return replacement !== undefined && isLadderRung(replacement) ? replacement : 'DISABLED';
 }
 
+/**
+ * The widest rung a run an INBOUND A2A TASK started may write at (#3679).
+ *
+ * Owner decision 2026-10-17, threat-model R17: such a run never dispatches an
+ * external write above `PROPOSE_ONLY`. On a connection at `AUTOMATIC` its write
+ * becomes an `EXTERNAL_WRITE` proposal a person approves, instead of a row the
+ * dispatch pass sends unattended. A source constant, like the ceiling above:
+ * widening it must be a reviewed diff.
+ */
+export const INBOUND_A2A_MAX_MODE: ExternalWriteMode = 'PROPOSE_ONLY';
+
+/**
+ * The rung a write actually runs at: the connection's, narrowed to
+ * `INBOUND_A2A_MAX_MODE` when the run was started by a peer. Only narrows.
+ */
+export function clampForInboundA2a(mode: ExternalWriteMode, startedByPeer: boolean): ExternalWriteMode {
+    if (!startedByPeer) return mode;
+    return LADDER.indexOf(mode) > LADDER.indexOf(INBOUND_A2A_MAX_MODE) ? INBOUND_A2A_MAX_MODE : mode;
+}
+
 /** Is `mode` wider than `clamp`? Unknown modes must be coerced FIRST. */
 export function isAboveClamp(mode: ExternalWriteMode, clamp: ExternalWriteMode): boolean {
     return LADDER.indexOf(mode) > LADDER.indexOf(clamp);

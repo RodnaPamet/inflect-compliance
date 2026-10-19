@@ -73,6 +73,18 @@ export type ConfigFieldRule =
      * re-checks at USE time, which is the half that closes rebinding.
      */
     | { kind: 'publicOrigin' }
+    /**
+     * A REFERENCE TO A REGISTERED A2A PEER (#3679) — the peer's id, whose
+     * pinned agent card names the host a task is sent to.
+     *
+     * It carries no host itself, and it decides one all the same: the
+     * `a2a-peer` connection's stored credential is the one THAT peer issued,
+     * so repointing `peerId` at another peer while keeping the secret would
+     * hand one organisation's credential to another's endpoint. That is the
+     * redirect `redirectsStoredCredential` exists to refuse, so this kind is an
+     * ORIGIN kind and sits in `ORIGIN_KINDS` below.
+     */
+    | { kind: 'peerReference' }
     /** A filter that must remain a filter. */
     | { kind: 'boundedQuery'; check: (value: string) => string | null };
 
@@ -92,6 +104,7 @@ const ORIGIN_KINDS = new Set<ConfigFieldRule['kind']>([
     'vendorOrigin',
     'internalOrigin',
     'publicOrigin',
+    'peerReference',
 ]);
 
 /**
@@ -401,6 +414,12 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         // gain a rule here — a credential in `configJson` is returned by the
         // admin API, and the classification guard fails CI if one appears.
     },
+    'a2a-peer': {
+        // WHICH peer the connection sends to (#3679). An origin kind: see
+        // `peerReference` above. `authorization` is a secretField and has no
+        // rule here, for the reason the MCP server's note gives.
+        peerId: { kind: 'peerReference' },
+    },
 };
 
 /**
@@ -604,6 +623,13 @@ export function validateProviderConfig(
             }
             if (new URL(value).username || new URL(value).password) {
                 throw badRequest(`Invalid ${key}: must not carry credentials`);
+            }
+        } else if (rule.kind === 'peerReference') {
+            // The shape only. Whether the id names a peer in THIS tenant is
+            // decided at every send, by admission, which reads the register
+            // under the tenant's own row-level security.
+            if (!/^[a-z0-9]{8,64}$/.test(String(raw).trim())) {
+                throw badRequest(`Invalid ${key}: not a peer id`);
             }
         } else if (rule.kind === 'boundedQuery') {
             const problem = rule.check(String(raw));

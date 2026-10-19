@@ -42,6 +42,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
 import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 import { externalToolName } from '@/lib/mcp/external-tool-name';
+import { a2aSendToolName } from '@/lib/agentic/a2a/send-tool';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -76,6 +77,13 @@ interface DbOptions {
      * none is the state in which none of them are.
      */
     externalPins?: string[];
+    /**
+     * `a2a-peer` connections (#3679), each naming a peer, and the peers that
+     * carry a pin a person approved. A send to a peer is grantable only when
+     * both hold, so the default of none is the state in which no send is.
+     */
+    a2aConnections?: Array<{ id: string; peerId: string }>;
+    pinnedPeerIds?: string[];
 }
 
 function makeDb(options: DbOptions = {}) {
@@ -128,6 +136,18 @@ function makeDb(options: DbOptions = {}) {
                 (options.externalPins ?? []).includes(args.where.tenantId_toolName.toolName)
                     ? { id: 'pin-1' }
                     : null,
+            ),
+        },
+        integrationConnection: {
+            findMany: jest.fn(async () =>
+                (options.a2aConnections ?? []).map((c) => ({ id: c.id, configJson: { peerId: c.peerId } })),
+            ),
+        },
+        peerAgent: {
+            findMany: jest.fn(async (args: any) =>
+                (options.pinnedPeerIds ?? [])
+                    .filter((id) => (args.where.id.in as string[]).includes(id))
+                    .map((id) => ({ id })),
             ),
         },
         registeredAgentTool: {
@@ -494,5 +514,59 @@ describe('external tools', () => {
         makeDb({ externalPins: [] });
         const res: any = await listAgentTools(ctx, 'agent-1');
         expect(res.available).toEqual([...MCP_TOOL_NAMES]);
+    });
+});
+
+describe('A2A sends (#3679)', () => {
+    const SEND = a2aSendToolName('cmconnpeer');
+    const agent = {
+        id: 'agent-1',
+        status: 'ACTIVE',
+        name: 'Agent one',
+        autonomyLevel: 2,
+        dataAccessScope: 'EXTERNAL_EGRESS',
+        reversibility: 'REVERSIBLE',
+        provenance: 'FIRST_PARTY',
+        modelRef: null,
+        riskTier: 'LOW',
+        riskTierScoredAt: new Date(),
+        _count: { tools: 1 },
+    };
+
+    it('offers the send of a connection whose peer is pinned', async () => {
+        makeDb({ a2aConnections: [{ id: 'cmconnpeer', peerId: 'peerpinned1' }], pinnedPeerIds: ['peerpinned1'] });
+        const res: any = await listAgentTools(ctx, 'agent-1');
+        expect(res.available).toEqual([...MCP_TOOL_NAMES, SEND]);
+    });
+
+    it('does not offer the send of a connection whose peer has no pin', async () => {
+        makeDb({ a2aConnections: [{ id: 'cmconnpeer', peerId: 'peerunpinned' }], pinnedPeerIds: [] });
+        const res: any = await listAgentTools(ctx, 'agent-1');
+        expect(res.available).toEqual([...MCP_TOOL_NAMES]);
+    });
+
+    it('refuses to grant a send whose peer has no pin, even with a manifest pin on the name', async () => {
+        // The tool's definition is Inflect's own; what a person must have
+        // reviewed is the PEER'S CARD, so a pin on the name proves nothing.
+        const { upserts } = makeDb({
+            agent,
+            externalPins: [SEND],
+            a2aConnections: [{ id: 'cmconnpeer', peerId: 'peerunpinned' }],
+            pinnedPeerIds: [],
+        });
+        await expect(grantAgentTool(ctx, 'agent-1', { toolName: SEND })).rejects.toThrow(
+            /not a send to a pinned A2A peer/,
+        );
+        expect({ writes: upserts.length }).toEqual({ writes: 0 });
+    });
+
+    it('grants a send whose peer is pinned, to an agent that declared egress', async () => {
+        const { upserts } = makeDb({
+            agent,
+            a2aConnections: [{ id: 'cmconnpeer', peerId: 'peerpinned1' }],
+            pinnedPeerIds: ['peerpinned1'],
+        });
+        await expect(grantAgentTool(ctx, 'agent-1', { toolName: SEND })).resolves.toMatchObject({ toolName: SEND });
+        expect(upserts[0].create.toolName).toBe(SEND);
     });
 });

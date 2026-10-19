@@ -57,6 +57,10 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // belongs.
     '/agents/parameter-sets': { href: '/agents/external-tools', label: 'External tools' },
     '/agents/compose': { href: '/agents', label: 'Agents' },
+    // #3679 — the peers list hangs off the register like its siblings; one
+    // peer's Back goes to the list it was opened from.
+    '/agents/peers': { href: '/agents', label: 'Agents' },
+    '/agents/peers/[peerId]': { href: '/agents/peers', label: 'A2A peers' },
     '/agents/proposals': { href: '/agents', label: 'Agents' },
     '/agents/reports': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },

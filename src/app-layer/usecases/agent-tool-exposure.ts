@@ -40,6 +40,8 @@
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { EXTERNAL_TOOL_PREFIX, isExternalToolName } from '@/lib/mcp/external-tool-name';
+import { a2aSendConnectionId, a2aSendToolName } from '@/lib/agentic/a2a/send-tool';
+import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
 import { isKnownMcpTool, mcpToolCapabilityClass, MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import {
@@ -139,7 +141,19 @@ export async function listAgentTools(ctx: RequestContext, agentId: string) {
             orderBy: { toolName: 'asc' },
             select: { toolName: true },
         });
-        const available = [...MCP_TOOL_NAMES, ...externalPins.map((p) => p.toolName)];
+        // ── AND THE A2A SENDS, GRANTABLE ONCE THE PEER IS PINNED (#3679) ────
+        //
+        // The send tool's definition is Inflect's own; what a person must have
+        // reviewed is the PEER'S CARD. So a send is grantable for an `a2a-peer`
+        // connection whose peer carries a pin a person approved — the A2A
+        // counterpart of "baseline, then grant". The live card is compared at
+        // every assembly and every send; this is only what may be granted.
+        const a2aSends = await grantableA2aSendTools(db, ctx);
+        const available = [
+            ...MCP_TOOL_NAMES,
+            ...externalPins.map((p) => p.toolName).filter((n) => a2aSendConnectionId(n) === null),
+            ...a2aSends,
+        ];
 
         // ── WHICH GRANTS THE CEILING ACTUALLY PERMITS ───────────────────────
         //
@@ -363,16 +377,30 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
             if (!isExternalToolName(toolName)) {
                 throw badRequest(`Unknown MCP tool "${toolName}".`);
             }
-            const pinned = await db.mcpToolManifestPin.findUnique({
-                where: { tenantId_toolName: { tenantId: ctx.tenantId, toolName } },
-                select: { id: true },
-            });
-            if (!pinned) {
-                throw badRequest(
-                    `"${toolName}" has no approved definition on file. Review the ` +
-                        'server\'s catalogue and accept the tool definition before ' +
-                        'granting it.',
-                );
+            if (a2aSendConnectionId(toolName) !== null) {
+                // A send to an A2A peer (#3679): grantable only while its
+                // connection names a peer a person has pinned. A manifest pin
+                // on the name is NOT enough — the tool's definition is ours,
+                // and the text that needed a person's review is the card.
+                const grantable = await grantableA2aSendTools(db, ctx);
+                if (!grantable.includes(toolName)) {
+                    throw badRequest(
+                        `"${toolName}" is not a send to a pinned A2A peer. Register the peer, approve `
+                            + 'its card, and connect it as an a2a-peer integration before granting it.',
+                    );
+                }
+            } else {
+                const pinned = await db.mcpToolManifestPin.findUnique({
+                    where: { tenantId_toolName: { tenantId: ctx.tenantId, toolName } },
+                    select: { id: true },
+                });
+                if (!pinned) {
+                    throw badRequest(
+                        `"${toolName}" has no approved definition on file. Review the ` +
+                            'server\'s catalogue and accept the tool definition before ' +
+                            'granting it.',
+                    );
+                }
             }
         }
 
@@ -448,4 +476,30 @@ export async function revokeAgentTool(ctx: RequestContext, agentId: string, tool
 
         return { agentId, toolName, revoked: true };
     });
+}
+
+/**
+ * The A2A send tools this tenant can grant: one per `a2a-peer` connection whose
+ * peer is not retired and carries a pin a person approved (#3679). Bounded: a
+ * tenant connects a handful of peers.
+ */
+async function grantableA2aSendTools(db: PrismaTx, ctx: RequestContext): Promise<string[]> {
+    const connections = await db.integrationConnection.findMany({
+        where: { tenantId: ctx.tenantId, provider: A2A_PEER_PROVIDER_ID },
+        select: { id: true, configJson: true },
+        take: 200,
+    });
+    const peerIds = connections
+        .map((c) => ((c.configJson ?? {}) as { peerId?: unknown }).peerId)
+        .filter((v): v is string => typeof v === 'string' && v !== '');
+    if (peerIds.length === 0) return [];
+    const pinned = await db.peerAgent.findMany({
+        where: { tenantId: ctx.tenantId, id: { in: peerIds }, status: { not: 'RETIRED' }, pinRevision: { gte: 1 } },
+        select: { id: true },
+        take: 200,
+    });
+    const pinnedIds = new Set(pinned.map((p) => p.id));
+    return connections
+        .filter((c) => pinnedIds.has(String(((c.configJson ?? {}) as { peerId?: unknown }).peerId)))
+        .map((c) => a2aSendToolName(c.id));
 }

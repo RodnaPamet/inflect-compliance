@@ -954,6 +954,21 @@ export async function listWorkflowRuns(
  * `finally`, not `then` — a run that threw is no longer executing, and leaving
  * it tracked would have the drain pause a row that has already settled.
  */
+async function withInboundOrigin(ctx: RequestContext, runId: string): Promise<RequestContext> {
+    const row = await runInTenantContext(ctx, (db) =>
+        db.workflowRun.findFirst({
+            where: { id: runId, tenantId: ctx.tenantId },
+            select: { inboundPeerId: true, inboundMessageId: true },
+        }),
+    );
+    const fromRow =
+        row?.inboundPeerId && row.inboundMessageId
+            ? { peerId: row.inboundPeerId, messageId: row.inboundMessageId }
+            : undefined;
+    const a2aInbound = fromRow ?? ctx.a2aInbound;
+    return a2aInbound ? { ...ctx, a2aInbound } : ctx;
+}
+
 async function executeFrom(
     ctx: RequestContext,
     runId: string,
@@ -981,6 +996,17 @@ async function executeFrom(
     const { run, driver } = selectRunDriver(def, permittedDriver);
     const driverLabel = driver === 'flue' ? 'FLUE' : 'STATIC';
 
+    // ── A RUN AN A2A PEER STARTED CARRIES THAT ON EVERY SEGMENT (#3679) ──────
+    //
+    // Restored HERE, from the run's own write-once columns, because this is the
+    // one seam a start, a human's resume and a queued Flue segment all pass
+    // through. A resume runs on the RESUMING person's context, and a context
+    // that forgot where the run came from would lift R17 (no external write
+    // above PROPOSE_ONLY) and R14 (no outbound A2A send) for every step after
+    // the checkpoint. It only ever narrows: an origin already on the context is
+    // kept if the row somehow carried none.
+    const runCtx = await withInboundOrigin(ctx, runId);
+
     // THE ONE SEAM BOTH ENGINES PASS THROUGH (#3484). The static driver and
     // Flue each settle their own runs — four `status: 'COMPLETED'` sites
     // between them, plus the halt paths — so instrumenting the drivers would
@@ -991,8 +1017,8 @@ async function executeFrom(
 
     trackInFlightRun(runId);
     try {
-        const outcome = await run(ctx, runId, def, fromSeq, runStartMs);
-        await recordRunSettlementMetrics(ctx, runId, driverLabel, outcome.status);
+        const outcome = await run(runCtx, runId, def, fromSeq, runStartMs);
+        await recordRunSettlementMetrics(runCtx, runId, driverLabel, outcome.status);
         return outcome;
     } catch (err) {
         // A THROW IS A FAILED RUN for metric purposes, and it has to be
@@ -1170,6 +1196,11 @@ async function createSealedRun(
                     // updated after the walk: a run that crashes mid-step still
                     // has to be able to say what was executing it.
                     driver: driver === 'flue' ? 'FLUE' : 'STATIC',
+                    // …and, for a run an A2A peer's task started, WHICH peer
+                    // and WHICH verified message (#3679). Write-once at the
+                    // database; R17 and R14 are keyed on it.
+                    inboundPeerId: ctx.a2aInbound?.peerId ?? null,
+                    inboundMessageId: ctx.a2aInbound?.messageId ?? null,
                     // …and what it was TAUGHT. `[]` for a run that mounts no
                     // skill, never NULL: NULL means the row predates the pin.
                     mountedSkills: mountedSkills.map(pinForRow),

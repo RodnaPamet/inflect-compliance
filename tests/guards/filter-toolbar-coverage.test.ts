@@ -163,6 +163,9 @@ const EXEMPTIONS: Record<string, string> = {
         "Shadow-agent sub-table inside the multi-section /agents/reports dashboard — the agents no register row answers for, bounded by the read and ordered by last seen; faceting it would let the report under-state the shadow population.",
     "src/app/t/[tenantSlug]/(app)/agents/reports/harness/ScanHistory.tsx":
         "Scan-history sub-table inside the multi-section /agents/reports dashboard — the newest scans in a fixed window with their sources and completeness, read in full; not a faceted-filter list surface.",
+    // #3679 — the A2A peer detail page's tab sub-tables.
+    "src/app/t/[tenantSlug]/(app)/agents/peers/[peerId]/PeerDetailClient.tsx":
+        "Detail-tab sub-tables inside the A2A peer's <EntityDetailLayout> — its kill history and its signed messages, newest first and bounded by the read; a facet that hid a message would hide a receipt that does not verify.",
     "src/app/t/[tenantSlug]/(app)/agents/reports/harness/ScannerKeysCard.tsx":
         "Scanner-key register sub-table inside the multi-section /agents/reports dashboard — the handful of keys a tenant trusts, with inline register and revoke; a small fixed list, not a faceted-filter list surface.",
     // Pages composed of multiple cards + sub-tables, where the page

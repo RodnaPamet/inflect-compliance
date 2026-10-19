@@ -34,6 +34,7 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { coerceStoredMode } from '@/lib/integrations/external-write-ladder';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
+import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
 import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
 
 import type { RequestContext } from '../types';
@@ -64,7 +65,9 @@ export async function openApprovedExternalWrite(
             where: {
                 id: payload.connectionId,
                 tenantId: ctx.tenantId,
-                provider: MCP_SERVER_PROVIDER_ID,
+                // An A2A peer's outbound connection too (#3679): a task to a
+                // peer is approved the way every other external write is.
+                provider: { in: [MCP_SERVER_PROVIDER_ID, A2A_PEER_PROVIDER_ID] },
             },
             select: { id: true, externalWriteMode: true },
         }),
@@ -97,7 +100,19 @@ export async function openApprovedExternalWrite(
         endpointUrl: payload.endpointUrl,
         toolName: payload.toolName,
         advertisedToolName: payload.advertisedToolName,
-        mode: rung,
+        // ── AN APPROVED WRITE CARRIES THE RUNG OF ITS APPROVAL (#3679) ──────
+        //
+        // `PROPOSE_ONLY`, also when the connection has since widened to
+        // `AUTOMATIC`. The authority this row leaves under is a person's
+        // approval of one specific change, which is what the dispatch pass's
+        // `PROPOSE_ONLY` arm checks for (the drift against the prior state the
+        // person read). Stamping it `AUTOMATIC` sent it down the unattended arm,
+        // which requires an approved parameter set this row never ran — so a
+        // write a person approved on an `AUTOMATIC` connection was refused at
+        // send, every time. That made the owner's R17 rule (a run an A2A peer
+        // started writes only through a person's approval, even on an
+        // `AUTOMATIC` connection) a refusal rather than a review.
+        mode: rung === 'AUTOMATIC' ? 'PROPOSE_ONLY' : rung,
         argumentsJson: JSON.stringify(payload.arguments),
         // The state read when the write was PROPOSED. The dispatch re-reads it
         // and refuses on drift, so this is the copy the approver saw and the

@@ -251,6 +251,7 @@ describe('the type refuses the call the clamp catches', () => {
             'agent.proposal': true,
             'agent.tool-result': true,
             'agent.run-input': true,
+            'a2a.peer-task': true,
         };
         expect(Object.keys(unionMembers).sort()).toStrictEqual(DATA_ONLY_IDS.slice().sort());
         // And the exclusion is real in both directions: no member of the union

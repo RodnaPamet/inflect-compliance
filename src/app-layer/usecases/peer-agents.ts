@@ -43,6 +43,7 @@ import {
 } from '@/lib/agentic/peer-agent-card';
 import { fetchAgentCard, type AgentCardFetchOptions, type AgentCardFetchResult } from '@/lib/agentic/peer-agent-card-fetch';
 import { recordPeerCardCheck } from '@/lib/observability/integration-metrics';
+import { recentAgentCard, type RecentCardOptions } from '@/lib/agentic/a2a/card-cache';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
@@ -59,6 +60,10 @@ export const RegisterPeerAgentSchema = z
     })
     .strict();
 
+/** The per-peer inbound quota's bounds, as the CHECK in the 4b migration holds them. */
+export const PEER_INBOUND_QUOTA_MIN = 1;
+export const PEER_INBOUND_QUOTA_MAX = 1000;
+
 export const UpdatePeerAgentSchema = z
     .object({
         name: z.string().min(1).max(200).optional(),
@@ -66,6 +71,12 @@ export const UpdatePeerAgentSchema = z
         /** `null` withdraws a score: the peer is UNSCORED, and refused, again. */
         riskTier: z.enum(RISK_TIERS).nullable().optional(),
         status: z.enum(PEER_STATUSES).optional(),
+        /**
+         * Inbound messages per hour (#3679). A limit that only narrows, held to
+         * 1..1000 here and by a CHECK; the kill, not a zero, is how a peer is
+         * stopped.
+         */
+        inboundMessagesPerHour: z.number().int().min(PEER_INBOUND_QUOTA_MIN).max(PEER_INBOUND_QUOTA_MAX).optional(),
     })
     .strict()
     .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
@@ -95,6 +106,7 @@ const PEER_SELECT = {
     pinnedByUserId: true,
     pinnedAt: true,
     previousCardHash: true,
+    inboundMessagesPerHour: true,
     createdByUserId: true,
     createdAt: true,
     updatedAt: true,
@@ -247,7 +259,7 @@ export async function updatePeerAgent(ctx: RequestContext, peerId: string, input
     return runInTenantContext(ctx, async (db) => {
         const before = await db.peerAgent.findFirst({
             where: { id: peerId, tenantId: ctx.tenantId },
-            select: { id: true, name: true, ownerUserId: true, riskTier: true, status: true },
+            select: { id: true, name: true, ownerUserId: true, riskTier: true, status: true, inboundMessagesPerHour: true },
         });
         if (!before) throw notFound('Peer agent not found');
         // One-way, here and in the database trigger behind it.
@@ -268,6 +280,7 @@ export async function updatePeerAgent(ctx: RequestContext, peerId: string, input
             data.riskTierScoredAt = parsed.riskTier === null ? null : new Date();
         }
         if (parsed.status !== undefined) data.status = parsed.status;
+        if (parsed.inboundMessagesPerHour !== undefined) data.inboundMessagesPerHour = parsed.inboundMessagesPerHour;
 
         const after = await db.peerAgent.update({
             where: { id_tenantId: { id: before.id, tenantId: ctx.tenantId } },
@@ -283,8 +296,18 @@ export async function updatePeerAgent(ctx: RequestContext, peerId: string, input
                 category: 'access',
                 entityName: 'PeerAgent',
                 operation: 'updated',
-                before: { ownerUserId: before.ownerUserId, riskTier: before.riskTier, status: before.status },
-                after: { ownerUserId: after.ownerUserId, riskTier: after.riskTier, status: after.status },
+                before: {
+                    ownerUserId: before.ownerUserId,
+                    riskTier: before.riskTier,
+                    status: before.status,
+                    inboundMessagesPerHour: before.inboundMessagesPerHour,
+                },
+                after: {
+                    ownerUserId: after.ownerUserId,
+                    riskTier: after.riskTier,
+                    status: after.status,
+                    inboundMessagesPerHour: after.inboundMessagesPerHour,
+                },
             },
         });
         return after;
@@ -443,6 +466,52 @@ export async function checkPeerAdmission(
     return admission;
 }
 
+/**
+ * The gate step 4b calls before EVERY message, in both directions (#3679).
+ *
+ * `checkPeerAdmission` above reads the live card, which is right for the admin
+ * surface and wrong per message: it would put a third party's latency in front
+ * of every task. This reads a copy of the card at most fifteen minutes old
+ * (owner decision 2026-10-17, threat-model R18; `recentAgentCard`), fetching one
+ * when none is held — and a fetch that fails refuses, as the rule requires. The
+ * PIN is read from the database every time, so a re-approval or a retirement
+ * takes effect on the next message, not the next fetch.
+ *
+ * Returns what the caller needs to act on an admission and nothing more: the
+ * peer's registered signing key, its registered identity, its owner, the pin,
+ * and the endpoint from the pinned card. The verdict on a refusal is for the
+ * caller's audit row only; it must never reach the peer or an agent (rule 7).
+ */
+export async function admitPeerMessage(ctx: RequestContext, peerId: string, opts: RecentCardOptions = {}) {
+    const peer = await loadForAdmission(ctx, peerId);
+    const pin = pinOf(peer);
+    const read =
+        pin && peer.status === 'ACTIVE'
+            ? await recentAgentCard({ tenantId: ctx.tenantId, peerId: peer.id, cardUrl: peer.cardUrl }, opts)
+            : null;
+    const admission = evaluatePeerAdmission({
+        status: peer.status,
+        ownerActive: peer.ownerActive,
+        riskTier: peer.riskTier,
+        pin,
+        live: read && read.ok ? read.hashes : null,
+    });
+    recordPeerCardCheck({ outcome: admission.admitted ? 'ADMITTED' : admission.reason, context: 'message' });
+    return {
+        admission,
+        peer: {
+            id: peer.id,
+            cardUrl: peer.cardUrl,
+            ownerUserId: peer.ownerUserId,
+            signingPublicKey: peer.signingPublicKey,
+            signingKeyFingerprint: peer.signingKeyFingerprint,
+        },
+        pin,
+        /** The service endpoint of the card that was admitted. Null on any refusal. */
+        endpoint: admission.admitted && read && read.ok ? read.card.url : null,
+    };
+}
+
 async function loadForAdmission(ctx: RequestContext, peerId: string) {
     return runInTenantContext(ctx, async (db) => {
         const peer = await db.peerAgent.findFirst({
@@ -453,6 +522,8 @@ async function loadForAdmission(ctx: RequestContext, peerId: string) {
                 status: true,
                 riskTier: true,
                 ownerUserId: true,
+                signingPublicKey: true,
+                signingKeyFingerprint: true,
                 pinnedCardHash: true,
                 pinnedTextHash: true,
                 pinnedEndpointHash: true,

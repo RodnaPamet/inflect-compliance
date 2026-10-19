@@ -169,10 +169,11 @@ describeFn('the kill-switch drill runs, records, and raises (real DB)', () => {
         expect(result.outcome).toBe('PASSED');
         expect(result.boundaryRefusalReason).toBe('agent_killed');
         expect(result.toolCallsAfterKill).toBe(0);
-        // ALL THREE scopes reported, sorted-insensitively. A drill that silently
+        // ALL FOUR scopes reported — the three the boundary resolves and the
+        // per-peer A2A kill (#3679) — sorted-insensitively. A drill that silently
         // exercised one arm and reported a pass would be the truncation this
         // subsystem refuses everywhere else.
-        expect([...result.scopesHonoured].sort()).toEqual(['AGENT', 'PLATFORM', 'TENANT']);
+        expect([...result.scopesHonoured].sort()).toEqual(['AGENT', 'PEER', 'PLATFORM', 'TENANT']);
         expect(result.scopesFailed).toEqual([]);
 
         const row = await prisma.agentKillSwitchDrill.findFirstOrThrow({

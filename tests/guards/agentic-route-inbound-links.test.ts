@@ -114,6 +114,11 @@ const AGENTIC_ROUTES: readonly string[] = [
     // because requiring approve-authority to compose would turn four eyes
     // into two.
     '/agents/compose',
+    // #3679 — A2A peers and the tenant's own signing key. Linked from the
+    // Views menu's ASSURANCE group beside external tools; a peer's own page is
+    // linked from the list's rows.
+    '/agents/peers',
+    '/agents/peers/[peerId]',
 ] as const;
 
 /**
@@ -279,6 +284,14 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/peers/[peerId]/card/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/route.ts',
     't/[tenantSlug]/admin/agents/peers/route.ts',
+    // #3679 — A2A messaging: an operator issues the peer's inbound credential,
+    // engages or lifts a kill on it, and reads the signed receipts, from the
+    // peer page at /agents/peers/[peerId]; the tenant's own signing key is read
+    // and rotated from /agents/peers.
+    't/[tenantSlug]/admin/agents/a2a-signing-key/route.ts',
+    't/[tenantSlug]/admin/agents/peers/[peerId]/inbound-credential/route.ts',
+    't/[tenantSlug]/admin/agents/peers/[peerId]/kill/route.ts',
+    't/[tenantSlug]/admin/agents/peers/[peerId]/messages/route.ts',
     't/[tenantSlug]/admin/agents/reports/export/route.ts',
     't/[tenantSlug]/admin/agents/reports/route.ts',
     't/[tenantSlug]/admin/agents/review-quality/route.ts',

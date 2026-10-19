@@ -417,6 +417,15 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/mcp/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /authenticateMcpRequest/,
       note: 'Bearer TenantApiKey. The per-tool enforceApiKeyScope + usecase assertCanRead sit deeper than the hop budget, so only the key check is visible from here.' },
+    // The inbound A2A endpoint (#3679). Another organisation's agent: no
+    // session or role stands behind it. `handleInboundA2a` checks, in order and
+    // before the body is parsed, the peer's own `iflp_` credential (constant
+    // time), its Ed25519 signature over the exact body against its REGISTERED
+    // key, its card against the pin and its kill, and every refusal attributable
+    // to a tenant writes the AUTHZ_DENIED row requirePermission would have.
+    { handler: 'api/a2a/[tenantSlug]/peers/[peerId]/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /handleInboundA2a/,
+      note: 'Inbound A2A (#3679): the peer\'s per-peer iflp_ bearer AND its per-message Ed25519 signature over the exact body, verified against PeerAgent.signingPublicKey, plus the card pin, the per-peer kill and the tenant caps — all inside handleInboundA2a, before the body is parsed. Not requirePermission: the caller is another organisation\'s agent and its reach is the receiving agent\'s grants (owner decision 4), not a key of its own. Every refusal attributable to a tenant writes AUTHZ_DENIED explicitly.' },
     { handler: 'api/mcp/entra-grant/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /authenticateGrantCaller/,
       note: 'Per-connection bearer `<connectionId>.<secret>`, compared in constant time against the connection\'s stored authorization secret (#3323). NOT requirePermission, and not because it was skipped: no API key can hold `admin.tenant_lifecycle` — `scopesToPermissions` states those "need a real session and no bearer token, however scoped, performs" — so the first version of this route was callable by a human in a browser and by nothing else, which is the inverse of its purpose. The tenant is still authenticated rather than asserted: it comes from the connection row the token names, never from an argument. The AUTHZ_DENIED row requirePermission would have written is written explicitly for every refusal that can be attributed to a tenant; the ones that cannot (a malformed token names none, and AuditLog is tenant-scoped) are logged, and that asymmetry is carried in GrantAuthRefusal.attributable so a new refusal kind must decide which it is.' },

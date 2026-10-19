@@ -70,6 +70,7 @@ import {
     type ExternalWriteState,
 } from '@/lib/integrations/external-write-ladder';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
+import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
 
@@ -279,7 +280,12 @@ export async function getExternalWritePolicy(
 ): Promise<ExternalWritePolicy> {
     const row = await runInTenantContext(ctx, (db) =>
         db.integrationConnection.findFirst({
-            where: { id: connectionId, tenantId: ctx.tenantId, provider: MCP_SERVER_PROVIDER_ID },
+            // An A2A peer's outbound connection climbs the same ladder (#3679).
+            where: {
+                id: connectionId,
+                tenantId: ctx.tenantId,
+                provider: { in: [MCP_SERVER_PROVIDER_ID, A2A_PEER_PROVIDER_ID] },
+            },
             select: {
                 id: true,
                 name: true,

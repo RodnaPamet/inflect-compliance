@@ -62,6 +62,8 @@ const EXPECTED: Array<[string, ContentProvenance]> = [
     ['agent.tool-result', 'THIRD_PARTY_INGESTED'],
     // A run's declared input, as its caller supplied it — data, never instruction.
     ['agent.run-input', 'THIRD_PARTY_INGESTED'],
+    // An A2A peer's task text: signed by the peer, written by another organisation.
+    ['a2a.peer-task', 'THIRD_PARTY_INGESTED'],
     // A signed-in human typing into IC's own surfaces.
     ['ui.authenticated-form', 'TENANT_AUTHORED'],
     ['ui.review-decision', 'TENANT_AUTHORED'],

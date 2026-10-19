@@ -139,6 +139,9 @@ const RICH_TEXT_COVERAGE: Readonly<
     // surface and by the drill's evidence record, so render-time sanitising
     // alone would leave the row dangerous to every other consumer.
     AgentKillSwitch: { usecases: ['src/app-layer/usecases/agent-kill-switch.ts'], sanitizer: 'sanitizePlainText' },
+    // The per-peer A2A kill (#3679): the same operator free text, sanitised at
+    // its single write seam (`requireReason`) before encryption.
+    PeerAgentKillSwitch: { usecases: ['src/app-layer/usecases/a2a-peer-kill.ts'], sanitizer: 'sanitizePlainText' },
     Finding: { usecases: ['src/app-layer/usecases/finding.ts'], sanitizer: 'sanitizePlainText' },
     Risk: { usecases: ['src/app-layer/usecases/risk.ts'], sanitizer: 'sanitizePlainText' },
     // MCP agent proposals — payloadJson (proposed entity content) + rationale
@@ -246,6 +249,17 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
         'write path) plus engine-generated synthesis text. Not a new user-supplied ' +
         'rich-text input; any PROPOSED content is sanitised by createAgentProposal ' +
         'before it enters the AgentProposal queue.',
+    TenantA2aSigningKey:
+        'privateKeySeed is a 32-byte Ed25519 seed (#3679), hex, minted by ' +
+        '`mintA2aSigningSeed` and never supplied by a user. Key material, not ' +
+        'text: it is never rendered, returned or logged, and sanitising it would ' +
+        'only risk corrupting the key.',
+    PeerAgentMessage:
+        'body is the EXACT signed bytes of an A2A task or result (#3679), kept so ' +
+        'the receipt\'s digest re-verifies. Sanitising it would change bytes and ' +
+        'break the very signature the row exists to prove; it is never rendered ' +
+        '(the receipt list returns statements and signatures, no body), and the ' +
+        'task text that reaches a run is labelled third-party and scanned there.',
     WorkflowStep:
         'inputJson/outputJson are per-step tool payloads (engine-internal), same ' +
         'reasoning as WorkflowRun — derived from already-sanitised reads + engine ' +
