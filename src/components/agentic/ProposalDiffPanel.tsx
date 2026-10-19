@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@inflect/ui/lib/cn';
-import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff';
+import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 
 /**
  * The review surface for ONE proposal's diff - and the only place the approve

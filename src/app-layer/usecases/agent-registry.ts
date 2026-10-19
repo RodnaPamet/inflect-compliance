@@ -70,6 +70,7 @@ import {
     lockAuditorIndependence,
     reconcileAuditorIndependenceInTx,
 } from './auditor-independence';
+import { assertHoldsOnlyAuditorRemitInTx } from './auditor-remit';
 import { assertOwnerInTenant } from './vendor-link-targets';
 import {
     CreateRegisteredAgentSchema,
@@ -1065,6 +1066,7 @@ async function planAuditorMark(
     }
     if (to && !agent.isAuditor) {
         await assertAuditorIndependentInTx(db, ctx, { ownerUserId: agent.ownerUserId, agentId: id });
+        await assertHoldsOnlyAuditorRemitInTx(db, ctx, id, 'mark');
     }
     return { agentId: id, ownerUserId: agent.ownerUserId, from: agent.isAuditor, to };
 }
@@ -1432,6 +1434,7 @@ async function assertActivatable(db: PrismaTx, ctx: RequestContext, id: string) 
     if (!lifecycle) throw notFound('Registered agent not found');
     if (lifecycle.isAuditor) {
         await assertAuditorIndependentInTx(db, ctx, { ownerUserId: lifecycle.ownerUserId, agentId: id });
+        await assertHoldsOnlyAuditorRemitInTx(db, ctx, id, 'activate');
     }
 }
 

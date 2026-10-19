@@ -316,13 +316,26 @@ describe('bundle-size budget', () => {
 
     it('every tracked route is within its First Load JS budget', () => {
         const violations: string[] = [];
+        const measured: Array<{ pageKey: string; sizeKb: number; budget: number }> = [];
         for (const [pageKey, files] of routes) {
             const sizeKb = gzippedKb(files);
             const budget = BUDGETS_KB[budgetKeyFor(pageKey)];
+            measured.push({ pageKey, sizeKb, budget });
             if (sizeKb > budget) {
                 violations.push(`${pageKey}: ${sizeKb.toFixed(0)}KB > ${budget}KB budget`);
             }
         }
+        // Every route's figure, in the Build job's log. A budget that passes
+        // says nothing about how close a route came, and a change that shrinks
+        // a page (#3726) has nothing to be measured against without these.
+        console.log(
+            [
+                `[bundle-size-budget] First Load JS, gzipped, ${measured.length} routes:`,
+                ...measured
+                    .sort((a, b) => b.sizeKb - a.sizeKb || (a.pageKey < b.pageKey ? -1 : 1))
+                    .map((m) => `  ${m.sizeKb.toFixed(1).padStart(7)} KB / ${m.budget} KB  ${m.pageKey}`),
+            ].join('\n'),
+        );
         expect(violations).toEqual([]);
     });
 

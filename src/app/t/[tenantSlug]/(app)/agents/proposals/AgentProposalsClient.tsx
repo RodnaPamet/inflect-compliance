@@ -17,7 +17,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import type { ProposalDiff } from '@/lib/agentic/proposal-diff';
+import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 // The guard's three states, and the rule that reads them. Shared with the
 // governance pack, which counts the same three — see the module header for why
 // a `'use client'` file cannot own a rule a server read also needs.

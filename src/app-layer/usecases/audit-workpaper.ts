@@ -132,6 +132,26 @@ async function assertAllExist(
  * unless every reference resolves in this tenant.
  */
 export async function recordAuditWorkpaper(ctx: RequestContext, input: unknown) {
+    const parsed = parseForRecord(ctx, input);
+    return runInTenantContext(ctx, (db) => recordParsedInTx(db, ctx, parsed));
+}
+
+/**
+ * The same write, on a transaction the CALLER already holds — the control-test
+ * runner's (#3676). The auditor's handlers run inside the runner's tenant
+ * transaction, which holds the `ControlTestRun` the workpaper names: a second
+ * transaction could not see that uncommitted run and would refuse
+ * `RUN_NOT_FOUND`. Every rule below is the same rule; only the transaction is
+ * the caller's.
+ */
+export async function recordAuditWorkpaperInTx(db: PrismaTx, ctx: RequestContext, input: unknown) {
+    const parsed = parseForRecord(ctx, input);
+    return recordParsedInTx(db, ctx, parsed);
+}
+
+type ParsedWorkpaper = ReturnType<typeof RecordAuditWorkpaperSchema.parse>;
+
+function parseForRecord(ctx: RequestContext, input: unknown): ParsedWorkpaper {
     const parsed = RecordAuditWorkpaperSchema.parse(input);
     assertSpeaksForAuditor(ctx, parsed.auditorAgentId);
 
@@ -148,136 +168,137 @@ export async function recordAuditWorkpaper(ctx: RequestContext, input: unknown) 
         );
     }
 
+    return parsed;
+}
+
+async function recordParsedInTx(db: PrismaTx, ctx: RequestContext, parsed: ParsedWorkpaper) {
     const findingIds = [...new Set(parsed.findingIds ?? [])];
+    await assertAuditorMayWrite(db, ctx, parsed.auditorAgentId);
 
-    return runInTenantContext(ctx, async (db) => {
-        await assertAuditorMayWrite(db, ctx, parsed.auditorAgentId);
+    const [run, evidence, proposals, findings] = await Promise.all([
+        db.controlTestRun.findFirst({
+            where: { id: parsed.controlTestRunId, tenantId: ctx.tenantId },
+            select: { id: true },
+        }),
+        parsed.evidenceRefs.length === 0
+            ? Promise.resolve([])
+            : db.evidence.findMany({
+                  where: { tenantId: ctx.tenantId, id: { in: parsed.evidenceRefs } },
+                  select: { id: true },
+                  take: parsed.evidenceRefs.length,
+              }),
+        parsed.proposalIds.length === 0
+            ? Promise.resolve([])
+            : db.agentProposal.findMany({
+                  // A finding proposal the AUDITOR raised: its own id on the row.
+                  where: {
+                      tenantId: ctx.tenantId,
+                      id: { in: parsed.proposalIds },
+                      agentId: parsed.auditorAgentId,
+                  },
+                  select: { id: true },
+                  take: parsed.proposalIds.length,
+              }),
+        findingIds.length === 0
+            ? Promise.resolve([])
+            : db.finding.findMany({
+                  where: { tenantId: ctx.tenantId, id: { in: findingIds }, deletedAt: null },
+                  select: { id: true },
+                  take: findingIds.length,
+              }),
+    ]);
+    if (!run) refuse('RUN_NOT_FOUND', 'The control-test run named on this workpaper does not exist here.');
+    await assertAllExist('EVIDENCE_NOT_FOUND', 'evidence record(s)', parsed.evidenceRefs, evidence);
+    await assertAllExist(
+        'PROPOSAL_NOT_FOUND',
+        'finding proposal(s) raised by this auditor',
+        parsed.proposalIds,
+        proposals,
+    );
+    await assertAllExist('FINDING_NOT_FOUND', 'finding(s)', findingIds, findings);
 
-        const [run, evidence, proposals, findings] = await Promise.all([
-            db.controlTestRun.findFirst({
-                where: { id: parsed.controlTestRunId, tenantId: ctx.tenantId },
-                select: { id: true },
-            }),
-            parsed.evidenceRefs.length === 0
-                ? Promise.resolve([])
-                : db.evidence.findMany({
-                      where: { tenantId: ctx.tenantId, id: { in: parsed.evidenceRefs } },
-                      select: { id: true },
-                      take: parsed.evidenceRefs.length,
-                  }),
-            parsed.proposalIds.length === 0
-                ? Promise.resolve([])
-                : db.agentProposal.findMany({
-                      // A finding proposal the AUDITOR raised: its own id on the row.
-                      where: {
-                          tenantId: ctx.tenantId,
-                          id: { in: parsed.proposalIds },
-                          agentId: parsed.auditorAgentId,
-                      },
-                      select: { id: true },
-                      take: parsed.proposalIds.length,
-                  }),
-            findingIds.length === 0
-                ? Promise.resolve([])
-                : db.finding.findMany({
-                      where: { tenantId: ctx.tenantId, id: { in: findingIds }, deletedAt: null },
-                      select: { id: true },
-                      take: findingIds.length,
-                  }),
-        ]);
-        if (!run) refuse('RUN_NOT_FOUND', 'The control-test run named on this workpaper does not exist here.');
-        await assertAllExist('EVIDENCE_NOT_FOUND', 'evidence record(s)', parsed.evidenceRefs, evidence);
-        await assertAllExist(
-            'PROPOSAL_NOT_FOUND',
-            'finding proposal(s) raised by this auditor',
-            parsed.proposalIds,
-            proposals,
+    // THE FIRST SAMPLE IS BINDING. Under the same lock key the trigger takes,
+    // so two concurrent first runs serialise and the second is held to the
+    // first; this gives the named refusal, the trigger is the backstop.
+    if (parsed.sample) {
+        await db.$executeRawUnsafe(
+            `SELECT pg_advisory_xact_lock(hashtext($1))`,
+            `audit-workpaper-sample:${ctx.tenantId}:${parsed.procedureId}:${parsed.periodLabel}`,
         );
-        await assertAllExist('FINDING_NOT_FOUND', 'finding(s)', findingIds, findings);
-
-        // THE FIRST SAMPLE IS BINDING. Under the same lock key the trigger takes,
-        // so two concurrent first runs serialise and the second is held to the
-        // first; this gives the named refusal, the trigger is the backstop.
-        if (parsed.sample) {
-            await db.$executeRawUnsafe(
-                `SELECT pg_advisory_xact_lock(hashtext($1))`,
-                `audit-workpaper-sample:${ctx.tenantId}:${parsed.procedureId}:${parsed.periodLabel}`,
+        const binding = await AuditWorkpaperRepository.findBindingSample(
+            db,
+            ctx,
+            parsed.procedureId,
+            parsed.periodLabel,
+        );
+        if (
+            binding &&
+            !sampleMatchesBinding(parsed.sample, {
+                sampleEpoch: binding.sampleEpoch as string,
+                seedFingerprint: binding.seedFingerprint as string,
+                sampledUnitIds: binding.sampledUnitIds,
+            })
+        ) {
+            refuse(
+                'SAMPLE_NOT_BINDING',
+                `Workpaper ${binding.id} already fixed the sample for ${parsed.procedureId} ` +
+                    `${parsed.periodLabel}. A later run reuses that sample and re-evaluates it; ` +
+                    'it never draws another.',
+                { bindingWorkpaperId: binding.id },
             );
-            const binding = await AuditWorkpaperRepository.findBindingSample(
-                db,
-                ctx,
-                parsed.procedureId,
-                parsed.periodLabel,
-            );
-            if (
-                binding &&
-                !sampleMatchesBinding(parsed.sample, {
-                    sampleEpoch: binding.sampleEpoch as string,
-                    seedFingerprint: binding.seedFingerprint as string,
-                    sampledUnitIds: binding.sampledUnitIds,
-                })
-            ) {
-                refuse(
-                    'SAMPLE_NOT_BINDING',
-                    `Workpaper ${binding.id} already fixed the sample for ${parsed.procedureId} ` +
-                        `${parsed.periodLabel}. A later run reuses that sample and re-evaluates it; ` +
-                        'it never draws another.',
-                    { bindingWorkpaperId: binding.id },
-                );
-            }
         }
+    }
 
-        const created = await AuditWorkpaperRepository.create(db, ctx, {
-            procedureId: parsed.procedureId,
-            catalogueVersion: parsed.catalogueVersion,
-            periodLabel: parsed.periodLabel,
-            populationDefinition: sanitizePlainText(parsed.populationDefinition),
-            populationCount: parsed.populationCount,
-            populationDigest: parsed.populationDigest,
-            sampleEpoch: parsed.sample?.epoch ?? null,
-            seedFingerprint: parsed.sample?.seedFingerprint ?? null,
-            sampleSize: parsed.sample ? parsed.sample.sampledUnitIds.length : null,
-            sampledUnitIds: parsed.sample?.sampledUnitIds ?? [],
-            ...(parsed.parameters !== undefined ? { parametersJson: parsed.parameters } : {}),
-            attributesTested: parsed.attributesTested,
-            itemOutcomesJson: parsed.itemOutcomes,
-            exceptionsJson: parsed.exceptions,
-            exceptionCount: parsed.exceptions.length,
-            conclusion: parsed.conclusion,
-            conclusionBasis: parsed.conclusionBasis,
-            evidenceRefs: [...new Set(parsed.evidenceRefs)],
-            proposalIds: [...new Set(parsed.proposalIds)],
-            auditorAgentId: parsed.auditorAgentId,
-            controlTestRunId: parsed.controlTestRunId,
-        });
-        const linked = await AuditWorkpaperRepository.linkFindings(db, ctx, created.id, findingIds);
-
-        await logEvent(db, ctx, {
-            action: 'AUDIT_WORKPAPER_RECORDED',
-            entityType: 'AuditWorkpaper',
-            entityId: created.id,
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'AuditWorkpaper',
-                operation: 'created',
-                after: {
-                    procedureId: parsed.procedureId,
-                    catalogueVersion: parsed.catalogueVersion,
-                    periodLabel: parsed.periodLabel,
-                    conclusion: parsed.conclusion,
-                    conclusionBasis: parsed.conclusionBasis,
-                    populationCount: parsed.populationCount,
-                    sampleSize: parsed.sample ? parsed.sample.sampledUnitIds.length : null,
-                    exceptionCount: parsed.exceptions.length,
-                    findingsLinked: linked,
-                    auditorAgentId: parsed.auditorAgentId,
-                    controlTestRunId: parsed.controlTestRunId,
-                },
-            },
-        });
-
-        return { id: created.id, createdAt: created.createdAt, findingsLinked: linked };
+    const created = await AuditWorkpaperRepository.create(db, ctx, {
+        procedureId: parsed.procedureId,
+        catalogueVersion: parsed.catalogueVersion,
+        periodLabel: parsed.periodLabel,
+        populationDefinition: sanitizePlainText(parsed.populationDefinition),
+        populationCount: parsed.populationCount,
+        populationDigest: parsed.populationDigest,
+        sampleEpoch: parsed.sample?.epoch ?? null,
+        seedFingerprint: parsed.sample?.seedFingerprint ?? null,
+        sampleSize: parsed.sample ? parsed.sample.sampledUnitIds.length : null,
+        sampledUnitIds: parsed.sample?.sampledUnitIds ?? [],
+        ...(parsed.parameters !== undefined ? { parametersJson: parsed.parameters } : {}),
+        attributesTested: parsed.attributesTested,
+        itemOutcomesJson: parsed.itemOutcomes,
+        exceptionsJson: parsed.exceptions,
+        exceptionCount: parsed.exceptions.length,
+        conclusion: parsed.conclusion,
+        conclusionBasis: parsed.conclusionBasis,
+        evidenceRefs: [...new Set(parsed.evidenceRefs)],
+        proposalIds: [...new Set(parsed.proposalIds)],
+        auditorAgentId: parsed.auditorAgentId,
+        controlTestRunId: parsed.controlTestRunId,
     });
+    const linked = await AuditWorkpaperRepository.linkFindings(db, ctx, created.id, findingIds);
+
+    await logEvent(db, ctx, {
+        action: 'AUDIT_WORKPAPER_RECORDED',
+        entityType: 'AuditWorkpaper',
+        entityId: created.id,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'AuditWorkpaper',
+            operation: 'created',
+            after: {
+                procedureId: parsed.procedureId,
+                catalogueVersion: parsed.catalogueVersion,
+                periodLabel: parsed.periodLabel,
+                conclusion: parsed.conclusion,
+                conclusionBasis: parsed.conclusionBasis,
+                populationCount: parsed.populationCount,
+                sampleSize: parsed.sample ? parsed.sample.sampledUnitIds.length : null,
+                exceptionCount: parsed.exceptions.length,
+                findingsLinked: linked,
+                auditorAgentId: parsed.auditorAgentId,
+                controlTestRunId: parsed.controlTestRunId,
+            },
+        },
+    });
+
+    return { id: created.id, createdAt: created.createdAt, findingsLinked: linked };
 }
 
 /**

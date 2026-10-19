@@ -33,6 +33,9 @@ import {
 } from '../policies/test.policies';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
+import type { PrismaTx } from '@/lib/db-context';
+import { parseAuditProcedureConfig } from '@/lib/agentic/audit-procedure-library';
+import { assertAuditorOwnerMayChangeProcedurePlans } from './audit-procedure-plans';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { computeNextRunFromCron } from '../jobs/control-test-scheduler';
@@ -131,9 +134,12 @@ export async function scheduleTestPlan(
                 // restart it — see the nextDueAt note below.
                 nextDueAt: true,
                 createdAt: true,
+                // Whether this plan runs, or is to run, an audit procedure (#3676).
+                automationConfig: true,
             },
         });
         if (!plan) throw notFound('Test plan not found');
+        await assertMayScheduleAuditProcedure(db, ctx, plan.automationConfig, input.automationConfig);
 
         // Recompute nextRunAt under the NEW (or just-cleared) schedule.
         const tz = input.scheduleTimezone ?? null;
@@ -223,6 +229,48 @@ export async function scheduleTestPlan(
     });
     await bumpEntityCacheVersion(ctx, 'test');
     return result;
+}
+
+/**
+ * THE SECOND LINE SETS AN AUDIT PROCEDURE'S PARAMETERS (#3676, decision 3).
+ *
+ * A plan whose `automationConfig` names an audit procedure is how the auditor
+ * agent is operated: which procedure, which parameters (the leaver window, the
+ * remediation window), how large a sample. Decision 3 gives that to the second
+ * line, which owns and operates the auditor. So a schedule write that puts a
+ * procedure config on a plan — or changes or removes one already there, or
+ * changes or clears the cron of a plan that carries one — is refused unless
+ * the caller is a PERSON who owns the auditor agent named, with the named
+ * reason `AUDIT_PROCEDURE_PLAN_OWNER_ONLY`. The same gate holds pausing and
+ * deleting such a plan (decision 6); it lives in `audit-procedure-plans.ts` so
+ * every path asks one question.
+ *
+ * Two further refusals are this write's own: a config that names a procedure
+ * and is malformed is a 400 here, rather than a plan that would run
+ * INCONCLUSIVE `CONFIG_INVALID` on every tick; and a config whose agent is not
+ * an auditor of this workspace is a 400.
+ */
+async function assertMayScheduleAuditProcedure(
+    db: PrismaTx,
+    ctx: RequestContext,
+    existing: unknown,
+    incoming: unknown,
+): Promise<void> {
+    // With no incoming config the stored one stays, so it is the one judged.
+    const after = parseAuditProcedureConfig(incoming === undefined ? existing : incoming);
+    if (after.kind === 'INVALID') {
+        throw badRequest(`This audit procedure configuration is not valid (${after.reason}).`);
+    }
+    await assertAuditorOwnerMayChangeProcedurePlans(db, ctx, [existing, incoming], 'SCHEDULE');
+    if (after.kind === 'OK') {
+        const agent = await db.registeredAgent.findFirst({
+            where: { tenantId: ctx.tenantId, id: after.config.auditorAgentId, deletedAt: null },
+            select: { isAuditor: true, status: true },
+        });
+        if (!agent || !agent.isAuditor || agent.status === 'RETIRED') {
+            throw badRequest('The agent this plan names is not an auditor agent of this workspace.');
+        }
+    }
 }
 
 // PR-Q — the standalone `getUpcomingTests` usecase + its `GET /tests/upcoming`

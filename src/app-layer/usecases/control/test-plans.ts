@@ -33,6 +33,7 @@ import { computeNextRunFromCron } from '../../jobs/control-test-scheduler';
 import { createTask } from '../task';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
+import { assertAuditorOwnerMayChangeProcedurePlans } from '../audit-procedure-plans';
 
 /**
  * Idempotency guard for the FAIL → CONTROL_GAP spawn. A re-run of a
@@ -424,6 +425,20 @@ export async function updateTestPlan(ctx: RequestContext, planId: string, patch:
         await assertOwnerIsActiveMember(db, ctx, patch.ownerUserId);
         const existing = await TestPlanRepository.getById(db, ctx, planId);
         if (!existing) throw notFound('Test plan not found');
+
+        // An audit procedure's plan is switched off only by the auditor's owner
+        // (#3676, decision 6): a status that stops it running, or an automation
+        // type that stops the procedure being dispatched. A resume, a no-op and
+        // every other field stay open; a plan with no procedure is untouched.
+        const stops =
+            patch.status !== undefined && patch.status !== 'ACTIVE' && patch.status !== existing.status
+                ? (patch.status === 'ARCHIVED' ? 'ARCHIVE' : 'PAUSE')
+                : patch.automationType !== undefined && patch.automationType !== existing.automationType
+                    ? 'AUTOMATION_CHANGE'
+                    : null;
+        if (stops) {
+            await assertAuditorOwnerMayChangeProcedurePlans(db, ctx, [existing.automationConfig], stops);
+        }
 
         // Detect status change for event emission
         const oldStatus = existing.status;
@@ -1069,6 +1084,18 @@ export async function bulkSetTestPlanStatus(
     const updated = await runInTenantContext(ctx, async (db) => {
         const rows = await TestPlanRepository.listByIds(db, ctx, planIds);
         if (rows.length === 0) return 0;
+        // A pause or archive of an audit procedure's plan is the auditor's
+        // owner's to make (#3676, decision 6). One refused plan refuses the
+        // whole batch: a partial write would leave the caller guessing which
+        // of their selection was switched off.
+        if (status !== 'ACTIVE') {
+            await assertAuditorOwnerMayChangeProcedurePlans(
+                db,
+                ctx,
+                rows.filter((r) => r.status !== status).map((r) => r.automationConfig),
+                status === 'ARCHIVED' ? 'ARCHIVE' : 'PAUSE',
+            );
+        }
         await TestPlanRepository.bulkUpdate(db, ctx, planIds, { status });
         for (const r of rows) {
             await logEvent(db, ctx, {
@@ -1102,9 +1129,12 @@ export async function bulkDeleteTestPlan(ctx: RequestContext, planIds: string[])
     const result = await runInTenantContext(ctx, async (db) => {
         const rows = await db.controlTestPlan.findMany({
             where: { id: { in: planIds }, tenantId: ctx.tenantId },
-            select: { id: true },
+            select: { id: true, automationConfig: true },
         });
         if (rows.length === 0) return { deleted: 0 };
+        // Deleting an audit procedure's plan is the auditor's owner's act, not
+        // an ADMIN's (#3676, decision 6); the batch is refused whole.
+        await assertAuditorOwnerMayChangeProcedurePlans(db, ctx, rows.map((r) => r.automationConfig), 'DELETE');
         await db.controlTestPlan.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
         for (const r of rows) {
             await logEvent(db, ctx, {

@@ -90,12 +90,8 @@ import {
     type HarnessLevel,
     type HarnessReach,
 } from './harness-ladder';
-import {
-    isScanComplete,
-    looksLikeSecret,
-    type HarnessReportAgent,
-    type HarnessReportBody,
-} from './harness-contract';
+import type { HarnessReportAgent, HarnessReportBody } from './harness-contract';
+import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
  * The path of the first string member of a verified body whose value is

@@ -10,19 +10,24 @@
  * a module that hashed with `node:crypto`. Nothing short of the Build job
  * noticed, and the Build job is the last thing to report.
  *
- * Two claims, of different strength:
+ * Two claims:
  *
- *   1. From EVERY `'use client'` file, no `node:` specifier is reachable. That
- *      is exactly the class that breaks the build, it holds for the whole tree
- *      today, and so it holds with no allowlist.
- *   2. From the WORKFLOW REGISTRY, no Node built-in is reachable at all — bare
- *      ones (`crypto`, `fs`, `path`, …) included. A bare `crypto` compiles,
- *      but only because Next substitutes `crypto-browserify`, which bloats the
- *      processes page's bundle with code no workflow step should need. The
- *      registry is the seam that makes every workflow step client-reachable,
- *      so a server-side need there (a hash, a file read) belongs in a
- *      server-only module the usecase imports, as
- *      `agent-recertification-hash.ts` does.
+ *   1. From EVERY `'use client'` file, no Node built-in is reachable, bare
+ *      (`crypto`, `fs`, `path`, …) or `node:`. A `node:` specifier breaks the
+ *      build. A bare `crypto` compiles, but only because Next substitutes
+ *      `crypto-browserify`, which ships a polyfill for a hash no page takes in
+ *      the browser (#3726 removed the last four: `proposal-diff.ts`,
+ *      `harness-contract.ts`, `receipt-verification.ts`, `audit-redact.ts`).
+ *      It holds for the whole tree, with no allowlist. A server-side need in a
+ *      client-reachable module (a hash, a signature check, a file read) belongs
+ *      in a server-only module, with the pure part the client needs in a leaf,
+ *      as `agent-recertification-hash.ts`, `proposal-diff-status.ts` and
+ *      `harness-contract-rules.ts` do.
+ *   2. From the WORKFLOW REGISTRY, no Node built-in is reachable at all. Claim 1
+ *      covers it while a client imports the registry, and this claim is the
+ *      registry's own: it is the seam that makes every workflow step
+ *      client-reachable, so it must hold even if the import that makes it so
+ *      moves.
  *
  * WHY A GRAPH WALK, NOT AN ESLINT RULE. "Reachable from" is a property of the
  * import graph, not of any one file — the offending line in #3674 sat three
@@ -177,19 +182,16 @@ const clientFiles = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] })
     .filter((f) => isClientModule(fs.readFileSync(f, 'utf8')));
 
 describe('a module a client component can reach imports no Node built-in', () => {
-    it('no `node:` specifier is reachable from any `use client` file', () => {
+    it('no Node built-in, bare or `node:`, is reachable from any `use client` file', () => {
         const { builtins } = walk(clientFiles);
-        const offenders = builtins
-            .filter((b) => b.spec.startsWith('node:'))
-            .map((b) => `${b.module} imports ${b.spec}, reached ${b.via}`)
-            .sort();
+        const offenders = builtins.map((b) => `${b.module} imports ${b.spec}, reached ${b.via}`).sort();
         expect({
             offenders,
             hint: offenders.length === 0
                 ? 'none'
-                : 'next build cannot bundle a node: import into a client graph (UnhandledSchemeError). '
-                  + 'Move the server-side need into a module only the server imports, and import that '
-                  + 'from the usecase layer instead.',
+                : 'A node: import fails next build in a client graph (UnhandledSchemeError), and a bare one '
+                  + 'ships a browser polyfill. Move the server-side need into a module only the server '
+                  + 'imports, and give the client a leaf with only the pure part it uses.',
         }).toEqual({ offenders: [], hint: 'none' });
     });
 
@@ -220,6 +222,22 @@ describe('a module a client component can reach imports no Node built-in', () =>
         ]));
         // …and the server-only half is NOT in it.
         expect(fromRegistry).not.toContain('src/lib/agentic/agent-recertification-hash.ts');
+        // The #3726 splits: the clients reach the pure leaves, never the
+        // modules that hash or verify.
+        const fromClientFiles = [...fromClients.keys()].map(repoRelative);
+        expect(fromClientFiles).toEqual(expect.arrayContaining([
+            'src/lib/agentic/proposal-diff-status.ts',
+            'src/lib/agentic/harness-contract-rules.ts',
+            'src/lib/agentic/harness-findings.ts',
+        ]));
+        for (const serverOnly of [
+            'src/lib/agentic/proposal-diff.ts',
+            'src/lib/agentic/harness-contract.ts',
+            'src/lib/mcp/receipt-verification.ts',
+            'src/lib/audit-redact.ts',
+        ]) {
+            expect(fromClientFiles).not.toContain(serverOnly);
+        }
     });
 
     it('the detector sees every bundling edge and ignores type-only ones', () => {

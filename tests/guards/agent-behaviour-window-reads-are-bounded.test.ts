@@ -80,6 +80,7 @@
 import * as fs from 'node:fs';
 
 import { BASELINE_WINDOW_LIMIT } from '@/lib/agentic/circuit-breaker';
+import { POPULATION_CAP } from '@/app-layer/services/audit-procedures/shared';
 import { repoFiles, repoRelative } from '../helpers/repo-files';
 import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
@@ -104,6 +105,26 @@ const ROW_MULTIPLYING = new Set(['findMany', 'groupBy']);
  * `count`, `aggregate` and `deleteMany` all return a handful of rows while
  * touching an unbounded number, so check 1 would wave them through.
  */
+/**
+ * READERS BOUNDED BY A PERIOD, NOT BY THE BASELINE CAP — a decision, with its
+ * reason, per file. Their reads are held to a DIFFERENT rule rather than none:
+ * a top-level `take:` at or below the audit population cap, a `where:` naming
+ * tenantId and agentId (the index prefix), AND either a `windowStart` range
+ * with both ends or an `id:` list. So rows examined are bounded by one period
+ * of hours per agent, or by the ids asked for — never by the ledger's total
+ * history, which is the premise of docs/adr/0002 — and none of them is on the
+ * MCP authorization path.
+ */
+const PERIOD_BOUNDED_READERS: Readonly<Record<string, string>> = {
+    'src/app-layer/services/audit-procedures/agent-authority-conformance.ts':
+        'the auditor agent\'s agent.authority_conformance procedure (#3676): a scheduled ' +
+        'control test that reads ONE month of one tenant\'s windows, on the index prefix, ' +
+        'capped at the catalogue\'s 5000-unit population, and re-reads only the sampled ids',
+};
+
+/** The most rows a period-bounded reader may take: the catalogue's cap, read one past. */
+const PERIOD_ROW_CAP = POPULATION_CAP + 1;
+
 const KNOWN_METHODS: Readonly<Record<string, string>> = {
     findMany:
         'a read — must carry a `take:` at or below the cap (check 1 enforces it)',
@@ -253,7 +274,7 @@ export function resolveTake(expr: string, constants: Readonly<Record<string, num
  * constants a call site may legitimately reach for.
  */
 export function constantsIn(masked: string): Record<string, number> {
-    const out: Record<string, number> = { BASELINE_WINDOW_LIMIT };
+    const out: Record<string, number> = { BASELINE_WINDOW_LIMIT, POPULATION_CAP };
     const re = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*number\s*)?=\s*(-?\d+)\s*;/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(masked)) !== null) out[m[1]] = Number(m[2]);
@@ -290,17 +311,22 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
         // produce, and it would look exactly like success.
         expect(SOURCES.length).toBeGreaterThan(1000);
         expect(SCANNED.map((f) => f.rel).sort()).toEqual([
+            'src/app-layer/services/audit-procedures/agent-authority-conformance.ts',
             'src/app-layer/usecases/agent-circuit-breaker.ts',
             'src/app-layer/usecases/agent-recertification-evidence.ts',
             // Names the model in its docs and makes no call (zero sites).
             'src/lib/agentic/agent-recertification.ts',
+            // Names it in procedure 5's population definition; no call.
+            'src/lib/agentic/audit-procedure-library.ts',
             'src/lib/agentic/circuit-breaker-store.ts',
         ]);
-        expect(ALL_SITES.length).toBe(5);
+        expect(ALL_SITES.length).toBe(7);
     });
 
     it('every row-multiplying read carries a take at or below the cap', () => {
-        const reads = ALL_SITES.filter((s) => ROW_MULTIPLYING.has(s.method));
+        const reads = ALL_SITES.filter(
+            (s) => ROW_MULTIPLYING.has(s.method) && !Object.prototype.hasOwnProperty.call(PERIOD_BOUNDED_READERS, s.file),
+        );
 
         // The denominator, asserted rather than assumed. Three reads exist:
         // the detector's baseline, the panel's ledger page, and the panel's
@@ -361,6 +387,34 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
                     'to fit a new reader without saying what now sweeps the table.',
                 ].join('\n'),
             );
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('a period-bounded reader is held to its own rule: the population cap, the prefix, and a range or an id list', () => {
+        const reads = ALL_SITES.filter(
+            (s) => ROW_MULTIPLYING.has(s.method) && Object.prototype.hasOwnProperty.call(PERIOD_BOUNDED_READERS, s.file),
+        );
+        // The population read and the sampled re-read, and nothing else.
+        expect(reads.map((r) => `${r.file}:${r.method}`)).toEqual([
+            'src/app-layer/services/audit-procedures/agent-authority-conformance.ts:findMany',
+            'src/app-layer/services/audit-procedures/agent-authority-conformance.ts:findMany',
+        ]);
+        const offenders: string[] = [];
+        for (const read of reads) {
+            const constants = constantsIn(SCANNED.find((f) => f.rel === read.file)?.masked ?? '');
+            const expr = topLevelTake(read.arg);
+            const value = expr === null ? null : resolveTake(expr, constants);
+            if (value === null || value > PERIOD_ROW_CAP) {
+                offenders.push(`${read.file}:${read.line}  take: ${expr ?? '(none)'} — not at or below ${PERIOD_ROW_CAP}`);
+            }
+            const where = topLevelValue(read.arg, 'where') ?? '';
+            const anchored = /\btenantId\b/.test(where) && /\bagentId\b/.test(where);
+            const ranged = /\bwindowStart\s*:\s*\{[^}]*\bgte\b[^}]*\blt\b/.test(where);
+            const byId = /\bid\s*:\s*\{\s*in\b/.test(where);
+            if (!anchored || !(ranged || byId)) {
+                offenders.push(`${read.file}:${read.line}  where: not on the prefix with a windowStart range or an id list`);
+            }
         }
         expect(offenders).toEqual([]);
     });
