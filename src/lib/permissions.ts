@@ -389,16 +389,17 @@ export type PermissionSet = {
          */
         agent_ownership: boolean;
         /**
-         * AUTHORING AND REVIEWING A TENANT SKILL (#3680, step 4c): create a
-         * draft, edit it into a new version, attach its evaluation record,
-         * submit it for review, approve or reject it, and retire it
-         * (`…/admin/agents/skills/tenant/**`).
+         * APPROVING A TENANT SKILL (#3680, step 4c; narrowed by #3778): approve
+         * or reject a version in review, and retire one, at
+         * `…/admin/agents/skills/tenant/**` (`approve`, `reject`, `retire`).
          *
-         * One key for authoring and approval, because step 4c gives authoring
-         * to holders of "a new skill-review right" — and the four-eyes rule is
-         * not a second key but a person: the usecase refuses an approval by the
-         * version's author, and a CHECK makes one unrepresentable. A holder can
-         * therefore author or approve, never both for the same version.
+         * Authoring is its own key since #3778, `agent_skill_author`, below, by
+         * the owner's decision: a provider that writes a tenant's skills must
+         * be expressible as a holder of authoring who cannot approve. The
+         * four-eyes rule is still a PERSON as well: the usecase refuses an
+         * approval by the version's author, and a CHECK makes one
+         * unrepresentable, whoever holds both keys. Reading a tenant skill
+         * takes either key.
          *
          * OWNER, ADMIN and AI_ADMIN hold it. OWNER and ADMIN by step 0e's signed
          * permission table (`docs/agentic-iam-roadmap.md`), which names both:
@@ -413,6 +414,23 @@ export type PermissionSet = {
          * an agent that could approve skill text could teach itself.
          */
         agent_skill_review: boolean;
+        /**
+         * AUTHORING A TENANT SKILL (#3778): create a skill, create a version
+         * (an edit), attach its evaluation record and submit it for review, at
+         * `…/admin/agents/skills/tenant/**`. Approval, rejection and retirement
+         * are `agent_skill_review`'s.
+         *
+         * OWNER, ADMIN and AI_ADMIN hold both halves, so nobody who could act
+         * before the split lost an act. A custom role may carry this half alone,
+         * which is how a provider who writes the tenant's skills is kept from
+         * approving them (`docs/agentic-iam-managed-service.md`). A custom role
+         * stored before this key existed takes it from its own
+         * `agent_skill_review` (`DERIVED_FROM`), never from its base role.
+         *
+         * Never carried by a bearer token, for the reason the review key is
+         * not: an agent that could write skill text could teach itself.
+         */
+        agent_skill_author: boolean;
     };
 };
 
@@ -475,7 +493,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'compliance_dsar_view', 'compliance_dsar_manage',
         'agent_registry', 'agent_registry_view', 'agent_tool_exposure', 'agent_policy_card',
         'agent_kill_switch', 'agent_external_tools', 'agent_harness_ingest',
-        'agent_ownership', 'agent_skill_review',
+        'agent_ownership', 'agent_skill_review', 'agent_skill_author',
     ],
 };
 
@@ -501,6 +519,7 @@ export const AGENT_ADMIN_KEYS = [
     'agent_harness_ingest',
     'agent_ownership',
     'agent_skill_review',
+    'agent_skill_author',
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 // The two agent read predicates (#3710) live in `agent-inventory-read.ts` so a
@@ -552,6 +571,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_harness_ingest: true,
                     agent_ownership: true,
                     agent_skill_review: true,
+                    agent_skill_author: true,
                 },
             };
         case 'ADMIN':
@@ -607,6 +627,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // agents. The four-eyes rule is the author/approver split,
                     // which the usecase and a CHECK hold whoever holds the key.
                     agent_skill_review: true,
+                    agent_skill_author: true,
                 },
             };
         case 'EDITOR':
@@ -630,7 +651,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
             };
         case 'AUDITOR':
             return {
@@ -654,7 +675,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true, workpaper_view: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
             };
         case 'READER':
             return readerPermissions();
@@ -686,6 +707,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_harness_ingest: true,
                     agent_ownership: true,
                     agent_skill_review: true,
+                    agent_skill_author: true,
                 },
             };
         }
@@ -720,7 +742,7 @@ function readerPermissions(): PermissionSet {
         frameworks: { view: true, install: false },
         audits: { view: true, manage: false, freeze: false, share: false, workpaper_view: false },
         reports: { view: true, export: false, schedule_external: false },
-        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false },
+        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false, agent_skill_review: false, agent_skill_author: false },
     };
 }
 
@@ -922,6 +944,9 @@ export function validatePermissionsJson(json: unknown): string[] {
  */
 const DERIVED_FROM: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     audits: { workpaper_view: 'manage' },
+    // #3778: a role that could author through the review key before the split
+    // keeps authoring, and one that could not does not gain it.
+    admin: { agent_skill_author: 'agent_skill_review' },
 };
 
 /**

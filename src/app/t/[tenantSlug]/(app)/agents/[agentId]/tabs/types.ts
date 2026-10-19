@@ -123,4 +123,11 @@ export interface SkillsTabProps extends AgentTabProps {
      * a caller that does not thread it renders the tab read-only.
      */
     canReviewSkills?: boolean;
+    /**
+     * `admin.agent_skill_author` (#3778): create a workspace skill, edit it
+     * into a new version, attach its evaluation record and submit it. The
+     * review acts above stay on `canReviewSkills`; a holder of only this half
+     * authors and is offered no approval.
+     */
+    canAuthorSkills?: boolean;
 }

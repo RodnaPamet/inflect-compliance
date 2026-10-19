@@ -501,17 +501,40 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'is the key for an agent call leaving the tenant, and the ' +
             'authority that acts must not also configure whom it talks to.',
     },
-    // Tenant-authored skills (#3680, step 4c). Their own key, above the
-    // catch-all: authoring and approving what an agent is taught is the
-    // skill-review right, not the register's. Reading the Skills tab, tenant
-    // skills included, stays on the catch-all's `admin.agent_registry`.
+    // Tenant-authored skills (#3680, step 4c), split by #3778 into the
+    // review key (approve, reject, retire) and the authoring key (create,
+    // version, attach a record, submit), by the owner's decision: a provider
+    // that writes a tenant's skills must be expressible as a holder of
+    // authoring who cannot approve. Above the catch-all; the review acts
+    // first, because the authoring rule below matches their paths too.
+    // Reading the Skills tab, tenant skills included, stays on the
+    // catch-all's `admin.agent_registry`.
     {
-        path: new RegExp(`^${T}\\/admin\\/agents\\/skills\\/tenant(\\/.*)?$`),
+        path: new RegExp(`^${T}\\/admin\\/agents\\/skills\\/tenant\\/[^/]+\\/versions\\/[^/]+\\/(approve|reject|retire)$`),
         permission: 'admin.agent_skill_review',
         note:
-            'Author, edit, evaluate, submit, approve, reject and retire a ' +
-            'tenant-authored skill. The approver is never the version\'s ' +
-            'author (usecase and CHECK), and no API key holds the key.',
+            'Approve, reject or retire a tenant-authored skill version. The ' +
+            'approver is never the version\'s author (usecase and CHECK), and ' +
+            'no API key holds the key.',
+    },
+    {
+        // One skill's versions and their text, which the author edits from and
+        // the reviewer approves from: either half admits the read.
+        path: new RegExp(`^${T}\\/admin\\/agents\\/skills\\/tenant\\/[^/]+$`),
+        methods: ['GET'],
+        permission: ['admin.agent_skill_author', 'admin.agent_skill_review'],
+        mode: 'any',
+        note:
+            'Read one tenant-authored skill and its versions, for authoring ' +
+            'or for review.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/skills\\/tenant(\\/.*)?$`),
+        permission: 'admin.agent_skill_author',
+        note:
+            'Author a tenant-authored skill: create it, create a version, ' +
+            'attach its evaluation record and submit it for review. No API ' +
+            'key holds the key.',
     },
     // The registration intake (#3669). The same key as the catch-all below,
     // stated on its own because step 0e's permission table names it: the

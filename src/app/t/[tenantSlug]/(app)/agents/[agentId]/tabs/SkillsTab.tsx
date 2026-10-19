@@ -23,9 +23,10 @@ import type { SkillsTabProps } from './types';
  * read-only: a skill the product ships is a reviewed Markdown document in the
  * repository, and changing one is a pull request, not a form — its section
  * renders no control, which `tests/rendered/agent-skills-tab.test.tsx` counts.
- * The WORKSPACE section (`TenantSkillsSection`) carries authoring and review for
- * holders of `admin.agent_skill_review`, resolved on the server and threaded in
- * as `canReviewSkills`.
+ * The WORKSPACE section (`TenantSkillsSection`) carries authoring for holders of
+ * `admin.agent_skill_author` and review for holders of `admin.agent_skill_review`
+ * (#3778), resolved on the server and threaded in as `canAuthorSkills` and
+ * `canReviewSkills`.
  *
  * ── THE CLAIM THIS PANEL MAKES, AND THE ONE IT REFUSES TO ───────────────────
  *
@@ -79,7 +80,7 @@ interface Payload {
     catalogBudgetBytes: number;
 }
 
-export function SkillsTab({ agentId, refreshToken, canReviewSkills = false }: SkillsTabProps) {
+export function SkillsTab({ agentId, refreshToken, canReviewSkills = false, canAuthorSkills = false }: SkillsTabProps) {
     const t = useTranslations('agents.skills');
     const { data, error, isLoading, mutate } = useTenantSWR<Payload>('/admin/agents/skills');
     useEffect(() => { void mutate(); }, [refreshToken, mutate]);
@@ -90,7 +91,7 @@ export function SkillsTab({ agentId, refreshToken, canReviewSkills = false }: Sk
 
     const refused = data.refused ?? [];
     const tenantSkills = data.tenantSkills ?? [];
-    if (data.skills.length === 0 && refused.length === 0 && tenantSkills.length === 0 && !canReviewSkills) {
+    if (data.skills.length === 0 && refused.length === 0 && tenantSkills.length === 0 && !canReviewSkills && !canAuthorSkills) {
         return <InlineEmptyState title={t('empty.title')} description={t('empty.description')} />;
     }
 
@@ -159,6 +160,7 @@ export function SkillsTab({ agentId, refreshToken, canReviewSkills = false }: Sk
                 skills={tenantSkills}
                 workflows={data.attachableWorkflows ?? []}
                 canReview={canReviewSkills}
+                canAuthor={canAuthorSkills}
                 onChanged={() => { void mutate(); }}
             />
         </div>

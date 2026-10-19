@@ -15,7 +15,7 @@ import {
     assertNotSelfDeactivation,
 } from '@/app-layer/policies/admin.policies';
 import { computePermissions } from '@/lib/tenant-context';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
 
 // ─── Helpers ───
@@ -112,6 +112,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_harness_ingest: true,
             agent_ownership: true,
             agent_skill_review: true,
+            agent_skill_author: true,
         });
     });
 
@@ -139,6 +140,7 @@ describe('PermissionSet admin capabilities', () => {
             // #3680 — ADMIN holds the skill-review key (step 0e's table); the
             // four-eyes rule is the author/approver split, not a second key.
             agent_skill_review: true,
+            agent_skill_author: true,
         });
     });
 
@@ -163,6 +165,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_harness_ingest: false,
             agent_ownership: false,
             agent_skill_review: false,
+            agent_skill_author: false,
         });
     });
 
@@ -188,6 +191,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_harness_ingest: false,
             agent_ownership: false,
             agent_skill_review: false,
+            agent_skill_author: false,
         });
     });
 
@@ -212,6 +216,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_harness_ingest: false,
             agent_ownership: false,
             agent_skill_review: false,
+            agent_skill_author: false,
         });
     });
 });
@@ -235,5 +240,20 @@ describe('computePermissions admin flags', () => {
         const p = computePermissions('AUDITOR');
         expect(p.canAdmin).toBe(false);
         expect(p.canAudit).toBe(true);
+    });
+});
+
+describe('the skill authoring half (#3778)', () => {
+    it('a custom role stored before the split takes authoring from its own review key, never from its base role', () => {
+        // Held review: keeps authoring, which it could do through the one key.
+        expect(parsePermissionsJson({ admin: { agent_skill_review: true } }, 'READER').admin.agent_skill_author).toBe(true);
+        // Did not hold review: does not gain authoring, even on an ADMIN base
+        // whose default carries it.
+        expect(parsePermissionsJson({ admin: { agent_skill_review: false } }, 'ADMIN').admin.agent_skill_author).toBe(false);
+        // A role that names the authoring half is read as written.
+        expect(
+            parsePermissionsJson({ admin: { agent_skill_review: false, agent_skill_author: true } }, 'READER').admin
+                .agent_skill_author,
+        ).toBe(true);
     });
 });

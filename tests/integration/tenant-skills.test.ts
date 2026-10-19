@@ -60,6 +60,7 @@ import {
 } from '@/app-layer/usecases/tenant-skills';
 import type { RequestContext } from '@/app-layer/types';
 import { makeRequestContext } from '../helpers/make-context';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { passingRecordFor, TENANT_SKILL_INSTRUCTIONS, tenantSkillFields } from '../helpers/tenant-skill-fixture';
 
@@ -405,6 +406,66 @@ describeFn('tenant-authored skills (real DB)', () => {
                     `direct-${SUITE}`, TA, skill.id, skillContentHash('i'), USERS.authorA,
                 ),
             ).rejects.toThrow(/TENANT_SKILL_VERSION_STARTS_AT_DRAFT/);
+        });
+    });
+    /**
+     * #3778 — authoring and review are separate keys. A custom role built on
+     * READER carries one half alone: the authoring half creates, attaches,
+     * submits and reads, and cannot approve, reject or retire; the review half
+     * approves, rejects, retires and reads, and cannot create a skill or a
+     * version. That is what lets a provider write a tenant's skills without
+     * being able to approve them.
+     */
+    describe('the two halves (#3778)', () => {
+        const withHalf = (half: 'agent_skill_author' | 'agent_skill_review'): RequestContext => {
+            const base = getPermissionsForRole('READER');
+            return ctx(TA, 'READER', USERS.readerA, {
+                appPermissions: { ...base, admin: { ...base.admin, [half]: true } },
+            });
+        };
+
+        it('the authoring half authors and reads, and is refused every review act', async () => {
+            const author = withHalf('agent_skill_author');
+            const created = await createTenantSkill(author, { name: 'by-provider', ...tenantSkillFields({ workflowKeys: [WF] }) });
+            await attachTenantSkillEvaluation(author, created.skillId, created.versionId, { record: passingRecordFor('by-provider', 1) });
+            await submitTenantSkillVersion(author, created.skillId, created.versionId);
+            await expect(getTenantSkill(author, created.skillId)).resolves.toMatchObject({ name: 'by-provider' });
+
+            // The server offers it no approval, whoever authored the version.
+            const other = await createTenantSkill(authorA(), { name: 'by-client', ...tenantSkillFields({ workflowKeys: [WF] }) });
+            await attachTenantSkillEvaluation(authorA(), other.skillId, other.versionId, { record: passingRecordFor('by-client', 1) });
+            await submitTenantSkillVersion(authorA(), other.skillId, other.versionId);
+            const seen = await getTenantSkill(author, other.skillId);
+            expect(seen.versions.find((v) => v.id === other.versionId)?.canApprove).toBe(false);
+
+            await expect(approveTenantSkillVersion(author, other.skillId, other.versionId, { contentHash: other.contentHash }))
+                .rejects.toMatchObject({ status: 403 });
+            await expect(rejectTenantSkillVersion(author, other.skillId, other.versionId)).rejects.toMatchObject({ status: 403 });
+            await expect(retireTenantSkillVersion(author, other.skillId, other.versionId)).rejects.toMatchObject({ status: 403 });
+
+            // And the client approves the provider's version, which is the point.
+            await approveTenantSkillVersion(reviewerA(), created.skillId, created.versionId, { contentHash: created.contentHash });
+        });
+
+        it('the review half approves and reads, and is refused every authoring act', async () => {
+            const reviewer = withHalf('agent_skill_review');
+            const created = await createTenantSkill(authorA(), { name: 'for-review', ...tenantSkillFields({ workflowKeys: [WF] }) });
+            await attachTenantSkillEvaluation(authorA(), created.skillId, created.versionId, { record: passingRecordFor('for-review', 1) });
+            await submitTenantSkillVersion(authorA(), created.skillId, created.versionId);
+
+            const seen = await getTenantSkill(reviewer, created.skillId);
+            expect(seen.versions.find((v) => v.id === created.versionId)?.canApprove).toBe(true);
+            await approveTenantSkillVersion(reviewer, created.skillId, created.versionId, { contentHash: created.contentHash });
+
+            await expect(createTenantSkill(reviewer, { name: 'by-reviewer', ...tenantSkillFields() })).rejects.toMatchObject({ status: 403 });
+            await expect(
+                createTenantSkillVersion(reviewer, created.skillId, tenantSkillFields({ workflowKeys: [WF] })),
+            ).rejects.toMatchObject({ status: 403 });
+        });
+
+        it('neither half is refused the read', async () => {
+            const created = await createTenantSkill(authorA(), { name: 'unreadable', ...tenantSkillFields() });
+            await expect(getTenantSkill(ctx(TA, 'READER', USERS.readerA), created.skillId)).rejects.toMatchObject({ status: 403 });
         });
     });
 });

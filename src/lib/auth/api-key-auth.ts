@@ -356,6 +356,9 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
                 // its own instructions; ADMIN holds the key, so it is
                 // subtracted here rather than merely absent.
                 agent_skill_review: false,
+                // And its authoring half (#3778), for the same reason: an agent
+                // that could write skill text could teach itself.
+                agent_skill_author: false,
             },
         };
     }

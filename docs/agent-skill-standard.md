@@ -175,10 +175,19 @@ gate is `src/lib/agentic/flue/skills/tenant-skill.ts`.
 
 ### Who may author and approve
 
-Every act takes `admin.agent_skill_review`, which OWNER, ADMIN and `AI_ADMIN`
-hold, and which no API key holds: `*` subtracts it and no scope maps to it. One
-key covers authoring and approval. The four-eyes rule is a person, not a second
-key: the approver of a version is never its author. The usecase refuses it
+Two keys, split by #3778 (owner decision, 2026-10-19):
+
+- **`admin.agent_skill_author`** creates a skill, creates a version (an edit),
+  attaches its evaluation record and submits it for review.
+- **`admin.agent_skill_review`** approves, rejects and retires.
+- **Reading** one skill and its versions takes either key.
+
+OWNER, ADMIN and `AI_ADMIN` hold both, and no API key holds either: `*`
+subtracts both and no scope maps to them. A custom role may carry the authoring
+half alone, which is how a provider who writes a tenant's skills is kept from
+approving them. A custom role stored before the split takes the authoring half
+from its own review key. The four-eyes rule is also a person, whoever holds both
+keys: the approver of a version is never its author. The usecase refuses it
 (`SELF_APPROVAL`), a CHECK makes it unrepresentable, and an API-key caller never
 approves (`APPROVER_NOT_A_PERSON`).
 

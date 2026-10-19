@@ -82,6 +82,8 @@ export interface AgentDetailPermissions {
      * tab read-only.
      */
     canReviewSkills?: boolean;
+    /** `admin.agent_skill_author` (#3778) — authoring the workspace's own skills. */
+    canAuthorSkills?: boolean;
 }
 
 // `skills` is the SEVENTH key and `runs` the EIGHTH. The integration plan said
@@ -281,7 +283,11 @@ export function AgentDetailClient({
             {tab === 'tools' && (
                 <ToolsTab {...props} onChanged={refresh} canGrantTools={perms.canGrantTools} />
             )}
-            {tab === 'skills' && <SkillsTab {...props} canReviewSkills={perms.canReviewSkills === true} />}
+            {tab === 'skills' && <SkillsTab
+                    {...props}
+                    canReviewSkills={perms.canReviewSkills === true}
+                    canAuthorSkills={perms.canAuthorSkills === true}
+                />}
             {tab === 'coverage' && <CoverageTab {...props} />}
             {/* Read-only, and no `onChanged`: resuming or aborting a run
                 happens on the run itself, where the steps are. */}

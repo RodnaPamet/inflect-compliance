@@ -1107,7 +1107,8 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 - **Review.** A version moves one way, `DRAFT` → `IN_REVIEW` → `APPROVED` →
   `RETIRED`, by trigger. Approval names the content hash the reviewer read, is
   refused for the version's author by the usecase and by a CHECK, and is refused
-  for an API key. Every act takes `admin.agent_skill_review`. An edit is a new
+  for an API key. Authoring takes `admin.agent_skill_author` and approving,
+  rejecting and retiring take `admin.agent_skill_review` (#3778). An edit is a new
   version at `DRAFT`; the approved version keeps serving until the new one is
   approved, and is then retired as superseded.
 - **Evaluation.** The author attaches an evaluation record in the repository's
@@ -1381,16 +1382,18 @@ a rule in `src/lib/security/route-permissions.ts`, except the two endpoints
 under [Token-gated endpoints](#token-gated-endpoints), which say why. Key names
 follow `PERMISSION_SCHEMA` in `src/lib/permissions.ts`.
 
-**Four keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
+**Five keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
 the seventh, which #3699 shipped, the inventory view key, which #3710 shipped,
-and one new key:
+and the two halves of the tenant skill right, which #3680 shipped as one key and
+#3778 split:
 
 | Key | Gates | Granted by role | Bearer tokens |
 |---|---|---|---|
 | `admin.agent_harness_ingest` | Submitting a signed report, `POST /api/t/:slug/admin/agents/harness-scans` (`1a`, shipped in #3688), and the scanner's read of the register (`1a`, below) | OWNER, ADMIN | The `admin:harness_ingest` scope grants it and nothing else (`SCOPE_ACTION_MAP` in `src/lib/auth/api-key-auth.ts`). `*` carries it too: `*` is ADMIN's set minus the four agent-governance flags, and ADMIN holds it |
 | `admin.agent_ownership` | Proposing, reading, cancelling and completing an agent ownership transfer, `…/admin/agents/[agentId]/ownership-transfer` and `…/complete` (`2a`, shipped in #3699; `admin.tenant_lifecycle` until then) | OWNER, AI_ADMIN. Not ADMIN, which holds `admin.agent_registry`: an agent's accountable owner must not be movable by the role that owner is accountable to. An OWNER can grant it to an ADMIN through a custom role | Not carried by `*` (ADMIN's set, which lacks it), and no scope maps to it |
 | `admin.agent_registry_view` | READING the agent inventory (#3710): the register list and one agent's row (`GET …/admin/agents`, `GET …/admin/agents/[agentId]`), the harness scans and the matrix (`GET …/admin/agents/harness-scans`, `/agents/reports?tab=harness`), the client estates' schedule health (`GET …/admin/agents/harness-estates`, #3678), one discovered agent's facts (`get_discovered_agent`), and the governance pack (`GET …/admin/agents/reports`, `/agents/reports`). Also agent runs and proposals (`/agents/runs`, `/agents/proposals`, and the run routes `…/agent-runs/[id]/stream` and `…/checkpoint`), with `admin.view` as the other key that opens them. Every inventory read also admits `admin.agent_registry`, so nobody who read the inventory before the split lost it. Read-only: filing the pack, every register write, scanner keys, peers, intake, acceptances and estate declarations stay on `admin.agent_registry` | OWNER, ADMIN, AI_ADMIN, AUDITOR. A custom role may carry it | The `admin:agent_registry_view` scope grants it and nothing else. Neither `*` nor `admin:*` carries it (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so every key issued before it resolves as it did, and an agent reads the inventory only through a key minted for that read |
-| `admin.agent_skill_review` | Authoring, evaluating, submitting, approving, rejecting and retiring a tenant skill, `…/admin/agents/skills/tenant/**` (`4c`, shipped in #3680) | OWNER, ADMIN, AI_ADMIN. AI_ADMIN because it holds every agent key (decision 16), and #3680 classified this one as an agent key | Not carried by `*` (subtracted explicitly, because ADMIN holds it), and no scope maps to it |
+| `admin.agent_skill_author` | Authoring a tenant skill: creating it, creating a version, attaching its evaluation record and submitting it, `…/admin/agents/skills/tenant/**` (#3778, which split it from the review key). Reading a skill admits it too | OWNER, ADMIN, AI_ADMIN. A custom role may carry it alone; one stored before the split takes it from its own `agent_skill_review` (`DERIVED_FROM` in `src/lib/permissions.ts`) | Not carried by `*` (subtracted explicitly, because ADMIN holds it), and no scope maps to it |
+| `admin.agent_skill_review` | Approving, rejecting and retiring a tenant skill version, `…/versions/[versionId]/approve`, `/reject` and `/retire` (`4c`, shipped in #3680, which also gated authoring until #3778). Reading a skill admits it too | OWNER, ADMIN, AI_ADMIN. AI_ADMIN because it holds every agent key (decision 16), and #3680 classified this one as an agent key | Not carried by `*` (subtracted explicitly, because ADMIN holds it), and no scope maps to it |
 
 - **Reading scans takes the inventory view key.** `GET …/admin/agents/harness-scans`
   lists scans under `admin.agent_registry_view` or `admin.agent_registry`, and
@@ -1440,11 +1443,13 @@ and one new key:
   `ScopeCheckAction` now admits, and the MCP read-suite guardrail lists it as
   the one non-view scope, with its reason.
 - **A tenant skill's reviewer is never its author.** Step `4c` (#3680) asks for
-  "a new skill-review right", and `admin.agent_skill_review` is it. One key
-  gates authoring and approval, because #3680 gives the authoring surface on
-  the Skills tab to holders of the right, and the usecase refuses an approval
-  by the version's author, as does a CHECK below it (#3680). `*` does not
-  carry it, for the reason it does not
+  "a new skill-review right", and `admin.agent_skill_review` is it. #3680 gated
+  authoring and approval on that one key. #3778 split authoring into
+  `admin.agent_skill_author` (owner decision, 2026-10-19), so a provider who
+  writes a tenant's skills can be kept from approving them
+  ([`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)); the
+  usecase also refuses an approval by the version's author, as does a CHECK
+  below it (#3680). `*` carries neither half, for the reason it does not
   carry the four agent-governance flags: a skill is text mounted into an
   agent's context, and a key held by an agent that could approve skill text
   could teach itself.
@@ -1507,7 +1512,8 @@ and one new key:
 | Generate or rotate the tenant's A2A signing key (`4b`) | `admin.tenant_lifecycle` | OWNER only, the key that rotates the tenant's DEK (decision 21): the key speaks for the whole tenant to another organisation. Refused to an API key. Reading its public half is `admin.agent_registry`, the key that hands a peer its credential. |
 | Set a peer's inbound quota (`4b`) | `admin.agent_registry` | The key that registers the peer (decision 25). |
 | Issue, read and revoke a peer's inbound credential; read a peer's kept messages (`4b`) | `admin.agent_registry` | Binding a peer to a receiving agent and a workflow allowlist is configuration of whom the tenant talks to, as registering and pinning are (decision 12). Issuing also refuses an API key. The send itself is an external tool call under `admin.agent_external_tools`. |
-| Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/admin/agents/skills/tenant/**`; see above. |
+| Author a tenant skill (`4c`) | `admin.agent_skill_author` | Shipped in #3680 under the review key and split by #3778: create, version, attach a record and submit at `…/admin/agents/skills/tenant/**`; see above. |
+| Approve, reject or retire a tenant skill (`4c`) | `admin.agent_skill_review` | Shipped in #3680 at `…/versions/[versionId]/approve`, `/reject` and `/retire`; reading a skill takes either key; see above. |
 | Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | `audits.manage` and `admin.manage`, both | One route, `POST …/audits/cycles/:cycleId/reliance-pack` (#3681), because a reliance item's snapshot is built from the workpapers server-side and the existing item route takes a client-supplied snapshot. `audits.manage` because assembling reads every workpaper of the period, and `admin.manage` because assembling also freezes the pack, which `assertCanFreezePack` admits for OWNER and ADMIN by role; requiring both leaves no custom role that passes the route and fails the usecase without an `AUTHZ_DENIED` row. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
 
 Steps `1b`, `1c`, `1d`, `3c` and `4e` plan no route of their own. `1b` extends
