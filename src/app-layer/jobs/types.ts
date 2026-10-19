@@ -259,6 +259,16 @@ export interface AuditWorkpaperSampleReviewPayload {
     tenantId?: string;
 }
 
+/**
+ * audit-narrative-dispatch (#3749) — start one `audit-narrative` run per
+ * tenant, for the period of its oldest un-narrated workpaper, as the auditor
+ * agent that wrote it, under that agent's owner's permissions.
+ */
+export interface AuditNarrativeDispatchPayload {
+    /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
+    tenantId?: string;
+}
+
 /** Evidence retention sweep */
 export interface RetentionSweepPayload {
     tenantId?: string;
@@ -863,6 +873,7 @@ export interface JobPayloadMap {
     'external-write-dispatch': ExternalWriteDispatchPayload;
     'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
     'audit-workpaper-sample-review': AuditWorkpaperSampleReviewPayload;
+    'audit-narrative-dispatch': AuditNarrativeDispatchPayload;
     'agentic-evidence-emission': AgenticEvidenceEmissionPayload;
     'integration-passport-sweep': IntegrationPassportSweepPayload;
     'agent-owner-orphan-pass': AgentOwnerOrphanPassPayload;
@@ -1776,6 +1787,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         // week is recoverable; a silently doubled draw is not detectable.
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'audit-narrative-dispatch': {
+        // RETRIED: a retry cannot start a second run for a tenant, because a
+        // tenant that started a narrative run within the spacing window is
+        // skipped (`NARRATIVE_RUN_SPACING_HOURS`), whoever started it; and a
+        // day without a dispatch leaves a period un-narrated for another day.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60_000 },
         removeOnComplete: 50,
         removeOnFail: 200,
     },

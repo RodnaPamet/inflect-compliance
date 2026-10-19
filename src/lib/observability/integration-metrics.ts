@@ -391,6 +391,7 @@ export function recordHarnessScanOutcome(attrs:
 
 let _agentReviewAttribution: Counter | null = null;
 let _auditNarrativeCapture: Counter | null = null;
+let _auditNarrativeDispatch: Counter | null = null;
 
 /**
  * One attempt to store a `discovered-agent-review` run's owner suggestion
@@ -430,6 +431,22 @@ export function recordAuditNarrativeCapture(attrs: { outcome: string }): void {
         });
     }
     _auditNarrativeCapture.add(1, { outcome: attrs.outcome.toLowerCase() });
+}
+
+/**
+ * The daily narrative dispatch (#3749), one count per tenant decision —
+ * `dispatched` or a named refusal — and one `nothing_to_narrate` for a run that
+ * found no candidate anywhere, so a quiet night is told apart from a job that
+ * never ran.
+ */
+export function recordAuditNarrativeDispatch(attrs: { outcome: string }): void {
+    if (!_auditNarrativeDispatch) {
+        _auditNarrativeDispatch = getMeter().createCounter('agentic.audit_narrative.dispatch', {
+            description: 'Audit narrative dispatch decisions by outcome',
+            unit: '1',
+        });
+    }
+    _auditNarrativeDispatch.add(1, { outcome: attrs.outcome.toLowerCase() });
 }
 
 export function recordScannerFindingsTruncated(attrs: { source: string; dropped: number }): void {
