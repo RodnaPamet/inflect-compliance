@@ -416,6 +416,13 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // `justification` for the same reason: an owner's rationale for carrying a
     // risk, which names systems and people. Never filtered or sorted on.
     AgentHarnessAcceptance: ['justification'],
+    // A review run's stored owner suggestion (#3728). Both columns are MODEL
+    // OUTPUT: `signalsJson` holds the evidence pointers the suggestion rested
+    // on (free text the model wrote, bounded and schema-checked by the skill's
+    // contract), and `proposedOwnerRef` the person a SUGGESTED answer named, in
+    // the source's namespace — often an e-mail address. Read by key only,
+    // never filtered or sorted on.
+    DiscoveredAgentAttribution: ['signalsJson', 'proposedOwnerRef'],
 
     // ─── Epic MCP Phase 3 — agent proposal queue ───────
     // `payloadJson` is the agent-proposed business content (risk/control/policy/

@@ -193,6 +193,14 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // that never reach the source", which was not true here, and registering a
     // misdescribed hole is worse than having none.
     'src/app-layer/usecases/agent-governance-pack-export.ts — identifier bound elsewhere',
+    // The review attribution capture (#3728). Two holes, both the run id passed
+    // in as a parameter, in its two log lines: "no suggestion recorded" with the
+    // outcome, and "capture failed" with `err.name`. This file reads the model's
+    // answer, so what is NOT at its sinks matters most. Neither log line nor its
+    // audit row carries the answer, the contract's issues (they quote the
+    // answer), an evidence pointer or the suggested person: only a run id, a
+    // tenant id, a closed outcome code, a status, a grade and counts.
+    'src/app-layer/usecases/agent-harness-attribution.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-risk-assessment.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-tool-exposure.ts — identifier bound elsewhere',
     // The execution walk moved out of `workflow-runs.ts` into the static
@@ -746,7 +754,15 @@ const SINK_FLOOR = 30;
 // ("spread of an object whose keys are not in the source"). The spread went,
 // matching the sibling. A hole that can be closed should be; these four
 // cannot, without making the log worse.
-const MEASURED_HOLES = 198;
+//
+// 198 -> 200: THE REVIEW ATTRIBUTION CAPTURE (#3728). Two holes, both `runId`, a
+// parameter, at the capture's two log lines, against three new sinks (two log
+// lines and one audit row). The run id is the one field an operator needs to
+// find the run whose answer was or was not stored. Wrapping it to satisfy the
+// analyser would make the metric better and the logging no better. The
+// outcome, the tenant id and `err.name` are already member expressions or
+// literals, and the audit row names every field at the sink.
+const MEASURED_HOLES = 200;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

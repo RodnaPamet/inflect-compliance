@@ -727,6 +727,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'read by (tenantId, skillId) ordered by version — exactly @@unique([tenantId, skillId, version]) — or by (tenantId, status) for the mount read and the approval budget check, covered by @@index([tenantId, status]); bounded take ≤500.',
     DiscoveredAgent:
         'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) — exactly the @@unique([tenantId, discoveredId]), bounded by the report\'s agent count; the harness matrix\'s shadow list filters by tenantId and registeredAgentId IS NULL (or a deleted register row) and orders by lastSeenAt desc — covered by @@index([tenantId, registeredAgentId]) + @@index([tenantId, lastSeenAt]); bounded take ≤201.',
+    // A review run's stored owner suggestion (#3728) — at most one per discovered agent.
+    DiscoveredAgentAttribution:
+        'the harness matrix\'s shadow list reads suggestions by (tenantId, discoveredAgentId IN …) and the intake and the capture by (tenantId, discoveredAgentId) — exactly the @@unique([tenantId, discoveredAgentId]); no order; bounded take by the shown shadow rows (≤200), one row per agent.',
     // Harness matrix (#3687) — read by (tenantId, scanId IN …[, discoveredAgentId IN …]).
     AgentHarnessScanItem:
         'the harness matrix reads scan items by (tenantId, scanId IN …) and (tenantId, scanId, discoveredAgentId IN …) only — the tenantId-leading prefix of @@unique([tenantId, scanId, discoveredAgentId]); bounded take ≤20001 (light) and by the displayed row count (heavy).',

@@ -9505,6 +9505,8 @@
         "gradeWeak": "weak",
         "signalNamesPerson": "names a person",
         "suggestionNever": "This is provenance only, and it is never used as the owner. Choose and confirm the owner yourself.",
+        "suggestionFrom": "From the discovered-agent review run {run}, completed {date}.",
+        "keepSuggestion": "Record this suggestion with the registration, as provenance. It does not choose the owner.",
         "ownerLabel": "Accountable owner",
         "ownerHint": "An active member of this workspace.",
         "confirmLabel": "I confirm that {owner} is accountable for this agent.",

@@ -93,6 +93,7 @@ import {
 } from '@/lib/observability/metrics';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
 import { recordDecisionOutcome } from '@/app-layer/ai/decision-log';
+import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
 import type { AgentDriver } from '@/lib/agentic/agent-driver';
@@ -1019,6 +1020,11 @@ async function executeFrom(
     try {
         const outcome = await run(runCtx, runId, def, fromSeq, runStartMs);
         await recordRunSettlementMetrics(runCtx, runId, driverLabel, outcome.status);
+        // A COMPLETED discovered-agent review's owner suggestion is parsed and
+        // stored here (#3728), at the same one seam for the same reason: both
+        // engines settle their own runs, and only this function sees every
+        // settlement. A no-op for every other workflow; never throws.
+        await captureReviewAttributionAfterRun(runCtx, runId, def.key, outcome.status);
         return outcome;
     } catch (err) {
         // A THROW IS A FAILED RUN for metric purposes, and it has to be

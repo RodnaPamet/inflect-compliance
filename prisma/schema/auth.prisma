@@ -219,6 +219,7 @@ model Tenant {
   agentHarnessEstateSources         AgentHarnessEstateSource[]
   agentOwnershipTransfers           AgentOwnershipTransfer[]
   agentServicePrincipalConfirmations AgentServicePrincipalConfirmation[]
+  discoveredAgentAttributions       DiscoveredAgentAttribution[]
   auditWorkpapers                   AuditWorkpaper[]
   auditWorkpaperFindings            AuditWorkpaperFinding[]
   auditWorkpaperSampleReviews       AuditWorkpaperSampleReview[]

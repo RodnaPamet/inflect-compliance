@@ -29,11 +29,17 @@
  * toast, and the dialog stays open over it.
  *
  * The body is exactly what the strict `RegistrationIntakeSchema` takes: no
- * tier, no questionnaire — the entry is classified on the AI-system page — and
- * no `attribution`: that member carries the skill's raw answer, person
- * references included, and the harness tab's payload carries none by design.
- * Nothing on the tab supplies a suggestion today, because no attribution
- * answer is stored anywhere a page can read it.
+ * tier, no questionnaire — the entry is classified on the AI-system page.
+ *
+ * THE SUGGESTION IS A STORED ONE, AND IT NAMES NOBODY (#3728). A
+ * `discovered-agent-review` run's parsed owner suggestion is stored server-side
+ * (`DiscoveredAgentAttribution`) and reaches this dialog through the shadow
+ * row as status, grade and signals — never the person it named, which the
+ * harness tab's payload does not carry (the #3687 rule). The dialog renders it
+ * as text, offers to KEEP it (on by default; unticking discards it), and sends
+ * `attribution: { runId }` only while it is kept — a run id, from which the
+ * intake reads the stored row and records the provenance. Nothing in the
+ * suggestion reaches the owner picker.
  */
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -61,8 +67,8 @@ import {
     AGENT_PROVENANCES,
     AGENT_REVERSIBILITIES,
 } from '@/app-layer/schemas/agent-registry.schemas';
-import type { ShadowRow } from '@/lib/agentic/harness-read-model';
-import type { IntakeSuggestionProvenance } from '@/lib/agentic/registration-intake';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
+import { redactPointerCredentials, type ShadowRow, type ShadowSuggestion } from '@/lib/agentic/harness-read-model';
 
 /** The intake schema's bounds on the fields this dialog sends. */
 const NAME_MIN = 2;
@@ -87,13 +93,21 @@ export interface IntakeDraft {
     vendorId: string | null;
     deploymentRole: DeploymentRole;
     purpose: string;
+    /**
+     * The review run of the stored suggestion the person KEPT, or absent/null
+     * when there is none or they discarded it. It becomes `attribution:
+     * { runId }` and nothing else: it is a run id, and the owner is not read
+     * from it.
+     */
+    keptSuggestionRunId?: string | null;
 }
 
 /**
  * The request body, built ONLY from a complete draft. `null` is "send nothing":
  * no confirmed owner, an unanswered axis, or a third-party agent with no
- * supplier. The owner comes from the draft alone — there is no parameter
- * through which a suggestion could reach it.
+ * supplier. The owner comes from the draft's owner fields alone — the kept
+ * suggestion travels as a run id in `attribution`, and no line here reads an
+ * owner from it.
  */
 export function intakeRequestBody(findingId: string, d: IntakeDraft): Record<string, unknown> | null {
     const name = d.name.trim();
@@ -118,6 +132,7 @@ export function intakeRequestBody(findingId: string, d: IntakeDraft): Record<str
         ...(d.provenance === 'THIRD_PARTY' ? { vendorId: d.vendorId } : {}),
         deploymentRole: d.deploymentRole,
         ...(purpose ? { purpose } : {}),
+        ...(d.keptSuggestionRunId ? { attribution: { runId: d.keptSuggestionRunId } } : {}),
     };
 }
 
@@ -127,10 +142,11 @@ const AUTONOMY_LEVELS = Array.from(
 );
 
 /**
- * What an owner suggestion rested on, as the intake records it — and nothing
- * more: no person's reference, so there is nothing here to copy into the owner.
+ * What an owner suggestion rested on, as the harness tab holds it (#3728) —
+ * and nothing more: no person's reference, so there is nothing here to copy
+ * into the owner.
  */
-export type IntakeSuggestionView = Omit<IntakeSuggestionProvenance, 'confirmedOwnerIsSuggested'>;
+export type IntakeSuggestionView = ShadowSuggestion;
 
 export function RegisterShadowAgentModal({
     target,
@@ -138,7 +154,10 @@ export function RegisterShadowAgentModal({
     onClose,
 }: {
     target: ShadowRow;
-    /** Read-only provenance, when a suggestion exists for this agent. */
+    /**
+     * Read-only provenance, when a suggestion is stored for this agent. The
+     * harness tab passes the shadow row's own (`target.suggestion`).
+     */
     suggestion?: IntakeSuggestionView | null;
     onClose: () => void;
 }) {
@@ -160,6 +179,9 @@ export function RegisterShadowAgentModal({
     const [vendorId, setVendorId] = useState<string | null>(null);
     const [deploymentRole, setDeploymentRole] = useState<DeploymentRole>('DEPLOYER');
     const [purpose, setPurpose] = useState('');
+    // Kept unless the person discards it. Keeping records provenance; it never
+    // touches the owner state above.
+    const [keepSuggestion, setKeepSuggestion] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -191,6 +213,7 @@ export function RegisterShadowAgentModal({
         vendorId,
         deploymentRole,
         purpose,
+        keptSuggestionRunId: suggestion && keepSuggestion ? suggestion.runId : null,
     });
     const canSubmit = target.findingId !== null && body !== null && !busy;
 
@@ -290,13 +313,30 @@ export function RegisterShadowAgentModal({
                                             <li key={`${sig.kind}-${i}`}>
                                                 <span className="font-mono">{sig.kind}</span>
                                                 {' — '}
-                                                <span className="font-mono">{sig.evidence}</span>
+                                                {/* Model output: text only, with any URL userinfo hidden. */}
+                                                <span className="font-mono break-all">{redactPointerCredentials(sig.evidence).text}</span>
                                                 {sig.namesPerson && ` (${t('harness.registerModal.signalNamesPerson')})`}
                                             </li>
                                         ))}
                                     </ul>
                                 )}
+                                <p className="mt-1 text-xs text-content-subtle" data-testid="harness-register-suggestion-from">
+                                    {t('harness.registerModal.suggestionFrom', {
+                                        run: suggestion.runId,
+                                        date: formatDateTime(suggestion.runCompletedAt),
+                                    })}
+                                </p>
                                 <p className="mt-1">{t('harness.registerModal.suggestionNever')}</p>
+                                <label className="mt-1 flex items-start gap-tight text-sm text-content-default">
+                                    <Checkbox
+                                        id="harness-register-keep-suggestion"
+                                        checked={keepSuggestion}
+                                        onCheckedChange={(c) => setKeepSuggestion(c === true)}
+                                        disabled={busy}
+                                        className="mt-0.5"
+                                    />
+                                    <span>{t('harness.registerModal.keepSuggestion')}</span>
+                                </label>
                             </InlineNotice>
                         )}
 

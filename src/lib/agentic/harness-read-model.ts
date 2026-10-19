@@ -3,8 +3,8 @@
  *
  * What `usecases/agent-harness-matrix.ts` hands the harness tab on
  * `/agents/reports`, and the pure rules both sides of that boundary share.
- * CLIENT-SAFE: the only import is the ladder, which has none, so the tab's
- * components hold the same functions the server ran.
+ * CLIENT-SAFE: the only runtime import is the ladder, which has none, so the
+ * tab's components hold the same functions the server ran.
  *
  * ── THREE RULES THIS MODULE EXISTS TO STATE ONCE ────────────────────────────
  *
@@ -23,13 +23,15 @@
  *     userinfo replaced by `***` (`redactPointerCredentials`), so a pointer
  *     that embedded a password is neither linked nor printed nor copied.
  *
- * PURE: no clock, no I/O.
+ * PURE: no clock, no I/O. The one import beside the ladder is a TYPE
+ * (`OwnerSignalKind`), erased at build, so the tab's bundle gains nothing.
  */
 import {
     rungOf,
     type CriterionVerdict,
     type HarnessLevel,
 } from './harness-ladder';
+import type { OwnerSignalKind } from './iam-skill-outputs';
 
 // ─── View types: JSON-safe (ISO strings, no Date) ───────────────────────────
 
@@ -177,6 +179,39 @@ export interface ShadowRow {
      * next complete one.
      */
     readonly intake: { readonly agentId: string; readonly name: string | null; readonly linkable: boolean } | null;
+    /**
+     * The newest parsed owner suggestion of a `discovered-agent-review` run for
+     * this agent (#3728), or `null` when none is stored or the stored row does
+     * not re-validate. What the Register dialog shows above the owner picker.
+     */
+    readonly suggestion: ShadowSuggestion | null;
+}
+
+/**
+ * A review run's owner suggestion, as the harness tab may hold it (#3728).
+ *
+ * NAMES NOBODY. There is no member for the person a SUGGESTED answer named,
+ * and none for a signal's person reference: the payload crosses into a client
+ * component, and the #3687 rule is that no owner reference does. The server
+ * keeps the reference (`DiscoveredAgentAttribution.proposedOwnerRef`) and only
+ * the intake reads it. `runId` is how the dialog asks the intake to record this
+ * suggestion — a run id, not a person.
+ */
+export interface ShadowSuggestion {
+    readonly runId: string;
+    /** When the review run completed, ISO. */
+    readonly runCompletedAt: string;
+    readonly status: 'SUGGESTED' | 'AMBIGUOUS' | 'UNMATCHED';
+    /** The grade of a SUGGESTED answer; `null` otherwise. */
+    readonly grade: 'STRONG' | 'WEAK' | null;
+    /** Why an UNMATCHED answer proposed nobody; `null` otherwise. */
+    readonly unmatchedReason: 'NO_OWNER_SIGNAL' | 'OWNER_DEPARTED' | null;
+    /** What it rested on: kind, evidence pointer, and whether a person was named — never whom. */
+    readonly signals: readonly {
+        readonly kind: OwnerSignalKind;
+        readonly evidence: string;
+        readonly namesPerson: boolean;
+    }[];
 }
 
 export interface AcceptanceRow {

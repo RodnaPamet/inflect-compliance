@@ -2123,7 +2123,26 @@ the last three, and the daily cadence, are owner decisions of 2026-10-19:
   the REVIEW rather than who created the proposal, because the sweep's heal
   raises it under a system context. A ref naming a review the tenant does not
   hold refuses everybody (`DISSENT_AUTHOR_UNKNOWN`). Every deciding path calls
-  it; a new one must, or the bar has a way round.
+  it, and the database holds the same bar behind it (#3760): triggers on
+  `AgentProposal` (a PENDING to ACCEPTED, EDITED or REJECTED move) and on
+  `AgentProposalApproval` (a signature) refuse the review's dissenter under every
+  role, and a dissent proposal's `proposedBySessionRef` is write-once
+  (`DISSENT_ORIGIN_IMMUTABLE`), so the ref cannot be cleared first. The usecase
+  still refuses first, because only it writes the `AUTHZ_DENIED` row.
+
+**A review's ownership suggestion is a read model, not a write** (#3728, owner
+decision 2026-10-19). `captureReviewAttribution`
+(`usecases/agent-harness-attribution.ts`) is the only writer of
+`DiscoveredAgentAttribution`. When a COMPLETED Flue `discovered-agent-review` run
+that pinned `nhi-ownership-attribution` settles, it parses the run's answer
+through `parseOwnershipAttribution`, and stores the status, grade and person-free
+signals with the suggested person kept apart in the encrypted `proposedOwnerRef`.
+The row is written from model output with no person in the loop, and rule 5
+allows that because it sets nothing: it only feeds the Register dialog, where a
+person chooses the owner. Keep it that way. A path that let the stored suggestion
+set `ownerUserId`, or that showed `proposedOwnerRef` to the client, would turn an
+annotation into an agent write. A newer review whose answer cannot be parsed
+leaves the older suggestion in place, labelled with its own run.
 
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,

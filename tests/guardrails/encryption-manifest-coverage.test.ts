@@ -128,6 +128,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
     'PeerAgentMessage.bodyDigest': 'The SHA-256 hex of an A2A message body (#3679) — a digest, not content. Plaintext on purpose: it is what the signed statement covers, and a receipt must be checkable against its body without first holding the key that decrypts it.',
     'AgentKillSwitch.reasonCode': "A closed vocabulary pinned by a CHECK to one literal ('OWNER_DEPARTED'), written only by the owner-orphan pass's system actor (#3670). Plaintext because reports and the lift trigger filter on it; it carries no tenant content — the free-text reason beside it is the encrypted column.",
     'AgentKillSwitchDrill.detail': 'Machine-generated from source constants — scope names, counts and a fixed explanation of which arm proved what. It carries no tenant content by construction. Deliberately plaintext: it is the drill\'s own evidence, and a KEK failure is one of the things a drill would have to report from behind the key that failed.',
+    'DiscoveredAgentAttribution.unmatchedReason':
+        "One of two fixed codes ('NO_OWNER_SIGNAL' | 'OWNER_DEPARTED') from the attribution skill's output contract, CHECK-constrained in the migration (#3728) — a closed vocabulary, never free text.",
     'AgentServicePrincipalConfirmation.invalidatedReason':
         "One of two fixed codes ('PRINCIPAL_RELINKED' | 'AGENT_RELINKED'), CHECK-constrained in the migration and written only by our own harness ingest (#3671) — never user text.",
     'AgentKillSwitchDrill.boundaryRefusalReason': "One of three fixed literals ('agent_killed' | 'refused_for_another_reason' | 'not_refused') written by the drill, never by a user.",

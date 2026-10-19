@@ -5,7 +5,8 @@
  * READ-ONLY. This module calls `findMany`, `findFirst` and `count` and nothing
  * else: the scan, its items and the discovered agents are written by
  * `agent-harness-scans.ts` alone, acceptances by `agent-harness-acceptance.ts`
- * alone (`tests/guards/agent-harness-single-write-seam.test.ts`). It logs
+ * alone, review-run owner suggestions by `agent-harness-attribution.ts` alone
+ * (`tests/guards/agent-harness-single-write-seam.test.ts`). It logs
  * nothing either — a report's content is the client's data, not a log line.
  *
  * ── WHAT "LATEST" MEANS ─────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ import {
 } from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type HarnessLevel } from '@/lib/agentic/harness-ladder';
 import { acceptAffordanceFor } from '@/lib/agentic/harness-acceptance-rules';
+import { storedSuggestionView } from '@/lib/agentic/review-attribution';
 import {
     compareMatrixRows,
     computeHarnessDrift,
@@ -447,6 +449,27 @@ export async function getHarnessMatrix(
                 take: shadowShown.length,
             });
         const intakeBy = new Map(intakeRows.map((r) => [r.intakeDiscoveredAgentId, r]));
+        // 3i. The review runs' owner suggestions (#3728), one per agent at
+        // most (unique per discovered agent). NEVER `proposedOwnerRef`: this
+        // view crosses into a client component, and the person a suggestion
+        // named stays on the server — the intake reads it to compare, nothing
+        // else does. Only what the dialog shows is selected.
+        const suggestionRows = shadowShown.length === 0
+            ? []
+            : await db.discoveredAgentAttribution.findMany({
+                where: { tenantId: ctx.tenantId, discoveredAgentId: { in: shadowShown.map((d) => d.id) } },
+                select: {
+                    discoveredAgentId: true,
+                    runId: true,
+                    runCompletedAt: true,
+                    status: true,
+                    grade: true,
+                    unmatchedReason: true,
+                    signalsJson: true,
+                },
+                take: shadowShown.length,
+            });
+        const suggestionBy = new Map(suggestionRows.map((r) => [r.discoveredAgentId, storedSuggestionView(r)]));
         const shadowRows: ShadowRow[] = shadowShown.map((d) => {
             const intake = intakeBy.get(d.id);
             return {
@@ -465,6 +488,7 @@ export async function getHarnessMatrix(
                         linkable: isIntakeClaimLinkable({ status: intake.status, deleted: intake.deletedAt !== null }),
                     }
                     : null,
+                suggestion: suggestionBy.get(d.id) ?? null,
             };
         });
 
