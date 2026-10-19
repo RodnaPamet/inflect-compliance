@@ -142,10 +142,11 @@ MCP read or a registration proves otherwise. A self-hosted host is checked as a
 customer-named host when the configuration is read and resolved again before
 every request; one on the estate's own network names the private ranges it may
 resolve into, after the application's egress allowlist, with metadata, loopback
-and link-local refused inside them. The call counts and the agents' model
-endpoints have no member in `inflect-agent-harness/1`; the counts reach only the
-scanner's log, and the owner placed both in contract `/2` (#3754), for the
-LangSmith source to fill once `/2` is on `main`. The scanner DPIA names the
+and link-local refused inside them. The scanner reports under
+`inflect-agent-harness/2` (#3754), which has a member for the call counts and
+one for the agents' model endpoints; the LangSmith source fills both in a
+follow-up (owner, 2026-10-19), and until then the counts reach only the
+scanner's log. The scanner DPIA names the
 source and what is and is not read from it.
 
 A tenant declares each client ESTATE it scans (`AgentHarnessEstate`): a name,
