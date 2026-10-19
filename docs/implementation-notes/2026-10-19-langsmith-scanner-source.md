@@ -12,11 +12,13 @@ scanner DPIA names it.
 ```
 packages/agent-harness-scanner
   config: { kind: runtime, product: langsmith,
-            endpoint: { cloud: us|eu } | { selfHosted: https://… },
-            apiKeyEnv, workspaceId?, windowDays (7, ≤30), readDeployments }
+            endpoint: { cloud: us|eu }
+                    | { selfHosted: https://…, egressPrivateCidrAllowlist?: [CIDR] },
+            apiKeyEnv, workspaceId?, windowDays (7, ≤30), readDeployments (false) }
   sources/langsmith.ts
-    (self-hosted only) assertResolvesPublic(host) ── before EVERY request
-    1. GET /v2/deployments          (/api-host/v2/deployments self-hosted)
+    (self-hosted only) assertResolvesReachable(host, allowlist) ── before EVERY request
+    1. only with readDeployments: true
+       GET /v2/deployments          (/api-host/v2/deployments self-hosted)
          → { id, tracer_session_id } per deployment, nothing else
     2. GET /api/v1/sessions?reference_free&include_stats&facets
            &stats_start_time=asOf−window&stats_filter=eq(run_type,"tool")
@@ -24,8 +26,8 @@ packages/agent-harness-scanner
          → per project: run_count (tool calls), facets keyed `name` (calls by tool)
          → Σ name facets must equal run_count, else PAGINATION_TORN
     observations:
-      langsmith:deployment:<id>  every deployment, tools of its project
-      langsmith:project:<id>     a project no deployment writes to, with ≥1 tool call
+      langsmith:project:<id>     a project with ≥1 tool call that no listed deployment writes to
+      langsmith:deployment:<id>  (opt-in) every deployment, tools of its project
   report.ts   tools merged per agent by (server, name); count stays on the observation
   scan.ts     log line carries toolCalls (the one place the count may go)
 ```
@@ -40,7 +42,8 @@ would hold a `SHADOW_AGENT` finding nothing could close.
 | File | Role |
 | --- | --- |
 | `packages/agent-harness-scanner/src/sources/langsmith.ts` | the source: endpoint table, window, aggregate parse, tool-name digest |
-| `packages/agent-harness-scanner/src/customer-host.ts` | a customer-named host: checked at configuration, re-resolved before each request |
+| `packages/agent-harness-scanner/src/customer-host.ts` | a customer-named host: checked at configuration, re-resolved before each request, against the estate's private-range allowlist |
+| `eslint.config.mjs` | the scanner may import `@/lib/security/cidr`, the pure CIDR parser, besides the wire contract |
 | `packages/agent-harness-scanner/src/config.ts` | the `runtime` source's strict schema; `sourceCredentialEnv` |
 | `packages/agent-harness-scanner/src/source.ts` | `Observation.tools` (`ObservedToolUse`: the tool and its call count) |
 | `packages/agent-harness-scanner/src/report.ts` | merges tools per agent, caps them at `MAX_TOOLS_PER_AGENT` as `BYTE_CAP` |
@@ -67,12 +70,15 @@ would hold a `SHADOW_AGENT` finding nothing could close.
 - **The count has no member in `/1`, so it is not reported.** `ToolSchema` is
   strict and carries no count; inventing a member is a new contract id. The count
   stays on the observation, is asserted by the tests, and reaches the log as a
-  per-source total.
+  per-source total. The owner placed counts and model endpoints in contract
+  `/2` (#3754); the source fills them in a follow-up once `/2` lands.
 - **Tool fields say what LangSmith cannot.** `pinned: false`, `manifestHash:
   null`, `readOnlyHint: null`: nothing the scanner saw pins a definition or
   declares a hint, and the contract counts an undeclared hint as a write. The
   ingest therefore raises `UNPINNED_WRITE_TOOL` for each agent that called a
-  tool, and only an MCP source read in full can close one. `server` is the
+  tool, and only an MCP source read in full can close one. The owner confirmed
+  this is intended (2026-10-19): a tool seen only by LangSmith is unpinned and
+  undeclared until an MCP read or a registration proves otherwise. `server` is the
   tracing project the calls were seen in, because LangSmith does not record a
   tool's server.
 - **A run name can carry content; a tool name in the report cannot.** A model
@@ -91,10 +97,31 @@ would hold a `SHADOW_AGENT` finding nothing could close.
   every address in a table. The re-resolution runs before each request; pinning
   the connection to the checked address needs an undici dispatcher, which the
   scanner does not take, so that gap is DPIA residual R16.
-- **`readDeployments` exists for self-hosted estates.** A self-hosted LangSmith
-  may run no deployment control plane, where `/api-host/v2/deployments` would
-  answer 404 and the source would be `UNREACHABLE` on every scan. Turning it off
-  is the operator's statement in the configuration, never inferred from a 404.
+- **Deployments are opt-in** (owner decision, 2026-10-19).
+  - **Why.** LangSmith's deployments listing documents each deployment's
+    `secrets` with their values. A scanner that does not need the listing
+    should not receive it.
+  - **Default.** `readDeployments` defaults to false, so the source reads
+    projects only. An estate that wants its deployments listed opts in, and
+    the source then keeps each deployment's id and tracing project.
+  - **Self-hosted.** The same switch serves a self-hosted LangSmith that runs
+    no deployment control plane, where the listing would answer 404. That is
+    the operator's statement in the configuration, never inferred from a 404.
+- **A private-range allowlist for a self-hosted LangSmith** (owner decision,
+  2026-10-19). It mirrors the application's `EGRESS_PRIVATE_CIDR_ALLOWLIST`
+  (#3328) in name (`egressPrivateCidrAllowlist`) and in its three properties:
+  - It lives in the estate's own file, never a tenant column.
+  - The application's never-allowlistable ranges (metadata, loopback,
+    link-local) are checked first.
+  - It removes no other check.
+
+  The configuration check and the per-request check both apply it.
+
+  The CIDR parser is imported from `@/lib/security/cidr` (pure, import-free)
+  rather than copied, which widened the scanner's ESLint import boundary by
+  exactly that module. The never-allowlistable list is copied, because its
+  module reads the environment. A test holds the copy to the application's
+  answer.
 - **Offset paging, and its residual.** Both listings page by an offset the source
   computes, so no next link is server-supplied. A project created mid-read
   pushes the rest down a place, so one is listed twice and the repeat is

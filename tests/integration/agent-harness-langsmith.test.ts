@@ -88,7 +88,8 @@ async function scan(hoursAgo: number): Promise<{ raw: string; lines: string[] }>
         scanner: { agentId: scannerAgentId, signingKeyEnv: 'SCANNER_SIGNING_KEY' },
         inflect: { baseUrl: INGEST, tenantSlug: T1, apiKeyEnv: 'INFLECT_INGEST_KEY' },
         schedule: { everyHours: 24 },
-        sources: [{ kind: 'runtime', product: 'langsmith', endpoint: { cloud: 'us' }, apiKeyEnv: 'LANGSMITH_API_KEY' }],
+        // The estate opts in to deployments (off by default), so both listings are exercised.
+        sources: [{ kind: 'runtime', product: 'langsmith', endpoint: { cloud: 'us' }, apiKeyEnv: 'LANGSMITH_API_KEY', readDeployments: true }],
     });
     const lines: string[] = [];
     const { raw } = await runScan({

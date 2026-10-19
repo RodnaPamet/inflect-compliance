@@ -29,7 +29,7 @@ import { z } from 'zod';
 
 import { looksLikeSecret, SOURCE_KINDS } from '@/lib/agentic/harness-contract';
 
-import { customerOriginProblem } from './customer-host';
+import { customerOriginProblem, parsePrivateCidrAllowlist } from './customer-host';
 import { httpsOrigin } from './http';
 import { AZURE_KEY_VAULT_HOST_SUFFIX } from './sources/azure-key-vault';
 import {
@@ -83,15 +83,30 @@ const LangSmithSourceConfigSchema = z
          * Exactly one of: a cloud data region, whose host is fixed here, or the
          * customer's own self-hosted LangSmith — the one host in this file a
          * person types, refused unless it is a bare https origin that is not a
-         * private, loopback, link-local or internal address.
+         * private, loopback, link-local or internal address. A self-hosted
+         * LangSmith on the estate's own network names the private ranges it
+         * may resolve into (`egressPrivateCidrAllowlist`, after the
+         * application's `EGRESS_PRIVATE_CIDR_ALLOWLIST`); metadata, loopback and
+         * link-local stay refused inside them (`customer-host.ts`).
          */
         endpoint: z.union([
             z.object({ cloud: z.enum(Object.keys(LANGSMITH_CLOUD_ORIGINS) as [keyof typeof LANGSMITH_CLOUD_ORIGINS]) }).strict(),
             z
                 .object({
-                    selfHosted: z.string().refine((v) => customerOriginProblem(v) === null, 'selfHosted must be a public https origin'),
+                    selfHosted: z.string(),
+                    egressPrivateCidrAllowlist: z
+                        .array(z.string().max(64))
+                        .max(32)
+                        .refine((v) => parsePrivateCidrAllowlist(v) !== null, 'each entry must be a CIDR, e.g. 10.20.0.0/16 or fd00::/8')
+                        .default([]),
                 })
-                .strict(),
+                .strict()
+                .superRefine((e, ctx) => {
+                    const allowlist = parsePrivateCidrAllowlist(e.egressPrivateCidrAllowlist);
+                    if (allowlist !== null && customerOriginProblem(e.selfHosted, allowlist) !== null) {
+                        ctx.addIssue({ code: 'custom', message: 'selfHosted must be an https origin the scanner may reach', path: ['selfHosted'] });
+                    }
+                }),
         ]),
         /** A read-scoped LangSmith API key (a workspace Viewer service key). */
         apiKeyEnv: envName,
@@ -99,8 +114,13 @@ const LangSmithSourceConfigSchema = z
         workspaceId: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/).optional(),
         /** The bounded window tool usage is summarised over. */
         windowDays: z.number().int().min(1).max(LANGSMITH_MAX_WINDOW_DAYS).default(LANGSMITH_DEFAULT_WINDOW_DAYS),
-        /** False for a LangSmith that runs no deployment control plane; projects are still read. */
-        readDeployments: z.boolean().default(true),
+        /**
+         * Whether to list deployments too. OFF unless the estate opts in (owner
+         * decision 2026-10-19): the deployments listing carries each
+         * deployment's secrets, and a scanner that does not need it should not
+         * receive it. Projects are read either way.
+         */
+        readDeployments: z.boolean().default(false),
     })
     .strict();
 

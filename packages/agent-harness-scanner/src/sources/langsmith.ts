@@ -5,11 +5,13 @@
  * inventory that knows which agents RAN and which tools they CALLED. This
  * reads it, read-only, and reports two kinds of agent:
  *
- *   • DEPLOYMENTS. `GET /v2/deployments` (the LangSmith Deployment control
- *     plane), paged by offset. A deployment is an agent server by existence, so
- *     every one listed is reported, as `langsmith:deployment:<id>`, whether or
- *     not it ran in the window. Its tools are those its tracing project
- *     (`tracer_session_id`) recorded.
+ *   • DEPLOYMENTS, WHEN THE ESTATE OPTS IN. `GET /v2/deployments` (the
+ *     LangSmith Deployment control plane), paged by offset, and only with
+ *     `readDeployments: true` (owner decision 2026-10-19: off by default,
+ *     because that listing carries each deployment's secrets). A deployment is
+ *     an agent server by existence, so every one listed is reported, as
+ *     `langsmith:deployment:<id>`, whether or not it ran in the window. Its
+ *     tools are those its tracing project (`tracer_session_id`) recorded.
  *   • TRACING PROJECTS. `GET /api/v1/sessions`, paged by offset, experiments
  *     excluded (`reference_free=true`). A project that no deployment writes to
  *     is reported, as `langsmith:project:<id>`, when it recorded at least one
@@ -62,10 +64,11 @@
  *
  * HOSTS. The US or EU cloud API host, fixed here, or the customer's own
  * self-hosted LangSmith, which `customer-host.ts` checks when the configuration
- * is read and re-resolves before every request. Every request is https, on the
- * configured origin, with redirects refused; no next link is server-supplied,
- * because both listings page by offset and the source builds every page's URL
- * itself.
+ * is read and re-resolves before every request — against the estate's private
+ * range allowlist, if it names one, inside which metadata, loopback and
+ * link-local stay refused. Every request is https, on the configured origin,
+ * with redirects refused; no next link is server-supplied, because both
+ * listings page by offset and the source builds every page's URL itself.
  *
  * The endpoint paths and the facet shape are declared once, below. The paths
  * and every query parameter are in LangSmith's published OpenAPI documents;
@@ -77,7 +80,13 @@ import { createHash } from 'crypto';
 
 import { looksLikeSecret } from '@/lib/agentic/harness-contract';
 
-import { assertResolvesPublic, resolveWithDns, type ResolveHost } from '../customer-host';
+import {
+    assertResolvesReachable,
+    parsePrivateCidrAllowlist,
+    resolveWithDns,
+    type PrivateCidrAllowlist,
+    type ResolveHost,
+} from '../customer-host';
 import type { ReadOnlyHttp } from '../http';
 import {
     isPlainId,
@@ -120,7 +129,13 @@ export const LANGSMITH_MAX_WINDOW_DAYS = 30;
 
 const DAY_MS = 86_400_000;
 
-export type LangSmithEndpoint = { readonly cloud: LangSmithCloud } | { readonly selfHosted: string };
+export type LangSmithEndpoint =
+    | { readonly cloud: LangSmithCloud }
+    | {
+          readonly selfHosted: string;
+          /** Private ranges the self-hosted host may resolve into; metadata, loopback and link-local never. */
+          readonly egressPrivateCidrAllowlist?: readonly string[];
+      };
 
 export interface LangSmithSourceOptions {
     readonly endpoint: LangSmithEndpoint;
@@ -130,7 +145,7 @@ export interface LangSmithSourceOptions {
     readonly workspaceId: string | null;
     /** The bounded window the tool usage is summarised over, in days. */
     readonly windowDays: number;
-    /** Whether the estate runs the deployment control plane; a self-hosted LangSmith may not. */
+    /** Whether the estate opted in to listing deployments (off by default: the listing carries their secrets). */
     readonly readDeployments: boolean;
     /** How a self-hosted host is re-resolved before each request. DNS unless a test passes its own. */
     readonly resolveHost?: ResolveHost;
@@ -217,10 +232,10 @@ function projectsQuery(since: string, offset: number): string {
 }
 
 /** A GET-only reader that re-resolves the host before every request it makes. */
-function guarded(http: ReadOnlyHttp, resolve: ResolveHost): ReadOnlyHttp {
+function guarded(http: ReadOnlyHttp, resolve: ResolveHost, allowlist: PrivateCidrAllowlist): ReadOnlyHttp {
     return {
         async getJson(url, o) {
-            await assertResolvesPublic(new URL(url).hostname, resolve);
+            await assertResolvesReachable(new URL(url).hostname, resolve, allowlist);
             return http.getJson(url, o);
         },
     };
@@ -236,12 +251,18 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
     const headers: Record<string, string> = { 'X-Api-Key': opts.apiKey };
     if (opts.workspaceId !== null) headers['X-Tenant-Id'] = opts.workspaceId;
     const resolve = opts.resolveHost ?? resolveWithDns;
+    // An entry that does not parse admits nothing: the configuration refuses
+    // one, and here it fails closed rather than widening anything.
+    const allowlist: PrivateCidrAllowlist =
+        'selfHosted' in opts.endpoint
+            ? parsePrivateCidrAllowlist(opts.endpoint.egressPrivateCidrAllowlist ?? []) ?? []
+            : [];
 
     return {
         kind: 'runtime',
         product: 'langsmith',
         async read(ctx: SourceContext): Promise<SourceRead> {
-            const http = selfHosted ? guarded(ctx.http, resolve) : ctx.http;
+            const http = selfHosted ? guarded(ctx.http, resolve, allowlist) : ctx.http;
             const since = new Date(ctx.asOf.getTime() - opts.windowDays * DAY_MS).toISOString();
             const deployments: { id: string; projectId: string | null }[] = [];
             const usage = new Map<string, Map<string, number>>();

@@ -18,7 +18,10 @@
  *   6. A SELF-HOSTED HOST is a customer-named host: refused at configuration
  *      unless it is a public https origin, and re-resolved before every
  *      request, so a name that turns private stops the read before the key
- *      leaves.
+ *      leaves. An estate may name private ranges its host resolves into;
+ *      metadata, loopback and link-local stay refused inside them.
+ *   8. DEPLOYMENTS ARE OPT-IN: the default configuration lists none, by
+ *      request log, and an estate that opts in lists them.
  *   7. Tools merge into the report by (server, name), and a cap is reported.
  */
 import { generateKeyPairSync } from 'crypto';
@@ -41,8 +44,16 @@ import {
 import { MAX_TOOLS_PER_AGENT, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
 import { planHarnessScan } from '@/lib/agentic/harness-findings';
 import { isPrivateAddress as appIsPrivateAddress } from '@/app-layer/automation/webhook-safety';
+import { isNeverAllowlistable as appIsNeverAllowlistable } from '@/lib/security/egress-allowlist';
 import { ConfigError, credentialEnvNames, parseScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
-import { customerOriginProblem, isPrivateAddress, type ResolveHost } from '../../../packages/agent-harness-scanner/src/customer-host';
+import {
+    addressReachable,
+    customerOriginProblem,
+    isNeverAllowlistable,
+    isPrivateAddress,
+    parsePrivateCidrAllowlist,
+    type ResolveHost,
+} from '../../../packages/agent-harness-scanner/src/customer-host';
 import { createSourceWire } from '../../../packages/agent-harness-scanner/src/http';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
 import { buildReportBody, rawPublicKeyHex } from '../../../packages/agent-harness-scanner/src/report';
@@ -235,7 +246,8 @@ describe('3. no content, and no key, in the report or the log', () => {
     }
 
     it('the signed report carries the agents and tool names, and no marker of run content or of a member not kept', async () => {
-        const { deps, lines, publicKeyHex } = langSmithOnly({ workspaceId: LANGSMITH_WORKSPACE_ID });
+        // Opted in to deployments, so the secrets-bearing listing is read and its markers are tested too.
+        const { deps, lines, publicKeyHex } = langSmithOnly({ workspaceId: LANGSMITH_WORKSPACE_ID, readDeployments: true });
         const { raw, body } = await runScan(deps);
 
         expect(verifyAndParseHarnessReport(raw, [publicKeyHex])).toMatchObject({ ok: true, complete: true });
@@ -564,6 +576,194 @@ describe('6. a self-hosted LangSmith is a customer-named host', () => {
     });
 });
 
+describe('6b. a private-range allowlist for a self-hosted LangSmith', () => {
+    const PRIVATE_HOST = 'https://langsmith.corp.internal';
+    const selfHostedAt = (origin: string): Fakes =>
+        createSourceFakes({ langsmith: { [origin]: { ...langSmithFixture(), selfHosted: true } } });
+    const readSelfHosted = (fakes: Fakes, origin: string, allowlist: string[] | undefined, addresses: string[]) =>
+        read(fakes, {
+            endpoint: { selfHosted: origin, ...(allowlist ? { egressPrivateCidrAllowlist: allowlist } : {}) },
+            resolveHost: async () => addresses,
+        });
+
+    it('a host resolving inside an allowed range is read', async () => {
+        const fakes = selfHostedAt(PRIVATE_HOST);
+        const result = await readSelfHosted(fakes, PRIVATE_HOST, ['10.20.0.0/16'], ['10.20.4.7']);
+        expect(result).toMatchObject({ status: 'COMPLETE', rows: 6 });
+        expect(fakes.log.map((r) => r.path)).toEqual(['/api-host/v2/deployments', '/api/v1/sessions']);
+    });
+
+    it('the same host without the allowlist is refused, and no request carries the key', async () => {
+        const fakes = selfHostedAt(PRIVATE_HOST);
+        const result = await readSelfHosted(fakes, PRIVATE_HOST, undefined, ['10.20.4.7']);
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNREACHABLE', rows: 0 });
+        expect(fakes.log).toHaveLength(0);
+    });
+
+    it.each([
+        ['cloud metadata', ['169.254.0.0/16', '0.0.0.0/0'], ['169.254.169.254']],
+        ['loopback', ['127.0.0.0/8', '0.0.0.0/0'], ['127.0.0.1']],
+        ['v6 link-local', ['fe80::/10', '::/0'], ['fe80::1']],
+        ['v6 loopback', ['::1/128', '::/0'], ['::1']],
+        ['metadata written as v4-mapped v6', ['::/0', '0.0.0.0/0'], ['::ffff:169.254.169.254']],
+    ])('%s is refused even when the allowlist lists it, and nothing is sent', async (_label, allowlist, addresses) => {
+        const fakes = selfHostedAt(PRIVATE_HOST);
+        const result = await readSelfHosted(fakes, PRIVATE_HOST, allowlist, addresses);
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNREACHABLE', rows: 0 });
+        expect(fakes.log).toHaveLength(0);
+    });
+
+    it('a host that resolves outside the allowlist at use time sends no request and no key', async () => {
+        const fakes = selfHostedAt(PRIVATE_HOST);
+        const sent: (string | null)[] = [];
+        const inner = fakes.fetchImpl;
+        const spy: typeof inner = async (url, init) => {
+            sent.push(new Headers(init.headers).get('x-api-key'));
+            return inner(url, init);
+        };
+        const wire = createSourceWire({ fetchImpl: spy, deadline: ASOF.getTime() + 60_000, now: () => ASOF.getTime() });
+        const result = await langSmithSource({
+            endpoint: { selfHosted: PRIVATE_HOST, egressPrivateCidrAllowlist: ['10.20.0.0/16'] },
+            apiKey: LANGSMITH_API_KEY_VALUE,
+            workspaceId: null,
+            windowDays: 7,
+            readDeployments: true,
+            // Inside the range when the file was written; outside it tonight.
+            resolveHost: async () => ['10.99.0.3'],
+        }).read({ asOf: ASOF, ...wire });
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNREACHABLE', rows: 0 });
+        expect(sent).toEqual([]);
+        expect(fakes.log).toHaveLength(0);
+    });
+
+    it('one address outside the allowlist among allowed ones is enough to refuse', async () => {
+        const fakes = selfHostedAt(PRIVATE_HOST);
+        const result = await readSelfHosted(fakes, PRIVATE_HOST, ['10.20.0.0/16'], ['10.20.4.7', '192.168.1.9']);
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNREACHABLE' });
+        expect(fakes.log).toHaveLength(0);
+    });
+
+    it('the configuration accepts a private host inside an allowed range, and refuses it without one', () => {
+        const allow = parsePrivateCidrAllowlist(['10.20.0.0/16', 'fd00::/8']) ?? [];
+        expect(customerOriginProblem('https://10.20.0.5', allow)).toBeNull();
+        expect(customerOriginProblem('https://10.20.0.5')).not.toBeNull();
+        expect(customerOriginProblem('https://[fd00::5]', allow)).toBeNull();
+        expect(customerOriginProblem('https://10.21.0.5', allow)).not.toBeNull();
+        // With an allowlist the question is the address, so an internal NAME is accepted.
+        expect(customerOriginProblem(PRIVATE_HOST, allow)).toBeNull();
+        expect(customerOriginProblem(PRIVATE_HOST)).not.toBeNull();
+    });
+
+    it('the configuration refuses metadata, loopback and the blocked names even when the allowlist covers them', () => {
+        const everything = parsePrivateCidrAllowlist(['0.0.0.0/0', '::/0', '169.254.0.0/16', '127.0.0.0/8']) ?? [];
+        expect(everything).toHaveLength(4);
+        for (const origin of ['https://169.254.169.254', 'https://127.0.0.1', 'https://[::1]', 'https://[fe80::1]', 'https://localhost', 'https://metadata.google.internal']) {
+            expect([origin, customerOriginProblem(origin, everything)]).toEqual([origin, expect.any(String)]);
+        }
+    });
+
+    it('agrees with the application on which addresses no allowlist may admit', () => {
+        const table = [
+            '127.0.0.1', '127.255.255.254', '0.0.0.0', '169.254.169.254', '169.254.0.1', '::1', '::', 'fe80::1',
+            '::ffff:169.254.169.254', '::ffff:127.0.0.1', '10.0.0.1', '192.168.1.1', '172.16.0.1', 'fd00::1', '8.8.8.8',
+        ];
+        for (const address of table) {
+            expect([address, isNeverAllowlistable(address)]).toEqual([address, appIsNeverAllowlistable(address)]);
+        }
+        expect(addressReachable('203.0.113.10', [])).toBe(true);
+        expect(addressReachable('10.0.0.1', [])).toBe(false);
+    });
+
+    it('through the configuration: the allowlist is parsed, refused when it is not CIDRs, and used by the scan', async () => {
+        const config = (endpoint: Record<string, unknown>) => ({
+            estate: 'acme-agents',
+            scanner: { agentId: 'agt_scanner', signingKeyEnv: 'SCANNER_SIGNING_KEY' },
+            inflect: { baseUrl: INGEST, tenantSlug: 'acme', apiKeyEnv: 'INFLECT_INGEST_KEY' },
+            schedule: { everyHours: 24 },
+            sources: [{ kind: 'runtime', product: 'langsmith', apiKeyEnv: 'LANGSMITH_API_KEY', endpoint }],
+        });
+        expect(() => parseScannerConfig(config({ selfHosted: PRIVATE_HOST, egressPrivateCidrAllowlist: ['10.20.0.0'] }))).toThrow(ConfigError);
+        expect(() => parseScannerConfig(config({ selfHosted: 'https://10.20.0.5' }))).toThrow(ConfigError);
+        expect(() => parseScannerConfig(config({ selfHosted: 'https://169.254.169.254', egressPrivateCidrAllowlist: ['0.0.0.0/0'] }))).toThrow(ConfigError);
+        const parsed = parseScannerConfig(config({ selfHosted: PRIVATE_HOST, egressPrivateCidrAllowlist: ['10.20.0.0/16'] }));
+
+        const { privateKey } = generateKeyPairSync('ed25519');
+        const fakes = selfHostedAt(PRIVATE_HOST);
+        const { body } = await runScan({
+            config: parsed,
+            env: {
+                SCANNER_SIGNING_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+                LANGSMITH_API_KEY: LANGSMITH_API_KEY_VALUE,
+            },
+            log: jsonLineLog(() => undefined),
+            fetchImpl: fakes.fetchImpl,
+            resolveHost: async () => ['10.20.4.7'],
+            now: () => ASOF.getTime(),
+        });
+        expect(body.population.sources).toEqual([{ kind: 'runtime', status: 'COMPLETE', rows: 4 }]);
+        expect(fakes.log.map((r) => r.path)).toEqual(['/api/v1/sessions']);
+    });
+});
+
+describe('8. deployments are opt-in', () => {
+    function scanWith(readDeployments: boolean | undefined) {
+        const { privateKey } = generateKeyPairSync('ed25519');
+        const fakes = createSourceFakes();
+        const config = parseScannerConfig({
+            estate: 'acme-agents',
+            scanner: { agentId: 'agt_scanner', signingKeyEnv: 'SCANNER_SIGNING_KEY' },
+            inflect: { baseUrl: INGEST, tenantSlug: 'acme', apiKeyEnv: 'INFLECT_INGEST_KEY' },
+            schedule: { everyHours: 24 },
+            sources: [
+                {
+                    kind: 'runtime',
+                    product: 'langsmith',
+                    endpoint: { cloud: 'us' },
+                    apiKeyEnv: 'LANGSMITH_API_KEY',
+                    ...(readDeployments === undefined ? {} : { readDeployments }),
+                },
+            ],
+        });
+        return runScan({
+            config,
+            env: {
+                SCANNER_SIGNING_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+                LANGSMITH_API_KEY: LANGSMITH_API_KEY_VALUE,
+            },
+            log: jsonLineLog(() => undefined),
+            fetchImpl: fakes.fetchImpl,
+            now: () => ASOF.getTime(),
+        }).then(({ raw, body }) => ({ raw, body, fakes }));
+    }
+
+    it('the default configuration issues no deployments request: projects only', async () => {
+        const { raw, body, fakes } = await scanWith(undefined);
+        expect(fakes.log.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/sessions']);
+        expect(body.population.sources).toEqual([{ kind: 'runtime', status: 'COMPLETE', rows: 4 }]);
+        expect(body.agents.map((a) => a.discoveredId)).toEqual([
+            `langsmith:project:${LS.projectSupport}`,
+            `langsmith:project:${LS.projectResearch}`,
+        ]);
+        // Nothing of the secrets-bearing listing was even received.
+        expect(raw).not.toContain(LANGSMITH_MARKERS.deploymentSecretValue);
+    });
+
+    it('an estate that opts in lists its deployments, and their projects are no longer agents of their own', async () => {
+        const { body, fakes } = await scanWith(true);
+        expect(fakes.log.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /v2/deployments', 'GET /api/v1/sessions']);
+        expect(body.agents.map((a) => a.discoveredId)).toEqual([
+            `langsmith:deployment:${LS.deploymentSupport}`,
+            `langsmith:deployment:${LS.deploymentIdle}`,
+            `langsmith:project:${LS.projectResearch}`,
+        ]);
+    });
+
+    it('opting out explicitly is the default', async () => {
+        const { fakes } = await scanWith(false);
+        expect(fakes.log.some((r) => r.path.includes('deployments'))).toBe(false);
+    });
+});
+
 describe('7. the configuration, and the report merge', () => {
     const base = (source: Record<string, unknown>) => ({
         estate: 'acme-agents',
@@ -576,7 +776,7 @@ describe('7. the configuration, and the report merge', () => {
     it('names the key by environment variable, and applies the window and deployment defaults', () => {
         const config = parseScannerConfig(base({ endpoint: { cloud: 'eu' } }));
         expect(credentialEnvNames(config)).toEqual(['SCANNER_SIGNING_KEY', 'INFLECT_INGEST_KEY', 'LANGSMITH_API_KEY']);
-        expect(config.sources[0]).toMatchObject({ kind: 'runtime', windowDays: 7, readDeployments: true });
+        expect(config.sources[0]).toMatchObject({ kind: 'runtime', windowDays: 7, readDeployments: false });
         expect(parseScannerConfig(base({ endpoint: { selfHosted: LANGSMITH_SELF_HOSTED } })).sources[0]).toMatchObject({
             endpoint: { selfHosted: LANGSMITH_SELF_HOSTED },
         });

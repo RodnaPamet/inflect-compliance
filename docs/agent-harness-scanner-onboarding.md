@@ -43,17 +43,31 @@ credential is supplied through an environment variable that the configuration
 names; none is ever written in the configuration file.
 
 **LangSmith.** Name the workspace to read with `workspaceId` (sent as
-`X-Tenant-Id`) unless the key is scoped to one workspace. A self-hosted
-LangSmith is configured by its origin (`"endpoint": { "selfHosted":
-"https://…" }`) and must be a bare https origin whose name resolves only to
-public addresses: the scanner checks it when the file is read, resolves it again
-before every request, and does not send the key to a private, loopback,
-link-local or metadata address. A self-hosted LangSmith that runs no deployment
-control plane is configured with `"readDeployments": false`. The scanner sends
+`X-Tenant-Id`) unless the key is scoped to one workspace. The scanner sends
 LangSmith GET requests only, and the Viewer role is what keeps the key read-only
 on LangSmith's side; where the workspace cannot assign a key that role, the key
 carries the rights of whoever issued it and only the scanner's GET-only wire
 keeps the read read-only.
+
+- **Deployments are opt-in.** By default the scanner reads tracing projects only.
+  LangSmith's deployments listing carries each deployment's secrets, names and
+  values, so the scanner requests it only for an estate whose configuration sets
+  `"readDeployments": true`. It then keeps each deployment's id and tracing
+  project, and drops the rest with the page. Leave it off for a self-hosted
+  LangSmith that runs no deployment control plane.
+- **A self-hosted LangSmith** is configured by its origin (`"endpoint":
+  { "selfHosted": "https://…" }`) and must be a bare https origin. The scanner
+  checks it when the file is read, resolves it again before every request, and
+  does not send the key to a private, loopback, link-local or metadata address.
+- **A self-hosted LangSmith on the estate's own network** lists the private
+  ranges its host may resolve into, beside its origin:
+  `"egressPrivateCidrAllowlist": ["10.20.0.0/16"]`. This mirrors the
+  application's self-hosted egress allowlist (`EGRESS_PRIVATE_CIDR_ALLOWLIST`).
+  Metadata, loopback and link-local (`169.254.0.0/16`, `127.0.0.0/8`,
+  `0.0.0.0/8`, `fe80::/10`, `::1`, `::`) stay refused even when listed. Every
+  resolved address is still checked before every request, so a name that
+  resolves outside the listed ranges sends nothing. With an allowlist, an
+  internal name such as `langsmith.corp.internal` is accepted.
 
 ## 3. Labelling the estate's principals
 
@@ -80,10 +94,11 @@ it, so the credential lands on the same agent:
 
 **LangSmith reads no label.** Its agents are identified by LangSmith's own ids,
 and LangSmith records no owner for a project or a deployment, so each is reported
-unowned. Every deployment is reported. A tracing project that no deployment
-writes to is reported when it recorded a tool call in the window (`windowDays`,
-7 by default, at most 30); one that only called a model is counted and reported
-as nothing. Each agent's tools are the tool names its project's calls carry,
+unowned. A tracing project is reported when it recorded a tool call in the
+window (`windowDays`, 7 by default, at most 30); one that only called a model is
+counted and reported as nothing. With `readDeployments`, every deployment is
+reported as well, and its tracing project is reported as the deployment rather
+than as a project of its own. Each agent's tools are the tool names its project's calls carry,
 summarised over the window, and nothing of any run is read. LangSmith records no
 tool definition, pin or read-only hint, and the contract counts an undeclared
 hint as a write, so every LangSmith agent that called a tool raises
@@ -110,6 +125,21 @@ example. Set `schedule.everyHours` to the cadence declared on the estate in
 Inflect. Check the report with `scan --dry-run` first, then run `schedule`,
 which scans at once and then every `everyHours`, anchored to each run's start,
 and carries on after a failed run.
+
+**Before the first estate scans a real LangSmith workspace** (owner decision,
+2026-10-19), run one `scan --dry-run` against it and read the `runtime` entry
+of `population.sources`. The paths and query parameters the source uses are in
+LangSmith's published OpenAPI documents, but the members of one run facet
+(`key`, `value`, `n`) are not, and neither is whether the tool-run filter
+applies to the facets. The source fails closed on both, so the outcome answers
+the question:
+
+- **`COMPLETE`** with the agents and tool names the workspace is known to have:
+  the assumption holds, and the estate may be scheduled.
+- **`INCOMPLETE` `PAGINATION_TORN`** while the API answered (no `AUTH_FAILED`,
+  `UNREACHABLE` or `RATE_LIMITED`): the response did not read as assumed. Do not
+  schedule the estate. The shape is corrected in one place,
+  `packages/agent-harness-scanner/src/sources/langsmith.ts`.
 
 ## 5. Schedule health
 

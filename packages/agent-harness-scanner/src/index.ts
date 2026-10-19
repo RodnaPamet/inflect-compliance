@@ -3,7 +3,14 @@
  * See README.md for what it reads, what it may import, and how to run it.
  */
 export { parseScannerConfig, ScannerConfigSchema, ConfigError, credentialEnvNames, sourceCredentialEnv, type ScannerConfig } from './config';
-export { assertResolvesPublic, customerOriginProblem, type ResolveHost } from './customer-host';
+export {
+    addressReachable,
+    assertResolvesReachable,
+    customerOriginProblem,
+    parsePrivateCidrAllowlist,
+    type PrivateCidrAllowlist,
+    type ResolveHost,
+} from './customer-host';
 export { createSourceWire, MAX_RESPONSE_BYTES, MAX_SOURCE_BYTES, type FetchLike, type ReadOnlyHttp, type TokenExchange } from './http';
 export { jsonLineLog, type ScannerLog } from './log';
 export { postReport, ingestUrl, type PostResult } from './post';
