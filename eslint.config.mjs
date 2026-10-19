@@ -271,6 +271,40 @@ const config = [
         },
     },
     {
+        // ── The harness scanner package's boundary (#3678) ──
+        //
+        // `packages/agent-harness-scanner` runs in a CLIENT's estate, with that
+        // estate's credentials. It shares the wire contract with the ingest —
+        // it must, so the report it signs is checked by the schemas and signed
+        // through the function the ingest verifies with — and nothing else of
+        // the application: no database, no tenant, no Next.js, no usecase. A
+        // scanner that could import `@/lib/prisma` is one refactor from a
+        // scanner that writes somewhere it should only read.
+        //
+        // A regex rather than a `group` with negations: gitignore semantics
+        // cannot re-include a file under an excluded parent, so `@/*` with
+        // `!@/lib/agentic/harness-contract` would refuse the contract too.
+        files: ['packages/agent-harness-scanner/src/**/*.ts'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            regex: '^@/(?!lib/agentic/harness-(contract|findings|ladder)$|lib/canonical-json$)',
+                            message:
+                                'The harness scanner imports the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json) and nothing else of the application. See packages/agent-harness-scanner/README.md.',
+                        },
+                        {
+                            group: ['@prisma/*', 'next', 'next/*', '@inflect/ui', '@inflect/ui/*'],
+                            message: 'The harness scanner runs in a client estate: no database client, no Next.js, no UI.',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    {
         files: ['src/lib/security/**/*', 'src/middleware.ts'],
         rules: {
             '@typescript-eslint/no-explicit-any': 'error',

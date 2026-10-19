@@ -691,6 +691,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listAuditWorkpapers filters by tenantId (+ optional procedureId/periodLabel or auditorAgentId equality) and orders by createdAt desc — covered by @@index([tenantId, procedureId, periodLabel]), @@index([tenantId, auditorAgentId]) and @@index([tenantId, createdAt]); the binding-sample read is (tenantId, procedureId, periodLabel) ordered by createdAt, the first composite\'s exact prefix; bounded take ≤200.',
     // A2A peers (#3673) — listPeerAgents filters by tenantId alone and orders
     // by createdAt; a tenant registers a handful of partners.
+    // Client estates (#3678) — getHarnessEstateHealth lists a tenant's estates
+    // by tenantId ordered by name; a portfolio is a handful.
+    AgentHarnessEstate:
+        'getHarnessEstateHealth filters by tenantId alone and orders by (name, id) — exactly the tenantId-leading @@unique([tenantId, name]); every other read is by (id, tenantId) or (tenantId, scannerAgentId | name), both unique keys; bounded take ≤51.',
     PeerAgent:
         'listPeerAgents filters by tenantId only and every other read is by (id, tenantId) or the tenantId-leading @@unique([tenantId, cardUrl]) — a tenant registers a handful of peers, covered by @@index([tenantId, status]); bounded take ≤200.',
     // Tenant-authored skills (#3680) — a workspace authors a handful of skills.

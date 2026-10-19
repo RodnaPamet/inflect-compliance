@@ -9105,6 +9105,38 @@
       }
     },
     "harness": {
+      "estates": {
+        "heading": "Estate schedule health",
+        "intro": "Each estate is a client environment one scanner covers, scanned at its declared cadence. It is fresh while its last complete scan — every declared source read in full, and agents found — is younger than one and a half cadences.",
+        "none": "No estate is declared, so no scan is held to a schedule. Declare each estate a scanner covers, with an owner for every source.",
+        "status": {
+          "FRESH": "Fresh",
+          "STALE": "Stale"
+        },
+        "cadence": "Every {cadence} h · stale after {stale} h",
+        "scanner": "Scanner: {name}",
+        "scannerRetired": "The scanner is retired or removed from the register. Its keys verify nothing, so this estate cannot be scanned until a live scanner covers it.",
+        "lastComplete": "Last complete scan: {at} ({scanRef})",
+        "lastCompleteMissing": "No complete scan among the newest {window} scans read.",
+        "latest": "Latest scan: {at} · {completeness}",
+        "latestMissing": "No scan from this estate's scanner among the newest {window} scans read.",
+        "sourceOwner": "Owner: {name}",
+        "ownerUnnamed": "an unnamed member",
+        "ownerDeparted": "no longer an active member",
+        "sourceLastComplete": "Last read in full {at}",
+        "sourceNeverComplete": "Not read in full in any scan read",
+        "sourceState": {
+          "COMPLETE": "complete",
+          "EMPTY": "read in full, found nothing",
+          "INCOMPLETE": "incomplete: {reason}",
+          "NOT_REPORTED": "not reported by the latest scan",
+          "UNREADABLE": "stored sources unreadable"
+        },
+        "latestState": "Latest: {state}",
+        "undeclared": "The latest scan also read {kinds}, which this estate does not declare: no one owns those sources here.",
+        "windowTruncated": "Only the newest {window} scans were read. An estate with no complete scan among them may have an older one, and is shown as stale either way.",
+        "estatesTruncated": "More estates are declared than this card shows."
+      },
       "reportOnly": "Harness levels are reported, never enforced: an agent below its bar raises a finding and is never stopped by it.",
       "noScansTitle": "No harness scan has been received",
       "noScansBody": "Nothing has looked for agents outside the register, so this tab cannot say how many there are. An empty result is a finding, not a clean bill.",

@@ -20,6 +20,9 @@
         "docs/agent-harness-contract.md": {
             "class": "authoritative"
         },
+        "docs/agent-harness-scanner-onboarding.md": {
+            "class": "authoritative"
+        },
         "docs/agent-skill-standard.md": {
             "class": "authoritative"
         },

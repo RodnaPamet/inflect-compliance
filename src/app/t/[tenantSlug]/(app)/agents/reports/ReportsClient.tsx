@@ -14,6 +14,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { HarnessMatrixView, HarnessScannerKeysView } from '@/lib/agentic/harness-read-model';
+import type { HarnessEstateHealthView } from '@/lib/agentic/harness-estate-health';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { ExportPackButton } from './ExportPackButton';
@@ -163,6 +164,8 @@ export type HarnessTabProps = ReportsCommonProps & {
      * is false: the Register action is hidden unless the server said yes.
      */
     canRegisterShadow?: boolean;
+    /** Per-estate schedule health (#3678), read server-side by `getHarnessEstateHealth`. */
+    estateHealth: HarnessEstateHealthView;
 };
 
 export function ReportsClient(props: PackTabProps | HarnessTabProps) {
@@ -230,6 +233,7 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps) {
                 <HarnessTab
                     view={props.harness}
                     scannerKeys={props.scannerKeys}
+                    estateHealth={props.estateHealth}
                     canRegisterShadow={props.canRegisterShadow === true}
                 />
             ) : (

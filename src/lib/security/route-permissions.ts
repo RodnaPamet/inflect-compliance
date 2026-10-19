@@ -547,6 +547,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'register key; submitting one is the ingest key, above.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/harness-estates$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'Read the client estates and their schedule health (#3678): the last ' +
+            'complete scan per estate and per source. Built from the scans, so ' +
+            'the key their list takes. DECLARING an estate, changing it or ' +
+            'removing it falls to the register key below: which scanner covers ' +
+            'which estate is the register\'s decision, never the scanner\'s.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/agents\\/reports$`),
         methods: ['GET'],
         permission: ['admin.agent_registry_view', 'admin.agent_registry'],
