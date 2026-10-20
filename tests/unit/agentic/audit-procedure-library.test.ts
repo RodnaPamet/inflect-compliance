@@ -47,13 +47,13 @@ describe('library v1', () => {
         }
     });
 
-    it('is PROPOSED, with internal audit, PwC and every PwC reference still open', () => {
+    it('is PROPOSED, with internal audit, the provider and every provider reference still open', () => {
         expect(LIBRARY_V1_STATUS).toEqual({
             catalogueVersion: 1,
             status: 'PROPOSED',
             internalAuditApproval: 'OPEN',
-            pwcAgreement: 'OPEN',
-            pwcMethodologyReference: 'OPEN',
+            providerAgreement: 'OPEN',
+            providerMethodologyReference: 'OPEN',
             recordedOn: '#3663',
         });
     });
@@ -257,7 +257,7 @@ describe('an exception as a finding proposal', () => {
 
     it('never presents the library as approved, and never closes anything', () => {
         const text = String(item.description);
-        expect(text).toMatch(/proposed to internal audit and PwC/);
+        expect(text).toMatch(/proposed to internal audit and the managed-service provider/);
         expect(text).toMatch(/not an approved or agreed definition/);
         expect(text).toMatch(/the auditor closes and resolves nothing/);
     });

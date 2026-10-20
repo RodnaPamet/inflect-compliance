@@ -225,7 +225,7 @@ describe('deleteTenantUnderOrg', () => {
     beforeEach(installMocks);
 
     it('soft-deletes a tenant belonging to the org (sets deletedAt, no hard delete)', async () => {
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
 
         const res = await deleteTenantUnderOrg(ctx, 't-1');
 
@@ -239,7 +239,7 @@ describe('deleteTenantUnderOrg', () => {
         const upd = update.mock.calls[0][0];
         expect(upd.where).toEqual({ id: 't-1' });
         expect(upd.data.deletedAt).toBeInstanceOf(Date);
-        expect(res.tenant).toEqual({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        expect(res.tenant).toEqual({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
     });
 
     it('rejects (notFound) a tenant not in this org — never updates', async () => {
@@ -253,7 +253,7 @@ describe('deleteTenantUnderOrg', () => {
         // The gap #2747 names: `deletedAt` is a claim about every future
         // query remembering the filter. The grants themselves outlived the
         // tenant for the whole 90-day retention window — 113 of them.
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
 
         await deleteTenantUnderOrg(ctx, 't-1');
 
@@ -282,7 +282,7 @@ describe('deleteTenantUnderOrg', () => {
         // The file's own docstring promises the data is "retained for
         // compliance and a possible restore". A deleteMany would answer an
         // auditor's question with silence.
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
 
         await deleteTenantUnderOrg(ctx, 't-1');
 
@@ -303,7 +303,7 @@ describe('deleteTenantUnderOrg', () => {
         were still listed on 2026-10-04.
     */
     it('bumps sessionVersion for the members who still carry the tenant', async () => {
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
         await deleteTenantUnderOrg(ctx, 't-1');
 
         expect(userUpdateMany).toHaveBeenCalledTimes(1);
@@ -320,7 +320,7 @@ describe('deleteTenantUnderOrg', () => {
             removal — worse than the stale switcher it fixes, and it would
             read as an outage rather than a bug.
         */
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
         await deleteTenantUnderOrg(ctx, 't-1');
 
         const where = (userUpdateMany.mock.calls[0][0] as {
@@ -342,7 +342,7 @@ describe('deleteTenantUnderOrg', () => {
             fail for the reason it names. This replaces the `txnBatchSizes`
             count, which could only measure a `$transaction([...])` array.
         */
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
         await deleteTenantUnderOrg(ctx, 't-1');
 
         expect(transactions).toEqual([[
@@ -361,7 +361,7 @@ describe('deleteTenantUnderOrg', () => {
         // only a tenant already carrying `deletedAt`. Reverse these two and
         // every deletion aborts against a real database while this file's
         // mocks — which have no triggers — stay green.
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'acme-nis2' });
 
         await deleteTenantUnderOrg(ctx, 't-1');
 
@@ -393,7 +393,7 @@ describe('deleteTenantUnderOrg', () => {
 describe('the removal is written to the audit trail', () => {
     beforeEach(() => {
         installMocks();
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'PwC NIS2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'Acme NIS2' });
     });
 
     /**
@@ -436,9 +436,9 @@ describe('the removal is written to the audit trail', () => {
         expect(input.detailsJson).toMatchObject({
             category: 'entity_lifecycle',
             operation: 'soft_delete',
-            entityName: 'PwC NIS2',
+            entityName: 'Acme NIS2',
         });
-        expect(input.details).toContain('pwc-nis2');
+        expect(input.details).toContain('acme-nis2');
     });
 
     /**
@@ -487,7 +487,7 @@ describe('the removal is written to the audit trail', () => {
 describe('the removal is also recorded where it can still be read', () => {
     beforeEach(() => {
         installMocks();
-        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'PwC NIS2' });
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'acme-nis2', name: 'Acme NIS2' });
     });
 
     /**
@@ -518,7 +518,7 @@ describe('the removal is also recorded where it can still be read', () => {
             requestId: 'req-1',
         });
         expect(input.detailsJson).toMatchObject({
-            tenantId: 't-1', slug: 'pwc-nis2', name: 'PwC NIS2', revokedMemberships: 3,
+            tenantId: 't-1', slug: 'acme-nis2', name: 'Acme NIS2', revokedMemberships: 3,
         });
     });
 
@@ -552,7 +552,7 @@ describe('the removal is also recorded where it can still be read', () => {
         appendOrgAuditEntry.mockRejectedValueOnce(new Error('org chain locked') as never);
 
         await expect(deleteTenantUnderOrg(ctx, 't-1')).resolves.toMatchObject({
-            tenant: { id: 't-1', slug: 'pwc-nis2' },
+            tenant: { id: 't-1', slug: 'acme-nis2' },
         });
         // The durable half still happened — that is what makes failing open safe.
         expect(appendAuditEntryWithin).toHaveBeenCalledTimes(1);

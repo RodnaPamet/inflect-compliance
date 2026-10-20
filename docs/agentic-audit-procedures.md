@@ -8,14 +8,17 @@ tests, the raw rows its re-performance recomputes, what counts as an exception,
 and what makes it INCONCLUSIVE. This version proposes library v1 as procedures
 1 to 5. Procedures 6 to 8 are catalogued and are later.
 
-**Status: adopted for this repository; internal audit's approval and PwC's
-agreement are open.** The repository owner's merge of this file's pull request
-is the repository owner's sign-off, and it adopts catalogue version 1 for this
-repository. The merge does not supply the acts of external parties. Neither
-internal audit's approval nor PwC's agreement of version 1 is recorded on issue
-#3663, and each is recorded there when given. While both are open, library v1
-is proposed to internal audit and PwC, and no procedure here is a definition
-either of them has approved or agreed.
+**Status: adopted for this repository; internal audit's approval and the
+provider's agreement are open.** The provider is the managed-service provider
+whose IAM practice runs the use cases
+([`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)). The
+repository owner's merge of this file's pull request is the repository owner's
+sign-off, and it adopts catalogue version 1 for this repository. The merge does
+not supply the acts of external parties. Neither internal audit's approval nor
+the provider's agreement of version 1 is recorded on issue #3663, and each is
+recorded there when given. While both are open, library v1 is proposed to
+internal audit and the provider, and no procedure here is a definition either
+of them has approved or agreed.
 
 Procedures 1 to 5 run on `main` as handlers on the control-test runner, as the
 registered auditor agent (step `3c`, #3676;
@@ -68,14 +71,15 @@ sampling of the workpapers.
   merge of the pull request that adds or changes this file adopts that version
   for this repository, and auto-merge on green is the repository owner's
   standing authorisation for that merge (the repository owner's decision of
-  2026-10-17). Internal audit is to approve the catalogue and PwC is to agree
-  it, and the merge supplies neither: each is an act of its own, recorded on
+  2026-10-17). Internal audit is to approve the catalogue and the provider is
+  to agree it, and the merge supplies neither: each is an act of its own, recorded on
   the version's step issue (#3663 for version 1) when given. Neither is
   recorded for version 1, so both are open.
-- **The procedure text is Inflect-original.** PwC's methodology reference for
-  each procedure is recorded by name only, and no PwC text is reproduced. The
-  repository holds no PwC methodology reference names, so every reference is
-  open: PwC supplies it, and it is recorded on issue #3663 when given. The
+- **The procedure text is Inflect-original.** The provider's methodology
+  reference for each procedure is recorded by name only, and none of the
+  provider's text is reproduced. The repository holds no provider methodology
+  reference names, so every reference is open: the provider supplies it, and it
+  is recorded on issue #3663 when given. The
   reference column below states that for each procedure.
 - **Control identifiers are identifiers only.** No ISO/IEC or SOC 2 control
   text is reproduced here. Each identifier is one this repository's framework
@@ -95,22 +99,22 @@ substitution for the legacy recertification evidence.
 
 A change to a procedure is a pull request to this file. It raises the catalogue
 version, the repository owner's merge of that pull request adopts the new
-version, and internal audit's approval and PwC's agreement of it are recorded on
+version, and internal audit's approval and the provider's agreement of it are recorded on
 its step issue when given, as for the first version. A procedure id is never
 renamed and never reused.
 
 ## The library
 
-| # | Procedure id | Procedure | Library | Control identifiers | PwC methodology reference |
+| # | Procedure id | Procedure | Library | Control identifiers | Provider methodology reference |
 |---|---|---|---|---|---|
-| 1 | `iam.leaver_timeliness` | Leaver timeliness | **v1** | ISO/IEC 27001:2022 A.5.16, A.5.18, A.6.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) | Open: PwC supplies it, recorded on #3663 when given |
-| 2 | `iam.recertification_completeness` | Recertification completeness | **v1** | ISO/IEC 27001:2022 A.5.18 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) | Open: PwC supplies it, recorded on #3663 when given |
-| 3 | `iam.time_bounded_access_expiry` | Time-bounded access expiry | **v1** | ISO/IEC 27001:2022 A.5.15, A.5.18 · SOC 2 CC6.1 · OWASP ASI03 | Open: PwC supplies it, recorded on #3663 when given |
-| 4 | `iam.privileged_access` | Privileged access | **v1** | ISO/IEC 27001:2022 A.5.18, A.8.2, A.8.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i), Art. 21(2)(j) | Open: PwC supplies it, recorded on #3663 when given |
-| 5 | `agent.authority_conformance` | Agent authority conformance | **v1** | OWASP ASI02, ASI03 · ISO/IEC 27001:2022 A.5.15, A.8.2 · ISO/IEC 42001 A.9.4 · SOC 2 CC6.1 | Open: PwC supplies it, recorded on #3663 when given |
-| 6 | `agent.stop_control` | Stop control | later | OWASP ASI08, ASI10 · ISO/IEC 27001:2022 A.5.26 · ISO/IEC 42001 A.6.2.6 | Open: PwC supplies it, recorded on #3663 when given |
-| 7 | `agent.approval_quality` | Approval quality | later | OWASP ASI09 · EU AI Act Art.14 · ISO/IEC 27001:2022 A.5.3 · ISO/IEC 42001 A.9.2 | Open: PwC supplies it, recorded on #3663 when given |
-| 8 | `assurance.evidence_sufficiency` | Evidence sufficiency | later | ISO/IEC 27001:2022 A.5.35, A.5.36 · ISO/IEC 42001 7.5, 9.2 · SOC 2 CC4.1 | Open: PwC supplies it, recorded on #3663 when given |
+| 1 | `iam.leaver_timeliness` | Leaver timeliness | **v1** | ISO/IEC 27001:2022 A.5.16, A.5.18, A.6.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) | Open: the provider supplies it, recorded on #3663 when given |
+| 2 | `iam.recertification_completeness` | Recertification completeness | **v1** | ISO/IEC 27001:2022 A.5.18 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) | Open: the provider supplies it, recorded on #3663 when given |
+| 3 | `iam.time_bounded_access_expiry` | Time-bounded access expiry | **v1** | ISO/IEC 27001:2022 A.5.15, A.5.18 · SOC 2 CC6.1 · OWASP ASI03 | Open: the provider supplies it, recorded on #3663 when given |
+| 4 | `iam.privileged_access` | Privileged access | **v1** | ISO/IEC 27001:2022 A.5.18, A.8.2, A.8.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i), Art. 21(2)(j) | Open: the provider supplies it, recorded on #3663 when given |
+| 5 | `agent.authority_conformance` | Agent authority conformance | **v1** | OWASP ASI02, ASI03 · ISO/IEC 27001:2022 A.5.15, A.8.2 · ISO/IEC 42001 A.9.4 · SOC 2 CC6.1 | Open: the provider supplies it, recorded on #3663 when given |
+| 6 | `agent.stop_control` | Stop control | later | OWASP ASI08, ASI10 · ISO/IEC 27001:2022 A.5.26 · ISO/IEC 42001 A.6.2.6 | Open: the provider supplies it, recorded on #3663 when given |
+| 7 | `agent.approval_quality` | Approval quality | later | OWASP ASI09 · EU AI Act Art.14 · ISO/IEC 27001:2022 A.5.3 · ISO/IEC 42001 A.9.2 | Open: the provider supplies it, recorded on #3663 when given |
+| 8 | `assurance.evidence_sufficiency` | Evidence sufficiency | later | ISO/IEC 27001:2022 A.5.35, A.5.36 · ISO/IEC 42001 7.5, 9.2 · SOC 2 CC4.1 | Open: the provider supplies it, recorded on #3663 when given |
 
 This version proposes library v1 as exactly procedures 1 to 5: the five in the
 scope of step `3c` (#3676), which runs them on the existing control-test
@@ -316,7 +320,7 @@ window?
 | | |
 |---|---|
 | Control identifiers | ISO/IEC 27001:2022 A.5.16, A.5.18, A.6.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar month · `OVER_WINDOW` |
 | Unit | one `Employee` row |
 | Parameter | `leaverWindowHours`: the longest acceptable time from `Employee.endDate` to the account being disabled. Set by the second line and recorded on the workpaper |
@@ -412,7 +416,7 @@ complete, closed campaign whose revocations took effect?
 | | |
 |---|---|
 | Control identifiers | ISO/IEC 27001:2022 A.5.18 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar quarter · units `AS_OF_GENERATION`, campaigns `OVER_WINDOW` |
 | Unit | one review population |
 | Parameter | `remediationWindowDays`: how long after a campaign closes a revoked account may stay active. Set by the second line and recorded on the workpaper |
@@ -510,7 +514,7 @@ Did every time-bounded grant Inflect made end when it said it would?
 | | |
 |---|---|
 | Control identifiers | ISO/IEC 27001:2022 A.5.15, A.5.18 · SOC 2 CC6.1 · OWASP ASI03 |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar month · `OVER_WINDOW` |
 | Unit | one `ExternalWriteJournal` row |
 | Settle margin | 24 hours, fixed by this catalogue: the procedure runs no earlier than 24 hours after the period ends, so a grant ending in the period's last minute has been through the expiry sweep |
@@ -588,7 +592,7 @@ within the interval?
 | | |
 |---|---|
 | Control identifiers | ISO/IEC 27001:2022 A.5.18, A.8.2, A.8.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i), Art. 21(2)(j) |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar quarter · `AS_OF_GENERATION` (the mirror holds current state) |
 | Unit | one `ConnectedIdentityAccount` row, or one `TenantMembership` row |
 
@@ -676,7 +680,7 @@ time: a grant, a policy card that permits the tool, and an active registration?
 | | |
 |---|---|
 | Control identifiers | OWASP ASI02, ASI03 · ISO/IEC 27001:2022 A.5.15, A.8.2 · ISO/IEC 42001 A.9.4 · SOC 2 CC6.1 |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar month · `OVER_WINDOW` |
 | Unit | one `AgentBehaviourWindow` row: one agent, one hour, the authorised calls in it |
 
@@ -778,7 +782,7 @@ value.
 | | |
 |---|---|
 | Control identifiers | OWASP ASI08, ASI10 · ISO/IEC 27001:2022 A.5.26 · ISO/IEC 42001 A.6.2.6 |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar month · `OVER_WINDOW` |
 | Unit | one `AgentKillSwitchDrill` row, or one `AgentKillSwitch` row |
 | Parameter | `killGraceSeconds`: how long after `engagedAt` a call authorised before the engagement may still complete. Set by the second line and recorded on the workpaper |
@@ -851,7 +855,7 @@ them, and it is more useful once library v1 has run.
 | | |
 |---|---|
 | Control identifiers | OWASP ASI09 · EU AI Act Art.14 · ISO/IEC 27001:2022 A.5.3 · ISO/IEC 42001 A.9.2 |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar month · `OVER_WINDOW` |
 | Unit | one `AgentProposal` row |
 
@@ -918,7 +922,7 @@ alone.
 | | |
 |---|---|
 | Control identifiers | ISO/IEC 27001:2022 A.5.35, A.5.36 · ISO/IEC 42001 7.5, 9.2 · SOC 2 CC4.1 |
-| PwC methodology reference | Open: PwC supplies it, recorded on #3663 when given |
+| Provider methodology reference | Open: the provider supplies it, recorded on #3663 when given |
 | Period and moment | UTC calendar quarter · `OVER_WINDOW` |
 | Unit | one `EvidenceControlLink` row |
 
@@ -985,8 +989,8 @@ names the step that builds it, or says that no step does.
 |---|---|---|
 | No handler runs any procedure | 6 to 8 | no step; adding one is a change to this catalogue and a new step issue |
 | No agent subjects in access reviews: `AccessReviewScope` has no agent value | procedure 2 | step `3a` (#3674) |
-| Internal audit's approval and PwC's agreement of version 1 are open; the repository owner's merge adopts the version and supplies neither | all | internal audit and PwC, each recorded on issue #3663 when given |
-| PwC's methodology reference for each procedure is open | all | PwC, recorded on issue #3663 when given |
+| Internal audit's approval and the provider's agreement of version 1 are open; the repository owner's merge adopts the version and supplies neither | all | internal audit and the provider, each recorded on issue #3663 when given |
+| The provider's methodology reference for each procedure is open | all | the provider, recorded on issue #3663 when given |
 | The parameters `leaverWindowHours` and `remediationWindowDays` are agreed 2026-10-19 for the pilot: 24 h and 14 days, entered on each plan (`automationConfig.parameters`, written by `scripts/audit-pilot-setup.ts`); the library holds no default, so a value beyond the pilot is the second line's to enter on its plan. `killGraceSeconds` has no stored home | 1, 2, 6 | the second line sets the values beyond the pilot; procedure 6 has no step |
 | An account disabled outside Inflect carries no disable time, so L2 is UNTESTABLE for it | procedure 1 | no step; named in the step `3c` pull request (#3676) |
 | `src/app-layer/usecases/identity-sync.ts` stores an undetermined `isAdmin` or `mfaEnrolled` as `false`, including every Okta account past the enrichment cap | procedure 4 | no step; named in the step `3c` pull request (#3676) |

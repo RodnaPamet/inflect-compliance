@@ -350,7 +350,7 @@ function refusedResult(
         evidenceContent: [
             `Audit procedure: ${procedure ?? 'unconfigured'}`,
             `Library v1 status: ${LIBRARY_V1_STATUS.status} (internal audit approval ${LIBRARY_V1_STATUS.internalAuditApproval}, ` +
-                `PwC agreement ${LIBRARY_V1_STATUS.pwcAgreement}; ${LIBRARY_V1_STATUS.recordedOn})`,
+                `provider agreement ${LIBRARY_V1_STATUS.providerAgreement}; ${LIBRARY_V1_STATUS.recordedOn})`,
             '',
             'Verdict: INCONCLUSIVE',
             `Basis: ${reason}`,
@@ -600,8 +600,8 @@ function renderWorkpaperEvidence(input: {
         def.title,
         `Control identifiers: ${def.controls.join(', ')}`,
         `Library v1 status: ${LIBRARY_V1_STATUS.status} — internal audit approval ${LIBRARY_V1_STATUS.internalAuditApproval}, ` +
-            `PwC agreement ${LIBRARY_V1_STATUS.pwcAgreement}, PwC methodology reference ` +
-            `${LIBRARY_V1_STATUS.pwcMethodologyReference} (${LIBRARY_V1_STATUS.recordedOn})`,
+            `provider agreement ${LIBRARY_V1_STATUS.providerAgreement}, provider methodology reference ` +
+            `${LIBRARY_V1_STATUS.providerMethodologyReference} (${LIBRARY_V1_STATUS.recordedOn})`,
         `Auditor agent: ${input.auditorAgentId}`,
         '',
         `Period: ${input.periodLabel}`,

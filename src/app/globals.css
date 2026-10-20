@@ -173,7 +173,7 @@ body {
  * drawn inward. Paired with an "elegant" border (base border tinted with a
  * touch of brand) and a top inner-highlight hairline (glass edge) over the
  * drop shadow. Resolves per-theme via the --bg-default / --brand-default /
- * --border-default tokens, so one class serves METRO dark + PwC light.
+ * --border-default tokens, so one class serves METRO dark + the light theme.
  *
  * Layered in #3153. The rule sets background / border / box-shadow, so it was
  * eating any `bg-*`, `border-*` or `shadow-*` a call site passed. Measured: of

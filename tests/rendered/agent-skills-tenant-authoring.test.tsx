@@ -92,12 +92,12 @@ function repoSkill(over: Record<string, unknown> = {}) {
 function tenantSkill(over: Record<string, unknown> = {}) {
     return {
         id: 'skill-1',
-        name: 'pwc-joiner-review',
+        name: 'acme-joiner-review',
         inService: {
             versionId: 'ver-1',
             version: 1,
-            license: 'PwC proprietary',
-            sourceRef: 'PwC IAM methodology',
+            license: 'Acme Advisory proprietary',
+            sourceRef: 'Acme Advisory IAM methodology',
             description: 'Check a joiner request against the access policy.',
             workflowKeys: ['discovered-agent-review'],
             instructionBytes: 512,
@@ -117,8 +117,8 @@ function version(over: Record<string, unknown> = {}) {
         retiredReason: null,
         contentHash: HASH,
         workflowKeys: ['discovered-agent-review'],
-        license: 'PwC proprietary',
-        sourceRef: 'PwC IAM methodology',
+        license: 'Acme Advisory proprietary',
+        sourceRef: 'Acme Advisory IAM methodology',
         requiredInput: null,
         output: null,
         controls: null,
@@ -197,7 +197,7 @@ describe('repository skills remain read-only in the product', () => {
         // controls, so it is not passing on a panel that renders none at all.
         const tenant = screen.getByTestId('agent-skills-tenant');
         expect(within(tenant).getByTestId('tenant-skill-new')).toBeInTheDocument();
-        expect(within(tenant).getByTestId('tenant-skill-review-pwc-joiner-review')).toBeInTheDocument();
+        expect(within(tenant).getByTestId('tenant-skill-review-acme-joiner-review')).toBeInTheDocument();
     });
 });
 
@@ -206,8 +206,8 @@ describe('the workspace section', () => {
         serve(payload());
         const { container } = renderTab(false);
         const tenant = screen.getByTestId('agent-skills-tenant');
-        expect(within(tenant).getByText('pwc-joiner-review')).toBeInTheDocument();
-        expect(within(tenant).getByText('PwC proprietary')).toBeInTheDocument();
+        expect(within(tenant).getByText('acme-joiner-review')).toBeInTheDocument();
+        expect(within(tenant).getByText('Acme Advisory proprietary')).toBeInTheDocument();
         expect(within(tenant).getByText(copy('tenant.inService').replace('{version}', '1'))).toBeInTheDocument();
         expect(within(container).getByTestId('agent-skills-agent-1').querySelectorAll(CONTROLS)).toHaveLength(0);
     });
@@ -222,7 +222,7 @@ describe('the workspace section', () => {
             ],
         }));
         renderTab(true);
-        const refused = screen.getByTestId('tenant-skill-pwc-joiner-review-refused');
+        const refused = screen.getByTestId('tenant-skill-acme-joiner-review-refused');
         expect(refused.textContent).toContain('skill.reveal_context, inj.instruction_override.reveal_prompt');
         expect(screen.queryByText('Check a joiner request against the access policy.')).toBeNull();
     });
@@ -239,11 +239,11 @@ describe('review', () => {
     it('does not offer Approve to the version’s author, and says why', async () => {
         serve(payload(), {
             id: 'skill-1',
-            name: 'pwc-joiner-review',
+            name: 'acme-joiner-review',
             versions: [version({ author: { userId: 'u-me', label: 'Me', isViewer: true }, canApprove: false })],
         });
         renderTab(true);
-        fireEvent.click(screen.getByTestId('tenant-skill-review-pwc-joiner-review'));
+        fireEvent.click(screen.getByTestId('tenant-skill-review-acme-joiner-review'));
         await waitFor(() => expect(screen.getByTestId('tenant-skill-version-2')).toBeInTheDocument());
         expect(screen.queryByTestId('tenant-skill-approve-2')).toBeNull();
         expect(screen.getByTestId('tenant-skill-author-note-2')).toHaveTextContent(copy('sheet.authorCannotApprove'));
@@ -252,9 +252,9 @@ describe('review', () => {
     });
 
     it('approves with the content hash on screen', async () => {
-        serve(payload(), { id: 'skill-1', name: 'pwc-joiner-review', versions: [version()] });
+        serve(payload(), { id: 'skill-1', name: 'acme-joiner-review', versions: [version()] });
         renderTab(true);
-        fireEvent.click(screen.getByTestId('tenant-skill-review-pwc-joiner-review'));
+        fireEvent.click(screen.getByTestId('tenant-skill-review-acme-joiner-review'));
         await waitFor(() => expect(screen.getByTestId('tenant-skill-approve-2')).toBeInTheDocument());
         fireEvent.click(screen.getByTestId('tenant-skill-approve-2'));
         await waitFor(() => expect(global.fetch).toHaveBeenCalled());
@@ -266,7 +266,7 @@ describe('review', () => {
     it('withholds the text of a version the scan refuses, and offers it no approval', async () => {
         serve(payload(), {
             id: 'skill-1',
-            name: 'pwc-joiner-review',
+            name: 'acme-joiner-review',
             versions: [
                 version({
                     description: null,
@@ -279,7 +279,7 @@ describe('review', () => {
             ],
         });
         renderTab(true);
-        fireEvent.click(screen.getByTestId('tenant-skill-review-pwc-joiner-review'));
+        fireEvent.click(screen.getByTestId('tenant-skill-review-acme-joiner-review'));
         await waitFor(() => expect(screen.getByTestId('tenant-skill-version-2-refused')).toBeInTheDocument());
         expect(screen.getByTestId('tenant-skill-version-2-refused')).toHaveTextContent('skill.fetchable_url');
         expect(screen.queryByTestId('tenant-skill-version-2-instructions')).toBeNull();
@@ -294,10 +294,10 @@ describe('the two halves (#3778): authoring and review are separate keys', () =>
     const inReview = () => version();
 
     it('an author who cannot review gets New skill and the authoring acts, and no review act', async () => {
-        serve(payload(), { id: 'skill-1', name: 'pwc-joiner-review', versions: [draft(), { ...inReview(), id: 'ver-3', version: 3, canApprove: false }] });
+        serve(payload(), { id: 'skill-1', name: 'acme-joiner-review', versions: [draft(), { ...inReview(), id: 'ver-3', version: 3, canApprove: false }] });
         renderTab(false, true);
         expect(screen.getByTestId('tenant-skill-new')).toBeInTheDocument();
-        fireEvent.click(screen.getByTestId('tenant-skill-review-pwc-joiner-review'));
+        fireEvent.click(screen.getByTestId('tenant-skill-review-acme-joiner-review'));
         await waitFor(() => expect(screen.getByTestId('tenant-skill-version-2')).toBeInTheDocument());
         expect(screen.getByTestId('tenant-skill-edit')).toBeInTheDocument();
         expect(screen.getByTestId('tenant-skill-submit-2')).toBeInTheDocument();
@@ -310,10 +310,10 @@ describe('the two halves (#3778): authoring and review are separate keys', () =>
     });
 
     it('a reviewer who cannot author gets the review acts, and no New skill, edit, attach or submit', async () => {
-        serve(payload(), { id: 'skill-1', name: 'pwc-joiner-review', versions: [inReview(), { ...draft(), id: 'ver-4', version: 4, evaluation: null }] });
+        serve(payload(), { id: 'skill-1', name: 'acme-joiner-review', versions: [inReview(), { ...draft(), id: 'ver-4', version: 4, evaluation: null }] });
         renderTab(true, false);
         expect(screen.queryByTestId('tenant-skill-new')).toBeNull();
-        fireEvent.click(screen.getByTestId('tenant-skill-review-pwc-joiner-review'));
+        fireEvent.click(screen.getByTestId('tenant-skill-review-acme-joiner-review'));
         await waitFor(() => expect(screen.getByTestId('tenant-skill-approve-2')).toBeInTheDocument());
         expect(screen.getByTestId('tenant-skill-reject-2')).toBeInTheDocument();
         expect(screen.getByTestId('tenant-skill-retire-2')).toBeInTheDocument();
@@ -326,6 +326,6 @@ describe('the two halves (#3778): authoring and review are separate keys', () =>
         serve(payload());
         renderTab(false, false);
         expect(screen.queryByTestId('tenant-skill-new')).toBeNull();
-        expect(screen.queryByTestId('tenant-skill-review-pwc-joiner-review')).toBeNull();
+        expect(screen.queryByTestId('tenant-skill-review-acme-joiner-review')).toBeNull();
     });
 });

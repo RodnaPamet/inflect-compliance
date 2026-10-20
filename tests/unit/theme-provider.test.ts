@@ -225,7 +225,7 @@ describe('globals.css — legacy → semantic alias bridge', () => {
         // them would have pinned a comment.
         // COUNTS, not `toMatch`, and that is deliberate rather than a style
         // choice. Every one of these tokens is defined TWICE — once in the
-        // METRO dark `:root` and once in the PwC light block — so a
+        // METRO dark `:root` and once in the light block — so a
         // `toMatch(/--btn-still-top\s*:/)` would be a non-unique needle: delete
         // one theme's definition and the other keeps the assertion green,
         // which is the Class D defect

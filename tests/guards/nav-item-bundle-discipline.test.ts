@@ -164,7 +164,7 @@ describe('Roadmap-12 PR-10 — NavItem bundle discipline (capstone)', () => {
         it('ACTIVE carries an emphasised text colour', () => {
             // R12-PR6: `text-content-emphasis`.
             // R13-PR5:  `text-[var(--brand-default)]` (brand-coloured
-            //           letters — yellow on METRO, orange on PwC).
+            //           letters — yellow on METRO, orange on the light theme).
             const r12 = /\btext-content-emphasis\b/.test(recipe);
             // T07 (#3076) — the needle moved from `--brand-default` to
             // `--content-brand`. The INTENT is unchanged and still enforced: the

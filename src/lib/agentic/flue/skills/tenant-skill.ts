@@ -3,9 +3,10 @@
  * Q5 of the agentic IAM roadmap).
  *
  * A tenant may teach its own agents with a skill it wrote — third-party
- * methodology, such as PwC's, enters the product only this way, under the
- * author's licence. It arrives behind the lifecycle a repository skill has, and
- * this module is the half of it that decides whether a run may mount one:
+ * methodology, such as a managed-service provider's, enters the product only
+ * this way, under the author's licence. It arrives behind the lifecycle a
+ * repository skill has, and this module is the half of it that decides whether a
+ * run may mount one:
  *
  *   NOT_APPROVED   the version is not APPROVED (DRAFT, IN_REVIEW, RETIRED)
  *   SELF_APPROVED  its approver is its author (a CHECK makes this
