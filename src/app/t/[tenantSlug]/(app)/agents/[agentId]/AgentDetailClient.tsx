@@ -6,6 +6,7 @@ import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ServicePrincipalLinkCard } from './tabs/ServicePrincipalLinkCard';
+import { OwnershipTransferCard } from './tabs/OwnershipTransferCard';
 import { OverviewTab } from './tabs/OverviewTab';
 import { RiskAssessmentTab } from './tabs/RiskAssessmentTab';
 import { PolicyCardTab } from './tabs/PolicyCardTab';
@@ -85,6 +86,12 @@ export interface AgentDetailPermissions {
     canReviewSkills?: boolean;
     /** `admin.agent_skill_author` (#3778) — authoring the workspace's own skills. */
     canAuthorSkills?: boolean;
+    /**
+     * `admin.agent_ownership` AND the role-tier read — the routes' key and
+     * the floor `assertCanTransferAgentOwnership` asserts (#3807). Optional so
+     * a caller that predates it renders no transfer card.
+     */
+    canTransferOwnership?: boolean;
 }
 
 // `skills` is the SEVENTH key and `runs` the EIGHTH. The integration plan said
@@ -115,12 +122,15 @@ export function AgentDetailClient({
     perms,
     owners,
     vendors,
+    viewerUserId,
 }: {
     tenantSlug: string;
     agent: AgentSummary;
     perms: AgentDetailPermissions;
     owners: OwnerChoice[];
     vendors: VendorChoice[];
+    /** The signed-in person; the transfer card says which side of an open transfer they are on. */
+    viewerUserId?: string;
 }) {
     const t = useTranslations('admin');
     // The register's copy lives in the top-level `agents` namespace now that
@@ -270,6 +280,15 @@ export function AgentDetailClient({
                     {/* The register key, which the link route takes for its
                         read and its confirm alike (#3807). */}
                     {perms.canReadRegistry && <ServicePrincipalLinkCard {...props} />}
+                    {perms.canTransferOwnership && viewerUserId && (
+                        <OwnershipTransferCard
+                            {...props}
+                            onChanged={refresh}
+                            viewerUserId={viewerUserId}
+                            owners={owners}
+                            retired={agent.status === 'RETIRED'}
+                        />
+                    )}
                 </>
             )}
             {tab === 'risk' && (

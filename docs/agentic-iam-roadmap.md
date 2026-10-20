@@ -499,8 +499,8 @@ then. Agents retired before #3698 keep whatever keys and grants they held then.
 
 An agent's owner moves only by a two-step transfer
 (`…/admin/agents/[agentId]/ownership-transfer` and `…/ownership-transfer/complete`,
-both a literal `requirePermission('admin.agent_ownership')`, and API-only: no
-page calls them). Step one names the new owner, who must be an active OWNER, an
+both a literal `requirePermission('admin.agent_ownership')`; the agent's
+Overview tab carries the card that calls them, #3807). Step one names the new owner, who must be an active OWNER, an
 active `AI_ADMIN`, or an active ADMIN whose custom role carries
 `admin.agent_ownership` — the routes sit under `/admin/`, where the edge admits
 the ADMIN and OWNER built-in roles, and `AI_ADMIN` on the agent paths only;
