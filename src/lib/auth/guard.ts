@@ -538,6 +538,25 @@ export const EDGE_ADMIN_ROLES: ReadonlySet<string> = new Set(['ADMIN', 'OWNER'])
  */
 export const AI_ADMIN_ADMIN_PATH_PREFIXES: readonly string[] = [
     '/api/t/[slug]/admin/agents',
+    // A2A host consumers (#3861). NOT an expansion of what an AI_ADMIN can
+    // already do, which is the reason this is a one-line addition rather than
+    // a decision to escalate:
+    //
+    //   · the routes are gated on `admin.agent_registry` and
+    //     `admin.agent_kill_switch`, both of which an AI_ADMIN already HOLDS;
+    //   · `/api/t/[slug]/admin/agents` is already listed above, and the PEER
+    //     A2A routes live under it — so an AI_ADMIN can already issue a
+    //     credential that admits ANOTHER ORGANISATION'S agent. Admitting a
+    //     host consumer is the same authority over the same keys.
+    //
+    // `tests/unit/ai-admin-handler-authz.test.ts` is what forced the choice,
+    // and it leaves no third option: a route OUTSIDE this list may not name a
+    // key an AI_ADMIN holds. The alternative was to move the routes under
+    // `admin/agents/host-consumers`, which was rejected — a catch-all
+    // `admin/agents(/.*)?` rule and the `[agentId]` segment both match it, so
+    // the word "host-consumers" would become an agent id nobody could ever
+    // use. A separate `admin/a2a` subtree keeps the paths unambiguous.
+    '/api/t/[slug]/admin/a2a',
     '/api/t/[slug]/admin/mcp/quarantine',
     '/t/[slug]/admin/agents',
     '/t/[slug]/admin/mcp/agent-receipts',

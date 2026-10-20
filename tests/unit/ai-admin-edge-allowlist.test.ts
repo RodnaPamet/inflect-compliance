@@ -110,9 +110,18 @@ const adminPages = repoFiles({ under: PAGE_ADMIN_DIR, extensions: ['page.tsx'] }
 beforeEach(() => jest.clearAllMocks());
 
 describe('AI_ADMIN_ADMIN_PATH_PREFIXES — the whole allowlist, pinned', () => {
-    it('is exactly these five subtrees (set equality, no duplicates)', () => {
+    it('is exactly these six subtrees (set equality, no duplicates)', () => {
         expect([...AI_ADMIN_ADMIN_PATH_PREFIXES].sort()).toEqual(
             [
+                // #3861 — A2A host consumers. Added as the SIXTH, and the pin
+                // is why: this list is a security surface, so growing it should
+                // cost a deliberate edit here rather than ride along with a
+                // route. The reason it is admissible at all is on the constant
+                // itself — an AI_ADMIN already holds both keys these routes
+                // name, and can already issue a peer credential that admits
+                // another organisation's agent under the `admin/agents` entry
+                // below. Same authority, same keys, a different subtree.
+                '/api/t/[slug]/admin/a2a',
                 '/api/t/[slug]/admin/agents',
                 '/api/t/[slug]/admin/mcp/quarantine',
                 '/t/[slug]/admin/agents',

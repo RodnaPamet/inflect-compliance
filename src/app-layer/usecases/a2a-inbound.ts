@@ -97,6 +97,7 @@ import {
     parseA2aInboundRequest,
     taskStateForRunStatus,
 } from '@/lib/agentic/a2a/protocol';
+import type { A2aInboundRequest as ParsedA2aRequest } from '@/lib/agentic/a2a/protocol';
 import { inflectA2aIdentity } from '@/lib/agentic/a2a/own-card';
 import { inflectA2aOrigin } from '@/lib/agentic/a2a/origin';
 import type { RecentCardOptions } from '@/lib/agentic/a2a/card-cache';
@@ -430,8 +431,23 @@ async function startHostConsumerRequest(
 
     const answer = async (result: Record<string, unknown>, runId: string | undefined, rpcId: string | number) => {
         const outcome = await guardEgress(sys, result, { source: 'a2a-inbound-answer' });
-        if (!outcome.ok) return refusal('GUARD_REFUSED', rpcId);
-        return { status: 200, body: a2aResult(rpcId, result), headers: { ...JSON_HEADERS }, runId, outcome: 'OK' };
+        // THE PEER PATH'S RULE, not a refusal. A flagged or blocked answer is
+        // WITHHELD rather than refused: the host learns the task's state and
+        // nothing the guard would not let leave. `reviewRequired` and not
+        // `blocked`, because under the default balanced mode a secret in the
+        // payload resolves to `flag`, and no person reviews this answer before
+        // it crosses into another organisation.
+        //
+        // My first version read `outcome.ok` — which does not exist on
+        // `GuardOutcome` — and refused the whole answer. Wrong twice: the field
+        // was invented, and refusing tells a host nothing about its own run
+        // where withholding tells it the state. CI's Typecheck caught the
+        // field; mirroring the peer path is what fixes the behaviour.
+        const body = a2aResult(rpcId, outcome.reviewRequired ? { ...result, artifacts: [] } : result);
+        // NOT signed, unlike the peer's answer: a host consumer has no key and
+        // no receipt, which is the whole of R25. There is nothing to sign with
+        // on its side and nothing it could verify.
+        return { status: 200, body, headers: { ...JSON_HEADERS }, runId, outcome: 'OK' };
     };
 
     // KEPT BEFORE ANYTHING ACTS ON IT, and the insert is the replay check — the
@@ -502,7 +518,21 @@ interface InboundPrincipal {
     readonly recordId: string;
 }
 
-type ParsedInboundRequest = Extract<ReturnType<typeof parseA2aInboundRequest>, { ok: true }>['request'];
+/**
+ * ONLY the `message/send` arm of the parsed request.
+ *
+ * `A2aInboundRequest` is a union over `method`, and `workflowKey`, `text`,
+ * `data` and `messageId` exist on this arm alone. Both callers reach
+ * `startInboundRun` only after their own `tasks/get` branch has returned, so
+ * the narrowing is a fact about the call sites — stated in the type rather than
+ * left for the compiler to infer at each one.
+ *
+ * My first version of this alias took the whole union, which is what CI's
+ * `Typecheck` caught: the original code was narrowed by the `tasks/get` branch
+ * directly above it, and extracting the tail moved the field accesses out from
+ * under that narrowing.
+ */
+type ParsedInboundRequest = Extract<ParsedA2aRequest, { method: 'message/send' }>;
 
 /**
  * Everything after admission: the allowlist, the agent, the run, the audit row
