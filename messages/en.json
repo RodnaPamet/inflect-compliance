@@ -4637,7 +4637,17 @@
       "revokeInviteAction": "Revoke invitation",
       "inviteRevocationFailed": "Failed to revoke invitation",
       "bulkRevokedInvitesToast": "Revoked {count} invitations",
-      "memberActions": "Member actions"
+      "memberActions": "Member actions",
+      "colLineOfDefence": "Line of defence",
+      "lineOfDefence": {
+        "UNDECLARED": "Not declared",
+        "FIRST": "First line",
+        "SECOND": "Second line",
+        "THIRD": "Third line"
+      },
+      "lineOfDefenceFailed": "The line of defence could not be changed.",
+      "lineOfDefenceUpdated": "Line of defence updated for {email}",
+      "lineOfDefenceUpdatedWithFindings": "Line of defence updated for {email}. It broke an auditor agent's independence, and {count} finding(s) were raised."
     },
     "security": {
       "crumbSelf": "Security & MFA",

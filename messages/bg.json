@@ -4637,7 +4637,17 @@
       "revokeInviteAction": "Отмяна на покана",
       "inviteRevocationFailed": "Неуспешна отмяна на покана",
       "bulkRevokedInvitesToast": "Отменени са {count} покани",
-      "memberActions": "Действия за член"
+      "memberActions": "Действия за член",
+      "colLineOfDefence": "Линия на защита",
+      "lineOfDefence": {
+        "UNDECLARED": "Не е декларирана",
+        "FIRST": "Първа линия",
+        "SECOND": "Втора линия",
+        "THIRD": "Трета линия"
+      },
+      "lineOfDefenceFailed": "Линията на защита не можа да бъде променена.",
+      "lineOfDefenceUpdated": "Линията на защита за {email} е обновена",
+      "lineOfDefenceUpdatedWithFindings": "Линията на защита за {email} е обновена. Това наруши независимостта на одиторски агент и бяха повдигнати {count} констатации."
     },
     "security": {
       "crumbSelf": "Сигурност и MFA",
