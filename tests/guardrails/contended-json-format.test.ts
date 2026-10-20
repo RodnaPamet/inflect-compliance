@@ -119,7 +119,10 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated again 2026-10-17: one entry added for
         // `skills-evaluate.yml:record` (#3666), the manual job that records
         // skill evaluations with the repository secret. A pure append, +5/-0.
-        keyOrderSha: '69176b945d3b6559e2eced86490f26c91fd861e4c6b36a27ea9df4b4753bb35a',
+        // Updated again 2026-10-20: one entry added for
+        // `scanner-image.yml:build-scan-push`, the dispatch-only publish of the
+        // harness scanner's image for Inflect's own estate. A pure append, +5/-0.
+        keyOrderSha: '068b1f1aa54bd6b32714e1cc51930d99dc7378f4d9fc08370ce4fae60302caa7',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

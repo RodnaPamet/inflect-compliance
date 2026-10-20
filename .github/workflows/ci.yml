@@ -2793,8 +2793,10 @@ jobs:
   #  Job 11: Scanner image — the harness scanner's container (#3686)
   #  Builds packages/agent-harness-scanner/Dockerfile, smoke-tests the
   #  image the way an estate runs it, and blocks on CRITICAL and HIGH
-  #  severity vulnerabilities. Built and checked, never published
-  #  (owner decision, 2026-10-19): a client builds it from source.
+  #  severity vulnerabilities. Built and checked here, never published
+  #  from here: a client builds it from source (owner decision, 2026-10-19).
+  #  Inflect's own copy is published by digest by the dispatch-only
+  #  scanner-image.yml (owner decision, 2026-10-20).
   # ═══════════════════════════════════════════════════════════════
   scanner-image:
     name: "Scanner image"

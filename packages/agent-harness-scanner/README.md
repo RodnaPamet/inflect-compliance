@@ -575,8 +575,14 @@ string with a secret's shape is replaced before it is written.
 ## Container
 
 The scanner runs in a client's estate as a container (#3686). It is built and
-smoke-tested in CI and **not published** (owner decision, 2026-10-19): a client
-builds it from a checkout of this repository, at its root.
+smoke-tested in CI, and a client builds it from a checkout of this repository,
+at its root (owner decision, 2026-10-19). The one published copy is for
+Inflect's own estate, whose scanner runs on the production VM (owner decision,
+2026-10-20). The dispatch-only `Scanner image` workflow
+(`.github/workflows/scanner-image.yml`) builds it, runs the smoke test and the
+Trivy gate below, then pushes it to the repository's private GHCR package as
+`ghcr.io/rodnapamet/agent-harness-scanner:sha-<commit>`. It reports the digest,
+which is what a deployment pins. It has no `:latest` tag.
 
 ```bash
 docker build -f packages/agent-harness-scanner/Dockerfile -t agent-harness-scanner .

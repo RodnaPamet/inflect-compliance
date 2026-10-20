@@ -212,8 +212,11 @@ which scans at once and then every `everyHours`, anchored to each run's start,
 and carries on after a failed run.
 
 The scanner runs in the estate as a container that the estate builds from a
-checkout of this repository (`packages/agent-harness-scanner/Dockerfile`; it is
-not published, owner decision 2026-10-19). Its default command is `schedule`.
+checkout of this repository (`packages/agent-harness-scanner/Dockerfile`, owner
+decision 2026-10-19). Inflect's own estate is the exception. Its scanner runs on
+the production VM from a copy published by digest to the repository's private
+GHCR package (owner decision 2026-10-20; the README's Container section). Its
+default command is `schedule`.
 Run it read-only, with every capability dropped, as its own non-root user
 (uid 1000); mount the configuration and each `code` root read-only and readable
 by that user; and supply the environment variables the configuration names from
