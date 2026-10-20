@@ -216,10 +216,11 @@ checkout of this repository (`packages/agent-harness-scanner/Dockerfile`, owner
 decision 2026-10-19). Inflect's own estate is the exception. Its scanner runs on
 the production VM from a copy published by digest to the repository's private
 GHCR package (owner decision 2026-10-20; the README's Container section), as
-the opt-in Compose overlay `deploy/docker-compose.harness-scanner.yml`. Fill in
-its configuration from `deploy/harness-scanner/config.pilot.example.json`, and
-its credentials from `deploy/harness-scanner/scanner.env.example`; the overlay's
-header lists the preconditions. Its default command is `schedule`.
+the opt-in Compose overlay `deploy/docker-compose.harness-scanner.yml`. The
+dispatch-only `Scanner VM` workflow configures, checks and starts it, from
+credentials kept as `production` environment secrets
+(`deploy/harness-scanner/README.md` has the one-time setup and the order of the
+actions). Its default command is `schedule`.
 Run it read-only, with every capability dropped, as its own non-root user
 (uid 1000); mount the configuration and each `code` root read-only and readable
 by that user; and supply the environment variables the configuration names from

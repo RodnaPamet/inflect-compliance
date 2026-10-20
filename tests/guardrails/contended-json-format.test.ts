@@ -122,7 +122,9 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated again 2026-10-20: one entry added for
         // `scanner-image.yml:build-scan-push`, the dispatch-only publish of the
         // harness scanner's image for Inflect's own estate. A pure append, +5/-0.
-        keyOrderSha: '068b1f1aa54bd6b32714e1cc51930d99dc7378f4d9fc08370ce4fae60302caa7',
+        // And again the same day: `scanner-vm.yml:scanner-vm`, the dispatch-only
+        // workflow that configures and starts that scanner on the VM. +5/-0.
+        keyOrderSha: '2773ce0a15a95c8263edecf47c7abe8ccd47f32702bed1da938acd7e92b8a44b',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

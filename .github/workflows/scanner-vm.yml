@@ -1,0 +1,94 @@
+#
+# The harness scanner on the production VM — configured, checked and started
+# by a person's dispatch (#3665; owner decision 2026-10-20).
+#
+# WHY A WORKFLOW AND NOT A SESSION. The owner chose to keep every credential the
+# scanner needs as a GitHub secret in the `production` environment, so none of
+# them passes through a chat, a terminal or a session's environment. Only a
+# workflow can read those, so the VM steps live here. The `production`
+# environment's required reviewer approves every run.
+#
+# NO LONG-LIVED KEY. The runner reaches GCP through Workload Identity
+# Federation: GCP trusts this repository's workflow tokens, and the provider's
+# attribute condition admits only jobs in the `production` environment of this
+# repository. The one-time setup is in `deploy/harness-scanner/README.md`.
+#
+# THE LOGS ARE PUBLIC, because the repository is. `deploy/harness-scanner/remote.sh`
+# prints file and variable NAMES, container states, the public key and the
+# scanner's own log lines (kinds and counts), and never a value or the
+# dry-run report, which lists the estate's agents. The configuration's ids
+# come from secrets so they are masked here too.
+#
+# The order, the first time: preflight → configure → public-key (register it in
+# Inflect) → dry-run (every source COMPLETE) → start. `status` and `stop` at any
+# time. `configure` keeps the signing key it generated before, so it can be
+# re-run to rotate a credential without re-registering the key.
+#
+name: Scanner VM
+
+on:
+    workflow_dispatch:
+        inputs:
+            action:
+                description: What to do on the production VM
+                required: true
+                type: choice
+                options:
+                    - preflight
+                    - configure
+                    - public-key
+                    - dry-run
+                    - start
+                    - status
+                    - stop
+
+# One at a time: two runs staging files on the VM at once would race.
+concurrency:
+    group: scanner-vm
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    scanner-vm:
+        name: Scanner VM (${{ inputs.action }})
+        runs-on: ubuntu-latest
+        environment: production
+        timeout-minutes: 20
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Authenticate to GCP (Workload Identity Federation)
+              uses: google-github-actions/auth@v2
+              with:
+                  workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+                  service_account: ${{ vars.GCP_VM_OPERATOR_SA }}
+
+            - name: Set up gcloud
+              uses: google-github-actions/setup-gcloud@v2
+
+            - name: Write the configuration and the credential lines
+              if: inputs.action == 'configure'
+              env:
+                  SCANNER_TENANT_SLUG: ${{ secrets.SCANNER_TENANT_SLUG }}
+                  SCANNER_AGENT_ID: ${{ secrets.SCANNER_AGENT_ID }}
+                  SCANNER_ENTRA_DIRECTORY_ID: ${{ secrets.SCANNER_ENTRA_DIRECTORY_ID }}
+                  SCANNER_ENTRA_CLIENT_ID: ${{ secrets.SCANNER_ENTRA_CLIENT_ID }}
+                  INFLECT_INGEST_KEY: ${{ secrets.INFLECT_INGEST_KEY }}
+                  ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+                  SCANNER_GITHUB_READ_TOKEN: ${{ secrets.SCANNER_GITHUB_READ_TOKEN }}
+                  GCP_SCANNER_KEY: ${{ secrets.GCP_SCANNER_KEY }}
+              run: deploy/harness-scanner/stage-config.sh "$RUNNER_TEMP/harness-scanner"
+
+            - name: Run on the VM
+              env:
+                  CONFIG_FILE: ${{ runner.temp }}/harness-scanner/config.json
+                  ENV_PARTIAL: ${{ runner.temp }}/harness-scanner/env.partial
+              run: deploy/harness-scanner/vm.sh "${{ inputs.action }}"
+
+            - name: Remove the staged credentials
+              if: always()
+              run: rm -rf "$RUNNER_TEMP/harness-scanner"
