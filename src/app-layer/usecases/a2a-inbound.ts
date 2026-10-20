@@ -69,6 +69,11 @@ import { randomUUID } from 'node:crypto';
 import type { RequestContext } from '../types';
 import { runInGlobalContext } from '@/lib/db/rls-middleware';
 import { runInTenantContext } from '@/lib/db-context';
+import {
+    tryAdmitHostConsumer,
+    type AdmittedHostConsumer,
+} from '@/app-layer/usecases/a2a-host-consumer-admission';
+import type { HostConsumerTokenClaims } from '@/lib/agentic/a2a/host-consumer';
 import { appendAuditEntryOrQueue } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { recordA2aMessage as recordA2aMetric } from '@/lib/observability/integration-metrics';
@@ -216,6 +221,26 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
         job: 'a2a-inbound',
         requestId: req.requestId,
     });
+    // ── HOST CONSUMER, BEFORE THE PEER PATH ─────────────────────────────────
+    //
+    // A host-consumer token is recognised here and NEVER falls through to the
+    // peer path, so no peer check can be reached by a host-consumer credential
+    // and no host-consumer check can weaken a peer. A bearer that is not one of
+    // our tokens answers NOT_A_HOST_TOKEN and the peer path below sees it
+    // unchanged — including when this deployment holds no token secret, which
+    // is what `looksLikeAToken` is there for.
+    const hostAdmission = await tryAdmitHostConsumer(sys, {
+        authorization: req.authorization,
+        now: req.now,
+    });
+    if (hostAdmission.kind === 'REFUSED') {
+        await auditRefusal(tenant.id, null, hostAdmission.reason, req.requestId);
+        return refusal(hostAdmission.reason, null, hostAdmission.httpStatus);
+    }
+    if (hostAdmission.kind === 'ADMITTED') {
+        return startHostConsumerRequest(sys, tenant, req, hostAdmission.consumer, hostAdmission.claims);
+    }
+
     const token = peerBearerFrom(req.authorization);
 
     // Which peer. The per-tenant route has only the credential to go on: its
@@ -361,6 +386,105 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
             receivingAgentId: credential.receivingAgentId,
             workflowKeys: credential.workflowKeys,
             recordId: taskRow.id,
+        },
+    });
+}
+
+/**
+ * An admitted host consumer's request: keep the evidence, then take the same
+ * post-admission path a peer takes (#3861).
+ *
+ * The tenant-cap check is repeated here DELIBERATELY. It lives in the peer
+ * prologue, which this branch runs before, and a host consumer must not escape
+ * a cap a peer cannot — R13 exists so an inbound caller cannot spend a budget
+ * the tenant never set. Repeated rather than hoisted because hoisting it would
+ * move a check the peer path has been running in a known position.
+ */
+async function startHostConsumerRequest(
+    sys: RequestContext,
+    tenant: { readonly id: string; readonly slug: string },
+    req: InboundA2aRequest,
+    consumer: AdmittedHostConsumer,
+    claims: HostConsumerTokenClaims,
+): Promise<InboundA2aResponse> {
+    const refuse = async (reason: A2aInboundRefusalReason, rpcId: string | number | null = null, status = 403) => {
+        await auditRefusal(tenant.id, null, reason, req.requestId);
+        return refusal(reason, rpcId, status);
+    };
+
+    // R13, as the peer path applies it: no inbound A2A for a tenant that has
+    // left either cap at "no cap".
+    const settings = await runInTenantContext(sys, (db) =>
+        db.tenantSecuritySettings.findFirst({
+            where: { tenantId: tenant.id },
+            select: { agentMonthlyTokenBudget: true, agentMaxConcurrentRuns: true },
+        }),
+    );
+    if (settings?.agentMonthlyTokenBudget == null || settings?.agentMaxConcurrentRuns == null) {
+        return refuse('TENANT_CAPS_UNSET');
+    }
+
+    const parsed = parseA2aInboundRequest(req.body);
+    if (!parsed.ok) return refuse(parsed.reason, parsed.rpcId);
+    const request = parsed.request;
+
+    const answer = async (result: Record<string, unknown>, runId: string | undefined, rpcId: string | number) => {
+        const outcome = await guardEgress(sys, result, { source: 'a2a-inbound-answer' });
+        if (!outcome.ok) return refusal('GUARD_REFUSED', rpcId);
+        return { status: 200, body: a2aResult(rpcId, result), headers: { ...JSON_HEADERS }, runId, outcome: 'OK' };
+    };
+
+    // KEPT BEFORE ANYTHING ACTS ON IT, and the insert is the replay check — the
+    // same shape the peer path uses, against the unique
+    // (tenant, consumer, jti, digest). A retry of the identical body under the
+    // identical token is a replay; a different body under the same token is a
+    // second question and is allowed.
+    let record: { id: string };
+    try {
+        record = await runInTenantContext(sys, (db) =>
+            db.hostConsumerMessage.create({
+                data: {
+                    tenantId: tenant.id,
+                    hostConsumerId: consumer.id,
+                    clientId: consumer.clientId,
+                    tokenJti: claims.jti,
+                    method: request.method,
+                    body: req.body,
+                    bodyDigest: a2aBodyDigest(req.body),
+                    agentId: consumer.receivingAgentId,
+                },
+                select: { id: true },
+            }),
+        );
+    } catch {
+        return refuse('REPLAY', request.rpcId, 409);
+    }
+
+    if (request.method === 'tasks/get') {
+        const run = await runInTenantContext(sys, (db) =>
+            db.workflowRun.findFirst({
+                where: { id: request.taskId, tenantId: tenant.id, inboundHostConsumerId: consumer.id },
+                select: { id: true, status: true },
+            }),
+        );
+        if (!run) return refuse('TASK_NOT_FOUND', request.rpcId);
+        return answer(await taskFor(sys, run.id, run.status, null), run.id, request.rpcId);
+    }
+
+    return startInboundRun({
+        sys,
+        tenant,
+        req,
+        request,
+        refuse,
+        answer,
+        grants: {
+            kind: 'HOST_CONSUMER',
+            id: consumer.id,
+            ownerUserId: consumer.ownerUserId,
+            receivingAgentId: consumer.receivingAgentId,
+            workflowKeys: consumer.workflowKeys,
+            recordId: record.id,
         },
     });
 }
