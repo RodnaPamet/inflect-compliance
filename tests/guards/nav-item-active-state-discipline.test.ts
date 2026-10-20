@@ -8,13 +8,13 @@
  * tokens, no single one shouting:
  *
  *   1. `text-[var(--brand-default)]` — yellow letters on METRO,
- *      orange letters on PwC. R12-PR6 originally locked
+ *      orange letters on the light theme. R12-PR6 originally locked
  *      `text-content-emphasis` here (one rung brighter than muted,
  *      held permanently). R13-PR5 evolves to brand-coloured letters
  *      so the active page is visually unmissable from across the
  *      desk. Both colours clear WCAG AA on the brand-subtle wash.
  *
- *   2. `bg-[var(--brand-subtle)]` — a brand-tinted wash, ~9% (PwC
+ *   2. `bg-[var(--brand-subtle)]` — a brand-tinted wash, ~9% (light-theme
  *      orange) or ~18% (METRO yellow) over the page bg. This is
  *      what distinguishes ACTIVE from HOVER — hover shows just
  *      the band; active commits with the wash. The wash is the
@@ -68,7 +68,7 @@ describe('Roadmap-12 PR-6 — NavItem active-state discipline', () => {
 
         // (1) Text: brand-coloured letters (R13-PR5 evolution from
         //     the R12-PR6 lock on text-content-emphasis). Yellow on
-        //     METRO, orange on PwC, both via `var(--brand-default)`.
+        //     METRO, orange on the light theme, both via `var(--brand-default)`.
         // T07 (#3076) — the needle moved from `--brand-default` to
         // `--content-brand`. The INTENT is unchanged and still enforced: the
         // active label is brand-coloured. What changed is which brand token

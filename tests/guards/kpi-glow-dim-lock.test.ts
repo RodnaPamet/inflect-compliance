@@ -2,7 +2,7 @@
  * kpi-glow-dim-08 (2026-05-15) — KPI card glow opacity multiplier.
  *
  * MetricCard's R17-PR4 corner glow used the gradient's natural
- * source alpha (`--brand-subtle` = 18% METRO / 9% PwC) at full
+ * source alpha (`--brand-subtle` = 18% METRO / 9% light) at full
  * pseudo opacity (1.0). After the hero-glow tightening sweep
  * (#529 → #530 → #531 dropped the hero from animated 0.65↔1.0
  * down to a static 0.15) the KPI cards started reading as the

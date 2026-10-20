@@ -29,7 +29,7 @@
  *      recipe actually applies to the rendered `<a>` element.
  *   2. Resolves the CSS custom properties inside it against the REAL
  *      theme blocks in `src/styles/tokens.css` (both METRO dark and
- *      PwC light).
+ *      light theme).
  *   3. Asserts the active band's gradient stops resolve to the
  *      page-background colour — and carry ZERO brand-ramp tokens.
  *
@@ -93,7 +93,7 @@ function parseThemeBlock(selector: string): Record<string, string> {
 }
 
 const METRO = parseThemeBlock(':root');
-const PWC = parseThemeBlock('[data-theme="light"]');
+const LIGHT = parseThemeBlock('[data-theme="light"]');
 
 /** Recursively substitute every `var(--x)` against a token map. */
 function resolveVars(value: string, tokens: Record<string, string>): string {
@@ -187,7 +187,7 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         expect(resolved).not.toContain('__UNRESOLVED');
     });
 
-    it('the rendered active band resolves to --bg-page on the PwC light theme', () => {
+    it('the rendered active band resolves to --bg-page on the light theme', () => {
         render(
             <NavItem
                 href="/t/acme/controls"
@@ -199,10 +199,10 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         const link = screen.getByRole('link', { name: 'Controls' });
         const bandValue = extractBeforeBg(link.className, 'active');
 
-        const resolved = resolveVars(bandValue, PWC);
+        const resolved = resolveVars(bandValue, LIGHT);
 
-        // PwC --bg-page is #F4F2ED (warm off-white).
-        expect(PWC['--bg-page']).toBe('#F4F2ED');
+        // The light theme's --bg-page is #F4F2ED (warm off-white).
+        expect(LIGHT['--bg-page']).toBe('#F4F2ED');
         expect(resolved).toContain('#F4F2ED');
         expect(resolved).not.toContain('__UNRESOLVED');
     });
@@ -248,7 +248,7 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         // resolution tests above prove the rendered colour; this pins the
         // spelling that keeps them true when the page tone moves.
         expect(METRO['--nav-band-active']).toBe('var(--bg-page)');
-        expect(PWC['--nav-band-active']).toBe('var(--bg-page)');
+        expect(LIGHT['--nav-band-active']).toBe('var(--bg-page)');
     });
 
     it('the DEFAULT (idle) band still uses the brand ramp — the swap is active-only', () => {

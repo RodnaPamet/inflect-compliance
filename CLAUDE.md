@@ -2020,9 +2020,10 @@ library v1 — catalogue procedures 1 to 5 — on the control-test runner as the
 registered auditor agent. Six rules, each held by a test or a lint rule:
 
 - **Library v1 is PROPOSED.** `LIBRARY_V1_STATUS` records internal audit's
-  approval, PwC's agreement and each PwC reference as OPEN. Changing one is a
-  claim about an external party's act; it belongs only in the pull request that
-  records that act on #3663.
+  approval, the managed-service provider's agreement and each provider
+  methodology reference as OPEN. Changing one is a claim about an external
+  party's act; it belongs only in the pull request that records that act on
+  #3663.
 - **One runner, one INTEGRATION handler.** `agenticControlTestHandler` sends a
   `procedure` config to `auditProcedureHandler`; never a second runner or a
   second INTEGRATION registration (the registry throws on one).

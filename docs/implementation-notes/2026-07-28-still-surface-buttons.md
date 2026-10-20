@@ -31,7 +31,7 @@ Four static layers, no keyframes:
 
 The complementary hue was **already in the palette**. `--brand-secondary-default`
 is documented in `tokens.css` as complementary to the brand in both themes
-(`#3B82F6` electric blue ↔ METRO yellow in dark; `#1E3A8A` deep navy ↔ PwC
+(`#3B82F6` electric blue ↔ METRO yellow in dark; `#1E3A8A` deep navy ↔ light-theme
 orange in light). Verified before building: the proposal's raw hex values map
 1:1 onto existing tokens — `#003C7A`→`--bg-default`, `#002F5F`→`--bg-muted`,
 `#00538C`→`--border-default`, `#ECF1F7`→`--content-emphasis`,

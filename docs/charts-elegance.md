@@ -68,8 +68,8 @@ After R16 the barrel exposes:
 hex stops at the token layer.
 
 - **Series 1** — primary brand. The "headline" colour.
-- **Series 2** — cyan METRO / navy PwC. The "cool" tone.
-- **Series 3** — violet METRO / teal PwC. Secondary cool.
+- **Series 2** — cyan METRO / navy light. The "cool" tone.
+- **Series 3** — violet METRO / teal light. Secondary cool.
 - **Series 4** — coral / rose. Warm-pink bridge.
 - **Series 5** — emerald / forest. "Growth" / positive.
 - **Series 6** — amber-warm. "Alert" / due-soon.

@@ -12227,7 +12227,7 @@
           "CONCLUSION_INCONCLUSIVE": "A procedure was inconclusive",
           "ATTRIBUTED_BY_CURRENT_PLAN": "Attributed by the current plan (test run purged)",
           "CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT": "Procedure catalogue not approved by internal audit",
-          "CATALOGUE_NOT_AGREED_BY_PWC": "Procedure catalogue not agreed by PwC",
+          "CATALOGUE_NOT_AGREED_BY_PROVIDER": "Procedure catalogue not agreed by the managed-service provider",
           "PROCEDURE_WITHOUT_CONTROL": "A library procedure is on no control"
         },
         "state": {

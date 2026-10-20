@@ -60,11 +60,11 @@ describe('parseRecipientAllowlist', () => {
         const { exact, domains } = parseRecipientAllowlist([
             'auditor@kpmg.com',
             '@bdo.com',
-            'pwc.com',
+            'auditfirm.example',
         ]);
         expect(exact.has('auditor@kpmg.com')).toBe(true);
         expect(domains.has('bdo.com')).toBe(true);
-        expect(domains.has('pwc.com')).toBe(true);
+        expect(domains.has('auditfirm.example')).toBe(true);
     });
 
     it('normalises case and ignores junk entries', () => {

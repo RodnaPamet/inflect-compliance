@@ -17,7 +17,7 @@ fell short on two fronts the user reported:
 2. **Sub-perceptual calibration.** Even where it WAS applied (modals),
    the wash was invisible: 4% brand-mix at centre + 6% black at the
    edge is below the perceptual floor on both the navy (METRO) and
-   cream (PwC) surfaces — the same too-low-alpha trap that bit the
+   cream (light-theme) surfaces — the same too-low-alpha trap that bit the
    Liquid Glass roadmap (R24).
 
 ## Design

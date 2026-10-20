@@ -35,8 +35,8 @@ export function tenantSkillFields(over: Partial<TenantSkillFixtureFields> = {}):
     return {
         description: 'Check a joiner request against the access policy and propose what to grant.',
         instructions: TENANT_SKILL_INSTRUCTIONS,
-        license: 'PwC proprietary — licensed to this workspace',
-        sourceRef: 'PwC IAM methodology, joiner review procedure; cites ISO/IEC 27001:2022 A.5.18 by identifier only',
+        license: 'Acme Advisory proprietary — licensed to this workspace',
+        sourceRef: 'Acme Advisory IAM methodology, joiner review procedure; cites ISO/IEC 27001:2022 A.5.18 by identifier only',
         workflowKeys: [],
         ...over,
     };

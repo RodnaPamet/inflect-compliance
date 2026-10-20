@@ -436,16 +436,16 @@ rows its re-performance recomputes, its exception and what makes it
 INCONCLUSIVE; an empty population is never a pass. It proposes library v1 as the
 first five. The repository owner's merge of its pull request is the repository
 owner's sign-off and adopts version 1 for this repository. The merge does not
-supply internal audit's approval or PwC's agreement: neither is recorded on
-#3663, each is recorded there when given, and while both are open library v1 is
+supply internal audit's approval or the managed-service provider's agreement:
+neither is recorded on #3663, each is recorded there when given, and while both are open library v1 is
 proposed to them, not approved or agreed. The catalogue records the ownership
 rule of decision 3: the second line is to own and operate the auditor agent, and
 internal audit is to approve its procedures and sample its workpapers. The
 line-of-defence value, the auditor independence check and the workpaper record
 are on `main` (step `3b`, below), and library v1 runs on the control-test runner
-as the registered auditor agent (step `3c`, below). Each procedure's PwC
-methodology reference is open: PwC supplies it, and it is recorded on #3663
-when given.
+as the registered auditor agent (step `3c`, below). Each procedure's provider
+methodology reference is open: the provider supplies it, and it is recorded on
+#3663 when given.
 
 ### Agent retirement and ownership transfer
 
@@ -925,7 +925,8 @@ auditee (rule 8).
 
 Step `3c` (#3676) runs library v1 — procedures 1 to 5 of the catalogue — on the
 existing control-test runner, as the registered auditor agent. Library v1 is
-proposed to internal audit and PwC, not approved or agreed by either:
+proposed to internal audit and the managed-service provider, not approved or
+agreed by either:
 `LIBRARY_V1_STATUS` in `src/lib/agentic/audit-procedure-library.ts` records
 both as open, and every evidence row and finding proposal says so.
 
@@ -1118,16 +1119,21 @@ ISO/IEC 27001 certification body as the auditor.
   identifiers.
 - **The memo.** `docs/agentic-audit-reliance-memo.md` states the basis
   (internal audit's re-performance) and the limits: library v1 not approved by
-  internal audit nor agreed by PwC, and only `agent.authority_conformance`
+  internal audit nor agreed by the managed-service provider, and only
+  `agent.authority_conformance`
   citing an ISO/IEC 42001 Annex A identifier.
-- **Open, and outside the code.** The external auditor's conclusion on reliance
-  is recorded on #3681 and as Evidence against each control it covers once
-  given; none is recorded.
+- **The conclusion.** The external auditor's conclusion on memo version 1 is
+  recorded on #3681, dated 2026-10-20: it relies on the workpapers for every
+  control in scope, for SOC 2 and ISO/IEC 42001, over the workpapers written in
+  the pilot period from 2026-10-19 to 2026-10-20, on its own re-performed sample
+  and internal audit's agreement rate. The record does not name the audit firm.
+  Attaching it as Evidence to each control it covers is the tenant's act.
 
 ### Tenant-authored skills
 
 Step `4c` (#3680) lets a tenant teach its own agents with a skill it wrote, which
-is how third-party methodology, PwC's among it, enters the product: under the
+is how third-party methodology, the managed-service provider's among it,
+enters the product: under the
 author's licence and behind the lifecycle a repository skill has (decision 5).
 `docs/agent-skill-standard.md` ("Tenant-authored skills") is the full rule set.
 
@@ -1163,15 +1169,15 @@ author's licence and behind the lifecycle a repository skill has (decision 5).
 
 ### The managed-service methodology
 
-Step `4e` (#3682) hands the six use cases to PwC's IAM practice as a managed
-service. [`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)
+Step `4e` (#3682) hands the six use cases to a managed-service provider's IAM
+practice (the provider) as a managed service. [`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)
 is its methodology, version 1, and it does four things:
 
-- It rests on one division: PwC prepares and watches, and the client admits,
+- It rests on one division: the provider prepares and watches, and the client admits,
   widens, accepts, approves and stops.
 - It sets out the engagement setup, the scanner deployment, the cadence of
   scans, campaigns and audit programmes, and the escalation paths.
-- It states who holds each right, with the PwC operator on a custom role that
+- It states who holds each right, with the provider operator on a custom role that
   adds the inventory view key and, at the client's request, the skill authoring
   key or the workpaper view key, and never a key that decides. The client's
   ownership of the register, the
@@ -1180,13 +1186,14 @@ is its methodology, version 1, and it does four things:
 - It maps every activity to its product surface and the evidence that
   activity leaves.
 
-It lists what PwC does not operate where it is also the client's external
+It lists what the provider does not operate where it is also the client's external
 auditor. Drafting it found two product gaps, both now closed: tenant skill
 authoring and approval are separate keys (#3778), and the monthly token budget
 that inbound A2A requires is set beside the concurrency cap (#3777).
 
-The repository owner's merge adopts it for this repository. PwC's practice
-lead's acceptance is open and is recorded on #3682 when given.
+The repository owner's merge adopts it for this repository. The provider's
+practice lead accepted version 1 on 2026-10-20, and the acceptance is recorded
+on #3682. Neither the methodology nor the record names the provider.
 
 ### What the six use cases stand on
 
@@ -1197,7 +1204,7 @@ lead's acceptance is open and is recorded on #3682 when given.
 | Skills | Nine original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine, and `iam-audit-procedures` by another, `audit-narrative` (#3749); both are read-only by declaration, as every Flue workflow with no PROPOSE step must be (#3775); each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. A tenant authors its own skills on the Skills tab under `admin.agent_skill_review`; a version mounts, in its own tenant only, once a person other than its author approves its hash with a passing record, and the run pin marks it `origin: 'tenant'`. The author attaches that record and the server recomputes it; the product does not run the set (owner decision, 2026-10-18). | No runtime check holds a run's answer to its output contract. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
-| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; `scripts/audit-pilot-setup.ts` sets the pilot up with its agreed parameters. Internal audit samples the workpapers: a daily keyed draw at the tenant's rate (100% in the pilot), which only internal audit sets, each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, where internal audit sees every assignment, every dissent a finding proposal somebody other than the dissenter decides, and the re-performance agreement rate in the governance pack with its definition. The auditor agent narrates a period's workpapers (`audit-narrative`, #3749), on demand and by a daily dispatch that starts one run per tenant as the auditor under its owner's permissions: each narrative is held to its workpaper's conclusion and codes before it is stored, write-once and encrypted, and is shown on the review sheet. | Internal audit's approval and PwC's agreement of the catalogue are open; procedures 6 to 8 have no handler. |
+| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. A line of defence per membership, set only by an OWNER; the auditor independence check at registration, amend and activation, with a finding on a later break; the one-way workpaper record with a binding sample and a review stamp set once by the third line. Library v1 runs on the control-test runner as the registered auditor agent: five procedures re-performed from raw rows, one workpaper per run, every exception a finding proposal, an empty population inconclusive; only the auditor's owner sets or switches off a procedure plan; `scripts/audit-pilot-setup.ts` sets the pilot up with its agreed parameters. Internal audit samples the workpapers: a daily keyed draw at the tenant's rate (100% in the pilot), which only internal audit sets, each assigned to an ACTIVE third-line member who does not own the auditor or recorded UNASSIGNED with a reason, answered once in codes on `/audits/workpaper-reviews`, where internal audit sees every assignment, every dissent a finding proposal somebody other than the dissenter decides, and the re-performance agreement rate in the governance pack with its definition. The auditor agent narrates a period's workpapers (`audit-narrative`, #3749), on demand and by a daily dispatch that starts one run per tenant as the auditor under its owner's permissions: each narrative is held to its workpaper's conclusion and codes before it is stored, write-once and encrypted, and is shown on the review sheet. | Internal audit's approval and the managed-service provider's agreement of the catalogue are open; procedures 6 to 8 have no handler. |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | — |
 
 ## Roadmap (future direction)
@@ -1284,7 +1291,8 @@ of decisions 1 to 6 above.
    standing authorisation for that merge. The owner re-confirmed this on
    2026-10-17 when asked directly, choosing auto-merge on green over holding the
    pull request for sign-off. The merge does not supply an external party's
-   act, such as internal audit's approval, PwC's agreement or the security
+   act, such as internal audit's approval, the managed-service provider's
+   agreement or the security
    owner's review: each is stated as recorded on the step issue when given, and
    never as given before then. For `0e`, the signature covers
    [the DPIA](agentic-harness-scanner-dpia.md) as written, with its two

@@ -38,7 +38,7 @@ describe('jwt callback — membership refresh on update trigger', () => {
                 {
                     tenantId: 't-new',
                     role: 'OWNER',
-                    tenant: { id: 't-new', slug: 'pwc-nis2' },
+                    tenant: { id: 't-new', slug: 'acme-nis2' },
                 },
             ],
             orgMemberships: [
@@ -68,10 +68,10 @@ describe('jwt callback — membership refresh on update trigger', () => {
         // sessionVersion check may add a second, unrelated read).
         expect(findUnique).toHaveBeenCalled();
         expect(result.memberships).toEqual([
-            { slug: 'pwc-nis2', role: 'OWNER', tenantId: 't-new' },
+            { slug: 'acme-nis2', role: 'OWNER', tenantId: 't-new' },
         ]);
         // Primary/back-compat claims track the (only) membership.
-        expect(result.tenantSlug).toBe('pwc-nis2');
+        expect(result.tenantSlug).toBe('acme-nis2');
         expect(result.role).toBe('OWNER');
         expect(result.orgMemberships).toEqual([
             { slug: 'my-org', role: 'ORG_ADMIN', organizationId: 'o-1' },

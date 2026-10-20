@@ -340,7 +340,7 @@
    * across the row body once when hover engages. The tint at 14%
    * alpha is muted enough to read as "a wash of light", not "a
    * solid colour block". METRO uses the brand yellow at low
-   * opacity; PwC uses the brand orange at a marginally higher
+   * opacity; the light theme uses the brand orange at a marginally higher
    * opacity to compensate for the cream surface's lower
    * contrast. Same alpha would make the orange disappear
    * against cream.
@@ -380,7 +380,7 @@
    * pink. Not adjacent-rainbow — adjacent-tonal.
    *
    * METRO palette emphasises saturated jewel tones against the
-   * deep-navy surface. PwC counterparts (below) are restrained
+   * deep-navy surface. Light-theme counterparts (below) are restrained
    * earth tones against cream. Same six families — different
    * brightness curves.
    * ─────────────────────────────────────────────────────────── */
@@ -464,17 +464,17 @@
 
 
 /* ═══════════════════════════════════════════════════════════════════
-   LIGHT THEME — PwC-inspired enterprise palette.
+   LIGHT THEME — warm enterprise palette.
 
    Activated by ThemeProvider setting `data-theme="light"` on <html>.
    Designed around:
      - warm off-white / cream backgrounds (not cold blue-slate)
      - charcoal text hierarchy (not blue-tinted)
-     - PwC signature orange as the primary accent
+     - signature orange as the primary accent
      - warm neutral borders
      - conservative, document-friendly status colors
 
-   Palette origin: PwC brand language + Tailwind warm neutrals.
+   Palette origin: a warm orange accent + Tailwind warm neutrals.
    Contrast: all text/surface pairs meet WCAG 2.1 AA (4.5:1+).
    ═══════════════════════════════════════════════════════════════════ */
 [data-theme="light"] {
@@ -527,8 +527,8 @@
   --canvas-shadow:     0 6px 16px -10px rgba(60, 50, 40, 0.28), 0 1px 2px rgba(60, 50, 40, 0.12);
   --canvas-recess:     inset 0 11px 20px -16px rgba(60, 50, 40, 0.22);
 
-  /* ── Brand / Primary (PwC-inspired orange) ──────────────────────── */
-  --brand-default:  #D04A02;                /* PwC signature orange — links, accents */
+  /* ── Brand / Primary (signature orange) ──────────────────────── */
+  --brand-default:  #D04A02;                /* signature orange — links, accents */
   --brand-emphasis: #B83D00;                /* burnt orange — primary buttons, active (5.8:1) */
   --brand-muted:    #E06520;                /* lighter orange — hover accent */
   --brand-subtle:   rgba(208, 74, 2, 0.09); /* orange @ 9% — brand tint backgrounds */
@@ -538,7 +538,7 @@
    * Roadmap-13's two-tone state vocabulary lands on the light theme
    * as deep navy (#1E3A8A — Tailwind indigo-900-ish). Against the
    * warm cream `--bg-default` (#F8F6F3) navy reads as the natural
-   * cool counter to PwC orange — same complementary-contrast logic
+   * cool counter to light-theme orange — same complementary-contrast logic
    * as METRO's electric-blue secondary, adapted to the palette
    * temperature.
    *
@@ -649,7 +649,7 @@
 
   /* ── Sidebar band glow (R13-PR2) ───────────────────────────────── */
   /*
-   * PwC: orange @ 35% on the cream `--bg-default` (#F8F6F3). Same
+   * Light theme: orange @ 35% on the cream `--bg-default` (#F8F6F3). Same
    * 6px blur radius as METRO — the geometry of the glow is theme-
    * independent; only the colour swaps. A flatter alpha would
    * disappear on cream; 0.35 lets the glow read at peripheral
@@ -659,7 +659,7 @@
 
   /* ── Sidebar band glow — ACTIVE variant (R13-PR4) ──────────────── */
   /*
-   * PwC active rows paint the band with deep navy. The active glow
+   * Light-theme active rows paint the band with deep navy. The active glow
    * is the navy hue at the same 35% alpha — keeps the aura coherent
    * with the band's stops. Geometry matches the METRO glow (6px
    * blur) so the visual weight of the active state feels balanced
@@ -672,9 +672,9 @@
 
   /* ── Sidebar gloss highlight (R13-PR6) ─────────────────────────── */
   /*
-   * On the cream PwC surface a white-on-cream highlight is much
+   * On the cream light-theme surface a white-on-cream highlight is much
    * less effective at simulating "light catching the edge" — cream
-   * already reads as nearly-white. The PwC gloss inverts the
+   * already reads as nearly-white. The light-theme gloss inverts the
    * direction: instead of "lighter at top", we use a faint white
    * at 70% which lands as a near-white sliver on cream — still
    * subtle, but readable as a defined top edge. The geometry of
@@ -694,7 +694,7 @@
    */
   --nav-bevel-shadow: inset 0 -1px 1px 0 rgba(60, 50, 40, 0.08);
 
-  /* R15-PR7 — light-theme liquid sweep tint. PwC orange at 16%
+  /* R15-PR7 — light-theme liquid sweep tint. Light-theme orange at 16%
    * opacity. Slightly higher alpha than METRO (0.14) because the
    * cream surface (`--bg-default: #FAF7F2`) has lower contrast
    * with brand orange than the navy METRO surface has with brand
@@ -713,11 +713,11 @@
   --nav-row-aura-color: rgba(30, 58, 138, 0.18);
 
   /* ───────────────────────────────────────────────────────────────
-   * R16-PR1 — Lickable Chart palette + motion (PwC theme).
+   * R16-PR1 — Lickable Chart palette + motion (light theme).
    *
    * Six-series palette, same hue families as METRO above, but
    * restrained earth tones against the cream surface (#F4F2ED).
-   * METRO uses jewel tones; PwC uses what feels right next to
+   * METRO uses jewel tones; the light theme uses what feels right next to
    * cream — deeper saturation on dark hues, lighter on the
    * brand orange to keep series-1 from dominating.
    *
@@ -729,7 +729,7 @@
    * not jarring.
    * ─────────────────────────────────────────────────────────── */
 
-  /* Series 1 — primary brand (PwC orange, slightly muted for
+  /* Series 1 — primary brand (light-theme orange, slightly muted for
    * cream contrast). */
   --chart-series-1-start: #D04A02;
   --chart-series-1-end:   #A03A00;
@@ -748,7 +748,7 @@
   --chart-series-4-start: #BE185D;
   --chart-series-4-end:   #831843;
 
-  /* Series 5 — forest. The "growth" tone in PwC trend cards. */
+  /* Series 5 — forest. The "growth" tone in light-theme trend cards. */
   --chart-series-5-start: #15803D;
   --chart-series-5-end:   #14532D;
 

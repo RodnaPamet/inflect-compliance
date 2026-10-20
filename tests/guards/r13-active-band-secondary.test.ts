@@ -3,7 +3,7 @@
  *
  * The headline change of R13. Until PR-4, hover and active painted
  * the band in the SAME hue family (primary brand — yellow on METRO,
- * orange on PwC), distinguished only by the brand-subtle wash and
+ * orange on the light theme), distinguished only by the brand-subtle wash and
  * font-weight on active. The user reads "more yellow" vs "even more
  * yellow", which is a tonal whisper rather than a state shout.
  *
@@ -62,18 +62,18 @@ describe('Roadmap-13 PR-4 — active band swaps to secondary brand', () => {
             );
         });
 
-        it('PwC declares --brand-secondary-muted', () => {
-            // PwC's secondary-default is deep navy (#1E3A8A); the
+        it('the light theme declares --brand-secondary-muted', () => {
+            // The light theme's secondary-default is deep navy (#1E3A8A); the
             // muted tier is one rung lighter (#3B82F6) — same
             // electric blue used as METRO's secondary-default,
-            // which works here because relative to PwC's deep navy
+            // which works here because relative to the light theme's deep navy
             // it reads as the "highlight" position.
             expect(LIGHT_BLOCK).toMatch(
                 /--brand-secondary-muted:\s*#3B82F6\b/i,
             );
         });
 
-        it('METRO + PwC both list secondary tokens in default/emphasis/muted/subtle order', () => {
+        it('METRO and the light theme both list secondary tokens in default/emphasis/muted/subtle order', () => {
             // The token order conveys hierarchy. Future PRs adding
             // tokens to this family MUST insert at the right tier;
             // a `--brand-secondary-emphasis` declared AFTER `--brand-
@@ -110,7 +110,7 @@ describe('Roadmap-13 PR-4 — active band swaps to secondary brand', () => {
             );
         });
 
-        it('PwC declares --nav-band-glow-active in the deep-navy family', () => {
+        it('the light theme declares --nav-band-glow-active in the deep-navy family', () => {
             expect(LIGHT_BLOCK).toMatch(
                 /--nav-band-glow-active:\s*0\s+0\s+6px\s+rgba\(30,\s*58,\s*138,\s*0\.35\)/,
             );

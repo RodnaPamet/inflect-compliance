@@ -315,12 +315,12 @@ Naming reuse; separate from R13 Living Sidebar.
 
 | PR | Claim | Verify | Status |
 |----|-------|--------|--------|
-| #391 R13-PR1 | Secondary brand tokens — electric blue METRO, deep navy PwC. | Inspect `--brand-secondary-default` in DevTools on both themes. | ? |
+| #391 R13-PR1 | Secondary brand tokens — electric blue METRO, deep navy light. | Inspect `--brand-secondary-default` in DevTools on both themes. | ? |
 | #392 R13-PR2 | 3-stop gradient on band (default → muted highlight → emphasis) + soft outer glow. | Hover band — gradient + halo visible. | ? |
 | #393 R13-PR3 | `nav-band-shimmer` 4s ease-in-out infinite background-position pan. | Hover band → slow pulse of brand light along its length. | ? |
 | #394 R13-PR4 | Active band swaps to navy (`!` important on from/via/to). | Active row band — navy. **NOTE 2026-05-13**: swapped from navy to `--bg-page` in [PR #455 + #463](https://github.com/h0mele55/inflect-compliance/pull/463). | OK (superseded) |
-| #395 R13-PR5 | Active label → `text-[var(--brand-default)]`. Yellow letters METRO, orange PwC. | Active row label — brand-colored letters. | ? |
-| #396 R13-PR6 | Glossy top-edge `::after` highlight (white @ 8% METRO / 70% PwC). | Hover row → faint top-edge gloss line. | ? |
+| #395 R13-PR5 | Active label → `text-[var(--brand-default)]`. Yellow letters METRO, orange light. | Active row label — brand-colored letters. | ? |
+| #396 R13-PR6 | Glossy top-edge `::after` highlight (white @ 8% METRO / 70% light). | Hover row → faint top-edge gloss line. | ? |
 | #397 R13-PR7 | Inset bevel shadow on hover via `--nav-bevel-shadow`. | Hover row → bottom-edge concavity. | ? |
 | #398 R13-PR8 | Press feedback `active:translate-y-px` + motion-language exempt. | Mousedown a sidebar row → row drops 1px. | ? |
 | #399 R13-PR9 | Band reaches on hover (top-1.5→top-1, w-3px→w-4px). | Hover row → band geometry expands. | ? |

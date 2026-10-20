@@ -9,9 +9,9 @@
  * ── LIBRARY v1 IS PROPOSED, NOT APPROVED ────────────────────────────────────
  *
  * The repository owner's merge adopted catalogue version 1 for this repository.
- * Internal audit's approval and PwC's agreement of it are OPEN, and so is each
- * procedure's PwC methodology reference: each is recorded on issue #3663 when
- * given. `LIBRARY_V1_STATUS` says so in code, and every finding proposal and
+ * Internal audit's approval and the managed-service provider's agreement of it
+ * are OPEN, and so is each procedure's provider methodology reference: each is
+ * recorded on issue #3663 when given. `LIBRARY_V1_STATUS` says so in code, and every finding proposal and
  * every evidence row the handlers write carries that status, so nothing a
  * person reads presents the library as approved. Changing a value there is a
  * claim about an external party's act; it belongs in the pull request that
@@ -68,16 +68,16 @@ export const LIBRARY_V1_STATUS = {
     /** Adopted for this repository by the owner's merge; proposed to the two parties below. */
     status: 'PROPOSED',
     internalAuditApproval: 'OPEN',
-    pwcAgreement: 'OPEN',
-    pwcMethodologyReference: 'OPEN',
+    providerAgreement: 'OPEN',
+    providerMethodologyReference: 'OPEN',
     recordedOn: '#3663',
 } as const;
 
 /** One sentence every finding proposal and evidence row carries about the library's standing. */
 export const LIBRARY_V1_STATUS_SENTENCE =
-    'Audit procedure library v1 is proposed to internal audit and PwC: their approval, their ' +
-    'agreement and each procedure\'s PwC methodology reference are open on #3663, so this ' +
-    'procedure is not an approved or agreed definition.';
+    'Audit procedure library v1 is proposed to internal audit and the managed-service provider: ' +
+    'their approval, their agreement and each procedure\'s provider methodology reference are ' +
+    'open on #3663, so this procedure is not an approved or agreed definition.';
 
 export type PeriodKind = 'MONTH' | 'QUARTER';
 
