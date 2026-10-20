@@ -352,3 +352,77 @@ describe('deploy scripts — the mechanism that keeps repo and VM in step', () =
         }
     });
 });
+
+/**
+ * The `Scanner VM` workflow reaches the production VM as root, with every
+ * credential the harness scanner holds (#3665). Each property below is one an
+ * edit "to make it work" would plausibly undo, and none of them would fail a
+ * run: the workflow simply becomes something nobody approved. Parsed as YAML,
+ * so each assertion is on a value the workflow has, not on its text.
+ */
+type Step = { name?: string; uses?: string; with?: Record<string, unknown>; env?: Record<string, string>; run?: string; if?: string };
+const wf = yaml.load(read('.github/workflows/scanner-vm.yml')) as {
+    on: Record<string, unknown>;
+    permissions: Record<string, string>;
+    jobs: Record<string, { environment?: string; steps: Step[] }>;
+};
+const job = wf.jobs['scanner-vm'];
+const steps = job.steps;
+
+describe('the Scanner VM workflow', () => {
+    it('runs only when a person dispatches it', () => {
+        expect(Object.keys(wf.on)).toEqual(['workflow_dispatch']);
+    });
+
+    it('runs in the production environment, whose reviewer approves each run', () => {
+        expect(Object.keys(wf.jobs)).toEqual(['scanner-vm']);
+        expect(job.environment).toBe('production');
+    });
+
+    it('holds an OIDC token and read access to the code, and nothing else', () => {
+        expect(wf.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+    });
+
+    it('authenticates to GCP by Workload Identity Federation, never with a key', () => {
+        const auth = steps.filter((s) => s.uses?.startsWith('google-github-actions/auth@'));
+        expect(auth).toHaveLength(1);
+        expect(Object.keys(auth[0].with ?? {}).sort()).toEqual(['service_account', 'workload_identity_provider']);
+    });
+
+    it('reads secrets in one step, which only writes the staged files', () => {
+        const withSecrets = steps.filter((s) => JSON.stringify(s).includes('secrets.'));
+        expect(withSecrets.map((s) => s.name)).toEqual(['Write the configuration and the credential lines']);
+        expect(withSecrets[0].if).toBe("inputs.action == 'configure'");
+        expect(withSecrets[0].run).toBe('deploy/harness-scanner/stage-config.sh "$RUNNER_TEMP/harness-scanner"');
+    });
+
+    it('always removes the staged credentials from the runner', () => {
+        const last = steps[steps.length - 1];
+        expect(last.if).toBe('always()');
+        expect(last.run).toBe('rm -rf "$RUNNER_TEMP/harness-scanner"');
+    });
+});
+
+describe('the scripts it runs print no credential', () => {
+    const scripts = ['deploy/harness-scanner/remote.sh', 'deploy/harness-scanner/vm.sh', 'deploy/harness-scanner/stage-config.sh'];
+    const code = (rel: string) =>
+        read(rel)
+            .split('\n')
+            .filter((l) => !/^\s*#/.test(l));
+
+    it.each(scripts)('%s never traces its commands', (rel) => {
+        expect(code(rel).filter((l) => /set\s+-[a-z]*x|set\s+-o\s+xtrace/.test(l))).toEqual([]);
+    });
+
+    it.each(scripts)('%s never prints an environment file', (rel) => {
+        expect(code(rel).filter((l) => /\b(cat|less|more|head|tail)\b[^|]*\.env(\.prod|\.scanner)?\b/.test(l))).toEqual([]);
+    });
+
+    it('the dry run sends the report to the summariser, never to the log', () => {
+        const lines = code('deploy/harness-scanner/remote.sh');
+        const scan = lines.findIndex((l) => l.includes('scan --dry-run'));
+        expect(scan).toBeGreaterThan(-1);
+        expect(lines[scan].trimEnd().endsWith('\\')).toBe(true);
+        expect(lines[scan + 1].trim().startsWith('| docker run --rm -i --network none --entrypoint node')).toBe(true);
+    });
+});

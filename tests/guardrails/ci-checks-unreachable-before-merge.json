@@ -93,5 +93,10 @@
         "kind": "never",
         "reason": "Manual dispatch only. It publishes the harness scanner's image to GHCR by digest for Inflect's own estate on the production VM (owner decision, 2026-10-20), and publishing cannot meaningfully happen from a pull request: a PR's token must not reach `packages: write`.",
         "coveredBy": "ci.yml `Scanner image` builds the same Dockerfile, runs the same container/smoke.sh and the same blocking Trivy gate on every pull request, unconditionally. tests/guardrails/publish-scans-before-push.test.ts names this job as a push site and requires its blocking Trivy step above every step that can reach a registry. RESIDUAL: the push and the digest read-back run only when somebody dispatches it."
+    },
+    "scanner-vm.yml:scanner-vm": {
+        "kind": "never",
+        "reason": "Manual dispatch only, in the `production` environment whose reviewer approves each run. It configures, checks and starts the harness scanner on the production VM as root with production secrets (#3665; owner decision 2026-10-20), which a pull request must never reach.",
+        "coveredBy": "tests/guards/deploy-compose-canonical.test.ts holds the workflow's shape (dispatch only, the production environment, OIDC and contents:read alone, Workload Identity Federation and no key, secrets read in one staging step, the staged credentials always removed) and its scripts' (no command tracing, no environment file printed, the dry-run report sent to the summariser). tests/unit/agent-harness-scanner/pilot-deployment-template.test.ts keeps the template it fills schema-valid. RESIDUAL: the ssh to the VM and the actions themselves run only when somebody dispatches it."
     }
 }

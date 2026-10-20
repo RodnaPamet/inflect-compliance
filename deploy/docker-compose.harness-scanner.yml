@@ -1,7 +1,10 @@
 #
 # OPT-IN OVERLAY — the agent-harness scanner for Inflect's OWN estate (#3665).
 #
-# Usage (a deliberate act, once the preconditions below are met):
+# Usage: the dispatch-only `Scanner VM` workflow installs this file on the VM,
+# writes its configuration and environment file from `production` secrets, and
+# runs it (.github/workflows/scanner-vm.yml; deploy/harness-scanner/README.md).
+# By hand, once the preconditions below are met, it is:
 #
 #   docker compose --env-file .env --env-file .env.prod \
 #     -f docker-compose.prod.yml \
