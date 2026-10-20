@@ -133,6 +133,7 @@ export default async function AgentRegisterPage({
             // ForbiddenPage.
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
+            canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
         />
     );
 }

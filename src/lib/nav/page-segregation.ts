@@ -241,6 +241,8 @@ export const SUBPAGES: readonly string[] = [
     // from the list's rows.
     '/agents/peers',
     '/agents/peers/[peerId]',
+    // #3807 — the owner-orphan pass, reached from the agents Views menu.
+    '/agents/owner-orphan-pass',
     '/agents/proposals',
     '/agents/quarantine',
     '/agents/receipts',

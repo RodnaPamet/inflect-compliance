@@ -198,6 +198,13 @@ const MIGRATED_PAGES = [
     // ceiling does not move in either direction.
     'agents/page.tsx',
     'agents/AgentsClient.tsx',
+    // #3807 — the owner-orphan pass page. Token-clean from the start (semantic
+    // content-*/bg-*/border-* only; Card + StatusBadge + InlineNotice +
+    // ConfirmDialog + PageBreadcrumbs + the shared LadderRungCard, no legacy
+    // btn/badge/glass-card). Promoted on landing rather than parked in the
+    // unmigrated tally.
+    'agents/owner-orphan-pass/page.tsx',
+    'agents/owner-orphan-pass/OwnerOrphanPassClient.tsx',
     // The five surfaces' shared ViewsMenu. Not a page.tsx / *Client.tsx, so it
     // was never in the tally; listed so the anti-drift checks read it.
     'agents/AgentsViewsMenu.tsx',
