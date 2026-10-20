@@ -29,14 +29,14 @@ import { repoFiles, repoRelative } from '../helpers/repo-files';
  * is the intersection that can actually leak — outside the closure AND created
  * by a suite that calls `resetDatabase`. That is 22 models.
  *
- * Of those, 19 are still unreset. They are listed below rather than fixed,
- * because each addition is a behavioural change for the suites that create the
- * row (#3597's own note works through the argument) and bulk-adding them blind
- * across 88 suites is not a safe edit. They are tracked in #3804.
+ * All 22 are now reset. The 19 that #3801 left on an allowlist went in under
+ * #3804, once the safety argument turned out to be ONE measurement rather than
+ * nineteen: it is about which suites reset inside `beforeEach` (3 of 88), and
+ * none of those creates any of them in `beforeAll`.
  *
- * So the rule is: that intersection is either reset or on the list below. A
- * NEW one is neither, and fails here — which is the property the three
- * incidents above all needed and none of them had.
+ * So the rule is: that intersection is reset, or it is on the allowlist below,
+ * which is now EMPTY and should stay that way. A new one is neither, and fails
+ * here — the property the three incidents above all needed and none had.
  */
 
 /** `relations ⊆ {Tenant, User, self}` — a self-relation is not a parent. */
@@ -45,31 +45,14 @@ const CLOSURE_ROOTS = new Set(['Tenant', 'User']);
 /**
  * Outside the closure, created by a resetting suite, and NOT truncated.
  *
- * Every entry is a latent #3801. Removing one requires adding it to
- * `RESET_TABLES` with the safety measurement #3597 and #3801 both record, not
- * deleting the line. Tracked in #3804.
+ * EMPTY, and that is the finished state — every model that can leak is reset.
+ * It is kept as a named, empty allowlist rather than deleted because the rule
+ * above needs somewhere to put a model that genuinely must not be truncated,
+ * and an entry here is then a decision with a reason attached instead of a
+ * silent omission from `RESET_TABLES`. Adding one means saying why in this
+ * docblock. The 19 that used to be here are in `RESET_TABLES` as of #3804.
  */
-const KNOWN_UNRESET: readonly string[] = [
-    'AgentKillSwitch',
-    'AgentKillSwitchDrill',
-    'AiSystem',
-    'AuditWorkpaper',
-    'ExternalToolParameterSet',
-    'ExternalToolPriorStateRead',
-    'IdentityDepartmentGroupRule',
-    'McpToolManifestPin',
-    'PreHire',
-    'ProcessMap',
-    'ReportTemplate',
-    'RiskSuggestionSession',
-    'ScannerRun',
-    'TenantCustomRole',
-    'TenantInvite',
-    'TenantNotificationSettings',
-    'TenantSecuritySettings',
-    'TrainingCourse',
-    'UserCalendarConnection',
-];
+const KNOWN_UNRESET: readonly string[] = [];
 
 function read(abs: string): string {
     return fs.readFileSync(abs, 'utf8');
