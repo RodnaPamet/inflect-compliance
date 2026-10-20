@@ -98,6 +98,19 @@ export const POST = withApiErrorHandling(
                 safeEnqueue(sseComment('connected'));
 
                 const heartbeat = setInterval(() => safeEnqueue(sseComment('hb')), HEARTBEAT_INTERVAL_MS);
+                // UNREF'd, and this is not test hygiene — it is the same
+                // concern as shutdown stage 3b. A heartbeat exists to keep a
+                // CONNECTION warm; it must never be the reason the PROCESS
+                // stays alive. Without this, an open stream holds the event
+                // loop for up to HEARTBEAT_INTERVAL_MS past the point where
+                // everything else has finished, which is exactly the delay
+                // that stage's "cut the streams" step is there to avoid.
+                //
+                // Found the hard way: CI shard 4/6 passed all 5305 tests and
+                // then sat for 21 minutes until the job timed out, with
+                // "Jest did not exit one second after the test run has
+                // completed" as the only clue.
+                heartbeat.unref?.();
 
                 // ONE abort controller for the turn, so a client disconnect
                 // reaches the provider's `fetch` (#3825). Without this an

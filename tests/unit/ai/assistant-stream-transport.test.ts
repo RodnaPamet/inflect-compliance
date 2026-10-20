@@ -44,6 +44,13 @@ import { NextRequest } from 'next/server';
 import * as route from '@/app/api/t/[tenantSlug]/assistant/stream/route';
 import { __resetStreamCapacity, MAX_STREAMS_PER_TENANT } from '@/app-layer/ai/assistant/stream-capacity';
 import type { AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
+import { readFileSync } from 'node:fs';
+import nodePath from 'node:path';
+
+const ROUTE_FILE = nodePath.join(
+    process.cwd(),
+    'src/app/api/t/[tenantSlug]/assistant/stream/route.ts',
+);
 
 /** Drain an SSE body into the parsed `data:` payloads, ignoring comments. */
 async function collect(res: Response): Promise<AssistantStreamEvent[]> {
@@ -190,5 +197,45 @@ describe('the concurrent-stream cap refuses the N+1', () => {
             expect(res.status).toBe(200);
             expect(res.body).not.toBeNull();
         }
+    });
+});
+
+describe('the heartbeat does not hold the process open', () => {
+    /**
+     * A regression assertion for a failure whose only symptom was a timeout.
+     *
+     * CI shard 4/6 passed all 5305 of its tests and then sat for 21 minutes
+     * until the job was cancelled. The single diagnostic line was "Jest did
+     * not exit one second after the test run has completed" — no failing
+     * assertion, no stack, and a green test summary immediately above it. The
+     * cause was this route's 25-second heartbeat interval: a test that opens
+     * the stream without draining it to completion never reaches `cleanup`,
+     * so the timer stayed ref'd and held Node's event loop.
+     *
+     * Asserted on the SOURCE because the alternative does not discriminate.
+     * `process.getActiveResourcesInfo()` reports a `Timeout` for every timer
+     * in the worker — jest's own, the test environment's, any other module's
+     * — so a count cannot say whose timer it saw, and an assertion that
+     * cannot name the subject would pass with this bug reintroduced.
+     */
+    it("unrefs every interval it starts, so a stream can't delay exit", () => {
+        const src = readFileSync(ROUTE_FILE, 'utf8');
+
+        // The denominator: if the route stops using an interval at all, this
+        // assertion must not keep passing by finding nothing to check.
+        const intervals = [...src.matchAll(/setInterval\(/g)];
+        expect(intervals.length).toBe(1);
+
+        expect(src).toMatch(/heartbeat\.unref\?\.\(\)/);
+    });
+
+    it('the assertion can fail — a ref\'d interval is detected', () => {
+        // Positive control. Without it, a typo in the pattern above would
+        // make the check vacuous in exactly the way it is meant to prevent.
+        const refd = "const heartbeat = setInterval(fn, 25_000);\n";
+        expect(refd).not.toMatch(/heartbeat\.unref\?\.\(\)/);
+
+        const unrefd = refd + 'heartbeat.unref?.();\n';
+        expect(unrefd).toMatch(/heartbeat\.unref\?\.\(\)/);
     });
 });
