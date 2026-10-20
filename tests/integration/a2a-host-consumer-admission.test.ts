@@ -42,6 +42,12 @@ import {
     rotateHostConsumerSecret,
 } from '@/app-layer/usecases/a2a-host-consumers';
 import { registerWorkflow } from '@/lib/agentic/workflow-registry';
+import {
+    engageHostConsumerKill,
+    liftHostConsumerKill,
+    listHostConsumerKills,
+    resolveHostConsumerKill,
+} from '@/app-layer/usecases/a2a-host-consumer-kill';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { hashForLookup } from '@/lib/security/encryption';
 import {
@@ -617,5 +623,114 @@ describe('managing a host consumer (#3861)', () => {
     it("cannot manage another tenant's consumer", async () => {
         await expect(rotateHostConsumerSecret(adminCtx(T2), world[T1].consumerId)).rejects.toThrow(/not found/);
         await expect(revokeHostConsumer(adminCtx(T2), world[T1].consumerId)).rejects.toThrow(/not found/);
+    });
+});
+
+describe('the per-consumer kill switch (#3861)', () => {
+    const opCtx = (tenantId: string) =>
+        makeRequestContext('OWNER', { tenantId, userId: world[tenantId].ownerUserId });
+
+    it('STOPS BOTH DOORS: no new tokens, and live ones refused', async () => {
+        // R26 rests on exactly this. A stateless token cannot be revoked
+        // individually, so the kill has to stop the token endpoint AND the
+        // boundary — otherwise a stopped consumer keeps working for fifteen
+        // minutes, or keeps being handed fresh tokens.
+        const issued = await issueHostConsumerToken({
+            tenantSlug: T1,
+            grantType: 'client_credentials',
+            clientId: world[T1].clientId,
+            clientSecret: world[T1].clientSecret,
+        });
+        if (!issued.ok) throw new Error('expected a token');
+
+        await engageHostConsumerKill(opCtx(T1), world[T1].consumerId, { reason: 'incident 11' });
+
+        expect(
+            await issueHostConsumerToken({
+                tenantSlug: T1,
+                grantType: 'client_credentials',
+                clientId: world[T1].clientId,
+                clientSecret: world[T1].clientSecret,
+            }),
+        ).toMatchObject({ ok: false, reason: 'HOST_CONSUMER_KILLED' });
+
+        expect(
+            await tryAdmitHostConsumer(ctxFor(T1), { authorization: `Bearer ${issued.accessToken}` }),
+        ).toMatchObject({ kind: 'REFUSED', reason: 'HOST_CONSUMER_KILLED' });
+
+        // And lifting restores both, with the SAME token — the evidence that
+        // neither door caches the predicate.
+        await liftHostConsumerKill(opCtx(T1), world[T1].consumerId, { liftReason: 'resolved' });
+        expect((await tryAdmitHostConsumer(ctxFor(T1), { authorization: `Bearer ${issued.accessToken}` })).kind).toBe(
+            'ADMITTED',
+        );
+        expect(
+            (
+                await issueHostConsumerToken({
+                    tenantSlug: T1,
+                    grantType: 'client_credentials',
+                    clientId: world[T1].clientId,
+                    clientSecret: world[T1].clientSecret,
+                })
+            ).ok,
+        ).toBe(true);
+    });
+
+    it('is idempotent — pressing stop twice says it is stopped', async () => {
+        const first = await engageHostConsumerKill(opCtx(T1), world[T1].consumerId, { reason: 'twice' });
+        expect(first.alreadyInForce).toBe(false);
+        const second = await engageHostConsumerKill(opCtx(T1), world[T1].consumerId, { reason: 'twice again' });
+        expect(second.alreadyInForce).toBe(true);
+        expect(second.id).toBe(first.id);
+        // The partial unique index is the authority, so there is still one.
+        expect(await prisma.hostConsumerKillSwitch.count({ where: { tenantId: T1, liftedAt: null } })).toBe(1);
+    });
+
+    it('refuses a kill with no stated reason, in both directions', async () => {
+        await expect(engageHostConsumerKill(opCtx(T1), world[T1].consumerId, {})).rejects.toThrow(/required/);
+        await expect(
+            engageHostConsumerKill(opCtx(T1), world[T1].consumerId, { reason: '   ' }),
+        ).rejects.toThrow(/required/);
+        await engageHostConsumerKill(opCtx(T1), world[T1].consumerId, { reason: 'has one' });
+        await expect(liftHostConsumerKill(opCtx(T1), world[T1].consumerId, {})).rejects.toThrow(/required/);
+    });
+
+    it('is lifted by a person, never by an API key', async () => {
+        await engageHostConsumerKill(opCtx(T1), world[T1].consumerId, { reason: 'incident 12' });
+        await expect(
+            liftHostConsumerKill(
+                makeRequestContext('OWNER', { tenantId: T1, userId: world[T1].ownerUserId, apiKeyId: 'key-9' }),
+                world[T1].consumerId,
+                { liftReason: 'by a token' },
+            ),
+        ).rejects.toThrow(/not by an API key/);
+        // Still stopped.
+        expect(await resolveHostConsumerKill(ctxFor(T1), world[T1].consumerId)).not.toBeNull();
+    });
+
+    it('refuses to lift when nothing is in force, and to kill an unknown consumer', async () => {
+        await expect(
+            liftHostConsumerKill(opCtx(T1), world[T1].consumerId, { liftReason: 'nothing to lift' }),
+        ).rejects.toThrow(/No kill is in force/);
+        await expect(
+            engageHostConsumerKill(opCtx(T1), 'no-such-consumer', { reason: 'x' }),
+        ).rejects.toThrow(/not found/);
+    });
+
+    it('keeps the lifted kill as the record, and lists it', async () => {
+        await engageHostConsumerKill(opCtx(T1), world[T1].consumerId, { reason: 'incident 13' });
+        await liftHostConsumerKill(opCtx(T1), world[T1].consumerId, { liftReason: 'all clear' });
+        const kills = await listHostConsumerKills(opCtx(T1), world[T1].consumerId);
+        expect(kills.length).toBeGreaterThanOrEqual(1);
+        // Lifting is an UPDATE stamping who and why, never a delete: the row is
+        // the evidence that traffic was stopped between two timestamps.
+        expect(kills[0]).toMatchObject({ liftedByUserId: world[T1].ownerUserId, liftReason: 'all clear' });
+        expect(kills[0].engagedAt).toBeInstanceOf(Date);
+    });
+
+    it("cannot kill another tenant's consumer", async () => {
+        await expect(
+            engageHostConsumerKill(opCtx(T2), world[T1].consumerId, { reason: 'cross tenant' }),
+        ).rejects.toThrow(/not found/);
     });
 });

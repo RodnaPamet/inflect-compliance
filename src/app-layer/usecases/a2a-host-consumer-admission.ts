@@ -5,6 +5,7 @@ import {
     type HostConsumerTokenClaims,
 } from '@/lib/agentic/a2a/host-consumer';
 import { runInTenantContext } from '@/lib/db-context';
+import { resolveHostConsumerKill } from '@/app-layer/usecases/a2a-host-consumer-kill';
 
 import type { RequestContext } from '@/app-layer/types';
 
@@ -147,15 +148,13 @@ export async function tryAdmitHostConsumer(
         return { kind: 'REFUSED', reason: 'HOST_CONSUMER_REVOKED', httpStatus: 403 };
     }
 
-    // UNCACHED, every request. See the docblock: this is what makes a stateless
-    // token revocable at all.
-    const killed = await runInTenantContext(sys, (db) =>
-        db.hostConsumerKillSwitch.findFirst({
-            where: { tenantId: sys.tenantId, hostConsumerId: row.id, liftedAt: null },
-            select: { id: true },
-        }),
-    );
-    if (killed) return { kind: 'REFUSED', reason: 'HOST_CONSUMER_KILLED', httpStatus: 403 };
+    // UNCACHED, every request, through the ONE spelling of the predicate — so
+    // the boundary and the token endpoint cannot come to disagree about what
+    // "killed" means. See the docblock: this is what makes a stateless token
+    // revocable at all.
+    if (await resolveHostConsumerKill(sys, row.id)) {
+        return { kind: 'REFUSED', reason: 'HOST_CONSUMER_KILLED', httpStatus: 403 };
+    }
 
     const since = new Date((opts.now ?? new Date()).getTime() - 60 * 60 * 1000);
     const used = await runInTenantContext(sys, (db) =>

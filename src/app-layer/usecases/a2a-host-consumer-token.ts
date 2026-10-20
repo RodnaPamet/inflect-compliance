@@ -7,6 +7,7 @@ import {
     HOST_CONSUMER_TOKEN_TTL_SECONDS,
 } from '@/lib/agentic/a2a/host-consumer';
 import { runInTenantContext } from '@/lib/db-context';
+import { resolveHostConsumerKill } from '@/app-layer/usecases/a2a-host-consumer-kill';
 import { runInGlobalContext } from '@/lib/db/rls-middleware';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { logger } from '@/lib/observability/logger';
@@ -135,13 +136,8 @@ export async function issueHostConsumerToken(input: {
     }
     if (row.revokedAt !== null || row.status !== 'ACTIVE') return deny('HOST_CONSUMER_REVOKED', 403);
 
-    const killed = await runInTenantContext(sys, (db) =>
-        db.hostConsumerKillSwitch.findFirst({
-            where: { tenantId: tenant.id, hostConsumerId: row.id, liftedAt: null },
-            select: { id: true },
-        }),
-    );
-    if (killed) return deny('HOST_CONSUMER_KILLED', 403);
+    // The same predicate the boundary uses, not a second copy of the query.
+    if (await resolveHostConsumerKill(sys, row.id)) return deny('HOST_CONSUMER_KILLED', 403);
 
     const minted = mintHostConsumerToken(
         {
