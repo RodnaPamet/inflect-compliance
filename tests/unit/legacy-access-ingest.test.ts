@@ -311,3 +311,257 @@ describe('storableColumns', () => {
             .toEqual(['CREATED', 'DISPLAY_NAME', 'EMAIL_ADDR', 'LOGIN', 'ROLE_1', 'ROLE_2', 'STATUS']);
     });
 });
+
+/**
+ * The defensive branches, which were the least-tested part of this module
+ * (#3795). Measured before these: 69.5% branch coverage, and the uncovered
+ * third was disproportionately the fail-closed half — three of the paths below
+ * carry a written safety argument in the source with nothing behind it.
+ *
+ * `ingest.ts` is the roadmap's untrusted-input boundary: it turns a customer's
+ * arbitrary spreadsheet into canonical rows. Its refusals and its coercions are
+ * where a bad cell either stops or quietly becomes a confident wrong answer.
+ */
+const WIDE_COLUMNS = [
+    'LOGIN', 'EMAIL_ADDR', 'DISPLAY_NAME', 'STATUS', 'CREATED',
+    'ROLE_1', 'ROLE_2', 'PRIV', 'KIND', 'ROLES_CSV',
+];
+
+const wideMapping = (over: Partial<StoredMapping> = {}): StoredMapping => ({
+    version: 3,
+    columnSetFingerprint: computeColumnSetFingerprint(WIDE_COLUMNS),
+    fields: {
+        accountKey: 'LOGIN',
+        email: 'EMAIL_ADDR',
+        displayName: 'DISPLAY_NAME',
+        status: 'STATUS',
+        createdAt: 'CREATED',
+        isPrivileged: 'PRIV',
+        accountType: 'KIND',
+    },
+    entitlements: { kind: 'wide', columns: ['ROLE_1', 'ROLE_2'] },
+    confirmedAt: '2026-10-09T00:00:00.000Z',
+    confirmedByUserId: 'u1',
+    ...over,
+});
+
+const wideRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    LOGIN: 'jsmith',
+    EMAIL_ADDR: 'j.smith@corp.test',
+    DISPLAY_NAME: 'John Smith',
+    STATUS: 'A',
+    CREATED: '2024-01-15T00:00:00.000Z',
+    ROLE_1: 'reader',
+    ROLE_2: '',
+    PRIV: 'false',
+    KIND: 'HUMAN',
+    ROLES_CSV: '',
+    ...over,
+});
+
+describe('a non-scalar cell is DROPPED, never stringified (#3795)', () => {
+    // The source's own argument: stringifying "would store a blob nobody
+    // classified, which is the thing the canonical schema exists to prevent."
+    it.each([
+        ['an object', { nested: 'value' }],
+        ['an array', ['a', 'b']],
+    ])('drops %s in a scalar cell rather than serialising it', (_label, cell) => {
+        const out = mapRows(wideMapping(), [wideRow({ DISPLAY_NAME: cell })], WIDE_COLUMNS);
+
+        expect(out.accounts[0]!.displayName).toBeNull();
+        // The failure this guards is not "wrong value" but "a blob in the
+        // column": assert the serialisations specifically, because a `String()`
+        // or a `JSON.stringify` would both satisfy a mere not-equal check.
+        expect(out.accounts[0]!.displayName).not.toBe('[object Object]');
+        expect(out.accounts[0]!.displayName).not.toBe(JSON.stringify(cell));
+    });
+
+    it('still stores a real scalar, so the drop is about SHAPE not emptiness', () => {
+        // The negative control. A reader that dropped everything would pass
+        // every assertion above.
+        const out = mapRows(wideMapping(), [wideRow({ DISPLAY_NAME: 'Jane Doe' })], WIDE_COLUMNS);
+        expect(out.accounts[0]!.displayName).toBe('Jane Doe');
+    });
+});
+
+describe('an unrecognised boolean is NULL, not false (#3795)', () => {
+    // The source's own argument: `isPrivileged` "gates whether an account is
+    // treated as high-risk in a review, so an unrecognised value becoming a
+    // confident `false` would quietly downgrade it."
+    it.each([['maybe'], ['PRIVILEGED?'], ['2'], ['oui']])(
+        'reads %s as null — unknown is not a denial',
+        (word) => {
+            const out = mapRows(wideMapping(), [wideRow({ PRIV: word })], WIDE_COLUMNS);
+            expect(out.accounts[0]!.isPrivileged).toBeNull();
+        },
+    );
+
+    it('distinguishes null from false, which is the whole point', () => {
+        // Without this pair the test above passes on an implementation that
+        // returns null for EVERYTHING, which would lose the real `false`.
+        const yes = mapRows(wideMapping(), [wideRow({ PRIV: 'TRUE' })], WIDE_COLUMNS);
+        const no = mapRows(wideMapping(), [wideRow({ PRIV: 'no' })], WIDE_COLUMNS);
+        const unknown = mapRows(wideMapping(), [wideRow({ PRIV: 'maybe' })], WIDE_COLUMNS);
+
+        expect(yes.accounts[0]!.isPrivileged).toBe(true);
+        expect(no.accounts[0]!.isPrivileged).toBe(false);
+        expect(unknown.accounts[0]!.isPrivileged).toBeNull();
+    });
+
+    it('a non-scalar in the boolean cell is null too, not truthy', () => {
+        // An object is truthy in JavaScript, so a naive `Boolean(cell)` would
+        // read it as PRIVILEGED — the inverse of the downgrade above and worse.
+        const out = mapRows(wideMapping(), [wideRow({ PRIV: { a: 1 } })], WIDE_COLUMNS);
+        expect(out.accounts[0]!.isPrivileged).toBeNull();
+    });
+});
+
+describe('an unknown account-type word is UNKNOWN (#3795)', () => {
+    it.each([['contractor'], ['robot'], ['']])('maps %s to UNKNOWN', (word) => {
+        const out = mapRows(wideMapping(), [wideRow({ KIND: word })], WIDE_COLUMNS);
+        expect(out.accounts[0]!.accountType).toBe('UNKNOWN');
+    });
+
+    it('still maps the words it knows, including the synonyms', () => {
+        for (const [word, expected] of [
+            ['USER', 'HUMAN'],
+            ['svc', 'SERVICE'],
+            ['service-account', 'SERVICE'],
+            ['GENERIC', 'SHARED'],
+            ['builtin', 'SYSTEM'],
+        ] as const) {
+            const out = mapRows(wideMapping(), [wideRow({ KIND: word })], WIDE_COLUMNS);
+            expect({ word, type: out.accounts[0]!.accountType }).toEqual({ word, type: expected });
+        }
+    });
+});
+
+describe('the delimited entitlements layout (#3795)', () => {
+    // Exercised in ZERO files before this: `git ls-files tests | xargs grep -l
+    // "'delimited'"` returned nothing. One of three layouts the mapping
+    // supports, and the only one no test reached.
+    const delimited = (delimiter = ',') =>
+        wideMapping({ entitlements: { kind: 'delimited', column: 'ROLES_CSV', delimiter } });
+
+    it('splits on the delimiter and trims each segment', () => {
+        const out = mapRows(delimited(), [wideRow({ ROLES_CSV: 'reader, writer ,admin' })], WIDE_COLUMNS);
+        expect(out.accounts[0]!.entitlements).toEqual(['reader', 'writer', 'admin']);
+    });
+
+    it('drops empty segments, so a trailing delimiter adds nothing', () => {
+        const out = mapRows(delimited(), [wideRow({ ROLES_CSV: 'reader,,writer,' })], WIDE_COLUMNS);
+        // An empty-string entitlement is a grant nobody holds; it would show up
+        // in a review as a blank row to certify.
+        expect(out.accounts[0]!.entitlements).toEqual(['reader', 'writer']);
+    });
+
+    it('an absent or non-scalar cell yields no entitlements, not a crash', () => {
+        for (const cell of ['', '   ', undefined, { a: 1 }, ['x']]) {
+            const out = mapRows(delimited(), [wideRow({ ROLES_CSV: cell })], WIDE_COLUMNS);
+            expect(out.accounts[0]!.entitlements).toEqual([]);
+        }
+    });
+
+    it('honours a multi-character delimiter', () => {
+        const out = mapRows(delimited(' | '), [wideRow({ ROLES_CSV: 'reader | writer' })], WIDE_COLUMNS);
+        expect(out.accounts[0]!.entitlements).toEqual(['reader', 'writer']);
+    });
+});
+
+describe('an unparsable date is counted, not guessed (#3795)', () => {
+    it.each([
+        ['an invalid Date object', new Date('not a date')],
+        ['a non-scalar cell', { when: 'yesterday' }],
+        ['an unparsable string', 'last Tuesday'],
+    ])('reports %s as unparsed and stores null', (_label, cell) => {
+        const out = mapRows(wideMapping(), [wideRow({ CREATED: cell })], WIDE_COLUMNS);
+        expect(out.accounts[0]!.createdAt).toBeNull();
+        expect(out.unparsedDates).toBeGreaterThan(0);
+    });
+
+    it('a valid date is parsed and counted as parsed', () => {
+        // The denominator: without this, an implementation that called
+        // everything unparsed would satisfy the cases above.
+        const out = mapRows(wideMapping(), [wideRow()], WIDE_COLUMNS);
+        expect(out.accounts[0]!.createdAt).toBeInstanceOf(Date);
+        expect(out.unparsedDates).toBe(0);
+    });
+});
+
+describe("the 'none' entitlements layout (#3795)", () => {
+    it('yields no entitlements and does not read any column', () => {
+        const out = mapRows(
+            wideMapping({ entitlements: { kind: 'none' } }),
+            [wideRow({ ROLE_1: 'reader', ROLES_CSV: 'writer' })],
+            WIDE_COLUMNS,
+        );
+        // Both candidate columns carry a value; `none` must ignore them rather
+        // than fall through to a default layout.
+        expect(out.accounts[0]!.entitlements).toEqual([]);
+    });
+});
+
+describe('ROW_SCHEMA_INVALID names the FIELD and never the value (#3795)', () => {
+    // This throw is the last line of defence: a value that survived every
+    // coercion above and still fails the canonical schema. Its comment says the
+    // Zod issue MESSAGES can quote the received value, so only the PATHS are
+    // used — which makes this a leak test as much as a coverage one. A snapshot
+    // refusal is surfaced to an operator and written to a job row.
+    const tooLong = 'k'.repeat(600);
+
+    it('refuses an over-long account key, naming the field', () => {
+        const err = refusalOf(() =>
+            mapRows(wideMapping(), [wideRow({ LOGIN: tooLong })], WIDE_COLUMNS),
+        );
+        expect(err.refusal).toBe('ROW_SCHEMA_INVALID');
+        expect(err.message).toContain('accountKey');
+    });
+
+    it('takes only Zod PATHS from the issue list, never Zod messages', () => {
+        // This is the property the comment above the throw is actually about,
+        // and it is narrower than "no values in the message". Zod issue
+        // messages can quote the received value; the code takes `is.path` only.
+        //
+        // I first asserted the message carried no part of the value at all,
+        // and that FAILED — deliberately so, as it turns out: the template is
+        // `account "${accountKey}" has values …`, and all THREE of this
+        // module's row-level refusals name the account the same way
+        // (ROW_SCHEMA_INVALID, DUPLICATE_ACCOUNT_KEY, CONTRADICTORY_ROWS).
+        // Naming the account is how an operator finds the row. Asserting my own
+        // preference here would have encoded it as the codebase's rule.
+        //
+        // What remains worth a ticket is that the interpolation is UNBOUNDED —
+        // filed as its own observation rather than changed under a coverage
+        // ticket, because bounding it touches three refusals and a convention.
+        const err = refusalOf(() =>
+            mapRows(wideMapping(), [wideRow({ LOGIN: tooLong })], WIDE_COLUMNS),
+        );
+        // The path is present...
+        expect(err.message).toContain('accountKey');
+        // ...and Zod's own prose for a max-length failure is not.
+        expect(err.message).not.toMatch(/too long|at most|expected string to contain/i);
+    });
+
+    it('refuses an over-long entitlement too, naming entitlements', () => {
+        // A second path to the same throw, through the delimited layout, so the
+        // test does not depend on one field's bound.
+        const err = refusalOf(() =>
+            mapRows(
+                wideMapping({ entitlements: { kind: 'delimited', column: 'ROLES_CSV', delimiter: ',' } }),
+                [wideRow({ ROLES_CSV: 'r'.repeat(600) })],
+                WIDE_COLUMNS,
+            ),
+        );
+        expect(err.refusal).toBe('ROW_SCHEMA_INVALID');
+        expect(err.message).toContain('entitlements');
+        expect(err.message).not.toContain('r'.repeat(40));
+    });
+
+    it('a row within the bounds does not throw, so the bound is the trigger', () => {
+        // The negative control. An implementation that threw on every row would
+        // satisfy all three assertions above.
+        expect(() =>
+            mapRows(wideMapping(), [wideRow({ LOGIN: 'k'.repeat(512) })], WIDE_COLUMNS),
+        ).not.toThrow();
+    });
+});
