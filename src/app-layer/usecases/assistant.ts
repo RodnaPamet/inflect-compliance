@@ -30,7 +30,7 @@ import { guardUntrustedInput, guardEgress, assertGuardAllowed, assertNoReviewReq
 import { getDashboardData } from './dashboard';
 import { createAgentProposal } from './agent-proposals';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
-import prisma from '@/lib/prisma';
+import { runInTenantContext } from '@/lib/db-context';
 import { RESIDENCY_SELECT, residencyTermsFrom, resolveFlueModel } from '@/lib/agentic/flue/model-selection';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { assistantTools } from '@/app-layer/ai/assistant/tools';
@@ -216,10 +216,18 @@ async function answerFromKeywords(ctx: RequestContext, q: string): Promise<Assis
  * READ TOOLS ONLY, deliberately — see the note on `readOnly` below.
  */
 async function answerFromToolLoop(ctx: RequestContext, question: string): Promise<AssistantAnswer | null> {
-    const secSettings = await prisma.tenantSecuritySettings.findUnique({
-        where: { tenantId: ctx.tenantId },
-        select: RESIDENCY_SELECT,
-    });
+    // THROUGH `runInTenantContext`, not the global client. `tests/unit/no-direct-prisma.test.ts`
+    // forbids a usecase importing `@/lib/prisma` — and the reason is the one that
+    // matters here rather than tidiness: this read is tenant-scoped, so it belongs
+    // inside the RLS context like every other read on this path. The same
+    // correction `risk-suggestions.ts` already carries: "the read stays here, on
+    // the `db` this block already holds".
+    const secSettings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: RESIDENCY_SELECT,
+        }),
+    );
     // AI sovereignty: the residency posture decides the model, and LOCAL_ONLY
     // short-circuits before any external consideration. Never `setProvider` —
     // see the header on `tool-loop.ts` for why a race here is a cross-tenant
