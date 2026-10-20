@@ -39,6 +39,11 @@
  *      the endpoint, the identity and the keys, verifies, differs per tenant,
  *      and follows a rotation; the per-tenant endpoint finds the peer from its
  *      credential alone and refuses everything else it is shown.
+ *  12. PROMOTING AN ACCEPTED SEND (#3743). The reconcile pass asks the peer
+ *      with a signed `tasks/get`: a verified `completed` promotes, a running
+ *      task stays ACCEPTED and is asked again only when due, a terminal or
+ *      unverifiable answer settles INDETERMINATE, and a killed or re-pinned
+ *      peer is not asked at all.
  */
 // Inflect's A2A identity is the tenant's card URL on the deployment's public
 // origin (#3742). The test sets the origin, and clears it to see the refusal.
@@ -97,6 +102,7 @@ import { listPeerMessages } from '@/app-layer/usecases/a2a-messages';
 import { handleInboundA2a } from '@/app-layer/usecases/a2a-inbound';
 import { dispatchA2aSend } from '@/app-layer/usecases/a2a-outbound';
 import { runExternalWriteDispatch } from '@/app-layer/usecases/external-write-dispatch';
+import { reconcileAcceptedExternalWrites } from '@/app-layer/usecases/external-write-reconcile';
 import { approveAgentProposal } from '@/app-layer/usecases/agent-proposals';
 import { saveParameterSet } from '@/app-layer/usecases/external-tool-parameters';
 import { grantAgentTool } from '@/app-layer/usecases/agent-tool-exposure';
@@ -269,6 +275,8 @@ beforeEach(async () => {
     for (const t of TENANTS) {
         world[t].peer.card = world[t].peer.baseCard();
         world[t].peer.reply = { kind: 'task', state: 'completed' };
+        world[t].peer.pollReply = { kind: 'task', state: 'completed' };
+        world[t].peer.polls.length = 0;
         world[t].peer.received.length = 0;
     }
 });
@@ -1389,5 +1397,126 @@ describe('the published card and the per-tenant endpoint', () => {
 
     it('an unknown tenant has no card', async () => {
         expect(await cardOf('no-such-tenant')).toBeNull();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 12. PROMOTING AN ACCEPTED SEND THROUGH tasks/get (#3743)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('an ACCEPTED send is asked after with tasks/get, and settled only on verified evidence', () => {
+    beforeEach(cleanOutbound);
+
+    /** A send the peer accepted and had not finished: the row, and the peer's id for the task. */
+    async function acceptedSend(text: string): Promise<{ id: string; taskId: string }> {
+        await setRung('AUTOMATIC');
+        await saveParameterSet(ownerCtx(T1), { toolName: SEND(), label: 'reconcile', parameters: { text } }).catch(() => undefined);
+        world[T1].peer.reply = { kind: 'task', state: 'working' };
+        await (await sendTool())!.run(agentCtx(T1), { parameterSet: 'reconcile' });
+        await dispatch();
+        const row = await prisma.externalWriteJournal.findFirstOrThrow({ where: { tenantId: T1, outcome: 'ACCEPTED' } });
+        return { id: row.id, taskId: `peer-task-${world[T1].peer.received.length}` };
+    }
+
+    const reconcile = (now?: Date) =>
+        reconcileAcceptedExternalWrites({ tenantId: T1, a2a: { fetchImpl: world[T1].peer.fetch, card: seam(T1) }, now });
+    const rowOf = (id: string) => prisma.externalWriteJournal.findUniqueOrThrow({ where: { id } });
+
+    it('a completed task, in a signed answer that verifies, promotes the row, and every message is kept', async () => {
+        const { id, taskId } = await acceptedSend('Reconcile INV-10');
+        world[T1].peer.pollReply = { kind: 'task', state: 'completed' };
+        await warmCard(T1);
+        const r = await reconcile();
+        expect(r).toMatchObject({ scanned: 1, promoted: 1, indeterminate: 0 });
+        expect(world[T1].peer.polls).toEqual([taskId]);
+        const row = await rowOf(id);
+        expect(row.outcome).toBe('APPLIED');
+        expect((await getJournalWrite(ownerCtx(T1), id))!.detail).toMatch(/reports task peer-task-\d+ completed/);
+
+        const receipts = await asApp(T1, (db) =>
+            db.peerAgentMessage.findMany({ where: { tenantId: T1, journalId: id }, orderBy: { createdAt: 'asc' } }),
+        );
+        expect(receipts.map((m) => `${m.direction}:${m.kind}:${m.method ?? '-'}`)).toEqual([
+            'OUTBOUND:TASK:message/send',
+            'INBOUND:RESULT:-',
+            'OUTBOUND:TASK:tasks/get',
+            'INBOUND:RESULT:-',
+        ]);
+        expect(verifyStoredA2aReceipt(receipts[2], world[T1].inflectPublicKey)).toBe(true);
+        expect(verifyStoredA2aReceipt(receipts[3], world[T1].peer.key.publicKeyHex)).toBe(true);
+    });
+
+    it('a task still running stays ACCEPTED, says how long, and is not asked again before it is due', async () => {
+        const { id } = await acceptedSend('Reconcile INV-11');
+        world[T1].peer.pollReply = { kind: 'task', state: 'working' };
+        await warmCard(T1);
+        expect(await reconcile()).toMatchObject({ promoted: 0, notYet: 1 });
+        expect((await rowOf(id)).outcome).toBe('ACCEPTED');
+        expect((await getJournalWrite(ownerCtx(T1), id))!.detail).toMatch(/reported it working at .+, accepted for \d+ minutes?/);
+        expect(world[T1].peer.polls).toHaveLength(1);
+
+        // Straight away: not due, not asked.
+        expect(await reconcile()).toMatchObject({ notYet: 1 });
+        expect(world[T1].peer.polls).toHaveLength(1);
+        // Past the floor: asked again.
+        await warmCard(T1);
+        await reconcile(new Date(Date.now() + 11 * 60 * 1000));
+        expect(world[T1].peer.polls).toHaveLength(2);
+    });
+
+    it.each([['failed'], ['canceled'], ['rejected']])('a %s task settles INDETERMINATE, naming the peer\'s report', async (state) => {
+        const { id } = await acceptedSend(`Reconcile ${state}`);
+        world[T1].peer.pollReply = { kind: 'task', state };
+        await warmCard(T1);
+        expect(await reconcile()).toMatchObject({ indeterminate: 1, promoted: 0 });
+        expect((await rowOf(id)).outcome).toBe('INDETERMINATE');
+        expect((await getJournalWrite(ownerCtx(T1), id))!.detail).toContain(`as ${state}`);
+    });
+
+    it.each([
+        ['signed by another key', { kind: 'wrong-key' } as const],
+        ['altered after signing', { kind: 'tampered' } as const],
+        ['unsigned', { kind: 'unsigned' } as const],
+    ])('a "completed" answer %s never promotes: it settles INDETERMINATE', async (_label, pollReply) => {
+        const { id } = await acceptedSend(`Reconcile ${pollReply.kind}`);
+        world[T1].peer.pollReply = pollReply;
+        await warmCard(T1);
+        expect(await reconcile()).toMatchObject({ promoted: 0, indeterminate: 1 });
+        expect((await rowOf(id)).outcome).toBe('INDETERMINATE');
+    });
+
+    it('a peer that answers with an HTTP error leaves the row ACCEPTED, to be asked again', async () => {
+        const { id } = await acceptedSend('Reconcile INV-12');
+        world[T1].peer.pollReply = { kind: 'http', status: 503 };
+        await warmCard(T1);
+        expect(await reconcile()).toMatchObject({ unreadable: 1, promoted: 0, indeterminate: 0 });
+        expect((await rowOf(id)).outcome).toBe('ACCEPTED');
+    });
+
+    it('a killed peer is not asked', async () => {
+        const { id } = await acceptedSend('Reconcile INV-13');
+        await engagePeerKill(ownerCtx(T1), world[T1].peerId, { reason: 'Poll kill check' });
+        try {
+            await warmCard(T1);
+            expect(await reconcile()).toMatchObject({ unreadable: 1 });
+            expect(world[T1].peer.polls).toHaveLength(0);
+            expect((await rowOf(id)).outcome).toBe('ACCEPTED');
+        } finally {
+            await liftPeerKill(ownerCtx(T1), world[T1].peerId, { liftReason: 'Poll kill check done' });
+        }
+    });
+
+    it('a peer re-pinned since the send is not asked: what was decided is not what would be asked about', async () => {
+        const { id } = await acceptedSend('Reconcile INV-14');
+        world[T1].peer.card = { ...world[T1].peer.baseCard(), description: 'Reconciles invoices, now also credit notes.' };
+        await approveCurrentCard(T1);
+        try {
+            expect(await reconcile()).toMatchObject({ unreadable: 1 });
+            expect(world[T1].peer.polls).toHaveLength(0);
+            expect((await rowOf(id)).outcome).toBe('ACCEPTED');
+        } finally {
+            world[T1].peer.card = world[T1].peer.baseCard();
+            await approveCurrentCard(T1);
+        }
     });
 });

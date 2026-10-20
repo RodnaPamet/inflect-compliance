@@ -90,7 +90,7 @@ export async function runExternalWriteDispatchJob(
         refused: 0,
         indeterminate: 0,
         accepted: 0,
-        reconcile: { scanned: 0, promoted: 0, notYet: 0, unreadable: 0, unverifiable: 0 },
+        reconcile: { scanned: 0, promoted: 0, notYet: 0, unreadable: 0, unverifiable: 0, indeterminate: 0 },
         expiry: { scanned: 0, confirmedExpired: 0, raised: 0, alreadyRaised: 0, unreadable: 0 },
     };
 
@@ -130,6 +130,7 @@ export async function runExternalWriteDispatchJob(
             total.reconcile.notYet += r.notYet;
             total.reconcile.unreadable += r.unreadable;
             total.reconcile.unverifiable += r.unverifiable;
+            total.reconcile.indeterminate += r.indeterminate;
         } catch (err) {
             // Nothing is settled on this path, so a failure is a delay and the
             // next pass retries. The row stays ACCEPTED either way.

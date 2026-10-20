@@ -1429,7 +1429,10 @@ Made on the questions step `4b` (#3679) raised. They continue the numbering.
 26. **The inbound credential stays Security ephemeral.** The vendor pilot
     partner, Inflect's published card (R19), promoting an `ACCEPTED` send on a
     later `tasks/get`, and feeding a peer's reply into the sending run are
-    follow-up issues. (`4b`)
+    follow-up issues. (`4b`) The card landed with #3742, and the `tasks/get`
+    promotion with #3743, built before the pilot because the pilot's peer is a
+    second Inflect tenant (owner decision, 2026-10-20). Feeding a reply back
+    waits on the pilot (#3744).
 
 ### Permission keys
 

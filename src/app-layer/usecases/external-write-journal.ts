@@ -264,6 +264,61 @@ export async function promoteAcceptedWrite(
 }
 
 /**
+ * Settle an `ACCEPTED` row `INDETERMINATE`, when the far end itself says the
+ * request it accepted did not finish (#3743: an A2A peer reporting its task
+ * `failed`, `canceled` or `rejected`, or answering in a way that cannot be tied
+ * to it).
+ *
+ * Not a demotion, and not `FAILED`. `FAILED` claims the far end changed
+ * nothing, and a peer's report is the peer's claim. `INDETERMINATE` claims only
+ * that whether anything changed is not known here, which is the state the send
+ * path records for exactly the same report when it arrives on the send. Pinned
+ * to `ACCEPTED`, as `promoteAcceptedWrite` is, so it can close an open row and
+ * never rewrite a closed one.
+ */
+export async function concludeAcceptedIndeterminate(
+    ctx: RequestContext,
+    journalId: string,
+    detail: string,
+): Promise<boolean> {
+    const res = await runInTenantContext(ctx, (db) =>
+        db.externalWriteJournal.updateMany({
+            where: { id: journalId, tenantId: ctx.tenantId, outcome: 'ACCEPTED' },
+            data: { outcome: 'INDETERMINATE', detail: sanitizePlainText(detail), settledAt: new Date() },
+        }),
+    );
+    if (res.count === 0) {
+        logger.warn('external write journal: nothing to conclude', {
+            component: 'external-write-journal',
+            tenantId: ctx.tenantId,
+            journalId,
+        });
+        return false;
+    }
+    logger.info('external write concluded INDETERMINATE', {
+        component: 'external-write-journal',
+        tenantId: ctx.tenantId,
+        journalId,
+    });
+    return true;
+}
+
+/**
+ * Record what a check of an `ACCEPTED` row found, without settling it (#3743):
+ * the far end says the work is still under way. The outcome and `settledAt`
+ * stay as they are, so the row still reads as accepted, and since when.
+ * Only the detail moves, to say when it was last asked and what it answered.
+ */
+export async function noteAcceptedWrite(ctx: RequestContext, journalId: string, detail: string): Promise<void> {
+    await runInTenantContext(ctx, (db) =>
+        db.externalWriteJournal.updateMany({
+            where: { id: journalId, tenantId: ctx.tenantId, outcome: 'ACCEPTED' },
+            data: { detail: sanitizePlainText(detail) },
+        }),
+    );
+}
+
+/**
  * Read one row back, decrypted.
  *
  * Exists because a journal you cannot read is half a control, and because the

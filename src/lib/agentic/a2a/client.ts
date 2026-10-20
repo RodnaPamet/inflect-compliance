@@ -10,9 +10,9 @@
  * kind, and `tests/guards/ssrf-egress-coverage.test.ts` holds it to that beside
  * the two MCP clients.
  *
- * Its method set is closed (`A2A_CLIENT_METHODS`): it can send `message/send`
- * and nothing else, so it cannot speak `tools/*`, and neither MCP client can
- * speak A2A.
+ * Its method set is closed (`A2A_CLIENT_METHODS`): it can send `message/send`,
+ * and `tasks/get` to ask after a task a peer accepted (#3743), and nothing
+ * else, so it cannot speak `tools/*`, and neither MCP client can speak A2A.
  *
  * Before a socket opens, the body is scanned by `findInternalSecret`: a
  * ciphertext envelope, an Inflect API key or a peer credential addressed to
@@ -32,7 +32,7 @@ import {
 } from '@/lib/mcp/wire-transport';
 import { findInternalSecret } from '@/app-layer/integrations/mcp/egress-scan';
 
-import { A2A_RECEIPT_HEADER } from './receipt';
+import { A2A_RECEIPT_HEADER, type A2aMethod } from './receipt';
 import { A2A_CLIENT_METHODS, A2A_MAX_RESPONSE_BYTES } from './protocol';
 
 /** One send, head and body together. */
@@ -79,7 +79,7 @@ export async function sendA2aMessage(req: A2aSendRequest): Promise<A2aSendResult
     } catch {
         return { ok: false, reason: 'METHOD_REFUSED', mayHaveArrived: false };
     }
-    if (typeof parsed.method !== 'string' || !A2A_CLIENT_METHODS.has(parsed.method as 'message/send')) {
+    if (typeof parsed.method !== 'string' || !A2A_CLIENT_METHODS.has(parsed.method as A2aMethod)) {
         return { ok: false, reason: 'METHOD_REFUSED', mayHaveArrived: false };
     }
     if (findInternalSecret(parsed.params)) {

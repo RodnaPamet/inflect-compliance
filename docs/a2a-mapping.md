@@ -157,6 +157,14 @@ authorization because no session stands behind the caller.
    admission and whether the pin it recorded still holds.
 3. **One wire.** `sendA2aMessage` (`src/lib/agentic/a2a/client.ts`) is the third
    client on `wirePost`, with a closed method set and the secret egress scan.
+4. **An accepted task is asked after** (#3743). A peer that answers a send with
+   a task still `submitted` or `working` leaves the row `ACCEPTED`, and the
+   reconcile pass asks it again with a signed `tasks/get` on the same rails: the
+   kill, admission and the recorded pin, then a receipt each way. A verified
+   `completed` promotes the row to `APPLIED`, a verified `failed`, `canceled` or
+   `rejected` settles it `INDETERMINATE`, and an answer that does not verify
+   settles it `INDETERMINATE` too. Nothing else moves it. A row is asked at most
+   every quarter of its age, between ten minutes and six hours.
 
 ### Receipts on both sides
 
