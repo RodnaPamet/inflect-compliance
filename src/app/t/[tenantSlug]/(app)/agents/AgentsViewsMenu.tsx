@@ -72,7 +72,8 @@ export type AgentsViewRoute =
     | 'external-tools'
     | 'peers'
     | 'compose'
-    | 'owner-orphan-pass';
+    | 'owner-orphan-pass'
+    | 'audit-pilot';
 
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
@@ -212,6 +213,19 @@ export function AgentsViewsMenu({
                             icon: <Gauge6 className="size-4" />,
                             href: href('/agents/reports'),
                             selected: current === 'reports',
+                        },
+                        canInvestigate && {
+                            // The pilot auditor's set-up (#3676, #3807): the
+                            // second line registers its auditor and schedules
+                            // library v1. ASSURANCE because the auditor is the
+                            // check on everything in OPERATE. The page asks
+                            // `admin.agent_registry`, as this entry does; who may
+                            // own an auditor is the usecase's to refuse.
+                            id: 'agents-view-audit-pilot',
+                            label: t('views.auditPilot'),
+                            icon: <BadgeCheck className="size-4" />,
+                            href: href('/agents/audit-pilot'),
+                            selected: current === 'audit-pilot',
                         },
                         canInvestigate && {
                             id: 'agents-view-review-quality',

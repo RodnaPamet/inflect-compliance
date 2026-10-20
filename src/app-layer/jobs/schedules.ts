@@ -637,7 +637,7 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // re-run.
         //
         // After the auditor agent's runs: the pilot's procedure plans run at
-        // 06:17 UTC on the 2nd (`scripts/audit-pilot-setup.ts`, `CRON`), so the
+        // 06:17 UTC on the 2nd (`usecases/audit-pilot-setup.ts`, `CRON`), so the
         // same day's sweep draws them three hours later, and a run the
         // control-test runner retried, or a re-run the second line started by
         // hand, is drawn the next morning.

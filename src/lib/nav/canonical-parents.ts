@@ -63,6 +63,8 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/agents/peers/[peerId]': { href: '/agents/peers', label: 'A2A peers' },
     // #3807 — the owner-orphan pass hangs off the register like its siblings.
     '/agents/owner-orphan-pass': { href: '/agents', label: 'Agents' },
+    // #3807 — the pilot auditor's set-up hangs off the register too.
+    '/agents/audit-pilot': { href: '/agents', label: 'Agents' },
     '/agents/proposals': { href: '/agents', label: 'Agents' },
     '/agents/reports': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },

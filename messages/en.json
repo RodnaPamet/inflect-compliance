@@ -8761,7 +8761,8 @@
       "externalTools": "External tools",
       "compose": "Compose a request",
       "peers": "Peer agents",
-      "ownerOrphanPass": "Owner departures"
+      "ownerOrphanPass": "Owner departures",
+      "auditPilot": "Audit pilot set-up"
     },
     "reviewQuality": {
       "accessTitle": "Agent register access required",
@@ -9791,6 +9792,38 @@
         "FAILED": "Could not be fully contained"
       },
       "crumbAgents": "Agents"
+    },
+    "auditPilot": {
+      "title": "Audit pilot set-up",
+      "crumbAgents": "Agents",
+      "accessTitle": "You can't set up the audit pilot",
+      "accessMessage": "Setting up the pilot auditor needs the agent register permission.",
+      "intro": "Registers the pilot auditor agent with you as its owner, grants it propose_finding and nothing else, activates it once its risk assessment is complete, and schedules one plan for each of the five library v1 procedures with the pilot's parameters. You must be a second-line member who may own an auditor. Nothing is written until you set it up: what you see first is a dry run.",
+      "inputsHeading": "What to set up",
+      "nameLabel": "Auditor name",
+      "nameHint": "The auditor is found by this name, so running the set-up again changes nothing that is already in place. Leave it empty to use the default.",
+      "controlsLabel": "Control for each procedure",
+      "controlsHint": "Each plan runs on the control it audits, matched from the procedure's ISO/IEC 27001 identifiers. Name a control only when the dry run says the match is missing or ambiguous. A plan that already exists keeps its control.",
+      "controlMapped": "Matched from the catalogue",
+      "controlSearch": "Search controls…",
+      "check": "Check again",
+      "apply": "Set up",
+      "dryRunHeading": "What the set-up would do",
+      "appliedHeading": "What the set-up did",
+      "checking": "Checking…",
+      "requestFailed": "The set-up could not be checked.",
+      "nameAControl": "Name the control for that procedure above, then check again.",
+      "outcome": {
+        "UNCHANGED": "In place",
+        "WOULD_CHANGE": "Would change",
+        "CHANGED": "Done",
+        "PENDING": "Waiting",
+        "DIFFERS": "Differs"
+      },
+      "confirmTitle": "Set up the pilot auditor",
+      "confirmBody": "You will own the auditor agent and its five procedure plans. Each write is made as you and lands in the audit trail. Steps already in place are left as they are, and a plan that differs from the pilot's is reported, never changed.",
+      "confirmAction": "Set up the pilot",
+      "cancel": "Cancel"
     }
   },
   "securityTesting": {
