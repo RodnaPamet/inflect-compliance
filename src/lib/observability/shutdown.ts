@@ -10,6 +10,7 @@ import {
 } from './shutdown-budget';
 import { pauseInFlightRuns } from '@/lib/agentic/in-flight-runs';
 import { closeOpenRunStreams } from '@/lib/agentic/open-run-streams';
+import { cutAllOpenStreams } from '@/app-layer/ai/assistant/stream-capacity';
 
 /**
  * One-shot SIGTERM / SIGINT handler. Drains observability surfaces
@@ -87,6 +88,37 @@ export function installShutdownHandlers(): void {
             // does not trust it — for the same reason the two stages above
             // carry one. An unguarded throw here would skip OTel AND Sentry.
             logger.warn('shutdown: closing run streams threw', {
+                component: 'shutdown',
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+
+        // Stage 3b — cut open ASSISTANT streams with a reason (#3827).
+        //
+        // Beside `closeOpenRunStreams` rather than after it, because the
+        // treatment is identical and only the population differs: run-replay
+        // viewers there, conversational turns here. Synchronous and
+        // never-throwing by contract, so like its neighbour it cannot exceed a
+        // budget and does not need one — which is why no fifth entry was added
+        // to `SHUTDOWN_STAGES_TOTAL_MS`.
+        //
+        // CUT, not drain. An assistant turn may legitimately run to its 60s
+        // wall-clock bound and the ceiling for ALL stages is 20s, so draining
+        // does not fit — it was not rejected on taste. Cutting loses no record:
+        // the turn commits nothing, and its audit row was flushed by stage 1.
+        // What it buys is the user seeing a reason instead of a dead socket.
+        try {
+            const cut = cutAllOpenStreams(
+                'The server is restarting, so this answer was cut short. Nothing was created. Ask again in a moment.',
+            );
+            if (cut > 0) {
+                logger.info('shutdown: cut open assistant streams', { component: 'shutdown', count: cut });
+            }
+        } catch (err) {
+            // `cutAllOpenStreams` promises never to throw, and this catch does
+            // not trust it — same reason as the three stages above. An
+            // unguarded throw here would skip OTel AND Sentry.
+            logger.warn('shutdown: cutting assistant streams threw', {
                 component: 'shutdown',
                 error: err instanceof Error ? err.message : String(err),
             });

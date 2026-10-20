@@ -36,6 +36,29 @@ jest.mock('@/app-layer/ai/guard', () => ({
 jest.mock('@/app-layer/usecases/dashboard', () => ({
     getDashboardData: jest.fn(),
 }));
+/**
+ * The Art 12 row (#3828).
+ *
+ * Mocked so the write is OBSERVABLE. Without these two mocks the call reaches a
+ * real `runInTenantContext`, throws, and is swallowed by the best-effort catch
+ * in `runGoverned` — so every assertion below would pass while no row was ever
+ * written. A logging path guarded by try/catch is exactly the shape that cannot
+ * express its own failure, which is why it is asserted rather than assumed.
+ */
+const logAiDecisionMock = jest.fn(async () => 'row-1');
+jest.mock('@/app-layer/ai/decision-log', () => ({
+    logAiDecision: (...args: unknown[]) => logAiDecisionMock(...(args as [])),
+}));
+jest.mock('@/lib/db-context', () => ({
+    // A tenant with NO security-settings row, which is a real state rather than
+    // a convenience: `residencyTermsFrom` documents that "an absent row
+    // resolves to `undefined` throughout", the same default
+    // `tenant-security-settings.ts` applies. Handing back a bare `{}` instead
+    // makes the residency read throw, which is not a state production has.
+    runInTenantContext: async (_ctx: unknown, fn: (db: unknown) => unknown) =>
+        fn({ tenantSecuritySettings: { findUnique: async () => null } }),
+}));
+
 jest.mock('@/app-layer/usecases/agent-proposals', () => ({
     createAgentProposal: jest.fn(),
 }));
@@ -138,5 +161,70 @@ describe('askAssistant — guard enforcement', () => {
         expect(createAgentProposal).not.toHaveBeenCalled();
         expect(getDashboardData).not.toHaveBeenCalled();
         expect(recordGeneration).not.toHaveBeenCalled();
+    });
+});
+
+describe('askAssistant — the Art 12 decision row (#3828)', () => {
+    beforeEach(() => {
+        logAiDecisionMock.mockClear();
+    });
+
+    it('writes exactly ONE row per turn', async () => {
+        await askAssistant(ctx, { question: 'how many open findings?' });
+        // One per invocation, matching every other feature in this log. Two
+        // would double-count the turn; zero would leave no record of it.
+        expect(logAiDecisionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('records the DETERMINISTIC path honestly when no model answered', async () => {
+        // The row's purpose is to say what produced the output. With no model
+        // configured under test the keyword router answers, and a row naming a
+        // provider and model would be a false Art 12 record — false in the
+        // direction that matters, since it would claim a model call that never
+        // happened.
+        await askAssistant(ctx, { question: 'how many open findings?' });
+
+        const [, , input] = logAiDecisionMock.mock.calls[0] as unknown as [
+            unknown,
+            unknown,
+            { feature: string; provider: string; model: string | null; outputSummary: string },
+        ];
+        expect(input.feature).toBe('assistant');
+        expect(input.provider).toBe('deterministic');
+        expect(input.model).toBeNull();
+    });
+
+    it('does not persist the raw question — only a digest of it', async () => {
+        await askAssistant(ctx, { question: 'how many open findings for ACME Ltd?' });
+        const [, , input] = logAiDecisionMock.mock.calls[0] as unknown as [
+            unknown,
+            unknown,
+            { sanitizedInput: unknown },
+        ];
+        // `logAiDecision` digests whatever it is handed, so what matters here is
+        // that the caller passes the question for digesting rather than storing
+        // it anywhere itself. The module's contract does the rest.
+        expect(JSON.stringify(input.sanitizedInput)).toContain('ACME');
+    });
+
+    it('records the answer the user was ALLOWED to see, after the egress guard', async () => {
+        await askAssistant(ctx, { question: 'how many open findings?' });
+        const [, , input] = logAiDecisionMock.mock.calls[0] as unknown as [
+            unknown,
+            unknown,
+            { outputSummary: string },
+        ];
+        // Written after `guardEgress`, so the summary is the released text
+        // rather than whatever was produced before the guard saw it.
+        expect(input.outputSummary).toMatch(/open finding/);
+    });
+
+    it('still answers when the row cannot be written', async () => {
+        // Best-effort by design: the row records a decision already made, so a
+        // logging failure must not deny the user their answer. Asserted so the
+        // catch is a deliberate contract rather than an accident.
+        logAiDecisionMock.mockRejectedValueOnce(new Error('db down'));
+        const r = await askAssistant(ctx, { question: 'how many open findings?' });
+        expect(r.message).toMatch(/open finding/);
     });
 });

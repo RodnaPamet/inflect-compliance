@@ -96,7 +96,11 @@ export function buildMessages(req: ProviderRequest): Array<{ role: 'user' | 'ass
 }
 
 /** Normalise Anthropic's reply into the loop's provider-agnostic shape. */
-export function parseTurn(data: { content?: AnthropicBlock[]; stop_reason?: string }): ProviderTurn {
+export function parseTurn(data: {
+    content?: AnthropicBlock[];
+    stop_reason?: string;
+    usage?: { input_tokens?: number; output_tokens?: number };
+}): ProviderTurn {
     const blocks = data.content ?? [];
     const text = blocks
         .filter((b): b is { type: 'text'; text?: string } => b.type === 'text')
@@ -115,7 +119,15 @@ export function parseTurn(data: { content?: AnthropicBlock[]; stop_reason?: stri
     const stopReason: ProviderTurn['stopReason'] =
         data.stop_reason === 'max_tokens' ? 'max_tokens' : toolCalls.length > 0 ? 'tool_use' : 'end';
 
-    return { text: text === '' ? null : text, toolCalls, stopReason };
+    // Only reported when BOTH halves are present. A partial usage object would
+    // otherwise be recorded as a complete cost with one side silently zero,
+    // which under-reports — the direction a spend record must not fail in.
+    const usage =
+        typeof data.usage?.input_tokens === 'number' && typeof data.usage?.output_tokens === 'number'
+            ? { tokensIn: data.usage.input_tokens, tokensOut: data.usage.output_tokens }
+            : undefined;
+
+    return { text: text === '' ? null : text, toolCalls, stopReason, usage };
 }
 
 export class SpecifierMismatchError extends Error {

@@ -82,6 +82,16 @@ export interface LoopResult {
     readonly text: string;
     readonly outcome: LoopOutcome;
     readonly calls: readonly LoopToolCall[];
+    /**
+     * Summed across every round-trip in the turn, or null if NO provider reply
+     * reported usage.
+     *
+     * Null rather than 0 deliberately: "this turn cost nothing" and "we do not
+     * know what this turn cost" are different facts, and a cost record that
+     * conflates them under-reports spend.
+     */
+    readonly tokensIn: number | null;
+    readonly tokensOut: number | null;
     /** True when ANY tool result was truncated — the UI must label the answer. */
     readonly truncatedAny: boolean;
     readonly iterations: number;
@@ -93,6 +103,14 @@ export interface ProviderTurn {
     readonly toolCalls: ReadonlyArray<{ readonly id: string; readonly name: string; readonly args: unknown }>;
     /** `max_tokens` is surfaced rather than folded into `end`: a truncated reply is not a finished one. */
     readonly stopReason: 'end' | 'tool_use' | 'max_tokens';
+    /**
+     * What the round-trip cost, when the provider says.
+     *
+     * Optional because not every provider reports it, and a missing figure must
+     * read as UNKNOWN rather than as zero — `0` would understate a tenant's
+     * recorded spend, which is the one direction a cost record must not fail in.
+     */
+    readonly usage?: { readonly tokensIn: number; readonly tokensOut: number };
 }
 
 /** What the loop sends. `toolResults` carries the previous turn's dispatches. */
@@ -253,6 +271,8 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
 
     const history: Array<ProviderRequest['history'][number]> = [];
     const calls: LoopToolCall[] = [];
+    let tokensIn: number | null = null;
+    let tokensOut: number | null = null;
     let spentCalls = opts.callsAlready ?? 0;
     let lastText: string | null = null;
     let iterations = 0;
@@ -268,6 +288,8 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
             text,
             outcome,
             calls,
+            tokensIn,
+            tokensOut,
             truncatedAny: calls.some((c) => c.truncated),
             iterations,
         };
@@ -292,6 +314,15 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
             // Degrade, do not throw at the user. Nothing is said about the
             // tenant's posture, because nothing was read.
             return finish('halted-provider-unavailable');
+        }
+
+        if (turn.usage !== undefined) {
+            // Accumulated across iterations, because a turn that called three
+            // tools made four round-trips and the tenant paid for all of them.
+            // Recording only the last would under-report a multi-step turn by
+            // most of its cost.
+            tokensIn = (tokensIn ?? 0) + turn.usage.tokensIn;
+            tokensOut = (tokensOut ?? 0) + turn.usage.tokensOut;
         }
 
         if (turn.text !== null && turn.text.trim() !== '') lastText = turn.text;
