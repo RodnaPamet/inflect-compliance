@@ -30,6 +30,13 @@ import { guardUntrustedInput, guardEgress, assertGuardAllowed, assertNoReviewReq
 import { getDashboardData } from './dashboard';
 import { createAgentProposal } from './agent-proposals';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
+import { runInTenantContext } from '@/lib/db-context';
+import { RESIDENCY_SELECT, residencyTermsFrom, resolveFlueModel } from '@/lib/agentic/flue/model-selection';
+import { resolveMcpInvocation } from '@/lib/mcp/auth';
+import { assistantTools } from '@/app-layer/ai/assistant/tools';
+import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
+import { runAssistantLoop } from '@/app-layer/ai/assistant/tool-loop';
+import { env } from '@/env';
 
 /**
  * The user-facing sentence for a queued proposal.
@@ -133,26 +140,8 @@ export async function askAssistant(
             message: proposalMessage(proposal.status, 'risk', title),
         };
     } else {
-        // ── Read intents → answer from live posture data (RLS-scoped) ──
-        const { stats } = await getDashboardData(ctx);
-        if (/\bhigh[-\s]?risk|top risk|critical risk/.test(q)) {
-            answer = { kind: 'answer', message: `You have ${stats.highRisks} high-severity risk(s) (inherent score ≥ 15) out of ${stats.risks} total.` };
-        } else if (/\brisk/.test(q)) {
-            answer = { kind: 'answer', message: `You have ${stats.risks} risk(s) on the register, ${stats.highRisks} of them high-severity.` };
-        } else if (/\bfinding/.test(q)) {
-            answer = { kind: 'answer', message: `You have ${stats.openFindings} open finding(s).` };
-        } else if (/\btask|remediat|action item/.test(q)) {
-            answer = { kind: 'answer', message: `You have ${stats.openTasks} open task(s) in progress.` };
-        } else if (/\bevidence/.test(q)) {
-            answer = { kind: 'answer', message: `You have ${stats.evidence} evidence item(s); ${stats.pendingEvidence} awaiting review and ${stats.overdueEvidence} overdue for re-review.` };
-        } else if (/\bcontrol|coverage|soc\s?2|iso|posture|status|summary|overview/.test(q)) {
-            answer = { kind: 'answer', message: `Posture: ${stats.controls} control(s), ${stats.risks} risk(s) (${stats.highRisks} high), ${stats.openFindings} open finding(s), ${stats.openTasks} open task(s), ${stats.evidence} evidence item(s).` };
-        } else {
-            answer = {
-                kind: 'answer',
-                message: 'I can answer read questions about your posture (high risks, open findings, tasks, evidence status, control coverage) and queue actions (raise a finding, create a risk) for a reviewer to approve. What would you like to know?',
-            };
-        }
+        // ── Read intents → the TOOL-USE LOOP, falling back to keywords ──
+        answer = (await answerFromToolLoop(ctx, question)) ?? (await answerFromKeywords(ctx, q));
     }
 
     // Guard the outbound message before it leaves the boundary.
@@ -161,3 +150,139 @@ export async function askAssistant(
     recordAiGeneration({ feature: 'assistant' }); // H6 — AI cost visibility
     return answer;
 }
+
+/**
+ * The deterministic read router — still here, now as the FALLBACK.
+ *
+ * `assistant.ts` called this "the first cut", and #3808 replaced it as the
+ * PRIMARY path rather than deleting it. Deleting it would regress a tenant who
+ * has the assistant enabled and no model configured: today they get real
+ * answers from live posture data, and refusing them instead would be a
+ * regression dressed as a feature.
+ *
+ * It is also what makes the assistant the legitimate exception to
+ * `resolveFlueModel`'s refuse-rather-than-fall-back rule. That rule exists
+ * because "there is no deterministic substitute for a model call" — true for an
+ * agent run, false here. This IS the substitute, and it answers from the same
+ * RLS-scoped data the loop would read.
+ */
+async function answerFromKeywords(ctx: RequestContext, q: string): Promise<AssistantAnswer> {
+    const { stats } = await getDashboardData(ctx);
+    const say = (message: string): AssistantAnswer => ({ kind: 'answer', message });
+
+    if (/\bhigh[-\s]?risk|top risk|critical risk/.test(q)) {
+        return say(`You have ${stats.highRisks} high-severity risk(s) (inherent score ≥ 15) out of ${stats.risks} total.`);
+    }
+    if (/\brisk/.test(q)) {
+        return say(`You have ${stats.risks} risk(s) on the register, ${stats.highRisks} of them high-severity.`);
+    }
+    if (/\bfinding/.test(q)) {
+        return say(`You have ${stats.openFindings} open finding(s).`);
+    }
+    if (/\btask|remediat|action item/.test(q)) {
+        return say(`You have ${stats.openTasks} open task(s) in progress.`);
+    }
+    if (/\bevidence/.test(q)) {
+        return say(
+            `You have ${stats.evidence} evidence item(s); ${stats.pendingEvidence} awaiting review and ${stats.overdueEvidence} overdue for re-review.`,
+        );
+    }
+    if (/\bcontrol|coverage|soc\s?2|iso|posture|status|summary|overview/.test(q)) {
+        return say(
+            `Posture: ${stats.controls} control(s), ${stats.risks} risk(s) (${stats.highRisks} high), ${stats.openFindings} open finding(s), ${stats.openTasks} open task(s), ${stats.evidence} evidence item(s).`,
+        );
+    }
+    return say(
+        'I can answer read questions about your posture (high risks, open findings, tasks, evidence status, control coverage) and queue actions (raise a finding, create a risk) for a reviewer to approve. What would you like to know?',
+    );
+}
+
+/**
+ * Answer through the LLM tool-use loop, or `null` to fall back (#3808).
+ *
+ * ═══ WHAT BOUNDS WHAT THIS CAN READ ═══
+ *
+ * `resolveMcpInvocation(ctx)` on a session context yields `agentId: null`, so
+ * `grantedTools` is null and the deny-by-default exposure term is SKIPPED
+ * rather than narrowed — `workflow-runs.ts` calls that state "the worse one"
+ * for an unbound caller. The binding filter is the one `loadableReadTools`
+ * applies last: `canSee(inv, t.authorize.keys)`, the ACTING CONTEXT's own
+ * permission keys.
+ *
+ * So the loop is offered exactly the tools this user could call themselves, and
+ * every call runs under their own `RequestContext`. The assistant cannot
+ * out-read its asker, and there is no service-account path to make it able to.
+ *
+ * READ TOOLS ONLY, deliberately — see the note on `readOnly` below.
+ */
+async function answerFromToolLoop(ctx: RequestContext, question: string): Promise<AssistantAnswer | null> {
+    // THROUGH `runInTenantContext`, not the global client. `tests/unit/no-direct-prisma.test.ts`
+    // forbids a usecase importing `@/lib/prisma` — and the reason is the one that
+    // matters here rather than tidiness: this read is tenant-scoped, so it belongs
+    // inside the RLS context like every other read on this path. The same
+    // correction `risk-suggestions.ts` already carries: "the read stays here, on
+    // the `db` this block already holds".
+    const secSettings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: RESIDENCY_SELECT,
+        }),
+    );
+    // AI sovereignty: the residency posture decides the model, and LOCAL_ONLY
+    // short-circuits before any external consideration. Never `setProvider` —
+    // see the header on `tool-loop.ts` for why a race here is a cross-tenant
+    // egress rather than a flake.
+    const choice = resolveFlueModel(residencyTermsFrom(secSettings));
+    if (!choice.ok) return null;
+
+    const provider = assistantProviderFor(choice, env);
+    if (provider === null) return null;
+
+    const inv = await resolveMcpInvocation(ctx);
+    // `readOnly: true` for now. The propose surface is reachable through the
+    // same adapter, but the ACTION branches above still own proposing, because
+    // they return a `proposalId` and compose the user-facing sentence from the
+    // proposal's own status — which is what keeps a QUARANTINED item from being
+    // described as queued. Routing proposals through the loop means relaying
+    // the funnel's sentence instead, and the funnel does say it honestly, but
+    // the id would be lost to existing callers. Tracked separately rather than
+    // half-done here.
+    const set = assistantTools(inv, { readOnly: true });
+
+    const result = await runAssistantLoop({
+        provider,
+        specifier: choice.specifier,
+        system: ASSISTANT_SYSTEM_PROMPT,
+        question,
+        tools: set.tools,
+        guardTripped: set.reviewRequired,
+    });
+
+    // An empty answer is not an answer. Falling back rather than returning
+    // nothing, so a model that said nothing useful does not become a blank
+    // reply the user reads as a hang.
+    if (result.text.trim() === '') return null;
+    return { kind: 'answer', message: result.text };
+}
+
+/**
+ * What the model is told it is, and what it may not do.
+ *
+ * The prohibitions are the load-bearing half. Each one names a failure the
+ * surrounding code cannot prevent on its own: the funnels stop an unpermitted
+ * READ, but nothing except this text stops the model inventing a control status
+ * when a read FAILED, or describing a quarantined proposal as queued.
+ */
+const ASSISTANT_SYSTEM_PROMPT = [
+    'You are a compliance assistant inside the Inflect platform, answering about THIS tenant only.',
+    '',
+    'Use the provided tools to read live data. Rules you must follow:',
+    '- If a tool returns an ERROR, say the data is unavailable. NEVER infer, estimate or recall a',
+    '  control status, a count, or a posture from anything but a successful tool result.',
+    '- If a tool result says TRUNCATED, say your answer is based on a partial result, and do not',
+    '  state totals or conclusions about the full set.',
+    '- If a tool result says an item was QUARANTINED, say exactly that it did NOT enter the review',
+    '  queue and nothing was created. Never describe a quarantined item as queued or pending.',
+    '- Do not describe menu paths or navigation. Answer from data, and let the product link.',
+    '- Be concise. Give the number or the fact first.',
+].join('\n');

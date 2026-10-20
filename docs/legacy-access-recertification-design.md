@@ -181,15 +181,15 @@ assertion.
   and HRIS providers.** A provider that only syncs is never checked.
 - **`validateProviderConfig` passes an unclassified provider's `configJson` through
   unvalidated.**
-- **Three of the six model-calling AI features do not honour `aiResidency`.**
+- **Three of the seven model-calling AI features do not honour `aiResidency`.**
   Compliance posture, questionnaire autofill and vendor-document extraction each
   construct an external provider without consulting residency.
 
   > **This bullet said "only one AI feature honours `aiResidency`" until
-  > 2026-10-16.** Four do, and each is named below with the file that BRANCHES
-  > on residency, so the claim can be checked instead of believed —
-  > `tests/guards/current-state-stays-true.test.ts` checks it in both
-  > directions:
+  > 2026-10-16, and "four do" until 2026-10-20.** Five do, and each is named
+  > below with the file that BRANCHES on residency, so the claim can be checked
+  > instead of believed — `tests/guards/current-state-stays-true.test.ts` checks
+  > it in both directions:
   >
   > - risk suggestions — `src/app-layer/ai/risk-assessment/index.ts`, also
   >   pinned by `tests/guards/ai-residency-enforcement.test.ts`
@@ -200,8 +200,20 @@ assertion.
   > - Flue's model selection, whose `LOCAL_ONLY` branch short-circuits before
   >   anything external is considered —
   >   `src/lib/agentic/flue/model-selection.ts`
+  > - the in-product assistant's tool-use loop, which returns NO provider for a
+  >   `LOCAL_ONLY` tenant and falls back to the deterministic keyword router
+  >   rather than answering externally —
+  >   `src/app-layer/ai/assistant/turn-provider.ts` (#3808)
   >
-  > A fifth file branches on residency and is deliberately NOT in that list:
+  > The assistant honours it TWICE, and the second place is the one worth
+  > knowing about: `resolveFlueModel` chooses the model, and the provider then
+  > RE-CHECKS that the specifier it was handed is addressed to it, refusing a
+  > `inflect-local/...` specifier rather than serving it. A residency decision
+  > made at selection time must not be overridable at the socket, because a
+  > conversational assistant makes concurrency the normal case — and the race
+  > `model-selection.ts` describes would be a cross-tenant egress, not a flake.
+  >
+  > A sixth file branches on residency and is deliberately NOT in that list:
   > `src/app-layer/usecases/tenant-security-settings.ts` VALIDATES the setting —
   > it refuses `EXTERNAL` under `LOCAL_ONLY` — rather than honouring it inside a
   > feature, which is a different role. The guard exempts it BY NAME, so the
