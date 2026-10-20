@@ -803,7 +803,7 @@ describe('outbound refusals: the next message, in this direction too', () => {
 
     it('R14: a run a peer started is offered no send and is refused one', async () => {
         await setRung('AUTOMATIC');
-        const inboundCtx = agentCtx(T1, { a2aInbound: { peerId: world[T1].peerId, messageId: 'm' } });
+        const inboundCtx = agentCtx(T1, { a2aInbound: { kind: 'PEER', peerId: world[T1].peerId, messageId: 'm' } });
         expect(await sendTool(inboundCtx)).toBeNull();
         await expect(
             dispatchA2aSend(inboundCtx, {
@@ -883,7 +883,7 @@ describe('R17: a run a peer started never writes above PROPOSE_ONLY', () => {
     }
 
     it('on an AUTOMATIC connection, a peer-started run\'s write becomes a proposal a person approves', async () => {
-        const ctx = agentCtx(T1, { a2aInbound: { peerId: world[T1].peerId, messageId: 'm' } });
+        const ctx = agentCtx(T1, { a2aInbound: { kind: 'PEER', peerId: world[T1].peerId, messageId: 'm' } });
         const out = (await (await writeTool(ctx)).run(ctx, { email: 'new@x' })) as { content: { text: string }[] };
         expect(out.content[0].text).toMatch(/^QUEUED FOR APPROVAL/);
         expect(await prisma.externalWriteJournal.count({ where: { tenantId: T1, mode: 'AUTOMATIC' } })).toBe(0);

@@ -130,7 +130,7 @@ import {
     describeFailure,
     isAgenticFatal,
 } from '@/lib/agentic/failure-isolation';
-import type { RequestContext } from '@/app-layer/types';
+import type { A2aInboundOrigin, RequestContext } from '@/app-layer/types';
 import { guardUntrustedInput, assertNoReviewRequired } from '@/app-layer/ai/guard';
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -960,13 +960,29 @@ async function withInboundOrigin(ctx: RequestContext, runId: string): Promise<Re
     const row = await runInTenantContext(ctx, (db) =>
         db.workflowRun.findFirst({
             where: { id: runId, tenantId: ctx.tenantId },
-            select: { inboundPeerId: true, inboundMessageId: true },
+            select: {
+                inboundPeerId: true,
+                inboundMessageId: true,
+                inboundHostConsumerId: true,
+                inboundHostMessageId: true,
+            },
         }),
     );
-    const fromRow =
+    // Either pair, never both — a CHECK holds that, and each pair is
+    // all-or-nothing for the reason this function exists: a half-written origin
+    // restores NO narrowing, so a run would start clamped and resume able to
+    // write. Peer first only because it is the older arm; the two are not
+    // ordered by precedence and cannot both be present.
+    const fromRow: A2aInboundOrigin | undefined =
         row?.inboundPeerId && row.inboundMessageId
-            ? { peerId: row.inboundPeerId, messageId: row.inboundMessageId }
-            : undefined;
+            ? { kind: 'PEER', peerId: row.inboundPeerId, messageId: row.inboundMessageId }
+            : row?.inboundHostConsumerId && row.inboundHostMessageId
+              ? {
+                    kind: 'HOST_CONSUMER',
+                    hostConsumerId: row.inboundHostConsumerId,
+                    messageId: row.inboundHostMessageId,
+                }
+              : undefined;
     const a2aInbound = fromRow ?? ctx.a2aInbound;
     return a2aInbound ? { ...ctx, a2aInbound } : ctx;
 }
@@ -1209,8 +1225,24 @@ async function createSealedRun(
                     // …and, for a run an A2A peer's task started, WHICH peer
                     // and WHICH verified message (#3679). Write-once at the
                     // database; R17 and R14 are keyed on it.
-                    inboundPeerId: ctx.a2aInbound?.peerId ?? null,
-                    inboundMessageId: ctx.a2aInbound?.messageId ?? null,
+                    // …and, for a run a third party's request started, WHICH
+                    // principal and WHICH record (#3679 for a peer, #3861 for a
+                    // host consumer). Write-once at the database; R17 and R14
+                    // are keyed on these columns, and `withInboundOrigin` reads
+                    // them back on every later segment — which is why a host
+                    // consumer has its OWN pair rather than borrowing
+                    // `inboundPeerId`.
+                    inboundPeerId: ctx.a2aInbound?.kind === 'PEER' ? ctx.a2aInbound.peerId : null,
+                    // Guarded on `kind` too, not just taken from the union: a
+                    // bare `?.messageId` would write the host consumer's id
+                    // into the PEER column as well, and `WorkflowRun_one_inbound_origin`
+                    // refuses a row with both pairs set — so every
+                    // host-consumer run would have failed at insert.
+                    inboundMessageId: ctx.a2aInbound?.kind === 'PEER' ? ctx.a2aInbound.messageId : null,
+                    inboundHostConsumerId:
+                        ctx.a2aInbound?.kind === 'HOST_CONSUMER' ? ctx.a2aInbound.hostConsumerId : null,
+                    inboundHostMessageId:
+                        ctx.a2aInbound?.kind === 'HOST_CONSUMER' ? ctx.a2aInbound.messageId : null,
                     // …and what it was TAUGHT. `[]` for a run that mounts no
                     // skill, never NULL: NULL means the row predates the pin.
                     mountedSkills: mountedSkills.map(pinForRow),

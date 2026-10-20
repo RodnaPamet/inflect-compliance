@@ -377,7 +377,7 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
         permissions: principal.permissions,
         appPermissions: principal.appPermissions,
         agentId: agent.id,
-        a2aInbound: { peerId: peer.id, messageId: taskRow.id },
+        a2aInbound: { kind: 'PEER', peerId: peer.id, messageId: taskRow.id },
     };
 
     // THE TASK IS DATA. Its text travels inside an envelope that labels it
