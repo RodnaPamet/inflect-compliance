@@ -444,7 +444,25 @@ describe('epic-named ratchets are not added back', () => {
         // where #3797 put the grant-cap-to-review tie — that guard's subject is
         // the external-write ladder over two named files, and widening it to a
         // repo-wide walk is how a guard's name stops describing it.
-        expect(guardFiles().length).toBeLessThan(793);
+        // RAISED 792 -> 794 on 2026-10-20, for TWO files, the same test applied
+        // to each:
+        //
+        // `reset-tables-covers-fixture-written-orphans` is named for its
+        // invariant — a model outside the `TRUNCATE ... CASCADE` closure that a
+        // resetting suite creates is either in `RESET_TABLES` or on a
+        // documented allowlist (#3801, the third instance of that list going
+        // stale after #3597's two). The only existing guard that names the
+        // helper at all is `integration-suite-audit-teardown`, which checks
+        // that suites tear their AUDIT rows down; it reads no schema and knows
+        // nothing of the cascade closure, so this is not folded into it.
+        //
+        // `ingest-refusals-bound-the-account-key` is named for its invariant —
+        // a refusal in `ingest.ts` interpolates the untrusted account key only
+        // through the helper that bounds it, by the canonical schema's own
+        // constant (#3800). It is source-text of necessity: two of the three
+        // refusals are post-parse, so no input can make them elide and no
+        // behavioural test can observe whether they use the helper.
+        expect(guardFiles().length).toBeLessThan(795);
     });
 
     /**
