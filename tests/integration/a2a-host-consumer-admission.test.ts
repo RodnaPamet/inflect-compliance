@@ -41,6 +41,7 @@ import {
     mintHostConsumerToken,
 } from '@/lib/agentic/a2a/host-consumer';
 import { tryAdmitHostConsumer } from '@/app-layer/usecases/a2a-host-consumer-admission';
+import { issueHostConsumerToken } from '@/app-layer/usecases/a2a-host-consumer-token';
 
 const prisma: PrismaClient = prismaTestClient();
 
@@ -53,7 +54,10 @@ const TENANTS = [T1, T2];
 // is no secret-shaped string in the repo at all, and each run signs with its own.
 const SECRET = crypto.randomBytes(24).toString('hex');
 
-const world: Record<string, { consumerId: string; clientId: string; agentId: string; ownerUserId: string }> = {};
+const world: Record<
+    string,
+    { consumerId: string; clientId: string; clientSecret: string; agentId: string; ownerUserId: string }
+> = {};
 
 /**
  * The SYSTEM context, as `handleInboundA2a` builds for itself.
@@ -107,6 +111,7 @@ async function seed(tenantId: string, enabled: boolean): Promise<void> {
     world[tenantId] = {
         consumerId: consumer.id,
         clientId: creds.clientId,
+        clientSecret: creds.secretPlaintext,
         agentId: agent.id,
         ownerUserId: user.id,
     };
@@ -331,6 +336,127 @@ describe('two tenants', () => {
         expect(await tryAdmitHostConsumer(ctxFor(T1), { authorization: `Bearer ${forged}` })).toMatchObject({
             kind: 'REFUSED',
             reason: 'UNKNOWN_HOST_CONSUMER',
+        });
+    });
+});
+
+describe('the token endpoint (#3861)', () => {
+    const exchange = (tenantId: string, over: Partial<{ grantType: string; clientId: string; clientSecret: string }> = {}) =>
+        issueHostConsumerToken({
+            tenantSlug: tenantId,
+            grantType: over.grantType ?? 'client_credentials',
+            clientId: over.clientId ?? world[tenantId].clientId,
+            clientSecret: over.clientSecret ?? world[tenantId].clientSecret,
+        });
+
+    it('ROUND TRIP: a token it issues is one admission accepts', async () => {
+        // The assertion that makes the two halves one feature. Either side can
+        // be green alone while the pair is broken — a mint the verify refuses.
+        const issued = await exchange(T1);
+        expect(issued.ok).toBe(true);
+        if (!issued.ok) return;
+        expect(issued.tokenType).toBe('Bearer');
+        expect(issued.expiresIn).toBe(900);
+
+        const admitted = await tryAdmitHostConsumer(ctxFor(T1), {
+            authorization: `Bearer ${issued.accessToken}`,
+        });
+        expect(admitted.kind).toBe('ADMITTED');
+        if (admitted.kind !== 'ADMITTED') return;
+        expect(admitted.consumer.id).toBe(world[T1].consumerId);
+    });
+
+    it('refuses an unknown client and a wrong secret with DIFFERENT audit reasons', async () => {
+        // Indistinguishable to the caller by design — both are `invalid_client`
+        // at the route — but the usecase names which, so an audit row can.
+        expect(await exchange(T1, { clientId: 'ifhc_nosuchclient' })).toMatchObject({
+            ok: false,
+            reason: 'UNKNOWN_CLIENT',
+        });
+        // Generated, not written: a literal reads as a hardcoded credential to
+        // `detect-secrets.sh`, and a random wrong secret is the better test
+        // anyway — it cannot accidentally be the right one.
+        expect(await exchange(T1, { clientSecret: crypto.randomBytes(24).toString('hex') })).toMatchObject({
+            ok: false,
+            reason: 'BAD_CLIENT_SECRET',
+        });
+    });
+
+    it('names an unsupported grant rather than blaming the client', async () => {
+        // A destination misconfigured for `password` should learn that, not be
+        // told its credentials are bad.
+        expect(await exchange(T1, { grantType: 'password' })).toMatchObject({
+            ok: false,
+            reason: 'UNSUPPORTED_GRANT_TYPE',
+        });
+        expect(await exchange(T1, { grantType: '' })).toMatchObject({
+            ok: false,
+            reason: 'UNSUPPORTED_GRANT_TYPE',
+        });
+    });
+
+    it('refuses missing credentials without reaching the database', async () => {
+        expect(await exchange(T1, { clientId: '' })).toMatchObject({
+            ok: false,
+            reason: 'MISSING_CLIENT_CREDENTIALS',
+        });
+        expect(await exchange(T1, { clientSecret: '' })).toMatchObject({
+            ok: false,
+            reason: 'MISSING_CLIENT_CREDENTIALS',
+        });
+    });
+
+    it('will not issue a token to a KILLED consumer', async () => {
+        // The window property: admission already refuses a killed consumer, so
+        // this stops a kill from leaving fifteen minutes in which fresh tokens
+        // are still being minted for a principal someone has stopped.
+        await prisma.hostConsumerKillSwitch.create({
+            data: {
+                tenantId: T1,
+                hostConsumerId: world[T1].consumerId,
+                reason: 'incident 7',
+                engagedByUserId: 'someone',
+            },
+        });
+        expect(await exchange(T1)).toMatchObject({ ok: false, reason: 'HOST_CONSUMER_KILLED' });
+    });
+
+    it('will not issue a token to a revoked consumer', async () => {
+        await prisma.hostConsumer.update({
+            where: { id: world[T1].consumerId },
+            data: { revokedAt: new Date() },
+        });
+        expect(await exchange(T1)).toMatchObject({ ok: false, reason: 'HOST_CONSUMER_REVOKED' });
+    });
+
+    it('will not issue a token when the tenant has not enabled host consumers', async () => {
+        await prisma.tenantSecuritySettings.update({
+            where: { tenantId: T1 },
+            data: { a2aHostConsumersEnabled: false },
+        });
+        expect(await exchange(T1)).toMatchObject({ ok: false, reason: 'HOST_CONSUMERS_DISABLED' });
+    });
+
+    it('fails closed with no signing secret', async () => {
+        envOverride.secret = undefined;
+        expect(await exchange(T1)).toMatchObject({ ok: false, reason: 'TOKEN_SECRET_NOT_CONFIGURED' });
+    });
+
+    it('refuses an unknown tenant', async () => {
+        expect(
+            await issueHostConsumerToken({
+                tenantSlug: 'no-such-tenant-at-all',
+                grantType: 'client_credentials',
+                clientId: 'ifhc_x',
+                clientSecret: 'y',
+            }),
+        ).toMatchObject({ ok: false, reason: 'UNKNOWN_TENANT' });
+    });
+
+    it("will not mint tenant one's consumer a token from tenant two's slug", async () => {
+        expect(await exchange(T2, { clientId: world[T1].clientId, clientSecret: world[T1].clientSecret })).toMatchObject({
+            ok: false,
+            reason: 'UNKNOWN_CLIENT',
         });
     });
 });
