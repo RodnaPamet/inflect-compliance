@@ -22,7 +22,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, usePermissions, useTenantContext } from '@/lib/tenant-context-provider';
 import { isOwnerManagedRole, mayCarryCustomRole } from '@/lib/roles';
 import {
     Users, UserPlus, ChevronDown, Shield, XCircle,
@@ -74,7 +74,14 @@ interface Member {
     invitedBy: { id: string; name: string | null } | null;
     /** Epic C.3 — count of live (non-revoked, non-expired) sessions. */
     activeSessionCount?: number;
+    /** #3675 — FIRST / SECOND / THIRD, or null for "not declared". */
+    lineOfDefence?: LineOfDefence | null;
 }
+
+const LINES_OF_DEFENCE = ['FIRST', 'SECOND', 'THIRD'] as const;
+type LineOfDefence = (typeof LINES_OF_DEFENCE)[number];
+/** The option that stands for `null`: not declared, which satisfies no check. */
+const UNDECLARED = 'UNDECLARED';
 
 interface MemberSession {
     sessionId: string;
@@ -188,6 +195,19 @@ export default function MembersAdminPage() {
     );
     // Moving a member into or out of AI_ADMIN is an OWNER's change (#3699).
     const canManageOwnerRoles = usePermissions().admin.owner_management;
+    // A member's line of defence (#3675, #3807) is set by an OWNER — the key
+    // AND the built-in role, as `setMembershipLineOfDefence` asks — and never
+    // on their own membership. The server refuses all three again.
+    const { role: viewerRole, userId: viewerUserId } = useTenantContext();
+    const canSetLineOfDefence = canManageOwnerRoles && viewerRole === 'OWNER';
+    const lineOfDefenceOptions: ComboboxOption[] = useMemo(
+        () =>
+            [UNDECLARED, ...LINES_OF_DEFENCE].map((v) => ({
+                value: v,
+                label: t(`members.lineOfDefence.${v}`),
+            })),
+        [t],
+    );
     const roleChangeOptions: ComboboxOption[] = useMemo(
         () =>
             [...ROLES, ...(canManageOwnerRoles ? OWNER_ONLY_ROLE_CHANGE_ROLES : [])].map((r) => ({
@@ -224,6 +244,9 @@ export default function MembersAdminPage() {
 
     // Custom roles
     const [customRoles, setCustomRoles] = useState<CustomRoleOption[]>([]);
+
+    // Line of defence — the membership being saved, if any.
+    const [savingLineId, setSavingLineId] = useState<string | null>(null);
 
     // Action menu
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -386,6 +409,40 @@ export default function MembersAdminPage() {
             setError((err as Error).message);
         } finally {
             setChangingRole(false);
+        }
+    }
+
+    async function handleLineOfDefenceChange(member: Member, value: string) {
+        const next: LineOfDefence | null = value === UNDECLARED ? null : (value as LineOfDefence);
+        if (next === (member.lineOfDefence ?? null)) return;
+        setError(null);
+        setSuccess(null);
+        setSavingLineId(member.id);
+        try {
+            const res = await fetch(apiUrl(`/admin/members/${member.id}/line-of-defence`), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lineOfDefence: next }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => null);
+                setError(apiErrorMessage(err, t('members.lineOfDefenceFailed')));
+                return;
+            }
+            const body = (await res.json().catch(() => null)) as { independenceFindingIds?: string[] } | null;
+            setMembers((ms) => ms.map((m) => (m.id === member.id ? { ...m, lineOfDefence: next } : m)));
+            const findings = body?.independenceFindingIds?.length ?? 0;
+            // A move off SECOND can break an auditor agent's independence; the
+            // server raises a finding rather than refusing, so say so here.
+            setSuccess(
+                findings > 0
+                    ? t('members.lineOfDefenceUpdatedWithFindings', { email: member.user.email, count: findings })
+                    : t('members.lineOfDefenceUpdated', { email: member.user.email }),
+            );
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setSavingLineId(null);
         }
     }
 
@@ -765,6 +822,36 @@ export default function MembersAdminPage() {
                 },
             },
             {
+                id: 'lineOfDefence',
+                header: t('members.colLineOfDefence'),
+                accessorFn: (m) => m.lineOfDefence ?? UNDECLARED,
+                cell: ({ row }) => {
+                    const m = row.original;
+                    const current = m.lineOfDefence ?? UNDECLARED;
+                    if (canSetLineOfDefence && m.userId !== viewerUserId) {
+                        return (
+                            <Combobox
+                                hideSearch
+                                id={`lod-select-${m.id}`}
+                                selected={lineOfDefenceOptions.find((o) => o.value === current) ?? null}
+                                setSelected={(opt) => {
+                                    if (opt) void handleLineOfDefenceChange(m, opt.value);
+                                }}
+                                options={lineOfDefenceOptions}
+                                matchTriggerWidth
+                                disabled={savingLineId !== null}
+                                buttonProps={{ className: 'text-xs py-1 px-2 w-full sm:w-32' }}
+                            />
+                        );
+                    }
+                    return (
+                        <span id={`lod-${m.id}`} className="text-xs text-content-muted">
+                            {t(`members.lineOfDefence.${current}`)}
+                        </span>
+                    );
+                },
+            },
+            {
                 id: 'status',
                 header: t('members.colStatus'),
                 accessorKey: 'status',
@@ -890,7 +977,7 @@ export default function MembersAdminPage() {
         // changes — otherwise the inline edit row's combobox would
         // render with a stale selection.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [editingRoleId, pendingRole, pendingCustomRoleId, changingRole, customRoles, openMenuId, t, roleLabel, roleChangeOptions, canManageOwnerRoles],
+        [editingRoleId, pendingRole, pendingCustomRoleId, changingRole, customRoles, openMenuId, t, roleLabel, roleChangeOptions, canManageOwnerRoles, canSetLineOfDefence, viewerUserId, lineOfDefenceOptions, savingLineId, members],
     );
 
     // ─── Invites DataTable columns ───

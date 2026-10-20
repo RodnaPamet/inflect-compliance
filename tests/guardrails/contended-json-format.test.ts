@@ -153,7 +153,15 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // docs/agentic-audit-reliance-memo.md (step 4d, #3681): +3/-0.
         // Moved 2026-10-19 by one sorted ADDITION,
         // docs/agentic-iam-managed-service.md (step 4e, #3682): +3/-0.
-        keyOrderSha: '63d03d5a99436414bfac3031376f7ef8e6b15fa16725dd4fb04c5bb79e26e512',
+        // Moved 2026-10-20 by one sorted ADDITION,
+        // docs/sap-agent-integration-roadmap.md (the SAP roadmap, #3859): +3/-0.
+        // Worth recording what the writer did, since this pin is aimed at it: the
+        // edit re-serialised the whole `docs` map through `sorted()` — the
+        // rewrite shape this digest exists for. It was a no-op only because the
+        // file was already sorted, which the +3/-0 diff is the evidence for. The
+        // digest moved because of the ADDITION, as it does for every honest one;
+        // it is not evidence that nothing else moved. The diff is.
+        keyOrderSha: 'f067167e48dfc7fda335a48da908adbfd3bd41437ea88e8abee8d5af8649dba7',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
