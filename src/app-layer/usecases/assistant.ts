@@ -66,7 +66,19 @@ function proposalMessage(
     return `I've queued a ${noun} "${title}" as a proposal for review — nothing is created until a reviewer approves it.`;
 }
 
-export const AskAssistantSchema = z.object({ question: z.string().min(1).max(2000) });
+import { describePageContext, PageContextSchema, type PageContext } from '@/app-layer/ai/assistant/page-context';
+import { checkGuidanceRoutes, GUIDANCE_ROUTE_REFUSAL } from '@/app-layer/ai/assistant/guidance';
+import { routeTableForPrompt } from '@/app-layer/ai/assistant/nav-routes';
+
+export const AskAssistantSchema = z.object({
+    question: z.string().min(1).max(2000),
+    /**
+     * What the user is looking at (#3841). OPTIONAL, which is what keeps
+     * `/assistant/ask` unchanged for its existing callers (#3822) — an older
+     * client that sends only a question behaves exactly as before.
+     */
+    pageContext: PageContextSchema.optional(),
+});
 
 export interface AssistantAnswer {
     kind: 'answer' | 'proposal';
@@ -74,6 +86,18 @@ export interface AssistantAnswer {
     /** Present when kind='proposal' — the PENDING agent-proposal awaiting human approval. */
     proposalId?: string;
     proposalKind?: string;
+    /**
+     * The proposal's own status, so a CALLER can tell queued from quarantined
+     * without parsing the message (#3847).
+     *
+     * `proposalMessage` already says the right thing in prose — a quarantined
+     * item is told plainly that nothing was created. But a UI that wants to
+     * render a status chip and a link to the review queue would otherwise have
+     * to infer the status from that sentence, and the one thing it must never
+     * do is call a quarantined proposal queued. Inferring a safety property
+     * from prose is how that goes wrong, so the status travels as data.
+     */
+    proposalStatus?: string;
 }
 
 /** Pull the free-text subject out of an action request ("raise a finding about X" → "X"). */
@@ -92,7 +116,12 @@ export async function askAssistant(
     ctx: RequestContext,
     input: z.infer<typeof AskAssistantSchema>,
 ): Promise<AssistantAnswer> {
-    return runGoverned(ctx, input.question, (question) => produceAnswer(ctx, question));
+    return runGoverned(
+        ctx,
+        input.question,
+        (question, contextBlock) => produceAnswer(ctx, question, contextBlock),
+        input.pageContext,
+    );
 }
 
 /**
@@ -160,7 +189,11 @@ interface ProducedBy {
 async function runGoverned(
     ctx: RequestContext,
     question: string,
-    produce: (question: string) => Promise<{ answer: AssistantAnswer; by: ProducedBy }>,
+    produce: (
+        question: string,
+        contextBlock: string | null,
+    ) => Promise<{ answer: AssistantAnswer; by: ProducedBy }>,
+    pageContext?: PageContext,
 ): Promise<AssistantAnswer> {
     await enforceFeatureGate(ctx, 'assistant');
     await checkRateLimit(ctx.tenantId, ctx.userId);
@@ -171,11 +204,49 @@ async function runGoverned(
     // under the default balanced guard mode.
     assertNoReviewRequired(await guardUntrustedInput(ctx, question, { source: 'assistant' }));
 
+    // The page context is a SIXTH customer-controlled field (#3841), so it is
+    // guarded on the same path as the question rather than trusted for having
+    // a narrow schema. Its shape forbids most prose; "disregard the above" is
+    // only letters and spaces, so shape alone is not the defence.
+    //
+    // A separate `source` so a refusal says WHICH field carried the injection:
+    // "the assistant refused" with no field named is a report that arrives
+    // without a reproduction.
+    const contextBlock = describePageContext(pageContext);
+    if (contextBlock !== null) {
+        assertNoReviewRequired(
+            await guardUntrustedInput(ctx, contextBlock, { source: 'assistant:page-context' }),
+        );
+    }
+
     const startedAt = Date.now();
-    const { answer, by } = await produce(question);
+    // `let`, not `const`: the guidance check below replaces the answer when it
+    // names a route the nav cannot vouch for.
+    let { answer, by } = await produce(question, contextBlock);
 
     // Guard the outbound message before it leaves the boundary.
     assertGuardAllowed(await guardEgress(ctx, { message: answer.message }, { source: 'assistant:outbound' }));
+
+    // ── GUIDANCE MUST STAY INSIDE THE REAL IA (#3845) ──
+    //
+    // The route table is in the prompt, which makes naming a path recall-free
+    // — but an instruction is not an enforcement, so the answer is checked.
+    // A path the nav cannot vouch for replaces the ANSWER rather than being
+    // stripped from it: deleting the path would leave the surrounding
+    // sentence ("open and read the panel on the right") reading as though a
+    // screen exists, which is the same wrong belief with the evidence
+    // removed.
+    //
+    // Deliberately AFTER the egress guard and BEFORE the decision-log row, so
+    // what gets recorded is what the user was actually shown.
+    const guidance = checkGuidanceRoutes(answer.message);
+    if (!guidance.ok) {
+        logger.warn('assistant.guidance_route_refused', {
+            tenantId: ctx.tenantId,
+            unknownRoutes: guidance.unknownRoutes,
+        });
+        answer = { kind: 'answer', message: GUIDANCE_ROUTE_REFUSAL };
+    }
 
     // ── ART 12 RECORD: ONE ROW PER TURN (#3828) ──
     //
@@ -220,6 +291,7 @@ async function runGoverned(
 async function produceAnswer(
     ctx: RequestContext,
     question: string,
+    contextBlock: string | null = null,
 ): Promise<{ answer: AssistantAnswer; by: ProducedBy }> {
     const q = question.toLowerCase();
     let answer: AssistantAnswer;
@@ -246,6 +318,7 @@ async function produceAnswer(
             kind: 'proposal',
             proposalId: proposal.id,
             proposalKind: proposal.kind,
+            proposalStatus: proposal.status,
             message: proposalMessage(proposal.status, 'finding', title),
         };
     } else if (/\b(create|open|add|log|raise)\b.*\brisk\b/.test(q)) {
@@ -260,11 +333,12 @@ async function produceAnswer(
             kind: 'proposal',
             proposalId: proposal.id,
             proposalKind: proposal.kind,
+            proposalStatus: proposal.status,
             message: proposalMessage(proposal.status, 'risk', title),
         };
     } else {
         // ── Read intents → the TOOL-USE LOOP, falling back to keywords ──
-        const loop = await answerFromToolLoop(ctx, question);
+        const loop = await answerFromToolLoop(ctx, question, {}, contextBlock);
         if (loop !== null) {
             answer = loop.answer;
             by = loop.by;
@@ -368,6 +442,7 @@ async function answerFromToolLoop(
     ctx: RequestContext,
     question: string,
     observe: ToolLoopObservers = {},
+    contextBlock: string | null = null,
 ): Promise<{ answer: AssistantAnswer; by: ProducedBy } | null> {
     // THROUGH `runInTenantContext`, not the global client. `tests/unit/no-direct-prisma.test.ts`
     // forbids a usecase importing `@/lib/prisma` — and the reason is the one that
@@ -405,7 +480,7 @@ async function answerFromToolLoop(
     const result = await runAssistantLoop({
         provider,
         specifier: choice.specifier,
-        system: ASSISTANT_SYSTEM_PROMPT,
+        system: assistantSystemPrompt(contextBlock),
         question,
         tools: set.tools,
         guardTripped: set.reviewRequired,
@@ -492,22 +567,55 @@ export async function streamAssistant(
     opts: StreamAssistantOptions,
 ): Promise<void> {
     try {
-        const answer = await runGoverned(ctx, input.question, async (question) => {
-            opts.emit({ type: 'thinking' });
-            const loop = await answerFromToolLoop(ctx, question, {
-                signal: opts.signal,
-                onToolCall: (name) => opts.emit({ type: 'tool_call', name }),
-                onToolResult: (name, ok, truncated) => opts.emit({ type: 'tool_result', name, ok, truncated }),
-                onHalt: (outcome, notice) => opts.emit({ type: 'halt', outcome, notice }),
-            });
-            if (loop !== null) return loop;
-            // The deterministic router. No tool events, because it calls no
-            // tools — emitting a fake one would describe work that did not
-            // happen.
-            return { answer: await answerFromKeywords(ctx, question.toLowerCase()), by: DETERMINISTIC };
-        });
+        const answer = await runGoverned(
+            ctx,
+            input.question,
+            async (question, contextBlock) => {
+                opts.emit({ type: 'thinking' });
+                const loop = await answerFromToolLoop(
+                    ctx,
+                    question,
+                    {
+                        signal: opts.signal,
+                        onToolCall: (name) => opts.emit({ type: 'tool_call', name }),
+                        onToolResult: (name, ok, truncated) =>
+                            opts.emit({ type: 'tool_result', name, ok, truncated }),
+                        onHalt: (outcome, notice) => opts.emit({ type: 'halt', outcome, notice }),
+                    },
+                    contextBlock,
+                );
+                if (loop !== null) return loop;
+                // The deterministic router. No tool events, because it calls no
+                // tools — emitting a fake one would describe work that did not
+                // happen.
+                return {
+                    answer: await answerFromKeywords(ctx, question.toLowerCase()),
+                    by: DETERMINISTIC,
+                };
+            },
+            // The STREAMING surface gets the page context too. Threading it on
+            // the ask path only would have been the subtler half-delivery: the
+            // UI built in this prompt streams, so the context would have been
+            // live in tests and absent in the product.
+            input.pageContext,
+        );
 
-        opts.emit({ type: 'answer', text: answer.message });
+        opts.emit({
+            type: 'answer',
+            text: answer.message,
+            // The proposal travels as structured data so the UI can render
+            // "queued" with a link, or "not queued" with none, without
+            // reading the sentence (#3847).
+            ...(answer.kind === 'proposal' && answer.proposalId !== undefined
+                ? {
+                      proposal: {
+                          id: answer.proposalId,
+                          kind: answer.proposalKind ?? 'unknown',
+                          status: answer.proposalStatus ?? 'unknown',
+                      },
+                  }
+                : {}),
+        });
         opts.emit({ type: 'done', truncatedAny: false });
     } catch (err) {
         // A GUARD refusal reaches here as a thrown `forbidden(...)`, and it must
@@ -548,16 +656,45 @@ function isGuardRefusal(err: unknown): boolean {
     return GUARD_REFUSAL_PREFIXES.some((p) => message.includes(p));
 }
 
-const ASSISTANT_SYSTEM_PROMPT = [
-    'You are a compliance assistant inside the Inflect platform, answering about THIS tenant only.',
-    '',
-    'Use the provided tools to read live data. Rules you must follow:',
-    '- If a tool returns an ERROR, say the data is unavailable. NEVER infer, estimate or recall a',
-    '  control status, a count, or a posture from anything but a successful tool result.',
-    '- If a tool result says TRUNCATED, say your answer is based on a partial result, and do not',
-    '  state totals or conclusions about the full set.',
-    '- If a tool result says an item was QUARANTINED, say exactly that it did NOT enter the review',
-    '  queue and nothing was created. Never describe a quarantined item as queued or pending.',
-    '- Do not describe menu paths or navigation. Answer from data, and let the product link.',
-    '- Be concise. Give the number or the fact first.',
-].join('\n');
+/**
+ * The system prompt, per turn.
+ *
+ * A function rather than a constant because two parts of it are
+ * request-scoped: the page context (#3841) and nothing else about the turn.
+ * The route table is static but is assembled here so the prompt has exactly
+ * one definition rather than a constant plus an append at the call site.
+ *
+ * ═══ WHY THE NAVIGATION RULE CHANGED ═══
+ *
+ * Prompt 1 shipped a blanket ban: "Do not describe menu paths or navigation."
+ * That was the right conservative default when the model had no way to know
+ * the real IA, because the failure it avoided — confidently naming a screen
+ * that does not exist — costs more in a compliance product than the silence
+ * costs. #3845 removes the REASON for the ban instead of the ban's effect:
+ * the actual route table goes in, so naming a path is no longer recall. The
+ * ban survives in narrowed form (only these routes) and is enforced on the
+ * way out by `checkGuidanceRoutes`, because a prompt is an instruction and
+ * not a guarantee.
+ */
+function assistantSystemPrompt(contextBlock: string | null): string {
+    return [
+        'You are a compliance assistant inside the Inflect platform, answering about THIS tenant only.',
+        '',
+        'Use the provided tools to read live data. Rules you must follow:',
+        '- If a tool returns an ERROR, say the data is unavailable. NEVER infer, estimate or recall a',
+        '  control status, a count, or a posture from anything but a successful tool result.',
+        '- If a tool result says TRUNCATED, say your answer is based on a partial result, and do not',
+        '  state totals or conclusions about the full set.',
+        '- If a tool result says an item was QUARANTINED, say exactly that it did NOT enter the review',
+        '  queue and nothing was created. Never describe a quarantined item as queued or pending.',
+        '- Be concise. Give the number or the fact first.',
+        '',
+        'NAVIGATION. You may refer to a page ONLY if its path appears in the list below. If the page',
+        'someone would need is not in the list, say you cannot point them to it rather than guessing a',
+        'path. Never invent a sub-page, a settings screen, or a tab. Do not describe click-by-click',
+        'menu paths — name the page and let the product render the link.',
+        '',
+        routeTableForPrompt(),
+        ...(contextBlock === null ? [] : ['', contextBlock]),
+    ].join('\n');
+}

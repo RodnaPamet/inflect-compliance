@@ -31,7 +31,23 @@ export type AssistantStreamEvent =
     | { readonly type: 'thinking' }
     | { readonly type: 'tool_call'; readonly name: string }
     | { readonly type: 'tool_result'; readonly name: string; readonly ok: boolean; readonly truncated: boolean }
-    | { readonly type: 'answer'; readonly text: string }
+    | {
+          readonly type: 'answer';
+          readonly text: string;
+          /**
+           * Present only when the turn QUEUED or QUARANTINED a proposal.
+           *
+           * `status` is carried rather than a boolean `queued`, because the
+           * set of statuses belongs to the proposal record and a boolean here
+           * would have to be re-derived — and the derivation that matters
+           * ("is this queued?") is exactly the one a UI must not get wrong.
+           */
+          readonly proposal?: {
+              readonly id: string;
+              readonly kind: string;
+              readonly status: string;
+          };
+      }
     | { readonly type: 'refusal'; readonly reason: string }
     | { readonly type: 'halt'; readonly outcome: LoopOutcome; readonly notice: string }
     | { readonly type: 'done'; readonly truncatedAny: boolean };

@@ -12571,5 +12571,36 @@
       "emptyTitle": "No evidence linked",
       "remove": "× Remove"
     }
+  },
+  "assistant": {
+    "title": "Assistant",
+    "description": "Ask about this tenant's compliance data. The assistant reads live data and can queue an action for approval — it never changes anything itself.",
+    "openLauncher": "Ask the assistant",
+    "closeLauncher": "Close the assistant",
+    "questionLabel": "Your question",
+    "questionPlaceholder": "Which controls are missing evidence?",
+    "send": "Ask",
+    "cancel": "Stop",
+    "newQuestion": "Ask something else",
+    "emptyTitle": "Ask about what you are looking at",
+    "emptyDescription": "The assistant can read this tenant's live data — controls, risks, evidence, vendors — and point you at the page that shows it. It can propose an action, which goes to the approval queue for a person to review.",
+    "phaseThinking": "Thinking…",
+    "phaseCalling": "Reading {tool}…",
+    "phaseAnswering": "Writing the answer…",
+    "toolsUsed": "{count, plural, =1 {# source read} other {# sources read}}",
+    "toolFailed": "{tool} — unavailable",
+    "toolTruncated": "{tool} — partial result",
+    "truncatedNotice": "Some results were too large to read in full, so this answer is based on a partial set. Treat totals as incomplete.",
+    "refusalTitle": "The assistant stopped",
+    "haltTitle": "The assistant stopped early",
+    "errorTitle": "Something went wrong",
+    "retry": "Try again",
+    "openPage": "Open {page}",
+    "proposalQueued": "Queued for approval",
+    "proposalQueuedDescription": "Nothing has changed yet. A person reviews this before it takes effect.",
+    "proposalQuarantined": "Not queued",
+    "proposalQuarantinedDescription": "This did not enter the review queue and nothing was created.",
+    "openReviewQueue": "Open the approval queue",
+    "shortcutDescription": "Open the assistant"
   }
 }

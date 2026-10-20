@@ -49,6 +49,7 @@ import {
     Paperclip,
     Settings,
     ShieldCheck,
+    Sparkles,
     Triangle,
     Truck,
     type LucideIcon,
@@ -57,6 +58,7 @@ import { signOut } from 'next-auth/react';
 import { useCallback, useMemo, type ComponentType, type SVGProps } from 'react';
 
 import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
+import { useAssistantOpen } from '@/components/assistant/assistant-open-context';
 import { useTheme } from '@/components/theme/ThemeProvider';
 
 export type PaletteCommandGroup = 'Navigation' | 'Actions';
@@ -101,6 +103,14 @@ function tenantPath(slug: string, path: string): string {
 
 export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] {
     const { toggle: toggleTheme } = useTheme();
+    // `available` is registered by the launcher on mount, not re-derived from
+    // the AI_ASSISTANT_ENABLED flag — that flag is server env and a second
+    // copy of the gate here could disagree with the one that decides whether
+    // the button exists.
+    const { available: assistantAvailable, setOpen: setAssistantOpen } = useAssistantOpen();
+    const openAssistant = useCallback(() => {
+        setAssistantOpen(true);
+    }, [setAssistantOpen]);
     const doSignOut = useCallback(() => {
         void signOut({ callbackUrl: '/login' });
     }, []);
@@ -335,6 +345,21 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 href: href('/admin'),
             },
             // ─── Actions (safe, low-risk only) ────────────────────────
+            // The assistant, reachable the way everything else is (#3840).
+            // Spread-conditional rather than filtered afterwards, so a
+            // disabled assistant contributes no row at all rather than a
+            // hidden one.
+            ...(assistantAvailable
+                ? [
+                      {
+                          id: 'action:open-assistant',
+                          group: 'Actions' as const,
+                          label: 'Ask the assistant',
+                          icon: Sparkles,
+                          perform: openAssistant,
+                      },
+                  ]
+                : []),
             {
                 id: 'action:toggle-theme',
                 group: 'Actions',
@@ -350,7 +375,7 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 perform: doSignOut,
             },
         ];
-    }, [tenantSlug, toggleTheme, doSignOut]);
+    }, [tenantSlug, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
 }
 
 /**
