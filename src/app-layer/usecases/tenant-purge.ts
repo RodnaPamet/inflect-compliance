@@ -126,6 +126,8 @@ export const TENANT_PURGE_RETAINED: ReadonlySet<string> = new Set([
     // A2A (#3679): the signed receipts and the per-peer kills. Neither carries a
     // cascading FK from any purged table — `peerId`, `runId` and `journalId` are
     // plain ids — so retaining them keeps them.
+    'HostConsumerKillSwitch',
+    'HostConsumerMessage',
     'PeerAgentKillSwitch',
     'PeerAgentMessage',
     'ReadinessSnapshot',

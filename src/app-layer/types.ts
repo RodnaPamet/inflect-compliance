@@ -90,8 +90,28 @@ export interface RequestContext {
      * `clampForInboundA2a`), and never sends an outbound A2A task (R14). It
      * grants nothing; it only ever narrows.
      */
-    a2aInbound?: { readonly peerId: string; readonly messageId: string };
+    a2aInbound?: A2aInboundOrigin;
 }
+
+/**
+ * Which third-party principal started a run, when one did (#3861).
+ *
+ * A UNION rather than a widened object, so a caller cannot build a half-origin:
+ * `{ kind: 'PEER' }` without a `peerId` does not compile. The two arms are
+ * deliberately not interchangeable in the type, and deliberately identical in
+ * effect — every consumer of this field tests only whether it is SET:
+ *
+ *   · `external-tools.ts` → `clampForInboundA2a(mode, Boolean(ctx.a2aInbound))`
+ *   · `a2a-outbound.ts`   → `if (ctx.a2aInbound) return []`, and again at the call
+ *
+ * That is why admitting a second principal does not weaken R17 or R14: the
+ * narrowings were never keyed on which principal it was. Anything added here
+ * that branches on `kind` to decide HOW MUCH to narrow would break that
+ * property, and is the thing to refuse in review.
+ */
+export type A2aInboundOrigin =
+    | { readonly kind: 'PEER'; readonly peerId: string; readonly messageId: string }
+    | { readonly kind: 'HOST_CONSUMER'; readonly hostConsumerId: string; readonly messageId: string };
 
 export interface PaginatedResult<T> {
     data: T[];

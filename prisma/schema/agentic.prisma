@@ -536,6 +536,21 @@ model WorkflowRun {
   /// The `PeerAgentMessage` (INBOUND, TASK) whose verified, signed message
   /// started this run. A plain id, for the reason above.
   inboundMessageId  String?
+  /// THE SAME TWO NARROWINGS, FOR A HOST CONSUMER (#3861).
+  ///
+  /// Separate columns rather than reusing `inboundPeerId`, which is a plain id
+  /// and would have accepted a host-consumer id without complaint — leaving
+  /// this docblock false and every join to `PeerAgent` silently empty.
+  ///
+  /// These exist because the narrowings ride on `RequestContext.a2aInbound`,
+  /// and `restoreA2aInbound` rebuilds that flag from the columns alone. A
+  /// principal whose ids are not persisted here keeps the clamp on its first
+  /// segment and LOSES it on a person's resume or a queued Flue segment —
+  /// a run that starts at `PROPOSE_ONLY` and resumes able to write. Write-once
+  /// with `inboundHostMessageId`, by the same trigger, for the same reason.
+  inboundHostConsumerId String?
+  /// The `HostConsumerMessage` whose request started this run. A plain id.
+  inboundHostMessageId  String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -816,6 +831,7 @@ model RegisteredAgent {
   /// (#3679). The credential binds a peer to ONE agent; the agent's own grants
   /// decide what a peer-started run may reach.
   peerInboundCredentials PeerAgentInboundCredential[]
+  hostConsumers          HostConsumer[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -3190,6 +3206,165 @@ model PeerAgentInboundCredential {
   @@unique([tenantId, keyHash])
   @@index([tenantId, peerId, revokedAt])
   @@index([tenantId, receivingAgentId])
+}
+
+/// A host that calls Inflect as a CLIENT, not as a peer agent (#3861).
+///
+/// The shape SAP Joule arrives in: it publishes no agent card, holds no
+/// Ed25519 key, cannot sign `inflect-a2a-receipt/1`, and authenticates through
+/// a BTP destination with OAuth2 client credentials. Every peer guarantee is
+/// kept for peers; this is a SEPARATE principal so that nothing about a peer is
+/// ever waived (ADR 0003, owner decision on #3860).
+///
+/// What replaces a peer's guarantees here, and what does not:
+///   · trust on first use — RE-SITED. A consumer does not exist until a person
+///     creates it naming exactly one receiving agent and a `workflowKeys`
+///     allowlist, so a token alone admits nothing.
+///   · the signed receipt — WEAKENED, with no equivalent. An OAuth bearer
+///     proves possession, not authorship. `HostConsumerMessage` keeps the
+///     request bytes, client id and `jti` instead. NOT the same property:
+///     threat-model R12 stays closed for peers and is open here.
+model HostConsumer {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// What a person calls this consumer, e.g. "Acme SAP Joule".
+  name String
+
+  /// The OAuth2 client id. Public by design — it travels in the token request
+  /// and is kept on every evidence row so a call can be attributed.
+  clientId String
+
+  /// SHA-256 of the client secret, hex. The secret itself is shown once at
+  /// creation and never stored, like a peer's inbound credential.
+  clientSecretHash String
+  /// The leading characters of the secret, so a person can tell two apart
+  /// without revealing either.
+  clientSecretPrefix String
+
+  /// Exactly ONE receiving agent, as a peer credential binds one. A consumer
+  /// cannot pick its agent per call.
+  receivingAgentId String
+  /// Which workflows this consumer may name (threat-model R6). Empty admits
+  /// nothing — deny by default.
+  workflowKeys String[]
+
+  status HostConsumerStatus @default(ACTIVE)
+
+  /// Per-consumer hourly cap (threat-model R13), bounded in the migration.
+  inboundMessagesPerHour Int @default(60)
+
+  /// The ACCOUNTABLE PERSON for this integration, as `PeerAgent.ownerUserId`
+  /// is for a peer — and distinct from whoever happened to create it.
+  ///
+  /// Threat-model R1 required an owner on a peer because a principal with no
+  /// answerable person is a principal nobody reviews. The same argument holds
+  /// here, and there is a second, concrete reason: a run a host consumer
+  /// starts carries THIS person's authority, resolved through the same
+  /// membership check the peer path uses. So the consumer cannot reach further
+  /// than a named human could, and an audit row names them.
+  ownerUserId String
+
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner  User            @relation("HostConsumerOwner", fields: [ownerUserId], references: [id])
+  agent  RegisteredAgent @relation(fields: [receivingAgentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, clientId])
+  @@unique([tenantId, clientSecretHash])
+  @@index([tenantId, status])
+  @@index([tenantId, receivingAgentId])
+  @@index([tenantId, ownerUserId])
+  @@index([tenantId, revokedAt])
+}
+
+/// The evidence a host consumer leaves, in place of a signed receipt (#3861).
+///
+/// WRITE-ONCE at the database, like `PeerAgentMessage`, including the one
+/// exception that admits the DEK and KEK rotation sweeps' re-wrap of the
+/// encrypted `body`: ciphertext to v2 ciphertext, every other column unchanged.
+///
+/// This is the whole of the non-repudiation story on this path and it is weaker
+/// than a receipt: it proves what arrived and under which token, not who
+/// authored it. Said plainly here because a reader comparing this model to
+/// `PeerAgentMessage` would otherwise assume they carry the same weight.
+model HostConsumerMessage {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// WHICH consumer — a PLAIN ID, with no foreign key, exactly as
+  /// `PeerAgentMessage.peerId` is and for the same two reasons.
+  ///
+  /// The evidence has to outlive the principal: a consumer can be revoked and
+  /// the tenant purge can delete it, and the record of what it sent must
+  /// survive both. With a `RESTRICT` relation here those retained rows would
+  /// BLOCK the purge of the consumer instead — which is how a retention class
+  /// turns into a purge that fails halfway (#3716 was four tables cascaded away
+  /// for the mirror-image reason).
+  hostConsumerId String
+
+  /// Attribution: the client id presented, and the access token's `jti`. Both
+  /// are kept even after the consumer is revoked, which is the point.
+  clientId String
+  tokenJti String
+
+  /// The JSON-RPC method asked for.
+  method String?
+
+  /// The EXACT request body bytes, encrypted through the manifest.
+  body String
+  /// SHA-256 of those bytes, hex — so a later read can prove the body is the
+  /// one that arrived.
+  bodyDigest String
+
+  agentId String?
+  runId   String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  /// Replay: the same body under the same token, twice. Named explicitly —
+  /// Prisma's conventional name for these four columns is 67 characters and
+  /// Postgres truncates an identifier at 63 BYTES SILENTLY, which makes the
+  /// database disagree with the schema and `db:check-schema-drift` fail on a
+  /// difference `prisma validate` cannot see (#3416).
+  @@unique([tenantId, hostConsumerId, tokenJti, bodyDigest], map: "HostConsumerMessage_replay_key")
+  @@index([tenantId, hostConsumerId, createdAt])
+  @@index([tenantId, runId])
+}
+
+/// A kill per host consumer (threat-model R11), mirroring
+/// `PeerAgentKillSwitch` exactly — read UNCACHED on every inbound request, and
+/// lifted only by a person with a reason.
+model HostConsumerKillSwitch {
+  id             String @id @default(cuid())
+  tenantId       String
+  hostConsumerId String
+
+  reason          String
+  engagedByUserId String
+  engagedAt       DateTime @default(now())
+
+  liftedAt       DateTime?
+  liftedByUserId String?
+  liftReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, hostConsumerId, liftedAt])
+  @@index([tenantId, engagedAt])
 }
 
 /// THE TENANT'S OWN A2A SIGNING KEY (#3679, owner decision 2026-10-19): the

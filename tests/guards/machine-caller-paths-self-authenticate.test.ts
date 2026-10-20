@@ -344,7 +344,21 @@ describe('/api/a2a: every exported method is the inbound endpoint or the publish
     it.each(HANDLERS)('%s %s is gated, or is the card', (file, method) => {
         const body = codeOnly(declarationOf(fs.readFileSync(path.join(APP, file), 'utf8'), method));
         expect(body.length).toBeGreaterThan(20);
-        if (method === 'POST') {
+        if (method === 'POST' && file.endsWith('/token/route.ts')) {
+            // THE THIRD KIND (#3861). The token endpoint is on `/api/a2a` but
+            // is not the inbound call: it is the OAuth2 client-credentials
+            // exchange a BTP destination performs BEFORE calling the agent, so
+            // it cannot route through `handleInboundA2a` — there is no message
+            // to admit yet.
+            //
+            // It is still self-authenticating, which is what this file is
+            // about: the client id and secret ARE the credential, compared in
+            // constant time against the stored SHA-256 inside
+            // `issueHostConsumerToken`, which also re-reads both gates and the
+            // kill switch. Asserted by NAME rather than by trusting the path,
+            // so a route that merely sits at `/token` without calling it fails.
+            expect(body).toMatch(/issueHostConsumerToken\s*\(/);
+        } else if (method === 'POST') {
             expect(body).toMatch(/handleInboundA2a\s*\(/);
         } else if (method === 'GET') {
             expect(file.endsWith('/agent-card.json/route.ts')).toBe(true);

@@ -161,7 +161,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // file was already sorted, which the +3/-0 diff is the evidence for. The
         // digest moved because of the ADDITION, as it does for every honest one;
         // it is not evidence that nothing else moved. The diff is.
-        keyOrderSha: 'f067167e48dfc7fda335a48da908adbfd3bd41437ea88e8abee8d5af8649dba7',
+        // Moved 2026-10-20 by one sorted ADDITION,
+        // docs/adr/0003-a2a-host-consumers.md (#3861): +3/-0. The guard that
+        // found it was `docs-accuracy`'s "every doc on disk is classified" —
+        // the ADR had been committed three commits earlier and never
+        // classified, which no amount of reading the diff had surfaced.
+        keyOrderSha: '68f40485eea65d19758584af9cff0c8f12ed0c2491b4bf18f05b4a16a1a3753f',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

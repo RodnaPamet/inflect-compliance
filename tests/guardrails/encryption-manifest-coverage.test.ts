@@ -71,6 +71,13 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'HostConsumerMessage.bodyDigest':
+        'A SHA-256 of the request body, and the body itself IS encrypted ' +
+        '(#3861). A digest discloses nothing about its preimage, and it has to ' +
+        'be readable in plaintext for the two jobs it exists for: proving the ' +
+        'stored body is the one that arrived, and the replay unique index ' +
+        '(tenant, consumer, jti, digest) — an encrypted column could not be ' +
+        'compared by the database at all.',
     'TenantSkillVersion.contentHash':
         'A `sha256:` digest of the instructions, CHECKed to that format — an identifier, not content. ' +
         'It must be plaintext: the evaluation set names it, the run pin records it, the approval ' +

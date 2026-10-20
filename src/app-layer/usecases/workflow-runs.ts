@@ -130,7 +130,7 @@ import {
     describeFailure,
     isAgenticFatal,
 } from '@/lib/agentic/failure-isolation';
-import type { RequestContext } from '@/app-layer/types';
+import type { A2aInboundOrigin, RequestContext } from '@/app-layer/types';
 import { guardUntrustedInput, assertNoReviewRequired } from '@/app-layer/ai/guard';
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -956,18 +956,61 @@ export async function listWorkflowRuns(
  * `finally`, not `then` — a run that threw is no longer executing, and leaving
  * it tracked would have the drain pause a row that has already settled.
  */
+/**
+ * Which third-party principal a run's columns say started it — the whole of the
+ * decision, with no database in it.
+ *
+ * Separated from the read so it can be tested directly, because the thing that
+ * matters is not reachable from the start of a run: `withInboundOrigin` rebuilds
+ * this flag on EVERY later segment — a person's resume and a queued Flue segment
+ * alike — and the two narrowings keyed on it (the `PROPOSE_ONLY` clamp, R17, and
+ * the refusal of an outbound send, R14) are lost on that segment if this returns
+ * undefined. A run that starts clamped and resumes able to write is the failure,
+ * and it is invisible to a test that only checks the start.
+ *
+ * Either pair, never both: a CHECK holds that at the database, and each pair is
+ * all-or-nothing there too, because a HALF-written origin would restore nothing
+ * at all. Peer is tried first only because it is the older arm — the two are not
+ * ordered by precedence and cannot both be present.
+ */
+export function inboundOriginFromRow(
+    row:
+        | {
+              readonly inboundPeerId: string | null;
+              readonly inboundMessageId: string | null;
+              readonly inboundHostConsumerId: string | null;
+              readonly inboundHostMessageId: string | null;
+          }
+        | null
+        | undefined,
+): A2aInboundOrigin | undefined {
+    if (!row) return undefined;
+    if (row.inboundPeerId && row.inboundMessageId) {
+        return { kind: 'PEER', peerId: row.inboundPeerId, messageId: row.inboundMessageId };
+    }
+    if (row.inboundHostConsumerId && row.inboundHostMessageId) {
+        return {
+            kind: 'HOST_CONSUMER',
+            hostConsumerId: row.inboundHostConsumerId,
+            messageId: row.inboundHostMessageId,
+        };
+    }
+    return undefined;
+}
+
 async function withInboundOrigin(ctx: RequestContext, runId: string): Promise<RequestContext> {
     const row = await runInTenantContext(ctx, (db) =>
         db.workflowRun.findFirst({
             where: { id: runId, tenantId: ctx.tenantId },
-            select: { inboundPeerId: true, inboundMessageId: true },
+            select: {
+                inboundPeerId: true,
+                inboundMessageId: true,
+                inboundHostConsumerId: true,
+                inboundHostMessageId: true,
+            },
         }),
     );
-    const fromRow =
-        row?.inboundPeerId && row.inboundMessageId
-            ? { peerId: row.inboundPeerId, messageId: row.inboundMessageId }
-            : undefined;
-    const a2aInbound = fromRow ?? ctx.a2aInbound;
+    const a2aInbound = inboundOriginFromRow(row) ?? ctx.a2aInbound;
     return a2aInbound ? { ...ctx, a2aInbound } : ctx;
 }
 
@@ -1209,8 +1252,24 @@ async function createSealedRun(
                     // …and, for a run an A2A peer's task started, WHICH peer
                     // and WHICH verified message (#3679). Write-once at the
                     // database; R17 and R14 are keyed on it.
-                    inboundPeerId: ctx.a2aInbound?.peerId ?? null,
-                    inboundMessageId: ctx.a2aInbound?.messageId ?? null,
+                    // …and, for a run a third party's request started, WHICH
+                    // principal and WHICH record (#3679 for a peer, #3861 for a
+                    // host consumer). Write-once at the database; R17 and R14
+                    // are keyed on these columns, and `withInboundOrigin` reads
+                    // them back on every later segment — which is why a host
+                    // consumer has its OWN pair rather than borrowing
+                    // `inboundPeerId`.
+                    inboundPeerId: ctx.a2aInbound?.kind === 'PEER' ? ctx.a2aInbound.peerId : null,
+                    // Guarded on `kind` too, not just taken from the union: a
+                    // bare `?.messageId` would write the host consumer's id
+                    // into the PEER column as well, and `WorkflowRun_one_inbound_origin`
+                    // refuses a row with both pairs set — so every
+                    // host-consumer run would have failed at insert.
+                    inboundMessageId: ctx.a2aInbound?.kind === 'PEER' ? ctx.a2aInbound.messageId : null,
+                    inboundHostConsumerId:
+                        ctx.a2aInbound?.kind === 'HOST_CONSUMER' ? ctx.a2aInbound.hostConsumerId : null,
+                    inboundHostMessageId:
+                        ctx.a2aInbound?.kind === 'HOST_CONSUMER' ? ctx.a2aInbound.messageId : null,
                     // …and what it was TAUGHT. `[]` for a run that mounts no
                     // skill, never NULL: NULL means the row predates the pin.
                     mountedSkills: mountedSkills.map(pinForRow),

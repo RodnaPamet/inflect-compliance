@@ -63,6 +63,16 @@ function headingLines(md: string, level: number): string {
  * a sub-processor" decision.
  */
 const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
+    // #3861 — A2A host consumers. NEITHER names an external service.
+    // `A2A_HOST_CONSUMERS` is a deployment feature flag, and the direction of
+    // travel is INBOUND: a host calls us. Nothing is sent anywhere by either.
+    A2A_HOST_CONSUMERS:
+        'Deployment feature flag admitting a host that calls US as a client ' +
+        '(#3861). Inbound only — no data leaves, so there is no processor.',
+    A2A_HOST_CONSUMER_TOKEN_SECRET:
+        'OUR OWN HS256 signing secret for the access token we mint and then ' +
+        'verify ourselves (#3861). It is never sent to anyone; a third party ' +
+        'only ever presents a token signed with it back to us.',
     // #1309 NVD CVE feed — NIST's PUBLIC vulnerability database. We PULL
     // CVE data from it; no customer/personal data is ever sent to NVD, so
     // it is not a sub-processor. NVD_API_KEY is an optional rate-limit key;

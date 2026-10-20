@@ -210,6 +210,9 @@ model Tenant {
   peerAgentMessages                 PeerAgentMessage[]
   peerAgentKillSwitches             PeerAgentKillSwitch[]
   peerAgentInboundCredentials       PeerAgentInboundCredential[]
+  hostConsumers                     HostConsumer[]
+  hostConsumerMessages              HostConsumerMessage[]
+  hostConsumerKillSwitches          HostConsumerKillSwitch[]
   tenantA2aSigningKeys              TenantA2aSigningKey[]
   agentHarnessScans                 AgentHarnessScan[]
   agentHarnessScanItems             AgentHarnessScanItem[]
@@ -1193,6 +1196,7 @@ model User {
   /// NOT NULL on the agent side, so every registered agent appears here.
   registeredAgentsOwned         RegisteredAgent[]               @relation("RegisteredAgentOwner")
   peerAgentsOwned               PeerAgent[]                     @relation("PeerAgentOwner")
+  hostConsumersOwned            HostConsumer[]                  @relation("HostConsumerOwner")
   /// #3678 — the harness-scan sources of a client estate this user is the
   /// accountable owner of. `RESTRICT` on the source side.
   harnessEstateSourcesOwned     AgentHarnessEstateSource[]      @relation("AgentHarnessEstateSourceOwner")
@@ -1787,6 +1791,18 @@ model TenantSecuritySettings {
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt
   mfaFailClosed                Boolean           @default(false)
+  /// Does this tenant admit HOST CONSUMERS — a host that calls us as a client
+  /// rather than as a peer agent (#3861)? Default FALSE, and the deployment
+  /// flag `A2A_HOST_CONSUMERS` must also be on: the flag crosses a deployment
+  /// and this column crosses a tenant, so one deployment serving tenants that
+  /// have decided differently is the normal case.
+  ///
+  /// It is the TENANT'S decision because of what it gives up. On this path the
+  /// signed receipt is replaced by a write-once record of the request bytes,
+  /// client id and token jti — weaker non-repudiation, with nothing restoring
+  /// it (ADR 0003, owner decision on #3860). A deployment-wide flag alone would
+  /// make that trade on a tenant's behalf.
+  a2aHostConsumersEnabled      Boolean           @default(false)
   tenant                       Tenant            @relation(fields: [tenantId], references: [id])
 }
 

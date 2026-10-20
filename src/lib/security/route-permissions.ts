@@ -310,6 +310,38 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // #3777 — the monthly token budget, the concurrency cap's sibling, under
     // the same key for the same reason (capacity, not the emergency stop), by
     // the owner's decision to set the two axes in one place.
+    // ── A2A host consumers (#3861) ──────────────────────────────────
+    //
+    // `admin.agent_registry` because a host consumer is "whom may call us",
+    // which is register-shaped rather than call-shaped (ADR 0003, owner
+    // decision). The KILL sits under `admin.agent_kill_switch` instead, and
+    // its rule must come FIRST — this map is first-wins, and the broader
+    // host-consumers pattern below would otherwise swallow it.
+    {
+        path: new RegExp(`^${T}\\/admin\\/a2a\\/host-consumers\\/[^/]+\\/kill$`),
+        permission: 'admin.agent_kill_switch',
+        note:
+            'Stop or restore ONE host consumer — the host that calls us as a ' +
+            'client. Not the register key, for the reason the agent kill ' +
+            'carries: `agent_registry` bundles admit with suspend, so sharing ' +
+            'it would mean a tenant cannot delegate the authority to STOP an ' +
+            'integration without also delegating the authority to ADMIT one. ' +
+            'It is also the term that makes a stateless access token ' +
+            'acceptable (threat-model R26): there is no revoking one token, so ' +
+            'stopping the consumer is what stands in for it.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/a2a\\/host-consumers(\\/[^/]+)?$`),
+        permission: 'admin.agent_registry',
+        note:
+            'Create, list, rotate the secret of and revoke a HOST CONSUMER ' +
+            '(#3861) — the principal SAP Joule arrives as, which calls us as ' +
+            'a client with an OAuth2 bearer rather than as a peer with a ' +
+            'signed receipt. The secret is returned once on creation and the ' +
+            'row keeps only its SHA-256. Never issued by an API key: a ' +
+            'credential that admits an external system is created by a person ' +
+            'who can be named in the audit row.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/budget$`),
         permission: 'admin.agent_registry',

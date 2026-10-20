@@ -1051,6 +1051,25 @@ export const RESET_TABLES: readonly string[] = [
     'TenantSecuritySettings',
     'TrainingCourse',
     'UserCalendarConnection',
+    //
+    // ── The host-consumer tables (#3861) ─────────────────────────────────
+    //
+    // Added because the guard from #3804 demanded them the moment a suite
+    // first created a row — `reset-tables-covers-fixture-written-orphans`
+    // named both and the file that writes them. Which is the point of it: the
+    // three incidents before it (#3597 twice, #3801) were all found by a
+    // failing suite instead.
+    //
+    // Both are parented by `Tenant` alone. `HostConsumerMessage` deliberately
+    // holds NO foreign key to `HostConsumer` — the evidence has to outlive the
+    // principal — which is exactly what puts it outside the cascade closure.
+    //
+    // Being TRUNCATEd here does not contradict their being RETAINED by the
+    // tenant purge: that purge skips them when deleting a tenant's data in
+    // production, and this list clears a test database between suites. Two
+    // different mechanisms, one of which is not production at all.
+    'HostConsumerMessage',
+    'HostConsumerKillSwitch',
     'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
     'EvidenceReview', 'Evidence', 'FileRecord',
     'ControlRequirementLink',

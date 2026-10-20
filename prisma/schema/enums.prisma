@@ -2048,6 +2048,16 @@ enum PeerAgentStatus {
   RETIRED
 }
 
+/// Lifecycle of a host consumer — a host that calls Inflect as a CLIENT
+/// (#3861). Deliberately the same three states as `PeerAgentStatus`: the
+/// difference between the two principals is how they authenticate and what
+/// evidence they leave, never how they are retired.
+enum HostConsumerStatus {
+  ACTIVE
+  SUSPENDED
+  RETIRED
+}
+
 /// Lifecycle of one version of a tenant-authored skill (#3680, step 4c). A
 /// version's text never changes: an edit is a NEW version, which starts here at
 /// DRAFT. DRAFT → IN_REVIEW (submitted, with a passing evaluation record) →
