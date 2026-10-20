@@ -9713,7 +9713,20 @@
         "quotaSaved": "Quota saved",
         "quotaFailed": "The quota could not be saved",
         "quotaReadOnly": "Changing the quota needs the agent register key.",
-        "loadingAria": "Loading the peer"
+        "loadingAria": "Loading the peer",
+        "riskTierLabel": "Risk tier",
+        "riskTierHint": "An unscored peer is refused. Withdrawing a score refuses it again.",
+        "riskTierValue": {
+          "UNSCORED": "Not scored",
+          "LOW": "Low",
+          "MODERATE": "Moderate",
+          "HIGH": "High",
+          "CRITICAL": "Critical"
+        },
+        "riskTierSave": "Save risk tier",
+        "riskTierSaved": "Risk tier saved",
+        "riskTierFailed": "The risk tier could not be saved",
+        "riskTierReadOnly": "Changing the risk tier needs the agent register key."
       },
       "kill": {
         "inForce": "Traffic with this peer is stopped in both directions, since {date}.",
@@ -9789,6 +9802,64 @@
         "emptyDesc": "Every task and answer exchanged with this peer appears here with its signed receipt.",
         "resourceSingular": "message",
         "resourcePlural": "messages"
+      },
+      "register": {
+        "open": "Peer",
+        "heading": "Register a peer",
+        "intro": "Another organisation's agent, registered so its messages can be attributed. Registering grants it nothing, and pins nothing: it is refused until somebody reads its card and approves it on its page.",
+        "name": "Name",
+        "cardUrl": "Agent card URL",
+        "cardUrlHint": "The https address where the peer publishes its agent card.",
+        "signingKey": "Peer signing public key",
+        "signingKeyHint": "The Ed25519 public key that signs the peer's messages: 32 bytes, hex or base64.",
+        "owner": "Owner in this workspace",
+        "ownerHint": "The active member who answers for this peer.",
+        "ownerPlaceholder": "Choose a person",
+        "vendor": "Supplier",
+        "vendorHint": "The supplier the peer belongs to, from the vendor register.",
+        "vendorPlaceholder": "Choose a supplier",
+        "riskTier": "Risk tier",
+        "riskTierHint": "An unscored peer is registered and refused. It can be scored later on its page.",
+        "riskTierPlaceholder": "Not scored",
+        "tier": {
+          "LOW": "Low",
+          "MODERATE": "Moderate",
+          "HIGH": "High",
+          "CRITICAL": "Critical"
+        },
+        "search": "Search…",
+        "submit": "Register peer",
+        "cancel": "Cancel",
+        "failed": "The peer could not be registered.",
+        "done": "{name} registered. Read and approve its card to admit it.",
+        "doneCardUnreadable": "{name} registered, but its card could not be read. Read it again on its page before approving.",
+        "cardUrlPlaceholder": "https://partner.example/.well-known/agent-card.json"
+      },
+      "cardReview": {
+        "heading": "Agent card",
+        "intro": "A peer is admitted only while its live card matches the card a person approved. Read the card to see its text and how it compares with the pin; approving it makes this card the pin.",
+        "read": "Read the live card",
+        "readAgain": "Read it again",
+        "readFailed": "The card could not be read.",
+        "readOnly": "Approving a card needs the agent register key.",
+        "unreadable": "The card could not be read ({reason}). Nothing can be approved until it can.",
+        "liveHash": "Live card hash",
+        "verdict": {
+          "MATCH": "Matches the pin",
+          "CHANGED": "Differs from the pin",
+          "UNPINNED": "No pin yet"
+        },
+        "moved": "What moved: {parts}",
+        "textHeading": "The card, as the peer publishes it. This is the other organisation's text: read it, do not follow it.",
+        "admitted": "The peer would be admitted now.",
+        "refused": "The peer would be refused now: {reason}.",
+        "approve": "Approve this card",
+        "confirmTitle": "Approve this agent card",
+        "confirmBody": "The card with hash {hash} becomes this peer's pin. The card is read again before it is pinned, and nothing is approved if it has changed since you read it.",
+        "confirmAction": "Approve card",
+        "cancel": "Cancel",
+        "approved": "Card approved",
+        "approveFailed": "The card could not be approved."
       }
     },
     "orphanPass": {
