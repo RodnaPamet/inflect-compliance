@@ -34,6 +34,14 @@ jest.mock('@/env', () => {
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { buildSystemContext } from '@/app-layer/context-system';
+import { makeRequestContext } from '../helpers/make-context';
+import {
+    createHostConsumer,
+    listHostConsumers,
+    revokeHostConsumer,
+    rotateHostConsumerSecret,
+} from '@/app-layer/usecases/a2a-host-consumers';
+import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { hashForLookup } from '@/lib/security/encryption';
 import {
@@ -60,14 +68,20 @@ const world: Record<
 > = {};
 
 /**
- * The SYSTEM context, as `handleInboundA2a` builds for itself.
+ * The SYSTEM context, as `handleInboundA2a` builds for itself — the inbound
+ * endpoint has no session behind it, so a test using anything else would be
+ * exercising a context production never has.
  *
- * Not `makeRequestContext`: a request context for a user with no membership in
- * the tenant reads NOTHING through `runInTenantContext` — measured, both the
- * settings row and the consumer came back null while a raw read saw them. The
- * inbound endpoint has no session behind it and builds a system context for
- * exactly this reason, so the test has to use the same one or it is testing a
- * context the production path never has.
+ * A correction worth keeping, because I recorded the wrong reason for this
+ * once: an earlier version of this helper called
+ * `makeRequestContext({ tenantId, ... })` and read NOTHING through
+ * `runInTenantContext`, and I attributed that to the user having no
+ * membership. It was not. `makeRequestContext(role, overrides)` takes TWO
+ * POSITIONAL arguments, so passing one object made the object the `role` and
+ * left `tenantId` at its default `'tenant-1'` — the reads were scoped to a
+ * tenant that does not exist here. Mis-calling a helper looks exactly like an
+ * RLS refusal from the outside, and the only tell was that a raw read saw the
+ * rows.
  */
 function ctxFor(tenantId: string) {
     return buildSystemContext({ tenantId, tenantSlug: tenantId, job: 'a2a-inbound-test' });
@@ -90,6 +104,9 @@ async function seed(tenantId: string, enabled: boolean): Promise<void> {
             provenance: 'FIRST_PARTY',
             ownerUserId: user.id,
         },
+    });
+    await prisma.tenantMembership.create({
+        data: { tenantId, userId: user.id, role: 'OWNER', status: 'ACTIVE' },
     });
     await prisma.tenantSecuritySettings.create({
         data: { tenantId, a2aHostConsumersEnabled: enabled },
@@ -458,5 +475,147 @@ describe('the token endpoint (#3861)', () => {
             ok: false,
             reason: 'UNKNOWN_CLIENT',
         });
+    });
+});
+
+describe('managing a host consumer (#3861)', () => {
+    const WF = 'host-consumer-management-test-wf';
+
+    /** A person with the register key — what the usecases require. */
+    const adminCtx = (tenantId: string) =>
+        makeRequestContext('OWNER', { tenantId, userId: world[tenantId].ownerUserId });
+
+    beforeAll(() => {
+        registerWorkflow({
+            key: WF,
+            name: 'Host consumer management test',
+            description: 'A workflow a host consumer may be allowed to name.',
+            steps: [],
+        });
+    });
+
+    const create = (tenantId: string, over: Record<string, unknown> = {}) =>
+        createHostConsumer(adminCtx(tenantId), {
+            name: 'Acme Joule',
+            ownerUserId: world[tenantId].ownerUserId,
+            receivingAgentId: world[tenantId].agentId,
+            workflowKeys: [WF],
+            ...over,
+        });
+
+    it('hands back the secret ONCE and stores only its hash', async () => {
+        const made = await create(T1);
+        expect(made.clientSecret).toMatch(/^[0-9a-f]{48}$/);
+        expect(made.consumer.clientId.startsWith('ifhc_')).toBe(true);
+
+        const row = await prisma.hostConsumer.findUniqueOrThrow({
+            where: { id: made.consumer.id },
+            select: { clientSecretHash: true, clientSecretPrefix: true },
+        });
+        // The row holds a hash, not the secret — and the listing never carries
+        // either, only the displayed prefix.
+        expect(row.clientSecretHash).not.toBe(made.clientSecret);
+        expect(row.clientSecretHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(made.consumer.clientSecretPrefix).toBe(row.clientSecretPrefix);
+        const listed = await listHostConsumers(adminCtx(T1));
+        expect(JSON.stringify(listed)).not.toContain(made.clientSecret);
+        expect(JSON.stringify(listed)).not.toContain(row.clientSecretHash);
+        await prisma.hostConsumer.delete({ where: { id: made.consumer.id } });
+    });
+
+    it('refuses without the register key, and refuses an API key outright', async () => {
+        await expect(
+            createHostConsumer(
+                makeRequestContext('READER', { tenantId: T1, userId: world[T1].ownerUserId }),
+                { name: 'x', ownerUserId: world[T1].ownerUserId, receivingAgentId: world[T1].agentId, workflowKeys: [WF] },
+            ),
+        ).rejects.toThrow(/admin.agent_registry/);
+
+        // A credential that admits an external system is issued by a person who
+        // can be named in the audit row, never by a token that cannot.
+        await expect(
+            createHostConsumer(
+                makeRequestContext('OWNER', {
+                    tenantId: T1,
+                    userId: world[T1].ownerUserId,
+                    apiKeyId: 'key-1',
+                }),
+                { name: 'x', ownerUserId: world[T1].ownerUserId, receivingAgentId: world[T1].agentId, workflowKeys: [WF] },
+            ),
+        ).rejects.toThrow(/not by an API key/);
+    });
+
+    it('refuses an unknown workflow, an unknown agent and a non-member owner', async () => {
+        await expect(create(T1, { workflowKeys: ['no-such-workflow-at-all'] })).rejects.toThrow(/Unknown workflow/);
+        await expect(create(T1, { receivingAgentId: 'no-such-agent' })).rejects.toThrow(/does not exist in this tenant/);
+        // The owner matters because the RUN carries their authority.
+        await expect(create(T1, { ownerUserId: world[T2].ownerUserId })).rejects.toThrow(/active member/);
+    });
+
+    it('refuses an empty allowlist — deny by default', async () => {
+        await expect(create(T1, { workflowKeys: [] })).rejects.toThrow();
+    });
+
+    it('ROTATE keeps the client id and kills the old secret at the token endpoint', async () => {
+        const made = await create(T1);
+        const rotated = await rotateHostConsumerSecret(adminCtx(T1), made.consumer.id);
+        // Same id, so a BTP destination changes a secret rather than being rewritten.
+        expect(rotated.consumer.clientId).toBe(made.consumer.clientId);
+        expect(rotated.clientSecret).not.toBe(made.clientSecret);
+
+        const withOld = await issueHostConsumerToken({
+            tenantSlug: T1,
+            grantType: 'client_credentials',
+            clientId: made.consumer.clientId,
+            clientSecret: made.clientSecret,
+        });
+        expect(withOld).toMatchObject({ ok: false, reason: 'BAD_CLIENT_SECRET' });
+
+        const withNew = await issueHostConsumerToken({
+            tenantSlug: T1,
+            grantType: 'client_credentials',
+            clientId: rotated.consumer.clientId,
+            clientSecret: rotated.clientSecret,
+        });
+        expect(withNew.ok).toBe(true);
+        await prisma.hostConsumer.delete({ where: { id: made.consumer.id } });
+    });
+
+    it('REVOKE stops new tokens AND a token already issued', async () => {
+        const made = await create(T1);
+        const issued = await issueHostConsumerToken({
+            tenantSlug: T1,
+            grantType: 'client_credentials',
+            clientId: made.consumer.clientId,
+            clientSecret: made.clientSecret,
+        });
+        if (!issued.ok) throw new Error('expected a token');
+
+        await revokeHostConsumer(adminCtx(T1), made.consumer.id);
+
+        // No new tokens…
+        expect(
+            await issueHostConsumerToken({
+                tenantSlug: T1,
+                grantType: 'client_credentials',
+                clientId: made.consumer.clientId,
+                clientSecret: made.clientSecret,
+            }),
+        ).toMatchObject({ ok: false, reason: 'HOST_CONSUMER_REVOKED' });
+
+        // …and the one already in the wild stops at the next request, which is
+        // the whole argument for a stateless token (R26).
+        expect(
+            await tryAdmitHostConsumer(ctxFor(T1), { authorization: `Bearer ${issued.accessToken}` }),
+        ).toMatchObject({ kind: 'REFUSED', reason: 'HOST_CONSUMER_REVOKED' });
+
+        await expect(revokeHostConsumer(adminCtx(T1), made.consumer.id)).rejects.toThrow(/already revoked/);
+        await expect(rotateHostConsumerSecret(adminCtx(T1), made.consumer.id)).rejects.toThrow(/cannot be rotated/);
+        await prisma.hostConsumer.delete({ where: { id: made.consumer.id } });
+    });
+
+    it("cannot manage another tenant's consumer", async () => {
+        await expect(rotateHostConsumerSecret(adminCtx(T2), world[T1].consumerId)).rejects.toThrow(/not found/);
+        await expect(revokeHostConsumer(adminCtx(T2), world[T1].consumerId)).rejects.toThrow(/not found/);
     });
 });
