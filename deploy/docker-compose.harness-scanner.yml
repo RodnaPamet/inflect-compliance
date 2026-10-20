@@ -1,0 +1,104 @@
+#
+# OPT-IN OVERLAY — the agent-harness scanner for Inflect's OWN estate (#3665).
+#
+# Usage (a deliberate act, once the preconditions below are met):
+#
+#   docker compose --env-file .env --env-file .env.prod \
+#     -f docker-compose.prod.yml \
+#     -f docker-compose.harness-scanner.yml up -d harness-scanner
+#
+# ── WHAT THIS IS ──────────────────────────────────────────────────────
+#
+# The pilot estate is Inflect's own (roadmap decision 10): its Entra
+# directory, its MCP server, the tenant's own register, its GitHub workflows
+# and its GCP project's service accounts. Its scanner runs here, on the
+# production VM, from the copy the dispatch-only `Scanner image` workflow
+# published to the repository's private GHCR package (owner decision
+# 2026-10-20). A client's estate still builds the image from source.
+#
+# It reads, signs one report per run and POSTs it to the tenant's ingest
+# route over the public origin. It serves nothing: no port, no Caddy vhost.
+#
+# ── WHY AN OVERLAY AND NOT docker-compose.prod.yml ────────────────────
+#
+# The canonical file is what `deploy/apply.sh` pushes and runs, and it must
+# start on a bare VM. This service needs two things a bare VM does not have:
+# a configuration naming the estate, and an environment file holding its
+# signing key and its credentials. Without them it cannot start, and the
+# pipelock lesson is that a service which cannot start does not belong in the
+# canonical file. So enabling it stays a deliberate act, as pipelock's is.
+#
+# ── WHY ITS OWN ENVIRONMENT FILE ──────────────────────────────────────
+#
+# `.env.prod` holds the database password, the Redis password and the master
+# encryption key. The scanner needs none of them, and an `env_file:` hands a
+# container every variable in the file. So it reads `.env.scanner` and only
+# that: the signing key, the ingest key (which also reads `/api/mcp`) and one
+# read credential per network source.
+# Nothing here is interpolated from either file, so the `--env-file` flags
+# above supply only what the canonical file's own interpolation needs.
+#
+# ── WHY THE DIRECTORY, NOT THE FILE ───────────────────────────────────
+#
+# The configuration is mounted as its directory, for two reasons:
+#
+#  - Caddy's: a single-file bind mount pins the inode, so an edit that
+#    renames a temp file over it never reaches the container.
+#  - Pipelock's: a missing bind-mount source becomes an empty DIRECTORY,
+#    not an error. A directory mount that is empty still reads
+#    "config.json: not found", which the scanner refuses at start and logs.
+#
+# ── HARDENING ─────────────────────────────────────────────────────────
+#
+# The README's Container section: a read-only root filesystem, every
+# capability dropped, no new privileges, the image's own uid 1000. The image
+# is pinned by DIGEST, and the service carries no Watchtower label, so
+# nothing updates it underneath the pin. A new image means a new dispatch of
+# the `Scanner image` workflow and a reviewed edit of the line below.
+#
+# ── PRECONDITIONS ─────────────────────────────────────────────────────
+#   [ ] The VM's GHCR login can pull the private `agent-harness-scanner`
+#       package: `sudo docker pull <the image line below>`.
+#   [ ] The scanner is a registered agent in Inflect's tenant, and its
+#       public key is registered against it. Print it with no network:
+#         docker compose ... run --rm --no-deps harness-scanner \
+#           public-key --config /etc/agent-harness-scanner/config.json
+#   [ ] /opt/inflect/harness-scanner/config.json, filled in from
+#       deploy/harness-scanner/config.pilot.example.json. Directory 0755,
+#       file 0644: it holds no credential, and the container reads it as uid
+#       1000.
+#   [ ] /opt/inflect/.env.scanner, holding every variable that file names
+#       (deploy/harness-scanner/scanner.env.example), root-owned, mode 0600.
+#   [ ] A dry run reads every source COMPLETE before the schedule starts:
+#         docker compose ... run --rm harness-scanner \
+#           scan --dry-run --config /etc/agent-harness-scanner/config.json
+#
+# ── TEARDOWN ──────────────────────────────────────────────────────────
+#   docker compose ... rm -sf harness-scanner
+#   revoke the ingest key and each source's read credential at its source
+#   remove /opt/inflect/.env.scanner
+#
+services:
+  harness-scanner:
+    # `Scanner image` run 39374783386, 2026-10-20, commit 776449bce:
+    # smoke-tested, then Trivy-gated at CRITICAL,HIGH with nothing found.
+    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:7b2906f3b64e00bd88940e4416e3cdf496472fb903f998f7fdfdcbaacdd7a7ec
+    restart: unless-stopped
+    command: ["schedule", "--config", "/etc/agent-harness-scanner/config.json"]
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - ./.env.scanner
+    volumes:
+      - ./harness-scanner:/etc/agent-harness-scanner:ro
+    logging:
+      # The canonical file's `default-logging`. An anchor does not cross
+      # files, so its values are repeated here.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,47 @@
+{
+  "estate": "inflect-own",
+  "scanner": {
+    "agentId": "REPLACE-with-the-scanner-register-id",
+    "signingKeyEnv": "SCANNER_SIGNING_KEY"
+  },
+  "inflect": {
+    "baseUrl": "https://app.inflect.bg",
+    "tenantSlug": "replace-with-the-tenant-slug",
+    "apiKeyEnv": "INFLECT_INGEST_KEY"
+  },
+  "schedule": { "everyHours": 24 },
+  "timeBoxSeconds": 600,
+  "sources": [
+    {
+      "kind": "entra-sp",
+      "directoryId": "00000000-0000-0000-0000-000000000000",
+      "clientId": "00000000-0000-0000-0000-000000000000",
+      "clientSecretEnv": "ENTRA_CLIENT_SECRET",
+      "includeThirdPartyApplications": false
+    },
+    {
+      "kind": "mcp",
+      "servers": [
+        {
+          "label": "inflect",
+          "url": "https://app.inflect.bg/api/mcp",
+          "agents": [],
+          "readTokenEnv": "INFLECT_INGEST_KEY"
+        }
+      ]
+    },
+    { "kind": "inflect-register" },
+    {
+      "kind": "cicd",
+      "product": "github-actions",
+      "repositories": ["RodnaPamet/inflect-compliance"],
+      "tokenEnv": "GITHUB_READ_TOKEN"
+    },
+    {
+      "kind": "gcp-sa",
+      "product": "gcp-iam",
+      "projects": ["hazel-design-419410"],
+      "keyEnv": "GCP_SCANNER_KEY"
+    }
+  ]
+}

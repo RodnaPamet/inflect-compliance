@@ -147,9 +147,11 @@ a container a client builds from this repository
 scanned by Trivy in CI on every pull request (owner decision, 2026-10-19).
 Inflect's own estate runs a copy published by digest to the repository's
 private GHCR package, by the dispatch-only `Scanner image` workflow, which
-smoke-tests and scans before it pushes (owner decision, 2026-10-20). It runs
-read-only, as a non-root user, with no package manager, and its base image is
-pinned by digest.
+smoke-tests and scans before it pushes (owner decision, 2026-10-20). On the
+production VM it runs from the opt-in Compose overlay
+`deploy/docker-compose.harness-scanner.yml`, beside a configuration template for
+the pilot estate (`deploy/harness-scanner/`). It runs read-only, as a non-root
+user, with no package manager, and its base image is pinned by digest.
 
 #3738 added a third source behind the same interface: LangSmith, as the
 `runtime` kind (owner decisions of 2026-10-19). It reads, by GET only, the

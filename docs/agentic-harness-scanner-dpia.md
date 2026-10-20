@@ -424,7 +424,12 @@ column. A client builds it from this repository. The one published copy is
 Inflect's own, for its estate's scanner on the production VM, and it goes to the
 repository's private GHCR package (owner decision, 2026-10-20). Publishing
 changes no data flow: the image holds no credential, no configuration and no
-estate data. It holds
+estate data. On the VM it runs from an opt-in Compose overlay,
+`deploy/docker-compose.harness-scanner.yml`, pinned by digest. Its credentials
+sit in their own root-only environment file, `.env.scanner`, not in the
+application's `.env.prod`. So the scanner receives none of the application's
+secrets, such as the master encryption key, and the application receives none
+of the scanner's read credentials. It holds
 no credential and no configuration. The signing key and each source's
 credential reach it as the environment variables the configuration names, from
 the estate's own secret store, so the key stays on the estate's infrastructure
