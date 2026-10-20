@@ -1,6 +1,9 @@
 # The harness scanner's container (#3686, owner decisions of 2026-10-19 on that
-# issue): built and smoke-tested in CI, and NOT published. A client builds it
-# from a checkout of this repository, at its root:
+# issue): built and smoke-tested in CI. A client builds it from a checkout of
+# this repository, at its root. The one published copy is Inflect's own, pushed
+# by digest to the repository's private GHCR package by the dispatch-only
+# `.github/workflows/scanner-image.yml` for the production VM (owner decision,
+# 2026-10-20):
 #
 #   docker build -f packages/agent-harness-scanner/Dockerfile -t agent-harness-scanner .
 #

@@ -1,0 +1,155 @@
+#
+# The harness scanner's image — built, smoke-tested, scanned, then published.
+#
+# WHY IT IS PUBLISHED AT ALL. Until 2026-10-20 the scanner image was built and
+# checked in CI and never published: a client builds it from a checkout of this
+# repository (owner decision, 2026-10-19). That still holds for a client's
+# estate. Inflect's own estate is the exception (owner decision, 2026-10-20): its
+# scanner runs on the production VM, which runs images and builds none, so the
+# image it runs has to come from a registry. This workflow puts it in the
+# repository's private GHCR package and nowhere else.
+#
+# WORKFLOW_DISPATCH ONLY, and that is the point. The application image publishes
+# on every push to `main` because Watchtower polls `:latest` and that is the
+# deploy path. This image is the opposite: it is referenced by DIGEST, so a new
+# build changes nothing until somebody edits the scanner overlay to point at the
+# new digest. Building it on every push would produce a stream of images nobody
+# pinned. There is no `:latest` tag, so nothing can follow one.
+#
+# BUILD -> SMOKE -> SCAN -> PUSH, on one runner, mirroring `ghcr-publish.yml`
+# and for its reason: a scan placed after the push gates nothing, because the
+# image is already in the registry by the time the scan has an opinion. The
+# smoke test and the Trivy gate are the ones `ci.yml`'s `Scanner image` job runs
+# on every pull request, against the same Dockerfile.
+#
+# WHAT THIS WORKFLOW DELIBERATELY DOES NOT DO: deploy. It prints the digest it
+# published and stops. Pinning the overlay to that digest and applying it on the
+# VM are separate, reviewed acts.
+#
+# `tests/guardrails/publish-scans-before-push.test.ts` names this job as a push
+# site and requires a blocking Trivy step above every step that can reach a
+# registry.
+#
+name: Scanner image
+
+on:
+    workflow_dispatch:
+
+concurrency:
+    group: scanner-image-${{ github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+    packages: write
+
+env:
+    REGISTRY: ghcr.io
+    IMAGE_NAME: rodnapamet/agent-harness-scanner
+    # Registry-less on purpose, as `ghcr-publish.yml`'s SCAN_REF is: a
+    # `ghcr.io/...` ref lets a typo scan an image pulled from the registry
+    # instead of the one just built.
+    SCAN_REF: agent-harness-scanner:publish-${{ github.sha }}
+
+jobs:
+    build-scan-push:
+        runs-on: ubuntu-latest
+        # The CI job that builds, smokes and scans this image has 20 minutes;
+        # the push and the digest read-back add little.
+        timeout-minutes: 30
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v4
+
+            - name: Log in to GHCR
+              uses: docker/login-action@v4
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            # NAMED EXPLICITLY, like every image build here (#3418). Loaded into
+            # this runner's daemon and nowhere else; the registry does not see
+            # it until the push step, which is downstream of the gate.
+            - name: Build the scanner image (load locally, NO push)
+              uses: docker/build-push-action@v7
+              with:
+                  context: .
+                  file: packages/agent-harness-scanner/Dockerfile
+                  push: false
+                  load: true
+                  tags: ${{ env.SCAN_REF }}
+                  platforms: linux/amd64
+
+            - name: Smoke-test the scanner image
+              run: packages/agent-harness-scanner/container/smoke.sh "${SCAN_REF}"
+
+            # The same gate as `ci.yml`'s `Scanner image` job and the
+            # application image's: CRITICAL,HIGH, blocking, fixed
+            # vulnerabilities only, with the repository's narrow exemptions.
+            - name: "Gate: Trivy scan of the scanner image (critical+high)"
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ env.SCAN_REF }}
+                  format: "table"
+                  exit-code: "1"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  trivyignores: ".trivyignore"
+                  timeout: "15m"
+
+            # PUSH THE BYTES TRIVY SAW, by tagging the local image, never by a
+            # second build (#3427). Tagged by the commit it was built from, the
+            # only name this image has; the digest is what an operator pins.
+            - name: Push the scanned image
+              id: push
+              run: |
+                  set -euo pipefail
+                  TARGET="${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA::9}"
+
+                  # The scanned image must be in the local daemon. If the build
+                  # ever stops loading it, `docker tag` fails rather than
+                  # pushing something else.
+                  docker image inspect "${SCAN_REF}" > /dev/null
+
+                  docker tag "${SCAN_REF}" "${TARGET}"
+                  docker push "${TARGET}"
+
+                  # The digest of what was pushed, read back from the registry
+                  # side: a local image id is not the manifest digest an
+                  # operator pins, and RepoDigests is filled only by a push.
+                  DIGEST=$(docker image inspect "${TARGET}" \
+                      --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+                      | grep "^${REGISTRY}/${IMAGE_NAME}@" | head -1 | cut -d@ -f2)
+                  if [ -z "${DIGEST:-}" ]; then
+                      echo "::error::pushed ${TARGET} but could not read its manifest digest"
+                      exit 1
+                  fi
+                  echo "tag=${TARGET}" >> "$GITHUB_OUTPUT"
+                  echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+            # THE DIGEST IS THE OUTPUT OF THIS WORKFLOW.
+            - name: Report the digest to pin
+              run: |
+                  {
+                    echo '### Harness scanner image published'
+                    echo
+                    echo '| field | value |'
+                    echo '| --- | --- |'
+                    echo "| commit | \`${GITHUB_SHA}\` |"
+                    echo "| tag | \`${{ steps.push.outputs.tag }}\` |"
+                    echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+                    echo
+                    echo 'Pin the scanner overlay to:'
+                    echo
+                    echo '```yaml'
+                    echo "    image: ${REGISTRY}/${IMAGE_NAME}@${{ steps.push.outputs.digest }}"
+                    echo '```'
+                    echo
+                    echo 'Nothing is deployed by this workflow.'
+                  } >> "$GITHUB_STEP_SUMMARY"
