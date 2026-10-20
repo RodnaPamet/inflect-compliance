@@ -427,7 +427,17 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // and the review sheet's approve and submit are secondary: a card action
 // inside a tab, and a four-eyes approve, as the parameter-sets page's is. Net
 // change: zero, re-measured at 175 on this branch rebased onto main.
-const MAX_PRIMARY_COUNT = 175;
+//
+// 2026-10-20 — #3807 owner-orphan pass page: 175 -> 174, A RELOCATION, NOT A
+// DEMOTION. The identity ladder's rung controls moved out of
+// `WriteLadderClient.tsx` into `src/components/admin/LadderRungCard.tsx`, so
+// the orphan-pass page can render the same control instead of declaring a
+// second one (`route-import-boundaries` sends shared code to src/components).
+// This counter scans `src/app`, so the ladder's widen primary — still rendered,
+// on both ladder pages — left its sight. The ceiling follows the measurement
+// down rather than leaving a slot that was never paid for: the next primary
+// still pays with a demotion.
+const MAX_PRIMARY_COUNT = 174;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));
 

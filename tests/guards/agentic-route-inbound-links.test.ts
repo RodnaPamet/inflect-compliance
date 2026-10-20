@@ -119,6 +119,10 @@ const AGENTIC_ROUTES: readonly string[] = [
     // linked from the list's rows.
     '/agents/peers',
     '/agents/peers/[peerId]',
+    // #3807 — the owner-orphan pass's mode and its recorded passes. Linked from
+    // the Views menu's OPERATE group for an OWNER, the only role its route
+    // admits (`admin.tenant_lifecycle`).
+    '/agents/owner-orphan-pass',
 ] as const;
 
 /**

@@ -8760,7 +8760,8 @@
       "decisions": "AI decision log",
       "externalTools": "External tools",
       "compose": "Compose a request",
-      "peers": "Peer agents"
+      "peers": "Peer agents",
+      "ownerOrphanPass": "Owner departures"
     },
     "reviewQuality": {
       "accessTitle": "Agent register access required",
@@ -9708,6 +9709,42 @@
         "resourceSingular": "message",
         "resourcePlural": "messages"
       }
+    },
+    "orphanPass": {
+      "accessTitle": "Owners only",
+      "accessMessage": "Only an owner can view or change the owner-orphan pass. Its mode decides whether a nightly job stops agents whose owner has left.",
+      "title": "Owner departures",
+      "intro": "Every night at 05:15 UTC, the owner-orphan pass looks for active agents whose accountable owner has left this workspace: no active membership, or an HR record marked terminated. Its mode decides what it does about them.",
+      "modeHeading": "Owner-orphan pass",
+      "blurb": "Off checks nothing. Dry run records each orphan and tells the owners, and changes nothing. Automatic engages each orphan's kill switch, suspends it, and asks for its Entra service principal to be disabled through the external write ladder.",
+      "loading": "Loading the owner-orphan pass…",
+      "loadError": "Couldn't load the owner-orphan pass.",
+      "saveError": "Couldn't change the owner-orphan pass.",
+      "confirmBody": {
+        "DRY_RUN": "From the next pass, each orphan is recorded and every owner is told. Nothing is stopped. The pass must stay here seven days, with at least one recorded pass, before it can widen.",
+        "AUTOMATIC": "From the next pass, each orphan's kill switch is engaged and the agent is suspended, by the system, with nobody approving it. Only the agent's new owner can lift that kill, after an ownership transfer completes."
+      },
+      "passesHeading": "Recorded passes",
+      "passesIntro": "The newest passes first, each with what it decided about every orphan. Compare a week of dry runs with who actually left before widening.",
+      "passesNone": "No pass has run yet. The next one runs at 05:15 UTC.",
+      "passMode": "Mode: {mode}",
+      "countsAutomatic": "{orphans} orphan(s): {contained} contained, {failed} failed.",
+      "countsDryRun": "{orphans} orphan(s) found. Nothing was changed.",
+      "rosterNotRead": "The HR roster was not read in full, so this pass may have missed a departure that only HR records.",
+      "decisionsTruncated": "More orphans were found than this record lists.",
+      "servicePrincipal": "Service principal: {status}",
+      "refusal": {
+        "MODE_DISABLED": "Off: no owner was checked.",
+        "MODE_ABOVE_CLAMP": "The stored mode is above what this build of the pass acts at, so nothing was checked.",
+        "NO_ACTIVE_AGENTS": "No active registered agent, so there was no owner to check. That is not a clean result."
+      },
+      "outcome": {
+        "WOULD_SUSPEND_AND_KILL": "Would be stopped and suspended",
+        "SUSPENDED_AND_KILLED": "Stopped and suspended",
+        "SUSPENDED_KILL_ALREADY_IN_FORCE": "Suspended; a kill was already in force",
+        "FAILED": "Could not be fully contained"
+      },
+      "crumbAgents": "Agents"
     }
   },
   "securityTesting": {

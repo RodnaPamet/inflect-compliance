@@ -54,6 +54,7 @@ import {
     PenWriting,
     ShieldSlash,
     SquareCheck,
+    UserMinus,
     Workflow,
 } from '@inflect/ui/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';
@@ -70,7 +71,8 @@ export type AgentsViewRoute =
     | 'decisions'
     | 'external-tools'
     | 'peers'
-    | 'compose';
+    | 'compose'
+    | 'owner-orphan-pass';
 
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
@@ -97,6 +99,13 @@ export interface AgentsViewsMenuProps {
      * you", as distinct from a confident zero.
      */
     proposalsAwaitingReview?: number | null;
+    /**
+     * `admin.tenant_lifecycle` — the owner-orphan pass page's gate (#3807). An
+     * OWNER's key: the mode decides whether a scheduled job stops agents
+     * unattended. Defaults to false, so a page that does not pass it shows no
+     * entry rather than one that would be refused.
+     */
+    canSetOrphanPass?: boolean;
 }
 
 export function AgentsViewsMenu({
@@ -107,6 +116,7 @@ export function AgentsViewsMenu({
     canInvestigate,
     canReadReports = canInvestigate,
     proposalsAwaitingReview = null,
+    canSetOrphanPass = false,
 }: AgentsViewsMenuProps) {
     const t = useTranslations('agents');
     const href = (path: string) => `/t/${tenantSlug}${path}`;
@@ -154,6 +164,16 @@ export function AgentsViewsMenu({
                             icon: <Workflow className="size-4" />,
                             href: href('/agents/runs'),
                             selected: current === 'runs',
+                        },
+                        canSetOrphanPass && {
+                            // The owner-orphan pass (#3670): whether a nightly
+                            // job stops the agents of owners who have left. OPERATE
+                            // because it acts on agents; OWNER-only, as its page.
+                            id: 'agents-view-owner-orphan-pass',
+                            label: t('views.ownerOrphanPass'),
+                            icon: <UserMinus className="size-4" />,
+                            href: href('/agents/owner-orphan-pass'),
+                            selected: current === 'owner-orphan-pass',
                         },
                     ],
                 },

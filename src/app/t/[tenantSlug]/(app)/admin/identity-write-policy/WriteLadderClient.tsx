@@ -39,23 +39,17 @@
  */
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import {
-    LADDER as SHARED_LADDER,
-    isAboveClamp,
-    type IdentityWriteMode,
-} from '@/lib/identity/write-ladder';
+import { isAboveClamp, type IdentityWriteMode } from '@/lib/identity/write-ladder';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { formatDate } from '@inflect/ui/lib/format-date';
+
+import { LadderRungCard } from '@/components/admin/LadderRungCard';
 
 // Imported, not respelled. This was a hand-written union of the same strings,
 // which is how a client keeps offering a rung the ladder has retired: when
@@ -64,19 +58,6 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 // server can no longer send. Deriving it makes a retired rung a build error here.
 type Mode = IdentityWriteMode;
 type Direction = 'leaver' | 'joiner';
-
-// Imported, not redeclared. This was a verbatim copy of the usecase's private
-// LADDER, and the pass used a third form again (`!==`). Three encodings of one
-// ordering that agreed only while the clamp sat at the second rung.
-// `write-ladder` carries no server imports, so a client component can hold it.
-const LADDER = SHARED_LADDER;
-
-/** Authority rises left to right, so the badge should too. */
-const MODE_VARIANT: Record<Mode, StatusBadgeVariant> = {
-    DISABLED: 'neutral',
-    DRY_RUN: 'info',
-    AUTOMATIC: 'error',
-};
 
 interface DirectionState {
     mode: Mode;
@@ -146,131 +127,50 @@ export function WriteLadderClient() {
         if (!data) return null;
         const state = data.directions[direction];
         const honoured = data.honoured[direction];
-        const current = LADDER.indexOf(state.mode);
-        const previous = current > 0 ? LADDER[current - 1] : null;
         // Above what the runtime will act on. Settable, and inert.
         const aboveClamp = isAboveClamp(state.mode, honoured.maxMode);
 
-        // Each direction is a LABELLED REGION, not a bare card. Two structurally
-        // identical blocks sit on this page whose buttons carry the same words —
-        // "Widen to Dry run" appears in both when both sit at Off. Without a
-        // named landmark a screen-reader user hears the second set of controls
-        // with nothing to say which directory operation they govern, which on
-        // this page is the difference between creating accounts and disabling
-        // them.
-        const headingId = `write-ladder-${direction}`;
         return (
-            <section key={direction} aria-labelledby={headingId}>
-                <Card className="space-y-default p-6">
-                <div className="flex items-center justify-between gap-default">
-                    <Heading level={2} id={headingId}>
-                        {t(`writeLadder.direction.${direction}`)}
-                    </Heading>
-                    <StatusBadge variant={MODE_VARIANT[state.mode]}>
-                        {t(`writeLadder.mode.${state.mode}`)}
-                    </StatusBadge>
-                </div>
-
-                <p className="max-w-3xl text-sm text-content-muted">
-                    {t(`writeLadder.blurb.${direction}`)}
-                </p>
-
-                {!honoured.implemented && (
-                    <InlineNotice variant="warning">
-                        {t('writeLadder.notImplemented')}
-                    </InlineNotice>
-                )}
-                {honoured.implemented && aboveClamp && (
-                    <InlineNotice variant="warning">
-                        {t('writeLadder.aboveClamp', {
-                            mode: t(`writeLadder.mode.${honoured.maxMode}`),
-                        })}
-                    </InlineNotice>
-                )}
-
-                {state.dryRunSince && (
-                    <p className="text-sm text-content-muted">
-                        {t('writeLadder.dryRunSince', {
-                            date: formatDate(state.dryRunSince),
-                            days: data.dryRunMinDays,
-                        })}
-                    </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-default">
-                    {state.nextMode ? (
-                        <div className="flex flex-col gap-tight">
-                            <Button
-                                variant="primary"
-                                // `honoured.implemented` was in scope and unread:
-                                // this button consulted `blockedReason` alone, so
-                                // the joiner's widen control sat ENABLED directly
-                                // beneath the notice saying the subsystem does not
-                                // exist. The server now refuses the same widen and
-                                // returns the reason, but the control must not
-                                // depend on a derived STRING arriving — a direction
-                                // the runtime cannot honour is not widenable
-                                // whatever `blockedReason` happens to hold.
-                                disabled={
-                                    Boolean(state.blockedReason) ||
-                                    !honoured.implemented ||
-                                    saving
-                                }
-                                onClick={() =>
-                                    setPending({ direction, mode: state.nextMode as Mode })
-                                }
-                            >
-                                {t('writeLadder.widenTo', {
-                                    mode: t(`writeLadder.mode.${state.nextMode}`),
+            <LadderRungCard
+                key={direction}
+                headingId={`write-ladder-${direction}`}
+                title={t(`writeLadder.direction.${direction}`)}
+                blurb={t(`writeLadder.blurb.${direction}`)}
+                mode={state.mode}
+                dryRunSince={state.dryRunSince}
+                dryRunMinDays={data.dryRunMinDays}
+                nextMode={state.nextMode}
+                blockedReason={state.blockedReason}
+                // Guarded on `implemented` so the unimplemented case shows
+                // exactly ONE message. The notice below already states it, in
+                // the operator's language, permanently; and `describeRefusal`
+                // returns English prose interpolating the raw wire token, so
+                // echoing it would put an untranslated paragraph under a
+                // translated notice saying the same thing in different words.
+                showBlockedReason={honoured.implemented}
+                // `honoured.implemented` used to go unread here: the joiner's
+                // widen control sat ENABLED beneath the notice saying the
+                // subsystem does not exist. A direction the runtime cannot
+                // honour is not widenable whatever `blockedReason` holds.
+                widenRefused={!honoured.implemented}
+                saving={saving}
+                onWiden={(mode) => setPending({ direction, mode })}
+                onNarrow={(mode) => void setMode(direction, mode).catch(() => {})}
+                notices={
+                    <>
+                        {!honoured.implemented && (
+                            <InlineNotice variant="warning">{t('writeLadder.notImplemented')}</InlineNotice>
+                        )}
+                        {honoured.implemented && aboveClamp && (
+                            <InlineNotice variant="warning">
+                                {t('writeLadder.aboveClamp', {
+                                    mode: t(`writeLadder.mode.${honoured.maxMode}`),
                                 })}
-                            </Button>
-                            {honoured.implemented && state.blockedReason && (
-                                // The reason, beside the control it disables.
-                                //
-                                // Guarded on `implemented` so the unimplemented
-                                // case shows exactly ONE message. Two reasons.
-                                // The `InlineNotice` above already states it, in
-                                // the operator's language, permanently — this
-                                // card renders that notice on every page load
-                                // for a direction with no runtime. And
-                                // `describeRefusal` returns English prose
-                                // interpolating the raw wire token ("The joiner
-                                // direction has…"), so echoing it here would put
-                                // a permanent untranslated paragraph under a
-                                // translated notice saying the same thing in
-                                // different words — the two-messages-one-card
-                                // shape this page exists to prevent.
-                                //
-                                // Every OTHER refusal — dwell, one-rung — IS
-                                // situational and transient, and carries dates
-                                // and rung names the client does not have, so
-                                // the server's sentence is the right one there.
-                                <span className="max-w-md text-sm text-content-muted">
-                                    {state.blockedReason}
-                                </span>
-                            )}
-                        </div>
-                    ) : (
-                        <span className="text-sm text-content-muted">{t('writeLadder.atTop')}</span>
-                    )}
-
-                    {previous && (
-                        // No confirmation. Narrowing removes authority and is the
-                        // emergency stop; a dialog in front of it is a reason to
-                        // hesitate at the moment nobody should.
-                        <Button
-                            variant="secondary"
-                            disabled={saving}
-                            onClick={() => void setMode(direction, previous).catch(() => {})}
-                        >
-                            {t('writeLadder.narrowTo', {
-                                mode: t(`writeLadder.mode.${previous}`),
-                            })}
-                        </Button>
-                    )}
-                </div>
-                </Card>
-            </section>
+                            </InlineNotice>
+                        )}
+                    </>
+                }
+            />
         );
     };
 

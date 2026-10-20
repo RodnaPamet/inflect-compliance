@@ -110,6 +110,8 @@ interface Props {
     canReviewProposals: boolean;
     /** `admin.view` — the compose page's gate (#3710); defaults to `canReviewProposals`. */
     canCompose?: boolean;
+    /** `admin.tenant_lifecycle` — the owner-orphan pass page's gate (#3807). */
+    canSetOrphanPass?: boolean;
 }
 
 /** Where an agent sits in its lifecycle. Only ACTIVE reaches the agent surface. */
@@ -170,6 +172,7 @@ function AgentsInner({
     canWrite,
     canReviewProposals,
     canCompose,
+    canSetOrphanPass = false,
 }: Props) {
     const router = useRouter();
     const guardedPush = useGuardedPush();
@@ -577,6 +580,7 @@ function AgentsInner({
                                 tenantSlug={tenantSlug}
                                 canReviewProposals={canReviewProposals}
                                 canCompose={canCompose}
+                                canSetOrphanPass={canSetOrphanPass}
                                 // `canWrite` IS `admin.agent_registry` — the
                                 // same key the three assurance surfaces gate
                                 // themselves on. Named for what it gates here.

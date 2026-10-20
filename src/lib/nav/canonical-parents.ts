@@ -61,6 +61,8 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // peer's Back goes to the list it was opened from.
     '/agents/peers': { href: '/agents', label: 'Agents' },
     '/agents/peers/[peerId]': { href: '/agents/peers', label: 'A2A peers' },
+    // #3807 — the owner-orphan pass hangs off the register like its siblings.
+    '/agents/owner-orphan-pass': { href: '/agents', label: 'Agents' },
     '/agents/proposals': { href: '/agents', label: 'Agents' },
     '/agents/reports': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },
