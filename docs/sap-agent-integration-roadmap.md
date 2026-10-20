@@ -4,9 +4,12 @@ inflect · sap agent integration · roadmap v3 · 2026-10-20
 > **Status: living design** — two routes for putting Inflect's judgement next to
 > SAP data, and a recommendation. The **Current state** section is true today.
 > The **Roadmap** section is the plan; its phases are tracked as issues under
-> #3859, one pull request each. **Phase 0 is a hard gate** and every one of its
-> items is an owner, legal or SAP action — no route's engineering starts until
-> they close. If the code contradicts a fact here, the code wins and the pull
+> #3859, one pull request each. **Phase 0 gates engineering, but not uniformly —
+> it was re-scoped on 2026-10-20 and the phase text below is the pre-re-scope
+> version.** The A2A route's gate is items 2 and 6, both the owner's; the MCP
+> route's is unchanged; the SAP correspondence (items 1 and 7) is prepared and
+> triggered rather than gating. #3860 carries the reasoning. If the code
+> contradicts a fact here, the code wins and the pull
 > request that finds it corrects this document.
 
 
@@ -119,7 +122,7 @@ integration.
 | | Phase | Issue | Blocked by |
 | --- | --- | --- | --- |
 | 0 | Pre-flight gate | #3860 | — |
-| J1 | Host-consumer admission | #3861 | Phase 0 items 1, 2 |
+| J1 | Host-consumer admission | #3861 | Phase 0 **item 2** only |
 | J2 | Discoverable card and skills | #3862 | J1 |
 | J3 | Synchronous answer path | #3863 | J1 |
 | J4 | The judgement workflow | #3864 | — (beside J1) |
@@ -136,11 +139,35 @@ integration.
 The phase detail follows. Each phase's prompt is reproduced on its issue
 verbatim, so the issue and this document cannot drift apart silently.
 
+**Where this document and the tracker deliberately differ.** The `PHASE 0`
+section below is the roadmap as written, and it makes all seven items a hard
+gate on both routes. #3860 narrows that, and is the authority:
+
+- The **A2A route** is gated on item 2 (threat model) and item 6 (AI residency).
+  Both are owner decisions needing no third party.
+- The **MCP route** keeps items 3, 4 and 5. That route calls SAP APIs, so its
+  policy question is real rather than hypothetical.
+- Items **1 and 7** — the §2.2.2(a) and Digital Access questions — are drafted
+  and parked. They fire before any external claim (which Phase H already
+  requires), when the MCP route starts, or when a customer's legal asks.
+
+The reason is in the "Not true today" paragraph above: on the A2A route Inflect
+calls no SAP API — structurally, through J4's guard — and SAP publishes the
+pattern itself. Asking whether an API policy covers a party that uses no API
+invites a conservative answer to a question that was not open, and it cannot be
+withdrawn. The policy text is second-hand here, so that is a risk posture rather
+than a finding, and #3860 says so.
+
 ## PHASE 0Pre-flight gate
 
 No code. Facts that each change the design, labelled by the route they bind. The first one decides whether the A2A route is a product line or a one-customer integration.
 
 Hard gate — no route's engineering starts until its items close
+
+<!-- Superseded 2026-10-20: see "Where this document and the tracker
+     deliberately differ" above, and #3860. The A2A route is gated on items 2
+     and 6 only; items 1 and 7 are triggered rather than gating. The list below
+     is kept as written because it is the reasoning the re-scope argues with. -->
 
 1. A2A **Ask SAP, in writing:** when Joule orchestrates and calls an external A2A agent, and that agent calls no SAP API, is the arrangement outside §2.2.2(a)? The reported FAQ wording points that way; nobody has said it about this direction. The same answer also governs whether Inflect's agent may ever read SAP itself, so ask the second question in the same letter.
 2. A2A **An owner decision on the threat model.** Joule arrives as a client, not as a peer agent: it publishes no card, holds no signing key and cannot sign Inflect's `inflect-a2a-receipt/1`. Admitting it means revisiting three deliberate decisions — no trust on first use, receipts as evidence, and a card that discloses nothing (R19). This is a security decision before it is an engineering one, and J1 cannot be written until it is made.
