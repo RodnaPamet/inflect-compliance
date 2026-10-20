@@ -71,24 +71,47 @@ import { graphHeaders } from '@/lib/http/graph-headers';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 /**
- * The longest a single grant may run: 90 days.
+ * The longest a single grant may run: 89 days.
  *
- * NOT a round number picked for feeling reasonable. 90 days is this product's
- * own `QUARTERLY` cadence — `automation-runner.ts` maps `QUARTERLY → 90 days`
- * and `risk-report.ts` advances a quarterly due date by three months — which
- * makes it the interval at which access is recertified.
+ * NOT a round number picked for feeling reasonable, and NOT 90 — the obvious
+ * number is the wrong one, for a reason worth stating because it was wrong here
+ * until #3792.
  *
- * So the bound states something true rather than arbitrary: **a grant may not
- * outlive the review that would catch it.** A 180-day assignment is live through
- * one whole recertification cycle without ever appearing in one as a decision,
- * which is the precise shape of the finding an access review exists to produce.
+ * The bound exists to make one thing true: **a grant may not outlive the review
+ * that would catch it.** A grant live through a whole recertification cycle
+ * never appears in one as a decision, which is the precise shape of the finding
+ * an access review exists to produce.
+ *
+ * ═══ WHY 89 AND NOT 90 ═══
+ *
+ * "The recertification interval" is not a single number. The review due date is
+ * computed by `utils/cadence.ts`'s `computeNextDueAt`, which advances a
+ * QUARTERLY cadence by three CALENDAR months — so the real interval is 89 to 92
+ * days depending on which quarter it starts in. The shortest is a
+ * February-start quarter in a non-leap year: 28 + 31 + 30 = 89.
+ *
+ * A cap must not exceed the SHORTEST such span, because a cap is a promise
+ * about every grant rather than the average one. At 90 this bound was violated
+ * by exactly the quarter that is shortest: a grant issued 1 February ran to
+ * 2 May, while the review that would have caught it fell due 1 May.
+ *
+ * Deliberately NOT derived from the cadence map at runtime. `MAX_GRANT_DAYS` is
+ * a reviewed constant, like the `process.env` refusal below: a cap that silently
+ * followed a cadence edit would move grant policy without anybody deciding to.
+ * `tests/guards/external-write-clamp-is-pinned.test.ts` ties the two instead, so
+ * a cadence change fails loudly here and the pair moves in one reviewed diff.
+ *
+ * Two other numbers call themselves quarterly and are NOT this bound's source,
+ * because neither governs the review due date: `jobs/automation-runner.ts` uses
+ * 90 days as a job-scheduling interval, and `usecases/task-source-reconcile.ts`
+ * uses 91 for an evidence review cadence. See #3792.
  *
  * It is a REFUSAL threshold, not a clamp. Silently shortening a 180-day request
- * to 90 would hand back a success for an operation nobody asked for, and the
- * person who needed 180 days would discover the difference when access
- * vanished mid-project.
+ * would hand back a success for an operation nobody asked for, and the person
+ * who needed 180 days would discover the difference when access vanished
+ * mid-project.
  */
-export const MAX_GRANT_DAYS = 90;
+export const MAX_GRANT_DAYS = 89;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -149,8 +172,9 @@ export function expiryRefusal(input: TimeBoundedGrantInput, now: Date): string |
     if (days > MAX_GRANT_DAYS) {
         return (
             `Grant refused: ${Math.ceil(days)} days exceeds the ${MAX_GRANT_DAYS}-day maximum. ` +
-            'That is this product\'s QUARTERLY recertification interval, so a longer grant would ' +
-            'be live through a whole access-review cycle without appearing in one as a decision. ' +
+            'That is the SHORTEST quarterly recertification interval this product can produce ' +
+            '(a February-start quarter is 89 days), so a longer grant could be live through a ' +
+            'whole access-review cycle without appearing in one as a decision. ' +
             'Shorten it, or raise the access through a review rather than a grant. It is not ' +
             'clamped to the maximum on purpose — a shortened grant returned as a success is an ' +
             'operation nobody asked for.'

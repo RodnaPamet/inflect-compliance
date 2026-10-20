@@ -88,6 +88,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { EXTERNAL_MAX_MODE, LADDER, isAboveClamp } from '@/lib/integrations/external-write-ladder';
+import { computeNextDueAt } from '@/app-layer/utils/cadence';
 import { codeOf, declarationOf } from '../helpers/source-blocks';
 import { repoFiles, repoRelative } from '../helpers/repo-files';
 
@@ -233,18 +234,92 @@ describe('the grant-expiry policy has one home until #3314 says otherwise', () =
             .filter((f) => new RegExp(`export\\s+${keyword}\\s+${name}\\b`).test(f.code))
             .map((f) => f.rel);
 
-    it('pins the cap at 90 days, in the source that declares it', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    /** The cap as the source actually declares it, parsed rather than restated. */
+    const declaredCapDays = (): { decl: string; days: number } => {
         const decl = declarationOf(
             fs.readFileSync(path.join(process.cwd(), ENTITLEMENT_REL), 'utf8'),
             'MAX_GRANT_DAYS',
         );
+        const m = /=\s*(\d+)\s*;/.exec(decl);
+        if (m === null) throw new Error(`MAX_GRANT_DAYS is not a plain integer: ${decl}`);
+        return { decl, days: Number(m[1]) };
+    };
+
+    /**
+     * Carried in BOTH halves of the assertion below, so the failure diff names
+     * what to do instead of only what moved (#3792, the shape
+     * `bullmq-job-id-rule.test.ts` uses).
+     */
+    const REMEDY_WHEN_THE_RECERT_INTERVAL_MOVES =
+        'The cap and the quarterly review interval move together, in ONE reviewed diff. ' +
+        'MAX_GRANT_DAYS must not exceed the SHORTEST span computeNextDueAt can produce for ' +
+        'QUARTERLY, or a grant outlives the review that would catch it. Do NOT derive the cap ' +
+        'from the cadence map at runtime — see the docblock on MAX_GRANT_DAYS and #3792.';
+
+    it('pins the cap at 89 days, in the source that declares it', () => {
+        const { decl, days } = declaredCapDays();
         // A failure here is this guard working, exactly as for the clamp: the cap
-        // is the recertification interval, so moving it means a grant can outlive
-        // the review. Change the constant and this line in one reviewed diff.
-        expect(decl).toContain('90');
+        // bounds a grant against the review that would catch it, so moving it
+        // means a grant can outlive that review. Change the constant and this
+        // line in one reviewed diff.
+        //
+        // An EXACT value, not `toContain('89')` — that also passes for 189 and
+        // for a comment that happens to mention the number.
+        expect(days).toBe(89);
         // Not computed from anything settable at runtime — the same direction
         // that would make the pin above vacuous.
         expect(decl).not.toMatch(/process\.env/);
+    });
+
+    it('ties the cap to the SHORTEST quarterly review span cadence.ts can produce (#3792)', () => {
+        // ═══ WHY THIS IS COMPUTED AND NOT WRITTEN DOWN ═══
+        //
+        // The whole defect this guards against was FOUR numbers calling
+        // themselves the quarterly interval — 90 in jobs/automation-runner.ts,
+        // 91 in usecases/task-source-reconcile.ts, 89-92 from cadence.ts, and
+        // the cap claiming to equal the first of them. A literal 89 here would
+        // be a fifth copy, and this guard would then pin the cap to a number
+        // rather than to the thing the cap is about.
+        //
+        // So the span is derived from `computeNextDueAt` itself. It advances by
+        // whole CALENDAR months, which is why the interval is a range at all:
+        // a February-start quarter in a non-leap year is 28 + 31 + 30 = 89.
+        const spans: number[] = [];
+        for (let year = 2025; year <= 2032; year += 1) {
+            for (let month = 0; month < 12; month += 1) {
+                // Local construction, because `addMonthsClamped` uses local
+                // getters — mixing a UTC-built date with them is the bug its
+                // own docblock warns about.
+                const from = new Date(year, month, 1);
+                const next = computeNextDueAt('QUARTERLY', from);
+                // POSITIVE CONTROL. If 'QUARTERLY' were renamed, this returns
+                // null, `spans` stays empty, and `Math.min()` of nothing is
+                // Infinity — which would make the comparison below pass while
+                // measuring nothing.
+                expect(next).not.toBeNull();
+                spans.push(Math.round(((next as Date).getTime() - from.getTime()) / DAY_MS));
+            }
+        }
+        expect(spans).toHaveLength(96);
+
+        const shortestReviewSpan = Math.min(...spans);
+        const { days: capDays } = declaredCapDays();
+
+        // Two facts in one diff: whether the cap still EQUALS the shortest span
+        // (the tie), and whether it EXCEEDS it (the unsafe direction). Reporting
+        // both is what tells a reader whether a failure is merely stale or is a
+        // grant that can now outlive its review.
+        expect({
+            capDays,
+            exceedsShortestReview: capDays > shortestReviewSpan,
+            remedy: REMEDY_WHEN_THE_RECERT_INTERVAL_MOVES,
+        }).toEqual({
+            capDays: shortestReviewSpan,
+            exceedsShortestReview: false,
+            remedy: REMEDY_WHEN_THE_RECERT_INTERVAL_MOVES,
+        });
     });
 
     it('defines the cap in exactly ONE place — the #3314 trigger', () => {
