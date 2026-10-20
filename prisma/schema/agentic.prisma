@@ -3263,7 +3263,6 @@ model HostConsumer {
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent  RegisteredAgent @relation(fields: [receivingAgentId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
-  messages HostConsumerMessage[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, clientId])
@@ -3284,8 +3283,18 @@ model HostConsumer {
 /// authored it. Said plainly here because a reader comparing this model to
 /// `PeerAgentMessage` would otherwise assume they carry the same weight.
 model HostConsumerMessage {
-  id             String @id @default(cuid())
-  tenantId       String
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// WHICH consumer — a PLAIN ID, with no foreign key, exactly as
+  /// `PeerAgentMessage.peerId` is and for the same two reasons.
+  ///
+  /// The evidence has to outlive the principal: a consumer can be revoked and
+  /// the tenant purge can delete it, and the record of what it sent must
+  /// survive both. With a `RESTRICT` relation here those retained rows would
+  /// BLOCK the purge of the consumer instead — which is how a retention class
+  /// turns into a purge that fails halfway (#3716 was four tables cascaded away
+  /// for the mirror-image reason).
   hostConsumerId String
 
   /// Attribution: the client id presented, and the access token's `jti`. Both
@@ -3307,8 +3316,7 @@ model HostConsumerMessage {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  host   HostConsumer @relation(fields: [hostConsumerId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([id, tenantId])
   /// Replay: the same body under the same token, twice. Named explicitly —

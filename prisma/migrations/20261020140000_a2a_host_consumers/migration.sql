@@ -35,6 +35,13 @@
 CREATE TYPE "HostConsumerStatus" AS ENUM ('ACTIVE', 'SUSPENDED', 'RETIRED');
 
 -- AlterTable
+-- The per-tenant half of the gate. Defaulted false, so the previous image and
+-- every existing tenant are unchanged: admitting a host consumer takes a
+-- deliberate act by the tenant that bears the weaker receipt guarantee.
+ALTER TABLE "TenantSecuritySettings"
+    ADD COLUMN "a2aHostConsumersEnabled" BOOLEAN NOT NULL DEFAULT false;
+
+-- AlterTable
 ALTER TABLE "WorkflowRun" ADD COLUMN "inboundHostConsumerId" TEXT,
 ADD COLUMN "inboundHostMessageId" TEXT;
 
@@ -124,8 +131,12 @@ ALTER TABLE "HostConsumer" ADD CONSTRAINT "HostConsumer_receivingAgentId_tenantI
 
 ALTER TABLE "HostConsumerMessage" ADD CONSTRAINT "HostConsumerMessage_tenantId_fkey"
     FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "HostConsumerMessage" ADD CONSTRAINT "HostConsumerMessage_hostConsumerId_tenantId_fkey"
-    FOREIGN KEY ("hostConsumerId", "tenantId") REFERENCES "HostConsumer"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- NO foreign key from "HostConsumerMessage" to "HostConsumer", deliberately,
+-- exactly as "PeerAgentMessage"."peerId" has none. The evidence must outlive the
+-- principal: a consumer is revocable and the tenant purge deletes it, while the
+-- record of what it sent is RETAINED. A RESTRICT relation would make those
+-- retained rows block the purge of the consumer — a retention class turning
+-- into a purge that fails halfway.
 
 ALTER TABLE "HostConsumerKillSwitch" ADD CONSTRAINT "HostConsumerKillSwitch_tenantId_fkey"
     FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
