@@ -336,6 +336,20 @@ export const env = createEnv({
         // case, not an edge one. See ADR 0003: the receipt guarantee is WEAKER
         // on this path, so the tenant that bears that has to choose it.
         A2A_HOST_CONSUMERS: z.string().optional(),
+        // The HS256 secret the host-consumer access token is signed with
+        // (#3861, owner decision 2026-10-20: a stateless token, not a stored
+        // one). Optional at BOOT and refused at USE: `mintHostConsumerToken`
+        // and `verifyHostConsumerToken` both return
+        // `TOKEN_SECRET_NOT_CONFIGURED` rather than signing or accepting
+        // anything unsigned.
+        //
+        // Optional rather than required-when-the-flag-is-on because a schema
+        // that 500s the process on a missing feature secret turns a
+        // misconfigured OPTIONAL integration into a whole-deployment outage —
+        // the same reasoning `AGENT_DRIVER_FLUE` above carries. The strictness
+        // belongs at the read, where the answer is "this integration refuses",
+        // not at boot, where it is "nothing starts".
+        A2A_HOST_CONSUMER_TOKEN_SECRET: z.string().optional(),
         // The model the Flue agent runtime's EXTERNAL provider names, and the
         // default `npm run skills:evaluate` records skills against (owner
         // decision, 2026-10-18). Its own variable on purpose: the agent
@@ -599,6 +613,7 @@ export const env = createEnv({
         AI_RISK_SUGGESTIONS_ENABLED: process.env.AI_RISK_SUGGESTIONS_ENABLED,
         AI_ASSISTANT_ENABLED: process.env.AI_ASSISTANT_ENABLED,
         A2A_HOST_CONSUMERS: process.env.A2A_HOST_CONSUMERS,
+        A2A_HOST_CONSUMER_TOKEN_SECRET: process.env.A2A_HOST_CONSUMER_TOKEN_SECRET,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,

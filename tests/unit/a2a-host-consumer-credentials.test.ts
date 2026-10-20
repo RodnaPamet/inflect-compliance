@@ -1,5 +1,11 @@
+import jwt from 'jsonwebtoken';
+
 import {
     HOST_CONSUMER_CLIENT_PREFIX,
+    HOST_CONSUMER_TOKEN_ISSUER,
+    HOST_CONSUMER_TOKEN_TTL_SECONDS,
+    mintHostConsumerToken,
+    verifyHostConsumerToken,
     generateHostConsumerCredentials,
     hashHostConsumerSecret,
     hostConsumerSecretMatches,
@@ -83,5 +89,124 @@ describe('both gates are required (#3861)', () => {
         // coerced — `{} as boolean` is truthy and must not admit.
         expect(hostConsumersAdmitted({ envValue: '1', tenantEnabled: 1 as unknown as boolean })).toBe(false);
         expect(hostConsumersAdmitted({ envValue: '1', tenantEnabled: 'true' as unknown as boolean })).toBe(false);
+    });
+});
+
+describe('the access token (#3861)', () => {
+    const SECRET = 'a'.repeat(48);
+    const base = {
+        tenantId: 't1',
+        hostConsumerId: 'hc1',
+        receivingAgentId: 'agent1',
+        workflowKeys: ['sap-transaction-review'],
+    };
+
+    it('mints a token that verifies back to the same claims', () => {
+        const minted = mintHostConsumerToken(base, { secret: SECRET });
+        expect(minted.ok).toBe(true);
+        if (!minted.ok) return;
+        expect(minted.expiresInSeconds).toBe(HOST_CONSUMER_TOKEN_TTL_SECONDS);
+        const v = verifyHostConsumerToken(minted.token, { secret: SECRET });
+        expect(v.ok).toBe(true);
+        if (!v.ok) return;
+        expect(v.claims).toEqual({ ...base, jti: minted.jti });
+    });
+
+    it('fails CLOSED with no secret, on both sides', () => {
+        // Never sign, never accept, rather than falling back to unsigned.
+        expect(mintHostConsumerToken(base, { secret: undefined })).toEqual({
+            ok: false,
+            reason: 'TOKEN_SECRET_NOT_CONFIGURED',
+        });
+        expect(mintHostConsumerToken(base, { secret: '' })).toEqual({
+            ok: false,
+            reason: 'TOKEN_SECRET_NOT_CONFIGURED',
+        });
+        const minted = mintHostConsumerToken(base, { secret: SECRET });
+        if (!minted.ok) throw new Error('unreachable');
+        expect(verifyHostConsumerToken(minted.token, { secret: null })).toEqual({
+            ok: false,
+            reason: 'TOKEN_SECRET_NOT_CONFIGURED',
+        });
+    });
+
+    it('refuses another deployment secret with a NAMED signature refusal', () => {
+        const minted = mintHostConsumerToken(base, { secret: SECRET });
+        if (!minted.ok) throw new Error('unreachable');
+        expect(verifyHostConsumerToken(minted.token, { secret: 'b'.repeat(48) })).toEqual({
+            ok: false,
+            reason: 'TOKEN_BAD_SIGNATURE',
+        });
+    });
+
+    it('refuses an expired token, and accepts it just before', () => {
+        const now = 1_700_000_000_000;
+        const minted = mintHostConsumerToken(base, { secret: SECRET, nowMs: now });
+        if (!minted.ok) throw new Error('unreachable');
+        const justInside = now + (HOST_CONSUMER_TOKEN_TTL_SECONDS - 5) * 1000;
+        expect(verifyHostConsumerToken(minted.token, { secret: SECRET, nowMs: justInside }).ok).toBe(true);
+        const past = now + (HOST_CONSUMER_TOKEN_TTL_SECONDS + 60) * 1000;
+        expect(verifyHostConsumerToken(minted.token, { secret: SECRET, nowMs: past })).toEqual({
+            ok: false,
+            reason: 'TOKEN_EXPIRED',
+        });
+    });
+
+    it('refuses an UNSIGNED token claiming alg:none', () => {
+        // This asserts the BEHAVIOUR and not the pin, and the difference was
+        // measured: removing `algorithms: ['HS256']` from the verify leaves
+        // this test — and all the others — green, because `jsonwebtoken`
+        // refuses an unsigned token whenever a secret is supplied. The pin is
+        // hygiene for a future asymmetric key, with no behavioural guard; see
+        // the docblock on `verifyHostConsumerToken`. Worth keeping anyway: an
+        // unsigned bearer being refused is the property, however it is obtained.
+        const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+        const body = Buffer.from(
+            JSON.stringify({ ...base, jti: 'x', iss: HOST_CONSUMER_TOKEN_ISSUER, exp: 9_999_999_999 }),
+        ).toString('base64url');
+        const v = verifyHostConsumerToken(`${header}.${body}.`, { secret: SECRET });
+        expect(v.ok).toBe(false);
+    });
+
+    it('refuses a token from a different issuer', () => {
+        const foreign = jwt.sign(
+            { ...base, jti: 'x', iss: 'someone-else', exp: Math.floor(Date.now() / 1000) + 600 },
+            SECRET,
+            { algorithm: 'HS256' },
+        );
+        expect(verifyHostConsumerToken(foreign, { secret: SECRET })).toEqual({
+            ok: false,
+            reason: 'TOKEN_WRONG_ISSUER',
+        });
+    });
+
+    it('refuses a correctly-signed token with claims missing', () => {
+        // Signed by us, so the signature and issuer pass — the refusal has to
+        // come from the claim check, which is what this asserts.
+        const thin = jwt.sign(
+            { tenantId: 't1', iss: HOST_CONSUMER_TOKEN_ISSUER, exp: Math.floor(Date.now() / 1000) + 600 },
+            SECRET,
+            { algorithm: 'HS256' },
+        );
+        expect(verifyHostConsumerToken(thin, { secret: SECRET })).toEqual({
+            ok: false,
+            reason: 'TOKEN_CLAIMS_INCOMPLETE',
+        });
+        const badKeys = jwt.sign(
+            { ...base, workflowKeys: [1, 2], jti: 'x', iss: HOST_CONSUMER_TOKEN_ISSUER, exp: Math.floor(Date.now() / 1000) + 600 },
+            SECRET,
+            { algorithm: 'HS256' },
+        );
+        expect(verifyHostConsumerToken(badKeys, { secret: SECRET })).toEqual({
+            ok: false,
+            reason: 'TOKEN_CLAIMS_INCOMPLETE',
+        });
+    });
+
+    it('refuses rubbish without throwing', () => {
+        for (const junk of ['', 'x', 'a.b.c', '....', 'not-a-jwt']) {
+            expect(() => verifyHostConsumerToken(junk, { secret: SECRET })).not.toThrow();
+            expect(verifyHostConsumerToken(junk, { secret: SECRET }).ok).toBe(false);
+        }
     });
 });
