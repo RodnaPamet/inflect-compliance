@@ -243,6 +243,8 @@ export const SUBPAGES: readonly string[] = [
     '/agents/peers/[peerId]',
     // #3807 — the owner-orphan pass, reached from the agents Views menu.
     '/agents/owner-orphan-pass',
+    // #3807 — the pilot auditor's set-up, reached from the agents Views menu.
+    '/agents/audit-pilot',
     '/agents/proposals',
     '/agents/quarantine',
     '/agents/receipts',

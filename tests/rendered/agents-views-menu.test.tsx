@@ -88,6 +88,8 @@ const ENTRY_IDS = [
     'agents-view-quarantine',
     'agents-view-decisions',
     'agents-view-reports',
+    // #3807 — the pilot auditor's set-up, an ASSURANCE entry on the register key.
+    'agents-view-audit-pilot',
     'agents-view-review-quality',
     'agents-view-external-tools',
     'agents-view-peers',
@@ -123,7 +125,7 @@ async function openMenu(
 /** The rendered menu-item rows, in DOM order. */
 const items = () => screen.queryAllByRole('menuitem');
 
-describe('ten entries in two labelled groups', () => {
+describe('eleven entries in two labelled groups', () => {
     it('renders exactly those, in order', async () => {
         await openMenu();
         // The ids, as an exact ordered list — a count would pass for six rows
@@ -143,6 +145,7 @@ describe('ten entries in two labelled groups', () => {
             '/t/acme/agents/quarantine',
             '/t/acme/agents/decisions',
             '/t/acme/agents/reports',
+            '/t/acme/agents/audit-pilot',
             '/t/acme/agents/review-quality',
             '/t/acme/agents/external-tools',
             '/t/acme/agents/peers',
@@ -165,6 +168,7 @@ describe('ten entries in two labelled groups', () => {
             VIEWS.quarantine,
             VIEWS.decisions,
             VIEWS.reports,
+            VIEWS.auditPilot,
             VIEWS.reviewQuality,
             VIEWS.externalTools,
             VIEWS.peers,
@@ -180,6 +184,7 @@ describe('`selected` marks the current route', () => {
         ['quarantine', 'agents-view-quarantine'],
         ['decisions', 'agents-view-decisions'],
         ['review-quality', 'agents-view-review-quality'],
+        ['audit-pilot', 'agents-view-audit-pilot'],
         ['peers', 'agents-view-peers'],
     ] as const)('on %s exactly that one row is selected', async (current, id) => {
         await openMenu({ current });
@@ -207,6 +212,7 @@ describe('a permission-absent entry is NOT RENDERED', () => {
             'agents-view-quarantine',
             'agents-view-decisions',
             'agents-view-reports',
+            'agents-view-audit-pilot',
             'agents-view-review-quality',
             'agents-view-external-tools',
             'agents-view-peers',

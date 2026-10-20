@@ -104,6 +104,8 @@ const ADMIN_ONLY_ROUTES = [
     // `admin.tenant_lifecycle`, the identity ladder's key: the mode decides
     // whether a scheduled job stops agents unattended.
     'admin/agents/owner-orphan-pass/route.ts',
+    // #3807 — the pilot auditor's set-up, as the signed-in owner (`admin.agent_registry`).
+    'admin/agents/audit-pilot/route.ts',
     // #3470 — the Flue skill corpus behind the Skills tab. Read-only, and
     // `admin.agent_registry` rather than the per-agent exposure key: a
     // skill is instruction text delivered to a model and is tenant-wide.

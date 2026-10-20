@@ -205,6 +205,11 @@ const MIGRATED_PAGES = [
     // unmigrated tally.
     'agents/owner-orphan-pass/page.tsx',
     'agents/owner-orphan-pass/OwnerOrphanPassClient.tsx',
+    // #3807 — the audit pilot set-up page. Token-clean from the start (Card +
+    // StatusBadge + InlineNotice + ConfirmDialog + PageBreadcrumbs, semantic
+    // tokens only).
+    'agents/audit-pilot/page.tsx',
+    'agents/audit-pilot/AuditPilotClient.tsx',
     // The five surfaces' shared ViewsMenu. Not a page.tsx / *Client.tsx, so it
     // was never in the tally; listed so the anti-drift checks read it.
     'agents/AgentsViewsMenu.tsx',

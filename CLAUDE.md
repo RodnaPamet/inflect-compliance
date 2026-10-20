@@ -2052,7 +2052,8 @@ registered auditor agent. Six rules, each held by a test or a lint rule:
   `AUDIT_PROCEDURE_PLAN_OWNER_ONLY`. A new path that stops a plan running asks
   it too, or the audited first line can switch off its own audit. The plan is
   where the second line's parameters live, and the library keeps no default
-  for them (pilot values: `scripts/audit-pilot-setup.ts`).
+  for them (pilot values: `usecases/audit-pilot-setup.ts`, run from the
+  `/agents/audit-pilot` page as the owner, or from `scripts/audit-pilot-setup.ts`).
 
 **Internal audit's sampling of the workpapers** (step 3d, #3677) is the check on
 the auditor. The DAILY sweep (`jobs/audit-workpaper-sample-review.ts`) draws

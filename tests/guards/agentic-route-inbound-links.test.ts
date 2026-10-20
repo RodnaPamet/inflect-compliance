@@ -123,6 +123,9 @@ const AGENTIC_ROUTES: readonly string[] = [
     // the Views menu's OPERATE group for an OWNER, the only role its route
     // admits (`admin.tenant_lifecycle`).
     '/agents/owner-orphan-pass',
+    // #3807 — the pilot auditor's set-up (step 3c). Linked from the Views
+    // menu's ASSURANCE group for a holder of `admin.agent_registry`, its key.
+    '/agents/audit-pilot',
 ] as const;
 
 /**
@@ -262,6 +265,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // until a page renders them, like the ownership transfer it hands its
     // orphans to; the pass itself runs on a schedule and needs no page to act.
     't/[tenantSlug]/admin/agents/owner-orphan-pass/route.ts',
+    // #3676 / #3807 — the pilot auditor's set-up, run as the signed-in owner:
+    // a dry run, then the writes, through the usecases the product already
+    // has. The `/agents/audit-pilot` page calls it; `scripts/audit-pilot-setup.ts`
+    // calls the same usecase from the command line.
+    't/[tenantSlug]/admin/agents/audit-pilot/route.ts',
     // #3669 — the registration intake: a SHADOW_AGENT finding becomes a DRAFT
     // register row through a provisional UNCLASSIFIED AI-system entry. Since
     // #3712 the harness tab's shadow list calls it: each shadow row carries its
