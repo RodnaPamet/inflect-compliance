@@ -321,6 +321,21 @@ export const env = createEnv({
         // outage. The strictness belongs at the read, where the answer is
         // "off", not at boot, where the answer is "nothing starts".
         AGENT_DRIVER_FLUE: z.string().optional(),
+        // A2A HOST CONSUMERS (#3861) — admits a host that calls Inflect as a
+        // CLIENT rather than as a peer agent: no card to pin, no Ed25519 key,
+        // an OAuth2 bearer instead of a signed receipt.
+        //
+        // A plain string for the reason above it: the read accepts '1' and
+        // 'true' via `flueEnvEnabled` and treats everything else as off, so a
+        // typo in a feature flag is "off" rather than a boot failure.
+        //
+        // OFF IS NOT THE ONLY GATE. A tenant must also turn it on, and both
+        // default off, because this flag crosses a deployment and the setting
+        // crosses a tenant — one deployment serving tenants that have made
+        // different decisions about admitting a third-party host is the normal
+        // case, not an edge one. See ADR 0003: the receipt guarantee is WEAKER
+        // on this path, so the tenant that bears that has to choose it.
+        A2A_HOST_CONSUMERS: z.string().optional(),
         // The model the Flue agent runtime's EXTERNAL provider names, and the
         // default `npm run skills:evaluate` records skills against (owner
         // decision, 2026-10-18). Its own variable on purpose: the agent
@@ -583,6 +598,7 @@ export const env = createEnv({
         AI_RISK_PLAN_REQUIRED: process.env.AI_RISK_PLAN_REQUIRED,
         AI_RISK_SUGGESTIONS_ENABLED: process.env.AI_RISK_SUGGESTIONS_ENABLED,
         AI_ASSISTANT_ENABLED: process.env.AI_ASSISTANT_ENABLED,
+        A2A_HOST_CONSUMERS: process.env.A2A_HOST_CONSUMERS,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
