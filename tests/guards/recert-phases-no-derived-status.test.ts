@@ -170,6 +170,52 @@ function notesForStep(step: string): string[] {
         .map((f) => path.basename(f));
 }
 
+/**
+ * Backticked spans on a `**Verified #N:**` line — the document's own evidence.
+ *
+ * Most are test NAMES. Some are code (`mail || userPrincipalName`), constants
+ * (`CONTRACT_VERSION = …`) or prose (`Issued: 2026-10-14`), and no classifier
+ * separated them reliably: a first pass over this set flagged 54 absentees of
+ * which 50 were my own false positives. So this does NOT try to decide which
+ * spans are test names. It counts how many resolve and refuses a FALL.
+ */
+function verifiedSpans(): string[] {
+    const out = new Set<string>();
+    for (const line of text.split('\n')) {
+        if (!line.includes('Verified #')) continue;
+        for (const m of line.matchAll(/`([^`]+)`/g)) {
+            const tok = m[1]!;
+            if (!tok.includes(' ')) continue;
+            if (/^(src|tests|docs|prisma)\//.test(tok)) continue;
+            if (/\.tsx?$/.test(tok)) continue;
+            out.add(tok);
+        }
+    }
+    return [...out];
+}
+
+/** Every tracked test file's text, concatenated once. */
+let testTreeBlob: string | null = null;
+function testTree(): string {
+    if (testTreeBlob === null) {
+        testTreeBlob = repoFiles({ under: 'tests', extensions: ['.ts', '.tsx'] })
+            .map((f) => fs.readFileSync(f, 'utf-8'))
+            .join('\n');
+    }
+    return testTreeBlob;
+}
+
+/**
+ * The floor. 259 of 285 spans resolved when this was written (#3794).
+ *
+ * A RATCHET rather than an equality, because the 26 that do not resolve are
+ * code and prose and always will be. It may only be LOWERED in a diff that
+ * says which citation was removed and why — which is the one thing that did
+ * not happen when #3535 retired the Laya provider and deleted four tests that
+ * three ticked criteria cited by name.
+ */
+const RESOLVING_CITATIONS_FLOOR = 259;
+
 describe('the recert phases table stores no derived status', () => {
     it('finds the tables it is meant to be checking', () => {
         // The population, asserted. A heading-matcher that silently stopped
@@ -325,5 +371,52 @@ describe('the recert phases table stores no derived status', () => {
         // And a real one resolves, so the empty result above is about the step
         // and not about the search being broken.
         expect(notesForStep('6c').length).toBeGreaterThan(0);
+    });
+});
+
+describe("the document's cited evidence still exists (#3794)", () => {
+    it('finds a substantial set of cited spans', () => {
+        // The denominator. A reworded marker would empty this set, and an empty
+        // set passes a floor of zero silently.
+        expect(verifiedSpans().length).toBeGreaterThan(200);
+    });
+
+    it('the number of cited test names that resolve has not fallen', () => {
+        const blob = testTree();
+        const resolving = verifiedSpans().filter((sp) => blob.includes(sp));
+        // If this fires, a test a ticked criterion cites by name has been
+        // deleted or renamed. Repoint the criterion at what proves it now, or
+        // untick it with the reason — and lower the floor in the same diff.
+        //
+        // #3535 retired the Laya provider and took four cited tests with it.
+        // A retirement has no reason to read a phases document; this is the
+        // thing that reads it for them.
+        expect({
+            resolving: resolving.length >= RESOLVING_CITATIONS_FLOOR,
+            floor: RESOLVING_CITATIONS_FLOOR,
+            actual: resolving.length,
+        }).toEqual({ resolving: true, floor: RESOLVING_CITATIONS_FLOOR, actual: resolving.length });
+    });
+
+    it('resolves a real cited name and not a fabricated one', () => {
+        // The control, driving the real blob. A `testTree()` that returned
+        // everything — or nothing — would make the ratchet meaningless in one
+        // direction or the other, and both look like a pass from outside.
+        const blob = testTree();
+        expect(blob.length).toBeGreaterThan(1_000_000);
+        expect(blob.includes('a tenant with NO settings row reads OFF')).toBe(true);
+
+        // THE SENTINEL IS ASSEMBLED, NOT WRITTEN, and the first version of this
+        // test failed because it was written. `testTree()` reads every file
+        // under `tests/` — including THIS ONE — so any absent-name literal I
+        // type here is present in the blob by the act of typing it, and the
+        // control asserted `false` on something that was true.
+        //
+        // A guard's own source being its worst false-positive source is the
+        // same shape as `flue-provider-is-never-set-per-run` needing comment
+        // masking because its subject file quotes the forbidden call. Here the
+        // join means no contiguous substring of the sentinel exists in source.
+        const absent = ['zz', 'no', 'such', 'cited', 'name'].join('-') + '-3794';
+        expect(blob.includes(absent)).toBe(false);
     });
 });

@@ -98,3 +98,31 @@ Identity matching itself is untouched: it runs on the deterministic engine
   owner's (legal review and the executed DPA; the notice window), one is #3508
   held for a coordinated quiet window, and one — "nothing in `src/` refers to
   TypeSafe" — stays open **by the owner's decision** to keep the Jev code.
+
+## What this retirement also deleted, found six days later (#3794)
+
+Added 2026-10-20. The figure above — "173 of 177" — was accurate when this note
+was written and is left as it stood.
+
+Removing the provider removed its tests, and **three ticked criteria in the
+phases document cited four of them by name**:
+
+```
+LOCAL_ONLY is refused when LAYA_BASE_URL is unset
+LOCAL_ONLY yields Laya when one is deployed
+LOCAL_ONLY yields the stub when no Laya is deployed — never an external fallback
+ONLY EXTERNAL can go external — activation does not widen OFF or LOCAL_ONLY
+```
+
+Each criterion went on reading as verified. One of them, the
+`TYPESAFE_SUBPROCESSOR_ACTIVE` gate, additionally argued that the literal
+`false` case need not be tested because the flag was "now `true` (#3409)" —
+which #3519 then reversed, so its stated reason became void in the same week.
+
+**Nothing connected the two, and nothing could have.** A retirement has no
+reason to read a phases document, and the document's ticks name tests in prose
+rather than in anything a tool follows. That is the gap, not the retirement:
+this change was correct and complete in its own terms.
+
+The count is now 172 of 177 — the `LAYA_BASE_URL` criterion is unticked as moot,
+since the variable it names no longer exists in `src/env.ts` at all.
