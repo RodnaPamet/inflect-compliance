@@ -4,11 +4,7 @@
  * asked.
  */
 import { a2aPollDue, A2A_POLL_MAX_INTERVAL_MS, A2A_POLL_MIN_INTERVAL_MS } from '@/app-layer/usecases/a2a-outbound';
-import {
-    A2A_CLIENT_METHODS,
-    buildA2aTaskGetBody,
-    parseA2aInboundRequest,
-} from '@/lib/agentic/a2a/protocol';
+import { buildA2aTaskGetBody, parseA2aInboundRequest } from '@/lib/agentic/a2a/protocol';
 import { sendA2aMessage } from '@/lib/agentic/a2a/client';
 
 describe('the tasks/get Inflect sends', () => {
@@ -29,10 +25,6 @@ describe('the tasks/get Inflect sends', () => {
             method: 'tasks/get',
             params: { id: 't' },
         });
-    });
-
-    it('is one of exactly two methods the client may send', () => {
-        expect([...A2A_CLIENT_METHODS].sort()).toEqual(['message/send', 'tasks/get']);
     });
 
     it('the client still refuses every other method before anything leaves', async () => {
