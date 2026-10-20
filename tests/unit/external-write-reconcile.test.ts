@@ -286,6 +286,7 @@ describe('the reconcile pass promotes on positive evidence only', () => {
             notYet: 0,
             unreadable: 0,
             unverifiable: 0,
+            indeterminate: 0,
         });
         expect(mockTx.integrationConnection.findMany).not.toHaveBeenCalled();
     });

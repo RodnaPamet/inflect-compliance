@@ -76,8 +76,8 @@ describe('inbound parsing', () => {
 });
 
 describe('outbound', () => {
-    it('the client method set is message/send alone', () => {
-        expect([...A2A_CLIENT_METHODS]).toEqual(['message/send']);
+    it('the client method set is message/send, and tasks/get to ask after an accepted task (#3743)', () => {
+        expect([...A2A_CLIENT_METHODS]).toEqual(['message/send', 'tasks/get']);
         expect(JSON.parse(buildA2aSendBody({ rpcId: 'j1', messageId: 'm1', text: 'go' })).method).toBe('message/send');
     });
 

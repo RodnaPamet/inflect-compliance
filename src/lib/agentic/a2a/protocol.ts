@@ -30,8 +30,12 @@ import type { A2aMethod } from './receipt';
 /** The methods a peer may send Inflect. */
 export const A2A_INBOUND_METHODS: ReadonlySet<A2aMethod> = new Set<A2aMethod>(['message/send', 'tasks/get']);
 
-/** The methods Inflect's client may send a peer. Results come back on the send. */
-export const A2A_CLIENT_METHODS: ReadonlySet<A2aMethod> = new Set<A2aMethod>(['message/send']);
+/**
+ * The methods Inflect's client may send a peer. Results come back on the send,
+ * and `tasks/get` asks after a task the peer accepted and had not finished
+ * (#3743): a read, never a write.
+ */
+export const A2A_CLIENT_METHODS: ReadonlySet<A2aMethod> = new Set<A2aMethod>(['message/send', 'tasks/get']);
 
 /** A request body over this is refused before it is parsed (R4, I1 D). */
 export const A2A_MAX_BODY_BYTES = 64 * 1024;
@@ -288,6 +292,16 @@ export function buildA2aSendBody(send: A2aOutboundSend): string {
         method,
         params: { message, configuration: { blocking: true } },
     });
+}
+
+/**
+ * The body of one `tasks/get` Inflect sends (#3743): the peer's own task id and
+ * nothing else. No history is asked for, because only the state is read.
+ */
+export function buildA2aTaskGetBody(get: { readonly rpcId: string; readonly taskId: string }): string {
+    const method: A2aMethod = 'tasks/get';
+    if (!A2A_CLIENT_METHODS.has(method)) throw new Error('a2a client: tasks/get is not in the method set');
+    return JSON.stringify({ jsonrpc: '2.0', id: get.rpcId, method, params: { id: get.taskId } });
 }
 
 export type A2aPeerReply =

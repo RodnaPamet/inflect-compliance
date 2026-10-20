@@ -58,7 +58,7 @@ import {
     a2aSendToolName,
     type A2aSendArgs,
 } from '@/lib/agentic/a2a/send-tool';
-import { buildA2aSendBody, parseA2aPeerReply } from '@/lib/agentic/a2a/protocol';
+import { buildA2aSendBody, buildA2aTaskGetBody, parseA2aPeerReply } from '@/lib/agentic/a2a/protocol';
 import {
     a2aBodyDigest,
     encodeA2aReceiptHeader,
@@ -76,7 +76,14 @@ import { resolvePeerKill } from './a2a-peer-kill';
 import { A2aReplayError, recordA2aMessage } from './a2a-messages';
 import { currentTenantA2aPublicKey, resolveTenantA2aSigningKey } from './a2a-signing-key';
 import { ownA2aIdentity } from './a2a-agent-card';
-import { recordIntent, settleWrite, type SettledOutcome } from './external-write-journal';
+import {
+    concludeAcceptedIndeterminate,
+    noteAcceptedWrite,
+    promoteAcceptedWrite,
+    recordIntent,
+    settleWrite,
+    type SettledOutcome,
+} from './external-write-journal';
 import { automaticBoundRefusalAtSend, openAutomaticExternalWrite } from './external-write-automatic';
 import { createAgentProposal } from './agent-proposals';
 
@@ -571,4 +578,264 @@ export async function sendA2aJournalRow(
         default:
             return settle('INDETERMINATE', 'The peer\'s signed answer was not a task or a message.', 'INDETERMINATE');
     }
+}
+
+// ─── #3743: asking a peer about a task it accepted ──────────────────────────
+
+/**
+ * What one poll of an `ACCEPTED` A2A send concluded.
+ *
+ * - `PROMOTED`: the peer reports the task completed, in a signed answer that
+ *   verifies. The row is `APPLIED`.
+ * - `INDETERMINATE`: the peer reports the task failed, was cancelled or was
+ *   rejected, or its answer cannot be tied to it. The row is `INDETERMINATE`,
+ *   as the send settles the same report.
+ * - `STILL_RUNNING`: the peer reports the task under way. The row stays
+ *   `ACCEPTED`, and its detail says when it was asked and how long it has been
+ *   accepted.
+ * - `NOT_POLLED`: nothing was asked, or nothing usable came back. The row stays
+ *   `ACCEPTED` and is asked again next pass. `reason` says why.
+ */
+export type A2aPollResult =
+    | { readonly outcome: 'PROMOTED' }
+    | { readonly outcome: 'INDETERMINATE' }
+    | { readonly outcome: 'STILL_RUNNING' }
+    | { readonly outcome: 'NOT_POLLED'; readonly reason: string };
+
+/**
+ * How soon a row may be asked again: a quarter of the time it has been
+ * accepted, between the pass's own ten minutes and six hours. A task the peer
+ * finishes in minutes is seen in minutes; one that runs for days is asked a few
+ * times a day, not 144, because every poll is two kept receipts and counts
+ * against the peer's own inbound quota.
+ */
+export const A2A_POLL_MIN_INTERVAL_MS = 10 * 60 * 1000;
+export const A2A_POLL_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+export function a2aPollDue(acceptedAt: Date | null, lastPolledAt: Date | null, now: Date): boolean {
+    if (!lastPolledAt) return true;
+    const age = acceptedAt ? now.getTime() - acceptedAt.getTime() : 0;
+    const interval = Math.min(A2A_POLL_MAX_INTERVAL_MS, Math.max(A2A_POLL_MIN_INTERVAL_MS, age / 4));
+    return now.getTime() - lastPolledAt.getTime() >= interval;
+}
+
+/** How long a row has been accepted, for its detail. Coarse on purpose. */
+function acceptedFor(since: Date | null, now: Date): string {
+    if (!since) return 'for an unknown time';
+    const minutes = Math.max(0, Math.round((now.getTime() - since.getTime()) / 60_000));
+    if (minutes < 120) return `for ${minutes} minute${minutes === 1 ? '' : 's'}`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 48) return `for ${hours} hours`;
+    return `for ${Math.round(hours / 24)} days`;
+}
+
+/**
+ * Ask the peer about one `ACCEPTED` send with `tasks/get`, and settle the row
+ * only on what a signed, verified answer says (#3743).
+ *
+ * The same rails as the send, in the same order, because a poll goes out on
+ * the same wire to the same organisation:
+ *   the peer's kill → the card admission → the basis the write was authorised
+ *   on (a re-approved card is a different peer as far as that decision knew)
+ *   → the tenant's signing key and identity → the peer's credential.
+ * Then the request and its answer are each kept as a receipt, as every A2A
+ * message is. The poll is a read: `tasks/get` asks after a task and changes
+ * nothing, and the client's closed method set is what lets it leave.
+ *
+ * Promotion only on positive, verified evidence. A transport failure, a JSON-RPC
+ * error or an answer that is not a task leaves the row `ACCEPTED`; only a
+ * signed report of a terminal state, or a signature that fails, settles it.
+ */
+export async function pollAcceptedA2aSend(
+    ctx: RequestContext,
+    row: A2aJournalRow & { readonly settledAt: Date | null },
+    connection: { id: string; isEnabled: boolean; configJson: unknown; secretEncrypted: string | null },
+    net: A2aNetworkOptions = {},
+    /** Test seam for the backoff. */
+    now?: Date,
+): Promise<A2aPollResult> {
+    const notPolled = (reason: string): A2aPollResult => {
+        recordA2aMetric({ direction: 'OUTBOUND', outcome: `POLL_${reason}` });
+        return { outcome: 'NOT_POLLED', reason };
+    };
+
+    const peerId = peerIdOf(connection.configJson);
+    if (!peerId || a2aSendConnectionId(row.toolName) !== connection.id) return notPolled('CONNECTION_MOVED');
+    if (!connection.isEnabled) return notPolled('CONNECTION_DISABLED');
+    if (await resolvePeerKill(ctx, peerId)) return notPolled('PEER_KILLED');
+
+    const admitted = await admitPeerMessage(ctx, peerId, net.card);
+    if (!admitted.admission.admitted || !admitted.pin || !admitted.endpoint) {
+        return notPolled(admitted.admission.admitted ? 'NO_ENDPOINT' : admitted.admission.reason);
+    }
+
+    let args: A2aSendArgs;
+    let recorded: string;
+    try {
+        args = A2aSendArgsSchema.parse(JSON.parse(row.argumentsJson));
+        recorded = canonicalJson(JSON.parse(row.priorStateJson));
+    } catch {
+        return notPolled('ARGUMENTS_INVALID');
+    }
+    if (canonicalJson(a2aSendPriorState({ peerId, pin: admitted.pin, args })) !== recorded) {
+        return notPolled('BASIS_MOVED');
+    }
+
+    const lastPoll = await runInTenantContext(ctx, (db) =>
+        db.peerAgentMessage.findFirst({
+            where: { tenantId: ctx.tenantId, journalId: row.id, direction: 'OUTBOUND', kind: 'TASK', method: 'tasks/get' },
+            orderBy: { createdAt: 'desc' },
+            select: { createdAt: true },
+        }),
+    );
+    if (!a2aPollDue(row.settledAt, lastPoll?.createdAt ?? null, now ?? new Date())) {
+        return { outcome: 'NOT_POLLED', reason: 'NOT_DUE' };
+    }
+
+    // The peer's own id for the task, from the answer it signed to the send:
+    // the first RESULT kept against this row. Later RESULTs are this pass's own
+    // polls, so the oldest is the one that answered `message/send`.
+    const answer = await runInTenantContext(ctx, (db) =>
+        db.peerAgentMessage.findFirst({
+            where: { tenantId: ctx.tenantId, journalId: row.id, direction: 'INBOUND', kind: 'RESULT' },
+            orderBy: { createdAt: 'asc' },
+            select: { body: true },
+        }),
+    );
+    const accepted = answer ? parseA2aPeerReply(answer.body, row.id) : null;
+    if (accepted?.kind !== 'task') return notPolled('NO_TASK_ID');
+
+    const key = await resolveTenantA2aSigningKey(ctx);
+    if (!key) return notPolled('NO_SIGNING_KEY');
+    const inflect = await ownA2aIdentity(ctx);
+    if (!inflect) return notPolled('NO_PUBLIC_ORIGIN');
+
+    let authorization: string | undefined;
+    try {
+        const secrets = connection.secretEncrypted
+            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            : {};
+        authorization = typeof secrets.authorization === 'string' && secrets.authorization.trim() !== ''
+            ? secrets.authorization.trim()
+            : undefined;
+    } catch {
+        return notPolled('CREDENTIAL_UNUSABLE');
+    }
+
+    const rpcId = randomUUID();
+    const messageId = randomUUID();
+    const body = buildA2aTaskGetBody({ rpcId, taskId: accepted.taskId });
+    const task = signA2aReceipt(
+        {
+            v: 'inflect-a2a-receipt/1',
+            kind: 'TASK',
+            messageId,
+            relatesTo: null,
+            method: 'tasks/get',
+            sender: inflect,
+            recipient: admitted.peer.cardUrl,
+            issuedAt: new Date().toISOString(),
+            bodyDigest: a2aBodyDigest(body),
+        },
+        key.privateKey,
+    );
+    await recordA2aMessage(ctx, {
+        peerId,
+        direction: 'OUTBOUND',
+        receipt: task,
+        signerKeyFingerprint: key.fingerprint,
+        signerPublicKey: key.publicKeyHex,
+        body,
+        agentId: row.agentId,
+        runId: row.runId,
+        journalId: row.id,
+    });
+
+    const sent = await sendA2aMessage({
+        url: admitted.endpoint,
+        authorization,
+        body,
+        receiptHeader: encodeA2aReceiptHeader(task),
+        fetchImpl: net.fetchImpl,
+    });
+    if (!sent.ok) return notPolled(`SEND_${sent.reason}`);
+
+    const verdict = verifyA2aReceiptHeader(sent.receiptHeader, admitted.peer.signingPublicKey, {
+        kind: 'RESULT',
+        sender: admitted.peer.cardUrl,
+        recipient: inflect,
+        bodyDigest: a2aBodyDigest(sent.body),
+        relatesTo: messageId,
+    });
+    if (!verdict.ok) {
+        logger.warn('a2a.poll_unverified', {
+            component: 'a2a-outbound',
+            tenantId: ctx.tenantId,
+            journalId: row.id,
+            reason: verdict.reason,
+        });
+        await concludeAcceptedIndeterminate(
+            ctx,
+            row.id,
+            `Asked about task ${accepted.taskId}, the peer answered in a way that could not be verified against `
+                + `its registered key (${verdict.reason}). The answer was discarded; confirm with the peer whether `
+                + 'the task was acted on.',
+        );
+        recordA2aMetric({ direction: 'OUTBOUND', outcome: 'POLL_REPLY_UNVERIFIED' });
+        return { outcome: 'INDETERMINATE' };
+    }
+    try {
+        await recordA2aMessage(ctx, {
+            peerId,
+            direction: 'INBOUND',
+            receipt: verdict.receipt,
+            signerKeyFingerprint: admitted.peer.signingKeyFingerprint,
+            signerPublicKey: admitted.peer.signingPublicKey,
+            body: sent.body,
+            agentId: row.agentId,
+            runId: row.runId,
+            journalId: row.id,
+        });
+    } catch (err) {
+        if (err instanceof A2aReplayError) return notPolled('REPLAY');
+        throw err;
+    }
+
+    const reply = parseA2aPeerReply(sent.body, rpcId);
+    if (reply.kind !== 'task' || reply.taskId !== accepted.taskId) {
+        // An error (the peer may not know the task yet, or at all) or a shape
+        // that is not this task: kept, and asked again. Neither is a report of
+        // the task's state.
+        return notPolled(reply.kind === 'error' ? `PEER_ERROR_${reply.code}` : 'NOT_THIS_TASK');
+    }
+    const outcome = outcomeForTaskState(reply.state);
+    if (outcome === 'APPLIED') {
+        await promoteAcceptedWrite(
+            ctx,
+            row.id,
+            `The peer reports task ${reply.taskId} completed, in a signed answer to tasks/get that verifies `
+                + 'against its registered key. The request and the answer are kept.',
+        );
+        recordA2aMetric({ direction: 'OUTBOUND', outcome: 'POLL_APPLIED' });
+        return { outcome: 'PROMOTED' };
+    }
+    if (outcome === 'ACCEPTED') {
+        const at = now ?? new Date();
+        await noteAcceptedWrite(
+            ctx,
+            row.id,
+            `The peer accepted task ${reply.taskId} and reported it ${reply.state} at ${at.toISOString()}, `
+                + `accepted ${acceptedFor(row.settledAt, at)}. It is not yet known to be done.`,
+        );
+        recordA2aMetric({ direction: 'OUTBOUND', outcome: 'POLL_STILL_RUNNING' });
+        return { outcome: 'STILL_RUNNING' };
+    }
+    await concludeAcceptedIndeterminate(
+        ctx,
+        row.id,
+        `The peer reports task ${reply.taskId} as ${reply.state}, in a signed answer to tasks/get. Whether `
+            + 'anything changed is its claim.',
+    );
+    recordA2aMetric({ direction: 'OUTBOUND', outcome: 'POLL_INDETERMINATE' });
+    return { outcome: 'INDETERMINATE' };
 }

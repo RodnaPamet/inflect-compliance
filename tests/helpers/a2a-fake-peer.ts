@@ -56,7 +56,11 @@ export class FakeA2aPeer {
     readonly endpoint: string;
     card: Record<string, unknown>;
     reply: FakePeerReply = { kind: 'task', state: 'completed' };
+    /** How it answers a `tasks/get` (#3743), with the same misbehaviour on demand. */
+    pollReply: FakePeerReply = { kind: 'task', state: 'completed' };
     readonly received: ReceivedTask[] = [];
+    /** The `tasks/get` requests it verified, by the task id each asked about. */
+    readonly polls: string[] = [];
     /** Inflect's public key and its identity (the tenant's card URL, #3742), as the peer pinned them. */
     inflectPublicKey = '';
     inflectIdentity = '';
@@ -94,6 +98,8 @@ export class FakeA2aPeer {
             bodyDigest: a2aBodyDigest(body),
         });
         if (!verdict.ok) return new Response(JSON.stringify({ error: verdict.reason }), { status: 401 });
+        const asked = JSON.parse(body) as { id: string; method: string; params: { id?: string } };
+        if (asked.method === 'tasks/get') return this.answer(asked.id, asked.params.id ?? '', verdict.receipt.statement.messageId, this.pollReply, true);
         const rpc = JSON.parse(body) as {
             id: string;
             params: { message: { parts: { kind: string; text?: string }[]; contextId?: string } };
@@ -104,26 +110,40 @@ export class FakeA2aPeer {
             text: rpc.params.message.parts.find((p) => p.kind === 'text')?.text ?? null,
             authorization: headers.get('authorization'),
         });
-        if (this.reply.kind === 'http') return new Response('{}', { status: this.reply.status });
+        return this.answer(
+            rpc.id,
+            `peer-task-${this.received.length}`,
+            verdict.receipt.statement.messageId,
+            this.reply,
+            false,
+            rpc.params.message.contextId ?? `ctx-${this.received.length}`,
+        );
+    };
 
-        const state = this.reply.kind === 'task' ? this.reply.state : 'completed';
+    /** A signed answer about one task: to the send that created it, or to a `tasks/get` about it. */
+    private answer(
+        rpcId: string,
+        taskId: string,
+        relatesTo: string,
+        reply: FakePeerReply,
+        poll: boolean,
+        contextId = 'ctx-poll',
+    ): Response {
+        if (poll) this.polls.push(taskId);
+        if (reply.kind === 'http') return new Response('{}', { status: reply.status });
+        const state = reply.kind === 'task' ? reply.state : 'completed';
         const answer = JSON.stringify({
             jsonrpc: '2.0',
-            id: rpc.id,
-            result: {
-                kind: 'task',
-                id: `peer-task-${this.received.length}`,
-                contextId: rpc.params.message.contextId ?? `ctx-${this.received.length}`,
-                status: { state },
-            },
+            id: rpcId,
+            result: { kind: 'task', id: taskId, contextId, status: { state } },
         });
-        const signer = this.reply.kind === 'wrong-key' ? newSigningKey().key : this.key;
+        const signer = reply.kind === 'wrong-key' ? newSigningKey().key : this.key;
         const receipt = signA2aReceipt(
             {
                 v: 'inflect-a2a-receipt/1',
                 kind: 'RESULT',
                 messageId: randomUUID(),
-                relatesTo: verdict.receipt.statement.messageId,
+                relatesTo,
                 method: null,
                 sender: this.cardUrl,
                 recipient: this.inflectIdentity,
@@ -132,11 +152,11 @@ export class FakeA2aPeer {
             },
             signer.privateKey,
         );
-        const out = this.reply.kind === 'tampered' ? answer.replace('"completed"', '"completed" ') : answer;
+        const out = reply.kind === 'tampered' ? answer.replace(`"${state}"`, `"${state}" `) : answer;
         const respHeaders: Record<string, string> = { 'content-type': 'application/json' };
-        if (this.reply.kind !== 'unsigned') respHeaders[A2A_RECEIPT_HEADER] = encodeA2aReceiptHeader(receipt);
+        if (reply.kind !== 'unsigned') respHeaders[A2A_RECEIPT_HEADER] = encodeA2aReceiptHeader(receipt);
         return new Response(out, { status: 200, headers: respHeaders });
-    };
+    }
 
     /** A request from this peer TO Inflect, signed as the peer signs: body plus its receipt header. */
     signedRequest(

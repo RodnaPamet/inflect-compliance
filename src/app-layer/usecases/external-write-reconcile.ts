@@ -35,6 +35,17 @@
  * population that merely had not been checked. Demotion waits for a measured
  * distribution.
  *
+ * ═══ AN A2A SEND IS ASKED, NOT READ (#3743) ═══
+ *
+ * A send to an A2A peer has no paired read: its far end is the peer's own task,
+ * and the question goes to the peer as a signed `tasks/get` on the A2A rails
+ * (`pollAcceptedA2aSend`). It is the one row this pass may settle other than
+ * `APPLIED`. When the peer, in a signed answer, reports the task `failed`,
+ * `canceled` or `rejected`, or answers in a way that cannot be tied to it, the
+ * row becomes `INDETERMINATE`. That is still no `FAILED` and no timer: it is
+ * the far end's own report, the same one the send settles `INDETERMINATE` when
+ * it arrives on the send itself.
+ *
  * ═══ WHY THE PAIRED READ, AND NOT A SECOND GRAPH CLIENT ═══
  *
  * Every tool that may write already has a nominated prior-state read
@@ -78,7 +89,11 @@ import {
     servicePrincipalFactsOf,
 } from '@/lib/agentic/service-principal-disable';
 
+import { A2A_SEND_TOOL } from '@/lib/agentic/a2a/send-tool';
+import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
+
 import { promoteAcceptedWrite } from './external-write-journal';
+import { pollAcceptedA2aSend, type A2aNetworkOptions } from './a2a-outbound';
 import { getPriorStateRead } from './external-prior-state-read';
 import { createTask } from './task';
 
@@ -326,6 +341,12 @@ export interface ExternalWriteReconcileResult {
     unreadable: number;
     /** In `ACCEPTED` with no verifier for the tool. Left alone, and logged. */
     unverifiable: number;
+    /**
+     * Settled `INDETERMINATE` because the far end itself reported the request
+     * did not finish, or answered in a way that could not be tied to it (#3743,
+     * A2A only). Not `FAILED`: that is the far end's claim, not ours.
+     */
+    indeterminate: number;
 }
 
 /**
@@ -441,6 +462,9 @@ async function readJournalRowState(
 export async function reconcileAcceptedExternalWrites(input: {
     tenantId: string;
     limit?: number;
+    /** Test seams for an A2A poll. No file under src/ passes either. */
+    a2a?: A2aNetworkOptions;
+    now?: Date;
 }): Promise<ExternalWriteReconcileResult> {
     const ctx = buildSystemContext({
         tenantId: input.tenantId,
@@ -465,6 +489,7 @@ export async function reconcileAcceptedExternalWrites(input: {
         notYet: 0,
         unreadable: 0,
         unverifiable: 0,
+        indeterminate: 0,
     };
     if (due.length === 0) return result;
 
@@ -491,7 +516,52 @@ export async function reconcileAcceptedExternalWrites(input: {
         ).map((c) => [c.id, c] as const),
     );
 
+    // An A2A send is asked, not read (#3743): its far end is a peer's task, and
+    // the question goes out as a signed `tasks/get` on the A2A rails. Its
+    // connections are `a2a-peer` ones, which the MCP lookup above excludes.
+    const a2aConnectionIds = [
+        ...new Set(
+            due
+                .filter((r) => r.advertisedToolName === A2A_SEND_TOOL)
+                .map((r) => r.connectionId)
+                .filter((v): v is string => !!v),
+        ),
+    ];
+    const a2aConnections = new Map(
+        a2aConnectionIds.length === 0
+            ? []
+            : (
+                  await runInTenantContext(ctx, (db) =>
+                      db.integrationConnection.findMany({
+                          where: { id: { in: a2aConnectionIds }, tenantId: input.tenantId, provider: A2A_PEER_PROVIDER_ID },
+                          select: { id: true, isEnabled: true, configJson: true, secretEncrypted: true },
+                      }),
+                  )
+              ).map((c) => [c.id, c] as const),
+    );
+
     for (const row of due) {
+        if (row.advertisedToolName === A2A_SEND_TOOL) {
+            const connection = row.connectionId ? a2aConnections.get(row.connectionId) : undefined;
+            const polled = connection
+                ? await pollAcceptedA2aSend(ctx, row, connection, input.a2a, input.now)
+                : ({ outcome: 'NOT_POLLED', reason: 'CONNECTION_GONE' } as const);
+            if (polled.outcome === 'PROMOTED') result.promoted += 1;
+            else if (polled.outcome === 'INDETERMINATE') result.indeterminate += 1;
+            else if (polled.outcome === 'STILL_RUNNING') result.notYet += 1;
+            else if (polled.reason === 'NOT_DUE') result.notYet += 1;
+            else {
+                result.unreadable += 1;
+                logger.info('external write reconcile: A2A send not polled this pass', {
+                    component: 'external-write-reconcile',
+                    tenantId: input.tenantId,
+                    journalId: row.id,
+                    reason: polled.reason,
+                });
+            }
+            continue;
+        }
+
         const verifier = DELIVERY_VERIFIERS.get(row.advertisedToolName);
         if (!verifier) {
             // Named, not swallowed. A tool that settles `ACCEPTED` and has no
