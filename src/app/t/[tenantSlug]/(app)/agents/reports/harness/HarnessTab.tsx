@@ -92,7 +92,16 @@ export function HarnessTab({
                 {t('harness.reportOnly')}
             </InlineNotice>
 
-            <EstateHealthCard view={estateHealth} />
+            <EstateHealthCard
+                view={estateHealth}
+                // The estate routes take the register key, as the key register
+                // does, so the same `null` withholds every control (#3807).
+                manage={
+                    scannerKeys
+                        ? { scanners: scannerKeys.candidates.rows.map((c) => ({ id: c.id, name: c.name })) }
+                        : null
+                }
+            />
 
             {!hasScans ? (
                 <InlineNotice variant="error" title={t('harness.noScansTitle')} data-testid="harness-no-scans">

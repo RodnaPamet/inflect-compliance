@@ -13,6 +13,7 @@ import {
     storableColumns,
 } from '@/lib/legacy-access/ingest';
 import {
+    ACCOUNT_KEY_MAX_LENGTH,
     computeColumnSetFingerprint,
     type StoredMapping,
 } from '@/lib/legacy-access/canonical';
@@ -530,9 +531,8 @@ describe('ROW_SCHEMA_INVALID names the FIELD and never the value (#3795)', () =>
         // Naming the account is how an operator finds the row. Asserting my own
         // preference here would have encoded it as the codebase's rule.
         //
-        // What remains worth a ticket is that the interpolation is UNBOUNDED —
-        // filed as its own observation rather than changed under a coverage
-        // ticket, because bounding it touches three refusals and a convention.
+        // The unbounded interpolation that observation left open was filed as
+        // #3800 and is now bounded — see the describe at the end of this file.
         const err = refusalOf(() =>
             mapRows(wideMapping(), [wideRow({ LOGIN: tooLong })], WIDE_COLUMNS),
         );
@@ -563,5 +563,86 @@ describe('ROW_SCHEMA_INVALID names the FIELD and never the value (#3795)', () =>
         expect(() =>
             mapRows(wideMapping(), [wideRow({ LOGIN: 'k'.repeat(512) })], WIDE_COLUMNS),
         ).not.toThrow();
+    });
+});
+
+describe('the account key quoted in a refusal is bounded (#3800)', () => {
+    // `accountKey` is a cell from an untrusted upload, interpolated into a
+    // message that is logged and shown to an operator. #3795 established that
+    // naming the account is DELIBERATE in all three row-level refusals, so the
+    // fix is a bound rather than a redaction.
+    //
+    // The bound is `ACCOUNT_KEY_MAX_LENGTH`, the canonical schema's own, which
+    // is the load-bearing choice: `ROW_SCHEMA_INVALID` is thrown exactly when
+    // that schema REJECTED the row, so its key never went through the bound.
+
+    it('elides an over-long key, marks it, and gives the real length', () => {
+        const err = refusalOf(() =>
+            mapRows(wideMapping(), [wideRow({ LOGIN: 'k'.repeat(900) })], WIDE_COLUMNS),
+        );
+        expect(err.refusal).toBe('ROW_SCHEMA_INVALID');
+        // Marked, not silent: a key that looks complete but is not sends the
+        // operator hunting for an account their file does not contain.
+        expect(err.message).toContain('truncated from 900 characters');
+        // And bounded — the quoted run of the key stops at the schema's max.
+        expect(err.message).toContain('k'.repeat(ACCOUNT_KEY_MAX_LENGTH));
+        expect(err.message).not.toContain('k'.repeat(ACCOUNT_KEY_MAX_LENGTH + 1));
+    });
+
+    it('states the ORIGINAL length, not the truncated one', () => {
+        // The failure this rules out is reporting the bound back as the length,
+        // which would make every over-long key look identically 512 long.
+        const err = refusalOf(() =>
+            mapRows(wideMapping(), [wideRow({ LOGIN: 'k'.repeat(513) })], WIDE_COLUMNS),
+        );
+        expect(err.message).toContain('truncated from 513 characters');
+        expect(err.message).not.toContain(`truncated from ${ACCOUNT_KEY_MAX_LENGTH} characters`);
+    });
+
+    it('leaves a key the schema would ACCEPT completely intact', () => {
+        // The other half of tying the bound to the schema, and the reason this
+        // is not an arbitrary number: a key at exactly the schema's maximum is
+        // legitimate, so it must appear in full. The refusal here comes from a
+        // different field, which is what lets a valid key reach the message.
+        const key = 'k'.repeat(ACCOUNT_KEY_MAX_LENGTH);
+        const err = refusalOf(() =>
+            mapRows(
+                wideMapping({
+                    entitlements: { kind: 'delimited', column: 'ROLES_CSV', delimiter: ',' },
+                }),
+                [wideRow({ LOGIN: key, ROLES_CSV: 'r'.repeat(600) })],
+                WIDE_COLUMNS,
+            ),
+        );
+        expect(err.refusal).toBe('ROW_SCHEMA_INVALID');
+        expect(err.message).toContain(`account "${key}"`);
+        expect(err.message).not.toContain('truncated from');
+    });
+
+    it('bounds the two post-parse refusals by the same helper', () => {
+        // DUPLICATE_ACCOUNT_KEY and CONTRADICTORY_ROWS are thrown after a
+        // successful parse, so their key is already schema-bounded and no input
+        // can make them elide. What is checkable is that they still name the
+        // account — the behaviour #3795 found to be deliberate — so bounding
+        // them did not quietly remove it. That they route through the helper at
+        // all is held by `ingest-refusals-bound-the-account-key`.
+        const dup = refusalOf(() =>
+            mapRows(wideMapping(), [wideRow({ LOGIN: 'dup-1' }), wideRow({ LOGIN: 'dup-1' })], WIDE_COLUMNS),
+        );
+        expect(dup.refusal).toBe('DUPLICATE_ACCOUNT_KEY');
+        expect(dup.message).toContain('account "dup-1"');
+
+        const contra = refusalOf(() =>
+            mapRows(
+                wideMapping({ entitlements: { kind: 'long', column: 'ROLES_CSV' } }),
+                [
+                    wideRow({ LOGIN: 'dup-2', DISPLAY_NAME: 'Jane Doe' }),
+                    wideRow({ LOGIN: 'dup-2', DISPLAY_NAME: 'Someone Else' }),
+                ],
+                WIDE_COLUMNS,
+            ),
+        );
+        expect(contra.refusal).toBe('CONTRADICTORY_ROWS');
+        expect(contra.message).toContain('account "dup-2"');
     });
 });

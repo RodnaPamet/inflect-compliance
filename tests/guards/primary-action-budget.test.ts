@@ -101,7 +101,11 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // disclosure toggle was demoted to secondary (it is on screen with its
     // form's primary submit), paying for an intake dialog's primary under the
     // product-wide ceiling. Lowered to the measurement.
-    "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 7,
+    // 7 -> 6 (#3807): the Assessments tab's "Send assessment" trigger was
+    // demoted to secondary — it opens the send dialog, whose submit is that
+    // region's primary — paying for the estate dialog's primary on the harness
+    // tab under the product-wide ceiling.
+    "src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx": 6,
     // NIS2 incident detail — four modal confirms, each its own dialog,
     // never on screen together: submit-report, add-timeline-entry,
     // confirm-mark-reportable, and link-forensic-evidence. The page-level

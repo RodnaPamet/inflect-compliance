@@ -233,8 +233,21 @@ const optionalText = z.string().trim().min(1).max(512).nullish().transform((v) =
  * MAPPING rather than on each row. Enforcing it per row would refuse a real
  * account for having a blank display name.
  */
+/**
+ * The longest `accountKey` this schema accepts.
+ *
+ * Exported because `ingest.ts` bounds the key it quotes in a refusal message
+ * by the same number (#3800). Tying the two together is the point: the refusal
+ * that quotes an UNPARSED key is thrown exactly when this schema rejected the
+ * row, so the key there has not been through this bound and could be any
+ * length the upload cared to make it. Using this constant means a key that
+ * could ever be legitimate is never elided, and only one this schema would
+ * already refuse is.
+ */
+export const ACCOUNT_KEY_MAX_LENGTH = 512;
+
 export const CanonicalAccountSchema = z.object({
-    accountKey: z.string().trim().min(1).max(512),
+    accountKey: z.string().trim().min(1).max(ACCOUNT_KEY_MAX_LENGTH),
     username: optionalText,
     displayName: optionalText,
     givenName: optionalText,
