@@ -25,6 +25,7 @@
 
 import { scanEgress } from '@/app-layer/ai/guard';
 import {
+    ACCOUNT_KEY_MAX_LENGTH,
     CanonicalAccountSchema,
     computeColumnSetFingerprint,
     entitlementColumns,
@@ -273,6 +274,34 @@ function readEntitlements(mapping: StoredMapping, index: Map<string, unknown>): 
 }
 
 /**
+ * The account key as it appears in a refusal message, length-bounded.
+ *
+ * All three refusals below name the account on purpose: an operator fixing a
+ * spreadsheet has to know WHICH row, and #3800 did not ask for that to stop.
+ * What it asked for is a bound, because `accountKey` is a cell from an
+ * untrusted upload and goes straight into a message that is logged.
+ *
+ * `ROW_SCHEMA_INVALID` is the one that actually needed it. It is thrown
+ * exactly when {@link CanonicalAccountSchema} rejected the row, so the key it
+ * quotes has NOT been through that schema's `max` and can be any length the
+ * file cared to make it — being too long is itself one of the reasons the
+ * parse fails. The other two are thrown after a successful parse, where the
+ * schema has already bounded the key; they use this anyway, so the property
+ * holds without a reader having to prove which side of the parse they are on.
+ *
+ * The bound is the schema's own, so a key that could ever be legitimate is
+ * never elided and only one the schema would already refuse is.
+ *
+ * The elision is MARKED, and says the real length. Silent truncation would be
+ * worse than a long message: a key that looks complete but is not sends the
+ * operator looking for an account that does not exist in their file.
+ */
+function keyForMessage(accountKey: string): string {
+    if (accountKey.length <= ACCOUNT_KEY_MAX_LENGTH) return accountKey;
+    return `${accountKey.slice(0, ACCOUNT_KEY_MAX_LENGTH)}… (truncated from ${accountKey.length} characters)`;
+}
+
+/**
  * Apply a mapping to the rows the client returned.
  *
  * The order of the checks is the contract, and it is ordered by blast radius
@@ -361,7 +390,7 @@ export function mapRows(
             const paths = [...new Set(parsed.error.issues.map((is) => is.path.join('.')))].sort();
             throw new LegacyIngestError(
                 'ROW_SCHEMA_INVALID',
-                `account "${accountKey}" has values the canonical schema refuses in: ${paths.join(', ')}`
+                `account "${keyForMessage(accountKey)}" has values the canonical schema refuses in: ${paths.join(', ')}`
             );
         }
         const account = parsed.data;
@@ -374,7 +403,7 @@ export function mapRows(
         if (!isLong) {
             throw new LegacyIngestError(
                 'DUPLICATE_ACCOUNT_KEY',
-                `account "${accountKey}" appears more than once and the declared entitlement `
+                `account "${keyForMessage(accountKey)}" appears more than once and the declared entitlement `
                 + 'layout is not "long", so the repeat is not an extra entitlement row'
             );
         }
@@ -388,7 +417,7 @@ export function mapRows(
         if (disagreements.length > 0) {
             throw new LegacyIngestError(
                 'CONTRADICTORY_ROWS',
-                `account "${accountKey}" appears on several rows that disagree about `
+                `account "${keyForMessage(accountKey)}" appears on several rows that disagree about `
                 + `${disagreements.join(', ')}`
             );
         }

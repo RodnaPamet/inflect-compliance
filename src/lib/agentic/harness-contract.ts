@@ -75,6 +75,9 @@ import {
     HARNESS_CONTRACT_V3,
     isScanComplete,
     looksLikeSecret,
+    SOURCE_KINDS,
+    SOURCE_KINDS_V2,
+    SOURCE_KINDS_V3,
     type HarnessContractId,
 } from './harness-contract-rules';
 import {
@@ -92,6 +95,9 @@ export {
     HARNESS_CONTRACT_V3,
     isScanComplete,
     looksLikeSecret,
+    SOURCE_KINDS,
+    SOURCE_KINDS_V2,
+    SOURCE_KINDS_V3,
     type HarnessContractId,
 } from './harness-contract-rules';
 
@@ -117,32 +123,6 @@ export const MAX_ID_CHARS = 256;
 /** An evidence pointer: a path, a query, a resource locator. */
 export const MAX_EVIDENCE_CHARS = 512;
 
-/**
- * Where a scanner looks. Stable ids: the report and the matrix carry them. The
- * last, `code` (agent definitions read from source code and configuration,
- * #3737), is the one `/2` added; the rest were `/1`'s.
- */
-export const SOURCE_KINDS_V2 = [
-    'entra-sp',
-    'okta-app',
-    'vault',
-    'mcp',
-    'runtime',
-    'cicd',
-    'inflect-register',
-    'code',
-] as const;
-
-/** `/3`'s kinds: `/2`'s, and `gcp-sa`, a Google Cloud project's service accounts (#3785). */
-export const SOURCE_KINDS_V3 = [...SOURCE_KINDS_V2, 'gcp-sa'] as const;
-
-/**
- * Every source kind a report this verifier accepts can carry, which is also
- * every kind a stored scan can hold, `/1` and `/2` scans included. Stored scans
- * are re-read against it, and an estate may declare exactly these (the
- * database CHECKs the same list).
- */
-export const SOURCE_KINDS = SOURCE_KINDS_V3;
 
 /**
  * Why a source could not be read completely. The last, `UNPARSEABLE` (a

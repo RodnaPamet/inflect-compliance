@@ -428,6 +428,13 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // inside a tab, and a four-eyes approve, as the parameter-sets page's is. Net
 // change: zero, re-measured at 175 on this branch rebased onto main.
 //
+// 2026-10-20 — #3807 scanner-estate form: 175 stays, PAID FOR. The estate
+// dialog's submit is the LAST action of its dialog, which `modal-action-order`
+// requires, and it is bought by the vendor Assessments tab's "Send assessment"
+// trigger, which only opens a dialog whose own submit is that region's primary
+// (the #3687 key-dialog trigger precedent). The card's Estate trigger and each
+// estate's Edit are secondary. Net change: zero.
+//
 // 2026-10-20 — #3807 owner-orphan pass page: 175 -> 174, A RELOCATION, NOT A
 // DEMOTION. The identity ladder's rung controls moved out of
 // `WriteLadderClient.tsx` into `src/components/admin/LadderRungCard.tsx`, so
