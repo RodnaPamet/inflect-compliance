@@ -343,7 +343,73 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
     }
 
     // ── message/send ─────────────────────────────────────────────────────────
-    if (!credential.workflowKeys.includes(request.workflowKey)) return refuse('WORKFLOW_NOT_ALLOWED', request.rpcId);
+    //
+    // Shared with the host-consumer path below. Extracted rather than copied so
+    // the two principals cannot drift: everything from here on is keyed on what
+    // the principal GRANTS, never on which kind it is.
+    return startInboundRun({
+        sys,
+        tenant,
+        req,
+        request,
+        refuse,
+        answer,
+        grants: {
+            kind: 'PEER',
+            id: peer.id,
+            ownerUserId: peer.ownerUserId,
+            receivingAgentId: credential.receivingAgentId,
+            workflowKeys: credential.workflowKeys,
+            recordId: taskRow.id,
+        },
+    });
+}
+
+/** What an admitted inbound principal grants, whichever kind it is. */
+interface InboundPrincipal {
+    readonly kind: 'PEER' | 'HOST_CONSUMER';
+    /** The `PeerAgent` or `HostConsumer` id. */
+    readonly id: string;
+    /** The accountable person whose authority the run carries. */
+    readonly ownerUserId: string;
+    readonly receivingAgentId: string;
+    readonly workflowKeys: readonly string[];
+    /** The `PeerAgentMessage` or `HostConsumerMessage` that started it. */
+    readonly recordId: string;
+}
+
+type ParsedInboundRequest = Extract<ReturnType<typeof parseA2aInboundRequest>, { ok: true }>['request'];
+
+/**
+ * Everything after admission: the allowlist, the agent, the run, the audit row
+ * and the answer.
+ *
+ * ONE body for both principals, deliberately. The narrowings this path applies
+ * — the `PROPOSE_ONLY` clamp (R17) and the refusal of an outbound send (R14) —
+ * are keyed on `a2aInbound` being SET and never on which arm set it, so a
+ * change here cannot narrow one principal and not the other. A conditional on
+ * `grants.kind` that changed how much is allowed would undo that, and is
+ * the thing to refuse in review.
+ */
+async function startInboundRun(args: {
+    readonly sys: RequestContext;
+    readonly tenant: { readonly id: string; readonly slug: string };
+    readonly req: InboundA2aRequest;
+    readonly request: ParsedInboundRequest;
+    readonly refuse: (
+        reason: A2aInboundRefusalReason,
+        rpcId?: string | number | null,
+        status?: number,
+    ) => Promise<InboundA2aResponse>;
+    readonly answer: (
+        result: Record<string, unknown>,
+        runId: string | undefined,
+        rpcId: string | number,
+    ) => Promise<InboundA2aResponse>;
+    readonly grants: InboundPrincipal;
+}): Promise<InboundA2aResponse> {
+    const { sys, tenant, req, request, refuse, answer, grants } = args;
+    if (!grants.workflowKeys.includes(request.workflowKey)) return refuse('WORKFLOW_NOT_ALLOWED', request.rpcId);
     const def = getWorkflowDefinition(request.workflowKey);
     if (!def) return refuse('WORKFLOW_NOT_ALLOWED', request.rpcId);
     // A data part supplies only the inputs the workflow DECLARES. Anything else
@@ -353,7 +419,7 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
 
     const agent = await runInTenantContext(sys, (db) =>
         db.registeredAgent.findFirst({
-            where: { id: credential.receivingAgentId, tenantId: tenant.id, deletedAt: null },
+            where: { id: grants.receivingAgentId, tenantId: tenant.id, deletedAt: null },
             select: { id: true, status: true, riskTier: true },
         }),
     );
@@ -363,13 +429,13 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
 
     let principal;
     try {
-        principal = await resolveTenantContext({ tenantId: tenant.id }, peer.ownerUserId);
+        principal = await resolveTenantContext({ tenantId: tenant.id }, grants.ownerUserId);
     } catch {
         return refuse('OWNER_UNRESOLVED', request.rpcId);
     }
     const ctx: RequestContext = {
         requestId: req.requestId,
-        userId: peer.ownerUserId,
+        userId: grants.ownerUserId,
         actorType: 'SYSTEM',
         tenantId: tenant.id,
         tenantSlug: tenant.slug,
@@ -377,7 +443,10 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
         permissions: principal.permissions,
         appPermissions: principal.appPermissions,
         agentId: agent.id,
-        a2aInbound: { kind: 'PEER', peerId: peer.id, messageId: taskRow.id },
+        a2aInbound:
+            grants.kind === 'PEER'
+                ? { kind: 'PEER', peerId: grants.id, messageId: grants.recordId }
+                : { kind: 'HOST_CONSUMER', hostConsumerId: grants.id, messageId: grants.recordId },
     };
 
     // THE TASK IS DATA. Its text travels inside an envelope that labels it
@@ -394,7 +463,11 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
             source: A2A_PEER_TASK_SOURCE,
             provenance,
             mayCarryInstruction: mayCarryInstruction(provenance),
-            peerId: peer.id,
+            // A PEER's envelope keeps `peerId` exactly as it was — this field
+            // is part of the run input a model and `contextJson` both see, so
+            // renaming it would change the peer contract. A host consumer gets
+            // its own key rather than borrowing that one.
+            ...(grants.kind === 'PEER' ? { peerId: grants.id } : { hostConsumerId: grants.id }),
             messageId: request.messageId,
             contextId: request.contextId,
             text: request.text,
@@ -413,16 +486,17 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
 
     await appendAuditEntryOrQueue({
         tenantId: tenant.id,
-        userId: peer.ownerUserId,
+        userId: grants.ownerUserId,
         actorType: 'SYSTEM',
-        entity: 'PeerAgent',
-        entityId: peer.id,
-        action: 'PEER_AGENT_TASK_ADMITTED',
+        entity: grants.kind === 'PEER' ? 'PeerAgent' : 'HostConsumer',
+        entityId: grants.id,
+        action: grants.kind === 'PEER' ? 'PEER_AGENT_TASK_ADMITTED' : 'HOST_CONSUMER_TASK_ADMITTED',
         requestId: req.requestId,
         detailsJson: {
             category: 'access',
-            peerId: peer.id,
-            receiptId: taskRow.id,
+            principalKind: grants.kind,
+            principalId: grants.id,
+            recordId: grants.recordId,
             messageId: request.messageId,
             runId: started.runId,
             workflowKey: request.workflowKey,
