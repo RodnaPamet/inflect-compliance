@@ -117,7 +117,9 @@ describe('ConnectedIdentityAccount.protectionReason round-trips through the midd
         const data: Record<string, unknown> = { protectionReason: "Ada's break-glass admin, do not disable" };
         encryptDataNode(data, 'ConnectedIdentityAccount', null);
         expect(isEncryptedValue(data.protectionReason as string)).toBe(true);
-        expect(data.protectionReason as string).not.toContain('Ada');
+        // A needle base64 cannot spell: three letters alone turn up in random
+        // ciphertext about once in three thousand runs, and did.
+        expect(data.protectionReason as string).not.toContain("Ada's");
     });
 
     it('decrypts on read, recovering the original text', () => {
@@ -175,7 +177,7 @@ describe('DataSubjectRequest free text round-trips through the middleware', () =
         };
         encryptDataNode(data, 'DataSubjectRequest', null);
         expect(isEncryptedValue(data.rejectionReason as string)).toBe(true);
-        expect(data.rejectionReason as string).not.toContain('Ada');
+        expect(data.rejectionReason as string).not.toContain('Ada Lovelace');
         expect(data.rejectionReason as string).not.toContain('acme.com');
     });
 
