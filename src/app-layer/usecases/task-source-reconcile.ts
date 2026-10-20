@@ -710,13 +710,6 @@ async function reconcilePolicyReview(
 // (the real expiry): only a genuine re-upload / extension moves that, so
 // the sweep correctly re-raises if the evidence is still expiring.
 
-const EVIDENCE_CADENCE_DAYS: Record<string, number> = {
-    MONTHLY: 30,
-    QUARTERLY: 91,
-    SEMI_ANNUALLY: 182,
-    ANNUALLY: 365,
-};
-
 async function reconcileEvidenceExpiry(
     db: PrismaTx,
     ctx: RequestContext,
@@ -744,8 +737,14 @@ async function reconcileEvidenceExpiry(
     }
 
     const now = new Date();
-    const cadenceDays = evidence.reviewCycle ? EVIDENCE_CADENCE_DAYS[evidence.reviewCycle] : undefined;
-    const nextReviewDate = cadenceDays ? new Date(now.getTime() + cadenceDays * 86_400_000) : undefined;
+    // THROUGH `computeNextDueAt`, not a day count of our own (#3802). This file
+    // used to hold `{MONTHLY: 30, QUARTERLY: 91, SEMI_ANNUALLY: 182, ANNUALLY:
+    // 365}` and add it as milliseconds — the same shape of table #3136 deleted
+    // from `automation-runner.ts`, doing the same job for evidence instead of
+    // controls, and disagreeing with it: 31 January + MONTHLY was 2 March here
+    // and 28 February there. A review cycle is a calendar obligation, so the
+    // date has to clamp to month end rather than count flat days.
+    const nextReviewDate = computeNextDueAt(evidence.reviewCycle, now) ?? undefined;
 
     if (nextReviewDate) {
         await db.evidence.update({
