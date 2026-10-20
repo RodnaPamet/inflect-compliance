@@ -459,6 +459,67 @@ describe('computeNextRun', () => {
     it('adds 1 month for any unrecognised cadence (else default)', () => {
         expect(computeNextRun('NONSENSE', from).toISOString()).toBe('2026-02-15T00:00:00.000Z');
     });
+
+    /**
+     * ═══ MONTH END, WHICH NOTHING COVERED (#3802) ═══
+     *
+     * The four cases above all start on the 15th, so none of them could see the
+     * bug: this used a bare `setUTCMonth`, and a bare `setUTCMonth` OVERFLOWS
+     * instead of clamping. 31 January + 1 month returned 3 MARCH.
+     *
+     * The consequence was not a one-off off-by-two. `report-delivery-jobs.ts`
+     * recomputes from the run instant, so after one roll a month-end schedule
+     * permanently became a 3rd-of-month schedule — and February, having no
+     * 31st and now no 3rd-of-month row either, got no report at all while the
+     * UI went on stating the schedule the user had declared.
+     */
+    describe('clamps to month end rather than overflowing into the next month', () => {
+        it('31 January + MONTHLY is 28 February, not 3 March', () => {
+            expect(computeNextRun('MONTHLY', new Date('2026-01-31T00:00:00.000Z')).toISOString()).toBe(
+                '2026-02-28T00:00:00.000Z',
+            );
+        });
+
+        it('and 29 February in a leap year', () => {
+            expect(computeNextRun('MONTHLY', new Date('2028-01-31T00:00:00.000Z')).toISOString()).toBe(
+                '2028-02-29T00:00:00.000Z',
+            );
+        });
+
+        it('31 January + QUARTERLY is 30 April, not 1 May', () => {
+            expect(computeNextRun('QUARTERLY', new Date('2026-01-31T00:00:00.000Z')).toISOString()).toBe(
+                '2026-04-30T00:00:00.000Z',
+            );
+        });
+
+        it('31 May + MONTHLY is 30 June, not 1 July', () => {
+            expect(computeNextRun('MONTHLY', new Date('2026-05-31T00:00:00.000Z')).toISOString()).toBe(
+                '2026-06-30T00:00:00.000Z',
+            );
+        });
+
+        it('keeps the day when the target month HAS it — the control', () => {
+            // Without this, every assertion above is satisfied by a function
+            // that always returns the last day of the month.
+            expect(computeNextRun('MONTHLY', new Date('2026-03-30T00:00:00.000Z')).toISOString()).toBe(
+                '2026-04-30T00:00:00.000Z',
+            );
+            expect(computeNextRun('MONTHLY', new Date('2026-03-15T00:00:00.000Z')).toISOString()).toBe(
+                '2026-04-15T00:00:00.000Z',
+            );
+        });
+
+        it('stays an exact UTC instant, so a DST boundary cannot move the day', () => {
+            // The reason `risk-report` uses the UTC-clamped sibling rather than
+            // `computeNextDueAt`: a schedule row is an instant the delivery job
+            // claims with `nextRunAt <= now`. Through the wall-clock path this
+            // returned 2026-04-14T23:00:00Z — a schedule set for the 15th
+            // becoming claimable on the 14th.
+            const r = computeNextRun('QUARTERLY', new Date('2026-01-15T00:00:00.000Z'));
+            expect(r.toISOString()).toBe('2026-04-15T00:00:00.000Z');
+            expect(r.getUTCHours()).toBe(0);
+        });
+    });
 });
 
 // ── createSchedule: validation + defaulting ──────────────────────────────

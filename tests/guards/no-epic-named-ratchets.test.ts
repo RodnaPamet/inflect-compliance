@@ -426,7 +426,25 @@ describe('epic-named ratchets are not added back', () => {
         // neither reads a foreign key — which is exactly how four "retained"
         // access-review tables were cascaded away by the purge of their
         // campaign while both stayed green (#3716).
-        expect(guardFiles().length).toBeLessThan(792);
+        //
+        // RAISED 792 -> 793 on 2026-10-20, for ONE file, the same test:
+        // `cadence-has-one-home` is named for its invariant — cadence
+        // arithmetic happens in `utils/cadence.ts` and nowhere else, which that
+        // module has DECLARED since #3136 ("THE ONE PLACE THIS IS DECIDED")
+        // with nothing asserting it. By #3802 two files had drifted back out:
+        // `risk-report.ts` advanced schedules with a bare `setUTCMonth`, the
+        // overflow that header calls "the bug", and `task-source-reconcile.ts`
+        // had re-grown the flat day table #3136 deleted.
+        //
+        // It is not folded into `work-overdue-grace-matches-schedule` or
+        // `fan-out-bucket-matches-schedule`: each ties ONE constant to ONE
+        // schedule by reading two named files, whereas this walks every `.ts`
+        // under `src/` for a CLASS of arithmetic and carries the carve-out for
+        // the runner's lookback window. Nor into `external-write-clamp-is-pinned`,
+        // where #3797 put the grant-cap-to-review tie — that guard's subject is
+        // the external-write ladder over two named files, and widening it to a
+        // repo-wide walk is how a guard's name stops describing it.
+        expect(guardFiles().length).toBeLessThan(793);
     });
 
     /**

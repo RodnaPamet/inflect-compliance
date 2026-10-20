@@ -25,6 +25,7 @@ import {
     MAX_EMAIL_ATTACHMENT_BYTES,
 } from './report-recipients';
 import { buildTailByRisk } from '@/lib/risk/per-risk-results';
+import { addMonthsClampedUtc } from '../utils/cadence';
 
 export type ReportFormat = 'PDF' | 'CSV' | 'PPTX';
 
@@ -287,13 +288,36 @@ export async function listReports(ctx: RequestContext, opts: { limit?: number } 
 
 // ── Schedules ─────────────────────────────────────────────────────────
 
-/** Next run instant for a cadence (pure). */
+/**
+ * Next run instant for a cadence (pure).
+ *
+ * THROUGH `computeNextDueAt`, not month arithmetic of its own (#3802). This
+ * used a bare `setUTCMonth(getUTCMonth() + n)`, which is the overflow
+ * `utils/cadence.ts` exists to prevent and names in its own header as "the
+ * bug": 31 January + 1 month landed on 3 MARCH. A month-end monthly schedule
+ * therefore became a 3rd-of-month schedule after one roll and February got no
+ * report at all, while the UI went on stating the schedule the user declared.
+ *
+ * STAYS IN UTC. `cadence.ts`'s `computeNextDueAt` is wall-clock on purpose — a
+ * due date is a date a human reads off a calendar — but a schedule row is an
+ * INSTANT that `report-delivery-jobs.ts` claims with `nextRunAt <= now`.
+ * Measured: routing this through the wall-clock path moved a 15 January 00:00Z
+ * quarterly schedule to 14 April 23:00Z, i.e. a schedule set for the 15th
+ * became claimable on the 14th. So this uses the UTC-clamped sibling, and the
+ * clamp — the part that was actually broken — is still defined once.
+ *
+ * MONTHLY remains the default for an unrecognised cadence, as before: a
+ * schedule must get SOME next run rather than none.
+ */
 export function computeNextRun(cadence: string, from: Date): Date {
-    const d = new Date(from);
-    if (cadence === 'WEEKLY') d.setUTCDate(d.getUTCDate() + 7);
-    else if (cadence === 'QUARTERLY') d.setUTCMonth(d.getUTCMonth() + 3);
-    else d.setUTCMonth(d.getUTCMonth() + 1); // MONTHLY default
-    return d;
+    if (cadence === 'WEEKLY') {
+        const d = new Date(from);
+        d.setUTCDate(d.getUTCDate() + 7);
+        return d;
+    }
+    // MONTHLY is the default for an unrecognised cadence, preserved from the
+    // original: a schedule must get SOME next run rather than none.
+    return addMonthsClampedUtc(from, cadence === 'QUARTERLY' ? 3 : 1);
 }
 
 export interface CreateScheduleInput { templateId: string; cadence: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY'; format?: ReportFormat; recipients: string[]; parameters?: ReportParameters; deliveryDay?: number; sharePointDriveId?: string | null; sharePointFolderId?: string | null }
