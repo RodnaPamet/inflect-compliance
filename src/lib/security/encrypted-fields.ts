@@ -507,6 +507,24 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // ids, a digest, timestamps and the two parties, so a receipt can be listed
     // and its signature checked without the key.
     PeerAgentMessage: ['body'],
+    // A host consumer's request record (#3861) — the same bytes problem as
+    // `PeerAgentMessage.body` and encrypted for the same reason: the request a
+    // third-party host sent, carrying whatever the customer's own SAP data
+    // contains (names, usernames, order values). Never sanitised, because
+    // `bodyDigest` is kept to prove these are the bytes that arrived, and never
+    // rendered. Not used in any WHERE/orderBy — reads are by (tenantId,
+    // hostConsumerId, createdAt) or runId. `clientId` and `tokenJti` stay
+    // plaintext deliberately: they are the attribution a call is read by, and
+    // they are not the customer's data.
+    //
+    // WHAT THIS IS NOT. A peer's row proves authorship by a key its holder
+    // cannot repudiate. This one proves what arrived and under which token.
+    // Encrypting it does not close that gap — threat-model R12 is open on this
+    // path by owner decision (#3860).
+    HostConsumerMessage: ['body'],
+    // A kill's prose, as `PeerAgentKillSwitch` has it: a person's words about
+    // why an integration was stopped, which routinely name the incident.
+    HostConsumerKillSwitch: ['reason', 'liftReason'],
     // The tenant's own A2A signing key (#3679, owner decision 2026-10-19): the
     // 32-byte Ed25519 seed, wrapped by the tenant DEK here and nowhere else. It
     // is read only by `resolveTenantA2aSigningKey` to sign, never returned by a
