@@ -44,13 +44,7 @@ import { NextRequest } from 'next/server';
 import * as route from '@/app/api/t/[tenantSlug]/assistant/stream/route';
 import { __resetStreamCapacity, MAX_STREAMS_PER_TENANT } from '@/app-layer/ai/assistant/stream-capacity';
 import type { AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
-import { readFileSync } from 'node:fs';
-import nodePath from 'node:path';
 
-const ROUTE_FILE = nodePath.join(
-    process.cwd(),
-    'src/app/api/t/[tenantSlug]/assistant/stream/route.ts',
-);
 
 /** Drain an SSE body into the parsed `data:` payloads, ignoring comments. */
 async function collect(res: Response): Promise<AssistantStreamEvent[]> {
@@ -202,40 +196,72 @@ describe('the concurrent-stream cap refuses the N+1', () => {
 
 describe('the heartbeat does not hold the process open', () => {
     /**
-     * A regression assertion for a failure whose only symptom was a timeout.
+     * A regression test for a failure whose only symptom was a timeout.
      *
      * CI shard 4/6 passed all 5305 of its tests and then sat for 21 minutes
      * until the job was cancelled. The single diagnostic line was "Jest did
-     * not exit one second after the test run has completed" — no failing
-     * assertion, no stack, and a green test summary immediately above it. The
-     * cause was this route's 25-second heartbeat interval: a test that opens
-     * the stream without draining it to completion never reaches `cleanup`,
-     * so the timer stayed ref'd and held Node's event loop.
+     * not exit one second after the test run has completed", printed under a
+     * green summary — no failing assertion and no stack. The cause was this
+     * route's 25-second heartbeat: a caller that opens the stream without
+     * draining it never reaches `cleanup`, so `clearInterval` never runs and
+     * the ref'd timer holds Node's event loop.
      *
-     * Asserted on the SOURCE because the alternative does not discriminate.
-     * `process.getActiveResourcesInfo()` reports a `Timeout` for every timer
-     * in the worker — jest's own, the test environment's, any other module's
-     * — so a count cannot say whose timer it saw, and an assertion that
-     * cannot name the subject would pass with this bug reintroduced.
+     * ═══ WHY THIS SPIES RATHER THAN COUNTING OR READING SOURCE ═══
+     *
+     * `process.getActiveResourcesInfo()` reports a bare `Timeout` for every
+     * timer in the worker — jest's own, the environment's, any other module's
+     * — so a count cannot say WHOSE timer it saw. An assertion that cannot
+     * name its subject would keep passing with the bug reintroduced.
+     *
+     * Reading the route's source would name the subject, but only by text:
+     * it asserts that a character sequence is present, not that the timer is
+     * actually unref'd, and it would go stale the moment the heartbeat moved
+     * behind a helper.
+     *
+     * The spy names the subject exactly — timers created DURING this route
+     * call — and asserts the property that matters rather than the spelling
+     * of it.
      */
-    it("unrefs every interval it starts, so a stream can't delay exit", () => {
-        const src = readFileSync(ROUTE_FILE, 'utf8');
+    it("unrefs the interval it starts, so an open stream can't delay exit", async () => {
+        const created: Array<{ unrefCalled: boolean }> = [];
+        const realSetInterval = globalThis.setInterval;
 
-        // The denominator: if the route stops using an interval at all, this
-        // assertion must not keep passing by finding nothing to check.
-        const intervals = [...src.matchAll(/setInterval\(/g)];
-        expect(intervals.length).toBe(1);
+        const spy = jest
+            .spyOn(globalThis, 'setInterval')
+            .mockImplementation(((fn: () => void, ms?: number) => {
+                const timer = realSetInterval(fn, ms);
+                const record = { unrefCalled: false };
+                created.push(record);
+                const realUnref = timer.unref.bind(timer);
+                timer.unref = () => {
+                    record.unrefCalled = true;
+                    return realUnref();
+                };
+                // Stop it firing for real — this test is about the ref, and a
+                // live 25-second heartbeat would outlast the assertion.
+                clearInterval(timer);
+                return timer;
+            }) as unknown as typeof globalThis.setInterval);
 
-        expect(src).toMatch(/heartbeat\.unref\?\.\(\)/);
+        try {
+            await route.POST(request() as never, undefined as never);
+        } finally {
+            spy.mockRestore();
+        }
+
+        // The denominator: if the route stops creating an interval, this test
+        // must fail rather than pass by having nothing to check.
+        expect(created.length).toBeGreaterThanOrEqual(1);
+        expect(created.every((t) => t.unrefCalled)).toBe(true);
     });
 
-    it('the assertion can fail — a ref\'d interval is detected', () => {
-        // Positive control. Without it, a typo in the pattern above would
-        // make the check vacuous in exactly the way it is meant to prevent.
-        const refd = "const heartbeat = setInterval(fn, 25_000);\n";
-        expect(refd).not.toMatch(/heartbeat\.unref\?\.\(\)/);
-
-        const unrefd = refd + 'heartbeat.unref?.();\n';
-        expect(unrefd).toMatch(/heartbeat\.unref\?\.\(\)/);
+    it('the assertion can fail — an interval left ref\'d is detected', () => {
+        // Positive control for the shape above. Without it, a spy that never
+        // recorded anything would make `every` pass over an empty-ish set in
+        // exactly the way this test exists to prevent.
+        const refd = [{ unrefCalled: false }];
+        const unrefd = [{ unrefCalled: true }];
+        expect(refd.every((t) => t.unrefCalled)).toBe(false);
+        expect(unrefd.every((t) => t.unrefCalled)).toBe(true);
     });
 });
