@@ -968,6 +968,32 @@ export const RESET_TABLES: readonly string[] = [
     // membership or a connection in `beforeAll`. See the docblock above.
     'TenantMembership',
     'IntegrationConnection',
+    //
+    // `Employee` is the same shape and was found the same way (#3801). Its only
+    // relations are `tenant` and a self-relation (`manager`/`reports`), so it
+    // hangs off `Tenant` alone and survived every reset.
+    //
+    // What that cost: `tests/integration/legacy-adjudication.test.ts` passes on
+    // a clean table and fails on a re-run — 14 pass leaving 2 `Employee` rows
+    // behind, then the second run fails all 14 on
+    // `Employee_tenantId_workEmail_key`, because the suite's fixtures use a
+    // FIXED `workEmail`.
+    //
+    // Why CI stayed green is NOT that it was immune. The Test shards run
+    // `jest --runInBand`, and the per-worker cloning below gates on
+    // `maxWorkers > 1`, so CI is on the shared base DB: a row left by one
+    // suite is still there for the next one in the same shard. What saved it
+    // is only that no two suites collide on the same `(tenantId, workEmail)` —
+    // and `--shard=K/N` re-groups files as they are added, so that is luck
+    // with a moving denominator, not a property. A new database per CI run is
+    // what stops it ACCUMULATING; locally the database persists, which is why
+    // re-running one suite fires it immediately and is how it was found.
+    //
+    // Safe for the same measured reason as the two above, re-measured for this
+    // table on 2026-10-20: of 88 files using this helper, 3 reset inside
+    // `beforeEach`, and none of those creates an `Employee` in `beforeAll`.
+    // 15 suites create one; all of them create it after the reset.
+    'Employee',
     'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
     'EvidenceReview', 'Evidence', 'FileRecord',
     'ControlRequirementLink',
