@@ -4,7 +4,8 @@
  * ONE A2A PEER (#3679): what admits it, what stops it, how it may reach this
  * organisation, and what it has exchanged with it.
  *
- *   Overview     pin and card state, the peer's own key id, the inbound quota
+ *   Overview     pin and card state, reading and approving the live card, the
+ *                peer's own key id, its risk tier and the inbound quota
  *   Kill switch  stop or resume traffic in both directions, with a reason
  *   Credential   the one live inbound credential: issue (token shown once) and revoke
  *
@@ -43,6 +44,12 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { peerCardState, peerPinState } from '../peer-state';
+import { PeerCardReview } from './PeerCardReview';
+
+/** `UpdatePeerAgentSchema`'s risk tiers; `null` withdraws a score. */
+const PEER_RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
+type PeerRiskTier = (typeof PEER_RISK_TIERS)[number];
+const UNSCORED = 'UNSCORED';
 
 /** The quota's bounds, as `UpdatePeerAgentSchema` and the CHECK hold them. */
 const QUOTA_MIN = 1;
@@ -63,6 +70,8 @@ export interface PeerDetail {
         observedCardHash: string | null;
         observedAt: string | null;
         inboundMessagesPerHour: number;
+        /** `null` is unscored, which admission refuses. Optional for a caller that predates it. */
+        riskTier?: PeerRiskTier | null;
     };
     credential: {
         live: {
@@ -194,30 +203,46 @@ function OverviewTab({ detail, canManage }: { detail: PeerDetail; canManage: boo
     const toast = useToast();
     const { peer } = detail;
     const [quota, setQuota] = useState(peer.inboundMessagesPerHour);
+    const storedTier = peer.riskTier ?? UNSCORED;
+    const [tier, setTier] = useState<string>(storedTier);
     const [busy, setBusy] = useState(false);
     const card = peerCardState(peer);
+    const tierOptions: ComboboxOption[] = [UNSCORED, ...PEER_RISK_TIERS].map((v) => ({
+        value: v,
+        label: t(`peers.detail.riskTierValue.${v}`),
+    }));
 
-    const saveQuota = async () => {
+    /** One PATCH, for the quota or the risk tier: the route takes either. */
+    const patch = async (body: Record<string, unknown>, saved: string, failed: string) => {
         setBusy(true);
         try {
             const res = await fetch(apiUrl(`/admin/agents/peers/${peer.id}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ inboundMessagesPerHour: quota }),
+                body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const body = await res.json().catch(() => null);
-                toast.error(apiErrorMessage(body, t('peers.detail.quotaFailed')));
+                const json = await res.json().catch(() => null);
+                toast.error(apiErrorMessage(json, failed));
                 return;
             }
-            toast.success(t('peers.detail.quotaSaved'));
+            toast.success(saved);
             router.refresh();
         } catch {
-            toast.error(t('peers.detail.quotaFailed'));
+            toast.error(failed);
         } finally {
             setBusy(false);
         }
     };
+
+    const saveQuota = () =>
+        patch({ inboundMessagesPerHour: quota }, t('peers.detail.quotaSaved'), t('peers.detail.quotaFailed'));
+    const saveTier = () =>
+        patch(
+            { riskTier: tier === UNSCORED ? null : tier },
+            t('peers.detail.riskTierSaved'),
+            t('peers.detail.riskTierFailed'),
+        );
 
     return (
         <div className="space-y-section" data-testid="peer-overview">
@@ -255,6 +280,36 @@ function OverviewTab({ detail, canManage }: { detail: PeerDetail; canManage: boo
                         )}
                     </Fact>
                 </dl>
+            </Card>
+            <PeerCardReview peerId={peer.id} retired={peer.status === 'RETIRED'} canManage={canManage} />
+            <Card className="space-y-default" data-testid="peer-risk-tier">
+                <FormField label={t('peers.detail.riskTierLabel')} description={t('peers.detail.riskTierHint')}>
+                    <Combobox
+                        hideSearch
+                        id="peer-risk-tier-select"
+                        options={tierOptions}
+                        selected={tierOptions.find((o) => o.value === tier) ?? null}
+                        setSelected={(o) => o && setTier(o.value)}
+                        disabled={!canManage || busy}
+                        matchTriggerWidth
+                        buttonProps={{ className: 'w-full max-w-xs' }}
+                        caret
+                    />
+                </FormField>
+                {canManage ? (
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void saveTier()}
+                        disabled={busy || tier === storedTier}
+                        data-testid="peer-risk-tier-save"
+                    >
+                        {t('peers.detail.riskTierSave')}
+                    </Button>
+                ) : (
+                    <p className="text-xs text-content-muted">{t('peers.detail.riskTierReadOnly')}</p>
+                )}
             </Card>
             <Card className="space-y-default" data-testid="peer-quota">
                 <FormField

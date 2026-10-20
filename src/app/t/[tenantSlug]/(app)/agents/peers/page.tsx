@@ -3,6 +3,8 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { listPeerAgents } from '@/app-layer/usecases/peer-agents';
 import { getTenantA2aSigningKeys } from '@/app-layer/usecases/a2a-signing-key';
+import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
+import { listVendors } from '@/app-layer/usecases/vendor';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 
@@ -34,7 +36,15 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
         return <ForbiddenPage title={t('register.accessTitle')} message={t('register.accessMessage')} />;
     }
 
-    const [peers, keys] = await Promise.all([listPeerAgents(ctx), getTenantA2aSigningKeys(ctx)]);
+    // The registration form's pickers (#3807). Best-effort, as on the agent
+    // page: a reader who may register but not list suppliers gets an empty
+    // picker and the usecase's refusal, rather than no page at all.
+    const [peers, keys, owners, vendors] = await Promise.all([
+        listPeerAgents(ctx),
+        getTenantA2aSigningKeys(ctx),
+        listAssignableUsers(ctx).catch(() => []),
+        listVendors(ctx, {}, { take: 200 }).catch(() => []),
+    ]);
 
     const rows: PeerRow[] = peers.map((p) => ({
         id: p.id,
@@ -67,6 +77,11 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
             signingKey={signingKey}
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
+            owners={owners.map((m: { id: string; name: string | null; email: string }) => ({
+                id: m.id,
+                label: m.name ?? m.email,
+            }))}
+            vendors={vendors.map((v: { id: string; name: string }) => ({ id: v.id, label: v.name }))}
         />
     );
 }

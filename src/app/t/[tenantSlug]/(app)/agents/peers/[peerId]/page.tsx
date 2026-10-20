@@ -72,6 +72,7 @@ export default async function PeerDetailPage({
             observedCardHash: peer.observedCardHash,
             observedAt: iso(peer.observedAt),
             inboundMessagesPerHour: peer.inboundMessagesPerHour,
+            riskTier: peer.riskTier,
         },
         credential: {
             live: credential.credential

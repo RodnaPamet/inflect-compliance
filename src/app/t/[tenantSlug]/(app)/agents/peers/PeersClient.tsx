@@ -5,19 +5,23 @@
  * exchanges tasks with, and the tenant's own signing key above them.
  *
  * Read-only at the row level: a row opens the peer, where its kill switch,
- * inbound credential, quota and signed receipts live. Registering a peer and
- * approving its card stay the API's (`/admin/agents/peers`, step 2e) — this
- * page shows what admits a peer and what stops one.
+ * inbound credential, quota, card review and signed receipts live. The header's
+ * Peer button opens the registration form above the list (#3807); a peer it
+ * registers is refused until a person approves its card on the peer's page,
+ * which is where the form lands.
  *
  * The CARD column reads the stored last observation, not the live card, and
  * the column says which: admission never trusts the stored hash, it reads the
  * live card before every message (`admitPeerMessage`).
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Globe } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from 'lucide-react';
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/hooks';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
@@ -26,6 +30,7 @@ import { createColumns } from '@/components/ui/table';
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { buildPeerFilters, PEER_FILTER_KEYS } from './filter-defs';
 import { peerCardState, peerPinState } from './peer-state';
+import { RegisterPeerForm, type PeerChoice, type RegisteredPeer } from './RegisterPeerForm';
 import { SigningKeyPanel, type SigningKeyView } from './SigningKeyPanel';
 
 export interface PeerRow {
@@ -45,6 +50,10 @@ interface Props {
     signingKey: SigningKeyView;
     canReviewProposals: boolean;
     canCompose: boolean;
+    /** Active members, who may answer for a peer. */
+    owners?: PeerChoice[];
+    /** The tenant's suppliers; a peer belongs to one. */
+    vendors?: PeerChoice[];
 }
 
 const STATUS_VARIANT: Record<PeerRow['status'], StatusBadgeVariant> = {
@@ -89,7 +98,15 @@ export function PeersClient(props: Props) {
     );
 }
 
-function PeersInner({ tenantSlug, initialRows, signingKey, canReviewProposals, canCompose }: Props) {
+function PeersInner({
+    tenantSlug,
+    initialRows,
+    signingKey,
+    canReviewProposals,
+    canCompose,
+    owners = [],
+    vendors = [],
+}: Props) {
     // `useGuardedPush`, not `router.push`: a cold row click during hydration
     // can have its transition dropped by the client router (#3099).
     const guardedPush = useGuardedPush();
@@ -183,6 +200,23 @@ function PeersInner({ tenantSlug, initialRows, signingKey, canReviewProposals, c
         [t],
     );
 
+    const toast = useToast();
+    const [registering, setRegistering] = useState(false);
+    const onRegistered = useCallback(
+        (registered: RegisteredPeer) => {
+            // The peer is refused until its card is approved, which is done on
+            // its page — so that is where the form lands.
+            toast.success(
+                registered.card.readable
+                    ? t('peers.register.done', { name: registered.peer.name })
+                    : t('peers.register.doneCardUnreadable', { name: registered.peer.name }),
+            );
+            setRegistering(false);
+            guardedPush(`/t/${tenantSlug}/agents/peers/${registered.peer.id}`);
+        },
+        [guardedPush, t, tenantSlug, toast],
+    );
+
     const handleRowClick = useCallback(
         (row: { original: PeerRow }) => guardedPush(`/t/${tenantSlug}/agents/peers/${row.original.id}`),
         [guardedPush, tenantSlug],
@@ -206,8 +240,34 @@ function PeersInner({ tenantSlug, initialRows, signingKey, canReviewProposals, c
                     </>
                 ),
                 description: t('peers.description'),
+                actions: (
+                    // Secondary: the form it opens carries the submit, and the
+                    // list's own content is read-only.
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Plus className="h-4 w-4" />}
+                        onClick={() => setRegistering(true)}
+                        disabled={registering}
+                        data-testid="peer-register-open"
+                    >
+                        {t('peers.register.open')}
+                    </Button>
+                ),
             }}
-            banner={<SigningKeyPanel view={signingKey} />}
+            banner={
+                <div className="space-y-default">
+                    {registering && (
+                        <RegisterPeerForm
+                            owners={owners}
+                            vendors={vendors}
+                            onRegistered={onRegistered}
+                            onCancel={() => setRegistering(false)}
+                        />
+                    )}
+                    <SigningKeyPanel view={signingKey} />
+                </div>
+            }
             filters={{
                 defs: filterDefs,
                 searchId: 'peers-search',
