@@ -200,13 +200,20 @@ function testTree(): string {
     if (testTreeBlob === null) {
         testTreeBlob = repoFiles({ under: 'tests', extensions: ['.ts', '.tsx'] })
             .map((f) => fs.readFileSync(f, 'utf-8'))
+            // Joined WITH a separator: a span must sit inside one file, not
+            // straddle the boundary between two.
             .join('\n');
     }
     return testTreeBlob;
 }
 
 /**
- * The floor. 259 of 285 spans resolved when this was written (#3794).
+ * The floor. 260 of 285 spans resolve, measured — NO SLACK, deliberately.
+ *
+ * It was 259 for an hour, from a measurement taken with the file blob joined
+ * without separators, and that one-space slack made the ratchet useless: a
+ * genuine deletion would have left 259 >= 259 and passed. A gate set one below
+ * its subject cannot fire, and it took trying to break it to notice (#3794).
  *
  * A RATCHET rather than an equality, because the 26 that do not resolve are
  * code and prose and always will be. It may only be LOWERED in a diff that
@@ -214,7 +221,7 @@ function testTree(): string {
  * not happen when #3535 retired the Laya provider and deleted four tests that
  * three ticked criteria cited by name.
  */
-const RESOLVING_CITATIONS_FLOOR = 259;
+const RESOLVING_CITATIONS_FLOOR = 260;
 
 describe('the recert phases table stores no derived status', () => {
     it('finds the tables it is meant to be checking', () => {
