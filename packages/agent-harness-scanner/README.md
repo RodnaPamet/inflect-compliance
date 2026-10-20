@@ -582,7 +582,10 @@ Inflect's own estate, whose scanner runs on the production VM (owner decision,
 (`.github/workflows/scanner-image.yml`) builds it, runs the smoke test and the
 Trivy gate below, then pushes it to the repository's private GHCR package as
 `ghcr.io/rodnapamet/agent-harness-scanner:sha-<commit>`. It reports the digest,
-which is what a deployment pins. It has no `:latest` tag.
+which is what a deployment pins. It has no `:latest` tag. On the production VM
+it runs from the opt-in Compose overlay `deploy/docker-compose.harness-scanner.yml`.
+The pilot estate's configuration and environment-file templates are in
+`deploy/harness-scanner/`, and the overlay's header lists the preconditions.
 
 ```bash
 docker build -f packages/agent-harness-scanner/Dockerfile -t agent-harness-scanner .

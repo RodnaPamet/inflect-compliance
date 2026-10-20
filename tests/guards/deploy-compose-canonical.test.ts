@@ -34,6 +34,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'js-yaml';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -242,6 +243,71 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
         expect(
             canonicalVolumes.filter((v) => v.includes('pipelock')),
         ).toEqual([]);
+    });
+});
+
+/**
+ * The harness scanner's overlay (#3665): Inflect's own estate scanned from the
+ * production VM. Parsed as YAML, so each assertion is on a value the service
+ * actually has rather than on the file's text.
+ *
+ * Each property here is one a "make it start" edit would plausibly undo, and
+ * none of them fails at `up`: an `env_file` of `.env.prod` hands the scanner the
+ * master encryption key; a tag instead of a digest, or a Watchtower label, lets
+ * the image change underneath the pin; a dropped hardening line goes unnoticed
+ * because the scanner runs the same either way.
+ */
+describe('deploy compose — the harness scanner stays in its own overlay, pinned and narrowed', () => {
+    const SCANNER_OVERLAY = 'deploy/docker-compose.harness-scanner.yml';
+    type Service = {
+        image?: string;
+        user?: string;
+        read_only?: boolean;
+        cap_drop?: string[];
+        security_opt?: string[];
+        env_file?: string[];
+        environment?: unknown;
+        volumes?: string[];
+        ports?: unknown;
+        expose?: unknown;
+        labels?: unknown;
+        command?: string[];
+    };
+    const doc = yaml.load(read(SCANNER_OVERLAY)) as { services: Record<string, Service> };
+    const svc = doc.services['harness-scanner'];
+
+    it('defines the scanner and nothing else', () => {
+        expect(Object.keys(doc.services)).toEqual(['harness-scanner']);
+    });
+
+    it('pins the published image by digest', () => {
+        expect(svc.image).toMatch(/^ghcr\.io\/rodnapamet\/agent-harness-scanner@sha256:[0-9a-f]{64}$/);
+    });
+
+    it('reads its own environment file, never .env.prod, and interpolates nothing', () => {
+        expect(svc.env_file).toEqual(['./.env.scanner']);
+        expect(svc.environment).toBeUndefined();
+    });
+
+    it('runs read-only, unprivileged, as uid 1000, with every capability dropped', () => {
+        expect(svc.read_only).toBe(true);
+        expect(svc.user).toBe('1000:1000');
+        expect(svc.cap_drop).toEqual(['ALL']);
+        expect(svc.security_opt).toEqual(['no-new-privileges:true']);
+    });
+
+    it('mounts only its configuration directory, read-only', () => {
+        expect(svc.volumes).toEqual(['./harness-scanner:/etc/agent-harness-scanner:ro']);
+    });
+
+    it('serves nothing and is never auto-updated', () => {
+        expect(svc.ports).toBeUndefined();
+        expect(svc.expose).toBeUndefined();
+        expect(svc.labels).toBeUndefined();
+    });
+
+    it('runs the schedule against the mounted configuration', () => {
+        expect(svc.command).toEqual(['schedule', '--config', '/etc/agent-harness-scanner/config.json']);
     });
 });
 
