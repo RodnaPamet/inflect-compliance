@@ -242,6 +242,18 @@ const RICH_TEXT_COVERAGE: Readonly<
  * text — sanitisation does not apply. Each carries a written reason.
  */
 const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
+    HostConsumerMessage:
+        'body is the EXACT JSON-RPC request bytes a host sent (#3861), kept ' +
+        'so the stored body can be proved to be the one that arrived. ' +
+        'Sanitising it would break that proof — bodyDigest would no longer ' +
+        'match — and it is never rendered. The task text inside it reaches a ' +
+        'model only through the inbound provenance envelope, which labels it ' +
+        'third-party and scans it there.',
+    HostConsumerKillSwitch:
+        'reason and liftReason are a person\'s PLAIN-TEXT words about an ' +
+        'incident (#3861), already passed through sanitizePlainText at the ' +
+        'usecase, as PeerAgentKillSwitch is. Not rich text: there is no markup ' +
+        'surface to sanitise.',
     TenantSecuritySettings:
         'auditStreamSecretEncrypted is a system-generated HMAC secret, ' +
         'never user-supplied free text — there is nothing to sanitise.',

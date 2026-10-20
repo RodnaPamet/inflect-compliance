@@ -504,6 +504,16 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #3861 — both host-consumer lists filter on tenantId and sort on a
+    // column whose composite index leads with tenantId.
+    HostConsumer:
+        'listHostConsumers filters by tenantId alone and sorts by createdAt, ' +
+        'bounded at 200 — a tenant holds a handful of these, not a feed.',
+    HostConsumerKillSwitch:
+        'listHostConsumerKills filters by tenantId (optionally plus ' +
+        'hostConsumerId) and sorts by engagedAt, which @@index([tenantId, ' +
+        'engagedAt]) leads; the per-consumer form is served by ' +
+        '@@index([tenantId, hostConsumerId, liftedAt]).',
     // Step #3317 — the retention sweep reads every swept tenant's windows in ONE
     // query, hoisted out of the tenant loop because `query-shape-guardrails`
     // Layer D1 refuses a Prisma read inside one.

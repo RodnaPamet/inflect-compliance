@@ -28,6 +28,25 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /** Models with a dedicated two-tenant BEHAVIOURAL isolation test. */
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
+    // #3861 — all three. The VALUE here is a path, not prose: "every dedicated
+    // isolation-test file exists" resolves it with `exists()`, so a reason
+    // written in this slot would fail that sibling test. What the one file
+    // proves for each:
+    //   HostConsumer            tenant one's token admits nothing in tenant
+    //                           two; a token naming tenant two's id with
+    //                           tenant one's consumer is refused; the token
+    //                           endpoint will not mint across the slug; and
+    //                           rotate, revoke and kill from tenant two all
+    //                           answer not-found.
+    //   HostConsumerMessage     the quota count and the replay unique are both
+    //                           tenant-scoped, exercised while tenant two
+    //                           holds its own consumer.
+    //   HostConsumerKillSwitch  engaging a kill on tenant one's consumer from
+    //                           tenant two is refused, and the uncached
+    //                           resolve is tenant-scoped.
+    HostConsumer: "tests/integration/a2a-host-consumer-admission.test.ts",
+    HostConsumerMessage: "tests/integration/a2a-host-consumer-admission.test.ts",
+    HostConsumerKillSwitch: "tests/integration/a2a-host-consumer-admission.test.ts",
     LegacyAccountResolution: "tests/integration/legacy-reconcile-rls.test.ts",
     LegacyIdentityAlias: "tests/integration/legacy-reconcile-rls.test.ts",
     LegacyMatchVerdict: "tests/integration/legacy-match-verdict-rls.test.ts",

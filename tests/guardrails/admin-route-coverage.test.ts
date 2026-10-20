@@ -30,6 +30,13 @@ import * as path from 'path';
  * Every route file listed here is checked for the centralized admin guard import.
  */
 const ADMIN_ONLY_ROUTES = [
+    // A2A host consumers (#3861). Management is `admin.agent_registry` — a
+    // host consumer is "whom may call us", register-shaped (ADR 0003) — and the
+    // KILL is `admin.agent_kill_switch`, because the register key bundles admit
+    // with suspend and a tenant must be able to delegate STOP without ADMIT.
+    'admin/a2a/host-consumers/route.ts',
+    'admin/a2a/host-consumers/[hostConsumerId]/route.ts',
+    'admin/a2a/host-consumers/[hostConsumerId]/kill/route.ts',
     'admin/calendar/consent/route.ts',
     // Legacy access recertification (Step 2a). Both admin.manage: PUT decides
     // which legacy column means email and which means employeeNumber, and GET
