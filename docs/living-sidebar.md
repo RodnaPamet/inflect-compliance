@@ -19,7 +19,7 @@ evolution:
 - The active row introduces a TWO-TONE state vocabulary: hover
   paints the band in the primary brand (warm yellow/orange);
   active paints it in the cool **SECONDARY** brand (electric blue
-  on METRO, deep navy on PwC).
+  on METRO, deep navy on the light theme).
 - Active labels take their brand colour — yellow on the dark
   theme, orange on the light. The page you're on is unmissable
   from across the desk.
@@ -45,10 +45,10 @@ R12 named-const exports.
 
 R13 introduces five new CSS custom properties — three are new
 brand tokens, two are sidebar-specific decorative tokens. Every
-token is theme-aware (METRO + PwC) and the geometry is locked
+token is theme-aware (METRO and light) and the geometry is locked
 across themes; only the colour/alpha tunes for surface luminance.
 
-| Token | METRO (dark) | PwC (light) | Role |
+| Token | METRO (dark) | Light | Role |
 | --- | --- | --- | --- |
 | `--brand-secondary-default`  | `#3B82F6` (electric blue) | `#1E3A8A` (deep navy) | Active band top stop, future secondary chrome |
 | `--brand-secondary-emphasis` | `#2563EB` | `#172554` | Active band bottom stop |

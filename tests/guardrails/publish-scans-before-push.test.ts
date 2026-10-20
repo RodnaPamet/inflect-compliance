@@ -688,6 +688,10 @@ describe('an image push is gated by a scan that ran before it', () => {
             // site stopped being recognised", which is why the deletion is
             // written down.
             'ghcr-publish.yml:build-push',
+            // TWO again from 2026-10-20: the harness scanner's image, published
+            // by dispatch only and pinned by digest, so Inflect's own estate can
+            // run it on the production VM (owner decision on #3659).
+            'scanner-image.yml:build-scan-push',
         ].sort());
         expect(() => assertPopulation(sites)).not.toThrow();
     });

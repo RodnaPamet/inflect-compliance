@@ -4,9 +4,8 @@ Version **1**, for audit procedure catalogue version **1** (library v1). Step
 `4d` of [the agentic IAM plan](agentic-iam-roadmap.md), issue #3681.
 
 **Addressed to:** the certification body that holds Inflect's ISO/IEC 27001
-certification, for the extension of its work to ISO/IEC 42001. The memo names
-the body once the engagement is confirmed; until then it is addressed to the
-role.
+certification, for the extension of its work to ISO/IEC 42001. It is
+addressed to the role and does not name the body.
 
 **From:** Inflect's second line of defence, which owns and operates the auditor
 agent, with internal audit, which samples its work.
@@ -14,8 +13,14 @@ agent, with internal audit, which samples its work.
 **Status.** The repository owner's merge of the pull request that adds or
 changes this file is the owner's sign-off of that version. The external
 auditor's conclusion on reliance is that auditor's act: it is recorded on issue
-#3681 when given, and as Evidence against each control it covers. None is
-recorded for version 1.
+#3681, and as Evidence against each control it covers. The conclusion on
+version 1 is recorded on #3681, dated 2026-10-20: the external auditor relies
+on the workpapers for every control in scope, for SOC 2 and ISO/IEC 42001, over
+the workpapers written in the pilot period from 2026-10-19 to 2026-10-20, on the
+basis of its own re-performed sample and internal audit's agreement rate. The
+record does not name the audit firm. An editorial change to this memo that
+alters no procedure, control, limit or request does not raise its version;
+replacing a firm's name with its role (2026-10-20) was such a change.
 
 ## What we ask you to rely on
 
@@ -108,10 +113,11 @@ role in the rule, not by name.
 The pack states every limit that applies; it does not decide whether to rely.
 
 - **Library v1 is not an approved or agreed definition.** Internal audit's
-  approval of catalogue version 1 and PwC's agreement of it are open on #3663,
-  and each procedure's PwC methodology reference is open there too. The pack
-  says so as `CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT` and
-  `CATALOGUE_NOT_AGREED_BY_PWC` until both are recorded.
+  approval of catalogue version 1 and the managed-service provider's agreement
+  of it are open on #3663, and each procedure's provider methodology reference
+  is open there too. The pack says so as
+  `CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT` and
+  `CATALOGUE_NOT_AGREED_BY_PROVIDER` until both are recorded.
 - **ISO/IEC 42001 coverage is narrow.** Only `agent.authority_conformance` cites
   an ISO/IEC 42001 Annex A identifier (A.9.4). The other four procedures evidence
   access controls under ISO/IEC 27001:2022 Annex A and SOC 2 CC6.1, which the AI

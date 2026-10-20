@@ -180,7 +180,7 @@ export function MetricCard({
                 // kpi-glow-dim-08 (2026-05-15) — pseudo opacity
                 // multiplier set to 0.8. The R17-PR4 design used
                 // the gradient's natural source alpha (`--brand-
-                // subtle` = 18% METRO / 9% PwC) at full pseudo
+                // subtle` = 18% METRO / 9% light) at full pseudo
                 // opacity. After the hero-glow tightening sweep
                 // (#529/#530/#531) the KPI cards started reading
                 // as the brightest surface on the dashboard; 0.8

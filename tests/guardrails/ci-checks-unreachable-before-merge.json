@@ -88,5 +88,10 @@
         "kind": "never",
         "reason": "Manual dispatch only. It asks a real model to answer each skill's evaluation set using the ANTHROPIC_API_KEY repository secret, which a pull request from a fork must not reach, and a record is a claim about one model revision at one moment rather than about the diff.",
         "coveredBy": "The records it produces are checked at PR time: tests/unit/agentic/skill-mount-gate.test.ts recomputes every committed evaluation-record.json through the mount gate and fails if one no longer passes, and fails if a registered workflow declares a skill the gate refuses. The recorder's grading is the gate's own checkEvaluationRecord, covered by the same suite."
+    },
+    "scanner-image.yml:build-scan-push": {
+        "kind": "never",
+        "reason": "Manual dispatch only. It publishes the harness scanner's image to GHCR by digest for Inflect's own estate on the production VM (owner decision, 2026-10-20), and publishing cannot meaningfully happen from a pull request: a PR's token must not reach `packages: write`.",
+        "coveredBy": "ci.yml `Scanner image` builds the same Dockerfile, runs the same container/smoke.sh and the same blocking Trivy gate on every pull request, unconditionally. tests/guardrails/publish-scans-before-push.test.ts names this job as a push site and requires its blocking Trivy step above every step that can reach a registry. RESIDUAL: the push and the digest read-back run only when somebody dispatches it."
     }
 }

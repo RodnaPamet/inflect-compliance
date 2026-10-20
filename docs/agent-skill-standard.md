@@ -161,8 +161,9 @@ anything reaches the model. The run detail page lists the pin.
 ## Who may author skills
 
 Repository skills are reviewed in the repository, and the repository corpus is
-Inflect-original guidance. Third-party methodology, such as PwC's, enters only
-as skills a tenant authors under its own licence, behind the same rules (step
+Inflect-original guidance. Third-party methodology, such as a managed-service
+provider's, enters only as skills a tenant authors under its own licence, behind
+the same rules (step
 4c, #3680).
 
 ## Tenant-authored skills

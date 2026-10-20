@@ -5,9 +5,9 @@
  * (`tests/guards/agent-harness-single-write-seam.test.ts`).
  *
  * Settled decision Q5: the repository corpus stays Inflect-original guidance,
- * and third-party methodology — PwC's among it — enters only as a tenant's own
- * skill, under the author's licence, behind the lifecycle a repository skill
- * has. Each half of that lifecycle has a counterpart here:
+ * and third-party methodology — a managed-service provider's among it — enters
+ * only as a tenant's own skill, under the author's licence, behind the lifecycle
+ * a repository skill has. Each half of that lifecycle has a counterpart here:
  *
  *   repository skill                      tenant skill
  *   ────────────────────────────────────  ────────────────────────────────────

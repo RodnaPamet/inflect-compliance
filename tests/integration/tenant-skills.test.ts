@@ -147,7 +147,7 @@ describeFn('tenant-authored skills (real DB)', () => {
 
     describe('the lifecycle, end to end', () => {
         it('a draft mounts nothing; an approved, evaluated version mounts in its own tenant', async () => {
-            const created = await createTenantSkill(authorA(), { name: 'pwc-joiner-review', ...tenantSkillFields({ workflowKeys: [WF] }) });
+            const created = await createTenantSkill(authorA(), { name: 'acme-joiner-review', ...tenantSkillFields({ workflowKeys: [WF] }) });
             expect(created.version).toBe(1);
             expect(created.contentHash).toBe(skillContentHash(TENANT_SKILL_INSTRUCTIONS));
             expect((await resolveRunSkillMount(authorA(), { key: WF })).pins).toEqual([]);
@@ -155,14 +155,14 @@ describeFn('tenant-authored skills (real DB)', () => {
             await expect(submitTenantSkillVersion(authorA(), created.skillId, created.versionId))
                 .rejects.toMatchObject({ details: { reason: 'NO_EVALUATION' } });
 
-            await attachTenantSkillEvaluation(authorA(), created.skillId, created.versionId, { record: passingRecordFor('pwc-joiner-review', 1) });
+            await attachTenantSkillEvaluation(authorA(), created.skillId, created.versionId, { record: passingRecordFor('acme-joiner-review', 1) });
             await submitTenantSkillVersion(authorA(), created.skillId, created.versionId);
             expect((await resolveRunSkillMount(authorA(), { key: WF })).pins).toEqual([]);
 
             await approveTenantSkillVersion(reviewerA(), created.skillId, created.versionId, { contentHash: created.contentHash });
             const mount = await resolveRunSkillMount(authorA(), { key: WF });
             expect(mount.pins).toEqual([
-                { name: 'pwc-joiner-review', version: '1', contentHash: created.contentHash, origin: 'tenant', versionId: created.versionId },
+                { name: 'acme-joiner-review', version: '1', contentHash: created.contentHash, origin: 'tenant', versionId: created.versionId },
             ]);
             expect(mount.documents[0].instructions).toBe(TENANT_SKILL_INSTRUCTIONS);
         });

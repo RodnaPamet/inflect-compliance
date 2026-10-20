@@ -12228,7 +12228,7 @@
           "CONCLUSION_INCONCLUSIVE": "Процедура е без заключение",
           "ATTRIBUTED_BY_CURRENT_PLAN": "Отнесено по текущия план (тестовото изпълнение е изтрито)",
           "CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT": "Каталогът с процедури не е одобрен от вътрешния одит",
-          "CATALOGUE_NOT_AGREED_BY_PWC": "Каталогът с процедури не е съгласуван с PwC",
+          "CATALOGUE_NOT_AGREED_BY_PROVIDER": "Каталогът с процедури не е съгласуван с доставчика на управляваната услуга",
           "PROCEDURE_WITHOUT_CONTROL": "Процедура от библиотеката не е на контрола"
         },
         "state": {

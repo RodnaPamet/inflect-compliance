@@ -260,7 +260,7 @@ export async function applyMembershipClaims(
 /**
  * Resolve a usable email address from Microsoft Entra ID-token claims.
  *
- * The desired onboarding flow is: an admin adds `…@pwc.com` as a B2B guest
+ * The desired onboarding flow is: an admin adds `…@partner.example` as a B2B guest
  * in our Entra tenant + sends an in-app invite, then the guest signs in with
  * Microsoft and is provisioned immediately (see redeemPendingInvitesByEmail).
  * For that email-match to fire, the sign-in must surface the guest's REAL
@@ -269,8 +269,8 @@ export async function applyMembershipClaims(
  *     frequently ABSENT for B2B guests. (Typed `string` by the provider, but
  *     genuinely optional at runtime.)
  *   - `preferred_username` — the guest's sign-in name, normally their real
- *     external email (`ivaylo.i.ivanov@pwc.com`). Safe fallback.
- *   - `upn` — the mangled `..._pwc.com#EXT#@ourtenant.onmicrosoft.com` form;
+ *     external email (`jane.doe@partner.example`). Safe fallback.
+ *   - `upn` — the mangled `..._partner.example#EXT#@ourtenant.onmicrosoft.com` form;
  *     NEVER use it for matching (it would never equal the invite email).
  *
  * Returns the first `@`-shaped string claim, or null.

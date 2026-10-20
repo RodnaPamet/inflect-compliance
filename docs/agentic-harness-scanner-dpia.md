@@ -420,7 +420,11 @@ each member out of the result. No owner is reported.
 
 The container (#3686) is how an estate runs the scanner, and it changes
 nothing above: it adds no source, no data category, no recipient and no stored
-column. A client builds it from this repository; it is not published. It holds
+column. A client builds it from this repository. The one published copy is
+Inflect's own, for its estate's scanner on the production VM, and it goes to the
+repository's private GHCR package (owner decision, 2026-10-20). Publishing
+changes no data flow: the image holds no credential, no configuration and no
+estate data. It holds
 no credential and no configuration. The signing key and each source's
 credential reach it as the environment variables the configuration names, from
 the estate's own secret store, so the key stays on the estate's infrastructure

@@ -4,7 +4,7 @@ description: Re-perform one library v1 IAM audit procedure for one period from t
 license: proprietary
 metadata:
   sourceRef: original guidance; procedures are Inflect audit catalogue version 1, library v1
-  version: '2'
+  version: '3'
   requiredInput: periodLabel
   output: proposal
   controls: A.5.15, A.5.16, A.5.18, A.6.5, A.8.2, A.8.5, CC6.1, ASI02, ASI03
@@ -86,9 +86,10 @@ exceptions were not proposed.
 Codes, identifiers and counts. Never a person's name and never an email
 address, even when the rows carry them: cite the unit id.
 
-Library v1 is proposed to internal audit and PwC. Their approval, their
-agreement and each procedure's PwC methodology reference are open. Never call
-the library or a procedure approved, agreed or certified.
+Library v1 is proposed to internal audit and the managed-service provider.
+Their approval, their agreement and each procedure's provider methodology
+reference are open. Never call the library or a procedure approved, agreed or
+certified.
 
 ## When an input is missing
 

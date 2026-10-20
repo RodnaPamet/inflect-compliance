@@ -239,11 +239,11 @@ describe('the summary states the scope, the catalogue’s standing and the defin
         expect(summary.limits).toContain('PROCEDURE_WITHOUT_CONTROL');
     });
 
-    it('states that the catalogue is not yet approved by internal audit nor agreed by PwC', () => {
+    it('states that the catalogue is not yet approved by internal audit nor agreed by the provider', () => {
         const { summary } = planOf(input());
         expect(summary.catalogue.status.internalAuditApproval).toBe('OPEN');
         expect(summary.limits).toEqual(
-            expect.arrayContaining(['CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT', 'CATALOGUE_NOT_AGREED_BY_PWC']),
+            expect.arrayContaining(['CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT', 'CATALOGUE_NOT_AGREED_BY_PROVIDER']),
         );
         expect(summary.catalogue.versions).toEqual([1]);
         expect(summary.period.labels).toHaveLength(16);

@@ -95,7 +95,7 @@ export type RelianceControlLimit = (typeof RELIANCE_CONTROL_LIMITS)[number];
 /** What the pack as a whole cannot support. */
 export const RELIANCE_PACK_LIMITS = [
     'CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT',
-    'CATALOGUE_NOT_AGREED_BY_PWC',
+    'CATALOGUE_NOT_AGREED_BY_PROVIDER',
     'PROCEDURE_WITHOUT_CONTROL',
     'NO_CONCLUDED_REVIEW',
 ] as const;
@@ -477,9 +477,9 @@ export function planReliancePack(input: RelianceInput): ReliancePlanResult {
     // Widened to string on purpose: the limit holds for every value but the
     // one that lifts it, so a status the catalogue adds later fails closed.
     const approval: string = LIBRARY_V1_STATUS.internalAuditApproval;
-    const pwcAgreement: string = LIBRARY_V1_STATUS.pwcAgreement;
+    const providerAgreement: string = LIBRARY_V1_STATUS.providerAgreement;
     if (approval !== 'APPROVED') packLimits.push('CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT');
-    if (pwcAgreement !== 'AGREED') packLimits.push('CATALOGUE_NOT_AGREED_BY_PWC');
+    if (providerAgreement !== 'AGREED') packLimits.push('CATALOGUE_NOT_AGREED_BY_PROVIDER');
     if (proceduresWithoutControl.length > 0) packLimits.push('PROCEDURE_WITHOUT_CONTROL');
     if (agreement.concluded === 0) packLimits.push('NO_CONCLUDED_REVIEW');
 

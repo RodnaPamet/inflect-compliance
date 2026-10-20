@@ -67,7 +67,7 @@ shipped.
 - 🚩 anything weird; we'll triage by tag.
 - Mobile rows assume a 375px viewport (iPhone SE). Resize DevTools or use
   the device toolbar.
-- Two themes: METRO (dark, navy) is default; PwC (light, cream) toggles
+- Two themes: METRO (dark, navy) is default; the light theme (cream) toggles
   via the user-menu (top-right avatar → theme row).
 - "Active sidebar row" means: navigate to the page so it's the current
   highlighted item; the row should look distinctly engaged.
@@ -224,7 +224,7 @@ Visit `/t/<slug>/dashboard`.
 |---|---------------------|----------------------------|--------|
 | H1 | Any status pill across the product (risk severity, control status, etc.). | **Pill-shaped** (rounded-full). NOT rectangles or rounded-md. | ? |
 | H2 | Any status pill. | **Subtle tone** — light bg, slightly stronger text color. NOT solid filled. (R9-PR11.) | ? |
-| H3 | Any status pill. | Never brand-orange (PwC brand). Only semantic colors. | ? |
+| H3 | Any status pill. | Never brand-orange. Only semantic colors. | ? |
 | H4 | Visit `/t/<slug>/tests`. Result column. | Pills say PASS/FAIL/INCONCLUSIVE; should be pill shapes (NOT old `.badge-success` rectangles). | ? |
 
 ---
@@ -248,7 +248,7 @@ Visit `/t/<slug>/dashboard`.
 
 | # | Where + what to do | What you should see / feel | Status |
 |---|---------------------|----------------------------|--------|
-| J1 | Avatar (top-right) → theme toggle. | App switches between METRO (dark/navy/yellow) and PwC (light/cream/orange) instantly. No flash. | ? |
+| J1 | Avatar (top-right) → theme toggle. | App switches between METRO (dark/navy/yellow) and the light theme (cream/orange) instantly. No flash. | ? |
 | J2 | Switch theme. | Brand colors swap: yellow ↔ orange. Navy ↔ deep navy. Bg navy ↔ cream. | ? |
 | J3 | Switch theme. | Every status pill, badge, button, card stays consistent in BEHAVIOUR — only colors swap. | ? |
 | J4 | Print preview of SoA report. | Brand tones (orange/yellow). No raw `slate-*` colors. | ? |

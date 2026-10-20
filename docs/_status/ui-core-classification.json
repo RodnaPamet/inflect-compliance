@@ -2962,7 +2962,7 @@
  "src/components/ui/table/types.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Type-only module: feature-bound aliases over TanStack's generics plus the `UseTableProps`/`TableProps` contracts. No runtime code, no strings, no storage. It names Linear, Stripe and Vercel at :164 as design precedent for default-on selection — third-party design references, not any of the four brands in scope (Inflect, PwC, METRO, Dub), and not product coupling."
+  "reason": "Type-only module: feature-bound aliases over TanStack's generics plus the `UseTableProps`/`TableProps` contracts. No runtime code, no strings, no storage. It names Linear, Stripe and Vercel at :164 as design precedent for default-on selection — third-party design references, not any of the three brands in scope (Inflect, METRO, Dub), and not product coupling."
  },
  "src/components/ui/table/use-columns-dropdown.tsx": {
   "classification": "GENERIC",

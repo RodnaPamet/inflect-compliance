@@ -136,7 +136,7 @@ complementary edge; the surface tile takes the brand edge. Each variant
 borrows the other's colour, and neither one moves to do it. The
 complementary hue was already in the system — `--brand-secondary-default`
 is documented in `tokens.css` as complementary to the brand in both themes
-(electric blue ↔ METRO yellow in dark, deep navy ↔ PwC orange in light).
+(electric blue ↔ METRO yellow in dark, deep navy ↔ orange in light).
 Nothing was invented; it is the existing palette, held still.
 
 **Four static layers carry the depth, none of them a keyframe:**

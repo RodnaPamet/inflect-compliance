@@ -18,7 +18,7 @@
  *
  *   3. `focus-visible:ring-[var(--ring)]`
  *      Canonical focus tone — brand-tinted at low alpha (yellow
- *      ~55% in METRO theme, orange ~40% in PwC). The same token
+ *      ~55% in METRO theme, orange ~40% in the light theme). The same token
  *      every focusable primitive uses. NEVER a hard brand fill.
  *
  *   4. `focus-visible:ring-offset-2 focus-visible:ring-offset-bg-default`

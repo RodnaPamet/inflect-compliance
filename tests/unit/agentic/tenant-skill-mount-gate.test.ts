@@ -39,7 +39,7 @@ import { passingRecordFor, TENANT_SKILL_INSTRUCTIONS, tenantSkillFields } from '
 
 beforeEach(() => resetSkillCache());
 
-const NAME = 'pwc-joiner-review';
+const NAME = 'acme-joiner-review';
 
 function version(over: Partial<TenantSkillVersionForMount> = {}): TenantSkillVersionForMount {
     const f = tenantSkillFields({ workflowKeys: ['discovered-agent-review'] });

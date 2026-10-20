@@ -2904,10 +2904,10 @@ model PeerAgent {
 /// A SKILL AUTHORED BY A TENANT (#3680, step 4c; UC6, settled decision Q5).
 ///
 /// Repository skills are Inflect-original guidance reviewed as code. Third-party
-/// methodology, PwC's among it, enters only as a tenant's own skill under the
-/// author's licence, behind the same lifecycle: an evaluation record, a review
-/// by a person other than the author, a pinned content hash and the load-time
-/// text scan (`docs/agent-skill-standard.md`, "Tenant-authored skills").
+/// methodology, a managed-service provider's among it, enters only as a tenant's
+/// own skill under the author's licence, behind the same lifecycle: an
+/// evaluation record, a review by a person other than the author, a pinned
+/// content hash and the load-time text scan (`docs/agent-skill-standard.md`, "Tenant-authored skills").
 ///
 /// This row is the skill's identity only: its name, unique in the tenant and
 /// never a repository skill's name, and who created it. Everything that reaches
