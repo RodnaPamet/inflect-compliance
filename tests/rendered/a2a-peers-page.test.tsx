@@ -201,7 +201,7 @@ const detail = (over: Partial<PeerDetail> = {}): PeerDetail => ({
     credential: {
         live: null,
         revoked: [],
-        handover: { inflectIdentity: 'inflect:a2a/t1/peerpinned1', endpointPath: '/api/a2a/acme/peers/peerpinned1', signingPublicKey: KEY.publicKey },
+        handover: { inflectIdentity: 'https://app.inflect.test/api/a2a/acme/agent-card.json', endpointPath: '/api/a2a/acme', signingPublicKey: KEY.publicKey },
     },
     messages: [
         { id: 'm1', direction: 'INBOUND', kind: 'TASK', method: 'message/send', messageId: 'msg-1', signerKeyFingerprint: 'e'.repeat(64), createdAt: '2026-10-19T08:01:00.000Z', verifies: true },
@@ -265,8 +265,8 @@ describe('one peer: the inbound credential', () => {
             status: 201,
             json: async () => ({
                 token: 'iflp_secret_token_value',
-                inflectIdentity: 'inflect:a2a/t1/peerpinned1',
-                endpointPath: '/api/a2a/acme/peers/peerpinned1',
+                inflectIdentity: 'https://app.inflect.test/api/a2a/acme/agent-card.json',
+                endpointPath: '/api/a2a/acme',
                 inflectSigningPublicKey: KEY.publicKey,
             }),
         });
@@ -288,6 +288,37 @@ describe('one peer: the inbound credential', () => {
         await userEvent.click(screen.getByTestId('peer-credential-token-done'));
         await waitFor(() => expect(screen.queryByTestId('peer-credential-token')).toBeNull());
         expect(mockRefresh).toHaveBeenCalled();
+    });
+
+    it('hands over the tenant\'s card URL as its identity, and says so when there is none', async () => {
+        fetchMock.mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            json: async () => ({
+                token: 'iflp_secret_token_value',
+                inflectIdentity: 'https://app.inflect.test/api/a2a/acme/agent-card.json',
+                endpointPath: '/api/a2a/acme',
+                inflectSigningPublicKey: KEY.publicKey,
+            }),
+        });
+        renderDetail();
+        await openTab(P.detail.tabCredential);
+        expect(screen.queryByTestId('peer-credential-origin-missing')).toBeNull();
+        await userEvent.click(document.getElementById('peer-credential-agent')!);
+        await userEvent.click(await screen.findByRole('option', { name: 'Reconciler' }));
+        await userEvent.click(document.getElementById('peer-credential-workflows')!);
+        await userEvent.click(await screen.findByRole('option', { name: 'Diagnostic' }));
+        await userEvent.keyboard('{Escape}');
+        await userEvent.click(screen.getByTestId('peer-credential-issue'));
+        const panel = await screen.findByTestId('peer-credential-token-panel');
+        expect(panel.textContent).toContain('https://app.inflect.test/api/a2a/acme/agent-card.json');
+        expect(panel.textContent).toContain('/api/a2a/acme');
+    });
+
+    it('warns that every message is refused while the deployment has no public origin', async () => {
+        renderDetail(detail({ credential: { ...detail().credential, handover: { ...detail().credential.handover, inflectIdentity: null } } }));
+        await openTab(P.detail.tabCredential);
+        expect(screen.getByTestId('peer-credential-origin-missing').textContent).toContain(P.credential.originMissing);
     });
 
     it('revokes the live credential after a confirmation with the canonical verb', async () => {

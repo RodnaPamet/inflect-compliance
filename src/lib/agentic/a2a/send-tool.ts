@@ -81,11 +81,6 @@ export const A2aSendArgsSchema = z
 
 export type A2aSendArgs = z.infer<typeof A2aSendArgsSchema>;
 
-/** Inflect's identity in a receipt, per tenant and per peer, so a message signed for one pair verifies at no other. */
-export function inflectA2aIdentity(tenantId: string, peerId: string): string {
-    return `inflect:a2a/${tenantId}/${peerId}`;
-}
-
 /**
  * What an outbound send's journal row records as the state it acts on (R9).
  *

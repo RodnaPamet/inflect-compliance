@@ -14,12 +14,17 @@
  *
  *    1. The tenant in the URL exists. If not, there is nobody to attribute a
  *       refusal to: it is logged, never audited.
- *    2. The peer in the URL is registered in that tenant.
+ *    2. The peer is registered in that tenant. The per-peer route names it in
+ *       the path; the per-tenant route (#3742) learns it from the credential's
+ *       hash, and only that — whether the credential is live is still step 4's
+ *       question, asked the same way for both routes.
  *    3. No kill is in force on the peer — read uncached, every message.
  *    4. The bearer is the peer's live `iflp_` credential (constant time).
- *    5. The receipt header is the peer's: Ed25519 by its REGISTERED key over a
- *       statement naming this tenant-and-peer as recipient, the body's exact
- *       digest, a TASK, inside the clock window. Then the tenant has its own
+ *    5. The deployment has a public https origin (`NO_PUBLIC_ORIGIN`), because
+ *       the tenant's identity is built on it. The receipt header is the peer's:
+ *       Ed25519 by its REGISTERED key over a statement naming this tenant's card
+ *       URL as recipient, the body's exact digest, a TASK, inside the clock
+ *       window. Then the tenant has its own
  *       signing key (`NO_SIGNING_KEY` otherwise), since nothing could be
  *       answered unsigned — asked after the peer proved itself, so the refusal
  *       tells nobody else whether the tenant has a key.
@@ -87,7 +92,8 @@ import {
     parseA2aInboundRequest,
     taskStateForRunStatus,
 } from '@/lib/agentic/a2a/protocol';
-import { inflectA2aIdentity } from '@/lib/agentic/a2a/send-tool';
+import { inflectA2aIdentity } from '@/lib/agentic/a2a/own-card';
+import { inflectA2aOrigin } from '@/lib/agentic/a2a/origin';
 import type { RecentCardOptions } from '@/lib/agentic/a2a/card-cache';
 import { PEER_ID_SHAPE } from '@/app-layer/integrations/providers/a2a-peer-provider';
 import { guardEgress } from '@/app-layer/ai/guard';
@@ -95,7 +101,7 @@ import { guardEgress } from '@/app-layer/ai/guard';
 import { buildSystemContext } from '../context-system';
 import { admitPeerMessage } from './peer-agents';
 import { resolvePeerKill } from './a2a-peer-kill';
-import { matchPeerInboundCredential } from './a2a-peer-credentials';
+import { findPeerIdByInboundToken, matchPeerInboundCredential } from './a2a-peer-credentials';
 import { A2aReplayError, countInboundTasksSince, recordA2aMessage } from './a2a-messages';
 import { resolveTenantA2aSigningKey, type TenantA2aSigningKeyInForce } from './a2a-signing-key';
 
@@ -111,6 +117,7 @@ export const A2A_PEER_TASK_SOURCE = 'a2a.peer-task';
 
 export type A2aInboundRefusalReason =
     | 'NO_SIGNING_KEY'
+    | 'NO_PUBLIC_ORIGIN'
     | 'UNKNOWN_TENANT'
     | 'UNKNOWN_PEER'
     | 'PEER_KILLED'
@@ -131,7 +138,11 @@ export type A2aInboundRefusalReason =
 
 export interface InboundA2aRequest {
     readonly tenantSlug: string;
-    readonly peerId: string;
+    /**
+     * The per-peer route names the peer; the per-tenant route (#3742) leaves it
+     * out, and the peer is found from its credential.
+     */
+    readonly peerId?: string;
     readonly authorization: string | null;
     readonly receiptHeader: string | null;
     /** The exact bytes received, already capped by the route. */
@@ -163,15 +174,20 @@ function refusal(reason: A2aInboundRefusalReason, rpcId: string | number | null 
     };
 }
 
-/** The AUTHZ_DENIED row `requirePermission` would have written. Best-effort: the refusal already happened. */
-async function auditRefusal(tenantId: string, peerId: string, reason: string, requestId: string): Promise<void> {
+/**
+ * The AUTHZ_DENIED row `requirePermission` would have written. Best-effort: the
+ * refusal already happened. `peerId` is null only at the per-tenant endpoint,
+ * for a bearer no credential of the tenant hashes to; the row is then the
+ * tenant's.
+ */
+async function auditRefusal(tenantId: string, peerId: string | null, reason: string, requestId: string): Promise<void> {
     try {
         await appendAuditEntryOrQueue({
             tenantId,
             userId: null,
             actorType: 'SYSTEM',
-            entity: 'PeerAgent',
-            entityId: peerId,
+            entity: peerId ? 'PeerAgent' : 'Tenant',
+            entityId: peerId ?? tenantId,
             action: 'AUTHZ_DENIED',
             requestId,
             detailsJson: { category: 'access', endpoint: 'a2a-inbound', reason, peerId },
@@ -190,7 +206,7 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
     const tenant = await runInGlobalContext((db) =>
         db.tenant.findFirst({ where: { slug: req.tenantSlug, deletedAt: null }, select: { id: true, slug: true } }),
     );
-    if (!tenant || !PEER_ID_SHAPE.test(req.peerId)) {
+    if (!tenant || (req.peerId !== undefined && !PEER_ID_SHAPE.test(req.peerId))) {
         logger.warn('a2a inbound refused an unattributable caller', { component: 'a2a-inbound', reason: 'UNKNOWN_TENANT' });
         return refusal('UNKNOWN_TENANT', null, 401);
     }
@@ -200,14 +216,31 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
         job: 'a2a-inbound',
         requestId: req.requestId,
     });
+    const token = peerBearerFrom(req.authorization);
+
+    // Which peer. The per-tenant route has only the credential to go on: its
+    // hash names the peer it was issued to, revoked or not, so that a revoked
+    // credential is refused below as that peer's BAD_CREDENTIAL rather than as
+    // a stranger. A bearer no credential hashes to has no peer to blame.
+    let peerId: string;
+    if (req.peerId !== undefined) {
+        peerId = req.peerId;
+    } else {
+        const found = token ? await findPeerIdByInboundToken(sys, token) : null;
+        if (!found) {
+            await auditRefusal(tenant.id, null, 'BAD_CREDENTIAL', req.requestId);
+            return refusal('BAD_CREDENTIAL', null, 401);
+        }
+        peerId = found;
+    }
     const refuse = async (reason: A2aInboundRefusalReason, rpcId: string | number | null = null, status = 403) => {
-        await auditRefusal(tenant.id, req.peerId, reason, req.requestId);
+        await auditRefusal(tenant.id, peerId, reason, req.requestId);
         return refusal(reason, rpcId, status);
     };
 
     const peer = await runInTenantContext(sys, (db) =>
         db.peerAgent.findFirst({
-            where: { id: req.peerId, tenantId: tenant.id },
+            where: { id: peerId, tenantId: tenant.id },
             select: {
                 id: true,
                 cardUrl: true,
@@ -222,11 +255,14 @@ export async function handleInboundA2a(req: InboundA2aRequest): Promise<InboundA
 
     if (await resolvePeerKill(sys, peer.id)) return refuse('PEER_KILLED');
 
-    const token = peerBearerFrom(req.authorization);
     const credential = token ? await matchPeerInboundCredential(sys, peer.id, token) : null;
     if (!credential) return refuse('BAD_CREDENTIAL', null, 401);
 
-    const inflect = inflectA2aIdentity(tenant.id, peer.id);
+    // The tenant's identity is its card URL, on the deployment's own origin and
+    // never on one a request supplied. No origin, no identity to verify against.
+    const origin = inflectA2aOrigin();
+    if (!origin) return refuse('NO_PUBLIC_ORIGIN', null, 503);
+    const inflect = inflectA2aIdentity(origin, tenant.slug);
     const verdict = verifyA2aReceiptHeader(req.receiptHeader, peer.signingPublicKey, {
         kind: 'TASK',
         sender: peer.cardUrl,

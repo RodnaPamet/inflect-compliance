@@ -71,10 +71,35 @@ would be the second authority model this document exists to rule out.
 - **The signal.** `agentic.peer_card.check` counts every card read by outcome;
   `CHANGED` is the one to alert on.
 
+### Inflect's own card, and what Inflect is called
+
+Each tenant publishes one agent card, `GET /api/a2a/:tenantSlug/agent-card.json`
+(#3742, `src/lib/agentic/a2a/own-card.ts`), and **the card's URL is the tenant's
+A2A identity**: the sender of every receipt it signs and the recipient every
+peer must address, the same for every peer, built on `APP_URL` and never on a
+request. Inflect names a peer by its card URL, so naming itself the same way is
+what lets one Inflect tenant pin another (owner decision 2026-10-20).
+
+- **What it names.** The per-tenant endpoint, the identity, the receipt format,
+  the public key in force and, for seven days after a rotation, the previous
+  one with the time it stops being named. No agent list, no tool or workflow
+  name, no tenant name.
+- **Signed** by the key in force, over a domain-separated canonical form, and
+  deterministic, so a peer's pin holds until a key changes. A changed card is
+  something the PEER re-approves (pinning rule 6 of the threat model).
+- **Public by necessity**, rate-limited by IP, and one 404 for every reason
+  there is no card: an unknown tenant, no signing key, no `https` `APP_URL`.
+- **No public origin, no A2A.** Without an `https` `APP_URL` there is no
+  identity, so every message in either direction refuses `NO_PUBLIC_ORIGIN`
+  and the send tool is not offered.
+
 ### Inbound: a task becomes a run input
 
-`POST /api/a2a/:tenantSlug/peers/:peerId` is the only way in. The route caps
-the body at 64 KiB and calls `handleInboundA2a`
+There are two ways in, and one admission. `POST /api/a2a/:tenantSlug` is the
+endpoint the card names: it finds the peer from the SHA-256 of its bearer,
+through a unique index on the credential hash. `POST /api/a2a/:tenantSlug/peers/:peerId`
+names the peer in the path, and stays for peers already given it. Both cap the
+body at 64 KiB and call `handleInboundA2a`
 (`src/app-layer/usecases/a2a-inbound.ts`), which holds the endpoint's whole
 authorization because no session stands behind the caller.
 
@@ -184,8 +209,7 @@ Held by `tests/guards/agent-harness-single-write-seam.test.ts`.
 - **A real peer.** Step 4b was built and tested against an in-process fake
   peer. The pilot with a real vendor's agent stays open on #3752, and it is the
   first time a task crosses an organisation boundary.
-- **Inflect's own published card (R19).** Inflect publishes no card today; an
-  operator hands a peer the endpoint, Inflect's identity for the pair and the
-  tenant's public key (`getPeerInboundCredential`). A published card would
-  exist only for an agent a tenant enables for A2A, and carry no tenant data and
-  no tool names.
+- **A card per agent.** The published card is one per tenant (#3742) and names
+  no agent. A card per agent a tenant enables for A2A, listing that agent's
+  skills, waits until a real peer asks for one, since every name it adds is
+  something the tenant discloses.

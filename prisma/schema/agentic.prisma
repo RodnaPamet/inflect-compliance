@@ -3184,6 +3184,10 @@ model PeerAgentInboundCredential {
   agent  RegisteredAgent @relation(fields: [receivingAgentId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
   @@unique([id, tenantId])
+  /// How the per-tenant endpoint (#3742) finds the peer from the bearer alone.
+  /// Unique, so a token names one credential and so one peer; revoked rows are
+  /// in it too, so a revoked token is refused as its peer's.
+  @@unique([tenantId, keyHash])
   @@index([tenantId, peerId, revokedAt])
   @@index([tenantId, receivingAgentId])
 }

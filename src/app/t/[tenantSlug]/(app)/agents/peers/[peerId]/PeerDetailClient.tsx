@@ -73,7 +73,7 @@ export interface PeerDetail {
             createdAt: string;
         } | null;
         revoked: { id: string; keyPrefix: string; receivingAgentId: string; revokedAt: string }[];
-        handover: { inflectIdentity: string; endpointPath: string | null; signingPublicKey: string | null };
+        handover: { inflectIdentity: string | null; endpointPath: string | null; signingPublicKey: string | null };
     };
     messages: {
         id: string;
@@ -468,7 +468,7 @@ function KillForm({ mode, peerId }: { mode: 'engage' | 'lift'; peerId: string })
 
 interface IssuedHandover {
     token: string;
-    inflectIdentity: string;
+    inflectIdentity: string | null;
     endpointPath: string | null;
     inflectSigningPublicKey: string | null;
 }
@@ -549,6 +549,11 @@ function CredentialTab({ detail, canManage }: { detail: PeerDetail; canManage: b
                 {!handover.signingPublicKey && (
                     <InlineNotice variant="warning" data-testid="peer-credential-key-missing">
                         {t('peers.credential.keyMissing')}
+                    </InlineNotice>
+                )}
+                {!handover.inflectIdentity && (
+                    <InlineNotice variant="warning" data-testid="peer-credential-origin-missing">
+                        {t('peers.credential.originMissing')}
                     </InlineNotice>
                 )}
             </Card>
@@ -698,7 +703,11 @@ function IssuedTokenPanel({ issued, onDone }: { issued: IssuedHandover; onDone: 
                     </Fact>
                 )}
                 <Fact label={t('peers.credential.identity')}>
-                    <span className="font-mono text-xs break-all">{issued.inflectIdentity}</span>
+                    {issued.inflectIdentity ? (
+                        <span className="font-mono text-xs break-all">{issued.inflectIdentity}</span>
+                    ) : (
+                        <span className="text-content-muted">{t('peers.credential.originMissing')}</span>
+                    )}
                 </Fact>
                 <Fact label={t('peers.credential.publicKey')}>
                     {issued.inflectSigningPublicKey ? (
