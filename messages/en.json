@@ -5438,6 +5438,47 @@
           "AGENT_RELINKED": "a scan linked this agent to another principal",
           "UNKNOWN": "the reason was not recorded"
         }
+      },
+      "ownership": {
+        "heading": "Ownership",
+        "intro": "The person accountable for this agent. It moves only when two people act: one proposes a new owner, and the person named accepts within 7 days.",
+        "loadError": "Couldn't load the agent's ownership transfers.",
+        "currentOwner": "Owner: {name}",
+        "openLine": "Transfer to {to} proposed by {by}, open until {until}.",
+        "onlyRecipient": "Only {to} can accept it.",
+        "accept": "Accept",
+        "decline": "Decline",
+        "withdraw": "Withdraw",
+        "cancelTransfer": "Cancel transfer",
+        "acceptTitle": "Accept ownership of this agent",
+        "acceptBody": "You become this agent's accountable owner in place of {from}. Its proposals, harness shortfalls and the owner-orphan pass will name you, and if the pass stopped it because its owner left, you can lift that stop.",
+        "acceptAction": "Accept ownership",
+        "cancel": "Cancel",
+        "accepted": "You are now this agent's owner",
+        "acceptFailed": "The transfer could not be accepted.",
+        "recipientLabel": "Propose a new owner",
+        "recipientHint": "An OWNER or an AI admin, or an ADMIN whose custom role carries the agent ownership permission. They accept it themselves.",
+        "recipientPlaceholder": "Choose a person",
+        "recipientSearch": "Search people…",
+        "propose": "Propose transfer",
+        "proposed": "Transfer proposed to {name}",
+        "proposeFailed": "The transfer could not be proposed.",
+        "retired": "This agent is retired, so its owner no longer moves.",
+        "closing": {
+          "decline": "Declining the transfer",
+          "withdraw": "Withdrawing the transfer",
+          "cancel": "Cancelling the transfer"
+        },
+        "undo": "Undo",
+        "closeFailed": "The transfer could not be closed.",
+        "historyHeading": "Past transfers",
+        "historyLine": "{from} → {to}, {at}",
+        "status": {
+          "COMPLETED": "Completed",
+          "CANCELLED": "Cancelled",
+          "EXPIRED": "Expired",
+          "PENDING": "Open"
+        }
       }
     },
     "mcp": {

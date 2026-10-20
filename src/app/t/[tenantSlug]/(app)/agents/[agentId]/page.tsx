@@ -156,7 +156,15 @@ export default async function AgentDetailPage({
                 // authoring usecases.
                 canAuthorSkills:
                     ctx.appPermissions.admin.agent_skill_author === true && ctx.permissions.canRead,
+                // The transfer routes' key and the read the usecase asserts
+                // (#3807). Not ANDed with a role: `ctx.role` is a custom
+                // role's BASE, and the edge reads the MEMBERSHIP role, so an
+                // ADMIN membership on a READER-based custom role — a valid
+                // recipient — would be hidden by it.
+                canTransferOwnership:
+                    ctx.appPermissions.admin.agent_ownership === true && ctx.permissions.canRead,
             }}
+            viewerUserId={ctx.userId}
         />
     );
 }

@@ -27,8 +27,8 @@
  *
  * No API key carries `admin.agent_ownership` — `scopesToPermissions` builds `*`
  * from ADMIN's set, and no scope maps to it — so these routes are human-only by
- * construction. There is no page yet; the transfer is API-only until its
- * overview panel ships.
+ * construction. The agent's Overview tab carries the transfer card (#3807),
+ * which makes these same requests and adds no authority.
  */
 import { NextRequest } from 'next/server';
 
