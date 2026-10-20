@@ -956,6 +956,48 @@ export async function listWorkflowRuns(
  * `finally`, not `then` — a run that threw is no longer executing, and leaving
  * it tracked would have the drain pause a row that has already settled.
  */
+/**
+ * Which third-party principal a run's columns say started it — the whole of the
+ * decision, with no database in it.
+ *
+ * Separated from the read so it can be tested directly, because the thing that
+ * matters is not reachable from the start of a run: `withInboundOrigin` rebuilds
+ * this flag on EVERY later segment — a person's resume and a queued Flue segment
+ * alike — and the two narrowings keyed on it (the `PROPOSE_ONLY` clamp, R17, and
+ * the refusal of an outbound send, R14) are lost on that segment if this returns
+ * undefined. A run that starts clamped and resumes able to write is the failure,
+ * and it is invisible to a test that only checks the start.
+ *
+ * Either pair, never both: a CHECK holds that at the database, and each pair is
+ * all-or-nothing there too, because a HALF-written origin would restore nothing
+ * at all. Peer is tried first only because it is the older arm — the two are not
+ * ordered by precedence and cannot both be present.
+ */
+export function inboundOriginFromRow(
+    row:
+        | {
+              readonly inboundPeerId: string | null;
+              readonly inboundMessageId: string | null;
+              readonly inboundHostConsumerId: string | null;
+              readonly inboundHostMessageId: string | null;
+          }
+        | null
+        | undefined,
+): A2aInboundOrigin | undefined {
+    if (!row) return undefined;
+    if (row.inboundPeerId && row.inboundMessageId) {
+        return { kind: 'PEER', peerId: row.inboundPeerId, messageId: row.inboundMessageId };
+    }
+    if (row.inboundHostConsumerId && row.inboundHostMessageId) {
+        return {
+            kind: 'HOST_CONSUMER',
+            hostConsumerId: row.inboundHostConsumerId,
+            messageId: row.inboundHostMessageId,
+        };
+    }
+    return undefined;
+}
+
 async function withInboundOrigin(ctx: RequestContext, runId: string): Promise<RequestContext> {
     const row = await runInTenantContext(ctx, (db) =>
         db.workflowRun.findFirst({
@@ -968,22 +1010,7 @@ async function withInboundOrigin(ctx: RequestContext, runId: string): Promise<Re
             },
         }),
     );
-    // Either pair, never both — a CHECK holds that, and each pair is
-    // all-or-nothing for the reason this function exists: a half-written origin
-    // restores NO narrowing, so a run would start clamped and resume able to
-    // write. Peer first only because it is the older arm; the two are not
-    // ordered by precedence and cannot both be present.
-    const fromRow: A2aInboundOrigin | undefined =
-        row?.inboundPeerId && row.inboundMessageId
-            ? { kind: 'PEER', peerId: row.inboundPeerId, messageId: row.inboundMessageId }
-            : row?.inboundHostConsumerId && row.inboundHostMessageId
-              ? {
-                    kind: 'HOST_CONSUMER',
-                    hostConsumerId: row.inboundHostConsumerId,
-                    messageId: row.inboundHostMessageId,
-                }
-              : undefined;
-    const a2aInbound = fromRow ?? ctx.a2aInbound;
+    const a2aInbound = inboundOriginFromRow(row) ?? ctx.a2aInbound;
     return a2aInbound ? { ...ctx, a2aInbound } : ctx;
 }
 
