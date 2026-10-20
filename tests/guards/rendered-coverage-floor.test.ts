@@ -341,7 +341,12 @@ const ROOT = path.resolve(__dirname, '../..');
 //   372 (#3678): + agent-harness-estate-health.test.tsx, measured by this
 // guard's own counter on this branch rebased onto main (3.244.1); the other
 // three arrived from other branches inside the slack.
-const RENDERED_TEST_FLOOR = 372;
+//   381 (#3807): the #3807 form suites (estate form, line of defence,
+// service-principal card, owner-orphan pass page) and the others merged since
+// 372, measured by this guard's own counter on this branch merged with main
+// (3.272.x). Each PR stayed inside the slack alone; together they did not, and
+// the merge queue found it.
+const RENDERED_TEST_FLOOR = 381;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

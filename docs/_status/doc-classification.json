@@ -383,6 +383,9 @@
         "docs/runbooks/failed-migration-recovery.md": {
             "class": "authoritative"
         },
+        "docs/sap-agent-integration-roadmap.md": {
+            "class": "living"
+        },
         "docs/scheduled-notification-system.md": {
             "class": "authoritative"
         },

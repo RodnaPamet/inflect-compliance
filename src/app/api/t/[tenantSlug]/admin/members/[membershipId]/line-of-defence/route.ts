@@ -15,8 +15,8 @@
  * `ROUTE_PERMISSIONS`, which matches first-wins and would otherwise record
  * `admin.members`, a key ADMIN holds.
  *
- * API-only: the members page does not render the value yet, as the
- * ownership-transfer and orphan-pass routes ship API-first.
+ * The members page shows every member's line and, for an OWNER, sets it on
+ * any membership but their own through this route (#3807).
  */
 import type { NextRequest } from 'next/server';
 
