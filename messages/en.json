@@ -9796,7 +9796,8 @@
         "cancel": "Cancel",
         "failed": "The peer could not be registered.",
         "done": "{name} registered. Read and approve its card to admit it.",
-        "doneCardUnreadable": "{name} registered, but its card could not be read. Read it again on its page before approving."
+        "doneCardUnreadable": "{name} registered, but its card could not be read. Read it again on its page before approving.",
+        "cardUrlPlaceholder": "https://partner.example/.well-known/agent-card.json"
       },
       "cardReview": {
         "heading": "Agent card",

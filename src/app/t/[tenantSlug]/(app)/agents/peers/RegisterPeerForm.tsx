@@ -115,7 +115,7 @@ export function RegisterPeerForm({
                         type="url"
                         value={cardUrl}
                         maxLength={2048}
-                        placeholder="https://"
+                        placeholder={t('peers.register.cardUrlPlaceholder')}
                         onChange={(e) => setCardUrl(e.target.value)}
                     />
                 </FormField>

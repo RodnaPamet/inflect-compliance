@@ -17,8 +17,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
-import { Globe } from '@inflect/ui/components/ui/icons/nucleo';
-import { Plus } from 'lucide-react';
+import { Globe, Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/hooks';
