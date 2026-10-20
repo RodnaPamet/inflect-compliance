@@ -55,7 +55,7 @@ describe('ingest refusals bound the account key they quote', () => {
         // and the whole argument for never eliding a legitimate key rests on
         // the two being the same number.
         expect(src).toMatch(/accountKey\.length\s*<=\s*ACCOUNT_KEY_MAX_LENGTH/);
-        expect(src).toMatch(/import\s*\{[^}]*ACCOUNT_KEY_MAX_LENGTH/s);
+        expect(src).toMatch(/import\s*\{[^}]*ACCOUNT_KEY_MAX_LENGTH/);
     });
 
     it('detects a raw interpolation when there is one', () => {

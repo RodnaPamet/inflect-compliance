@@ -1100,8 +1100,21 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
  *
  * Raised rather than suppressed, and by the measured amount rather than a round
  * number, so the next raise is as visible as this one.
+ *
+ * RAISED 1401 -> 1404 on 2026-10-20, by THREE, for the two guards #3801 and
+ * #3800 added. Both are repo-wide scanners, which is the shape this detector
+ * cannot read by nature: the path handed to `readFileSync` comes out of
+ * `repoFiles()` and is a variable, so every such assertion lands in
+ * `path-not-constant` however it is written.
+ *
+ * Three rather than two because `reset-tables-covers-fixture-written-orphans`
+ * reads two populations — the Prisma schema files and the test tree — against
+ * one for the other guard.
+ *
+ * Raised by the measured amount rather than a round number, so the next raise
+ * is as visible as this one.
  */
-const UNANALYSABLE_READ_BASELINE = 1401;
+const UNANALYSABLE_READ_BASELINE = 1404;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
