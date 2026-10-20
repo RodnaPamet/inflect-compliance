@@ -54,6 +54,8 @@ export type HostConsumerRefusalReason =
 export interface AdmittedHostConsumer {
     readonly id: string;
     readonly clientId: string;
+    /** The accountable person whose authority a run this consumer starts carries. */
+    readonly ownerUserId: string;
     readonly receivingAgentId: string;
     readonly workflowKeys: readonly string[];
     readonly inboundMessagesPerHour: number;
@@ -131,6 +133,7 @@ export async function tryAdmitHostConsumer(
             select: {
                 id: true,
                 clientId: true,
+                ownerUserId: true,
                 receivingAgentId: true,
                 workflowKeys: true,
                 inboundMessagesPerHour: true,
@@ -170,6 +173,7 @@ export async function tryAdmitHostConsumer(
         consumer: {
             id: row.id,
             clientId: row.clientId,
+            ownerUserId: row.ownerUserId,
             receivingAgentId: row.receivingAgentId,
             workflowKeys: row.workflowKeys,
             inboundMessagesPerHour: row.inboundMessagesPerHour,

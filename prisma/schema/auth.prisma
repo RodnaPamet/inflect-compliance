@@ -1196,6 +1196,7 @@ model User {
   /// NOT NULL on the agent side, so every registered agent appears here.
   registeredAgentsOwned         RegisteredAgent[]               @relation("RegisteredAgentOwner")
   peerAgentsOwned               PeerAgent[]                     @relation("PeerAgentOwner")
+  hostConsumersOwned            HostConsumer[]                  @relation("HostConsumerOwner")
   /// #3678 — the harness-scan sources of a client estate this user is the
   /// accountable owner of. `RESTRICT` on the source side.
   harnessEstateSourcesOwned     AgentHarnessEstateSource[]      @relation("AgentHarnessEstateSourceOwner")

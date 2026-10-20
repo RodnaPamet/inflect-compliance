@@ -3254,6 +3254,17 @@ model HostConsumer {
   /// Per-consumer hourly cap (threat-model R13), bounded in the migration.
   inboundMessagesPerHour Int @default(60)
 
+  /// The ACCOUNTABLE PERSON for this integration, as `PeerAgent.ownerUserId`
+  /// is for a peer — and distinct from whoever happened to create it.
+  ///
+  /// Threat-model R1 required an owner on a peer because a principal with no
+  /// answerable person is a principal nobody reviews. The same argument holds
+  /// here, and there is a second, concrete reason: a run a host consumer
+  /// starts carries THIS person's authority, resolved through the same
+  /// membership check the peer path uses. So the consumer cannot reach further
+  /// than a named human could, and an audit row names them.
+  ownerUserId String
+
   createdByUserId String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -3261,6 +3272,7 @@ model HostConsumer {
   revokedByUserId String?
 
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner  User            @relation("HostConsumerOwner", fields: [ownerUserId], references: [id])
   agent  RegisteredAgent @relation(fields: [receivingAgentId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
 
@@ -3269,6 +3281,7 @@ model HostConsumer {
   @@unique([tenantId, clientSecretHash])
   @@index([tenantId, status])
   @@index([tenantId, receivingAgentId])
+  @@index([tenantId, ownerUserId])
   @@index([tenantId, revokedAt])
 }
 

@@ -53,7 +53,7 @@ const TENANTS = [T1, T2];
 // is no secret-shaped string in the repo at all, and each run signs with its own.
 const SECRET = crypto.randomBytes(24).toString('hex');
 
-const world: Record<string, { consumerId: string; clientId: string; agentId: string }> = {};
+const world: Record<string, { consumerId: string; clientId: string; agentId: string; ownerUserId: string }> = {};
 
 /**
  * The SYSTEM context, as `handleInboundA2a` builds for itself.
@@ -100,10 +100,16 @@ async function seed(tenantId: string, enabled: boolean): Promise<void> {
             clientSecretPrefix: creds.secretPrefix,
             receivingAgentId: agent.id,
             workflowKeys: ['sap-transaction-review'],
+            ownerUserId: user.id,
             createdByUserId: user.id,
         },
     });
-    world[tenantId] = { consumerId: consumer.id, clientId: creds.clientId, agentId: agent.id };
+    world[tenantId] = {
+        consumerId: consumer.id,
+        clientId: creds.clientId,
+        agentId: agent.id,
+        ownerUserId: user.id,
+    };
 }
 
 function tokenFor(tenantId: string, over: Partial<{ hostConsumerId: string; tenantId: string }> = {}) {
@@ -168,6 +174,8 @@ describe('a Joule-shaped request is admitted', () => {
         if (got.kind !== 'ADMITTED') return;
         expect(got.consumer.id).toBe(world[T1].consumerId);
         expect(got.consumer.receivingAgentId).toBe(world[T1].agentId);
+        // The accountable person a run will carry the authority of.
+        expect(got.consumer.ownerUserId).toBe(world[T1].ownerUserId);
     });
 
     it('decides on the ROW, not on the token claims', async () => {

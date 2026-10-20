@@ -54,6 +54,10 @@ CREATE TABLE "HostConsumer" (
     "clientSecretHash" TEXT NOT NULL,
     "clientSecretPrefix" TEXT NOT NULL,
     "receivingAgentId" TEXT NOT NULL,
+    -- The accountable person, as "PeerAgent"."ownerUserId" is. A run this
+    -- consumer starts carries their authority, so it cannot reach further than
+    -- a named human could.
+    "ownerUserId" TEXT NOT NULL,
     "workflowKeys" TEXT[],
     "status" "HostConsumerStatus" NOT NULL DEFAULT 'ACTIVE',
     "inboundMessagesPerHour" INTEGER NOT NULL DEFAULT 60,
@@ -106,6 +110,7 @@ CREATE UNIQUE INDEX "HostConsumer_tenantId_clientId_key" ON "HostConsumer"("tena
 CREATE UNIQUE INDEX "HostConsumer_tenantId_clientSecretHash_key" ON "HostConsumer"("tenantId", "clientSecretHash");
 CREATE INDEX "HostConsumer_tenantId_status_idx" ON "HostConsumer"("tenantId", "status");
 CREATE INDEX "HostConsumer_tenantId_receivingAgentId_idx" ON "HostConsumer"("tenantId", "receivingAgentId");
+CREATE INDEX "HostConsumer_tenantId_ownerUserId_idx" ON "HostConsumer"("tenantId", "ownerUserId");
 CREATE INDEX "HostConsumer_tenantId_revokedAt_idx" ON "HostConsumer"("tenantId", "revokedAt");
 
 CREATE UNIQUE INDEX "HostConsumerMessage_id_tenantId_key" ON "HostConsumerMessage"("id", "tenantId");
@@ -126,6 +131,8 @@ CREATE UNIQUE INDEX "HostConsumerKillSwitch_one_in_force_per_consumer"
 -- AddForeignKey
 ALTER TABLE "HostConsumer" ADD CONSTRAINT "HostConsumer_tenantId_fkey"
     FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "HostConsumer" ADD CONSTRAINT "HostConsumer_ownerUserId_fkey"
+    FOREIGN KEY ("ownerUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "HostConsumer" ADD CONSTRAINT "HostConsumer_receivingAgentId_tenantId_fkey"
     FOREIGN KEY ("receivingAgentId", "tenantId") REFERENCES "RegisteredAgent"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
