@@ -2,6 +2,13 @@
 
 **Status:** accepted · **Date:** 2026-10-20 · **Issue:** #3861 · **Roadmap:** #3859
 
+> **Status: historical record** — a decision taken on 2026-10-20 and the
+> reasoning behind it, pinned to that date. Classified `historical` as ADR 0001
+> is: an ADR records what was decided and why, and is not revised as the
+> implementation lands. Where it describes work still to come, #3861 and the
+> threat model (R25–R28) are current; where it and the code disagree, the code
+> wins and the pull request that finds it says so here.
+
 **Decision:** admit a host that calls Inflect as a **client** through a new
 `HostConsumer` principal with its own OAuth2 client-credentials endpoint.
 **Peers are untouched.** Option (a) of the three below.

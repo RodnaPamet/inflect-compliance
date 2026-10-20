@@ -17,6 +17,9 @@
         "docs/adr/0002-agent-behaviour-window-retention.md": {
             "class": "authoritative"
         },
+        "docs/adr/0003-a2a-host-consumers.md": {
+            "class": "historical"
+        },
         "docs/agent-harness-contract.md": {
             "class": "authoritative"
         },

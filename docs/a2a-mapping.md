@@ -93,6 +93,45 @@ what lets one Inflect tenant pin another (owner decision 2026-10-20).
   identity, so every message in either direction refuses `NO_PUBLIC_ORIGIN`
   and the send tool is not offered.
 
+### Two kinds of inbound principal
+
+Almost everything below describes a **peer**: another agent with its own card,
+its own Ed25519 key and a mutual pin. A second kind now exists.
+
+A **host consumer** is a host that calls Inflect as a *client* — SAP Joule is
+the first (#3861, ADR 0003). It publishes no card to pin, holds no signing key,
+and authenticates with an OAuth2 client-credentials bearer instead of a signed
+receipt. It is a separate principal with its own model, its own token endpoint
+and its own evidence table, and **nothing about a peer is waived to accommodate
+it**: a host-consumer token is recognised before the peer path and never falls
+through to it, so no peer check can be reached by a host-consumer credential.
+
+Three differences are worth holding in mind while reading the rest, because the
+sections below are written about peers:
+
+| | peer | host consumer |
+| --- | --- | --- |
+| authenticates with | an `iflp_` credential **and** a per-message Ed25519 receipt | a 15-minute signed JWT from the token endpoint |
+| identity established by | a person reading and pinning its live card | a person creating the consumer and issuing its credentials |
+| evidence kept | `PeerAgentMessage` — the signed statement, signature and body, re-verifiable from the row alone | `HostConsumerMessage` — the exact body, client id and token `jti` |
+
+**The third row is not a like-for-like swap and the threat model says so (R25).**
+A receipt proves authorship by a key its holder cannot repudiate; the evidence
+row proves what arrived and under which token. Non-repudiation is weaker on this
+path, nothing restores it, and it was admitted by owner decision on that
+understanding rather than by an argument that the two are equivalent.
+
+What does carry across unchanged, because it was never keyed on which principal
+called: the `PROPOSE_ONLY` clamp on external writes (R17), the refusal of any
+outbound A2A send from a run an inbound request started (R14), the `workflowKeys`
+allowlist (R6), a kill switch read uncached (R11) and an hourly quota (R13).
+Both principals are bound to exactly one receiving registered agent.
+
+Both gates must be on for a host consumer to be admitted at all: the deployment
+flag `A2A_HOST_CONSUMERS` and the per-tenant `a2aHostConsumersEnabled`, both
+default off. The tenant's is the decision that carries the weaker guarantee, so
+a deployment-wide flag alone does not make it.
+
 ### Inbound: a task becomes a run input
 
 There are two ways in, and one admission. `POST /api/a2a/:tenantSlug` is the
