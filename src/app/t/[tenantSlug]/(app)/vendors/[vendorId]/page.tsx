@@ -1082,8 +1082,11 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                 model that never surfaced the tenant's own
                                 questionnaire templates) was retired in favour of
                                 this unified flow. */}
+                            {/* Secondary (#3807): it opens the send dialog, whose
+                                own submit is the primary of that region — the
+                                harness tab's key-dialog trigger precedent. */}
                             <Button
-                                variant="primary"
+                                variant="secondary"
                                 onClick={() => {
                                     setSendError(null);
                                     setShowSendModal(true);

@@ -45,6 +45,34 @@ export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3] a
 export type HarnessContractId = (typeof HARNESS_CONTRACT_IDS)[number];
 
 /**
+ * Where a scanner looks. Stable ids: the report and the matrix carry them. The
+ * last, `code` (agent definitions read from source code and configuration,
+ * #3737), is the one `/2` added; the rest were `/1`'s.
+ */
+export const SOURCE_KINDS_V2 = [
+    'entra-sp',
+    'okta-app',
+    'vault',
+    'mcp',
+    'runtime',
+    'cicd',
+    'inflect-register',
+    'code',
+] as const;
+
+/** `/3`'s kinds: `/2`'s, and `gcp-sa`, a Google Cloud project's service accounts (#3785). */
+export const SOURCE_KINDS_V3 = [...SOURCE_KINDS_V2, 'gcp-sa'] as const;
+
+/**
+ * Every source kind a report this verifier accepts can carry, which is also
+ * every kind a stored scan can hold, `/1` and `/2` scans included. Stored scans
+ * are re-read against it, and an estate may declare exactly these (the
+ * database CHECKs the same list). Here rather than in the contract so the
+ * estate form, a client component, can offer the same list (#3807).
+ */
+export const SOURCE_KINDS = SOURCE_KINDS_V3;
+
+/**
  * Shapes that are a secret wherever they appear, including inside something
  * that otherwise looks like a reference. Deliberately short: a false refusal
  * names itself and costs a scanner fix; a false acceptance puts a credential in
