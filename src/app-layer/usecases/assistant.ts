@@ -26,16 +26,19 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { enforceFeatureGate } from '@/app-layer/ai/risk-assessment/feature-gate';
 import { checkRateLimit, recordGeneration } from '@/app-layer/ai/risk-assessment/rate-limiter';
 import { recordAiGeneration } from '@/lib/observability/integration-metrics';
+import { logger } from '@/lib/observability/logger';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed, assertNoReviewRequired } from '@/app-layer/ai/guard';
 import { getDashboardData } from './dashboard';
 import { createAgentProposal } from './agent-proposals';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import { runInTenantContext } from '@/lib/db-context';
+import { logAiDecision } from '@/app-layer/ai/decision-log';
 import { RESIDENCY_SELECT, residencyTermsFrom, resolveFlueModel } from '@/lib/agentic/flue/model-selection';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { assistantTools } from '@/app-layer/ai/assistant/tools';
 import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
-import { runAssistantLoop } from '@/app-layer/ai/assistant/tool-loop';
+import { runAssistantLoop, haltNotice, DEFAULT_LOOP_BOUNDS, type LoopOutcome } from '@/app-layer/ai/assistant/tool-loop';
+import type { AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
 import { env } from '@/env';
 
 /**
@@ -89,9 +92,78 @@ export async function askAssistant(
     ctx: RequestContext,
     input: z.infer<typeof AskAssistantSchema>,
 ): Promise<AssistantAnswer> {
+    return runGoverned(ctx, input.question, (question) => produceAnswer(ctx, question));
+}
+
+/**
+ * THE GOVERNED ORDERING, in one place (#3809).
+ *
+ * ```
+ * enforceFeatureGate -> checkRateLimit -> guardUntrustedInput
+ *   -> <produce> -> guardEgress -> recordGeneration
+ * ```
+ *
+ * Extracted when the streaming entry point arrived, because the alternative was
+ * a second copy of this sequence. Two copies look identical at review time and
+ * diverge at the first edit that touches only one — and what would diverge here
+ * is the order of the guards, which is the one property this file exists to
+ * hold. `tests/unit/usecases/assistant.test.ts` asserts the sequence; it now
+ * asserts it for both callers at once.
+ *
+ * The producer sees a question that has ALREADY passed the input guard, and its
+ * output is guarded on the way out. It cannot reorder either.
+ */
+/**
+ * How a turn was actually produced, for the Art 12 row.
+ *
+ * Reported by the producer rather than assumed by the logger, because the two
+ * paths differ in the one way the record must not get wrong: the loop calls a
+ * MODEL, and the keyword router calls none. A row naming a provider and model
+ * for an answer the deterministic router composed would be a false Art 12
+ * record — and false in the direction that matters, since the whole purpose of
+ * the row is to say what produced the output.
+ */
+interface ProducedBy {
+    readonly provider: string;
+    readonly model: string | null;
+    readonly toolCalls: number;
+    /**
+     * What the turn cost, null when unknown (#3833).
+     *
+     * ═══ THE ASSISTANT IS METERED SEPARATELY, AND HERE IS WHY ═══
+     *
+     * `agentMonthlyTokenBudget` is AGENT-scoped by name, and `spentThisMonth`
+     * sums `workflowRun.costTokens`. The assistant creates no run, so its spend
+     * is invisible to that ceiling — which the roadmap correctly flagged as a
+     * second, unbudgeted path.
+     *
+     * It is NOT folded into that sum. Doing so would silently redefine a
+     * setting tenants have already configured: an agent budget would begin
+     * refusing agent runs because a human used the assistant, and every other
+     * AI feature's spend would start counting too.
+     *
+     * What bounds it instead: `checkRateLimit` already applies
+     * `AI_RISK_DAILY_QUOTA` (50 turns per tenant per day by default) and
+     * `AI_RISK_USER_RPM` (5 per user per minute). With `MAX_TOKENS` at 8192 per
+     * round-trip and the loop capped at 6 iterations, a turn's ceiling is
+     * ~49k output tokens and a tenant's day is bounded above by 50 of those.
+     * That is a real bound, derived rather than asserted.
+     *
+     * And the spend is RECORDED per turn here, so it is visible and
+     * attributable even though no ceiling refuses it. An unrecorded cost would
+     * be the actual defect; an un-gated but measured one is a decision.
+     */
+    readonly tokensIn: number | null;
+    readonly tokensOut: number | null;
+}
+
+async function runGoverned(
+    ctx: RequestContext,
+    question: string,
+    produce: (question: string) => Promise<{ answer: AssistantAnswer; by: ProducedBy }>,
+): Promise<AssistantAnswer> {
     await enforceFeatureGate(ctx, 'assistant');
     await checkRateLimit(ctx.tenantId, ctx.userId);
-    const question = input.question;
 
     // The question is untrusted external input — guard before it steers
     // anything. H2 — auto-draft surface: abort on ANY review-required verdict
@@ -99,8 +171,59 @@ export async function askAssistant(
     // under the default balanced guard mode.
     assertNoReviewRequired(await guardUntrustedInput(ctx, question, { source: 'assistant' }));
 
+    const startedAt = Date.now();
+    const { answer, by } = await produce(question);
+
+    // Guard the outbound message before it leaves the boundary.
+    assertGuardAllowed(await guardEgress(ctx, { message: answer.message }, { source: 'assistant:outbound' }));
+
+    // ── ART 12 RECORD: ONE ROW PER TURN (#3828) ──
+    //
+    // The unit is the turn, and the append-only trigger is what settles it: a
+    // conversation-level row could not accumulate turns, so it would have to be
+    // written once at the end — leaving NO record for a conversation the user
+    // abandons, which is the wrong failure for record-keeping. Conversation
+    // grouping, when wanted, is `sessionRef` across turn rows.
+    //
+    // AFTER the egress guard, so the summary records what the user was actually
+    // allowed to see rather than what the model first produced.
+    //
+    // Best-effort: a logging failure must not deny the user their answer. The
+    // row is the record of a decision already made, not a precondition for it.
+    try {
+        await runInTenantContext(ctx, (db) =>
+            logAiDecision(db, ctx, {
+                feature: 'assistant',
+                provider: by.provider,
+                model: by.model,
+                sanitizedInput: { question: sanitizePlainText(question) },
+                outputSummary: answer.message,
+                latencyMs: Date.now() - startedAt,
+                tokensIn: by.tokensIn,
+                tokensOut: by.tokensOut,
+                sessionRef: ctx.requestId,
+            }),
+        );
+    } catch (err) {
+        logger.warn('assistant: decision log write failed', {
+            component: 'assistant',
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+
+    await recordGeneration(ctx.tenantId, ctx.userId);
+    recordAiGeneration({ feature: 'assistant' }); // H6 — AI cost visibility
+    return answer;
+}
+
+/** The non-streaming producer: action intents propose, everything else answers. */
+async function produceAnswer(
+    ctx: RequestContext,
+    question: string,
+): Promise<{ answer: AssistantAnswer; by: ProducedBy }> {
     const q = question.toLowerCase();
     let answer: AssistantAnswer;
+    let by: ProducedBy = DETERMINISTIC;
 
     // Which policy-card version governs a proposal queued from here. The
     // assistant speaks for a HUMAN — `ctx.agentId` is absent on a session
@@ -141,15 +264,34 @@ export async function askAssistant(
         };
     } else {
         // ── Read intents → the TOOL-USE LOOP, falling back to keywords ──
-        answer = (await answerFromToolLoop(ctx, question)) ?? (await answerFromKeywords(ctx, q));
+        const loop = await answerFromToolLoop(ctx, question);
+        if (loop !== null) {
+            answer = loop.answer;
+            by = loop.by;
+        } else {
+            answer = await answerFromKeywords(ctx, q);
+        }
     }
 
-    // Guard the outbound message before it leaves the boundary.
-    assertGuardAllowed(await guardEgress(ctx, { message: answer.message }, { source: 'assistant:outbound' }));
-    await recordGeneration(ctx.tenantId, ctx.userId);
-    recordAiGeneration({ feature: 'assistant' }); // H6 — AI cost visibility
-    return answer;
+    return { answer, by };
 }
+
+/**
+ * The provenance of an answer no model produced.
+ *
+ * Named rather than inlined so the Art 12 row says `deterministic` explicitly
+ * instead of carrying an empty provider that a reader would have to interpret.
+ * "No model was called" and "we did not record which model" are different
+ * facts, and only one of them is true here.
+ */
+const DETERMINISTIC: ProducedBy = {
+    provider: 'deterministic',
+    model: null,
+    toolCalls: 0,
+    // Zero, not null: a path that calls no model is KNOWN to have cost nothing.
+    tokensIn: 0,
+    tokensOut: 0,
+};
 
 /**
  * The deterministic read router — still here, now as the FALLBACK.
@@ -215,7 +357,18 @@ async function answerFromKeywords(ctx: RequestContext, q: string): Promise<Assis
  *
  * READ TOOLS ONLY, deliberately — see the note on `readOnly` below.
  */
-async function answerFromToolLoop(ctx: RequestContext, question: string): Promise<AssistantAnswer | null> {
+interface ToolLoopObservers {
+    readonly signal?: AbortSignal;
+    readonly onToolCall?: (name: string) => void;
+    readonly onToolResult?: (name: string, ok: boolean, truncated: boolean) => void;
+    readonly onHalt?: (outcome: LoopOutcome, notice: string) => void;
+}
+
+async function answerFromToolLoop(
+    ctx: RequestContext,
+    question: string,
+    observe: ToolLoopObservers = {},
+): Promise<{ answer: AssistantAnswer; by: ProducedBy } | null> {
     // THROUGH `runInTenantContext`, not the global client. `tests/unit/no-direct-prisma.test.ts`
     // forbids a usecase importing `@/lib/prisma` — and the reason is the one that
     // matters here rather than tidiness: this read is tenant-scoped, so it belongs
@@ -256,13 +409,41 @@ async function answerFromToolLoop(ctx: RequestContext, question: string): Promis
         question,
         tools: set.tools,
         guardTripped: set.reviewRequired,
+        signal: observe.signal,
     });
+
+    // Observation AFTER the loop rather than during it, which is a real
+    // limitation and not a preference: `runAssistantLoop` returns its call
+    // list when the turn ends, so these events describe work already done.
+    // A caller watching sees them in order, but not while each call is still
+    // in flight. Making them live means the loop taking a per-dispatch hook,
+    // which is #3886.
+    for (const call of result.calls) {
+        observe.onToolCall?.(call.name);
+        observe.onToolResult?.(call.name, call.ok, call.truncated);
+    }
+    if (result.outcome !== 'answered') {
+        const notice = haltNotice(result.outcome, DEFAULT_LOOP_BOUNDS);
+        if (notice !== null) observe.onHalt?.(result.outcome, notice);
+    }
 
     // An empty answer is not an answer. Falling back rather than returning
     // nothing, so a model that said nothing useful does not become a blank
     // reply the user reads as a hang.
     if (result.text.trim() === '') return null;
-    return { kind: 'answer', message: result.text };
+    return {
+        answer: { kind: 'answer', message: result.text },
+        by: {
+            // The specifier is `<provider-id>/<model-id>`; both halves are
+            // recorded rather than the whole string, because the Art 12 row
+            // asks which model, and a reader should not have to parse.
+            provider: choice.specifier.slice(0, Math.max(0, choice.specifier.indexOf('/'))) || 'unknown',
+            model: choice.specifier.slice(choice.specifier.indexOf('/') + 1) || null,
+            toolCalls: result.calls.length,
+            tokensIn: result.tokensIn,
+            tokensOut: result.tokensOut,
+        },
+    };
 }
 
 /**
@@ -273,6 +454,100 @@ async function answerFromToolLoop(ctx: RequestContext, question: string): Promis
  * READ, but nothing except this text stops the model inventing a control status
  * when a read FAILED, or describing a quarantined proposal as queued.
  */
+/**
+ * The STREAMING entry point (#3809).
+ *
+ * ═══ ONE COPY OF THE GOVERNED ORDERING, NOT TWO ═══
+ *
+ * The sequence `askAssistant` runs — feature gate, rate limit, input guard,
+ * answer, egress guard, record — is the thing this file exists to get right,
+ * and two copies of it would be two chances to drift. So the ordering lives
+ * once, in `runGoverned` below, and both entry points pass it a producer.
+ *
+ * Writing a second sequence here would have been the easier diff and the worse
+ * one: the copies look identical at review time and diverge at the first edit
+ * that touches only one of them.
+ *
+ * ═══ WHAT STREAMS TODAY, STATED PLAINLY ═══
+ *
+ * LIFECYCLE events stream: `thinking`, each `tool_call` by name, each
+ * `tool_result` with its truncation flag, then the answer, then `done`. A
+ * refusal or a halt arrives as its own event with a reason.
+ *
+ * The ANSWER TEXT arrives as one `answer` event rather than token deltas,
+ * because no provider in this codebase streams — verified: zero matches for
+ * `stream: true` across `src/app-layer/ai/**`. Token deltas need an SSE parser
+ * per provider, which is its own capability and its own tests. The user sees
+ * progress throughout either way, which is what stops a pause reading as a
+ * hang; they do not yet see the answer assemble word by word.
+ */
+export interface StreamAssistantOptions {
+    readonly emit: (event: AssistantStreamEvent) => void;
+    readonly signal?: AbortSignal;
+}
+
+export async function streamAssistant(
+    ctx: RequestContext,
+    input: z.infer<typeof AskAssistantSchema>,
+    opts: StreamAssistantOptions,
+): Promise<void> {
+    try {
+        const answer = await runGoverned(ctx, input.question, async (question) => {
+            opts.emit({ type: 'thinking' });
+            const loop = await answerFromToolLoop(ctx, question, {
+                signal: opts.signal,
+                onToolCall: (name) => opts.emit({ type: 'tool_call', name }),
+                onToolResult: (name, ok, truncated) => opts.emit({ type: 'tool_result', name, ok, truncated }),
+                onHalt: (outcome, notice) => opts.emit({ type: 'halt', outcome, notice }),
+            });
+            if (loop !== null) return loop;
+            // The deterministic router. No tool events, because it calls no
+            // tools — emitting a fake one would describe work that did not
+            // happen.
+            return { answer: await answerFromKeywords(ctx, question.toLowerCase()), by: DETERMINISTIC };
+        });
+
+        opts.emit({ type: 'answer', text: answer.message });
+        opts.emit({ type: 'done', truncatedAny: false });
+    } catch (err) {
+        // A GUARD refusal reaches here as a thrown `forbidden(...)`, and it must
+        // arrive as a visible refusal with a reason (#3826). An empty stream
+        // that simply ends is indistinguishable from a crash, so the user
+        // retries — which spends again and teaches them the feature is
+        // unreliable.
+        //
+        // The guard's own message is NOT forwarded: it carries rule ids, and
+        // `ai/guard` keeps those out of user-facing text. The reason the user
+        // gets says what happened and what it means for their data.
+        const refusal = isGuardRefusal(err)
+            ? 'That request was withheld by the content guard, which refuses material that reads as an instruction rather than as a record. Nothing was created and your data was not read.'
+            : 'The assistant could not answer this. Nothing was created.';
+        opts.emit({ type: 'refusal', reason: refusal });
+        opts.emit({ type: 'done', truncatedAny: false });
+    }
+}
+
+/**
+ * Is this the guard saying no, as opposed to anything else failing?
+ *
+ * Matched on the message prefix `ai/guard` writes, which is the only signal it
+ * gives: both `assertGuardAllowed` and `assertNoReviewRequired` throw the same
+ * `forbidden(...)` shape, so the HTTP status cannot tell them apart from a
+ * permission refusal.
+ *
+ * Deliberately narrow, and the consequence of a miss is the safe direction: an
+ * unrecognised throw becomes the generic refusal, which still says nothing was
+ * created. A rename upstream therefore degrades the WORDING, not the honesty —
+ * and `tests/unit/ai/assistant-stream-transport.test.ts` pins the prefix so the
+ * rename is visible rather than silent.
+ */
+export const GUARD_REFUSAL_PREFIXES = ['ai_guard_blocked:', 'ai_guard_review_required:'] as const;
+
+function isGuardRefusal(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return GUARD_REFUSAL_PREFIXES.some((p) => message.includes(p));
+}
+
 const ASSISTANT_SYSTEM_PROMPT = [
     'You are a compliance assistant inside the Inflect platform, answering about THIS tenant only.',
     '',

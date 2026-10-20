@@ -411,3 +411,86 @@ describe('a GUARD trip stops the turn — it is not data the model may reason pa
         expect(r.outcome).toBe('halted-guard-review');
     });
 });
+
+describe('what a turn cost, and the difference between zero and unknown (#3833)', () => {
+    it('reports NULL when no provider reply carried usage', async () => {
+        // Null rather than 0. "This turn cost nothing" and "we do not know what
+        // this turn cost" are different facts, and a spend record that conflates
+        // them under-reports — the one direction a cost record must not fail in.
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([answer('done')]),
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('t')],
+            bounds: BOUNDS,
+            now: () => 0,
+        });
+
+        expect(r.tokensIn).toBeNull();
+        expect(r.tokensOut).toBeNull();
+    });
+
+    it('SUMS usage across every round-trip, not just the last', async () => {
+        // A turn that called a tool made two round-trips and the tenant paid for
+        // both. Recording only the last would under-report a multi-step turn by
+        // most of its cost.
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([
+                { text: null, toolCalls: [{ id: 'c1', name: 't', args: {} }], stopReason: 'tool_use', usage: { tokensIn: 100, tokensOut: 20 } },
+                { text: 'done', toolCalls: [], stopReason: 'end', usage: { tokensIn: 300, tokensOut: 40 } },
+            ]),
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('t')],
+            bounds: BOUNDS,
+            now: () => 0,
+        });
+
+        expect(r.tokensIn).toBe(400);
+        expect(r.tokensOut).toBe(60);
+        // And the control: it is the SUM, not the maximum or the last.
+        expect(r.tokensIn).not.toBe(300);
+    });
+
+    it('counts a turn that reported usage only once, without zero-filling the rest', async () => {
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([
+                { text: null, toolCalls: [{ id: 'c1', name: 't', args: {} }], stopReason: 'tool_use' },
+                { text: 'done', toolCalls: [], stopReason: 'end', usage: { tokensIn: 50, tokensOut: 5 } },
+            ]),
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('t')],
+            bounds: BOUNDS,
+            now: () => 0,
+        });
+
+        // Partial knowledge is reported as what IS known rather than discarded,
+        // because an under-report is still better than no record — but the
+        // unreported round-trip is not invented as a zero either.
+        expect(r.tokensIn).toBe(50);
+        expect(r.tokensOut).toBe(5);
+    });
+
+    it('still reports the cost of a turn that HALTED', async () => {
+        // A bounded turn spent real money before it stopped. Reporting null
+        // there would hide the most expensive turns — the ones that ran to a cap.
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([
+                { text: null, toolCalls: [{ id: 'c', name: 't', args: {} }], stopReason: 'tool_use', usage: { tokensIn: 10, tokensOut: 2 } },
+            ]),
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('t')],
+            bounds: { ...BOUNDS, iterations: 2 },
+            now: () => 0,
+        });
+
+        expect(r.outcome).toBe('halted-iterations');
+        expect(r.tokensIn).toBeGreaterThan(0);
+    });
+});

@@ -1823,6 +1823,33 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Creating a member-scope campaign. Mirrors the assertCanAdmin ' +
             'in createAccessReview: OWNER + ADMIN.',
     },
+    {
+        // The in-product assistant. Both surfaces take the SAME key, and the
+        // reason is worth stating: proposing is safe at reader level because a
+        // proposal lands in the review queue as PENDING and creates nothing —
+        // the route's own docblock makes that argument. So the gate is about
+        // what the assistant may READ, which is `controls.view`.
+        //
+        // The streaming route must MATCH this, never loosen it: a transport
+        // that is easier to reach than the POST it mirrors would be a privilege
+        // escalation introduced by a change of transport.
+        path: new RegExp(`^${T}\\/assistant\\/ask$`),
+        methods: ['POST'],
+        permission: 'controls.view',
+        note:
+            'Asks the assistant and returns a finished answer. Reader-level '
+            + 'because every action it can take is queued as an agent-proposal '
+            + 'for human approval, never committed.',
+    },
+    {
+        path: new RegExp(`^${T}\\/assistant\\/stream$`),
+        methods: ['POST'],
+        permission: 'controls.view',
+        note:
+            'The same turn as /assistant/ask, streamed as SSE. Same key by '
+            + 'design — see the note above; a streaming transport grants no '
+            + 'additional read.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

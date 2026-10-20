@@ -228,3 +228,22 @@ describe('a non-2xx degrades through the loop rather than leaking a body', () =>
         await expect(new AnthropicAssistantProvider('key').complete(req())).rejects.toThrow(/503/);
     });
 });
+
+describe('usage is read both-or-neither (#3833)', () => {
+    it('reports usage when the provider gives both halves', () => {
+        const t = parseTurn({
+            content: [{ type: 'text', text: 'ok' }],
+            usage: { input_tokens: 120, output_tokens: 34 },
+        });
+        expect(t.usage).toEqual({ tokensIn: 120, tokensOut: 34 });
+    });
+
+    it('reports NOTHING when only one half is present', () => {
+        // A partial usage object recorded as a complete cost would carry one
+        // side silently zero, which under-reports. Undefined says "unknown",
+        // which the loop then keeps as null rather than as zero.
+        expect(parseTurn({ content: [], usage: { input_tokens: 120 } }).usage).toBeUndefined();
+        expect(parseTurn({ content: [], usage: { output_tokens: 34 } }).usage).toBeUndefined();
+        expect(parseTurn({ content: [] }).usage).toBeUndefined();
+    });
+});

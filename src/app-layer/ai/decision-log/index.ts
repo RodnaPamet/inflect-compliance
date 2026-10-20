@@ -47,7 +47,20 @@ const AGENTIC_SUMMARY_MAX = 4000;
  * never needed it.
  */
 export function summaryCapFor(feature: string): number {
-    return feature.startsWith('agentic-run') ? AGENTIC_SUMMARY_MAX : SUMMARY_MAX;
+    // `assistant` joins `agentic-run` on the SHAPE argument above, not by
+    // analogy: a turn that reached several read tools composes one answer from
+    // their results, which is synthesis rather than summary. And the row is the
+    // only record of what it said — there is no conversation store beside it —
+    // so at that ratio 500 characters would discard the record rather than bound
+    // it, which is the same sentence this file already writes about runs.
+    //
+    // Deliberately NOT done by naming the feature `agentic-run:assistant`. The
+    // assistant has no agent, no policy card and no WorkflowRun; a feature name
+    // claiming otherwise would make the Art 12 record assert something false
+    // about what produced the answer.
+    return feature.startsWith('agentic-run') || feature.startsWith('assistant')
+        ? AGENTIC_SUMMARY_MAX
+        : SUMMARY_MAX;
 }
 
 /**
