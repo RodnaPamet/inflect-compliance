@@ -289,6 +289,8 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       note: 'Global risk-template library — product catalogue content with no tenant dimension. Declared public in the handler doc comment.' },
     { handler: 'api/trust/[slug]/access-request/route.ts#POST', klass: 'PUBLIC_UNAUTHENTICATED',
       note: 'A prospect asking a tenant for access to gated trust-centre documents. The caller is by construction an outsider; approval happens later, inside the tenant.' },
+    { handler: 'api/a2a/[tenantSlug]/agent-card.json/route.ts#GET', klass: 'PUBLIC_UNAUTHENTICATED',
+      note: 'The tenant\'s published A2A agent card (#3742, threat-model R19). A peer fetches it to PIN it, before it holds any credential, so there is none to check. It names only what an operator would otherwise hand the peer out of band — the per-tenant endpoint, the identity, the receipt format and the public signing keys — never an agent, a workflow or the tenant\'s name; own-card.ts fixes the member set and a unit test asserts it over the whole document. Every reason there is no card answers one 404, so the route is no oracle for which slugs exist, and it is rate-limited by IP because withApiErrorHandling throttles only mutations.' },
 
     // ── SESSION_SELF_SERVICE ─────────────────────────────────────────
     { handler: 'api/account/avatar/route.ts#POST', klass: 'SESSION_SELF_SERVICE',
@@ -426,6 +428,12 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/a2a/[tenantSlug]/peers/[peerId]/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /handleInboundA2a/,
       note: 'Inbound A2A (#3679): the peer\'s per-peer iflp_ bearer AND its per-message Ed25519 signature over the exact body, verified against PeerAgent.signingPublicKey, plus the card pin, the per-peer kill and the tenant caps — all inside handleInboundA2a, before the body is parsed. Not requirePermission: the caller is another organisation\'s agent and its reach is the receiving agent\'s grants (owner decision 4), not a key of its own. Every refusal attributable to a tenant writes AUTHZ_DENIED explicitly.' },
+    // The per-tenant inbound endpoint the card names (#3742). The same
+    // `handleInboundA2a`, with the peer found from its credential's hash
+    // instead of the path; everything after that is the per-peer route's order.
+    { handler: 'api/a2a/[tenantSlug]/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /handleInboundA2a/,
+      note: 'Inbound A2A at the per-tenant address (#3742): the peer is identified by the SHA-256 of its iflp_ bearer through a unique index, and then admitted exactly as the per-peer route admits it — the kill, the live credential in constant time, the per-message Ed25519 signature over the exact body against PeerAgent.signingPublicKey, the card pin and the tenant caps, all inside handleInboundA2a before the body is parsed. A bearer no credential hashes to writes the AUTHZ_DENIED row against the tenant.' },
     { handler: 'api/mcp/entra-grant/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /authenticateGrantCaller/,
       note: 'Per-connection bearer `<connectionId>.<secret>`, compared in constant time against the connection\'s stored authorization secret (#3323). NOT requirePermission, and not because it was skipped: no API key can hold `admin.tenant_lifecycle` — `scopesToPermissions` states those "need a real session and no bearer token, however scoped, performs" — so the first version of this route was callable by a human in a browser and by nothing else, which is the inverse of its purpose. The tenant is still authenticated rather than asserted: it comes from the connection row the token names, never from an argument. The AUTHZ_DENIED row requirePermission would have written is written explicitly for every refusal that can be attributed to a tenant; the ones that cannot (a malformed token names none, and AuditLog is tenant-scoped) are logged, and that asymmetry is carried in GrantAuthRefusal.attributable so a new refusal kind must decide which it is.' },

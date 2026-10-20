@@ -192,6 +192,24 @@ export async function tenantA2aPublicKeysByFingerprint(
     return new Map(rows.map((r) => [r.fingerprint, r.publicKey]));
 }
 
+/**
+ * The keys the tenant's published agent card names (#3742): the most recently
+ * retired one, with when it was retired. The card decides whether that is
+ * still within its grace period; this only reads. The key in force comes from
+ * `resolveTenantA2aSigningKey`, because the card is signed with it.
+ */
+export async function lastRetiredTenantA2aKey(ctx: RequestContext) {
+    const row = await runInTenantContext(ctx, (db) =>
+        db.tenantA2aSigningKey.findFirst({
+            where: { tenantId: ctx.tenantId, retiredAt: { not: null } },
+            orderBy: { retiredAt: 'desc' },
+            select: { publicKey: true, fingerprint: true, retiredAt: true },
+        }),
+    );
+    if (!row?.retiredAt) return null;
+    return { publicKeyHex: row.publicKey, fingerprint: row.fingerprint, retiredAt: row.retiredAt };
+}
+
 /** The in-force public key only — what a peer is handed. `null` when none. */
 export async function currentTenantA2aPublicKey(ctx: RequestContext) {
     return runInTenantContext(ctx, (db) =>

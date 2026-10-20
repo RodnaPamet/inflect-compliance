@@ -35,7 +35,15 @@
  *   9. THE QUOTA. Per peer, settable by the register key, bounded.
  *  10. RETIREMENT. Retiring the receiving agent revokes the credential, and
  *      the next message fails at the credential check.
+ *  11. THE PUBLISHED CARD AND THE PER-TENANT ENDPOINT (#3742). The card names
+ *      the endpoint, the identity and the keys, verifies, differs per tenant,
+ *      and follows a rotation; the per-tenant endpoint finds the peer from its
+ *      credential alone and refuses everything else it is shown.
  */
+// Inflect's A2A identity is the tenant's card URL on the deployment's public
+// origin (#3742). The test sets the origin, and clears it to see the refusal.
+let mockA2aOrigin: string | null = 'https://inflect.test';
+jest.mock('@/lib/agentic/a2a/origin', () => ({ inflectA2aOrigin: () => mockA2aOrigin }));
 // The tenant-DEK rotation enqueues its sweep; the test runs the sweep itself.
 jest.mock('@/app-layer/jobs/queue', () => ({
     ...jest.requireActual('@/app-layer/jobs/queue'),
@@ -65,7 +73,9 @@ import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import { externalToolName } from '@/lib/mcp/external-tool-name';
 import { hashToolManifest } from '@/lib/mcp/tool-manifest';
 import { resolveExternalReadTools } from '@/lib/mcp/tools/external-tools';
-import { a2aSendToolName, inflectA2aIdentity } from '@/lib/agentic/a2a/send-tool';
+import { a2aSendToolName } from '@/lib/agentic/a2a/send-tool';
+import { A2A_PREVIOUS_KEY_GRACE_MS, inflectA2aIdentity, verifyInflectAgentCard } from '@/lib/agentic/a2a/own-card';
+import { getTenantA2aAgentCard } from '@/app-layer/usecases/a2a-agent-card';
 import { verifyStoredA2aReceipt, A2A_RECEIPT_HEADER, verifyA2aReceiptHeader, a2aBodyDigest } from '@/lib/agentic/a2a/receipt';
 import { clearAgentCardCacheForTests, recentAgentCard } from '@/lib/agentic/a2a/card-cache';
 import { approvePeerAgentCard, readPeerAgentCard, registerPeerAgent, updatePeerAgent } from '@/app-layer/usecases/peer-agents';
@@ -98,6 +108,7 @@ import type { RequestContext } from '@/app-layer/types';
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(180_000);
 
+const ORIGIN = 'https://inflect.test';
 const T1 = 'a2a-msg-one';
 const T2 = 'a2a-msg-two';
 const TENANTS = [T1, T2];
@@ -215,7 +226,7 @@ async function seed(t: string, host: string): Promise<void> {
     );
     world[t].peerId = reg.peer.id;
     peer.inflectPublicKey = world[t].inflectPublicKey;
-    peer.inflectIdentity = inflectA2aIdentity(t, reg.peer.id);
+    peer.inflectIdentity = inflectA2aIdentity(ORIGIN, t);
     await approveCurrentCard(t);
     const issued = await issuePeerInboundCredential(ownerCtx(t), reg.peer.id, {
         receivingAgentId: agent.id,
@@ -267,13 +278,19 @@ beforeEach(async () => {
 async function inbound(
     t: string,
     body: Record<string, unknown>,
-    opts: Parameters<FakeA2aPeer['signedRequest']>[1] & { token?: string | null; tamper?: (b: string) => string; peerId?: string } = {},
+    opts: Parameters<FakeA2aPeer['signedRequest']>[1] & {
+        token?: string | null;
+        tamper?: (b: string) => string;
+        peerId?: string;
+        /** Through the per-tenant endpoint (#3742): no peer id, the credential names the peer. */
+        perTenant?: boolean;
+    } = {},
 ) {
     const w = world[t];
     const signed = w.peer.signedRequest(body, opts);
     return handleInboundA2a({
         tenantSlug: t,
-        peerId: opts.peerId ?? w.peerId,
+        ...(opts.perTenant ? {} : { peerId: opts.peerId ?? w.peerId }),
         authorization: opts.token === null ? null : `Bearer ${opts.token ?? w.token}`,
         receiptHeader: signed.receiptHeader,
         body: opts.tamper ? opts.tamper(signed.body) : signed.body,
@@ -334,7 +351,7 @@ describe('inbound: a pinned peer\'s task becomes a run for its receiving agent',
         // The answer verifies against Inflect's public key, as the peer checks it.
         const verdict = verifyA2aReceiptHeader(res.headers[A2A_RECEIPT_HEADER], world[T1].inflectPublicKey, {
             kind: 'RESULT',
-            sender: inflectA2aIdentity(T1, world[T1].peerId),
+            sender: inflectA2aIdentity(ORIGIN, T1),
             recipient: world[T1].peer.cardUrl,
             bodyDigest: a2aBodyDigest(res.body),
             relatesTo: JSON.parse(task.receiptJson).messageId,
@@ -483,7 +500,7 @@ describe('inbound refusals: generic to the peer, named in the audit row', () => 
             receivingAgentId: world[T1].agentId,
             workflowKeys: ['diagnostic'],
         });
-        stranger.inflectIdentity = inflectA2aIdentity(T1, reg.peer.id);
+        stranger.inflectIdentity = inflectA2aIdentity(ORIGIN, T1);
         const signed = stranger.signedRequest(FakeA2aPeer.sendBody('diagnostic', 'hi'));
         const res = await handleInboundA2a({
             tenantSlug: T1,
@@ -520,7 +537,7 @@ describe('inbound refusals: generic to the peer, named in the audit row', () => 
         });
         expect(tampered.outcome).toBe('DIGEST_MISMATCH');
         const misaddressed = await inbound(T1, FakeA2aPeer.sendBody('diagnostic', 'hi'), {
-            recipient: inflectA2aIdentity(T2, world[T1].peerId),
+            recipient: inflectA2aIdentity(ORIGIN, T2),
         });
         expect(misaddressed.outcome).toBe('RECIPIENT_MISMATCH');
 
@@ -1216,5 +1233,161 @@ describe('retiring the receiving agent', () => {
                 },
             }),
         ).rejects.toThrow(/AGENT_RETIRED/);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 11. THE PUBLISHED CARD AND THE PER-TENANT ENDPOINT (#3742)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('the published card and the per-tenant endpoint', () => {
+    const cardOf = (slug: string, now?: Date) => getTenantA2aAgentCard({ tenantSlug: slug, requestId: 'req-card', now });
+
+    it('finds the peer from its credential and admits it exactly as the per-peer route does', async () => {
+        const res = await inbound(T1, FakeA2aPeer.sendBody('diagnostic', 'through the card'), { perTenant: true });
+        expect(res.outcome).toBe('ANSWERED');
+        const run = await prisma.workflowRun.findUniqueOrThrow({ where: { id: res.runId! }, select: { inboundPeerId: true } });
+        expect(run.inboundPeerId).toBe(world[T1].peerId);
+        // The same checks, not a shortcut past them: a kill still stops it.
+        await engagePeerKill(ownerCtx(T1), world[T1].peerId, { reason: 'Per-tenant endpoint kill check' });
+        try {
+            expect((await inbound(T1, FakeA2aPeer.sendBody('diagnostic', 'hi'), { perTenant: true })).outcome).toBe('PEER_KILLED');
+        } finally {
+            await liftPeerKill(ownerCtx(T1), world[T1].peerId, { liftReason: 'Check done' });
+        }
+    });
+
+    it('a bearer no credential of the tenant hashes to is refused, and the AUTHZ_DENIED row is the tenant\'s', async () => {
+        const res = await inbound(T1, FakeA2aPeer.sendBody('diagnostic', 'hi'), { perTenant: true, token: 'iflp_not-the-token' });
+        expect(res).toMatchObject({ status: 401, outcome: 'BAD_CREDENTIAL' });
+        expect(res.body).toMatch(GENERIC);
+        const row = await prisma.auditLog.findFirstOrThrow({
+            where: { tenantId: T1, action: 'AUTHZ_DENIED', entity: 'Tenant' },
+            orderBy: { createdAt: 'desc' },
+        });
+        expect(row.entityId).toBe(T1);
+        expect((row.detailsJson as { reason?: unknown }).reason).toBe('BAD_CREDENTIAL');
+        expect((await inbound(T1, FakeA2aPeer.sendBody('diagnostic', 'hi'), { perTenant: true, token: null })).outcome).toBe(
+            'BAD_CREDENTIAL',
+        );
+    });
+
+    it('another tenant\'s credential names no peer here', async () => {
+        const signed = world[T2].peer.signedRequest(FakeA2aPeer.sendBody('diagnostic', 'hi'), {
+            recipient: inflectA2aIdentity(ORIGIN, T1),
+        });
+        const res = await handleInboundA2a({
+            tenantSlug: T1,
+            authorization: `Bearer ${world[T2].token}`,
+            receiptHeader: signed.receiptHeader,
+            body: signed.body,
+            requestId: 'req-cross-tenant',
+            card: seam(T1),
+        });
+        expect(res).toMatchObject({ status: 401, outcome: 'BAD_CREDENTIAL' });
+    });
+
+    it('a revoked credential is refused as its own peer\'s, not as a stranger\'s', async () => {
+        const old = world[T1].token;
+        await revokePeerInboundCredential(ownerCtx(T1), world[T1].peerId);
+        try {
+            const res = await inbound(T1, FakeA2aPeer.sendBody('diagnostic', 'hi'), { perTenant: true, token: old });
+            expect(res.outcome).toBe('BAD_CREDENTIAL');
+            const row = await prisma.auditLog.findFirstOrThrow({
+                where: { tenantId: T1, action: 'AUTHZ_DENIED' },
+                orderBy: { createdAt: 'desc' },
+            });
+            expect(row).toMatchObject({ entity: 'PeerAgent', entityId: world[T1].peerId });
+        } finally {
+            const issued = await issuePeerInboundCredential(ownerCtx(T1), world[T1].peerId, {
+                receivingAgentId: world[T1].agentId,
+                workflowKeys: ['diagnostic', UNGRANTED_WF],
+            });
+            world[T1].token = issued.token;
+        }
+    });
+
+    it('holds a credential hash unique per tenant in the database, revoked rows included', async () => {
+        const live = await prisma.peerAgentInboundCredential.findFirstOrThrow({ where: { tenantId: T1, revokedAt: null } });
+        await expect(
+            prisma.peerAgentInboundCredential.create({
+                data: {
+                    tenantId: T1,
+                    peerId: world[T1].peerId,
+                    receivingAgentId: world[T1].agentId,
+                    workflowKeys: ['diagnostic'],
+                    keyHash: live.keyHash,
+                    keyPrefix: 'iflp_dup',
+                    createdByUserId: world[T1].ownerUserId,
+                    revokedAt: new Date(),
+                    revokedByUserId: world[T1].ownerUserId,
+                },
+            }),
+        ).rejects.toMatchObject({ code: 'P2002' });
+    });
+
+    it('with no public origin, refuses every message and serves no card', async () => {
+        mockA2aOrigin = null;
+        try {
+            const res = await inbound(T1, FakeA2aPeer.sendBody('diagnostic', 'hi'), { perTenant: true });
+            expect(res).toMatchObject({ status: 503, outcome: 'NO_PUBLIC_ORIGIN' });
+            expect(res.body).toMatch(GENERIC);
+            expect(await cardOf(T1)).toBeNull();
+            const handover = await getPeerInboundCredential(ownerCtx(T1), world[T1].peerId);
+            expect(handover.inflectIdentity).toBeNull();
+        } finally {
+            mockA2aOrigin = ORIGIN;
+        }
+    });
+
+    it('names the per-tenant endpoint, the identity and the key in force, and verifies against that key', async () => {
+        const keys = await getTenantA2aSigningKeys(ownerCtx(T1));
+        const card = await cardOf(T1);
+        if (!card || !keys.current) throw new Error('expected a card and a key');
+        expect(card.url).toBe(`${ORIGIN}/api/a2a/${T1}`);
+        expect(card['x-inflect'].identity).toBe(`${ORIGIN}/api/a2a/${T1}/agent-card.json`);
+        expect(card['x-inflect'].signingKeys[0]).toMatchObject({ publicKey: keys.current.publicKey, status: 'CURRENT' });
+        expect(verifyInflectAgentCard(card, keys.current.publicKey)).toEqual({ ok: true });
+        // And what an operator hands a peer says the same.
+        const handover = await getPeerInboundCredential(ownerCtx(T1), world[T1].peerId);
+        expect(handover).toMatchObject({ inflectIdentity: card['x-inflect'].identity, endpointPath: `/api/a2a/${T1}` });
+    });
+
+    it('two tenants\' cards are distinct, and neither names the other', async () => {
+        const [one, two] = await Promise.all([cardOf(T1), cardOf(T2)]);
+        const k2 = (await getTenantA2aSigningKeys(ownerCtx(T2))).current?.publicKey;
+        if (!one || !two || !k2) throw new Error('expected two cards');
+        const a = JSON.stringify(one);
+        const b = JSON.stringify(two);
+        expect(a).not.toBe(b);
+        expect(a).not.toContain(T2);
+        expect(b).not.toContain(T1);
+        expect(a).not.toContain(k2);
+        expect(verifyInflectAgentCard(one, k2)).toMatchObject({ ok: false });
+    });
+
+    it('after a rotation names the new key, and the previous one only for its grace period', async () => {
+        const before = (await getTenantA2aSigningKeys(ownerCtx(T1))).current;
+        await rotateTenantA2aSigningKey(ownerCtx(T1));
+        const after = (await getTenantA2aSigningKeys(ownerCtx(T1))).current;
+        if (!before || !after) throw new Error('expected keys');
+        world[T1].inflectPublicKey = after.publicKey;
+        world[T1].peer.inflectPublicKey = after.publicKey;
+
+        const now = await cardOf(T1);
+        expect(now?.['x-inflect'].signingKeys.map((k) => [k.fingerprint, k.status])).toEqual([
+            [after.fingerprint, 'CURRENT'],
+            [before.fingerprint, 'PREVIOUS'],
+        ]);
+        expect(verifyInflectAgentCard(now, after.publicKey)).toEqual({ ok: true });
+        // A card signed by the new key is no card under the old one.
+        expect(verifyInflectAgentCard(now, before.publicKey)).toMatchObject({ ok: false });
+
+        const later = await cardOf(T1, new Date(Date.now() + A2A_PREVIOUS_KEY_GRACE_MS + 60_000));
+        expect(later?.['x-inflect'].signingKeys.map((k) => k.status)).toEqual(['CURRENT']);
+    });
+
+    it('an unknown tenant has no card', async () => {
+        expect(await cardOf('no-such-tenant')).toBeNull();
     });
 });

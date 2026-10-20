@@ -57,7 +57,7 @@ export class FakeA2aPeer {
     card: Record<string, unknown>;
     reply: FakePeerReply = { kind: 'task', state: 'completed' };
     readonly received: ReceivedTask[] = [];
-    /** Inflect's public key and its identity for this peer, as the peer registered them. */
+    /** Inflect's public key and its identity (the tenant's card URL, #3742), as the peer pinned them. */
     inflectPublicKey = '';
     inflectIdentity = '';
 

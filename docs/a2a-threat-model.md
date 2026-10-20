@@ -17,10 +17,10 @@ states:
 
 - **On `main`**, cited by file and symbol. It holds today and A2A traffic must
   pass through it. A control step 4b built is marked **On `main` (4b)**.
-- **Required**, with the step that builds it. After 4b, one control is in this
-  state: Inflect's own published agent card (R19). The controls this model
-  assigned to **2d** (the integration passport, #3672) and **2e** are on `main`
-  and are cited as such.
+- **Required**, with the step that builds it. No control is in this state: the
+  last one, Inflect's own published agent card (R19), is on `main` since #3742.
+  The controls this model assigned to **2d** (the integration passport, #3672)
+  and **2e** are on `main` and are cited as such.
 
 The residual risks, each with the step that closes it, are at the end.
 
@@ -203,6 +203,17 @@ and step 4b enforces them on traffic.
    before every message against a copy at most 15 minutes old is required on
    step 4b by owner decision (2026-10-17); the window it leaves is residual
    R18. Re-approval is the only way back; refusing never needs approval.
+
+   **The same rule binds the other side, about Inflect's card (#3742).** Each
+   tenant publishes its own card (`GET /api/a2a/:tenantSlug/agent-card.json`,
+   `src/lib/agentic/a2a/own-card.ts`), and a peer pins it as Inflect pins the
+   peer's. A key rotation changes the card, and so does the end of a rotation's
+   seven-day grace period, when the previous key drops off it. Either change is
+   one the PEER re-approves before it sends again: Inflect cannot re-approve on
+   a peer's behalf, and a peer that went on trusting a changed card would be
+   trusting whoever changed it. The card is deterministic — the same keys give
+   the same bytes — so nothing else changes it, and a peer is never asked to
+   re-approve a card that did not move.
 7. **A refusal reveals nothing.** The message returned to an agent or a peer
    names the peer and says re-approval is required. Hashes and the nature of the
    change go to the audit row and the metric only, as `assertToolManifestPinned`
@@ -234,9 +245,9 @@ Boundary: TB1.
 
 | STRIDE | Threat | Control |
 |---|---|---|
-| S | An unregistered agent sends a task. | On `main` (4b): the endpoint `POST /api/a2a/:tenantSlug/peers/:peerId` refuses any request whose credential does not resolve to the live `iflp_` credential of a registered peer of that tenant, or whose peer has no current card pin (`handleInboundA2a` in `src/app-layer/usecases/a2a-inbound.ts`). |
-| T | A message is altered in transit or replayed. | On `main` (4b): https at the deployment's edge, and an `inflect-a2a-receipt/1` signature over each message by the peer's REGISTERED key, Ed25519 over the canonical JSON of a statement carrying the SHA-256 of the exact body, through the same `receiptSignedMessage` `verifyReceiptSignature` uses (`src/lib/agentic/a2a/receipt.ts`). The statement names this tenant-and-peer as recipient and is refused outside a five-minute clock window; a message id seen before from that peer is refused by the unique index the receipt is written under (`PeerAgentMessage`). |
-| I | Inflect's own card discloses what a tenant runs. | Required (R19): Inflect publishes a card only for an agent a tenant enables for A2A, and the card carries no tenant data and no tool names. Step 4b publishes no card: a peer is handed the endpoint, Inflect's identity for the pair and Inflect's public key by an operator (`getPeerInboundCredential`). |
+| S | An unregistered agent sends a task. | On `main` (4b): the endpoint `POST /api/a2a/:tenantSlug/peers/:peerId` refuses any request whose credential does not resolve to the live `iflp_` credential of a registered peer of that tenant, or whose peer has no current card pin (`handleInboundA2a` in `src/app-layer/usecases/a2a-inbound.ts`). On `main` (#3742): the per-tenant endpoint the card names, `POST /api/a2a/:tenantSlug`, finds the peer from the SHA-256 of its bearer through a unique index (`findPeerIdByInboundToken`) and then admits it through the same function, in the same order and with the same refusals. A bearer no credential hashes to is refused, with an `AUTHZ_DENIED` row against the tenant. |
+| T | A message is altered in transit or replayed. | On `main` (4b): https at the deployment's edge, and an `inflect-a2a-receipt/1` signature over each message by the peer's REGISTERED key, Ed25519 over the canonical JSON of a statement carrying the SHA-256 of the exact body, through the same `receiptSignedMessage` `verifyReceiptSignature` uses (`src/lib/agentic/a2a/receipt.ts`). The statement names this tenant as recipient — by its card URL since #3742, the same for every peer, with the peer named as sender, so a message signed for one tenant verifies at no other and a message from one peer verifies as no other's — and is refused outside a five-minute clock window; a message id seen before from that peer is refused by the unique index the receipt is written under (`PeerAgentMessage`). |
+| I | Inflect's own card discloses what a tenant runs. | On `main` (#3742): one card per tenant, served only while the tenant holds a signing key — which is what enabling A2A means — so a tenant that never set A2A up has none. It names the per-tenant endpoint, the identity, the receipt format and the public keys, and nothing else: no agent list (`skills` is always empty), no tool or workflow name, no tenant name. `CARD_MEMBERS` fixes its members, verification refuses any other, and a test asserts the strings of the whole document. Every reason there is no card — an unknown slug, no key, no public origin — is one 404, so the route is no oracle for which tenants exist or use A2A. Signed by the key in force (`signInflectAgentCard`). |
 | I | A new credential type widens the edge's carve-out. | On `main`: the edge lets `/api/t/**` with an `iflk_` bearer fall through to the handler, and `matchTenantApiKeyRequest` (`src/lib/auth/guard.ts`) is deliberately narrow because the fall-through also skips the admin-role and MFA gates. On `main` (4b): the A2A endpoint is its own entry in `MACHINE_CALLER_PREFIXES`, outside `/api/t/**`, and its credential has its own `iflp_` prefix, so neither `matchTenantApiKeyRequest` nor `verifyApiKey` ever sees it; the handler, not the edge, decides whether it is real. |
 | D | A flood of tasks. | On `main`: `withApiErrorHandling` applies `API_MUTATION_LIMIT` to every POST (`src/lib/security/rate-limit.ts`, `src/lib/security/rate-limit-middleware.ts`), keyed by IP. On `main` (4b): a quota per peer, `PeerAgent.inboundMessagesPerHour` (default 60, a CHECK holds it to 1..1000, set with the register key), counted from the peer's kept receipts, because an IP key cannot tell two peers behind one gateway apart. |
 | D | An oversized body. | On `main` (4b): `A2A_MAX_BODY_BYTES` (64 KiB), refused on a declared length and again while the body streams, before it is parsed (the route). |
@@ -355,7 +366,7 @@ Boundary: TB3.
 | STRIDE | Threat | Control |
 |---|---|---|
 | T | The reply carries instructions for Inflect's model. | On `main`: the result is scanned for injection and for secrets before the model sees it, a flag parks the run, and a tool this build does not define resolves to `THIRD_PARTY_INGESTED` (`src/lib/agentic/content-provenance.ts`). |
-| S | The reply comes from an agent other than the pinned peer. | On `main` (4b): the reply's receipt is verified against the peer's registered key, as a RESULT naming Inflect's identity for the pair and answering the task's message id, over the digest of the exact reply body. An unsigned, wrongly signed or altered reply is discarded, not kept, and the journal row settles `INDETERMINATE`. |
+| S | The reply comes from an agent other than the pinned peer. | On `main` (4b): the reply's receipt is verified against the peer's registered key, as a RESULT naming Inflect's identity (the tenant's card URL since #3742) as recipient and answering the task's message id, over the digest of the exact reply body. An unsigned, wrongly signed or altered reply is discarded, not kept, and the journal row settles `INDETERMINATE`. |
 | D | The reply never comes. | On `main`: the deadline (`wirePost` in `src/lib/mcp/wire-transport.ts`), and the `INDETERMINATE` journal outcome for a send that did not report back (`ExternalWriteOutcome` in `prisma/schema/enums.prisma`). |
 
 ### O6 — Follow-up traffic: streams, callbacks and requests for input
@@ -439,8 +450,8 @@ raising no finding with an owner) and R16 (a connection with no accountable
 owner) were closed by step 2d, which shipped the weekly integration passport and
 the connection owner; their numbers are not reused. R1 and R3 were closed by
 step 2e (#3673). Step 4b (#3679) closed R2 and R4 to R24 except R19, against an
-in-process fake peer; R19, Inflect's own published card, is the one Required
-control left. The controls in R13 (the tenant caps), R17 and R18 were required
+in-process fake peer, and #3742 closed R19, so no Required control is left. The
+controls in R13 (the tenant caps), R17 and R18 were required
 on 4b by owner decision (2026-10-17) and are on `main`.
 
 | # | Risk | Why it remains on `main` | Closed by |
@@ -461,7 +472,7 @@ on 4b by owner decision (2026-10-17) and are on `main`.
 | R14 | Chaining: a peer uses Inflect's agent to reach a second peer. | **Closed by 4b.** A run an inbound task started is offered no send, is refused one at the call, and its row is refused at the send. | 4b (I4 E). |
 | R17 | A run an inbound task started causes an unattended write to another system. | **Closed by 4b**, by owner decision (2026-10-17): `clampForInboundA2a` holds such a run's external writes at `PROPOSE_ONLY`, so on an `AUTOMATIC` connection its write is a proposal a person approves; an approved write opens at `PROPOSE_ONLY`. | 4b (I4 E). |
 | R18 | Between a peer changing its card and the next comparison, its messages are still admitted and sent. | **Accepted at 15 minutes, by owner decision (2026-10-17).** The card is compared before every message against a copy at most 15 minutes old (`A2A_CARD_MAX_AGE_MS`), fetched when none is held, and a failed fetch refuses. A change made inside the window is admitted and sent until the copy expires. | 4b (pinning rule 6). |
-| R19 | Inflect's own published card discloses what a tenant runs. | Inflect publishes no card; an operator hands a peer the endpoint, Inflect's identity for the pair and the tenant's public key. | Open: a card only for an agent a tenant enables for A2A, carrying no tenant data and no tool names (I1 I). No step is assigned yet. |
+| R19 | Inflect's own published card discloses what a tenant runs. | **Closed by #3742.** One signed card per tenant that holds a signing key, naming the per-tenant endpoint, the identity and the keys and nothing else — no agent list, no tool or workflow name, no tenant name. The owner chose a card per tenant over one per agent (2026-10-20), because a second Inflect tenant cannot pin per-pair cards: each side's would need the peer id the other assigns, which exists only after it has pinned this one. | #3742 (I1 I; pinning rule 6 binds the peer to re-approve a changed card). |
 | R20 | A very large inbound task. | **Closed by 4b.** A 64 KiB body cap before parsing, and caps on the task's text and data before it is scanned. | 4b (I3 D). |
 | R21 | The answer to a peer: what it carries, what it claims, and what a refusal reveals. | **Closed by 4b.** The answer is the task's state and the run's proposals by status, passes `guardEgress` (a flag or a block withholds its artefact), says a pending proposal changed nothing, and every refusal is one generic error with the reason in the audit row. | 4b (I5 I, T). |
 | R22 | A peer's endpoint repointed while its stored credential is kept. | **Closed by 2e and 4b.** A peer's card URL and signing key cannot be updated (2e); the `a2a-peer` connection holds no endpoint, and its `peerId` is an origin field, so repointing it keeps no stored credential (4b). | 2e and 4b (O0 T). 2d: an endpoint change is a HIGH passport finding (P1). |

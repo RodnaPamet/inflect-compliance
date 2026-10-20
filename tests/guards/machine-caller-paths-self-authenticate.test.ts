@@ -302,3 +302,56 @@ describe('/api/admin: every exported method gates itself on the platform key', (
         expect(MACHINE_CALLER_PREFIXES).toContain('/api/admin');
     });
 });
+
+/**
+ * `/api/a2a` — EVERY method of EVERY route, derived from the directory (#3742).
+ *
+ * The prefix had one route until the per-tenant endpoint and the published
+ * agent card joined it, and the contract table samples one. So, as for
+ * `/api/admin`: walk the directory, and hold each exported method to the one
+ * thing it may be.
+ *
+ * - A POST is an inbound message, and is admitted by `handleInboundA2a`, which
+ *   checks the peer's credential and signature before it parses anything.
+ * - A GET is the published card and nothing else: credential-less by necessity
+ *   (a peer reads it before it holds a credential), so it is held instead to
+ *   serving `getTenantA2aAgentCard` behind its own rate limit.
+ *
+ * A third method, or a GET that serves anything else, fails here on the day it
+ * is added.
+ */
+describe('/api/a2a: every exported method is the inbound endpoint or the published card', () => {
+    const A2A_DIR = path.join(APP, 'api/a2a');
+    const routes = (dir: string): string[] =>
+        fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) return routes(full);
+            return e.name === 'route.ts' ? [full] : [];
+        });
+    const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+    const HANDLERS: Array<[string, string]> = routes(A2A_DIR).flatMap((f) => {
+        const src = fs.readFileSync(f, 'utf8');
+        return METHODS.filter((m) => new RegExp(`export const ${m}\\s*=`).test(src)).map(
+            (m) => [path.relative(APP, f), m] as [string, string],
+        );
+    });
+
+    it('the population is the three handlers it was written for, at least', () => {
+        expect(HANDLERS.length).toBeGreaterThanOrEqual(3);
+        expect(HANDLERS.filter(([, m]) => m === 'GET').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it.each(HANDLERS)('%s %s is gated, or is the card', (file, method) => {
+        const body = codeOnly(declarationOf(fs.readFileSync(path.join(APP, file), 'utf8'), method));
+        expect(body.length).toBeGreaterThan(20);
+        if (method === 'POST') {
+            expect(body).toMatch(/handleInboundA2a\s*\(/);
+        } else if (method === 'GET') {
+            expect(file.endsWith('/agent-card.json/route.ts')).toBe(true);
+            expect(body).toMatch(/getTenantA2aAgentCard\s*\(/);
+            expect(body).toMatch(/applyCardReadRateLimit\s*\(\s*req\s*\)/);
+        } else {
+            throw new Error(`${file} exports ${method}, which /api/a2a has no gate for`);
+        }
+    });
+});

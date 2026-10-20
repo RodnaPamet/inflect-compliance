@@ -56,7 +56,6 @@ import {
     a2aSendConnectionId,
     a2aSendPriorState,
     a2aSendToolName,
-    inflectA2aIdentity,
     type A2aSendArgs,
 } from '@/lib/agentic/a2a/send-tool';
 import { buildA2aSendBody, parseA2aPeerReply } from '@/lib/agentic/a2a/protocol';
@@ -67,6 +66,7 @@ import {
     verifyA2aReceiptHeader,
 } from '@/lib/agentic/a2a/receipt';
 import { sendA2aMessage } from '@/lib/agentic/a2a/client';
+import { inflectA2aOrigin } from '@/lib/agentic/a2a/origin';
 import type { RecentCardOptions } from '@/lib/agentic/a2a/card-cache';
 import type { WireFetch } from '@/lib/mcp/wire-transport';
 import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
@@ -75,6 +75,7 @@ import { admitPeerMessage } from './peer-agents';
 import { resolvePeerKill } from './a2a-peer-kill';
 import { A2aReplayError, recordA2aMessage } from './a2a-messages';
 import { currentTenantA2aPublicKey, resolveTenantA2aSigningKey } from './a2a-signing-key';
+import { ownA2aIdentity } from './a2a-agent-card';
 import { recordIntent, settleWrite, type SettledOutcome } from './external-write-journal';
 import { automaticBoundRefusalAtSend, openAutomaticExternalWrite } from './external-write-automatic';
 import { createAgentProposal } from './agent-proposals';
@@ -128,6 +129,8 @@ export async function resolveGrantedA2aSendTools(
     // A tenant with no signing key of its own can sign nothing, so no send is
     // offered (and the call and the send refuse `NO_SIGNING_KEY` again).
     if (!(await currentTenantA2aPublicKey(ctx))) return [];
+    // Nor without a public origin, which the tenant's identity is built on.
+    if (!inflectA2aOrigin()) return [];
 
     const { connections, parameterSets } = await runInTenantContext(ctx, async (db) => ({
         connections: await db.integrationConnection.findMany({
@@ -221,6 +224,13 @@ export async function dispatchA2aSend(
         throw refusedForModel(
             'a2a_no_signing_key',
             'This organisation has no A2A signing key, so no task to a peer can be signed. An owner must generate one.',
+        );
+    }
+    if (!inflectA2aOrigin()) {
+        recordA2aMetric({ direction: 'OUTBOUND', outcome: 'NO_PUBLIC_ORIGIN' });
+        throw refusedForModel(
+            'a2a_no_public_origin',
+            'This deployment has no public https address configured, so it has no A2A identity to send as.',
         );
     }
 
@@ -426,6 +436,16 @@ export async function sendA2aJournalRow(
     if (!key) {
         return settle('FAILED', 'This organisation has no A2A signing key, so the task cannot be signed and was not sent.', 'NO_SIGNING_KEY');
     }
+    // What the task is signed as, and what the answer must be addressed to:
+    // this tenant's card URL, the same for every peer (#3742).
+    const inflect = await ownA2aIdentity(ctx);
+    if (!inflect) {
+        return settle(
+            'FAILED',
+            'This deployment has no public https origin (APP_URL), so it has no A2A identity to sign as. The task was not sent.',
+            'NO_PUBLIC_ORIGIN',
+        );
+    }
 
     let authorization: string | undefined;
     try {
@@ -440,7 +460,6 @@ export async function sendA2aJournalRow(
     }
 
     const messageId = randomUUID();
-    const inflect = inflectA2aIdentity(ctx.tenantId, peerId);
     const body = buildA2aSendBody({
         rpcId: row.id,
         messageId,

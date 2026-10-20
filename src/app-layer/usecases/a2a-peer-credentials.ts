@@ -39,9 +39,10 @@ import type { PrismaTx } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
-import { mintPeerInboundToken, peerTokenMatches } from '@/lib/agentic/a2a/credential';
-import { inflectA2aIdentity } from '@/lib/agentic/a2a/send-tool';
+import { hashPeerInboundToken, mintPeerInboundToken, peerTokenMatches } from '@/lib/agentic/a2a/credential';
+import { inflectA2aEndpointPath } from '@/lib/agentic/a2a/own-card';
 import { currentTenantA2aPublicKey } from './a2a-signing-key';
+import { ownA2aIdentity } from './a2a-agent-card';
 
 export const IssuePeerInboundCredentialSchema = z
     .object({
@@ -72,14 +73,19 @@ function assertMayManage(ctx: RequestContext): void {
 /**
  * What an operator hands the peer's organisation, beside the token: where to
  * send, whom to address, and the key this tenant's answers are signed with.
- * None of it is secret. A `null` key means the tenant has no signing key yet,
- * and every message would be refused `NO_SIGNING_KEY` until an OWNER makes one.
+ * None of it is secret, and since #3742 the tenant's published card carries all
+ * of it but the token: the identity IS the card's URL, so a peer that can fetch
+ * it can pin the rest. The same for every peer (owner decision 2026-10-20).
+ *
+ * A `null` identity means the deployment has no public https origin, and a
+ * `null` key that the tenant has no signing key yet; every message is refused
+ * (`NO_PUBLIC_ORIGIN`, `NO_SIGNING_KEY`) until that changes.
  */
-async function peerHandover(ctx: RequestContext, peerId: string) {
+async function peerHandover(ctx: RequestContext) {
     const key = await currentTenantA2aPublicKey(ctx);
     return {
-        inflectIdentity: inflectA2aIdentity(ctx.tenantId, peerId),
-        endpointPath: ctx.tenantSlug ? `/api/a2a/${ctx.tenantSlug}/peers/${peerId}` : null,
+        inflectIdentity: await ownA2aIdentity(ctx),
+        endpointPath: ctx.tenantSlug ? inflectA2aEndpointPath(ctx.tenantSlug) : null,
         inflectSigningPublicKey: key?.publicKey ?? null,
         inflectSigningKeyFingerprint: key?.fingerprint ?? null,
     };
@@ -106,7 +112,7 @@ export async function getPeerInboundCredential(ctx: RequestContext, peerId: stri
         });
         return { live, revoked };
     });
-    return { credential: live, revoked, ...(await peerHandover(ctx, peerId)) };
+    return { credential: live, revoked, ...(await peerHandover(ctx)) };
 }
 
 export async function issuePeerInboundCredential(ctx: RequestContext, peerId: string, input: unknown) {
@@ -171,7 +177,7 @@ export async function issuePeerInboundCredential(ctx: RequestContext, peerId: st
         });
         return row;
     });
-    return { credential, token: minted.token, ...(await peerHandover(ctx, peerId)) };
+    return { credential, token: minted.token, ...(await peerHandover(ctx)) };
 }
 
 export async function revokePeerInboundCredential(ctx: RequestContext, peerId: string) {
@@ -219,6 +225,23 @@ export async function matchPeerInboundCredential(ctx: RequestContext, peerId: st
     if (!live) return null;
     if (!peerTokenMatches(token, live.keyHash)) return null;
     return { id: live.id, receivingAgentId: live.receivingAgentId, workflowKeys: live.workflowKeys };
+}
+
+/**
+ * The peer a presented token was issued to, by the unique index on its hash —
+ * revoked or not — or `null` when no credential of this tenant hashes to it.
+ * Used ONLY by the per-tenant endpoint (#3742) to name the peer. It decides
+ * nothing: `matchPeerInboundCredential` is then asked about that peer exactly
+ * as the per-peer route asks it, so a revoked credential is refused there.
+ */
+export async function findPeerIdByInboundToken(ctx: RequestContext, token: string): Promise<string | null> {
+    const row = await runInTenantContext(ctx, (db) =>
+        db.peerAgentInboundCredential.findUnique({
+            where: { tenantId_keyHash: { tenantId: ctx.tenantId, keyHash: hashPeerInboundToken(token) } },
+            select: { peerId: true },
+        }),
+    );
+    return row?.peerId ?? null;
 }
 
 /**

@@ -298,6 +298,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // peer page at /agents/peers/[peerId]; the tenant's own signing key is read
     // and rotated from /agents/peers.
     't/[tenantSlug]/admin/agents/a2a-signing-key/route.ts',
+    // #3742 — the tenant's published A2A agent card, untenanted under `/api/a2a`
+    // beside the inbound endpoints it names. A PEER reads it, not a page: it is
+    // fetched to be pinned, before the peer holds a credential, and the
+    // operator meets its URL on the peer page as the identity it hands over.
+    'a2a/[tenantSlug]/agent-card.json/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/inbound-credential/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/kill/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/messages/route.ts',
