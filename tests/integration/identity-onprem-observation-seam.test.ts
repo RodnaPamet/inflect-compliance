@@ -78,7 +78,14 @@ async function clearOwnRows(): Promise<void> {
     // anywhere re-partitions the shards and changes that ordering (#3320) — which
     // is how a PR that touches none of this turns the suite red.
     //
-    // A leftover tenant row is harmless; the next run's `resetDatabase` clears it.
+    // The TENANT ROW IS LEFT BEHIND FOR GOOD, and the hook below is written for
+    // that. This comment used to end "a leftover tenant row is harmless; the
+    // next run's `resetDatabase` clears it", which was never true: `Tenant` and
+    // `User` deliberately SURVIVE a reset so fixtures can, and `Tenant` is in
+    // none of `RESET_TABLES`'s entries. The row this function intentionally
+    // keeps is the row that made the next run of this file fail in `beforeAll`
+    // on `Tenant_pkey` — both tests, on the hook rather than an assertion
+    // (#3858). CI never saw it because its database is new every run.
 }
 
 /**
@@ -130,12 +137,23 @@ d('the on-prem observation survives the DB seam', () => {
     beforeAll(async () => {
         await resetDatabase(prisma);
         await clearOwnRows();
-        await prisma.tenant.create({ data: { id: T, name: 'Obs Seam', slug: T } });
+        // `upsert`, not `create`: `clearOwnRows` leaves this tenant behind on
+        // purpose (see its comment) and nothing else clears it, so the hook has
+        // to tolerate finding its own row from a previous run (#3858).
+        await prisma.tenant.upsert({
+            where: { id: T },
+            create: { id: T, name: 'Obs Seam', slug: T },
+            update: {},
+        });
         // The ladder is re-read PER ACCOUNT inside `decideAndDisable`, so without
         // this the outcome is REFUSED_MODE and the test would assert nothing
         // about the observation at all.
-        await prisma.tenantSecuritySettings.create({
-            data: { tenantId: T, identityLeaverMode: 'DRY_RUN', identityLeaverDryRunSince: new Date() },
+        // `tenantId` is UNIQUE on this table, so the same argument applies —
+        // though `clearOwnRows` does delete it, so this is belt and braces.
+        await prisma.tenantSecuritySettings.upsert({
+            where: { tenantId: T },
+            create: { tenantId: T, identityLeaverMode: 'DRY_RUN', identityLeaverDryRunSince: new Date() },
+            update: { identityLeaverMode: 'DRY_RUN', identityLeaverDryRunSince: new Date() },
         });
     });
 

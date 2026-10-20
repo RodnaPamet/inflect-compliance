@@ -994,6 +994,63 @@ export const RESET_TABLES: readonly string[] = [
     // `beforeEach`, and none of those creates an `Employee` in `beforeAll`.
     // 15 suites create one; all of them create it after the reset.
     'Employee',
+    //
+    // ── The other nineteen, added together (#3804) ───────────────────────
+    //
+    // Same shape as the three above, found by deriving the population rather
+    // than by being bitten: a model outside the cascade closure that a
+    // `resetDatabase`-calling suite creates. That is 22 models; these are the
+    // 19 that were still unlisted after #3801.
+    //
+    // ONE safety argument covers all of them, which is why they go in
+    // together rather than one ticket at a time. The argument is #3597's,
+    // re-measured on 2026-10-20: of the 88 files using this helper, 3 reset
+    // inside `beforeEach` — `task-due-notification`, `task-key-sequence` and
+    // `wave-features-rls` — and NONE of the three creates any of these 19 in
+    // `beforeAll`. So no suite can lose a fixture it made once and expected to
+    // survive a reset between tests.
+    //
+    // NONE of the 19 was a live defect when they were added, and saying so is
+    // the honest framing: this is hardening, not a bug fix. Two things were
+    // holding them up, neither of them this list. Nearly every suite
+    // hand-deletes what it creates (`AiSystem`: 27 creators, 28 cleaners), and
+    // the ones that do not use a per-run tenant id, so last run's row belongs
+    // to a tenant this run never queries.
+    //
+    // That second mechanism is worth recording because it falsified a
+    // prediction. `TenantInvite` looked like the next `Employee` — created by
+    // a resetting suite, keyed `(tenantId, email)`, with no cleanup of its own,
+    // and `owner-custom-role` asserts `tenantInvite.count(...) === 0` BEFORE
+    // creating one. Run twice on one database it passes, because `a.tenantId`
+    // is fresh each run and the stale invite hangs off the previous tenant.
+    // `Employee` was reachable precisely because `legacy-adjudication` pins
+    // `TENANT = 'adj-tenant'` and fixed `workEmail`s.
+    //
+    // So what this buys is the removal of a standing requirement that every
+    // author of every future fixture remember to hand-clean, in a list whose
+    // whole purpose is to make that unnecessary.
+    //
+    // Verified by running the 50 suites that create any of them TWICE against
+    // one database, before and after — a single green run is what hid #3801.
+    'AgentKillSwitch',
+    'AgentKillSwitchDrill',
+    'AiSystem',
+    'AuditWorkpaper',
+    'ExternalToolParameterSet',
+    'ExternalToolPriorStateRead',
+    'IdentityDepartmentGroupRule',
+    'McpToolManifestPin',
+    'PreHire',
+    'ProcessMap',
+    'ReportTemplate',
+    'RiskSuggestionSession',
+    'ScannerRun',
+    'TenantCustomRole',
+    'TenantInvite',
+    'TenantNotificationSettings',
+    'TenantSecuritySettings',
+    'TrainingCourse',
+    'UserCalendarConnection',
     'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
     'EvidenceReview', 'Evidence', 'FileRecord',
     'ControlRequirementLink',
