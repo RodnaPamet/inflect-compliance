@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { ServicePrincipalLinkCard } from './tabs/ServicePrincipalLinkCard';
 import { OverviewTab } from './tabs/OverviewTab';
 import { RiskAssessmentTab } from './tabs/RiskAssessmentTab';
 import { PolicyCardTab } from './tabs/PolicyCardTab';
@@ -260,11 +261,16 @@ export function AgentDetailClient({
                 refreshToken={refreshToken}
             />
             {tab === 'overview' && (
-                <OverviewTab
-                    {...props}
-                    onChanged={refresh}
-                    canManageRegistry={perms.canManageRegistry}
-                />
+                <>
+                    <OverviewTab
+                        {...props}
+                        onChanged={refresh}
+                        canManageRegistry={perms.canManageRegistry}
+                    />
+                    {/* The register key, which the link route takes for its
+                        read and its confirm alike (#3807). */}
+                    {perms.canReadRegistry && <ServicePrincipalLinkCard {...props} />}
+                </>
             )}
             {tab === 'risk' && (
                 <RiskAssessmentTab

@@ -5423,6 +5423,31 @@
         "emptyTitle": "No runs yet",
         "emptyDescription": "This agent has not started a workflow run. Runs a person started are not listed here — a run records which agent authorised it, and a human-started run names none.",
         "loadFailed": "Could not load this agent’s runs"
+      },
+      "spLink": {
+        "heading": "Entra service principal",
+        "intro": "The directory identity a harness scan linked to this agent. When the owner-orphan pass contains the agent at Automatic, it asks for this principal to be disabled, and only a link a person has confirmed can be disabled with nobody approving it.",
+        "loadError": "Couldn't load the agent's service principal.",
+        "none": "No harness scan has linked an Entra service principal to this agent.",
+        "ambiguous": "A scan links {count} principals to this agent. A disable names one, so none can be confirmed until a scan links exactly one.",
+        "unreadableId": "An unreadable principal id",
+        "lastSeen": "Last seen {at}",
+        "unconfirmed": "Not confirmed",
+        "confirmedOn": "Confirmed {at}",
+        "confirm": "Confirm",
+        "confirmTitle": "Confirm this agent's service principal",
+        "confirmBody": "You are confirming that the Entra service principal {principal} belongs to this agent. If the owner-orphan pass later contains the agent at Automatic, it may ask for this principal to be disabled without anyone approving it. A later scan that moves the link withdraws this confirmation.",
+        "confirmAction": "Confirm link",
+        "cancel": "Cancel",
+        "confirmed": "Link confirmed",
+        "confirmFailed": "The link could not be confirmed.",
+        "historyHeading": "Withdrawn confirmations",
+        "historyLine": "Confirmed {confirmed}, withdrawn {invalidated}: {reason}",
+        "invalidated": {
+          "PRINCIPAL_RELINKED": "a scan linked the principal to another agent",
+          "AGENT_RELINKED": "a scan linked this agent to another principal",
+          "UNKNOWN": "the reason was not recorded"
+        }
       }
     },
     "mcp": {
