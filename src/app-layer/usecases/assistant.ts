@@ -292,6 +292,18 @@ async function produceAnswer(
     ctx: RequestContext,
     question: string,
     contextBlock: string | null = null,
+    /**
+     * Streaming observers, threaded through to the loop (#3899).
+     *
+     * Empty by default, so the `/assistant/ask` caller is unchanged. The
+     * streaming surface used to re-implement a SUBSET of this function and so
+     * could not reach the propose branches below at all — the UI rendered a
+     * queued-proposal block that nothing could ever produce. One producer for
+     * both surfaces, which is the argument `runGoverned` makes one level up:
+     * the sequence exists once so two callers cannot drift, and this is the
+     * drift that happened a level beneath it.
+     */
+    observe: ToolLoopObservers = {},
 ): Promise<{ answer: AssistantAnswer; by: ProducedBy }> {
     const q = question.toLowerCase();
     let answer: AssistantAnswer;
@@ -338,7 +350,7 @@ async function produceAnswer(
         };
     } else {
         // ── Read intents → the TOOL-USE LOOP, falling back to keywords ──
-        const loop = await answerFromToolLoop(ctx, question, {}, contextBlock);
+        const loop = await answerFromToolLoop(ctx, question, observe, contextBlock);
         if (loop !== null) {
             answer = loop.answer;
             by = loop.by;
@@ -572,26 +584,22 @@ export async function streamAssistant(
             input.question,
             async (question, contextBlock) => {
                 opts.emit({ type: 'thinking' });
-                const loop = await answerFromToolLoop(
-                    ctx,
-                    question,
-                    {
-                        signal: opts.signal,
-                        onToolCall: (name) => opts.emit({ type: 'tool_call', name }),
-                        onToolResult: (name, ok, truncated) =>
-                            opts.emit({ type: 'tool_result', name, ok, truncated }),
-                        onHalt: (outcome, notice) => opts.emit({ type: 'halt', outcome, notice }),
-                    },
-                    contextBlock,
-                );
-                if (loop !== null) return loop;
-                // The deterministic router. No tool events, because it calls no
-                // tools — emitting a fake one would describe work that did not
-                // happen.
-                return {
-                    answer: await answerFromKeywords(ctx, question.toLowerCase()),
-                    by: DETERMINISTIC,
-                };
+                // `produceAnswer`, NOT a re-implementation of part of it (#3899).
+                //
+                // This used to call `answerFromToolLoop` and fall back to
+                // `answerFromKeywords` directly. Both of those answer READ
+                // questions — the loop runs `readOnly: true` — so the propose
+                // intents, which live only in `produceAnswer`, were unreachable
+                // from the streaming route. The UI shipped a queued-proposal
+                // block that nothing could produce, and `/assistant/ask` held
+                // the only path that could, with no caller.
+                return produceAnswer(ctx, question, contextBlock, {
+                    signal: opts.signal,
+                    onToolCall: (name) => opts.emit({ type: 'tool_call', name }),
+                    onToolResult: (name, ok, truncated) =>
+                        opts.emit({ type: 'tool_result', name, ok, truncated }),
+                    onHalt: (outcome, notice) => opts.emit({ type: 'halt', outcome, notice }),
+                });
             },
             // The STREAMING surface gets the page context too. Threading it on
             // the ask path only would have been the subtler half-delivery: the

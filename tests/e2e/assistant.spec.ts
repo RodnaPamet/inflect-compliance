@@ -75,8 +75,22 @@ test.describe('the in-product assistant', () => {
         const answer = await authedPage.getByTestId('assistant-answer').textContent();
         expect((answer ?? '').trim().length).toBeGreaterThan(0);
 
-        // The page behind it is still there — the whole point of a Sheet.
-        await expect(authedPage.getByRole('main')).toBeVisible();
+        // The page behind it is still MOUNTED — the whole point of a Sheet over
+        // a Modal.
+        //
+        // NOT asserted with `getByRole('main')`: Vaul marks background content
+        // `aria-hidden` while the drawer is open, which is correct dialog
+        // semantics and removes it from the accessibility tree that `getByRole`
+        // queries. The first version of this failed for that reason and read
+        // like a product defect.
+        //
+        // The claim is about the DOM, so it is asserted against the DOM — the
+        // landmark is still attached — and then against the behaviour that
+        // actually matters: it is visible again once the sheet closes, which a
+        // page that had been unmounted or navigated away from could not manage.
+        await expect(authedPage.locator('main')).toBeAttached();
+        await authedPage.keyboard.press('Escape');
+        await expect(authedPage.getByRole('main')).toBeVisible({ timeout: 15000 });
     });
 
     test('does not appear on a page that has no tenant shell', async ({ authedPage }) => {
@@ -84,7 +98,16 @@ test.describe('the in-product assistant', () => {
         // non-tenant surfaces do not render. Asserted on the account page,
         // which is signed-in but outside `/t/<slug>/(app)`.
         await authedPage.goto('/account');
-        await expect(authedPage.getByRole('main')).toBeVisible({ timeout: 20000 });
+        // Waited on `networkidle` rather than a `main` landmark: `/account` has
+        // none, and the first version of this asserted one and failed there —
+        // a precondition inventing a requirement the page never had.
+        //
+        // The wait is still load-bearing. `toHaveCount(0)` is satisfied by a
+        // page that has not rendered yet, so without it this test would pass
+        // whether or not the launcher is absent, which is the shape of an
+        // assertion that cannot fail.
+        await authedPage.waitForLoadState('networkidle');
+        await expect(authedPage.getByRole('heading').first()).toBeVisible({ timeout: 20000 });
         await expect(authedPage.getByTestId('assistant-launcher')).toHaveCount(0);
     });
 
