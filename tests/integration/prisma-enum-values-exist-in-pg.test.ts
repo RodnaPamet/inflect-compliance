@@ -74,15 +74,17 @@ const SCHEMA_DIR = path.join(process.cwd(), 'prisma/schema');
  * for a type that cannot exist and reports a missing one — a false finding, in
  * the file whose job is reporting real ones.
  */
+export function stripComments(src: string): string {
+    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/\/?.*$/gm, '');
+}
+
 function schemaSource(): string {
     let out = '';
     for (const f of readdirSync(SCHEMA_DIR)) {
         if (!f.endsWith('.prisma')) continue;
         out += `${readFileSync(path.join(SCHEMA_DIR, f), 'utf8')}\n`;
     }
-    return out
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/\/?.*$/gm, '');
+    return stripComments(out);
 }
 
 interface SchemaEnum {
@@ -202,11 +204,35 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         expect(sis?.mapped).toBe(false);
         expect(sis?.pgType).toBe('SuggestionItemStatus');
 
-        // The positive control: that prose really is in the file, so this is
-        // not passing because the sentence moved.
-        const raw = readFileSync(path.join(SCHEMA_DIR, 'enums.prisma'), 'utf8');
-        expect(raw).toContain('@@map("WorkItem*")');
-        expect(schemaSource()).not.toContain('@@map("WorkItem*")');
+    });
+
+    it('the stripper itself removes a quoted @@map from prose', () => {
+        // Driven with a FIXTURE rather than asserted against the real schema
+        // text, for two reasons.
+        //
+        // It can express the failing input. The real file happens to contain
+        // that prose today; if the sentence is ever reworded the assertion
+        // would pass by finding nothing, which is the shape of a control that
+        // cannot fail. A fixture always contains it.
+        //
+        // And `Class D — un-analysable whole-file reads` ratchets exactly the
+        // pattern the first version used: `expect(readFileSync(...))` with a
+        // string needle. Raising that baseline for a test that had a better
+        // form available would have been the ratchet running backwards.
+        const fixture = [
+            'enum Decoy {',
+            '  A',
+            '  /// prose that mentions @@map("Fake") in passing',
+            '  B',
+            '}',
+        ].join('\n');
+
+        expect(fixture).toContain('@@map("Fake")');
+        expect(stripComments(fixture)).not.toContain('@@map("Fake")');
+        // And the values survive the strip — a stripper that ate the body
+        // would make every enum look empty and every comparison vacuous.
+        expect(stripComments(fixture)).toContain('A');
+        expect(stripComments(fixture)).toContain('B');
     });
 
     it('every declared enum has a physical type', async () => {
