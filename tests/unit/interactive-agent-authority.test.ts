@@ -23,6 +23,23 @@
  * with the SAME agent is admitted. Without the second half, a funnel that
  * refused every propose call would pass.
  *
+ * ## Mutation proof (2026-10-21), because green proves nothing
+ *
+ * Both halves were broken at the call site — `permissionsFor` in
+ * `src/lib/mcp/authorize.ts:410`, which is where the principal basis resolves —
+ * and each mutation failed exactly one case, in opposite directions:
+ *
+ *   widened  (`risks.create: true` on the principal basis)
+ *       -> "is REFUSED at the permission step" FAILS. The test catches a
+ *          widening of the very thing the invariant is about.
+ *   deny-all (`risks.create: false` on the principal basis)
+ *       -> "an EDITOR with the SAME agent is ADMITTED" FAILS, while the READER
+ *          refusal still PASSES. That is the scenario named above, reproduced:
+ *          a funnel refusing every propose call satisfies the refusal assertion
+ *          and is caught only by the admission one.
+ *
+ * So neither case is load-bearing alone, and neither is redundant.
+ *
  * ## What this file does NOT claim
  *
  * It exercises the tool door for a session-shaped invocation. It is not the
