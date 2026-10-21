@@ -29,13 +29,11 @@ import { recordAiGeneration } from '@/lib/observability/integration-metrics';
 import { logger } from '@/lib/observability/logger';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed, assertNoReviewRequired } from '@/app-layer/ai/guard';
 import { getDashboardData } from './dashboard';
-import { createAgentProposal } from './agent-proposals';
-import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import { runInTenantContext } from '@/lib/db-context';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
 import { RESIDENCY_SELECT, residencyTermsFrom, resolveFlueModel } from '@/lib/agentic/flue/model-selection';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
-import { assistantTools } from '@/app-layer/ai/assistant/tools';
+import { assistantTools, type ProposalOutcome } from '@/app-layer/ai/assistant/tools';
 import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
 import { runAssistantLoop, haltNotice, DEFAULT_LOOP_BOUNDS, type LoopOutcome } from '@/app-layer/ai/assistant/tool-loop';
 import type { AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
@@ -64,6 +62,85 @@ function proposalMessage(
         );
     }
     return `I've queued a ${noun} "${title}" as a proposal for review — nothing is created until a reviewer approves it.`;
+}
+
+/**
+ * The user-facing sentence for a turn that proposed something (#3882).
+ *
+ * ═══ COMPOSED, NEVER RELAYED ═══
+ *
+ * The model's own sentence is not used. The funnel's result tells the truth
+ * and the system prompt instructs the model to repeat it, but an instruction
+ * is not an enforcement: the model could paraphrase, and the paraphrase that
+ * matters is "queued for review" about something that was quarantined. Then
+ * the asker waits for an approval that cannot arrive and nobody looks at the
+ * quarantine — false in the direction that costs most.
+ *
+ * So the verdict here comes only from WHICH ID ARRAY the funnel put an id in.
+ * The title is quoted from the item, exactly as the deterministic keyword path
+ * always did, and sanitised the same way.
+ *
+ * The one-item wording is `proposalMessage`'s, unchanged, so the common path's
+ * text does not move because the producer changed.
+ */
+function proposalOutcomeMessage(outcomes: readonly ProposalOutcome[]): string {
+    const queued = outcomes.flatMap((o) => o.queued);
+    const quarantined = outcomes.flatMap((o) => o.quarantined);
+    const unreadable = outcomes.some((o) => o.unreadable === true);
+    const noun = nounFor(outcomes);
+
+    // An unreadable result is reported as unknown, never as "nothing was
+    // created". A row may exist, and claiming otherwise is the one sentence
+    // that cannot be walked back.
+    if (unreadable) {
+        return (
+            `I submitted the ${noun} but could not read back what happened to it. ` +
+            `Check the agent-proposals review queue before trying again — it may ` +
+            `already be there, and asking twice would queue it twice.`
+        );
+    }
+
+    const title = (i: number): string =>
+        sanitizePlainText(outcomes.flatMap((o) => o.titles)[i] ?? '').slice(0, 200) || 'Untitled';
+
+    // ONE item, which is the overwhelmingly common case: the exact sentence
+    // the keyword path produced, so nothing user-visible changes with the
+    // producer.
+    if (queued.length + quarantined.length === 1) {
+        return proposalMessage(quarantined.length === 1 ? 'QUARANTINED' : 'PENDING', noun, title(0));
+    }
+
+    if (queued.length === 0) {
+        return (
+            `I could not queue ${quarantined.length} ${noun}(s): the content guard ` +
+            `withheld them, which it does for material that reads as an instruction ` +
+            `rather than as a record. Nothing was created and nothing is awaiting ` +
+            `review. Rephrase, or ask an administrator to look at the quarantined items.`
+        );
+    }
+    if (quarantined.length === 0) {
+        return (
+            `I've queued ${queued.length} ${noun}(s) as proposals for review — ` +
+            `nothing is created until a reviewer approves them.`
+        );
+    }
+    // MIXED, and said as two facts rather than one summary. A single number
+    // here is what let "3 proposed" stand for a batch that queued one.
+    return (
+        `I've queued ${queued.length} ${noun}(s) for review. ${quarantined.length} ` +
+        `were withheld by the content guard and did NOT enter the queue — nothing ` +
+        `was created for those, and no reviewer will see them.`
+    );
+}
+
+/** The noun to use, from the funnel's own `kind`. */
+function nounFor(outcomes: readonly ProposalOutcome[]): string {
+    const kinds = new Set(outcomes.map((o) => o.kind).filter((k) => k !== 'unknown'));
+    if (kinds.size === 1) return [...kinds][0].toLowerCase();
+    // Several kinds in one turn, or none reported: a neutral noun rather than
+    // a guessed one. Naming the wrong entity in a compliance record is worse
+    // than naming none.
+    return 'item';
 }
 
 import { describePageContext, PageContextSchema, type PageContext } from '@/app-layer/ai/assistant/page-context';
@@ -100,13 +177,6 @@ export interface AssistantAnswer {
     proposalStatus?: string;
 }
 
-/** Pull the free-text subject out of an action request ("raise a finding about X" → "X"). */
-function extractTitle(question: string, verb: RegExp): string {
-    const m = question.match(verb);
-    const rest = m ? question.slice((m.index ?? 0) + m[0].length) : question;
-    const title = sanitizePlainText(rest.replace(/^[\s:,.-]+/, '').trim() || question.trim());
-    return title.slice(0, 200) || 'Untitled';
-}
 
 /**
  * Answer a read question from live tenant data, or PROPOSE an action (via the
@@ -315,48 +385,41 @@ async function produceAnswer(
     // anyway rather than left NULL: "no card governed this" and "this row
     // predates pinning" are different facts, and the queue is one table whose
     // rows come from both an agent and a person.
-    const policyCardVersion = await resolvePolicyCardPin(ctx.tenantId, ctx.agentId);
+    // NO policy-card pin computed here any more (#3882).
+    //
+    // It has not been lost — it MOVED, and to a better place. `runProposeTool`
+    // pins `pinFromCard(inv.policyCard?.inForce)`: the version that AUTHORIZED
+    // this call, taken from the invocation the gate already checked. The pin
+    // this line used to compute was a fresh `resolvePolicyCardPin` read, which
+    // answers "what is in force now" — a different claim, and the funnel's own
+    // comment says why that difference matters: between the gate and the write
+    // an operator can have edited the card.
 
-    // ── Action intents → propose (PENDING), never execute ──
-    if (/\b(create|open|raise|add|log|file)\b.*\bfinding\b/.test(q)) {
-        const title = extractTitle(question, /\bfinding\b(\s+(to|for|about|:))?/i);
-        const proposal = await createAgentProposal(ctx, {
-            kind: 'FINDING',
-            payload: { title, severity: 'MEDIUM', type: 'OBSERVATION' },
-            rationale: `Proposed by the compliance assistant from: "${sanitizePlainText(question).slice(0, 400)}"`,
-            policyCardVersion,
-        });
-        answer = {
-            kind: 'proposal',
-            proposalId: proposal.id,
-            proposalKind: proposal.kind,
-            proposalStatus: proposal.status,
-            message: proposalMessage(proposal.status, 'finding', title),
-        };
-    } else if (/\b(create|open|add|log|raise)\b.*\brisk\b/.test(q)) {
-        const title = extractTitle(question, /\brisk\b(\s+(to|for|about|:))?/i);
-        const proposal = await createAgentProposal(ctx, {
-            kind: 'RISK',
-            payload: { title },
-            rationale: `Proposed by the compliance assistant from: "${sanitizePlainText(question).slice(0, 400)}"`,
-            policyCardVersion,
-        });
-        answer = {
-            kind: 'proposal',
-            proposalId: proposal.id,
-            proposalKind: proposal.kind,
-            proposalStatus: proposal.status,
-            message: proposalMessage(proposal.status, 'risk', title),
-        };
+    // ── EVERY intent goes through the loop now (#3882) ──
+    //
+    // The two keyword propose branches that used to sit here are GONE, not
+    // kept as a fallback. They matched a verb and a noun — "raise a finding
+    // about X" — and anything phrased differently was answered as a read
+    // question, so the capability was reachable only by guessing the pattern.
+    //
+    // Deleting them rather than leaving them in front of the loop is the point.
+    // With both, the keyword branch would win whenever its regex happened to
+    // match, so the two producers would disagree on which phrasings propose
+    // and a user would get a proposal or an answer depending on their wording.
+    // One path means one behaviour.
+    //
+    // What is NOT lost: the sentence stays deterministic. The loop's propose
+    // outcomes are composed by `proposalOutcomeMessage` from the funnel's own
+    // id arrays, never from the model's prose — see that function's header.
+    const loop = await answerFromToolLoop(ctx, question, observe, contextBlock);
+    if (loop !== null) {
+        answer = loop.answer;
+        by = loop.by;
     } else {
-        // ── Read intents → the TOOL-USE LOOP, falling back to keywords ──
-        const loop = await answerFromToolLoop(ctx, question, observe, contextBlock);
-        if (loop !== null) {
-            answer = loop.answer;
-            by = loop.by;
-        } else {
-            answer = await answerFromKeywords(ctx, q);
-        }
+        // The deterministic router, still the fallback when no model is
+        // configured. It answers READ questions only, which is honest: with no
+        // model there is nothing to turn a request into a proposal.
+        answer = await answerFromKeywords(ctx, q);
     }
 
     return { answer, by };
@@ -487,7 +550,10 @@ async function answerFromToolLoop(
     // the funnel's sentence instead, and the funnel does say it honestly, but
     // the id would be lost to existing callers. Tracked separately rather than
     // half-done here.
-    const set = assistantTools(inv, { readOnly: true });
+    // `readOnly: false` (#3882). The propose surface is offered to the MODEL
+    // now, not merely to the adapter — the keyword intents that used to own
+    // proposing are gone, so this is the only path to a proposal.
+    const set = assistantTools(inv, { readOnly: false });
 
     const result = await runAssistantLoop({
         provider,
@@ -519,6 +585,43 @@ async function answerFromToolLoop(
     // An empty answer is not an answer. Falling back rather than returning
     // nothing, so a model that said nothing useful does not become a blank
     // reply the user reads as a hang.
+    // ── A PROPOSAL'S SENTENCE IS COMPOSED, NOT RELAYED (#3882) ──
+    //
+    // Checked BEFORE the empty-text fallback: a turn that proposed and then
+    // said nothing still proposed, and falling through to the keyword router
+    // would answer a read question about a write that already happened.
+    const proposals = set.proposals();
+    if (proposals.length > 0) {
+        const queuedId = proposals.flatMap((o) => o.queued)[0];
+        const kindOf = proposals.find((o) => o.queued.length > 0)?.kind;
+        return {
+            answer: {
+                // `proposal` only when something is actually AWAITING REVIEW.
+                // An all-quarantined turn created nothing a reviewer will see,
+                // so calling it a proposal would be the same false claim in a
+                // different field.
+                kind: queuedId === undefined ? 'answer' : 'proposal',
+                message: proposalOutcomeMessage(proposals),
+                ...(queuedId === undefined ? {} : { proposalId: queuedId }),
+                ...(kindOf === undefined || kindOf === 'unknown' ? {} : { proposalKind: kindOf }),
+                ...(proposals.some((o) => o.quarantined.length > 0)
+                    ? { proposalStatus: 'QUARANTINED' }
+                    : queuedId === undefined
+                      ? {}
+                      : { proposalStatus: 'PENDING' }),
+            },
+            by: {
+                provider:
+                    choice.specifier.slice(0, Math.max(0, choice.specifier.indexOf('/'))) ||
+                    'unknown',
+                model: choice.specifier.slice(choice.specifier.indexOf('/') + 1) || null,
+                toolCalls: result.calls.length,
+                tokensIn: result.tokensIn,
+                tokensOut: result.tokensOut,
+            },
+        };
+    }
+
     if (result.text.trim() === '') return null;
     return {
         answer: { kind: 'answer', message: result.text },
