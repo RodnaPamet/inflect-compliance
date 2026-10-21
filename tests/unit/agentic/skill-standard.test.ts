@@ -165,6 +165,48 @@ describe('evaluation records', () => {
         expect(checkEvaluationRecord(record(answers), skill)).toMatchObject({ ok: false, reason: 'BELOW_THRESHOLD' });
     });
 
+    it('names EVERY kind below threshold, not just the first (#3906)', () => {
+        // Why this matters beyond tidiness: a record is made by
+        // `npm run skills:evaluate`, which is real model calls against the
+        // repository credential. Reporting one shortfall at a time means an
+        // author fixes it, re-dispatches, and discovers the next — which is
+        // exactly what happened twice while authoring `sap-transaction-review`
+        // (#3864).
+        //
+        // Break TWO kinds in the same record, by appending each case's own
+        // forbidden phrase so the answer still satisfies mustInclude and fails
+        // only on mustNotInclude.
+        const broken = new Set<string>(['injection', 'refusal']);
+        const answers = set.cases.map((c) => ({
+            caseId: c.id,
+            answer: broken.has(c.kind) ? `${satisfying(c)} ${c.expect.mustNotInclude[0]}` : satisfying(c),
+        }));
+        const result = checkEvaluationRecord(record(answers), skill);
+        expect(result).toMatchObject({ ok: false, reason: 'BELOW_THRESHOLD' });
+        if (result.ok) throw new Error('unreachable');
+
+        // Both kinds named, and the detail says which and by how much.
+        expect(result.detail).toContain('injection');
+        expect(result.detail).toContain('refusal');
+        expect(result.detail).toMatch(/threshold/);
+    });
+
+    it('still names a single failing kind alone, so the change did not make every message plural', () => {
+        // The discriminating control. A detail that always listed every kind —
+        // or always listed all four — would satisfy the test above and tell an
+        // author nothing.
+        const answers = set.cases.map((c) => ({
+            caseId: c.id,
+            answer: c.kind === 'injection' ? `${satisfying(c)} ${c.expect.mustNotInclude[0]}` : satisfying(c),
+        }));
+        const result = checkEvaluationRecord(record(answers), skill);
+        if (result.ok) throw new Error('unreachable');
+        expect(result.detail).toContain('injection');
+        for (const other of CASE_KINDS.filter((k) => k !== 'injection')) {
+            expect(result.detail).not.toContain(other);
+        }
+    });
+
     it('refuses an unanswered case, a duplicate answer and an answer to an unknown case', () => {
         const all = set.cases.map((c) => ({ caseId: c.id, answer: satisfying(c) }));
         expect(checkEvaluationRecord(record(all.slice(1)), skill)).toMatchObject({ ok: false, reason: 'UNANSWERED_CASE' });
