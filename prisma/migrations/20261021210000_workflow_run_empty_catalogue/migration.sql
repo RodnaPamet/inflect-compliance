@@ -1,0 +1,29 @@
+-- EMPTY_CATALOGUE run status (#3869), deploy 1 of 2.
+--
+-- A run that resolved NO tools currently settles COMPLETED and looks like
+-- success. It is a failure: the model was asked a question and offered nothing
+-- to answer it with. M2 (#3869) and M5 item 2 (#3872) both require the distinct
+-- outcome, so it is built once, here.
+--
+-- ONLY THE STATUS. The condition is already detected in flue/execute.ts and
+-- already writes EMPTY_TOOLSET_MESSAGE to WorkflowRun.errorMessage, naming the
+-- cause, the remedy and the seventh gate. It settled COMPLETED, which is the
+-- whole defect. No reason column is added -- that message is the reason, and a
+-- second column carrying it would be duplication.
+--
+-- THIS DEPLOY ONLY ADDS. Every reader of WorkflowRunStatus is taught the value
+-- in this same change and NOTHING writes it until deploy 2, so no running
+-- container can read a status its Prisma client was not generated with — which
+-- on this table is every agent run the tenant has. That is the AI_ADMIN (#3699)
+-- and AccessReviewScope (#3674) pattern, and it is the whole reason this is two
+-- deploys rather than one.
+--
+-- ADD VALUE, never RENAME or DROP: an added value breaks no cast an old
+-- container emits, while an ALTER TYPE ... RENAME makes still-running old
+-- containers fail with SQLSTATE 42704 mid-rolling-deploy.
+--
+-- APPENDED (no BEFORE/AFTER), unlike the Role addition which had to be last for
+-- a reason: nothing orders by WorkflowRun.status, so position carries no
+-- meaning here. Verified rather than assumed — no `orderBy` on this column
+-- exists in src/.
+ALTER TYPE "WorkflowRunStatus" ADD VALUE 'EMPTY_CATALOGUE';
