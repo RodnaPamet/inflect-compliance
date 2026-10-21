@@ -31,10 +31,34 @@
  *   `A2A_PREVIOUS_KEY_GRACE_MS` after a rotation, the one it signed with
  *   before.
  *
- * The card has no agent list: `skills` is always empty. It also has no tenant
- * name, no tool name and no workflow name (R19). The tenant's slug is in it
- * because it is in the URL a peer was given. A test asserts the member set over
- * the whole document.
+ * The PEER card has no agent list: its `skills` is always empty, and typed
+ * `readonly never[]` so it cannot acquire one. It also has no tenant name, no
+ * tool name and no workflow name (R19). The tenant's slug is in it because it
+ * is in the URL a peer was given. A test asserts the member set over the whole
+ * document.
+ *
+ * ## Two variants, one member set (#3862)
+ *
+ * `buildInflectHostConsumerCard` builds a second variant for HOST CONSUMERS —
+ * the principal admitted by `a2a-host-consumer-admission.ts`. It carries the
+ * same `CARD_MEMBERS`, so `verifyInflectAgentCard` verifies either, and differs
+ * in exactly two values: `skills` lists the advertised workflows, and
+ * `securitySchemes` names the OAuth2 client-credentials flow instead of a
+ * peer's bearer credential.
+ *
+ * **The host variant's skills do not depend on the tenant.** They are the
+ * workflows that carry reviewed public copy, so the list is identical for every
+ * tenant and discloses nothing tenant-specific. Which workflows a given
+ * consumer may actually call is NOT on the card — it is `HostConsumer.workflowKeys`,
+ * enforced per request from the row by `startInboundRun`. A card that published
+ * the grants would have had to publish the union across a tenant's consumers,
+ * telling each what the others may call. The owner decision is on #3862.
+ *
+ * A consequence to keep in mind before "fixing" it: the card advertises more
+ * than most callers may invoke, so `WORKFLOW_NOT_ALLOWED` is an EXPECTED answer
+ * to a well-formed request, not a misconfiguration.
+ *
+ * Which path serves which variant is decided in `a2a-agent-card.ts`.
  *
  * ## The signature
  *
@@ -52,6 +76,9 @@ import { sign as cryptoSign, verify as cryptoVerify, type KeyObject } from 'node
 import { canonicalJson } from '@/lib/canonical-json';
 import { harnessKeyFingerprint } from '@/lib/agentic/harness-contract';
 import { ed25519PublicKeyFromMaterial } from '@/lib/mcp/receipt-verification';
+// Type-only, so this module stays free of the workflow engine at runtime and
+// the published skill shape has ONE definition rather than two that can drift.
+import type { A2aPublicSkill } from '@/lib/agentic/workflow-types';
 
 import { A2A_RECEIPT_VERSION } from './receipt';
 
@@ -74,6 +101,32 @@ export function inflectA2aCardPath(tenantSlug: string): string {
 /** Where a peer sends a task. The peer is found from its own credential. */
 export function inflectA2aEndpointPath(tenantSlug: string): string {
     return `/api/a2a/${tenantSlug}`;
+}
+
+/**
+ * WHERE A HOST LOOKS FOR THE CARD, relative to the per-tenant base (#3862).
+ *
+ * Two paths, because the protocol renamed the file and SAP's toolkit did not
+ * follow. `agent.json` is the pre-0.3 name and the one SAP's Joule toolkit
+ * composes — "destination base URL" + `/.well-known/agent.json`, confirmed from
+ * `skills/joule-a2a-agent/SKILL.md:311` ("must be served at") at the toolkit's
+ * 2026-04-21 head. `agent-card.json` is the v0.3/v1.0 name. A host reading
+ * either spec, or SAP's toolkit, finds the card.
+ *
+ * Both serve the SAME bytes. They are not alternatives to
+ * `inflectA2aCardPath` — that path is the tenant's signed IDENTITY and still
+ * serves the peer card.
+ */
+export const HOST_CONSUMER_CARD_FILENAMES = ['agent.json', 'agent-card.json'] as const;
+
+/** The well-known paths the host card is served at, in a fixed order. */
+export function inflectA2aHostCardPaths(tenantSlug: string): readonly string[] {
+    return HOST_CONSUMER_CARD_FILENAMES.map((f) => `/api/a2a/${tenantSlug}/.well-known/${f}`);
+}
+
+/** Where a host consumer exchanges its client credentials for a token (J1). */
+export function inflectA2aTokenPath(tenantSlug: string): string {
+    return `/api/a2a/${tenantSlug}/token`;
 }
 
 /** The tenant's A2A identity: its card URL. `origin` is `inflectA2aOrigin()`. */
@@ -150,7 +203,8 @@ export type UnsignedInflectAgentCard = {
     };
 };
 
-export type InflectAgentCard = UnsignedInflectAgentCard & {
+/** The signature member, the one thing added by signing. */
+export type InflectCardSignature = {
     readonly 'x-inflect-signature': {
         readonly alg: 'Ed25519';
         readonly keyFingerprint: string;
@@ -158,6 +212,43 @@ export type InflectAgentCard = UnsignedInflectAgentCard & {
         readonly value: string;
     };
 };
+
+export type InflectAgentCard = UnsignedInflectAgentCard & InflectCardSignature;
+
+/**
+ * THE HOST-CONSUMER CARD (#3862). Same members as the peer card; two values
+ * differ.
+ *
+ * `skills` lists the workflows carrying reviewed public copy — see the module
+ * header for why that is not the caller's grant. `securitySchemes` names the
+ * OAuth2 client-credentials flow in the STANDARD members, so a host that reads
+ * only the A2A spec can authenticate without knowing anything Inflect-specific:
+ * it finds `tokenUrl`, posts its client id and secret, and gets a bearer.
+ */
+export type UnsignedInflectHostConsumerCard = Omit<
+    UnsignedInflectAgentCard,
+    'skills' | 'securitySchemes' | 'security'
+> & {
+    readonly skills: readonly A2aPublicSkill[];
+    readonly securitySchemes: {
+        readonly hostConsumerOAuth2: {
+            readonly type: 'oauth2';
+            readonly flows: {
+                readonly clientCredentials: {
+                    readonly tokenUrl: string;
+                    /** Required by the A2A schema; we define no scopes, so it is empty. */
+                    readonly scopes: Readonly<Record<string, string>>;
+                };
+            };
+        };
+    };
+    readonly security: readonly [{ readonly hostConsumerOAuth2: readonly [] }];
+};
+
+export type InflectHostConsumerCard = UnsignedInflectHostConsumerCard & InflectCardSignature;
+
+/** Either variant, before signing. What `signInflectAgentCard` accepts. */
+export type UnsignedInflectCardVariant = UnsignedInflectAgentCard | UnsignedInflectHostConsumerCard;
 
 /** Whether a retired key is still within the grace period at `now`. */
 export function previousKeyInGrace(retiredAt: Date, now: Date): boolean {
@@ -208,11 +299,56 @@ function signedBytes(unsigned: Record<string, unknown>): Buffer {
     return Buffer.from(`${INFLECT_AGENT_CARD_VERSION}\n${canonicalJson(unsigned)}`, 'utf8');
 }
 
-/** Sign with the key in force. `key.fingerprint` must be the CURRENT key the card names. */
-export function signInflectAgentCard(
-    card: UnsignedInflectAgentCard,
+/**
+ * THE HOST-CONSUMER VARIANT. Same input as the peer card plus the skills to
+ * advertise, which the caller reads from the workflow registry — this module
+ * stays pure.
+ *
+ * `skills` is sorted by `id` here, not taken in the caller's order. The card is
+ * signed over its canonical form, so a peer's pin holds only while the bytes
+ * are stable; registry insertion order is not a contract, and sorting makes the
+ * document independent of it.
+ */
+export function buildInflectHostConsumerCard(
+    input: InflectAgentCardInput & { readonly skills: readonly A2aPublicSkill[] },
+): UnsignedInflectHostConsumerCard {
+    const peer = buildInflectAgentCard(input);
+    const skills = [...input.skills].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return {
+        ...peer,
+        description:
+            'The A2A endpoint of one Inflect workspace, for a host application that calls it as a ' +
+            'client. Authenticate with the OAuth2 client credentials the workspace issued, then ' +
+            'send a task naming one of the skills below. Which skills a given client may invoke is ' +
+            'set by the workspace, so a skill listed here can still be refused.',
+        skills,
+        securitySchemes: {
+            hostConsumerOAuth2: {
+                type: 'oauth2',
+                flows: {
+                    clientCredentials: {
+                        tokenUrl: `${input.origin}${inflectA2aTokenPath(input.tenantSlug)}`,
+                        scopes: {},
+                    },
+                },
+            },
+        },
+        security: [{ hostConsumerOAuth2: [] }],
+    };
+}
+
+/**
+ * Sign with the key in force. `key.fingerprint` must be the CURRENT key the
+ * card names.
+ *
+ * Generic over the variant so there is ONE signing path: the bytes signed are
+ * the canonical form of every member but the signature, whichever variant it
+ * is, and a new variant cannot quietly get a different signing rule.
+ */
+export function signInflectAgentCard<T extends UnsignedInflectCardVariant>(
+    card: T,
     key: { readonly privateKey: KeyObject; readonly fingerprint: string },
-): InflectAgentCard {
+): T & InflectCardSignature {
     const current = card['x-inflect'].signingKeys.find((k) => k.status === 'CURRENT');
     if (!current || current.fingerprint !== key.fingerprint) {
         throw new Error('An Inflect agent card is signed only by the key it names as current');
@@ -220,7 +356,12 @@ export function signInflectAgentCard(
     const value = cryptoSign(null, signedBytes(card as unknown as Record<string, unknown>), key.privateKey).toString(
         'hex',
     );
-    return { ...card, [SIGNATURE_MEMBER]: { alg: 'Ed25519', keyFingerprint: key.fingerprint, value } };
+    // The computed member name defeats inference, so the shape is asserted
+    // rather than inferred. `InflectCardSignature` is what makes it true.
+    return {
+        ...card,
+        [SIGNATURE_MEMBER]: { alg: 'Ed25519', keyFingerprint: key.fingerprint, value },
+    } as T & InflectCardSignature;
 }
 
 export type InflectCardVerdict =

@@ -196,11 +196,66 @@ export interface WorkflowDefinition {
      */
     readOnly?: true;
 
+    /**
+     * THE PUBLIC A2A SKILL this workflow is advertised as, on the host-consumer
+     * agent card (#3862) — or ABSENT, which means it is never advertised.
+     * Absent is the default and the safe one: a workflow reaches the public
+     * card only by someone writing copy for it in a reviewed diff.
+     *
+     * NOT `skills` above. That field names AGENT SKILLS — prompt material
+     * mounted on the Flue engine, internal to a run. This one is the A2A
+     * protocol's `AgentSkill`, read by a host that has never talked to us. The
+     * two have nothing to do with each other and the collision is the
+     * protocol's, not ours.
+     *
+     * WRITTEN, NEVER GENERATED. Deriving this from step tool names would
+     * publish exactly what R19 withholds — `tool: 'get_compliance_posture'` is
+     * a tool name, and the card is fetched by anyone. So the copy is prose
+     * aimed at a stranger, and a reviewer can read what it discloses.
+     *
+     * `tags` is REQUIRED by the A2A v0.3.0 schema (`AgentSkill.required` is
+     * `["description","id","name","tags"]`), which is why it is not optional
+     * here even though nothing of ours reads it.
+     *
+     * NO `id` HERE ON PURPOSE. The card's skill id must be the workflow key,
+     * because that is what a host sends back as `workflowKey`. An authored id
+     * could disagree with the key and the card would then advertise a skill
+     * nobody can invoke, so the id is not authored at all —
+     * `advertisedA2aSkills` takes it from `key`.
+     */
+    a2aSkill?: A2aPublicSkillCopy;
+
     key: string;
     name: string;
     description: string;
     steps: WorkflowStepDef[];
 }
+
+/**
+ * One entry of the host-consumer card's `skills`, in the A2A v0.3.0 shape.
+ *
+ * `id` is the workflow key: it is what a host sends back as `workflowKey`, so
+ * the card's own identifier has to be the thing the call names. Anything else
+ * would make the card describe a skill the caller cannot then invoke.
+ */
+export interface A2aPublicSkill {
+    /** The workflow key. What the host names when it calls. */
+    readonly id: string;
+    readonly name: string;
+    /** Prose for a stranger. No tool names, no tenant names. */
+    readonly description: string;
+    /** Keywords. Required by the A2A schema. */
+    readonly tags: readonly string[];
+    /** Example prompts, a hint to the client. Optional in the A2A schema. */
+    readonly examples?: readonly string[];
+}
+
+/**
+ * What an author writes on a definition: the copy, without the id. The id is
+ * the workflow key and is supplied by `advertisedA2aSkills`, so the two cannot
+ * drift apart.
+ */
+export type A2aPublicSkillCopy = Omit<A2aPublicSkill, 'id'>;
 
 /**
  * Hard per-run guardrails for an autonomous multi-step agent. A run that

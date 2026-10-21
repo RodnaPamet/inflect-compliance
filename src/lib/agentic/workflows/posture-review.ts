@@ -60,6 +60,21 @@ export const postureReviewWorkflow: WorkflowDefinition = {
     // this flag makes that true of a model choosing its own calls (#3775).
     readOnly: true,
 
+    // Advertised on the host-consumer card (#3862). Safe to publish: read-only,
+    // and it needs no input, so a host can call it with nothing but the key.
+    a2aSkill: {
+        name: 'Review compliance posture',
+        description:
+            'Reviews what needs attention across a compliance workspace — controls, evidence ' +
+            'falling due, open findings and overdue remediation — and says what to address ' +
+            'first. Read-only: it changes nothing and proposes nothing.',
+        tags: ['compliance', 'risk', 'review'],
+        examples: [
+            'What needs attention in our compliance programme right now?',
+            'Which evidence is falling due in the next month?',
+        ],
+    },
+
     key: 'posture-review',
     name: 'Posture review',
     description:
