@@ -16,6 +16,7 @@ import { discoveredAgentReviewWorkflow } from './workflows/discovered-agent-revi
 import { agentRecertificationPackWorkflow } from './workflows/agent-recertification-pack';
 import { auditNarrativeWorkflow } from './workflows/audit-narrative';
 import { sapTransactionReviewWorkflow } from './workflows/sap-transaction-review';
+import { adHocQuestionWorkflow } from './workflows/ad-hoc-question';
 
 /**
  * "Diagnostic" — read the tenant's compliance posture, then synthesise a
@@ -84,6 +85,13 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
     // request whose receiving agent holds any external tool grant — a property
     // of the grant tables rather than of this definition.
     [sapTransactionReviewWorkflow.key]: sapTransactionReviewWorkflow,
+    // #3869 — the one workflow here whose subject is chosen by a PERSON TYPING
+    // rather than fixed by the definition. It names no READ steps on purpose:
+    // the tool surface comes from the agent's grants, so the model picks, and
+    // an agent granted nothing settles EMPTY_CATALOGUE rather than answering
+    // from no records. Not advertised on the A2A card, deliberately — see the
+    // definition's header.
+    [adHocQuestionWorkflow.key]: adHocQuestionWorkflow,
 };
 
 /**
