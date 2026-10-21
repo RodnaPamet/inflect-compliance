@@ -108,6 +108,24 @@ export const sapTransactionReviewWorkflow: WorkflowDefinition = {
                 const controls = ctx.outputs['controls'];
                 const controlCount = Array.isArray(controls) ? controls.length : 0;
 
+                // THE QUESTION IS RECORDED, NOT RE-NARRATED.
+                //
+                // It goes in `data` rather than into the answer prose, for two
+                // reasons. It is third-party text, and re-emitting it inside
+                // the narrative would put untrusted prose where a later reader
+                // meets it as part of our own report. And a structured field is
+                // where an auditor looks for "what was this run asked"; a
+                // sentence is not.
+                //
+                // It is READ here rather than merely declared because
+                // `tests/guardrails/canned-workflows-coverage.test.ts` holds
+                // the two directions equal: a key declared and never read
+                // refuses runs for an input nothing consumes. On Flue the
+                // question does reach the model through `run-message.ts`, but
+                // that is the driver delivering declared input, not this
+                // definition using it.
+                const question = requiredString(ctx, 'question');
+
                 // A payload that does not validate is reported as such rather
                 // than judged. On Flue admission has already refused it; this
                 // arm is the static engine's, and it must not pretend to a
@@ -117,7 +135,7 @@ export const sapTransactionReviewWorkflow: WorkflowDefinition = {
                         text:
                             `The facts supplied could not be read (${reading.reason}: ${reading.detail}). ` +
                             'No review was performed.',
-                        data: { factsAccepted: false, reason: reading.reason, detail: reading.detail },
+                        data: { question, factsAccepted: false, reason: reading.reason, detail: reading.detail },
                     };
                 }
 
@@ -132,6 +150,7 @@ export const sapTransactionReviewWorkflow: WorkflowDefinition = {
                         'could not be applied. No judgement is made here — the review is the answer given on the ' +
                         'Flue engine, which this run did not use.',
                     data: {
+                        question,
                         factsAccepted: true,
                         documents: docs.length,
                         controlsAvailable: controlCount,
