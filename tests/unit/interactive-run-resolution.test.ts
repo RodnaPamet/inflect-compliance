@@ -284,6 +284,70 @@ describe('the run context binds the agent and changes nothing else', () => {
     });
 });
 
+describe('the audit row carries BOTH the person and the agent', () => {
+    /**
+     * #3868 step 2 asks for this, and it already holds — which is worth a test
+     * rather than a shrug, because it holds by DERIVATION from the context this
+     * module builds, and the derivation is three separate reads that could each
+     * change without anyone connecting them to this path.
+     *
+     * `AuditLog` has no `agentId` column, so "both" means:
+     *
+     *   the person   `userId`                   <- ctx.userId
+     *   the actor    `actorType`                <- ctx.apiKeyId ? API_KEY : USER
+     *   the agent    `detailsJson.agentId`      <- ctx.agentId
+     *
+     * Hash-chain validity is NOT re-proved here. It is `appendAuditEntry`'s own
+     * invariant, held by the integration suites that exercise the real writer;
+     * asserting it against a double would prove something about the double.
+     */
+    const runsSource = (): string =>
+        require('node:fs').readFileSync(
+            require('node:path').join(__dirname, '../../src/app-layer/usecases/workflow-runs.ts'),
+            'utf8',
+        ) as string;
+
+    /** Just the WORKFLOW_RUN_STARTED entry, so a neighbouring row cannot satisfy this. */
+    const startedEntry = (): string => {
+        const src = runsSource();
+        const at = src.indexOf("action: 'WORKFLOW_RUN_STARTED'");
+        expect(at).toBeGreaterThan(-1);
+        // Bounded both ways around the action, because the fields sit above it
+        // and `detailsJson` below — an unbounded read would let any other audit
+        // call in this large file satisfy the assertions.
+        return src.slice(Math.max(0, at - 400), at + 900);
+    };
+
+    it('derives the PERSON from the context, not from a lookup', async () => {
+        expect(startedEntry()).toContain('userId: ctx.userId');
+    });
+
+    it('derives the AGENT from the context, and records null rather than omitting it', async () => {
+        // `?? null` matters: an omitted key and an explicit null are different
+        // facts in a JSON column, and "no agent" has to be stated for a
+        // person-started run to be distinguishable from an older row.
+        expect(startedEntry()).toContain('agentId: ctx.agentId ?? null');
+    });
+
+    it('stamps USER for a session, because apiKeyId is what selects API_KEY', async () => {
+        expect(startedEntry()).toContain("actorType: ctx.apiKeyId ? 'API_KEY' : 'USER'");
+        // And the interactive context never sets apiKeyId, so this resolves to
+        // USER — asserted on the context rather than inferred, which is the
+        // half that ties the source read above to this path.
+        const bound = interactiveRunContext(makeRequestContext('READER', { tenantId: TENANT }), AGENT);
+        expect(bound.apiKeyId).toBeUndefined();
+        expect(bound.agentId).toBe(AGENT);
+    });
+
+    it('and the trail is not asked to claim a job did it', async () => {
+        // A job stamps actorType JOB so the trail does not claim a person acted.
+        // Here a person DID, so both facts are present and neither substitutes
+        // for the other — the distinction ADR 0004 records.
+        const bound = interactiveRunContext(makeRequestContext('EDITOR', { tenantId: TENANT }), AGENT);
+        expect(bound.actorType).not.toBe('JOB');
+    });
+});
+
 describe('the refusal vocabulary is closed', () => {
     it('every declared refusal is distinct, so no two causes share a code', () => {
         expect(new Set(INTERACTIVE_RUN_REFUSALS).size).toBe(INTERACTIVE_RUN_REFUSALS.length);
