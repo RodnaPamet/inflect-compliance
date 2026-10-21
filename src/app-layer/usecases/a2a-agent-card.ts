@@ -28,9 +28,13 @@ import {
     buildInflectHostConsumerCard,
     inflectA2aIdentity,
     signInflectAgentCard,
+    buildInflectV1Card,
+    signInflectV1Card,
     type InflectAgentCard,
     type InflectHostConsumerCard,
+    type InflectV1Card,
 } from '@/lib/agentic/a2a/own-card';
+import type { A2aProtocolVersion } from '@/lib/agentic/a2a/version';
 
 import { buildSystemContext } from '../context-system';
 import type { RequestContext } from '../types';
@@ -109,7 +113,14 @@ export async function getTenantA2aHostConsumerCard(input: {
     tenantSlug: string;
     requestId: string;
     now?: Date;
-}): Promise<InflectHostConsumerCard | null> {
+    /**
+     * Which protocol version's card to serve (#3866). Defaults to 0.3, so a
+     * client that sends no `A2A-Version` header gets exactly what it got
+     * before — the spec's own rule (`specification.md:712`) and the reason
+     * this is additive.
+     */
+    version?: A2aProtocolVersion;
+}): Promise<InflectHostConsumerCard | InflectV1Card | null> {
     const origin = inflectA2aOrigin();
     if (!origin) return null;
     const tenant = await runInGlobalContext((db) =>
@@ -135,15 +146,23 @@ export async function getTenantA2aHostConsumerCard(input: {
     const key = await resolveTenantA2aSigningKey(sys);
     if (!key) return null;
     const previous = await lastRetiredTenantA2aKey(sys);
-    const card = buildInflectHostConsumerCard({
+    const build = {
         origin,
         tenantSlug: tenant.slug,
         current: { publicKeyHex: key.publicKeyHex, fingerprint: key.fingerprint },
         previous,
         now: input.now ?? new Date(),
         skills: advertisedA2aSkills(),
-    });
-    return signInflectAgentCard(card, key);
+    };
+    // Two shapes, not two spellings: v1.0 replaces the top-level url and
+    // protocolVersion with `supportedInterfaces`, and carries Inflect's
+    // identity in a declared extension because protobuf JSON rejects unknown
+    // top-level fields. Each has its own signer for the same reason — the
+    // signature lands in a different place — over the same signed bytes.
+    if ((input.version ?? '0.3') === '1.0') {
+        return signInflectV1Card(buildInflectV1Card(build), key);
+    }
+    return signInflectAgentCard(buildInflectHostConsumerCard(build), key);
 }
 
 /**

@@ -113,6 +113,13 @@ import { resolveTenantA2aSigningKey, type TenantA2aSigningKeyInForce } from './a
 import { agentHoldsExternalToolGrant } from './a2a-host-consumer-policy';
 import { hostConsumerAnswerText, settledRunAnswerText } from './a2a-run-answer';
 import { awaitRunSettled } from './a2a-synchronous-wait';
+import {
+    V1_METHOD_ALIASES,
+    resolveA2aVersion,
+    resolveV1Method,
+    v1TaskState,
+    type A2aProtocolVersion,
+} from '@/lib/agentic/a2a/version';
 
 /**
  * The default per-peer quota: inbound messages one peer may send one tenant per
@@ -156,6 +163,16 @@ export interface InboundA2aRequest {
     readonly peerId?: string;
     readonly authorization: string | null;
     readonly receiptHeader: string | null;
+    /**
+     * The `A2A-Version` header, or `null` when absent (#3866).
+     *
+     * ABSENT MEANS 0.3, which the spec states rather than us choosing it
+     * (`specification.md:712` at v1.0.1), and which is what leaves every caller
+     * that predates this unaffected. Only the HOST path reads it: a peer's
+     * response bytes are covered by a receipt it verifies, so re-spelling them
+     * for a peer would change a signed contract to serve nobody.
+     */
+    readonly protocolVersion?: string | null;
     /** The exact bytes received, already capped by the route. */
     readonly body: string;
     readonly requestId: string;
@@ -430,8 +447,27 @@ async function startHostConsumerRequest(
         return refuse('TENANT_CAPS_UNSET');
     }
 
-    const parsed = parseA2aInboundRequest(req.body);
-    if (!parsed.ok) return refuse(parsed.reason, parsed.rpcId);
+    // ── WHICH PROTOCOL VERSION THIS CALL SPEAKS (#3866) ─────────────────────
+    //
+    // Host consumers only. An absent header is 0.3, which the spec states
+    // (`specification.md:712`) rather than us being lenient — and which is why
+    // every caller that predates this change is untouched.
+    const negotiated = resolveA2aVersion(req.protocolVersion);
+    if (!negotiated.ok) return refuse(negotiated.error, null, 400);
+    const version = negotiated.version;
+
+    const parsed = parseA2aInboundRequest(req.body, version === '1.0' ? V1_METHOD_ALIASES : {});
+    if (!parsed.ok) {
+        // A v1.0 operation this build does not serve is refused with the
+        // SPEC'S OWN error rather than a generic method refusal, so a
+        // conformant client learns the right thing and can fall back. See
+        // `version.ts` for why ListTasks and CancelTask are not implemented.
+        if (parsed.reason === 'METHOD_REFUSED' && parsed.method) {
+            const v1 = resolveV1Method(parsed.method);
+            if (v1.kind === 'REFUSED') return refuse(v1.error, parsed.rpcId, 400);
+        }
+        return refuse(parsed.reason, parsed.rpcId);
+    }
     const request = parsed.request;
 
     const answer = async (result: Record<string, unknown>, runId: string | undefined, rpcId: string | number) => {
@@ -509,6 +545,7 @@ async function startHostConsumerRequest(
                 run.status,
                 null,
                 hostConsumerAnswerText({ status: run.status, settled, parked }, followUpText, run.id),
+                version,
             ),
             run.id,
             request.rpcId,
@@ -543,6 +580,9 @@ async function startHostConsumerRequest(
         request,
         refuse,
         answer,
+        // The negotiated version travels with the request (#3866). The peer's
+        // call deliberately omits it and takes the 0.3 default.
+        version,
         grants: {
             kind: 'HOST_CONSUMER',
             id: consumer.id,
@@ -610,8 +650,16 @@ async function startInboundRun(args: {
         rpcId: string | number,
     ) => Promise<InboundA2aResponse>;
     readonly grants: InboundPrincipal;
+    /**
+     * The negotiated protocol version (#3866). ABSENT for a peer, and the
+     * default is 0.3 — a peer's response bytes are covered by a receipt it
+     * verifies, so re-spelling them would change a signed contract to serve
+     * nobody. Only the host path supplies this.
+     */
+    readonly version?: A2aProtocolVersion;
 }): Promise<InboundA2aResponse> {
     const { sys, tenant, req, request, refuse, answer, grants } = args;
+    const version = args.version ?? '0.3';
     if (!grants.workflowKeys.includes(request.workflowKey)) return refuse('WORKFLOW_NOT_ALLOWED', request.rpcId);
     const def = getWorkflowDefinition(request.workflowKey);
     if (!def) return refuse('WORKFLOW_NOT_ALLOWED', request.rpcId);
@@ -734,6 +782,7 @@ async function startInboundRun(args: {
                 waited.status,
                 request.contextId,
                 hostConsumerAnswerText(waited, text, started.runId),
+                version,
             ),
             started.runId,
             request.rpcId,
@@ -760,6 +809,11 @@ async function taskFor(
      * member to them would change a document every pinned peer already agreed.
      */
     answerText?: string,
+    /**
+     * Which vocabulary to render the task state in (#3866). Defaults to 0.3, so
+     * every existing call site — the peer's included — is unchanged.
+     */
+    version: A2aProtocolVersion = '0.3',
 ) {
     const proposals = await runInTenantContext(sys, (db) =>
         db.agentProposal.findMany({
@@ -774,7 +828,12 @@ async function taskFor(
         id: runId,
         contextId: contextId ?? runId,
         status: {
-            state: taskStateForRunStatus(status),
+            // ONE DECISION, TWO SPELLINGS. `taskStateForRunStatus` decides what
+            // the run's state IS; `v1TaskState` only relabels it. A second
+            // mapping straight from run status to TASK_STATE_* could disagree
+            // with the first, and a caller using one version would never see
+            // the disagreement.
+            state: version === '1.0' ? v1TaskState(taskStateForRunStatus(status)) : taskStateForRunStatus(status),
             timestamp: new Date().toISOString(),
             // `status.message` is where SAP's toolkit reads its answer from —
             // `result.body.status.message.parts[0].text`. Spread so the member

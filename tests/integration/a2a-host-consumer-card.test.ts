@@ -137,8 +137,11 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
-const req = (slug: string, file: string) =>
-    new NextRequest(`https://app.inflect.test/api/a2a/${slug}/.well-known/${file}`, { method: 'GET' });
+const req = (slug: string, file: string, version?: string) =>
+    new NextRequest(`https://app.inflect.test/api/a2a/${slug}/.well-known/${file}`, {
+        method: 'GET',
+        ...(version === undefined ? {} : { headers: { 'a2a-version': version } }),
+    });
 const params = (slug: string) => ({ params: Promise.resolve({ tenantSlug: slug }) });
 
 async function body(res: Response): Promise<string> {
@@ -285,5 +288,71 @@ describe('R19 — the card discloses nothing of the tenant', () => {
         // Asserted so the test above is understood as "no NAMES", not "no
         // tenant-derived string at all" — the slug is deliberately present.
         expect(text).toContain('hcard1');
+    });
+});
+
+describe('the card is served per protocol version (#3866)', () => {
+    it('an ABSENT header serves the v0.3 shape, unchanged', async () => {
+        // The property that makes v1.0 additive: a client that predates it is
+        // served exactly what it was served before.
+        const doc = JSON.parse(await body(await GET_AGENT_JSON(req('hcard1', 'agent.json'), params('hcard1'))));
+        expect(doc['protocolVersion']).toBe('0.3.0');
+        expect(doc['url']).toContain('/api/a2a/hcard1');
+        expect(doc['x-inflect']).toBeDefined();
+        expect(doc['supportedInterfaces']).toBeUndefined();
+    });
+
+    it('an explicit 0.3 header serves the SAME BYTES as no header', async () => {
+        const absent = await body(await GET_AGENT_JSON(req('hcard1', 'agent.json'), params('hcard1')));
+        const explicit = await body(await GET_AGENT_JSON(req('hcard1', 'agent.json', '0.3'), params('hcard1')));
+        // Byte-identical, which also means the SIGNATURE is identical — so a
+        // client that pinned one and then started sending the header does not
+        // see a changed card.
+        expect(explicit).toBe(absent);
+    });
+
+    it('a 1.0 header serves the v1.0 shape, with no x- member', async () => {
+        const doc = JSON.parse(await body(await GET_AGENT_JSON(req('hcard1', 'agent.json', '1.0'), params('hcard1'))));
+        expect(Array.isArray(doc['supportedInterfaces'])).toBe(true);
+        expect(doc['url']).toBeUndefined();
+        expect(doc['protocolVersion']).toBeUndefined();
+        // protobuf JSON rejects unknown top-level fields, so this is the
+        // assertion that keeps the card parseable by a strict v1.0 client.
+        expect(Object.keys(doc).filter((k) => k.startsWith('x-'))).toEqual([]);
+    });
+
+    it('the v1.0 card carries Inflect’s identity in a declared, NOT-required extension', async () => {
+        const doc = JSON.parse(await body(await GET_AGENT_JSON(req('hcard1', 'agent.json', '1.0'), params('hcard1'))));
+        const ext = (doc['capabilities'] as { extensions: Array<Record<string, unknown>> }).extensions[0];
+        expect(ext['uri']).toBe('urn:inflect:a2a:card-extension:1');
+        // Required would oblige us to refuse every client that has not
+        // declared support for it, which is every v1.0 client.
+        expect(ext['required']).toBe(false);
+        expect((ext['params'] as Record<string, unknown>)['identity']).toContain('/api/a2a/hcard1/');
+    });
+
+    it('both versions advertise the SAME skills', async () => {
+        // The card's content decision (#3862) is version-independent: a
+        // re-spelling must not change what is disclosed.
+        const v03 = JSON.parse(await body(await GET_AGENT_JSON(req('hcard1', 'agent.json'), params('hcard1'))));
+        const v10 = JSON.parse(await body(await GET_AGENT_JSON(req('hcard1', 'agent.json', '1.0'), params('hcard1'))));
+        expect(v10['skills']).toEqual(v03['skills']);
+    });
+
+    it('an UNSUPPORTED version gets the same 404 as every other reason', async () => {
+        // No oracle: a client that cannot read our card cannot call us either,
+        // so there is nothing to tell it that the single 404 does not.
+        const bad = await GET_AGENT_JSON(req('hcard1', 'agent.json', '2.0'), params('hcard1'));
+        const unknownTenant = await GET_AGENT_JSON(req('nope-xyz', 'agent.json'), params('nope-xyz'));
+        expect(bad.status).toBe(404);
+        expect(await body(bad)).toBe(await body(unknownTenant));
+    });
+
+    it('the sibling path honours the header too, and agrees byte for byte', async () => {
+        const a = await body(await GET_AGENT_JSON(req('hcard1', 'agent.json', '1.0'), params('hcard1')));
+        const b = await body(
+            await GET_AGENT_CARD_JSON(req('hcard1', 'agent-card.json', '1.0'), params('hcard1')),
+        );
+        expect(a).toBe(b);
     });
 });

@@ -135,13 +135,37 @@ export type A2aInboundRequest =
 
 export type A2aInboundParse =
     | { readonly ok: true; readonly request: A2aInboundRequest }
-    | { readonly ok: false; readonly reason: A2aInboundRefusal; readonly rpcId: string | number | null };
+    | {
+          readonly ok: false;
+          readonly reason: A2aInboundRefusal;
+          readonly rpcId: string | number | null;
+          /**
+           * The method name as RECEIVED, on `METHOD_REFUSED` only (#3866).
+           *
+           * Echoed so a caller can name the spec's own error for a v1.0
+           * operation this build does not serve — `UnsupportedOperationError`
+           * rather than a generic refusal — without parsing the body twice.
+           */
+          readonly method?: string;
+      };
 
 /**
  * Parse a peer's request. Called only after the peer is authenticated, its
  * signature verified and its card admitted: this is the first read of content.
  */
-export function parseA2aInboundRequest(body: string): A2aInboundParse {
+export function parseA2aInboundRequest(
+    body: string,
+    /**
+     * v1.0 method names to rewrite to their v0.3 equivalents before the method
+     * set is checked (#3866). Passed only for a v1.0 caller.
+     *
+     * An ALIAS applied here rather than a rewrite of the body, because the body
+     * is evidence: `HostConsumerMessage` keeps the exact bytes received, and a
+     * request whose stored bytes differ from what arrived is not evidence of
+     * what arrived.
+     */
+    methodAliases: Readonly<Record<string, string>> = {},
+): A2aInboundParse {
     let raw: unknown;
     try {
         raw = JSON.parse(body);
@@ -151,11 +175,12 @@ export function parseA2aInboundRequest(body: string): A2aInboundParse {
     const env = EnvelopeSchema.safeParse(raw);
     if (!env.success) return { ok: false, reason: 'NOT_JSONRPC', rpcId: null };
     const rpcId = env.data.id;
-    if (!A2A_INBOUND_METHODS.has(env.data.method as A2aMethod)) {
-        return { ok: false, reason: 'METHOD_REFUSED', rpcId };
+    const method = methodAliases[env.data.method] ?? env.data.method;
+    if (!A2A_INBOUND_METHODS.has(method as A2aMethod)) {
+        return { ok: false, reason: 'METHOD_REFUSED', rpcId, method: env.data.method };
     }
 
-    if (env.data.method === 'tasks/get') {
+    if (method === 'tasks/get') {
         const p = GetParamsSchema.safeParse(env.data.params);
         if (!p.success) return { ok: false, reason: 'PARAMS_INVALID', rpcId };
         return { ok: true, request: { method: 'tasks/get', rpcId, taskId: p.data.id } };

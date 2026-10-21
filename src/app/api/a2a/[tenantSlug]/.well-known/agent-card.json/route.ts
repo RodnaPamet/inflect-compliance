@@ -21,6 +21,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { API_READ_LIMIT } from '@/lib/security/rate-limit';
 import { enforceRateLimit, getClientIp, isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
 import { getTenantA2aHostConsumerCard } from '@/app-layer/usecases/a2a-agent-card';
+import { A2A_VERSION_HEADER, resolveA2aVersion } from '@/lib/agentic/a2a/version';
 
 function applyCardReadRateLimit(req: NextRequest): NextResponse | null {
     if (isRateLimitBypassed()) return null;
@@ -37,10 +38,20 @@ export const GET = withApiErrorHandling(
         const limited = applyCardReadRateLimit(req);
         if (limited) return limited;
         const { tenantSlug } = await params;
-        const card = await getTenantA2aHostConsumerCard({
-            tenantSlug,
-            requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
-        });
+        // WHICH VERSION'S CARD (#3866). A client asks with the same
+        // `A2A-Version` header it will use for the call; absent means 0.3, per
+        // the spec, so every existing fetch is unchanged. An unsupported
+        // version gets the SAME 404 as every other reason there is no card —
+        // this route stays no oracle, and a client that cannot read our card
+        // cannot call us either.
+        const negotiated = resolveA2aVersion(req.headers.get(A2A_VERSION_HEADER));
+        const card = negotiated.ok
+            ? await getTenantA2aHostConsumerCard({
+                  tenantSlug,
+                  requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
+                  version: negotiated.version,
+              })
+            : null;
         if (!card) {
             return NextResponse.json(
                 { error: { code: 'NOT_FOUND', message: 'No agent card.' } },
