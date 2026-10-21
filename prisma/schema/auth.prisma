@@ -1735,6 +1735,41 @@ model TenantSecuritySettings {
   /// every read site then has to negate it, and a negated flag read under
   /// pressure is how a kill switch gets inverted.
   requireRegisteredAgent       Boolean           @default(true)
+  /// WHICH REGISTERED AGENT ANSWERS A PERSON'S QUESTION IN THIS TENANT
+  /// (#3868 step 2, ADR 0004).
+  ///
+  /// The tenant half of a pair: `AGENT_INTERACTIVE_RUNS` says whether the
+  /// browser-started path exists on this DEPLOYMENT, this says which agent it
+  /// binds in this TENANT. Both default off, because one deployment serving
+  /// tenants that have made different decisions is the normal case — the same
+  /// pairing `A2A_HOST_CONSUMERS` makes.
+  ///
+  /// THE DESIGNATION IS THE OPT-IN. There is deliberately no boolean beside
+  /// this: "enabled but no agent named" is not a state that means anything,
+  /// because the agent is what answers. A second column could disagree with
+  /// this one, and the disagreement would decide whether somebody's question
+  /// gets answered.
+  ///
+  /// ONE COLUMN, so two agents can never both claim it. The alternative — a
+  /// flag on `RegisteredAgent` — makes "which agent is interactive" a query
+  /// that can return two rows, and every reader then needs a tie-break nobody
+  /// decided.
+  ///
+  /// NO FOREIGN KEY, and not for the retention reason the other FK-less columns
+  /// here carry. The read has to validate the agent anyway — ACTIVE, not
+  /// retired, not killed, not breaker-latched, scored, and granted the tools —
+  /// so an FK adds no safety it does not already have. What an FK WOULD do is
+  /// decide the lifecycle wrongly: `ON DELETE SET NULL` makes a retired agent's
+  /// designation vanish silently, and `RESTRICT` makes retirement fail. Both
+  /// are worse than the correct behaviour, which is that the designation stays
+  /// and the next question is REFUSED with a reason naming the agent, so an
+  /// operator learns what happened instead of watching questions stop working.
+  ///
+  /// NULL means no agent designated, which is where every tenant starts and is
+  /// a REFUSAL rather than a fallback: picking "the only ACTIVE agent" would
+  /// silently change which agent answers the moment a tenant registers a
+  /// second one.
+  interactiveAgentId           String?
   /// The user accountable for recertifications this product raises WITHOUT a
   /// human asking — see the migration that added it.
   ///

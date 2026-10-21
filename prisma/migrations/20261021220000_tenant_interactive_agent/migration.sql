@@ -1,0 +1,26 @@
+-- Which registered agent answers a person's question in this tenant
+-- (#3868 step 2, ADR 0004).
+--
+-- The tenant half of a pair: AGENT_INTERACTIVE_RUNS says whether the
+-- browser-started path exists on this DEPLOYMENT, this says which agent it
+-- binds in this TENANT. Both default off, because one deployment serving
+-- tenants that have decided differently is the normal case.
+--
+-- THE DESIGNATION IS THE OPT-IN -- no boolean beside it. "Enabled but no agent
+-- named" is not a meaningful state, and a second column could disagree with
+-- this one about whether somebody's question gets answered.
+--
+-- NULLABLE with no default and no backfill. NULL is "no agent designated",
+-- where every tenant starts, and it is a REFUSAL rather than a fallback:
+-- resolving to "the only ACTIVE agent" would silently change which agent
+-- answers the moment a tenant registers a second one.
+--
+-- NO FOREIGN KEY, and not for the retention reason the other FK-less columns on
+-- this table carry. The read validates the agent regardless -- ACTIVE, not
+-- retired, not killed, not latched, scored, granted its tools -- so an FK adds
+-- no safety. What it would do is decide the lifecycle wrongly: ON DELETE SET
+-- NULL makes a retired agent's designation vanish silently, and RESTRICT makes
+-- retirement itself fail. The correct behaviour is that the designation STAYS
+-- and the next question is refused with a reason naming the agent, so an
+-- operator learns what happened rather than watching questions stop working.
+ALTER TABLE "TenantSecuritySettings" ADD COLUMN "interactiveAgentId" TEXT;

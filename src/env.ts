@@ -321,6 +321,31 @@ export const env = createEnv({
         // outage. The strictness belongs at the read, where the answer is
         // "off", not at boot, where the answer is "nothing starts".
         AGENT_DRIVER_FLUE: z.string().optional(),
+        // RUNS STARTED BY A PERSON IN A BROWSER (#3868 step 2) — opt-in.
+        //
+        // Every Flue run today is started by a job, a credential or an
+        // automation rule. This admits a fourth starter: a signed-in person
+        // asking a question, answered by the agent their tenant designated.
+        // ADR 0004 settled the authority half — a session is its own principal,
+        // so the answer can never reach data the asker could not reach through
+        // the UI — and this flag is whether that path exists on a deployment.
+        //
+        // A plain string for the reason `AGENT_DRIVER_FLUE` above carries, and
+        // read through the SAME `flueEnvEnabled`: '1' and 'true' are on,
+        // everything else is off, so a typo in a feature flag is "off" rather
+        // than a process that will not boot. One parser, not a second one that
+        // can disagree with it about `AGENT_INTERACTIVE_RUNS=yes`.
+        //
+        // OFF IS NOT THE ONLY GATE, and the pairing is deliberate — the same
+        // one `A2A_HOST_CONSUMERS` below makes. This flag crosses a DEPLOYMENT;
+        // the tenant's half crosses a TENANT, and is
+        // `TenantSecuritySettings.interactiveAgentId`. Note the tenant's opt-in
+        // IS the designation rather than a boolean beside it: there is no
+        // meaningful "enabled but no agent named", because the agent is what
+        // answers. A separate boolean would add a second state that can
+        // disagree with the id, and the disagreement would decide whether
+        // somebody's question is answered.
+        AGENT_INTERACTIVE_RUNS: z.string().optional(),
         // A2A HOST CONSUMERS (#3861) — admits a host that calls Inflect as a
         // CLIENT rather than as a peer agent: no card to pin, no Ed25519 key,
         // an OAuth2 bearer instead of a signed receipt.
@@ -615,6 +640,7 @@ export const env = createEnv({
         A2A_HOST_CONSUMERS: process.env.A2A_HOST_CONSUMERS,
         A2A_HOST_CONSUMER_TOKEN_SECRET: process.env.A2A_HOST_CONSUMER_TOKEN_SECRET,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
+        AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,
