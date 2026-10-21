@@ -231,3 +231,39 @@ describe('z-order keeps it under any overlay', () => {
         expect(40).not.toBeLessThan(40);
     });
 });
+
+describe('the role gate — a reader is not shown a button that refuses them', () => {
+    /**
+     * `enforceFeatureGate`'s predicate 3 is `ctx.permissions.canWrite`, so a
+     * READER is refused every turn. Nothing they do in the session changes
+     * that, which is the test for hiding rather than explaining: a plan
+     * entitlement can be bought, a role cannot be self-granted.
+     */
+    function mountAs(canWrite: boolean) {
+        const ctx: TenantContextValue = {
+            ...TENANT,
+            permissions: { ...TENANT.permissions, canWrite },
+        };
+        return render(
+            <KeyboardShortcutProvider>
+                <AssistantOpenProvider>
+                    <TenantProvider value={ctx}>
+                        <AssistantLauncher />
+                    </TenantProvider>
+                </AssistantOpenProvider>
+            </KeyboardShortcutProvider>,
+        );
+    }
+
+    it('renders nothing for a caller without write permission', () => {
+        const { container } = mountAs(false);
+        expect(container.querySelector('[data-testid="assistant-launcher"]')).toBeNull();
+    });
+
+    it('renders for a caller WITH write permission — the control', () => {
+        // Without this, a launcher that rendered nothing ever would satisfy
+        // the assertion above.
+        const { container } = mountAs(true);
+        expect(container.querySelector('[data-testid="assistant-launcher"]')).not.toBeNull();
+    });
+});
