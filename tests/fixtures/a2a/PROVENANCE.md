@@ -36,3 +36,43 @@ To refresh at a later protocol version, fetch the new tag, record its sha here,
 and expect `a2a-card-spec-conformance.test.ts` to tell you if the new schema
 uses a JSON Schema keyword the validator does not implement — it pins that
 vocabulary deliberately.
+
+
+# `a2a-v1.0.1.proto`
+
+The A2A protocol's **canonical** definition at tag `v1.0.1`, vendored because
+the v1.0 line ships **no committed JSON Schema**.
+
+| | |
+| --- | --- |
+| Source | `a2aproject/A2A`, path `specification/a2a.proto` |
+| Tag | `v1.0.1` |
+| Tag object sha | `3303592588e388e62e0f69f701af531d2f4e3991` |
+| **Blob sha** | `400cdbad934654e27d7abbae1e145923eb40ac52` |
+| Retrieved | 2026-10-21 |
+
+## Why the proto and not a schema
+
+At v1.0.1 `specification/json/` contains only a README, which states that
+`a2a.json` is "a **non-normative build artifact** derived from the canonical
+proto definition at `specification/a2a.proto`… intentionally **not** committed
+to source control". Neither `specification/json/a2a.json` nor
+`docs/spec/a2a.json` exists at the tag — checked, both 404.
+
+So the v0.3 approach — vendor the JSON Schema, walk it with a generic validator
+— has nothing to vendor here. Generating the JSON needs `protoc` plus
+`protoc-gen-jsonschema`, which is a toolchain this repo does not have and should
+not acquire for one fixture.
+
+The proto IS the normative source, so it is what the card is checked against:
+`tests/helpers/proto-messages.ts` reads message fields and their
+`(google.api.field_behavior) = REQUIRED` markers out of these bytes. The
+constraint still comes from upstream rather than from a transcription of it,
+which is the property that mattered about the v0.3 fixture too.
+
+Verify the same way:
+
+```
+git hash-object tests/fixtures/a2a/a2a-v1.0.1.proto
+gh api repos/a2aproject/A2A/contents/specification/a2a.proto?ref=v1.0.1 --jq .sha
+```
