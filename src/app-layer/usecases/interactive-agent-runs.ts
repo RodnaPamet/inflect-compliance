@@ -61,6 +61,7 @@
  * no kill row for it and pass — so the existence check is a tenant-isolation
  * control, not a duplicate of the gate.
  */
+import { forbidden } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { flueEnvEnabled } from '@/lib/agentic/agent-driver';
@@ -224,4 +225,34 @@ export async function resolveInteractiveAgent(ctx: RequestContext): Promise<Inte
  */
 export function interactiveRunContext(ctx: RequestContext, agentId: string): RequestContext {
     return { ...ctx, agentId };
+}
+
+/**
+ * Start a run for a person, or throw the named refusal.
+ *
+ * Thin ON PURPOSE. Everything it does not do is done by `startWorkflowRun`,
+ * which is the one place the budget, the concurrency slot, the Flue gate and
+ * the skill mounts are decided — and duplicating any of them here would be a
+ * second control over the same fact. What this adds is the two checks that
+ * function does NOT make, and the designation that tells it which agent.
+ *
+ * Imported lazily, as `agent-invoke-dispatch` does, so this module stays
+ * cheap for the callers that only want `resolveInteractiveAgent` to decide
+ * whether to offer the affordance at all.
+ */
+export async function startInteractiveRun(
+    ctx: RequestContext,
+    workflowKey: string,
+    input: Record<string, unknown> = {},
+): Promise<{ readonly runId: string }> {
+    const resolved = await resolveInteractiveAgent(ctx);
+    if (!resolved.ok) {
+        // `forbidden`, not a thrown Error: the refusal is a decision about
+        // authority and reaches the caller as a 403 carrying the code, so a
+        // client can tell "designate an agent" from "lift the kill switch".
+        throw forbidden(`${resolved.refusal}: ${resolved.detail}`);
+    }
+    const { startWorkflowRun } = await import('./workflow-runs');
+    const started = await startWorkflowRun(interactiveRunContext(ctx, resolved.agentId), workflowKey, input);
+    return { runId: started.runId };
 }

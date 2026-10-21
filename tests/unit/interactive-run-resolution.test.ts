@@ -14,6 +14,25 @@
  * single uniform failure, which is the shape that makes production logs name
  * nothing. So each case pins the code.
  *
+ * ## Mutation proof (2026-10-22), because green proves nothing
+ *
+ * Three claims this file makes were broken at the source, and each failed:
+ *
+ *   remove the kill-switch check          -> 1 failed. A killed agent resolves
+ *                                            and answers questions. This is the
+ *                                            defect the module exists for:
+ *                                            `startWorkflowRun` does not make
+ *                                            this check.
+ *   drop `tenantId` from the designation  -> 10 failed. The isolation property
+ *     lookup                                 is covered by the read assertions
+ *                                            rather than by one case.
+ *   drop `actorType !== 'JOB'` from       -> 1 failed. The term that looks
+ *     `isPersonContext`                      redundant beside the other two is
+ *                                            not: a job carries a real
+ *                                            person's permissions by design,
+ *                                            so `userId` is set and both other
+ *                                            terms pass.
+ *
  * ## The ordering cases are not stylistic
  *
  * Two assertions are about what a caller LEARNS, not whether it is refused: a
