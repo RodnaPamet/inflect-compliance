@@ -103,6 +103,21 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // triaged on their own above — which is exactly why this flag must not be
     // read as covering them.
     AGENT_DRIVER_FLUE: 'operator feature flag selecting the in-process agent execution engine — an imported library, not an external endpoint, and not a sub-processor',
+    // Agent INTERACTIVE-RUN seam (#3868 step 2) — admits a new STARTER for a
+    // run, a signed-in person in a browser, beside the job, credential and
+    // automation-rule starters that already exist. It names no host, opens no
+    // socket and sends nothing anywhere: WHICH engine executes the run, and
+    // which model that engine calls, are the driver's question above and the
+    // AI_* vars' question, both triaged on their own.
+    //
+    // The honest nuance, because this is a data-protection register and not a
+    // lint list: turning this on means MORE runs happen, and those runs reach
+    // whatever the configured driver reaches. That is true of the driver flag
+    // too, and it is why the triage asks whether the VAR names an endpoint
+    // rather than whether it can increase traffic. If the set of third parties
+    // a run may reach ever changes, that is a change to the inventory above,
+    // not to this entry — so this flag must not be read as covering it.
+    AGENT_INTERACTIVE_RUNS: 'operator feature flag admitting a browser-started agent run — a new starter for the existing engine, not an external endpoint, and not a sub-processor',
     // AI sovereignty (DS-1) — the local/self-hosted LLM gateway. These configure
     // the TENANT'S OWN in-jurisdiction inference endpoint (Ollama / vLLM), the
     // OPPOSITE of an external sub-processor: a LOCAL_ONLY tenant's inference

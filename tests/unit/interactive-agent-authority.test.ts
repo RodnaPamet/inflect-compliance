@@ -78,7 +78,12 @@ jest.mock('@/lib/prisma', () => {
                 return grantRows;
             }),
         },
-        agentPolicyCard: { findUnique: jest.fn(async () => null) },
+        agentPolicyCard: {
+            findUnique: jest.fn(async () => {
+                trace.push('card:read');
+                return null;
+            }),
+        },
         agentPolicyCardVersion: { findUnique: jest.fn(async () => null) },
         // A SESSION has no credential, so this must never be consulted. It
         // is present and traced rather than omitted: an absent method would
@@ -90,17 +95,29 @@ jest.mock('@/lib/prisma', () => {
             }),
         },
         mcpToolManifestPin: {
-            findUnique: jest.fn(async () => null),
+            findUnique: jest.fn(async () => {
+                trace.push('manifest');
+                return null;
+            }),
             createMany: jest.fn(async () => ({ count: 0 })),
             create: jest.fn(async () => null),
             upsert: jest.fn(async () => null),
             findMany: jest.fn(async () => []),
         },
         agentCircuitBreaker: {
-            findUnique: jest.fn(async () => null),
+            findUnique: jest.fn(async () => {
+                trace.push('breaker');
+                return null;
+            }),
             updateMany: jest.fn(async () => ({ count: 0 })),
         },
-        agentBehaviourWindow: { findMany: jest.fn(async () => []), updateMany: jest.fn(async () => ({ count: 0 })) },
+        agentBehaviourWindow: {
+            findMany: jest.fn(async () => {
+                trace.push('window');
+                return [];
+            }),
+            updateMany: jest.fn(async () => ({ count: 0 })),
+        },
         agentProposal: { count: jest.fn(async () => 0) },
         $queryRaw: jest.fn(async (...args: unknown[]) => {
             const strings = args[0] as readonly string[];
@@ -111,7 +128,10 @@ jest.mock('@/lib/prisma', () => {
             }
             return [];
         }),
-        $executeRaw: jest.fn(async () => 0),
+        $executeRaw: jest.fn(async () => {
+            trace.push('ledger');
+            return 0;
+        }),
     };
     // BOTH the named and default export: `@/lib/prisma` declares
     // `export const prisma`, and consumers import it by name. A mock supplying
@@ -270,5 +290,70 @@ describe('the autonomy ceiling is not a permission dimension', () => {
         // own reason, and the behaviour a fourth nullable term would have to
         // preserve.
         expect(resolveAutonomyCeiling(terms({ riskTierCeiling: 3 }))).toBe(3);
+    });
+});
+
+describe('a browser-initiated call traverses the funnel, skipping only the credential', () => {
+    /**
+     * #3868 step 2 asks for a browser-initiated run to be shown traversing the
+     * authority funnel rather than a shortcut around it.
+     *
+     * The load-bearing assertion is the ABSENCE of `credential`, and it is the
+     * one thing that must differ from a key-started call: a session has no
+     * credential to check for liveness, which is the same fact step 1 proved
+     * from the other side (`buildMcpInvocation` intersects only
+     * `if (keyCtx.apiKeyId)`). Every other control point is consulted exactly
+     * as it would be for a key — so this is not a parallel path, it is the
+     * same path with one input absent.
+     *
+     * Pinned as an ORDERED ARRAY rather than a set, for the reason the
+     * suspension suite gives: an ordering change, a control that stops being
+     * consulted, and a control consulted twice have each been the shape of a
+     * real regression here.
+     *
+     * ON THE TWO REPEATS, which are observed rather than endorsed:
+     * `circuit-breaker-store.ts` reads the latch at :522, writes, then returns
+     * `readBreakerLatch(...)` again at :525 — a read-modify-reread around one
+     * write, so `breaker` and its paired `ledger` write appear twice for one
+     * logical operation. Recorded here with the mechanism named so the next
+     * reader does not have to rediscover it, and so a change from two to one
+     * is a deliberate diff rather than a surprise.
+     */
+    it('consults every control point in order, and NEVER the credential', async () => {
+        const inv = await sessionInvocation('EDITOR');
+        // NOT cleared: the exposure read and the card load happen while the
+        // invocation is assembled, and they are part of the traversal. Clearing
+        // here is what hid them on the first attempt at this test.
+        await authorizeToolCall(inv, { ...PROPOSE_RISKS, capabilityClass: 'propose' } as never, {});
+
+        expect(trace).toEqual([
+            'grants', //      the exposure allowlist, read at assembly
+            'card:read', //   the policy card LOADED at assembly, not yet applied
+            'kill', //        step 0
+            'breaker', //     step 2b
+            'ledger', //      the breaker's own write
+            'breaker', //     the read-modify-reread described above
+            'manifest', //    step 3
+            'ledger', //      step 11, the behavioural window
+        ]);
+
+        // Stated separately as well as implied by the array, because this is
+        // the invariant and an array assertion is easy to "fix" by pasting a
+        // new received value — which would silently admit a credential read.
+        expect(trace).not.toContain('credential');
+    });
+
+    it('and the credential double EXISTS, so its absence is a choice not a gap', async () => {
+        // The positive control. If `tenantApiKey.findFirst` were simply absent
+        // from the mock, the assertion above would pass for the wrong reason —
+        // nothing could have recorded it. It is present and traced, so "never
+        // consulted" is a measurement.
+        const { prisma } = (await import('@/lib/prisma')) as unknown as {
+            prisma: { tenantApiKey: { findFirst: () => Promise<unknown> } };
+        };
+        expect(typeof prisma.tenantApiKey.findFirst).toBe('function');
+        trace.length = 0;
+        await prisma.tenantApiKey.findFirst();
+        expect(trace).toEqual(['credential']);
     });
 });

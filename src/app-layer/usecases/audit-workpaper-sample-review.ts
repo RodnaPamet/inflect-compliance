@@ -96,6 +96,11 @@ import {
 import type { RequestContext } from '../types';
 import { createAgentProposal } from './agent-proposals';
 import { stampWorkpaperReviewedInTx } from './audit-workpaper';
+// MOVED, not copied (#3868 step 2): a second caller needed this predicate, and
+// two copies of "is this a person" drift invisibly — both keep compiling and
+// both keep passing their own tests, while one of them is wrong about whether
+// an API key may act as a person.
+import { isPersonContext } from '../request-context-kind';
 
 /** The most rows one reviewer's list returns. Read one past it to know. */
 export const REVIEW_LIST_CAP = 200;
@@ -106,11 +111,6 @@ const RAISE_TX_TIMEOUT_MS = 30_000;
 type ReviewerStanding =
     | { eligible: true; reason: null }
     | { eligible: false; reason: Extract<WorkpaperReviewRefusal, 'REVIEWER_NOT_ACTIVE_MEMBER' | 'REVIEWER_LINE_NOT_THIRD'> };
-
-/** True when the context speaks for a person — not an API key, an agent or a job. */
-function isPersonContext(ctx: RequestContext): boolean {
-    return ctx.apiKeyId === undefined && ctx.agentId === undefined && ctx.actorType !== 'JOB';
-}
 
 /** A person, holding `audits.view`. Everything else about who may answer is per row. */
 function assertPersonWithAuditsView(ctx: RequestContext): void {
