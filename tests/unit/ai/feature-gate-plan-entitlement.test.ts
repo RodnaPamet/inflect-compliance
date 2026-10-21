@@ -38,6 +38,13 @@ jest.mock('@/lib/db-context', () => ({
                         return billingAccountRow;
                     },
                 },
+                // The gate's per-tenant toggle read. NOT counted in `dbReads`,
+                // deliberately: that counter exists to prove the PLAN resolver
+                // short-circuits in self-hosted mode, and folding a second,
+                // unrelated read into it would make every `expect(dbReads)`
+                // below assert something other than what it says. `null` = no
+                // settings row = the schema defaults = all four toggles on.
+                tenantSecuritySettings: { findUnique: async () => null },
             });
         },
     ),
@@ -193,7 +200,26 @@ describe('fail-closed', () => {
 
         const result = await gate.checkFeatureGateWithPlan(adminCtx, 'risk');
         expect(result.allowed).toBe(false);
-        expect(result.reason).toMatch(/could not be verified/i);
+        /*
+            The WORDING moved and the property did not.
+
+            `dbError` makes every database read throw, and there are two
+            database predicates now: the per-tenant AI toggle and the plan
+            resolver. The toggle runs first — it is always on, while plan
+            gating is opt-in and off by default — so with the connection
+            refused it is the toggle that reports, saying availability "could
+            not be confirmed" rather than the plan "could not be verified".
+
+            Which of the two answers arrives is not the thing under test, and
+            pinning one predicate's exact sentence would make this case fail
+            whenever another unresolvable read is added ahead of it. What must
+            hold is that an unreadable database REFUSES and says so as an
+            unknown, never as a tenant choice or a role problem — because a
+            reader sent to a settings page that shows the feature ON would
+            have no way to understand the refusal.
+        */
+        expect(result.reason).toMatch(/could not be (verified|confirmed)/i);
+        expect(result.reason).not.toMatch(/turned off|Editor or Admin|disabled/i);
         await expect(gate.enforceFeatureGate(adminCtx, 'risk')).rejects.toThrow();
     });
 });
@@ -201,8 +227,38 @@ describe('fail-closed', () => {
 describe('a forgotten `await` can never weaken the gate', () => {
     it('the flag/role refusal still throws SYNCHRONOUSLY', () => {
         const gate = loadGate({ AI_RISK_PLAN_REQUIRED: 'pro', STRIPE_SECRET_KEY: 'sk_test_x' });
-        // Deliberately not awaited — this is the pre-existing enforcement,
-        // and it must survive a caller that treats the gate as synchronous.
-        expect(() => gate.enforceFeatureGate(readerCtx, 'risk')).toThrow(/Editor or Admin/);
+        /*
+            Deliberately not awaited — this is the pre-existing enforcement, and
+            it must survive a caller that treats the gate as synchronous. It
+            survived the per-tenant toggle too: that predicate reads the
+            database, so it went into the promise tail rather than making the
+            whole function `async`.
+
+            WHY THIS IS WRITTEN OUT INSTEAD OF `expect(() => …).toThrow()`.
+
+            Under the regression this case exists to catch — the gate marked
+            `async` — nothing is thrown and a REJECTED PROMISE is returned
+            instead. `expect(() => …).toThrow()` then leaves that rejection
+            unhandled, and an unhandled rejection kills the jest worker: the
+            suite reports "Test suite failed to run" with ZERO failed tests,
+            which reads like a memory or environment problem rather than a
+            broken invariant. It cost exactly that misdiagnosis once.
+
+            So the call is made by hand, any returned promise is defused, and
+            the assertion is about what was THROWN. A regression now fails as
+            this test, by name, saying what it expected.
+        */
+        let thrown: unknown;
+        let returned: unknown;
+        try {
+            returned = gate.enforceFeatureGate(readerCtx, 'risk');
+        } catch (error) {
+            thrown = error;
+        }
+        if (returned && typeof (returned as Promise<void>).catch === 'function') {
+            (returned as Promise<void>).catch(() => undefined);
+        }
+        expect(thrown).toBeDefined();
+        expect((thrown as Error).message).toMatch(/Editor or Admin/);
     });
 });

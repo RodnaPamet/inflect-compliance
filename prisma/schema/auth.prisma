@@ -1803,6 +1803,33 @@ model TenantSecuritySettings {
   /// it (ADR 0003, owner decision on #3860). A deployment-wide flag alone would
   /// make that trade on a tenant's behalf.
   a2aHostConsumersEnabled      Boolean           @default(false)
+
+  /// ─── PER-TENANT AI FEATURE TOGGLES ────────────────────────────────
+  ///
+  /// The four env flags (`AI_RISK_ENABLED` and the three per-feature ones)
+  /// are PROCESS-GLOBAL and read at module load, so no UI can change them.
+  /// These are the per-tenant half, and the effective answer is the AND:
+  ///
+  ///   effective = env_global AND env_feature AND tenant_toggle
+  ///
+  /// WHY THE ENV KEEPS THE POWER TO FORCE OFF. It is the kill switch. If a
+  /// tenant setting could override an env `false`, an operator would have no
+  /// way to stop AI without a deploy — which is the one thing a kill switch
+  /// exists to provide. So env OFF always wins, and the admin UI SAYS when a
+  /// toggle is forced off rather than showing an on-looking control that does
+  /// nothing (the failure #3909 fixed in the launcher).
+  ///
+  /// Default TRUE, deliberately, and this is the opposite of
+  /// `processCanvasEnabled`. A module is opt-in because granting it is a
+  /// commercial act. These are not grants: they describe whether a tenant
+  /// wants a capability the platform has already decided to offer, so the
+  /// tenant inherits whatever env allows and opting OUT is the deliberate
+  /// act. Defaulting false would silently withdraw AI from every existing
+  /// tenant the moment this column shipped.
+  aiEnabled                    Boolean           @default(true)
+  aiRiskSuggestionsEnabled     Boolean           @default(true)
+  aiAssistantEnabled           Boolean           @default(true)
+  aiQuestionnaireEnabled       Boolean           @default(true)
   tenant                       Tenant            @relation(fields: [tenantId], references: [id])
 }
 

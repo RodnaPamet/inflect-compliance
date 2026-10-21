@@ -93,6 +93,10 @@ describe('GAP-2 — per-feature AI enable flags', () => {
     });
 
     it('enforceFeatureGate throws 403 for a disabled feature', () => {
+        // SYNCHRONOUSLY, still. An env flag needs no I/O to read, so it is
+        // refused in the gate's synchronous prologue — the property
+        // `feature-gate-plan-entitlement` pins under "a forgotten `await` can
+        // never weaken the gate".
         const gate = loadGate({ AI_QUESTIONNAIRE_ENABLED: 'false' });
         expect(() => gate.enforceFeatureGate(baseCtx, 'questionnaire')).toThrow();
     });

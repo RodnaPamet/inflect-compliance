@@ -6236,6 +6236,7 @@
       "vendorTemplates": "Assessment Templates",
       "vendorReviews": "Assessment Reviews",
       "notifications": "Notifications",
+      "aiFeatures": "AI features",
       "modules": "Modules",
       "theme": "Theme",
       "privacy": "Privacy & data protection",
@@ -6544,6 +6545,43 @@
         "DRY_RUN": "The agent will record what it WOULD change in this system, and send nothing. This is the rung the observation window is measured on.",
         "PROPOSE_ONLY": "Every change the agent decides on will be queued for a person to approve. Nothing reaches the connected system until somebody accepts it.",
         "AUTOMATIC": "The agent will change this connected system without asking, whenever it decides to. Read the dry-run record before granting this."
+      }
+    },
+    "aiFeatures": {
+      "forbidden": "Only a workspace owner can turn AI features on or off. An administrator cannot grant this.",
+      "heading": "AI features",
+      "intro": "Which AI features this workspace uses. A feature that is off is unavailable to everyone here, whatever their role — it is not a permission. Some features are turned off for the whole platform; those say so, and cannot be changed from this page.",
+      "breadcrumb": "AI features",
+      "loadFailed": "The AI feature settings could not be loaded.",
+      "turnOn": "Turn on",
+      "turnOff": "Turn off",
+      "saveFailedHeading": "That change was not saved",
+      "saveFailedBody": "The switch is unchanged. The change and its audit record are saved together, so a failure leaves both undone — nothing was half-applied. Try again.",
+      "platformOffHeading": "Not available on this deployment",
+      "platformOffBody": "This feature is turned off for the whole platform, so it cannot run for any workspace. Changing that is a server configuration change, not a setting on this page.",
+      "masterOffHeading": "AI is off for this workspace",
+      "masterOffBody": "This switch is on, but AI is turned off for the whole workspace, so the feature does not run. Turn AI on above to use it.",
+      "status": {
+        "on": "On",
+        "off-by-platform": "Unavailable",
+        "off-by-master": "Not running",
+        "off-by-tenant": "Off"
+      },
+      "ai": {
+        "name": "All AI features",
+        "description": "The master switch. With this off, no AI feature runs for this workspace and none of its data is sent to a model."
+      },
+      "assistant": {
+        "name": "Assistant",
+        "description": "The in-product assistant in the corner of every page. It answers questions about this workspace's compliance data and can raise proposals for review."
+      },
+      "risk": {
+        "name": "Risk suggestions",
+        "description": "Suggested risk assessments — likelihood, impact and treatment drafted from the risk's own description. A suggestion is always reviewed before it is saved."
+      },
+      "questionnaire": {
+        "name": "Questionnaire autofill",
+        "description": "Drafts answers to incoming security questionnaires from your existing policies and controls. Every answer can be edited before the questionnaire is returned."
       }
     },
     "modules": {
