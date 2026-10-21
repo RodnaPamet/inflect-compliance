@@ -48,6 +48,19 @@ export const auditNarrativeWorkflow: WorkflowDefinition = {
     /** Refused at admission without it — see `requiredInput` on the type. */
     requiredInput: ['periodLabel'],
 
+    // Advertised on the host-consumer card (#3862). Safe to publish: read-only,
+    // and its one required input is a period LABEL — a string the caller already
+    // knows, not an internal id it would have to be told.
+    a2aSkill: {
+        name: 'Draft audit workpaper narratives',
+        description:
+            "Reads one audit period's workpapers and drafts, for each one not yet narrated, the " +
+            'short narrative a reviewer reads beside it: what was tested, what the sample showed, ' +
+            'and the conclusion recorded. Cites nothing the workpaper does not record. Read-only.',
+        tags: ['audit', 'workpapers', 'narrative'],
+        examples: ['Draft the reviewer narratives for the Q3 2026 workpapers.'],
+    },
+
     key: 'audit-narrative',
     name: 'Audit workpaper narrative',
     description:

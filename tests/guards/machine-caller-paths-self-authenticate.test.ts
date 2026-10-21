@@ -360,6 +360,24 @@ describe('/api/a2a: every exported method is the inbound endpoint or the publish
             expect(body).toMatch(/issueHostConsumerToken\s*\(/);
         } else if (method === 'POST') {
             expect(body).toMatch(/handleInboundA2a\s*\(/);
+        } else if (method === 'GET' && file.includes('/.well-known/')) {
+            // THE FOURTH KIND (#3862). The HOST-CONSUMER card, at the two
+            // well-known filenames a host composes — `agent.json` (what SAP's
+            // Joule toolkit requests) and `agent-card.json` (the v0.3/v1.0
+            // name). Also unauthenticated, for the same reason the peer card
+            // is: it is read before the caller holds anything.
+            //
+            // This branch comes FIRST because `.well-known/agent-card.json`
+            // also ends with `/agent-card.json/route.ts`, so the peer branch
+            // below would otherwise claim it and demand the wrong usecase.
+            //
+            // Asserted by the usecase NAME, which is what makes the gate real:
+            // `getTenantA2aHostConsumerCard` is where the host-consumer
+            // admission gate is re-read, so a route that served the card
+            // without it would publish skills for a tenant that has host
+            // consumers switched off.
+            expect(body).toMatch(/getTenantA2aHostConsumerCard\s*\(/);
+            expect(body).toMatch(/applyCardReadRateLimit\s*\(\s*req\s*\)/);
         } else if (method === 'GET') {
             expect(file.endsWith('/agent-card.json/route.ts')).toBe(true);
             expect(body).toMatch(/getTenantA2aAgentCard\s*\(/);

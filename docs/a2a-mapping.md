@@ -256,7 +256,27 @@ Held by `tests/guards/agent-harness-single-write-seam.test.ts`.
 - **A real peer.** Step 4b was built and tested against an in-process fake
   peer. The pilot with a real vendor's agent stays open on #3752, and it is the
   first time a task crosses an organisation boundary.
-- **A card per agent.** The published card is one per tenant (#3742) and names
-  no agent. A card per agent a tenant enables for A2A, listing that agent's
-  skills, waits until a real peer asks for one, since every name it adds is
+- **A card per agent — asked for, and ANSWERED DIFFERENTLY (#3862).** The
+  deferral below said a card listing an agent's skills waits "until a real peer
+  asks for one". A host consumer asked. The answer was *not* a card per agent,
+  and the reason is the one the deferral itself gave: every name it adds is
   something the tenant discloses.
+
+  What shipped instead is a second VARIANT of the per-tenant card, at
+  `/.well-known/agent.json` and `/.well-known/agent-card.json`, whose `skills`
+  are PRODUCT workflows carrying reviewed public copy — identical for every
+  tenant, naming no agent, no tool and no tenant. So the card stopped being
+  empty without disclosing anything, which a per-agent card could not have
+  done. The grant that decides what a given caller may actually invoke
+  (`HostConsumer.workflowKeys`) is deliberately NOT on the card; it is enforced
+  per request from the row in `startInboundRun`.
+
+  The original deferral therefore still stands for what it actually covered: a
+  card that names a tenant's agents does not exist and still waits for a reason
+  to.
+
+  *Superseded text, kept because the reasoning is still the governing one:*
+  "The published card is one per tenant (#3742) and names no agent. A card per
+  agent a tenant enables for A2A, listing that agent's skills, waits until a
+  real peer asks for one, since every name it adds is something the tenant
+  discloses."

@@ -315,6 +315,15 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // fetched to be pinned, before the peer holds a credential, and the
     // operator meets its URL on the peer page as the identity it hands over.
     'a2a/[tenantSlug]/agent-card.json/route.ts',
+    // #3862 — the HOST-CONSUMER card, at the two well-known filenames a host
+    // composes from the per-tenant base. Also read by a machine rather than a
+    // page, and by one that has never talked to us: SAP's Joule toolkit asks
+    // for `agent.json`, the current spec for `agent-card.json`, and both serve
+    // the same bytes. The operator meets neither URL on a page — a host
+    // consumer is configured from the admin host-consumers surface, which
+    // hands over the base URL that these hang off.
+    'a2a/[tenantSlug]/.well-known/agent.json/route.ts',
+    'a2a/[tenantSlug]/.well-known/agent-card.json/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/inbound-credential/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/kill/route.ts',
     't/[tenantSlug]/admin/agents/peers/[peerId]/messages/route.ts',
