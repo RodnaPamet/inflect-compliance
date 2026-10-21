@@ -19,9 +19,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 // the Node runtime this route actually runs on.
 import { ReadableStream } from 'node:stream/web';
 
+// Settable per test: the page context reads filter state from the URL, so the
+// query string is an INPUT to the behaviour under test rather than scenery.
+let searchParamsValue = new URLSearchParams();
+
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
-    useSearchParams: () => new URLSearchParams(),
+    useSearchParams: () => searchParamsValue,
     useSelectedLayoutSegment: () => null,
     useSelectedLayoutSegments: () => [],
     usePathname: () => '/t/acme/controls',
@@ -130,7 +134,16 @@ async function ask(question = 'which controls are missing evidence?') {
 
 afterEach(() => {
     jest.restoreAllMocks();
+    searchParamsValue = new URLSearchParams();
 });
+
+/** The JSON body of the single `fetch` the turn made. */
+function sentBody(): { question: string; pageContext?: Record<string, unknown> } {
+    const mock = global.fetch as unknown as jest.Mock;
+    expect(mock).toHaveBeenCalledTimes(1);
+    const init = mock.mock.calls[0][1] as { body: string };
+    return JSON.parse(init.body);
+}
 
 describe('opening and closing', () => {
     it('opens from the launcher and shows the first-run EmptyState', () => {
@@ -303,5 +316,73 @@ describe('a quarantined proposal is never described as queued', () => {
             expect(screen.getByTestId('assistant-proposal-quarantined')).toBeInTheDocument(),
         );
         expect(screen.queryByTestId('assistant-proposal-queued')).toBeNull();
+    });
+});
+
+describe('the page context the turn carries', () => {
+    it('sends the route with no per-page wiring', async () => {
+        stubStream([{ type: 'answer', text: 'ok' }, { type: 'done', truncatedAny: false }]);
+        mount();
+        await ask('how many controls?');
+        await waitFor(() => expect(screen.getByTestId('assistant-answer')).toBeInTheDocument());
+
+        const body = sentBody();
+        expect(body.pageContext).toMatchObject({ route: '/t/acme/controls' });
+    });
+
+    it('reads visible filter state and the selection out of the URL', async () => {
+        // This product serialises filters into the query string
+        // (`filterStateToUrlParams`), with the selection in an `ids` param. So
+        // the context is correct on every list page without a page reporting
+        // anything — the same move as reading the route from `usePathname`.
+        searchParamsValue = new URLSearchParams(
+            'evidence=missing&severity=high&ids=ctl_1,ctl_2&page=3',
+        );
+        stubStream([{ type: 'answer', text: 'ok' }, { type: 'done', truncatedAny: false }]);
+        mount();
+        await ask('which of these has no evidence?');
+        await waitFor(() => expect(screen.getByTestId('assistant-answer')).toBeInTheDocument());
+
+        const body = sentBody();
+        expect(body.pageContext).toMatchObject({
+            route: '/t/acme/controls',
+            filters: { evidence: 'missing', severity: 'high' },
+            selectedIds: ['ctl_1', 'ctl_2'],
+        });
+        // `page` is view mechanics, not filter state. Reporting a page number
+        // as a filter invites the model to reason about it as one.
+        expect((body.pageContext as { filters: Record<string, string> }).filters).not.toHaveProperty(
+            'page',
+        );
+    });
+
+    it('DROPS a param the server would reject rather than losing the turn', async () => {
+        // The server rejects the whole body on a schema violation, so one
+        // unacceptable value would cost the user their entire question. Losing
+        // that one filter from the context is much the smaller failure, and
+        // the acceptable ones beside it must still arrive.
+        searchParamsValue = new URLSearchParams('evidence=missing&q=a,b;c&bad%20key=x');
+        stubStream([{ type: 'answer', text: 'ok' }, { type: 'done', truncatedAny: false }]);
+        mount();
+        await ask('anything');
+        await waitFor(() => expect(screen.getByTestId('assistant-answer')).toBeInTheDocument());
+
+        const filters = (sentBody().pageContext as { filters: Record<string, string> }).filters;
+        expect(filters).toEqual({ evidence: 'missing' });
+    });
+
+    it('omits the context entirely when there is nothing but the route', async () => {
+        // Empty collections are omitted rather than sent as `{}` / `[]`: the
+        // server distinguishes "no filters" from "filters, none of them set",
+        // and an empty object reaching the prompt would read as the latter.
+        stubStream([{ type: 'answer', text: 'ok' }, { type: 'done', truncatedAny: false }]);
+        mount();
+        await ask('anything');
+        await waitFor(() => expect(screen.getByTestId('assistant-answer')).toBeInTheDocument());
+
+        const pc = sentBody().pageContext as Record<string, unknown>;
+        expect(pc).not.toHaveProperty('filters');
+        expect(pc).not.toHaveProperty('selectedIds');
+        expect(pc).toHaveProperty('route');
     });
 });
