@@ -334,7 +334,25 @@ export async function runProposeTool(
                         kind: tool.kind,
                         proposalIds: queued,
                         quarantinedProposalIds: quarantined,
-                        status: 'PENDING',
+                        // NO scalar `status` (#3900). It was `'PENDING'`
+                        // unconditionally, so a batch in which EVERY item was
+                        // quarantined reported itself as pending human review
+                        // when nothing was waiting — on the external-agent
+                        // surface, where the reader is a machine taking the
+                        // obvious field at its word.
+                        //
+                        // The comment above already said this was fixed. The
+                        // `message` was; the structured field was left behind,
+                        // and the structured field is the one that gets read.
+                        //
+                        // Not made conditional either: one status for a BATCH
+                        // is the category error — "for the whole batch" is
+                        // exactly the claim this seam cannot make, and no
+                        // scalar can express the mixed case. The two counts and
+                        // the two id arrays say everything, including that one.
+                        // A client reading `status` now gets `undefined`
+                        // instead of a confident wrong value, which is the
+                        // trade the metric reporters make for the same reason.
                         message,
                     },
                     null,
