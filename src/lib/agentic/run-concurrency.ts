@@ -35,12 +35,22 @@
  * a run nobody was watching progress, or a stream held open for a run that
  * had finished.
  *
- * `COMPLETED`, `ABORTED` and `FAILED` are deliberately absent: a cap that
- * counted terminal runs would refuse a tenant for work that was already over.
- * Those three plus these three are the WHOLE of `WorkflowRunStatus` — there is
- * no `PENDING` and no `HALTED`, however much either sounds like one, and a
- * test asserts this list is a subset of the generated enum so a status that
- * does not exist cannot be listed as live again.
+ * The terminal statuses are deliberately absent: a cap that counted them would
+ * refuse a tenant for work that was already over. As of #3869 they are
+ * `COMPLETED`, `ABORTED`, `FAILED` and `EMPTY_CATALOGUE` — but do not read a
+ * count off this comment, because that is exactly what rotted. It used to say
+ * "those three plus these three are the WHOLE of `WorkflowRunStatus`", which a
+ * single added value falsified.
+ *
+ * What holds instead is the SHAPE: this is an allowlist of the LIVE statuses,
+ * so a status added to the enum and not taught here is excluded, and `a cap
+ * that counted it` cannot happen. That is the safe direction, and it is not
+ * universal — `a2a-synchronous-wait.ts` allowlisted the TERMINAL side until
+ * #3869 and had the opposite failure, reporting a finished run as unsettled.
+ * Two tests hold both directions: this list is a subset of the generated enum,
+ * and its complement is exactly the terminal set, so a new value fails there
+ * and gets classified on purpose. There is still no `PENDING` and no `HALTED`,
+ * however much either sounds like one.
  */
 export const LIVE_RUN_STATUSES = [
     'RUNNING',
