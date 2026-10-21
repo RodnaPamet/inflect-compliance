@@ -177,6 +177,27 @@ model IntegrationConnection {
   /// measured from here, and any move — including NARROWING — restarts it, so a
   /// rung cannot be re-entered to inherit an old window's elapsed days.
   externalWriteModeSince DateTime?
+
+  /// #3864 — does this connection reach a third-party BUSINESS SYSTEM (an ERP,
+  /// a finance or HR system of record) rather than a tool or directory?
+  ///
+  /// Added for the MCP route (M4/M5), which DOES call such APIs and therefore
+  /// has to tell kinds of connection apart. It is recorded here so that route
+  /// reuses one flag instead of inventing its own.
+  ///
+  /// **The A2A host-consumer policy guard deliberately does NOT read this**,
+  /// and that is a decision rather than an oversight (owner, 2026-10-21, on
+  /// #3864). A guard that depended on a flag would pass for the one connection
+  /// it exists to catch — an ERP connection nobody remembered to flag — and no
+  /// test could tell "no violation" from "nobody set it". So that guard refuses
+  /// EVERY external tool held by a host consumer's receiving agent, which is
+  /// what the workflow was specified to need anyway and has nothing to forget.
+  ///
+  /// NULL means nobody has said. Three states, not two, because `false` is a
+  /// REVIEWED claim that this connection is not a business system, and
+  /// defaulting unreviewed rows to that claim would be asserting something
+  /// nobody checked.
+  reachesBusinessSystem  Boolean?
   /// #3672 — P11 of the integration passport: the person ACCOUNTABLE for what
   /// this connection lets an agent do. Not the creator (the audit trail records
   /// who created a connection, and creating one is not accepting accountability

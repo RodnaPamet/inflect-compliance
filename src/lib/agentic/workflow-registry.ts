@@ -15,6 +15,7 @@ import { accessPostureWorkflow } from './workflows/access-posture';
 import { discoveredAgentReviewWorkflow } from './workflows/discovered-agent-review';
 import { agentRecertificationPackWorkflow } from './workflows/agent-recertification-pack';
 import { auditNarrativeWorkflow } from './workflows/audit-narrative';
+import { sapTransactionReviewWorkflow } from './workflows/sap-transaction-review';
 
 /**
  * "Diagnostic" — read the tenant's compliance posture, then synthesise a
@@ -76,6 +77,13 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
     // answer is captured, held to the record, when the run settles. See the
     // header of `audit-narrative.ts`.
     [auditNarrativeWorkflow.key]: auditNarrativeWorkflow,
+    // #3864 — the judgement the A2A route exists for: Joule hands over facts
+    // about SAP documents, this tests them against the tenant's controls, and
+    // NOTHING here reads SAP. That last part is held by
+    // `a2a-host-consumer-policy.ts`, which refuses an inbound host-consumer
+    // request whose receiving agent holds any external tool grant — a property
+    // of the grant tables rather than of this definition.
+    [sapTransactionReviewWorkflow.key]: sapTransactionReviewWorkflow,
 };
 
 /**

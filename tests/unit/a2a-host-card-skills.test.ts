@@ -62,9 +62,22 @@ describe('every advertised skill is one a host can actually invoke', () => {
         // The criterion the advertised set was chosen on: a workflow whose
         // `requiredInput` is an internal Inflect id (an access-review id, a
         // discovered-agent id) would be refused at admission for every host
-        // that tried it. Only `periodLabel` — a string the caller supplies —
-        // is admissible here.
-        const ALLOWED_INPUTS = new Set(['periodLabel']);
+        // that tried it, so advertising it would put an uncallable skill on a
+        // public card.
+        //
+        // A HAND-WRITTEN LIST ON PURPOSE, and it is the point rather than a
+        // shortcut: advertising a workflow whose input is not here fails this
+        // test, which forces someone to decide in a reviewed diff whether a
+        // caller could know that input. Deriving the set from the definitions
+        // would make every new input admissible by construction and the test
+        // would stop asking the question.
+        //
+        // Each entry is a value the CALLER supplies from its own knowledge:
+        //   periodLabel — an audit period, e.g. "Q3 2026" (#3862)
+        //   question    — what the host is asking, free text (#3864)
+        //   facts       — the host's own structured description of SAP
+        //                 documents, validated by `sap-transaction-facts.ts`
+        const ALLOWED_INPUTS = new Set(['periodLabel', 'question', 'facts']);
         for (const s of skills()) {
             const def = getWorkflowDefinition(s.id)!;
             for (const input of def.requiredInput ?? []) {
