@@ -137,7 +137,14 @@ describe('a failure is VISIBLE, never an empty stream', () => {
 
         expect(events.map((e) => e.type)).toContain('refusal');
         const refusal = events.find((e) => e.type === 'refusal') as { reason: string };
-        expect(refusal.reason).toMatch(/Nothing was created/);
+        // Asserted on what the refusal must TELL the user, not on a claim it
+        // must no longer make. It used to say "Nothing was created", which
+        // #3882 removed: once the loop can propose, a turn can have queued a
+        // row and then thrown on its way to saying so, and claiming nothing
+        // happened makes the user ask again and queue it twice.
+        expect(refusal.reason).toMatch(/could not complete/);
+        expect(refusal.reason).toMatch(/review queue/);
+        expect(refusal.reason).not.toMatch(/Nothing was created/);
         // And it still TERMINATES: exactly one terminal signal, whichever path
         // ended the turn. A refusal with no `done` leaves a client unable to
         // tell "finished" from "still open, nothing more yet".

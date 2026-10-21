@@ -740,9 +740,29 @@ export async function streamAssistant(
         // The guard's own message is NOT forwarded: it carries rule ids, and
         // `ai/guard` keeps those out of user-facing text. The reason the user
         // gets says what happened and what it means for their data.
+        // ── "NOTHING WAS CREATED" IS A CLAIM, AND #3882 MADE IT REACHABLE ──
+        //
+        // Both branches used to assert it unconditionally. That was true while
+        // the loop was `readOnly: true` and only the keyword branches could
+        // propose — nothing in a read turn could have written a row. It is no
+        // longer true in two cases:
+        //
+        //   · an INTERNAL failure after the loop has already called a propose
+        //     tool. The row exists; the turn fell over afterwards.
+        //   · an EGRESS guard refusal, which fires AFTER `produce` — so a
+        //     proposal may already be queued when the guard withholds the
+        //     sentence describing it.
+        //
+        // Only the INPUT guard genuinely runs before anything can be written.
+        // It is not distinguishable from the egress case here (both arrive as
+        // the same thrown `forbidden`), so neither claims it: the honest line
+        // tells the user where to look instead, which is the same rule the
+        // unreadable-outcome sentence follows. Claiming "nothing was created"
+        // about a row that exists is the one error that cannot be walked back —
+        // the user asks again and queues it twice.
         const refusal = isGuardRefusal(err)
-            ? 'That request was withheld by the content guard, which refuses material that reads as an instruction rather than as a record. Nothing was created and your data was not read.'
-            : 'The assistant could not answer this. Nothing was created.';
+            ? 'That request was withheld by the content guard, which refuses material that reads as an instruction rather than as a record. If you asked me to raise something, check the agent-proposals review queue before asking again.'
+            : 'The assistant could not complete this. If you asked me to raise something, check the agent-proposals review queue before asking again — it may already be there.';
         opts.emit({ type: 'refusal', reason: refusal });
         opts.emit({ type: 'done', truncatedAny: false });
     }
