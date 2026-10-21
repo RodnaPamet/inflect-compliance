@@ -60,31 +60,35 @@ let breakerLatch: { state: string } | null = null;
 
 jest.mock('@/env', () => ({ env: mockEnv }));
 
-jest.mock('@/lib/prisma', () => {
-    const client = {
-        tenantSecuritySettings: {
-            findUnique: jest.fn(async (args: { where: { tenantId: string } }) => {
-                reads.push(`settings:${args.where.tenantId}`);
-                return { interactiveAgentId: designation };
-            }),
-        },
-        registeredAgent: {
-            findFirst: jest.fn(async (args: { where: { id: string; tenantId: string } }) => {
-                reads.push(`agent:${args.where.tenantId}:${args.where.id}`);
-                // The mock honours the tenant scope rather than ignoring it —
-                // a double that returned the row regardless would make the
-                // isolation assertion below pass while proving nothing.
-                return agentRows.includes(`${args.where.tenantId}:${args.where.id}`)
-                    ? { id: args.where.id }
-                    : null;
-            }),
-        },
-    };
-    // The NAMED export beside the default: `@/lib/prisma` declares
-    // `export const prisma`, and a mock supplying only `default` leaves every
-    // call reading a property of undefined.
-    return { __esModule: true, default: client, prisma: client };
-});
+jest.mock('@/lib/db-context', () => ({
+    // The reads go through `runInTenantContext`, so RLS binds the tenant per
+    // transaction and this double stands in for the bound client. Mocking the
+    // SEAM the usecase actually uses, rather than `@/lib/prisma`, is what
+    // `no-direct-prisma` pushed the usecase towards — and the test has to
+    // follow, or it would be doubling a module the code no longer imports.
+    runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) =>
+        cb({
+            tenantSecuritySettings: {
+                findUnique: async (args: { where: { tenantId: string } }) => {
+                    reads.push(`settings:${args.where.tenantId}`);
+                    return { interactiveAgentId: designation };
+                },
+            },
+            registeredAgent: {
+                findFirst: async (args: { where: { id: string; tenantId: string } }) => {
+                    reads.push(`agent:${args.where.tenantId}:${args.where.id}`);
+                    // The double honours the tenant scope rather than ignoring
+                    // it — one that returned the row regardless would make the
+                    // isolation assertion pass while proving nothing. (RLS is
+                    // the real second layer in production; this stands in for
+                    // the application filter the predicate still carries.)
+                    return agentRows.includes(`${args.where.tenantId}:${args.where.id}`)
+                        ? { id: args.where.id }
+                        : null;
+                },
+            },
+        }),
+}));
 
 jest.mock('@/lib/agentic/kill-switch', () => ({
     resolveKillState: jest.fn(async (tenantId: string, agentId: string) => {

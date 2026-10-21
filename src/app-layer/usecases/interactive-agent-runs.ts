@@ -62,7 +62,7 @@
  * control, not a duplicate of the gate.
  */
 import { forbidden } from '@/lib/errors/types';
-import { prisma } from '@/lib/prisma';
+import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
 import { flueEnvEnabled } from '@/lib/agentic/agent-driver';
 import { resolveKillState } from '@/lib/agentic/kill-switch';
@@ -143,10 +143,12 @@ export async function resolveInteractiveAgent(ctx: RequestContext): Promise<Inte
     // 3. THE TENANT'S HALF. NULL is a refusal, never a fallback: resolving to
     //    "the only ACTIVE agent" would silently change which agent answers the
     //    moment a tenant registers a second one.
-    const settings = await prisma.tenantSecuritySettings.findUnique({
-        where: { tenantId: ctx.tenantId },
-        select: { interactiveAgentId: true },
-    });
+    const settings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { interactiveAgentId: true },
+        }),
+    );
     const agentId = settings?.interactiveAgentId ?? null;
     if (!agentId) {
         return {
@@ -159,7 +161,23 @@ export async function resolveInteractiveAgent(ctx: RequestContext): Promise<Inte
         };
     }
 
-    // 4. TENANT ISOLATION, not a duplicate of the Flue gate. A stale or
+    // 4. TENANT ISOLATION — now DEFENCE IN DEPTH rather than the only layer.
+    //
+    //    Both reads above go through `runInTenantContext`, so Postgres RLS
+    //    binds the tenant per transaction and returns zero rows for another
+    //    tenant's row whatever this `where` says. That is the better shape and
+    //    it arrived because `no-direct-prisma` refused the global client here:
+    //    the rule exists so a tenant-scoped read cannot rely on an application
+    //    filter alone, and following it upgraded the isolation instead of
+    //    costing an allowlist entry.
+    //
+    //    The explicit `tenantId` stays. It is not redundant: it keeps the
+    //    application-layer filter this repo requires as its second layer, and
+    //    it is what makes the refusal legible — RLS returning no rows and a
+    //    wrong id returning no rows are the same outcome, and the test below
+    //    pins the predicate rather than the mechanism.
+    //
+    //    NOT a duplicate of the Flue gate. A stale or
     //    cross-tenant id handed to `resolveKillState` below would find no kill
     //    row and pass. Scoped on `tenantId` for that reason, and `deletedAt`
     //    is excluded because a soft-deleted row vouches for nothing.
@@ -167,10 +185,12 @@ export async function resolveInteractiveAgent(ctx: RequestContext): Promise<Inte
     //    STATUS IS NOT READ HERE. The Flue gate inside `startWorkflowRun`
     //    decides standing, once, with its own named refusal — two controls over
     //    one fact would eventually disagree.
-    const agent = await prisma.registeredAgent.findFirst({
-        where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true },
-    });
+    const agent = await runInTenantContext(ctx, (db) =>
+        db.registeredAgent.findFirst({
+            where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+        }),
+    );
     if (!agent) {
         return {
             ok: false,
