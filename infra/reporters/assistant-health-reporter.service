@@ -1,0 +1,22 @@
+[Unit]
+Description=Report assistant refusal rate and proposal volume to GCP Monitoring (#3856)
+Documentation=https://github.com/RodnaPamet/inflect-compliance/issues/3856
+# Reads the database through the postgres CONTAINER, so docker must be up for
+# the numbers to mean anything. It deliberately does NOT require the app: a
+# guard misfiring or a model proposing indiscriminately are both conditions in
+# which the app is perfectly healthy, which is why neither is visible from
+# /api/readyz and why this reporter exists.
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/assistant-health-reporter.sh
+# A hung psql must not wedge the unit. If a read cannot complete the reporter
+# emits nothing, which is correct — the policies' absence arms turn sustained
+# silence into a page. A STUCK unit would stop the timer firing at all, so the
+# timeout is deliberately shorter than the timer interval.
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

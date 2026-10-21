@@ -1,0 +1,46 @@
+{
+  "displayName": "inflect agent proposals are FLOODING the review queue (#3856)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "more than 50 proposals created in the last hour",
+      "conditionThreshold": {
+        "filter": "metric.type=\"custom.googleapis.com/ai/assistant_proposal_volume\" AND resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 50,
+        "duration": "1800s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_MAX",
+            "crossSeriesReducer": "REDUCE_MAX"
+          }
+        ]
+      }
+    },
+    {
+      "displayName": "proposal-volume reporting stopped — absence is not health",
+      "conditionAbsent": {
+        "filter": "metric.type=\"custom.googleapis.com/ai/assistant_proposal_volume\" AND resource.type=\"gce_instance\"",
+        "duration": "3600s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ]
+      }
+    }
+  ],
+  "documentation": {
+    "mimeType": "text/markdown",
+    "content": "Agent proposals were created at more than 50 an hour. The review queue is\nfilling faster than a human can read it.\n\nWHY VOLUME IS THE SIGNAL. The queue's entire value is that a person looked\nbefore anything took effect. A queue that fills with plausible noise does not\nfail loudly -- reviewers start approving by habit, and the control degrades into\na rubber stamp while every dashboard stays green. That is strictly worse than an\noutage, because the outcome is approved records nobody really examined.\n\nWHAT IT COUNTS. Every `AgentProposal` row created in the last hour, across all\ntenants and all four proposal kinds -- not only the assistant's. That is\ndeliberate: a reviewer's queue does not care which producer filled it, and\nscoping this to one producer would miss the case where two of them each stay\nunder their own threshold.\n\nWHAT TO DO.\n\n    journalctl -u assistant-health-reporter.service -n 50\n\nThen look at the queue itself at `/t/<slug>/agents/proposals`, sorted newest\nfirst, and ask whether the proposals are DISTINCT. Many near-identical\nproposals point at a loop or a retried run; many varied but thin ones point at a\nmodel proposing on weak evidence.\n\nWorth checking alongside: `assistant_turns`. Proposal volume rising while turns\nstay flat means more proposals per turn, which is a model-behaviour change. Both\nrising together is just more use, and the threshold may simply need raising --\nin which case raise it HERE, in the repo copy, rather than on the VM.\n\nTHE THRESHOLD IS A STARTING POINT, not a measurement. Production proposal\nvolume has never been high enough to characterise, so this is set just above\nwhat one busy tenant could plausibly generate. The first time it fires, read the\nqueue before assuming the alert is wrong -- and if it is wrong, say what the\nobserved normal was in the commit that changes it.\n"
+  }
+}

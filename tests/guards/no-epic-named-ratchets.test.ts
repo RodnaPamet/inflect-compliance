@@ -462,7 +462,26 @@ describe('epic-named ratchets are not added back', () => {
         // constant (#3800). It is source-text of necessity: two of the three
         // refusals are post-parse, so no input can make them elide and no
         // behavioural test can observe whether they use the helper.
-        expect(guardFiles().length).toBeLessThan(795);
+        // RAISED 794 -> 795 on 2026-10-21, for ONE file:
+        //
+        // `assistant-health-reporter-matches-its-policies` is named for its
+        // invariant — every metric type an alert policy FILTERS on is one the
+        // reporter actually PUBLISHES, and each policy carries an absence arm on
+        // that same metric (#3856). Nothing connects those two files otherwise:
+        // a policy watches a type string, the reporter emits one, and a
+        // one-character disagreement leaves a policy whose threshold can never
+        // fire and whose absence arm pages forever. `infra/reporters/README.md`
+        // already records the general form of that cost — 22 alert rules that
+        // "have never run".
+        //
+        // It is not folded into `unsettled-reporter-matches-the-product`, the
+        // only existing guard that drives a reporter: that one's subject is the
+        // IDENTITY reporter and the product population it measures, reading
+        // `listUnsettledWrites` and the leaver pass to check the two agree on a
+        // staleness window. This reads two POLICY files against a third file's
+        // published metric names, and runs a different script. Widening that
+        // guard to a second reporter is how a guard's name stops describing it.
+        expect(guardFiles().length).toBeLessThan(796);
     });
 
     /**

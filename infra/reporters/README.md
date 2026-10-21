@@ -39,6 +39,7 @@ the same day or the two silently diverge again.
 | `container-health-reporter.sh` | `docker/container_health`, `host/disk_percent_used` | 60s | **deployed** |
 | `identity-unsettled-reporter.sh` | `identity/write_unsettled` | 5m | **deployed** |
 | `work-overdue-reporter.sh` | `jobs/work_overdue`, `jobs/work_abandoned` | 5m | **deployed** 2026-10-15, policies `9571974332933407186` (overdue) and `work-abandoned.json` (abandoned) |
+| `assistant-health-reporter.sh` | `ai/assistant_refusal_pct`, `ai/assistant_refusals`, `ai/assistant_turns`, `ai/assistant_proposal_volume` | 10m | **NOT deployed** — script, units and both policies are in the repo; see the procedure below (#3856) |
 
 ### The identity row said "not yet applied" until 2026-10-15, and was wrong
 
@@ -71,6 +72,76 @@ Four rules, and each one exists because its opposite has failed in production:
    and let the policy's absence condition do its job.
 4. **Every policy has an absence condition.** A threshold condition alone is
    satisfied by silence.
+
+## Operator procedure — installing `assistant-health-reporter` (#3856)
+
+Nothing below has been applied. Until it is, **there is no alert on the
+assistant refusing users or on the review queue being flooded.** Both are
+conditions in which the app is perfectly healthy, so `/api/readyz` stays green
+and nothing else would say.
+
+### 0. Dry run first (safe, changes nothing)
+
+Reads the database and prints the payload instead of posting it:
+
+```bash
+scp infra/reporters/assistant-health-reporter.sh inflect:/tmp/
+ssh inflect 'sudo ASSISTANT_HEALTH_DRY_RUN=1 bash /tmp/assistant-health-reporter.sh'
+```
+
+Expect four series and a plausible denominator. **If it prints
+`emitting NOTHING — an unreadable number is not a healthy one`, stop** — that
+is rule 3 working, and it means a query could not be read. Fix that before
+installing, because a reporter that cannot read will post nothing and the
+policies' absence arms will page on a schedule.
+
+### 1. Install the script and units
+
+```bash
+ssh inflect '
+  sudo install -m 0755 /tmp/assistant-health-reporter.sh /usr/local/bin/assistant-health-reporter.sh
+  sudo install -m 0644 /tmp/assistant-health-reporter.service /etc/systemd/system/
+  sudo install -m 0644 /tmp/assistant-health-reporter.timer   /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now assistant-health-reporter.timer
+  systemctl list-timers assistant-health-reporter.timer --no-pager
+'
+```
+
+### 2. Create both policies
+
+```bash
+gcloud alpha monitoring policies create \
+  --policy-from-file=infra/alerts/policies/assistant-refusal-rate.json
+gcloud alpha monitoring policies create \
+  --policy-from-file=infra/alerts/policies/assistant-proposal-volume.json
+```
+
+### 3. Confirm the metrics are arriving BEFORE trusting the alerts
+
+An absence arm on a metric that never arrived pages immediately and teaches
+whoever is on call to mute it. Check that points exist first:
+
+```bash
+gcloud monitoring time-series list \
+  --filter='metric.type="custom.googleapis.com/ai/assistant_refusal_pct"' \
+  --format='value(points.len())'
+```
+
+### 4. Update the table above with the policy ids
+
+This is the step that was skipped for `identity-unsettled-reporter`, and the
+section above records what that cost: the repo claimed there was no alert when
+there was one, which would have led the next reader to build a second.
+
+### A note on the thresholds
+
+`REFUSAL_PCT_ALARM=33` and the proposal threshold of 50/hour are **starting
+points, not measurements** — production volume has never been high enough to
+characterise either. The first time one fires, read the data before assuming
+the alert is wrong, and if it is wrong, record the observed normal in the
+commit that changes it. The threshold lives in the repo copy; change it here
+and re-install.
 
 ## Operator procedure — installing `identity-unsettled-reporter` (#2842)
 

@@ -1,0 +1,25 @@
+[Unit]
+Description=Run the assistant-health reporter every 10 minutes (#3856)
+
+[Timer]
+# 10 minutes against a ONE-HOUR window, so each reading overlaps the last five.
+# That is deliberate on both axes:
+#
+#   · The window cannot be much shorter. A refusal RATE needs a denominator,
+#     and at the default quota of 50 turns per tenant per day a 5-minute
+#     window usually holds zero attempts — the rate would be noise.
+#   · The timer cannot be much shorter either. `AuditLog`'s indexes are all
+#     `[tenantId, ...]`-prefixed and this query is cross-tenant, so the scan is
+#     not index-covered. Reading an hour's rows every 5 minutes would double
+#     that cost for no new information, since the number moves on an hourly
+#     scale.
+#
+# It is also what the policies' absence arms assume: they fire after 3600s,
+# which is six consecutive missed runs rather than one slow one.
+OnBootSec=6min
+OnUnitActiveSec=10min
+AccuracySec=30s
+Unit=assistant-health-reporter.service
+
+[Install]
+WantedBy=timers.target
