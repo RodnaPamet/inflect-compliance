@@ -178,7 +178,27 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // constraint and I added the entries anyway. CI caught it three ways at
         // once: this digest, the round-trip, and docs-accuracy's path-derived
         // check.
-        keyOrderSha: 'cfc537917f1f44a20f531da779ded5c84998084c6c8631e13839507940c9f330',
+        //
+        // Moved 2026-10-21 by one sorted ADDITION,
+        // docs/adr/0004-interactive-agent-runs.md (#3868 step 1, M1's ADR):
+        // +3/-0, inserted textually after the 0003 entry so no existing key
+        // moved. 153 entries.
+        //
+        // Worth recording, because the pin caught the writer rather than the
+        // diff this time. The first attempt DID use a Python round-trip —
+        // `json.dumps(indent=4)` through an OrderedDict — and it produced the
+        // correct +3/-0 for the `docs` map while silently rewriting the
+        // `description` field, because `json.dumps` defaults to
+        // `ensure_ascii=True` and this file is declared `escapeNonAscii: false`.
+        // Every em-dash in that one long line became `\u2014`. The diffstat read
+        // 4 insertions / 1 deletion and looked like a one-line touch; what it
+        // actually was is the whole-file-rewrite class, scoped to the only line
+        // containing non-ASCII. Reverted and redone as a textual insert.
+        //
+        // So the two halves of this Format caught different things: the
+        // `escapeNonAscii` round-trip would have caught the revert-worthy part,
+        // and this digest caught the honest addition. Neither sees the other's.
+        keyOrderSha: 'e3f48bbacf28751ee84701e851c8231302a8e2253c049fb6e6c7d7db63f51b17',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
