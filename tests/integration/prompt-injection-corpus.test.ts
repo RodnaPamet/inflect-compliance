@@ -95,6 +95,24 @@ interface ProposeResult {
     quarantined: number;
     proposalIds: string[];
     quarantinedProposalIds: string[];
+    /**
+     * Must be ABSENT (#3900).
+     *
+     * The seam used to return `status: 'PENDING'` unconditionally, so a batch
+     * in which every item was quarantined reported itself as pending human
+     * review when nothing was waiting — on the external-agent surface, where
+     * the reader is a machine taking the obvious field at its word.
+     *
+     * This interface never declared the field, which is precisely why it
+     * survived: the assertions below read `quarantined`, `proposed` and the two
+     * id arrays, all of which were already correct, and nothing looked at the
+     * one that was wrong. It is declared here now so the absence can be
+     * ASSERTED rather than merely unmentioned.
+     *
+     * One status for a BATCH is the category error — no scalar can express the
+     * mixed case, and the counts plus the id arrays already express all three.
+     */
+    status?: string;
 }
 
 function proposeResultOf(json: unknown): ProposeResult {
@@ -251,6 +269,12 @@ describeFn('prompt-injection corpus — an obeyed injection never reaches the re
                 expect(result.quarantined).toBe(1);
                 expect(result.proposed).toBe(0);
                 expect(result.proposalIds).toStrictEqual([]);
+                // And the result must not CLAIM anything about the batch's
+                // status (#3900). Nothing is pending here — a machine
+                // reading `status` was previously told `PENDING` while
+                // `quarantined` said 1 and `proposed` said 0 in the same
+                // object.
+                expect(result.status).toBeUndefined();
                 quarantinedId = result.quarantinedProposalIds[0];
             }, 60_000);
 
@@ -348,6 +372,12 @@ describeFn('prompt-injection corpus — an obeyed injection never reaches the re
             const result = proposeResultOf(json);
             expect(result.quarantined).toBe(0);
             expect(result.proposed).toBe(1);
+            // Absent on the CLEAN path too — the field is gone, not made
+            // conditional. This is the control: an assertion that only
+            // checked the quarantined case would be satisfied by a seam
+            // still reporting `PENDING` whenever anything queued, which
+            // covers most of the mixed cases.
+            expect(result.status).toBeUndefined();
 
             const id = result.proposalIds[0];
             const row = await prisma.agentProposal.findFirst({ where: { id } });
