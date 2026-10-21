@@ -13,6 +13,11 @@
  * followed by a length check. A test that only used plain text would pass under
  * either order and prove nothing about which one shipped.
  *
+ * Mutation-proved (2026-10-22): moving the length check onto the SANITISED
+ * value — the order this file argues against — fails exactly the ordering case
+ * and nothing else. So that one test is what holds the order, and the other
+ * seventeen would have shipped either version.
+ *
  * ## And why `QUESTION_EMPTY` and `QUESTION_NOT_READABLE` are separate
  *
  * A caller that sent nothing and a caller that sent only markup are different
