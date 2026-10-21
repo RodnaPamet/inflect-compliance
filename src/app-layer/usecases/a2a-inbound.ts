@@ -110,6 +110,7 @@ import { resolvePeerKill } from './a2a-peer-kill';
 import { findPeerIdByInboundToken, matchPeerInboundCredential } from './a2a-peer-credentials';
 import { A2aReplayError, countInboundTasksSince, recordA2aMessage } from './a2a-messages';
 import { resolveTenantA2aSigningKey, type TenantA2aSigningKeyInForce } from './a2a-signing-key';
+import { agentHoldsExternalToolGrant } from './a2a-host-consumer-policy';
 
 /**
  * The default per-peer quota: inbound messages one peer may send one tenant per
@@ -140,6 +141,8 @@ export type A2aInboundRefusalReason =
     | 'GUARD_REFUSED'
     | 'RUN_REFUSED'
     | 'TASK_NOT_FOUND'
+    /** #3864 — the host consumer's receiving agent holds an external tool grant. */
+    | 'RECEIVING_AGENT_HOLDS_EXTERNAL_TOOL'
     | string;
 
 export interface InboundA2aRequest {
@@ -485,6 +488,27 @@ async function startHostConsumerRequest(
         );
         if (!run) return refuse('TASK_NOT_FOUND', request.rpcId);
         return answer(await taskFor(sys, run.id, run.status, null), run.id, request.rpcId);
+    }
+
+    // ── THE POLICY LINE, enforced before any work (#3864) ────────────────────
+    //
+    // The A2A route is policy-clean only while Inflect's agent cannot reach an
+    // SAP API, and on this platform that is a property of what the RECEIVING
+    // AGENT IS GRANTED rather than of any code here. So the grant table is read
+    // and a single external tool refuses the request.
+    //
+    // Checked on the HOST path only. A peer's receiving agent may legitimately
+    // hold external tools — nothing in #3860's argument is about peers — so
+    // putting this in the shared `startInboundRun` would refuse traffic the
+    // policy never covered.
+    //
+    // Read UNCACHED per request, for the same reason the status and kill
+    // switch are (R26): a grant made inside a cache window would otherwise keep
+    // being admitted. Fail-closed — a tenant that grants its receiving agent an
+    // external tool is refused rather than quietly running with the weaker
+    // posture that #3860's reasoning rules out.
+    if (await agentHoldsExternalToolGrant(sys, consumer.receivingAgentId)) {
+        return refuse('RECEIVING_AGENT_HOLDS_EXTERNAL_TOOL', request.rpcId);
     }
 
     return startInboundRun({

@@ -62,6 +62,11 @@ describe('the Flue skill corpus', () => {
             'iso-27001-annex-a-drafting',
             'nhi-ownership-attribution',
             'nis2-article-23-timelines',
+            // #3864 — the judgement the A2A route exists for. Teaches what
+            // segregation of duties means for a document, how to cite the
+            // workspace control a finding tests, and how to report a clean
+            // result without presenting it as a clearance.
+            'sap-transaction-review',
             'soa-authoring',
         ]);
     });
