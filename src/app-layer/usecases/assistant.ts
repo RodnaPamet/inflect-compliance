@@ -248,6 +248,14 @@ interface ProducedBy {
      * ~49k output tokens and a tenant's day is bounded above by 50 of those.
      * That is a real bound, derived rather than asserted.
      *
+     * AND HERE IS HOW BIG IT IS (#3918). "Bounded" without a magnitude reads as
+     * "safe" when it only means "finite", so the figure belongs beside the
+     * reasoning that accepted it: `ASSISTANT_SPEND_CEILING` in
+     * `ai/assistant/spend-ceiling.ts` multiplies these three constants out —
+     * ~49k output tokens a turn, ~2.5M a tenant-day, ~74M a tenant-month. It is
+     * computed from the live constants rather than typed here, so raising any of
+     * them moves the stated ceiling instead of quietly invalidating it.
+     *
      * And the spend is RECORDED per turn here, so it is visible and
      * attributable even though no ceiling refuses it. An unrecorded cost would
      * be the actual defect; an un-gated but measured one is a decision.
@@ -542,17 +550,16 @@ async function answerFromToolLoop(
     if (provider === null) return null;
 
     const inv = await resolveMcpInvocation(ctx);
-    // `readOnly: true` for now. The propose surface is reachable through the
-    // same adapter, but the ACTION branches above still own proposing, because
-    // they return a `proposalId` and compose the user-facing sentence from the
-    // proposal's own status — which is what keeps a QUARANTINED item from being
-    // described as queued. Routing proposals through the loop means relaying
-    // the funnel's sentence instead, and the funnel does say it honestly, but
-    // the id would be lost to existing callers. Tracked separately rather than
-    // half-done here.
     // `readOnly: false` (#3882). The propose surface is offered to the MODEL
     // now, not merely to the adapter — the keyword intents that used to own
     // proposing are gone, so this is the only path to a proposal.
+    //
+    // WHERE QUARANTINE HONESTY LIVES, now that the ACTION branches are gone
+    // (#3916). It is `proposalOutcomeMessage`, which composes the sentence from
+    // the funnel's own id arrays rather than from the model's prose — so a
+    // QUARANTINED item is still never described as queued. The comment removed
+    // here attributed that property to the deleted branches, which would have
+    // sent a reader to restore the wrong mechanism.
     const set = assistantTools(inv, { readOnly: false });
 
     const result = await runAssistantLoop({
