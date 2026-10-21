@@ -37,7 +37,7 @@ const ADMIN_ONLY_ROUTES = [
     'admin/a2a/host-consumers/route.ts',
     'admin/a2a/host-consumers/[hostConsumerId]/route.ts',
     'admin/a2a/host-consumers/[hostConsumerId]/kill/route.ts',
-    // The four AI switches (#3910). `admin.tenant_lifecycle`, the OWNER key,
+    // The four AI switches (#3914). `admin.tenant_lifecycle`, the OWNER key,
     // because a customer may have undertaken that no model processes their
     // data and the control honouring that cannot sit where day-to-day
     // administration reaches it.
