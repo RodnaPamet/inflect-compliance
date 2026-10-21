@@ -28,7 +28,53 @@ import { advertisedA2aSkills } from '@/lib/agentic/a2a/host-card-skills';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PKG = 'deploy/joule';
-const read = (rel: string) => readFileSync(path.join(ROOT, PKG, rel), 'utf8');
+
+/** Every file `joule deploy` needs, so a missing one is reported as missing. */
+const FILES = [
+    'da.sapdas.yaml',
+    'capability/capability.sapdas.yaml',
+    'capability/capability_context.yaml',
+    'capability/functions/call_agent.yaml',
+    'capability/scenarios/invoke_agent.yaml',
+] as const;
+
+/**
+ * Read a package file, or `null` if it is not there.
+ *
+ * `null` rather than a throw, and the reads happen INSIDE the tests rather than
+ * at describe scope, because of what the first draft did: renaming one file away
+ * made the whole suite report
+ *
+ *     Test suite failed to run — ENOENT …
+ *     Tests: 0 total
+ *
+ * Zero tests beside a failed suite says the module never loaded, which tells a
+ * reader nothing about what was being defended. A guard whose failure mode is a
+ * crash cannot report its own violation — so this one names the missing file
+ * instead, and the test below is what makes that true.
+ */
+const read = (rel: string): string | null => {
+    try {
+        return readFileSync(path.join(ROOT, PKG, rel), 'utf8');
+    } catch {
+        return null;
+    }
+};
+
+/** The same read, for a test that has already established the file is there. */
+const must = (rel: string): string => {
+    const body = read(rel);
+    expect(body).not.toBeNull();
+    return body ?? '';
+};
+
+describe('the package is present at all', () => {
+    it('ships every file joule deploy needs, and NAMES any that are missing', () => {
+        // The first assertion on purpose: every test below reads one of these,
+        // and without this one a deleted file is a crash rather than a finding.
+        expect(FILES.filter((f) => read(f) === null)).toEqual([]);
+    });
+});
 
 /**
  * The file with its `#` comment lines removed.
@@ -40,7 +86,7 @@ const read = (rel: string) => readFileSync(path.join(ROOT, PKG, rel), 'utf8');
  * hit usually means the thing was deliberately kept OUT.
  */
 const code = (rel: string) =>
-    read(rel)
+    must(rel)
         .split('\n')
         .filter((line) => !/^\s*#/.test(line))
         .join('\n');
@@ -49,13 +95,13 @@ const code = (rel: string) =>
 const flatten = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 describe('the scenario description is the card’s skill description', () => {
-    const scenario = read('capability/scenarios/invoke_agent.yaml');
+    const scenario = () => must('capability/scenarios/invoke_agent.yaml');
 
     it('carries the workflow’s a2aSkill description verbatim', () => {
         const fromCard = sapTransactionReviewWorkflow.a2aSkill?.description;
         expect(fromCard).toBeTruthy();
         // The YAML's `description:` block, up to the next top-level key.
-        const block = /description:\s*>\s*\n([\s\S]*?)\n\w/.exec(scenario);
+        const block = /description:\s*>\s*\n([\s\S]*?)\n\w/.exec(scenario());
         expect(block).not.toBeNull();
         expect(flatten(block![1])).toBe(flatten(fromCard!));
     });
@@ -69,22 +115,22 @@ describe('the scenario description is the card’s skill description', () => {
 });
 
 describe('the two values SAP’s toolkit fails deploy on', () => {
-    const capability = read('capability/capability.sapdas.yaml');
-    const da = read('da.sapdas.yaml');
+    const capability = () => must('capability/capability.sapdas.yaml');
+    const da = () => must('da.sapdas.yaml');
 
     it('the capability namespace is joule.ext, which deploy requires', () => {
         // `SKILL.md:319` — any other namespace fails with a namespace
         // validation error. Asserted because SAP's own reference examples show
         // `com.sap.paa`, so a reader following the examples would break deploy.
-        expect(capability).toMatch(/namespace:\s*joule\.ext\b/);
+        expect(capability()).toMatch(/namespace:\s*joule\.ext\b/);
     });
 
     it('the two schema versions are the right way round', () => {
         // `SKILL.md:318`: the capability is 3.28.0 and the DA descriptor is
         // 1.4.0. They are easy to swap and the failure is a deploy-time error
         // nobody reads as a version mix-up.
-        expect(capability).toMatch(/schema_version:\s*3\.28\.0/);
-        expect(da).toMatch(/schema_version:\s*1\.4\.0/);
+        expect(capability()).toMatch(/schema_version:\s*3\.28\.0/);
+        expect(da()).toMatch(/schema_version:\s*1\.4\.0/);
     });
 
     it('the DA descriptor carries neither field that needs 1.5.0-beta', () => {
@@ -96,44 +142,44 @@ describe('the two values SAP’s toolkit fails deploy on', () => {
         expect(daCode).not.toContain('enable_native_agenticness');
         expect(daCode).not.toContain('conversational_search');
         // The comment IS still there, which is the point of stripping it.
-        expect(da).toContain('enable_native_agenticness');
+        expect(da()).toContain('enable_native_agenticness');
     });
 });
 
 describe('the alias and the destination agree', () => {
-    const capability = read('capability/capability.sapdas.yaml');
-    const fn = read('capability/functions/call_agent.yaml');
+    const capability = () => must('capability/capability.sapdas.yaml');
+    const fn = () => must('capability/functions/call_agent.yaml');
 
     it('the function’s system_alias is one the capability declares', () => {
         // A mismatch here deploys cleanly and fails at call time, which is the
         // worst place for it: the operator sees Joule fail to reach the agent
         // with nothing naming the alias.
-        const declared = [...capability.matchAll(/^\s{2}(\w+):\s*$/gm)].map((m) => m[1]);
-        const used = /system_alias:\s*(\w+)/.exec(fn)?.[1];
+        const declared = [...capability().matchAll(/^\s{2}(\w+):\s*$/gm)].map((m) => m[1]);
+        const used = /system_alias:\s*(\w+)/.exec(fn())?.[1];
         expect(used).toBeTruthy();
         expect(declared).toContain(used!);
     });
 });
 
 describe('the function reads the answer where Inflect writes it', () => {
-    const fn = read('capability/functions/call_agent.yaml');
+    const fn = () => must('capability/functions/call_agent.yaml');
 
     it('renders status.message.parts[0].text — the part #3863 added', () => {
         // The join between the two systems, and the reason J3 exists: this
         // action renders that text for EVERY state, so a response without a
         // text part shows a Joule user nothing.
-        expect(fn).toContain('result.body.status.message.parts[0].text');
+        expect(fn()).toContain('result.body.status.message.parts[0].text');
     });
 
     it('takes the task id from result.body.id, which is the run id', () => {
         // `taskFor` returns the run id as the task `id`, and the host's
         // tasks/get branch looks the run up by it. If either side changed, a
         // follow-up turn would silently start a new task instead of resuming.
-        expect(fn).toContain('result.body.id');
-        expect(fn).toContain('result.body.contextId');
+        expect(fn()).toContain('result.body.id');
+        expect(fn()).toContain('result.body.contextId');
     });
 
     it('sends no body on the first turn, so a new task is created', () => {
-        expect(fn).toMatch(/contextId == null \|\| contextId\.isEmpty\(\)/);
+        expect(fn()).toMatch(/contextId == null \|\| contextId\.isEmpty\(\)/);
     });
 });
