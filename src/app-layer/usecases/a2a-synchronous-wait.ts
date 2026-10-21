@@ -34,6 +34,7 @@
  * A source constant, so changing it is a reviewed diff, and one place to change
  * if SAP ever publishes the real figure.
  */
+import type { WorkflowRunStatus } from '@prisma/client';
 import { runInTenantContext } from '@/lib/db-context';
 
 import type { RequestContext } from '../types';
@@ -45,24 +46,74 @@ export const A2A_HOST_SYNCHRONOUS_WAIT_MS = 10_000;
 export const A2A_HOST_WAIT_POLL_MS = 400;
 
 /**
- * A run that will not change without something outside this request happening.
+ * WHAT A RUN'S STATUS MEANS TO A CALLER WAITING ON IT — for every status there
+ * is, in ONE exhaustive table rather than two allowlists.
  *
- * Derived from `WorkflowRunStatus`, which is `RUNNING | AWAITING_APPROVAL |
- * PAUSED | COMPLETED | ABORTED | FAILED`. The three terminal ones settle.
+ * ── WHY THE SHAPE CHANGED (#3869) ───────────────────────────────────────────
+ *
+ * This was `TERMINAL = new Set(['COMPLETED', 'FAILED', 'ABORTED'])` beside a
+ * `PARKED_ON_A_PERSON` set, under a docstring that ENUMERATED the enum. Adding
+ * a status to `WorkflowRunStatus` falsified that docstring and, worse, the two
+ * sets failed in OPPOSITE directions:
+ *
+ *   `run-concurrency.ts` allowlists the LIVE statuses, so a new TERMINAL one
+ *   falls outside it and is handled correctly by construction. Safe.
+ *
+ *   this file allowlisted the TERMINAL ones, so a new terminal status was
+ *   simply absent — `awaitRunSettled` would poll the entire ten-second window
+ *   and return `settled: false` for a run that had already finished, and the
+ *   host consumer would be told `working` about something that was over.
+ *
+ * `Record<WorkflowRunStatus, …>` makes that unrepresentable: a value added to
+ * the enum without a disposition here is a COMPILE error — mutation-proved by
+ * deleting the `EMPTY_CATALOGUE` line, which yields TS2741 rather than a silent
+ * pass. It is the property `SIGNAL_STRENGTH` holds for reconcile signals, for
+ * the same reason: a classification that CAN be forgotten eventually is.
+ *
+ * `EMPTY_CATALOGUE` is what found this. The fix is not specific to it.
  */
-const TERMINAL = new Set(['COMPLETED', 'FAILED', 'ABORTED']);
+type RunDisposition =
+    /** Will not change without something outside this request happening. */
+    | 'TERMINAL'
+    /** Has stopped waiting on US and started waiting on a PERSON. */
+    | 'PARKED_ON_A_PERSON'
+    /** Still ours to wait for. */
+    | 'IN_FLIGHT';
+
+const DISPOSITION: Readonly<Record<WorkflowRunStatus, RunDisposition>> = {
+    RUNNING: 'IN_FLIGHT',
+    // PARKED is told apart from TERMINAL deliberately. Continuing to poll for
+    // ten seconds because a human might approve inside them is futile, and it
+    // spends the whole budget to learn nothing — so the wait returns at once
+    // and the caller's text part explains who must act. This is the behaviour
+    // that replaces mapping the state to `input-required`, which would have
+    // named the wrong actor (owner decision on #3863).
+    AWAITING_APPROVAL: 'PARKED_ON_A_PERSON',
+    PAUSED: 'PARKED_ON_A_PERSON',
+    COMPLETED: 'TERMINAL',
+    ABORTED: 'TERMINAL',
+    FAILED: 'TERMINAL',
+    // A run that reached no tools is OVER, and is not a success. Terminal for
+    // the same reason FAILED is: there is nothing further to wait for, and what
+    // the caller should get is the refusal rather than ten seconds of silence
+    // followed by one.
+    EMPTY_CATALOGUE: 'TERMINAL',
+};
 
 /**
- * A run that has stopped waiting on US and started waiting on a PERSON.
+ * The disposition of whatever status was read off the row.
  *
- * Told apart from terminal deliberately. Continuing to poll for ten seconds
- * because a human might approve inside them is futile, and it spends the whole
- * budget to learn nothing — so the wait returns at once and the caller's text
- * part explains who must act. This is the behaviour that replaces mapping the
- * state to `input-required`, which would have named the wrong actor (owner
- * decision on #3863).
+ * AN UNRECOGNISED STATUS IS IN-FLIGHT, never terminal, and the direction is the
+ * decision: calling a status we do not know "settled" sends the caller on to
+ * read an answer that may not exist, while calling it in-flight costs one wait
+ * window and reports honestly. Note this is defensive only — in a rolling
+ * deploy an unknown value never arrives here as a string, because Prisma fails
+ * the whole read of a row carrying an enum value its client lacks. That is why
+ * the status is added one deploy before anything writes it.
  */
-const PARKED_ON_A_PERSON = new Set(['AWAITING_APPROVAL', 'PAUSED']);
+function dispositionOf(status: string): RunDisposition {
+    return DISPOSITION[status as WorkflowRunStatus] ?? 'IN_FLIGHT';
+}
 
 export type RunWaitOutcome = {
     /** The status as last read. */
@@ -128,8 +179,9 @@ export async function awaitRunSettled(
         // A run that cannot be read is not a settled one. Reporting its last
         // known status rather than throwing keeps the response path intact.
         status = row?.status ?? status;
-        if (TERMINAL.has(status)) return { status, settled: true, parked: false };
-        if (PARKED_ON_A_PERSON.has(status)) return { status, settled: false, parked: true };
+        const disposition = dispositionOf(status);
+        if (disposition === 'TERMINAL') return { status, settled: true, parked: false };
+        if (disposition === 'PARKED_ON_A_PERSON') return { status, settled: false, parked: true };
         // CHECKED AFTER THE READ, not before: a run that settles during the
         // last sleep is still reported as settled, and the loop always makes at
         // least one read even with a zero budget — so a caller passing 0 gets

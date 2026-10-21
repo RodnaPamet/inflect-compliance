@@ -135,7 +135,12 @@ describe('LIVE_RUN_STATUSES', () => {
         // list, which would make every cap unlimited.
         const real = Object.keys(WorkflowRunStatus);
         const notLive = real.filter((s) => !isLiveRunStatus(s));
-        expect(notLive.sort()).toEqual(['ABORTED', 'COMPLETED', 'FAILED']);
+        // EMPTY_CATALOGUE joined the terminal side in #3869 — a run that
+        // resolved no tools is over. It reached this assertion rather than
+        // slipping into the live set, which is this test doing its job: the
+        // classification is deliberate, not inherited from where the value was
+        // declared in the enum.
+        expect(notLive.sort()).toEqual(['ABORTED', 'COMPLETED', 'EMPTY_CATALOGUE', 'FAILED']);
         expect(LIVE_RUN_STATUSES.length).toBe(real.length - notLive.length);
     });
 

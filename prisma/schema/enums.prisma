@@ -981,6 +981,24 @@ enum WorkflowRunStatus {
   COMPLETED
   ABORTED
   FAILED
+  /// A run that resolved NO tools: a failure, not a success (#3869, and M5
+  /// item 2 of #3859 — built once, here).
+  ///
+  /// THE ONLY THING THIS ADDS IS THE STATUS. The condition is already detected
+  /// at `flue/execute.ts` (`tools.length === 0`), already counts a step
+  /// failure, and already writes `EMPTY_TOOLSET_MESSAGE` to
+  /// `WorkflowRun.errorMessage` — a sentence that names the cause, the remedy
+  /// and the seventh gate, which the run list and run detail already render.
+  /// What was wrong is that it then settled `COMPLETED`, so the run "sits there
+  /// looking successful" in that message's own words. No reason column was
+  /// added: `errorMessage` already carries the named sentence, and a second
+  /// column for it would be the duplication this roadmap says to avoid.
+  ///
+  /// Terminal. APPENDED, and nothing orders by `WorkflowRun.status` — verified,
+  /// not assumed — so position carries no meaning here, unlike `Role`, where
+  /// three job actor pickers sort ascending and an inserted value would have
+  /// changed seniority.
+  EMPTY_CATALOGUE
 }
 
 /// A workflow step's kind. READ = call an MCP read tool; PROPOSE = call an MCP
