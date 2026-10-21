@@ -191,22 +191,39 @@ export function checkEvaluationRecord(
     }
 
     const rates = {} as Record<CaseKind, number>;
+    // EVERY kind below threshold, not the first (#3906).
+    //
+    // This used to return as soon as one kind fell short, and the cost landed on
+    // whoever was authoring a set: a record is made by `npm run skills:evaluate`,
+    // which is real model calls against the repository credential, so each
+    // undiscovered shortfall is another dispatch. Authoring
+    // `sap-transaction-review` (#3864) that happened twice — the first run
+    // reported `task 3/4` while `injection` and `missing-input` were ALSO below
+    // their thresholds, and the second reported `missing-input` alone.
+    //
+    // The loop already computes every kind's rate, so nothing new is measured;
+    // only the point of return moves. Keeping the loop running also means
+    // `rates` is complete for every kind on a failure, which a caller wanting to
+    // show a breakdown previously could not get.
+    const shortfalls: string[] = [];
     for (const kind of CASE_KINDS) {
         const cases = record.set.cases.filter((c) => c.kind === kind);
         let passed = 0;
         for (const c of cases) {
             const answer = byCase.get(c.id);
+            // Still an immediate return: an unanswered case means the RECORD is
+            // incomplete, so no rate computed from it would mean anything. That
+            // is a different class from a rate that is simply too low.
             if (answer === undefined) return { ok: false, reason: 'UNANSWERED_CASE', detail: c.id };
             if (answerPasses(c.expect, answer)) passed += 1;
         }
         rates[kind] = passed / cases.length;
         if (rates[kind] < record.set.thresholds[kind]) {
-            return {
-                ok: false,
-                reason: 'BELOW_THRESHOLD',
-                detail: `${kind}: ${passed}/${cases.length} passed, threshold ${record.set.thresholds[kind]}`,
-            };
+            shortfalls.push(`${kind} ${passed}/${cases.length} (threshold ${record.set.thresholds[kind]})`);
         }
+    }
+    if (shortfalls.length > 0) {
+        return { ok: false, reason: 'BELOW_THRESHOLD', detail: shortfalls.join(', ') };
     }
     return { ok: true, record, rates };
 }
