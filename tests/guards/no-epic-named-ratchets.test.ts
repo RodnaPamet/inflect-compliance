@@ -481,7 +481,27 @@ describe('epic-named ratchets are not added back', () => {
         // staleness window. This reads two POLICY files against a third file's
         // published metric names, and runs a different script. Widening that
         // guard to a second reporter is how a guard's name stops describing it.
-        expect(guardFiles().length).toBeLessThan(796);
+        // RAISED 795 -> 796 on 2026-10-21, for ONE file:
+        //
+        // `joule-package-matches-the-card` is named for its invariant — the
+        // Joule scenario's `description` IS the `a2aSkill.description` of the
+        // `sap-transaction-review` workflow, verbatim (#3865). Two surfaces
+        // route requests to the same workflow and are edited in different
+        // places: Joule matches user intent on the YAML's text, a spec-reading
+        // host matches on the agent card's skill text. Two independently
+        // maintained copies of "when to call this agent" diverge SILENTLY —
+        // Joule starts sending requests the card does not advertise, or stops
+        // sending ones it does, and nothing fails.
+        //
+        // It is not folded into `a2a-host-card-skills`, the existing guard over
+        // the advertised set: that one reads the workflow registry and the card
+        // it produces, both TypeScript, and its subject is what the card may
+        // disclose (R19). This reads a DEPLOYMENT ARTEFACT — YAML under
+        // `deploy/joule/` that no TypeScript imports — against that card, plus
+        // the two values SAP's own toolkit fails `joule deploy` on. Different
+        // population, different failure, and widening the first to cover YAML
+        // is how a guard's name stops describing it.
+        expect(guardFiles().length).toBeLessThan(797);
     });
 
     /**
