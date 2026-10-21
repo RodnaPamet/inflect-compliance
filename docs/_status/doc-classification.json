@@ -20,6 +20,9 @@
         "docs/adr/0003-a2a-host-consumers.md": {
             "class": "historical"
         },
+        "docs/adr/0004-interactive-agent-runs.md": {
+            "class": "historical"
+        },
         "docs/agent-harness-contract.md": {
             "class": "authoritative"
         },
