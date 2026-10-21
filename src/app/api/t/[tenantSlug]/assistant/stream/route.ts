@@ -153,9 +153,18 @@ export const POST = withApiErrorHandling(
                         // something unexpected threw, and the honest end is a
                         // refusal rather than a silent close — an empty stream
                         // is indistinguishable from a crash.
+                        //
+                        // It does NOT claim "nothing was created" (#3882). Since
+                        // the loop may propose, a turn can have queued a row and
+                        // then fallen over on its way to saying so. Telling the
+                        // user nothing happened is the one error that cannot be
+                        // walked back: they ask again and it queues twice.
                         emit({
                             type: 'refusal',
-                            reason: 'The assistant could not complete this turn. Nothing was created.',
+                            reason:
+                                'The assistant could not complete this turn. If you asked it to ' +
+                                'raise something, check the agent-proposals review queue before ' +
+                                'asking again — it may already be there.',
                         });
                         // `done` AFTER the refusal, so there is exactly ONE
                         // terminal signal whichever path ends the turn. Without

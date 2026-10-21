@@ -111,10 +111,36 @@ test.describe('the in-product assistant', () => {
         await expect(authedPage.getByTestId('assistant-launcher')).toHaveCount(0);
     });
 
-    test('a proposal renders as queued and its link reaches the real queue', async ({
+    test('a propose-phrased question queues NOTHING when no model is configured', async ({
         authedPage,
         isolatedTenant,
     }) => {
+        /**
+         * ═══ THIS TEST USED TO EXERCISE THE PROPOSE JOURNEY, AND CANNOT ═══
+         *
+         * It asked for a finding and asserted the queued block, the
+         * review-queue link and the row appearing in the queue. That worked
+         * because the KEYWORD branches owned proposing and needed no model.
+         *
+         * #3882 moved proposing behind the model: it is a propose TOOL the
+         * model elects to call. CI configures no external model — deliberately,
+         * and `resolveFlueModel` REFUSES rather than substituting one — so the
+         * propose journey is now unreachable here. Not broken: unreachable,
+         * for the same reason the read path falls back to the keyword router.
+         *
+         * So the assertion is inverted rather than deleted. Deleting it would
+         * quietly drop a coverage claim the roadmap made (#3854); inverting it
+         * pins the behaviour that IS reachable, and it is a property worth
+         * holding in its own right — a propose-phrased question must not
+         * silently become a read that looks like success, and must not queue
+         * anything by keyword.
+         *
+         * The propose journey itself is covered at the usecase level in
+         * `tests/unit/ai/assistant-proposes-through-the-loop.test.ts`, where
+         * the model seams are mocked and the provider is scripted to LIE about
+         * the outcome — a stronger assertion than this e2e ever made, since no
+         * real model can be relied on to quarantine anything on cue.
+         */
         const uid = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
         const title = `E2E assistant finding ${uid}`;
 
@@ -122,30 +148,23 @@ test.describe('the in-product assistant', () => {
         await expect(authedPage.getByRole('main')).toBeVisible({ timeout: 20000 });
 
         await openAssistant(authedPage);
-        // Phrased to hit the finding intent: a create/raise verb plus the noun.
         await askAssistant(authedPage, `raise a finding about ${title}`);
 
-        // QUEUED, with the review-queue link. A quarantined proposal renders
-        // the other block and carries no link — the two are deliberately
-        // distinguishable from the outside.
-        const queued = authedPage.getByTestId('assistant-proposal-queued');
-        await expect(queued).toBeVisible({ timeout: 30000 });
+        // It still ANSWERS — the deterministic router runs, so this is not a
+        // silent failure dressed up as a policy.
+        await expect(authedPage.getByTestId('assistant-answer')).toBeVisible({ timeout: 30000 });
+
+        // And neither proposal block renders, because nothing was proposed.
+        await expect(authedPage.getByTestId('assistant-proposal-queued')).toHaveCount(0);
         await expect(authedPage.getByTestId('assistant-proposal-quarantined')).toHaveCount(0);
 
-        // Follow the deep link rather than navigating by URL, so the thing
-        // under test is the href the product rendered.
-        await queued.getByRole('link').first().click();
-
-        // `/agents/proposals` is the real queue; `/agent-proposals` is a
-        // redirect shim, so a wrong href would bounce through it.
-        await expect(authedPage).toHaveURL(
-            new RegExp(`/t/${isolatedTenant.tenantSlug}/agents/proposals`),
-            { timeout: 30000 },
-        );
-
-        // And the proposal the assistant queued is actually listed. Scoped to
-        // main so chrome text cannot satisfy it.
-        await expect(authedPage.getByRole('main')).toContainText(title, { timeout: 30000 });
+        // The decisive one: the review queue is empty for this tenant. A
+        // keyword branch surviving anywhere would put a row here, and the
+        // assertions above would not necessarily catch it — a row can be
+        // created without the UI rendering a block for it.
+        await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/agents/proposals`);
+        await expect(authedPage.getByRole('main')).toBeVisible({ timeout: 20000 });
+        await expect(authedPage.getByRole('main')).not.toContainText(title);
     });
 
     test('closes without disturbing the page, and returns focus to the launcher', async ({

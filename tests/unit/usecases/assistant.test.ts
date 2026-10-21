@@ -127,28 +127,42 @@ describe('askAssistant — read intents (tenant-scoped, no mutation)', () => {
     });
 });
 
-describe('askAssistant — action intents (propose, never execute)', () => {
-    it('a "raise a finding" request PROPOSES a FINDING, not a direct create', async () => {
-        (createAgentProposal as jest.Mock).mockResolvedValue({ id: 'prop-f', kind: 'FINDING', status: 'PENDING' });
-        const res = await askAssistant(ctx, { question: 'raise a finding about missing MFA on the VPN' });
-        expect(res.kind).toBe('proposal');
-        expect(res.proposalId).toBe('prop-f');
-        expect(createAgentProposal).toHaveBeenCalledWith(ctx, expect.objectContaining({
-            kind: 'FINDING',
-            payload: expect.objectContaining({ title: expect.stringContaining('missing MFA'), severity: 'MEDIUM', type: 'OBSERVATION' }),
-        }));
-        // Not answered as a read; nothing bypasses the queue.
-        expect(getDashboardData).not.toHaveBeenCalled();
+describe('with NO model configured, nothing proposes (#3882)', () => {
+    /**
+     * The keyword propose branches are gone. They matched a verb and a noun —
+     * "raise a finding about X" — so the capability was reachable only by
+     * guessing the pattern, and two producers would have disagreed about which
+     * phrasings propose.
+     *
+     * This suite mocks no model, so `resolveFlueModel` refuses and
+     * `answerFromToolLoop` returns null. The honest result is a READ answer and
+     * no proposal: with no model there is nothing to turn a request into one.
+     *
+     * Proposing through the loop is covered in
+     * `tests/unit/ai/assistant-proposes-through-the-loop.test.ts`, which mocks
+     * the three seams needed to reach the loop at all.
+     */
+    it('answers a propose-phrased question as a read, and queues nothing', async () => {
+        const res = await askAssistant(ctx, {
+            question: 'raise a finding about missing MFA on the VPN',
+        });
+
+        expect(res.kind).toBe('answer');
+        expect(res.proposalId).toBeUndefined();
+        // The decisive assertion: no row was created by a keyword match.
+        expect(createAgentProposal).not.toHaveBeenCalled();
+        // And it DID answer — the deterministic router ran, so this is not a
+        // silent failure dressed up as a policy.
+        expect(res.message.length).toBeGreaterThan(0);
+        expect(getDashboardData).toHaveBeenCalled();
     });
 
-    it('a "create a risk" request PROPOSES a RISK', async () => {
-        (createAgentProposal as jest.Mock).mockResolvedValue({ id: 'prop-r', kind: 'RISK', status: 'PENDING' });
-        const res = await askAssistant(ctx, { question: 'create a risk for third-party data processing' });
-        expect(res.kind).toBe('proposal');
-        expect(createAgentProposal).toHaveBeenCalledWith(ctx, expect.objectContaining({
-            kind: 'RISK',
-            payload: expect.objectContaining({ title: expect.stringContaining('third-party data processing') }),
-        }));
+    it('does the same for a risk phrasing — the pattern is gone, not narrowed', async () => {
+        const res = await askAssistant(ctx, {
+            question: 'create a risk for third-party data processing',
+        });
+        expect(res.kind).toBe('answer');
+        expect(createAgentProposal).not.toHaveBeenCalled();
     });
 });
 
@@ -253,38 +267,18 @@ describe('the STREAMING surface can do everything the ask surface can (#3899)', 
         return events;
     };
 
-    it('PROPOSES on a "raise a finding" request, as the ask surface does', async () => {
-        (createAgentProposal as jest.Mock).mockResolvedValue({
-            id: 'prop-s1',
-            kind: 'FINDING',
-            status: 'PENDING',
-        });
-
+    it('proposes NOTHING when no model is configured, on this surface too', async () => {
+        // The streaming surface reaches `produceAnswer` (#3899), so it has the
+        // same capability as the ask surface — and with no model, that
+        // capability is "answer as a read", identically. A surface that still
+        // proposed here would mean the keyword branches had survived on one
+        // path, which is exactly the drift #3899 was about.
         const events = await collect('raise a finding about missing MFA on the VPN');
 
-        expect(createAgentProposal).toHaveBeenCalledTimes(1);
+        expect(createAgentProposal).not.toHaveBeenCalled();
         const answer = events.find((e) => e.type === 'answer');
         expect(answer).toBeDefined();
-        // The id and status travel as DATA on the event, so the UI can render
-        // "queued" with a link without parsing the sentence (#3847).
-        expect(answer?.proposal).toMatchObject({ id: 'prop-s1', status: 'PENDING' });
-    });
-
-    it('carries QUARANTINED through as the status, not as a queued proposal', async () => {
-        // The safety property the UI depends on. If the status did not travel,
-        // the UI would have to infer it from prose — which is exactly how
-        // "quarantined" becomes "queued".
-        (createAgentProposal as jest.Mock).mockResolvedValue({
-            id: 'prop-s2',
-            kind: 'FINDING',
-            status: 'QUARANTINED',
-        });
-
-        const events = await collect('raise a finding about missing MFA on the VPN');
-
-        const answer = events.find((e) => e.type === 'answer');
-        expect(answer?.proposal).toMatchObject({ status: 'QUARANTINED' });
-        expect(answer?.proposal).not.toMatchObject({ status: 'PENDING' });
+        expect(answer?.proposal).toBeUndefined();
     });
 
     it('still answers a READ question without proposing anything', async () => {

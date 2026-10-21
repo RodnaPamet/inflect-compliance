@@ -579,7 +579,19 @@ const HIGH_MULTIPLICITY = 5;
 //   severity and exit code, are now asserted inside each gate's own step,
 //   which takes the new site back out and the severity one (two positions
 //   before this diff) with it.
-const AMBIGUOUS_NEEDLE_BASELINE = 1163;
+// 1163 -> 1162 on 2026-10-21 (#3882). Re-seated in the same diff that earned
+// it, as the drift sentinel requires: tolerated slack is 0, because a baseline
+// above the live count is headroom a future regression can spend on a green
+// build.
+//
+// The improvement: `tests/guards/assistant-ai.test.ts` asserted the assistant's
+// propose path with `toMatch(/kind: 'FINDING'/)` and `toMatch(/kind: 'RISK'/)`
+// over the whole usecase file. Those needles matched the two keyword branches
+// AND every other `kind:` in the file. #3882 removed the branches and re-aimed
+// the guard at the mechanism that now carries the property — `readOnly: false`,
+// `set.proposals()` and `proposalOutcomeMessage(proposals)` — each of which
+// names one site.
+const AMBIGUOUS_NEEDLE_BASELINE = 1162;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

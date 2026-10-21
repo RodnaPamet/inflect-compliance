@@ -37,10 +37,48 @@ describe('assistant AI — governance + propose-not-commit', () => {
         expect(usecase).toMatch(/assertGuardAllowed/);
     });
 
-    it('actions are PROPOSED via the existing agent-proposal queue, never executed directly', () => {
-        expect(usecase).toMatch(/createAgentProposal\(ctx, \{/);
-        expect(usecase).toMatch(/kind: 'FINDING'/);
-        expect(usecase).toMatch(/kind: 'RISK'/);
+    it('actions are PROPOSED through the funnel, never executed directly', () => {
+        // ═══ THE NEEDLE MOVED; THE PROPERTY DID NOT ═══
+        //
+        // This asserted `createAgentProposal(ctx, {` plus `kind: 'FINDING'`
+        // and `kind: 'RISK'` — the two keyword branches that used to own
+        // proposing. #3882 removed them: the model now calls a propose TOOL,
+        // and `runProposeTool` calls `createAgentProposal` on the other side
+        // of the same funnel that authorizes it.
+        //
+        // So the old needles are gone and the guarantee is stronger, not
+        // weaker — the funnel also enforces the capability, the scope, the
+        // autonomy rung and the policy-card pin, none of which the direct call
+        // did. Re-aimed at the mechanism that now carries it rather than
+        // deleted, because a guard whose subject moves and is deleted leaves
+        // the property unguarded at exactly the moment it changed hands.
+        //
+        // The import allowlist below is the other half and needs no change: it
+        // already fails on ANY create-usecase import, and the assistant now
+        // imports fewer of them than before.
+
+        // The propose surface reaches the MODEL — `readOnly: false` is what
+        // offers it, and `true` would silently return to read-only.
+        expect(usecase).toMatch(/assistantTools\(inv, \{ readOnly: false \}\)/);
+
+        // The outcome is read from the funnel's structured result, and the
+        // user-facing sentence is COMPOSED from it rather than relayed. A
+        // relayed sentence is how "quarantined" becomes "queued for review".
+        expect(usecase).toMatch(/set\.proposals\(\)/);
+        expect(usecase).toMatch(/proposalOutcomeMessage\(proposals\)/);
+
+        // And the verdict is never taken from the model's text: the only
+        // `message:` on the proposal path is the composed one.
+        expect(usecase).not.toMatch(/message: result\.text,[\s\S]{0,200}proposalId/);
+    });
+
+    it('the keyword propose branches are GONE, not merely bypassed', () => {
+        // Left in front of the loop they would win whenever their regex
+        // matched, so two producers would disagree about which phrasings
+        // propose — and a user would get a proposal or an answer depending on
+        // their wording.
+        expect(usecase).not.toMatch(/\bcreateAgentProposal\(ctx, \{/);
+        expect(usecase).not.toMatch(/extractTitle\(question/);
     });
 
     // H5 — POSITIVE allowlist (was a 3-name blacklist that missed

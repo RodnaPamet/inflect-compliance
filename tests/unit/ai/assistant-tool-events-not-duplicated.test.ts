@@ -91,6 +91,12 @@ jest.mock('@/app-layer/ai/assistant/tools', () => ({
         ],
         reviewRequired: () => false,
         omitted: [],
+        // Required since #3882: `answerFromToolLoop` reads `set.proposals()`.
+        // Without it the call threw, the turn's catch emitted a `refusal`
+        // instead of an `answer`, and this suite's event-shape assertion is
+        // what noticed — the tool events were still right, only the terminal
+        // changed.
+        proposals: () => [],
     }),
 }));
 
