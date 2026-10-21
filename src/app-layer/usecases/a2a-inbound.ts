@@ -111,6 +111,8 @@ import { findPeerIdByInboundToken, matchPeerInboundCredential } from './a2a-peer
 import { A2aReplayError, countInboundTasksSince, recordA2aMessage } from './a2a-messages';
 import { resolveTenantA2aSigningKey, type TenantA2aSigningKeyInForce } from './a2a-signing-key';
 import { agentHoldsExternalToolGrant } from './a2a-host-consumer-policy';
+import { hostConsumerAnswerText, settledRunAnswerText } from './a2a-run-answer';
+import { awaitRunSettled } from './a2a-synchronous-wait';
 
 /**
  * The default per-peer quota: inbound messages one peer may send one tenant per
@@ -487,7 +489,30 @@ async function startHostConsumerRequest(
             }),
         );
         if (!run) return refuse('TASK_NOT_FOUND', request.rpcId);
-        return answer(await taskFor(sys, run.id, run.status, null), run.id, request.rpcId);
+        // THE FOLLOW-UP TURN, answered the same way as the first (#3863). Joule
+        // passes the task id back when a call returned `working`, and it reads
+        // its answer from the same place either time — so a follow-up that
+        // returned a bare state would make the second turn useless in exactly
+        // the way the first was.
+        //
+        // No WAIT here, unlike `message/send`: the run has been going since the
+        // earlier call, so either it has settled or waiting another ten seconds
+        // for a job measured in minutes buys nothing. The status is read fresh,
+        // which is the part that matters.
+        const settled = run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'ABORTED';
+        const parked = run.status === 'AWAITING_APPROVAL' || run.status === 'PAUSED';
+        const followUpText = settled ? await settledRunAnswerText(sys, run.id) : null;
+        return answer(
+            await taskFor(
+                sys,
+                run.id,
+                run.status,
+                null,
+                hostConsumerAnswerText({ status: run.status, settled, parked }, followUpText, run.id),
+            ),
+            run.id,
+            request.rpcId,
+        );
     }
 
     // ── THE POLICY LINE, enforced before any work (#3864) ────────────────────
@@ -682,6 +707,39 @@ async function startInboundRun(args: {
         },
     }).catch(() => undefined);
 
+    // ── THE SYNCHRONOUS ANSWER, HOST CONSUMERS ONLY (#3863) ─────────────────
+    //
+    // Joule reads its answer out of THIS call's own result — confirmed from
+    // SAP's toolkit, `references/joule-capability.md:155,436` — and never calls
+    // `tasks/get`. A just-started run maps to `working`, so returning
+    // immediately hands Joule a state code and no words, and its user sees
+    // nothing. So the host path waits, briefly and boundedly, and always
+    // answers in sentences.
+    //
+    // PEERS ARE UNTOUCHED and that is deliberate rather than conservative: a
+    // peer polls `tasks/get` by design, it has a signed receipt contract over
+    // the exact response bytes, and nothing in the roadmap asked for it. Adding
+    // a wait to their path would change a settled contract for every pinned
+    // peer to serve a problem they do not have.
+    if (grants.kind === 'HOST_CONSUMER') {
+        const waited = await awaitRunSettled(sys, started.runId);
+        // Read the words only when there is something to read. A run that is
+        // still running has written no answer, and asking for one would be two
+        // queries to learn what the status already said.
+        const text = waited.settled ? await settledRunAnswerText(sys, started.runId) : null;
+        return answer(
+            await taskFor(
+                sys,
+                started.runId,
+                waited.status,
+                request.contextId,
+                hostConsumerAnswerText(waited, text, started.runId),
+            ),
+            started.runId,
+            request.rpcId,
+        );
+    }
+
     return answer(await taskFor(sys, started.runId, started.status, request.contextId), started.runId, request.rpcId);
 }
 
@@ -690,7 +748,19 @@ async function startInboundRun(args: {
  * the run has made with their statuses. It reports what EXISTS here and claims
  * nothing about effect: a pending proposal is pending, and the note says so.
  */
-async function taskFor(sys: RequestContext, runId: string, status: string, contextId: string | null) {
+async function taskFor(
+    sys: RequestContext,
+    runId: string,
+    status: string,
+    contextId: string | null,
+    /**
+     * The answer, in words, for a host consumer (#3863). ABSENT for a peer, and
+     * absence is the peer's contract rather than an oversight: a peer's
+     * response bytes are covered by a signed receipt it verifies, so adding a
+     * member to them would change a document every pinned peer already agreed.
+     */
+    answerText?: string,
+) {
     const proposals = await runInTenantContext(sys, (db) =>
         db.agentProposal.findMany({
             where: { tenantId: sys.tenantId, runId },
@@ -703,7 +773,25 @@ async function taskFor(sys: RequestContext, runId: string, status: string, conte
         kind: 'task',
         id: runId,
         contextId: contextId ?? runId,
-        status: { state: taskStateForRunStatus(status), timestamp: new Date().toISOString() },
+        status: {
+            state: taskStateForRunStatus(status),
+            timestamp: new Date().toISOString(),
+            // `status.message` is where SAP's toolkit reads its answer from —
+            // `result.body.status.message.parts[0].text`. Spread so the member
+            // is ABSENT and not `undefined` for a peer: `undefined` would
+            // survive into `canonicalJson` differently from absent, and the
+            // peer's receipt is signed over the exact bytes.
+            ...(answerText === undefined
+                ? {}
+                : {
+                      message: {
+                          kind: 'message',
+                          role: 'agent',
+                          messageId: `${runId}:answer`,
+                          parts: [{ kind: 'text', text: answerText }],
+                      },
+                  }),
+        },
         artifacts: [
             {
                 artifactId: `${runId}:proposals`,

@@ -1125,8 +1125,27 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
  *
  * Raised by the measured amount rather than a round number, so the next raise
  * is as visible as this one.
+ *
+ * RAISED 1404 -> 1405 on 2026-10-21, by ONE, for #3863's addition to
+ * `flue-model-output-has-one-destination.test.ts`: the assertion that pins
+ * every READER of `AiDecisionLog.outputSummary`.
+ *
+ * Why it cannot be written analysably. The value of that assertion is that the
+ * reader set is DERIVED FROM THE TREE — a hand-written list would pass while a
+ * new reader of the Art 12 summary sat beside it unnoticed, which is the exact
+ * failure the guard exists to prevent. Deriving it means enumerating files and
+ * reading each, so the path is a loop variable and lands in
+ * `path-not-constant` however it is written.
+ *
+ * One and not two: the same block's other assertions are over text read through
+ * the file's own CONSTANT path (`read(A2A_INBOUND)`), which the analyser
+ * follows. Only the enumeration is blind, and that the overshoot is one is the
+ * evidence the scanning shape was kept to the single assertion that needs it.
+ *
+ * Measured on this branch, not estimated: the detector reported `current: 1405`
+ * against the 1404 ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1404;
+const UNANALYSABLE_READ_BASELINE = 1405;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
