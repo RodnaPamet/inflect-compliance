@@ -1,0 +1,46 @@
+{
+  "displayName": "inflect assistant is REFUSING most attempts — users blocked from a working feature (#3856)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "assistant refusal rate at or above 33% over the last hour",
+      "conditionThreshold": {
+        "filter": "metric.type=\"custom.googleapis.com/ai/assistant_refusal_pct\" AND resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_GTE",
+        "thresholdValue": 33,
+        "duration": "1800s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_MAX",
+            "crossSeriesReducer": "REDUCE_MAX"
+          }
+        ]
+      }
+    },
+    {
+      "displayName": "assistant refusal reporting stopped — absence is not health",
+      "conditionAbsent": {
+        "filter": "metric.type=\"custom.googleapis.com/ai/assistant_refusal_pct\" AND resource.type=\"gce_instance\"",
+        "duration": "3600s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ]
+      }
+    }
+  ],
+  "documentation": {
+    "mimeType": "text/markdown",
+    "content": "The in-product assistant REFUSED a third or more of its attempts over the last\nhour. Users are being blocked from a feature that works.\n\nWHY THIS IS PAGED RATHER THAN CHARTED. A refused user usually does not report\nit -- they stop asking. So the failure mode is silent by construction: the\nprocess is healthy, `/api/readyz` is green, and the only symptom is an absence\nof use that looks like low adoption. A guard misfiring on ordinary compliance\nprose would look exactly like that.\n\nHOW THE RATE IS COMPUTED, because the denominator is not the obvious one.\n`runGoverned` asserts on the guard verdict BEFORE producing an answer and\nTHROWS on review-required, so a refused turn writes no `AiDecisionLog` row at\nall. Dividing refusals by decision-log rows would therefore divide by the turns\nthat were NOT refused, and would read LOWER the worse things got. Attempts are\nthe sum: rows that got through, plus guard events that stopped one.\n\n    assistant_refusal_pct = assistant_refusals / (assistant_turns + assistant_refusals)\n\nBoth components are published beside the rate, because a percentage with no\ndenominator cannot be read at 03:00 -- 100% of two attempts and 100% of two\nhundred are different incidents.\n\nWHAT TO DO. The reporter writes the breakdown by guard source to its journal\nwhenever it crosses the threshold:\n\n    journalctl -u assistant-health-reporter.service -n 50\n\n| source | means |\n|---|---|\n| assistant | the user's own question tripped the injection scanner. A spike here is usually one tenant pasting document text into the prompt box. |\n| assistant:page-context | the PAGE CONTEXT tripped it -- route, filters or selected ids. This is the surface added in #3841 and the one to suspect after a filter or URL change, because its content is not typed by the user. |\n| assistant:outbound | the ANSWER tripped the egress guard. A spike here is the model, not the input. |\n\nA SPIKE CONFINED TO ONE SOURCE IS THE USEFUL CASE. All three rising together is\na guard-rule or guard-mode change; one rising alone names its own cause.\n\nNOT COVERED, so the absence of this alert is not an all-clear: the\nguidance-route refusal (#3845) writes a log line rather than a row and is not\ncounted; nor is the 429 stream-capacity refusal, which is a load signal and\nwould mislead if folded in here. A tenant in AUDIT guard mode refuses nothing\nand contributes nothing, correctly.\n"
+  }
+}
