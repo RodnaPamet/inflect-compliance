@@ -454,6 +454,15 @@
         },
         "docs/worker-autoscaling.md": {
             "class": "authoritative"
+        },
+        "docs/runbooks/joule-byoa.md": {
+            "class": "authoritative"
+        },
+        "docs/implementation-notes/2026-10-21-a2a-synchronous-answer.md": {
+            "class": "historical"
+        },
+        "docs/implementation-notes/2026-10-20-a2a-host-consumer-card.md": {
+            "class": "historical"
         }
     }
 }

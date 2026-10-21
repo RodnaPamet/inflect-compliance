@@ -1,0 +1,17 @@
+# Digital-assistant deployment descriptor — the entry point for
+# `joule compile` and `joule deploy` (#3865).
+#
+# `schema_version` here is 1.4.0 and is NOT the capability's 3.28.0. Two
+# different schemas, confirmed from SAP's toolkit
+# (`skills/joule-a2a-agent/SKILL.md:318`).
+#
+# Nothing else belongs in this file. `enable_native_agenticness` and
+# `conversational_search` require schema 1.5.0-beta and make `joule deploy`
+# fail under 1.4.0 — the toolkit's reference says so in as many words
+# (`references/joule-capability.md`, section 3).
+schema_version: 1.4.0
+name: inflect_compliance_review_a2a
+capabilities:
+  - type: local
+    name: inflect_compliance_review_a2a
+    folder: ./capability

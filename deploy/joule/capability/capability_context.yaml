@@ -1,0 +1,15 @@
+# Variables that persist across conversation turns (#3865).
+#
+# REQUIRED, not optional. `scenarios/invoke_agent.yaml` references
+# `$capability_context.contextId` and `$capability_context.taskId`, and without
+# this file the Joule compiler fails with
+#
+#   "contextId" / "taskId" must be declared within capability_context.yaml as
+#   variable name
+#
+# It is also the file the issue's own file list omitted — one reason the shape
+# here follows SAP's toolkit from source rather than a recollection of it
+# (`references/joule-capability.md`, section 6).
+variables:
+  - name: contextId
+  - name: taskId
