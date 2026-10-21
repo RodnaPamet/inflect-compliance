@@ -43,12 +43,39 @@ import { Sparkle3, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 
 import { Button } from '@/components/ui/button';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
+import { useTenantContext } from '@/lib/tenant-context-provider';
 
 import { useAssistantOpen } from './assistant-open-context';
 import { AssistantSheet } from './AssistantSheet';
 
 export function AssistantLauncher() {
     const t = useTranslations('assistant');
+    // The ROLE half of the gate.
+    //
+    // `enforceFeatureGate`'s predicate 3 is `ctx.permissions.canWrite` —
+    // Editor, Admin or Owner. A READER is refused every time, so the button is
+    // not shown to one.
+    //
+    // ═══ WHEN TO HIDE AND WHEN TO EXPLAIN ═══
+    //
+    // The distinction this draws, and the reason the plan gate is deliberately
+    // NOT here:
+    //
+    //   · ALWAYS refused for this user — the master switch off, the feature
+    //     off, the role insufficient — nothing they do in this session changes
+    //     it, so a button is a trap. Hide it.
+    //   · Refused for a reason that can CHANGE or that they can act on — the
+    //     plan entitlement — hide it and the feature is undiscoverable to
+    //     someone who could buy it. Show it and let the refusal say why
+    //     (#3849).
+    //
+    // The route permission is `controls.view`, which admits a reader, on the
+    // reasoning that proposing is reader-safe because it only queues. That
+    // reasoning is about the TRANSPORT; the feature gate is stricter, and
+    // where the two disagree the gate wins because it is what actually
+    // refuses. Noted rather than changed: loosening predicate 3 is a product
+    // decision about who may use AI, not a wiring fix.
+    const { permissions } = useTenantContext();
     // Shared with the command palette rather than local — see
     // `assistant-open-context.tsx` for why the state cannot live here.
     const { open, setOpen, setAvailable } = useAssistantOpen();
@@ -94,6 +121,13 @@ export function AssistantLauncher() {
         },
         { description: t('shortcutDescription') },
     );
+
+    // AFTER every hook, never before: an early return above them changes the
+    // hook call order between renders, which React refuses. The shortcut
+    // registration is harmless for a reader because the button it toggles is
+    // not rendered — and `useKeyboardShortcut` is in the registry either way,
+    // which is the lesser of the two wrongs available at this position.
+    if (!permissions.canWrite) return null;
 
     return (
         <>

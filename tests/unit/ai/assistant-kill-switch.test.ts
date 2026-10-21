@@ -74,3 +74,49 @@ describe('isAiFeatureEnabled follows the env flag', () => {
         expect(gate.isAiFeatureEnabled('questionnaire')).toBe(true);
     });
 });
+
+describe('the GLOBAL master switch gates the assistant too (production defect)', () => {
+    /**
+     * What production proved. `AI_RISK_ENABLED=false` was set and nothing else
+     * was, so `AI_ASSISTANT_ENABLED` defaulted to true, the launcher rendered
+     * on every tenant app page, and `enforceFeatureGate` refused every turn
+     * with "AI features are currently disabled".
+     *
+     * `AI_RISK_ENABLED` is predicate 1 of the gate's default-deny allowlist
+     * and applies to every `AiFeature`. The launcher's gate now ANDs both, and
+     * these assertions are what stop it drifting back to one.
+     */
+    function loadBoth(global: string | undefined, assistant: string | undefined) {
+        jest.resetModules();
+        jest.doMock('@/env', () => ({
+            env: {
+                ...ENV_BASE,
+                AI_RISK_ENABLED: global,
+                AI_ASSISTANT_ENABLED: assistant,
+            },
+        }));
+         
+        return require('@/app-layer/ai/risk-assessment/feature-gate') as typeof import('@/app-layer/ai/risk-assessment/feature-gate');
+    }
+
+    it('the master switch off means the assistant is off, whatever its own flag says', () => {
+        const g = loadBoth('false', 'true');
+        // The per-feature flag alone says ON — which is exactly the reading
+        // that shipped a button onto 151 pages.
+        expect(g.isAiFeatureEnabled('assistant')).toBe(true);
+        // The global says OFF, and it is predicate 1 of the gate.
+        expect(g.isAIRiskEnabled()).toBe(false);
+        // So the composition the layout now uses is OFF.
+        expect(g.isAiFeatureEnabled('assistant') && g.isAIRiskEnabled()).toBe(false);
+    });
+
+    it('both on means on — the control', () => {
+        const g = loadBoth('true', undefined);
+        expect(g.isAiFeatureEnabled('assistant') && g.isAIRiskEnabled()).toBe(true);
+    });
+
+    it('the assistant flag off means off even with the master ON', () => {
+        const g = loadBoth('true', 'false');
+        expect(g.isAiFeatureEnabled('assistant') && g.isAIRiskEnabled()).toBe(false);
+    });
+});

@@ -4,7 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { AppShell } from '@/components/layout/AppShell';
 import { ClientProviders } from '@/components/layout/ClientProviders';
 import { NavigationTracker } from '@/components/nav/NavigationTracker';
-import { isAiFeatureEnabled } from '@/app-layer/ai/risk-assessment/feature-gate';
+import { isAiFeatureEnabled, isAIRiskEnabled } from '@/app-layer/ai/risk-assessment/feature-gate';
 import { AssistantLauncher } from '@/components/assistant/AssistantLauncher';
 import { AssistantPageContextProvider } from '@/components/assistant/assistant-page-context';
 
@@ -71,7 +71,25 @@ export default async function AppLayout({
     //
     // The provider wraps BOTH the shell and the launcher: pages inside report
     // their context, and the launcher outside reads it.
-    const assistantEnabled = isAiFeatureEnabled('assistant');
+    // BOTH env switches, not just the per-feature one.
+    //
+    // ═══ THIS SHIPPED WRONG AND PRODUCTION PROVED IT ═══
+    //
+    // The first version checked `isAiFeatureEnabled('assistant')` alone. That
+    // reads `AI_ASSISTANT_ENABLED`, which is absent in production and defaults
+    // to true — so the launcher rendered on all 151 tenant app pages while
+    // `AI_RISK_ENABLED=false` made `enforceFeatureGate` refuse every single
+    // turn with "AI features are currently disabled".
+    //
+    // `AI_RISK_ENABLED` is predicate 1 of the gate's default-deny allowlist
+    // and its own comment calls it the "kill switch for ALL AI features" — it
+    // is checked for every `AiFeature`, the assistant included. Reasoning
+    // carefully about the per-feature flag and never looking at the global one
+    // is how a button that always errors reached every page.
+    //
+    // Which is exactly what the comment three lines down already warned
+    // about. The rule was right and this call site did not implement it.
+    const assistantEnabled = isAiFeatureEnabled('assistant') && isAIRiskEnabled();
 
     return (
         <AssistantPageContextProvider>
