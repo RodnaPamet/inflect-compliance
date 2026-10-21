@@ -39,7 +39,15 @@ const ANTHROPIC_VERSION = '2023-06-01';
  * carries tool results in its context and must still have room to answer.
  * A reply that hits this is reported as a halt rather than parsed as complete.
  */
-const MAX_TOKENS = 8192;
+/**
+ * Output cap per provider round-trip.
+ *
+ * EXPORTED because it is one of the three constants that bound assistant spend
+ * (#3918). `spend-ceiling.ts` multiplies it by the loop's iteration cap and the
+ * tenant daily quota to state the ceiling in tokens, so the figure in that
+ * module's docblock cannot drift from this value.
+ */
+export const MAX_TOKENS = 8192;
 
 /**
  * Per ROUND-TRIP, not per turn. The loop's own `wallClockMs` bounds the whole

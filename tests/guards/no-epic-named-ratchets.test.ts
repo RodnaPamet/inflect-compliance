@@ -501,7 +501,31 @@ describe('epic-named ratchets are not added back', () => {
         // the two values SAP's own toolkit fails `joule deploy` on. Different
         // population, different failure, and widening the first to cover YAML
         // is how a guard's name stops describing it.
-        expect(guardFiles().length).toBeLessThan(797);
+        // RAISED 797 -> 798 on 2026-10-21, for one file, on the grounds this
+        // ceiling states: `bottom-right-corner-has-one-resident.test.ts` is
+        // named for the invariant it protects — the corner the assistant
+        // launcher occupies has one resident, and anything else anchored there
+        // outranks it in z-order so it covers rather than collides.
+        //
+        // Why a new file rather than folding it in. The nearest match is
+        // `modal-overlay-guard`, whose subject is that page authors compose
+        // <Modal>/<Sheet> instead of hand-rolling a `fixed inset-0` backdrop —
+        // overlay PRIMITIVE discipline, scoped to `src/app/t`. This scans
+        // `src/components` for bottom-anchored elements and compares their
+        // z-order. Different population, different failure, and widening the
+        // first to cover corner occupancy is how a guard's name stops
+        // describing it.
+        //
+        // It exists because #3836 asked for this invariant to "remain asserted"
+        // and only the launcher's own position was (#3917). Measuring it found
+        // the prose was also wrong: `src/components/ui/popover.tsx` already
+        // anchors a mobile drawer to the bottom, which #3836 missed by looking
+        // only in `src/components/layout`.
+        //
+        // THE BACKSTOP IS INTACT: the assertion above that names epic-named
+        // files individually is green and unchanged, and this file is named for
+        // an invariant rather than a PR, epic or roadmap item.
+        expect(guardFiles().length).toBeLessThan(798);
     });
 
     /**
