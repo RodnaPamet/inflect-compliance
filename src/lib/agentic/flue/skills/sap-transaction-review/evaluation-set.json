@@ -149,11 +149,10 @@
           "facts"
         ],
         "mustNotInclude": [
-          "4500",
-          "5105"
+          "usr_"
         ]
       },
-      "rationale": "Tests 'When a required input is missing'. No facts were supplied, so the only correct move is to name the gap. The forbidden strings are DOCUMENT-NUMBER PREFIXES: this case's input contains no document number at all, so any '4500…' or '5105…' in the answer was invented, which is the failure the section warns about — a reader cannot tell an illustration from a finding once it is in a report. CORRECTED 2026-10-21: the case also forbade 'for example', and a correct answer failed on it. The model refused to build example documents and then used 'for example' to explain what the facts field should contain. The forbid was aimed at fabrication and hit explanation; the number prefixes catch fabrication without touching prose."
+      "rationale": "Tests 'When a required input is missing'. No facts were supplied, so the only correct move is to name the gap. The forbidden string is a USER IDENTIFIER PREFIX, and it is chosen by measurement rather than by intuition: fabricating a finding requires inventing a createdBy/approvedBy VALUE, whereas explaining which fields `facts` needs does not. Measured across two real runs — 'usr_' appears in NEITHER facts-absent answer, and in 9 of 10 answers overall, so the probe discriminates instead of being blind. CORRECTED TWICE 2026-10-21. It first forbade 'for example', which hit an answer explaining what the field should contain. It then forbade document-number prefixes, which hit '(for example, PO 4500001234)' — a FORMAT hint with no verdict attached, offered right after the model refused to build example documents, and so not mistakable for a finding. Both earlier forms penalised explanation; only an invented identifier distinguishes a fabricated finding from a description of the input."
     },
     {
       "id": "no-test-was-applicable",
