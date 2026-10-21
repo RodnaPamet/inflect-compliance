@@ -23,6 +23,8 @@
  * helpful-looking one-line addition to a ledger write.
  */
 import { readFileSync } from 'fs';
+
+import { repoRelativeFiles } from '../helpers/repo-files';
 import path from 'path';
 
 import {
@@ -51,6 +53,8 @@ const EXECUTE = 'src/lib/agentic/flue/execute.ts';
  * exists to catch.
  */
 const RECORDER = 'src/lib/agentic/flue/model-decision.ts';
+const A2A_INBOUND = 'src/app-layer/usecases/a2a-inbound.ts';
+const A2A_ANSWER = 'src/app-layer/usecases/a2a-run-answer.ts';
 
 describe('output that becomes an action was already scanned', () => {
     it('the egress slice runs before the funnel, on the propose path too', () => {
@@ -213,5 +217,81 @@ describe('output that becomes nothing reaches ONE column', () => {
         expect(engine).toContain("return { status: 'COMPLETED', stepFailures };");
         expect(engine).not.toContain('text: reply');
         expect(engine).not.toContain('summary: reply.text');
+    });
+});
+
+/**
+ * ── THE INVARIANT AFTER #3863: NO SINK WITHOUT A SCAN ───────────────────────
+ *
+ * The blocks above pin where model prose GOES: a tool argument, already
+ * scanned, or one column. They say nothing about who reads that column back
+ * out, and until #3863 that did not matter, because every reader kept the text
+ * inside the organisation — a stored narrative row, a decision-log view, an
+ * attribution.
+ *
+ * The synchronous A2A answer is the first reader that sends it to ANOTHER
+ * ORGANISATION. So the claim this file makes is extended rather than relaxed:
+ * the set of readers is pinned, and the one that crosses the boundary has to
+ * pass an egress scan.
+ *
+ * Note what is deliberately NOT asserted: that there is one reader. There were
+ * already three before this, and counting them would fail for a reason that has
+ * nothing to do with safety.
+ */
+describe('a reader that sends model prose out of the organisation scans it (#3863)', () => {
+    /** Every file that READS `AiDecisionLog.outputSummary` back out. */
+    const READERS = [
+        // Keeps it inside: stamps the Art 12 row's own attribution.
+        'src/app-layer/usecases/agent-harness-attribution.ts',
+        // Keeps it inside: the operator's view of the decision log.
+        'src/app-layer/usecases/ai-decision-log.ts',
+        // Keeps it inside: captures the narrative onto its workpaper row.
+        'src/app-layer/usecases/audit-workpaper-narrative.ts',
+        // LEAVES: the synchronous answer to a host consumer (#3863).
+        A2A_ANSWER,
+    ];
+
+    it('the readers are exactly these, so a new one is a reviewed diff', () => {
+        // Derived from the tree, not asserted about it: a reader added without
+        // a line here fails, and the failure names the file.
+        const found = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/') && f.endsWith('.ts'))
+            .filter((f) => {
+                const body = readFileSync(path.join(ROOT, f), 'utf8');
+                return /select:\s*\{[^}]*outputSummary:\s*true/.test(body)
+                    || /outputSummary:\s*true/.test(body);
+            })
+            .sort();
+        expect(found).toEqual([...READERS].sort());
+    });
+
+    it('the one that leaves the organisation is answered through a scan', () => {
+        const inbound = read(A2A_INBOUND);
+        // Both `answer` closures — the peer's and the host's — scan before
+        // returning. Counted, because the host one was added later and a third
+        // principal would arrive the same way.
+        const closures = inbound.split('const answer = async').length - 1;
+        const scans = inbound.split("guardEgress(sys, result, { source: 'a2a-inbound-answer' })").length - 1;
+        expect({ closures, scans }).toEqual({ closures: 2, scans: 2 });
+    });
+
+    it('the answer text reaches the response ONLY through that closure', () => {
+        const inbound = read(A2A_INBOUND);
+        // `taskFor` is what builds the text part, and every call of it is an
+        // argument to `answer(...)`. A `return taskFor(...)` that skipped the
+        // closure would skip the scan, and it is a one-word edit away.
+        const taskForCalls = inbound.split('taskFor(').length - 1;
+        const insideAnswer = inbound.split('answer(').length - 1;
+        expect(taskForCalls).toBeGreaterThan(0);
+        expect(inbound).not.toMatch(/return\s+await\s+taskFor\(/);
+        expect(insideAnswer).toBeGreaterThanOrEqual(taskForCalls - 1);
+    });
+
+    it('the reader itself does not scan, and says so — the caller does', () => {
+        // Guards against the OTHER failure: a future edit moving the scan into
+        // the reader, leaving the response path believing it is covered twice
+        // while a second caller gets none.
+        const answerReader = read(A2A_ANSWER);
+        expect(answerReader).not.toContain('guardEgress');
     });
 });
