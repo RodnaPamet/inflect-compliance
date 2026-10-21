@@ -358,13 +358,31 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
                 items: [{ title: 'Editor-proposed risk', description: 'should queue' }],
             });
 
-            const result = resultOf(json) as { proposed?: number; status?: string } | undefined;
+            const result = resultOf(json) as
+                | { proposed?: number; quarantined?: number }
+                | undefined;
             expect(errorMessageOf(json)).toBeUndefined();
             expect(result?.proposed).toBe(1);
-            expect(result?.status).toBe('PENDING');
+            // Nothing was withheld, which is what makes `proposed: 1` mean the
+            // item actually reached the queue.
+            expect(result?.quarantined).toBe(0);
 
             const after = await prisma.agentProposal.count({ where: { tenantId: TENANT_A } });
             expect(after).toBe(before + 1);
+
+            // PENDING is asserted on the ROW, not on the tool result (#3900).
+            //
+            // This used to read `result.status`, a batch-level scalar the seam
+            // returned unconditionally — so it said `PENDING` even when every
+            // item in the batch had been quarantined. It is gone, and reading
+            // the row instead makes this assertion STRONGER than the one it
+            // replaces: the row is where the status is actually recorded, and
+            // it is the thing a reviewer will act on.
+            const queued = await prisma.agentProposal.findFirst({
+                where: { tenantId: TENANT_A },
+                orderBy: { createdAt: 'desc' },
+            });
+            expect(queued?.status).toBe('PENDING');
         });
 
         it('the two keys are otherwise identical — the principal is the only difference', async () => {
