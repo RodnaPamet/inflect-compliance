@@ -243,6 +243,32 @@ export interface RunLoopOptions {
      * thrown error meant. See `LoopOutcome['halted-guard-review']`.
      */
     readonly guardTripped?: () => boolean;
+    /**
+     * Called with a tool's name BEFORE it is dispatched (#3886).
+     *
+     * Before, not after, and that ordering is the entire point. The reason a
+     * `tool_call` event exists is that naming the lookup justifies the wait —
+     * "checking your evidence expiry" tells the user why the pause is
+     * reasonable where a bare spinner does not. Emitted after the fact, the
+     * event arrives AFTER the pause it was meant to explain, so the pause is
+     * still unexplained and "a silent pause reads as a hang" is only half
+     * answered.
+     *
+     * Both hooks are called inside a try/catch. An observer is usually an
+     * emit into a stream, and a client that has gone away must not be able to
+     * abort a turn that is still spending tokens on its behalf — the turn's
+     * own `signal` is how a disconnect stops work, not an exception from a
+     * notification.
+     */
+    readonly onToolCall?: (name: string) => void;
+    /**
+     * Called once the result is recorded, with how the call ended.
+     *
+     * After `calls.push`, so the trail and the event cannot disagree about
+     * what happened, and before the guard-latch check, so a caller watching
+     * sees the call that tripped the latch rather than only the halt.
+     */
+    readonly onToolResult?: (name: string, ok: boolean, truncated: boolean) => void;
 }
 
 /**
@@ -262,6 +288,24 @@ export interface RunLoopOptions {
  * which is the behaviour the six existing `ai/*-provider.ts` implementations
  * already have.
  */
+/**
+ * Call an observer without letting it end the turn.
+ *
+ * The observers are emits into an SSE stream. A closed stream, a client that
+ * navigated away, a bug in a formatter — none of those are reasons to abandon
+ * a turn the tenant is being charged for, and none of them are the turn's own
+ * `signal`, which IS how a disconnect stops work.
+ */
+function notify(fn: (() => void) | undefined): void {
+    if (fn === undefined) return;
+    try {
+        fn();
+    } catch {
+        // Deliberately swallowed — see above. There is nowhere to report it
+        // that the failing observer is not already responsible for.
+    }
+}
+
 export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult> {
     const bounds = opts.bounds ?? DEFAULT_LOOP_BOUNDS;
     const now = opts.now ?? (() => Date.now());
@@ -346,6 +390,10 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
                 // offered set. Reported as a result rather than a throw: the
                 // model should correct itself, and an unknown name is not an
                 // authorization event — the funnel never saw it.
+                // Observed like any other call. The model DID attempt it, the
+                // attempt is in `calls`, and a watcher that saw nothing here
+                // would show a gap where a real (failed) lookup happened.
+                notify(() => opts.onToolCall?.(call.name));
                 history.push({
                     role: 'tool',
                     id: call.id,
@@ -353,8 +401,14 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
                     content: `ERROR: no tool named "${call.name}" is available to you. Do not try it again.`,
                 });
                 calls.push({ name: call.name, ok: false, bytes: 0, truncated: false });
+                notify(() => opts.onToolResult?.(call.name, false, false));
                 continue;
             }
+
+            // BEFORE the dispatch — the whole point of #3886. The client
+            // learns the name while the call is in flight, so the pause it is
+            // about to sit through is already explained.
+            notify(() => opts.onToolCall?.(call.name));
 
             let bounded: { content: string; bytes: number; truncated: boolean };
             let ok = true;
@@ -372,6 +426,7 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
 
             history.push({ role: 'tool', id: call.id, name: call.name, content: bounded.content });
             calls.push({ name: call.name, ok, bytes: bounded.bytes, truncated: bounded.truncated });
+            notify(() => opts.onToolResult?.(call.name, ok, bounded.truncated));
 
             // AFTER recording, so the trail shows the call that tripped it, and
             // BEFORE the next dispatch, so nothing runs past the trip.

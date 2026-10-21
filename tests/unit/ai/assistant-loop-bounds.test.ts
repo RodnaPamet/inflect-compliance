@@ -494,3 +494,167 @@ describe('what a turn cost, and the difference between zero and unknown (#3833)'
         expect(r.tokensIn).toBeGreaterThan(0);
     });
 });
+
+describe('tool events are LIVE, not replayed after the turn (#3886)', () => {
+    /**
+     * The property, and why presence is not enough to assert.
+     *
+     * The previous implementation replayed `result.calls` after the loop
+     * returned. Every event arrived, in the right order, with the right names
+     * and truncation flags — so a test that only checked *which* events arrived
+     * passed against it. What it could not do is arrive while the call was
+     * still running, which is the only reason `tool_call` exists: naming the
+     * lookup justifies the wait. Replayed, it arrived after the pause it was
+     * meant to explain.
+     *
+     * So these assertions are about ORDER WITH RESPECT TO THE DISPATCH, which
+     * is the thing that changed.
+     */
+    it('announces the tool BEFORE its run resolves', async () => {
+        const seen: string[] = [];
+        // The tool's own body records when it STARTED. If the event were
+        // replayed afterwards, 'call:list_findings' would land after
+        // 'run-started' — and after 'run-finished' too.
+        const slow = tool('list_findings', async () => {
+            seen.push('run-started');
+            await Promise.resolve();
+            seen.push('run-finished');
+            return 'rows';
+        });
+
+        await runAssistantLoop({
+            provider: scriptedProvider([wantsTool('c1', 'list_findings'), answer('3 findings.')]),
+            specifier: 'anthropic/claude-haiku-4-5',
+            system: 'sys',
+            question: 'how many findings?',
+            tools: [slow],
+            bounds: BOUNDS,
+            now: () => 0,
+            onToolCall: (name) => seen.push(`call:${name}`),
+            onToolResult: (name, ok) => seen.push(`result:${name}:${ok}`),
+        });
+
+        expect(seen).toEqual([
+            'call:list_findings',
+            'run-started',
+            'run-finished',
+            'result:list_findings:true',
+        ]);
+    });
+
+    it('announces each call exactly ONCE', async () => {
+        // The duplication this guards against is specific: if the post-hoc
+        // replay had been left in place alongside the live hooks, every call
+        // would be announced twice, and a duplicate `tool_call` reads to a
+        // client as a second lookup the assistant never made.
+        const calls: string[] = [];
+        const results: string[] = [];
+
+        await runAssistantLoop({
+            provider: scriptedProvider([
+                wantsTool('c1', 'list_findings'),
+                wantsTool('c2', 'list_risks'),
+                answer('done.'),
+            ]),
+            specifier: 'anthropic/claude-haiku-4-5',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('list_findings'), tool('list_risks')],
+            bounds: BOUNDS,
+            now: () => 0,
+            onToolCall: (name) => calls.push(name),
+            onToolResult: (name) => results.push(name),
+        });
+
+        expect(calls).toEqual(['list_findings', 'list_risks']);
+        expect(results).toEqual(['list_findings', 'list_risks']);
+    });
+
+    it('reports a FAILED call as a result, not as a missing event', async () => {
+        // A tool that throws still produced a call and a result. A watcher that
+        // saw the announcement and never saw an outcome would leave
+        // "Reading list_findings…" on screen for the rest of the turn.
+        const seen: string[] = [];
+        await runAssistantLoop({
+            provider: scriptedProvider([wantsTool('c1', 'list_findings'), answer('done.')]),
+            specifier: 'anthropic/claude-haiku-4-5',
+            system: 'sys',
+            question: 'q',
+            tools: [
+                tool('list_findings', async () => {
+                    throw new Error('upstream exploded');
+                }),
+            ],
+            bounds: BOUNDS,
+            now: () => 0,
+            onToolCall: (name) => seen.push(`call:${name}`),
+            onToolResult: (name, ok) => seen.push(`result:${name}:${ok}`),
+        });
+        expect(seen).toEqual(['call:list_findings', 'result:list_findings:false']);
+    });
+
+    it('observes a tool the model INVENTED, which never reaches a run', async () => {
+        // The unknown-name branch returns early. It still pushed a call onto
+        // the trail, so it must still be announced — otherwise the events and
+        // `result.calls` disagree about what the model did.
+        const seen: string[] = [];
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([wantsTool('c1', 'list_invented'), answer('done.')]),
+            specifier: 'anthropic/claude-haiku-4-5',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('list_findings')],
+            bounds: BOUNDS,
+            now: () => 0,
+            onToolCall: (name) => seen.push(`call:${name}`),
+            onToolResult: (name, ok) => seen.push(`result:${name}:${ok}`),
+        });
+        expect(seen).toEqual(['call:list_invented', 'result:list_invented:false']);
+        // And the events match the trail, which is the invariant that matters.
+        expect(r.calls.map((c) => c.name)).toEqual(['list_invented']);
+    });
+
+    it('an observer that THROWS does not abort the turn', async () => {
+        // The observers are emits into a stream. A client that has gone away
+        // must not be able to end a turn the tenant is being charged for —
+        // the turn's own `signal` is how a disconnect stops work, not an
+        // exception from a notification.
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([wantsTool('c1', 'list_findings'), answer('3 findings.')]),
+            specifier: 'anthropic/claude-haiku-4-5',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('list_findings')],
+            bounds: BOUNDS,
+            now: () => 0,
+            onToolCall: () => {
+                throw new Error('stream closed');
+            },
+            onToolResult: () => {
+                throw new Error('stream closed');
+            },
+        });
+
+        expect(r.outcome).toBe('answered');
+        expect(r.text).toBe('3 findings.');
+        // The call still happened and is still on the trail — the failure was
+        // in telling someone about it, not in doing it.
+        expect(r.calls.map((c) => c.name)).toEqual(['list_findings']);
+    });
+
+    it('runs unchanged with no observers at all', async () => {
+        // `/assistant/ask` passes none. The control for the whole block: hooks
+        // that were required rather than optional would break that caller.
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([wantsTool('c1', 'list_findings'), answer('3 findings.')]),
+            specifier: 'anthropic/claude-haiku-4-5',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('list_findings')],
+            bounds: BOUNDS,
+            now: () => 0,
+        });
+        expect(r.outcome).toBe('answered');
+        expect(r.calls).toHaveLength(1);
+    });
+});

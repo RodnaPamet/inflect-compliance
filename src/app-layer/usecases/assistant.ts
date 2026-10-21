@@ -497,18 +497,20 @@ async function answerFromToolLoop(
         tools: set.tools,
         guardTripped: set.reviewRequired,
         signal: observe.signal,
+        // LIVE, per dispatch (#3886). These used to be replayed from
+        // `result.calls` AFTER the loop returned: the events arrived in the
+        // right order with the right names, and all of them arrived together
+        // just before the answer — so the `tool_call` event that exists to
+        // explain a pause arrived after the pause had already happened.
+        //
+        // The replay loop that used to sit here is GONE rather than kept
+        // alongside: with both, every call would be announced twice, and a
+        // duplicate `tool_call` reads to a client as a second lookup the
+        // assistant never made.
+        onToolCall: observe.onToolCall,
+        onToolResult: observe.onToolResult,
     });
 
-    // Observation AFTER the loop rather than during it, which is a real
-    // limitation and not a preference: `runAssistantLoop` returns its call
-    // list when the turn ends, so these events describe work already done.
-    // A caller watching sees them in order, but not while each call is still
-    // in flight. Making them live means the loop taking a per-dispatch hook,
-    // which is #3886.
-    for (const call of result.calls) {
-        observe.onToolCall?.(call.name);
-        observe.onToolResult?.(call.name, call.ok, call.truncated);
-    }
     if (result.outcome !== 'answered') {
         const notice = haltNotice(result.outcome, DEFAULT_LOOP_BOUNDS);
         if (notice !== null) observe.onHalt?.(result.outcome, notice);
