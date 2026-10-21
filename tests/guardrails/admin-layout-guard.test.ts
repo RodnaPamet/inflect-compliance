@@ -76,6 +76,8 @@ describe('No duplicate admin guards on pages', () => {
     const STRICTER_GUARD_PAGES: Record<string, string> = {
         'external-write-policy/[connectionId]/page.tsx':
             'OWNER-only (admin.tenant_lifecycle) — deciding how far an AGENT may go when driving a write to a customer\'s own third-party system is authority of the same class as tenant deletion and DEK rotation, and it is the same key the identity write policy uses for the directory equivalent; an ADMIN who is not an OWNER would otherwise reach a rendered page and be told the policy "couldn\'t load", which is a permission refusal wearing the costume of a broken backend',
+        'ai-features/page.tsx':
+            'OWNER-only (admin.tenant_lifecycle) — the page turns AI on or off for the whole workspace, which for some customers is a contractual undertaking that no model processes their data; the layout\'s admin.view would let a non-OWNER admin reach it and read the API 403 as a broken backend, and the page also discloses the deploy-level flags, which is infrastructure state rather than tenant configuration',
         'modules/page.tsx':
             'OWNER-only (admin.tenant_lifecycle) — turning a product module on or off grants or removes a whole surface for the tenant, which is authority of the same class as tenant deletion; an ADMIN who is not an OWNER would otherwise reach the page and read the API 403 as a broken backend',
         'identity-leaver-passes/page.tsx':

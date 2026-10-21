@@ -131,6 +131,14 @@ const AI_GUARD_EXEMPT: Readonly<Record<string, string>> = {
         'that: the static driver has no model call at all, and the Flue ' +
         "driver's ingestion is guarded at the tool boundary in " +
         '`flue/tools-adapter.ts`, whose own tests assert both slices.',
+    'src/app-layer/usecases/ai-feature-toggles.ts':
+        'Imports `ai/risk-assessment/feature-gate` for `isAIRiskEnabled` and ' +
+        '`isAiFeatureEnabled` — two reads of process constants, used to report ' +
+        'what the DEPLOY permits beside what the tenant chose. It assembles no ' +
+        'prompt, calls no model, and the only values it writes are four ' +
+        'booleans parsed by a `z.boolean()` route schema, so no free text ' +
+        'exists here to guard. It is the surface that turns the model OFF; ' +
+        'guarding its ingestion would be guarding the kill switch.',
     'src/app-layer/usecases/a2a-inbound.ts':
         'Imports `ai/guard` for `guardEgress` on the answer to an A2A peer ' +
         '(#3679); it assembles no prompt and calls no model. The untrusted ' +

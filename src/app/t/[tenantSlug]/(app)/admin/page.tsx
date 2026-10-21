@@ -1,5 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { Shield, CreditCard, KeyRound, ShieldCheck, ShieldPlus, Users, UserCog, CloudCog, Plug, Palette, Grid3x3, Gauge, Bell, ScrollText, Globe, Laptop, GraduationCap, ClipboardList, ClipboardCheck, Lock } from 'lucide-react';
+import { Sparkles, Shield, CreditCard, KeyRound, ShieldCheck, ShieldPlus, Users, UserCog, CloudCog, Plug, Palette, Grid3x3, Gauge, Bell, ScrollText, Globe, Laptop, GraduationCap, ClipboardList, ClipboardCheck, Lock } from 'lucide-react';
 import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button-variants';
@@ -70,6 +70,14 @@ export default async function AdminPage({
                 // workspace-shaped settings, and one module does not make a
                 // category.
                 { href: '/admin/modules', id: 'modules-pill-btn', icon: <Grid3x3 className={iconCls} />, label: t('nav.modules') },
+                // AI switches. Beside modules rather than in the security
+                // section: this decides what the workspace HAS, like a module,
+                // and not who may reach it. The pill is visible to any reader
+                // of the admin index — the page behind it gates on
+                // `admin.tenant_lifecycle` and says so, which is the right
+                // shape here: the feature is discoverable, and the refusal
+                // names the one role that can change it.
+                { href: '/admin/ai-features', id: 'ai-features-pill-btn', icon: <Sparkles className={iconCls} />, label: t('nav.aiFeatures') },
             ],
         },
         {

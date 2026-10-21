@@ -190,6 +190,7 @@ export const SUBPAGES: readonly string[] = [
     // third-party-system authority rather than the directory one.
     '/admin/external-write-policy/[connectionId]',
     '/admin/identity-write-policy',
+    '/admin/ai-features',
     '/admin/modules',
     '/admin/integrations',
     '/admin/integrations/sharepoint-health',

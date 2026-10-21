@@ -582,10 +582,23 @@ describe('New page token discipline', () => {
         //     + PageBreadcrumbs + BackAffordance primitives, no legacy
         //     btn/badge/glass-card); in the unmigrated tally only because the
         //     surface is new and not yet promoted to MIGRATED_PAGES.
+        //   - 143 (+2): AI feature switches — admin/ai-features/page.tsx +
+        //     AiFeaturesClient.tsx, the OWNER-only surface where the four AI
+        //     flags are flipped. It exists because the three per-feature flags
+        //     and the master switch were env-only, so turning AI off for one
+        //     workspace meant a deploy for all of them — and because the
+        //     launcher bug (#3909) showed what happens when a control renders
+        //     from one predicate while the request behind it is refused by
+        //     another: this page's rows say WHICH layer stopped a feature.
+        //     Token-clean (semantic content-*/bg-*/border-* only; Heading +
+        //     Button + StatusBadge + InlineNotice + ErrorState +
+        //     PageBreadcrumbs + BackAffordance primitives, no legacy
+        //     btn/badge/glass-card); in the unmigrated tally only because the
+        //     surface is new and not yet promoted to MIGRATED_PAGES.
         // Each increment names the epic + page + reason; promotion
         // to MIGRATED_PAGES is the path forward, never silent
         // floor-bumping.
-        expect(unmigrated.length).toBeLessThanOrEqual(141);
+        expect(unmigrated.length).toBeLessThanOrEqual(143);
     });
 
     it('migrated page count is at least 4', () => {

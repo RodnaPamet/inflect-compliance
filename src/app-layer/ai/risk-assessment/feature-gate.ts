@@ -16,6 +16,9 @@
 import { forbidden } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
 import { env } from '@/env';
+import { runInTenantContext } from '@/lib/db-context';
+import { AI_MASTER_COLUMN, columnForFeature } from './tenant-toggle-columns';
+import { logger } from '@/lib/observability/logger';
 
 // ─── Configuration ───
 
@@ -148,12 +151,88 @@ export function checkFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk
  * When `AI_RISK_PLAN_REQUIRED` is empty — the default — this is exactly
  * `checkFeatureGate` with no additional work and no DB read.
  */
+/**
+ * The PER-TENANT half of the gate — the part an admin can flip from the UI.
+ *
+ * ═══ WHY THIS IS AND-ED WITH THE ENV, NEVER INSTEAD OF IT ═══
+ *
+ *   effective = env_global AND env_feature AND tenant_master AND tenant_feature
+ *
+ * The env flags stay able to force OFF because they are the kill switch: a
+ * tenant row that could override an env `false` would leave an operator no way
+ * to stop AI without a deploy. So this function can only ever REFUSE something
+ * the env already allowed.
+ *
+ * ═══ IT FAILS CLOSED, AND THAT IS THE UNUSUAL CHOICE ═══
+ *
+ * `resolveModeForTenant` in `ai/guard` defaults to `balanced` when its read
+ * fails, because a guard that cannot read its mode should still guard. This
+ * refuses instead, and the asymmetry is deliberate: the two answer different
+ * questions.
+ *
+ * A tenant turns AI off for reasons that are frequently contractual — no model
+ * processing of their data at all. Running a model for them because a row was
+ * briefly unreadable is a governance breach that cannot be undone; refusing for
+ * the same moment is a feature that looks down. Of the two, the recoverable one
+ * is the right failure.
+ *
+ * It is also the only direction consistent with the allowlist above, which is
+ * default-deny by construction — "every predicate must pass" cannot mean "or
+ * error".
+ */
+async function checkTenantToggle(
+    ctx: RequestContext,
+    feature: AiFeature,
+): Promise<FeatureGateResult> {
+    const column = columnForFeature(feature);
+    try {
+        const row = await runInTenantContext(ctx, (db) =>
+            db.tenantSecuritySettings.findUnique({
+                where: { tenantId: ctx.tenantId },
+                select: { [AI_MASTER_COLUMN]: true, [column]: true } as Record<string, true>,
+            }),
+        );
+        // NO ROW is not a refusal. A tenant that has never opened the settings
+        // page has no row, and the schema defaults are all `true` — so the
+        // absence means "inherits whatever env allows", which is what the
+        // column defaults say.
+        if (row === null) return { allowed: true };
+
+        const settings = row as unknown as Record<string, boolean>;
+        if (settings[AI_MASTER_COLUMN] === false) {
+            return { allowed: false, reason: 'AI features are turned off for this workspace' };
+        }
+        if (settings[column] === false) {
+            return {
+                allowed: false,
+                reason: `${FEATURE_LABEL[feature]} is turned off for this workspace`,
+            };
+        }
+        return { allowed: true };
+    } catch (err) {
+        logger.warn('ai-feature-gate: tenant toggle read failed, refusing', {
+            requestId: ctx.requestId,
+            tenantId: ctx.tenantId,
+            feature,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return {
+            allowed: false,
+            reason: 'AI availability could not be confirmed for this workspace',
+        };
+    }
+}
+
 export async function checkFeatureGateWithPlan(
     ctx: RequestContext,
     feature: AiFeature = 'risk',
 ): Promise<FeatureGateResult> {
     const sync = checkFeatureGate(ctx, feature);
     if (!sync.allowed) return sync;
+    // The per-tenant toggles, which run ALWAYS — unlike the plan gate, they are
+    // not conditional on an env opt-in.
+    const tenant = await checkTenantToggle(ctx, feature);
+    if (!tenant.allowed) return tenant;
     if (!AI_RISK_PLAN_REQUIRED) return { allowed: true };
     return checkPlanEntitlement(ctx);
 }
@@ -171,19 +250,17 @@ export async function checkFeatureGateWithPlan(
  * existed — a missing `await` can never make the gate weaker than it
  * was. Only the plan gate rides on the returned Promise.
  */
-export function enforceFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk'): Promise<void> {
-    const sync = checkFeatureGate(ctx, feature);
-    if (!sync.allowed) {
-        throw forbidden(sync.reason ?? 'This AI feature is not available');
+export async function enforceFeatureGate(
+    ctx: RequestContext,
+    feature: AiFeature = 'risk',
+): Promise<void> {
+    // `async` now rather than a hand-rolled promise chain: the per-tenant
+    // toggle below is a database read that runs on EVERY call, so the
+    // `Promise.resolve()` fast path this used to take no longer exists.
+    const result = await checkFeatureGateWithPlan(ctx, feature);
+    if (!result.allowed) {
+        throw forbidden(result.reason ?? 'This AI feature is not available');
     }
-    // Opted out of plan gating (the default) — nothing async to do.
-    if (!AI_RISK_PLAN_REQUIRED) return Promise.resolve();
-
-    return checkPlanEntitlement(ctx).then((result) => {
-        if (!result.allowed) {
-            throw forbidden(result.reason ?? 'This AI feature is not available');
-        }
-    });
 }
 
 /**

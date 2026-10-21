@@ -760,6 +760,25 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'that decides whether a customer sees it cannot sit below OWNER.',
     },
 
+    // ── AI feature switches (per tenant) ───────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/ai-features(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Turns AI on or off for the whole workspace — the master switch ' +
+            'plus the three per-feature ones. On the same OWNER key as the ' +
+            'process-canvas module rather than a narrower admin read key, for ' +
+            'a reason that is contractual rather than technical: a customer ' +
+            'may have undertaken that no model processes their data, and the ' +
+            'control honouring that undertaking cannot sit where day-to-day ' +
+            'administration can reach it. The GET shares the key because it ' +
+            'discloses the deploy-level flags (which features the platform ' +
+            'runs at all), which is infrastructure state rather than tenant ' +
+            'configuration. Note the route can only ever flip the TENANT ' +
+            'layer: the env flags are read once at process start, so no ' +
+            'permission grants the power to change them from here.',
+    },
+
     // ── JML identity-write authority (per direction) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/identity-write-policy(\\/.*)?$`),

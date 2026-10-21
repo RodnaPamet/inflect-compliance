@@ -120,6 +120,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // breadcrumb names the same target, so the two cannot disagree.
     '/admin/external-write-policy/[connectionId]': { href: '/agents/external-tools', label: 'External tools' },
     '/admin/identity-write-policy': { href: '/admin/integrations', label: 'Integrations' },
+    '/admin/ai-features': { href: '/admin', label: 'Admin' },
     '/admin/modules': { href: '/admin', label: 'Admin' },
     '/admin/integrations': { href: '/admin', label: 'Admin' },
     '/admin/integrations/sharepoint-health': { href: '/admin/integrations', label: 'Integrations' },
