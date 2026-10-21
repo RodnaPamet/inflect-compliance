@@ -25,6 +25,7 @@ import {
 } from '@/lib/agentic/workflows/sap-transaction-facts';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { isExternalToolName } from '@/lib/mcp/external-tool-name';
+import { asA2aFactsJson, sapScenario, sapScenarios } from '../../fixtures/sap/sap-scenarios';
 import type { WorkflowContext } from '@/lib/agentic/workflow-types';
 
 const doc = (over: Record<string, unknown> = {}) => ({
@@ -210,5 +211,54 @@ describe('the static synthesis claims no judgement it did not make', () => {
         const out = synth()(ctx({ question: 'q', facts: '{bad' }, { controls: [] }));
         expect(out.data).toMatchObject({ factsAccepted: false, reason: 'MALFORMED_JSON' });
         expect(out.text).toContain('No review was performed');
+    });
+});
+
+describe('the shared SAP fixtures reach this workflow (#3867)', () => {
+    // THE LINK THAT MAKES "ONE SOURCE" REAL. The scenarios in
+    // `tests/fixtures/sap/sap-scenarios.ts` are the MCP route's fixture set,
+    // and #3867 requires the same data to serve this workflow's tests rather
+    // than a second copy of it.
+    //
+    // Scope, stated rather than implied: the local `doc()` above stays for
+    // SCHEMA-SHAPE cases — an unknown key, a bound, a date kept as a string —
+    // where a full scenario proves nothing extra. And the judgement cases live
+    // in the evaluation set as PROSE, which cannot derive mechanically from
+    // structured fixtures. What the shared file is the single source of is
+    // structured facts, which is what these assert.
+
+    it('the SoD scenario flows through the real schema and synthesis', () => {
+        const facts = asA2aFactsJson(sapScenario('creator-is-approver'));
+        const step = sapTransactionReviewWorkflow.steps.find((x) => x.kind === 'SYNTHESIS');
+        if (!step || !('synthesize' in step)) throw new Error('no synthesis step');
+        const out = step.synthesize({
+            input: { question: 'any SoD issue?', facts },
+            outputs: { controls: [{}, {}] },
+        } as unknown as WorkflowContext);
+        expect(out.data).toMatchObject({ factsAccepted: true, documents: 1, judgementMade: false });
+    });
+
+    it('a scenario with no approver reports the gap, through this workflow', () => {
+        const facts = asA2aFactsJson(sapScenario('two-partners-one-name'));
+        const step = sapTransactionReviewWorkflow.steps.find((x) => x.kind === 'SYNTHESIS');
+        if (!step || !('synthesize' in step)) throw new Error('no synthesis step');
+        const out = step.synthesize({
+            input: { question: 'q', facts },
+            outputs: { controls: [] },
+        } as unknown as WorkflowContext);
+        const data = out.data as { notGiven: Array<{ notGiven: string[] }> };
+        expect(data.notGiven.some((g) => g.notGiven.join(' ').includes('no approver'))).toBe(true);
+    });
+
+    it('every scenario with documents is accepted by this workflow’s schema', () => {
+        // Derived, not listed: a scenario added to the shared file that this
+        // workflow cannot read fails HERE, which is the drift the single source
+        // exists to prevent.
+        const withDocs = sapScenarios().filter((s) => s.documents.length > 0);
+        expect(withDocs.length).toBeGreaterThan(5);
+        for (const scenario of withDocs) {
+            const r = readSapTransactionFacts(asA2aFactsJson(scenario));
+            expect({ id: scenario.id, ok: r.ok }).toEqual({ id: scenario.id, ok: true });
+        }
     });
 });
