@@ -6,6 +6,7 @@
 import '@/lib/zod-jitless';
 import { useEffect, useMemo, useState } from 'react';
 import { Toaster } from 'sonner';
+import { AssistantOpenProvider } from '@/components/assistant/assistant-open-context';
 import { SWRConfig } from 'swr';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import { SessionExpiredNotice } from '@/components/layout/session-expired-notice';
@@ -147,6 +148,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
                 <CommandPaletteProvider>
                     <ThemeProvider>
                         <TooltipProvider>
+                          {/*
+                           * Wraps BOTH `{children}` and `<CommandPalette />`.
+                           * The launcher lives inside the former and the
+                           * palette's command list inside the latter, and the
+                           * palette needs to be able to open the assistant
+                           * (#3840) — so the state has to sit above both.
+                           */}
+                          <AssistantOpenProvider>
                             <FormTelemetrySink />
                             {/*
                              * #2222 — ONE notice for a lapsed session, mounted once
@@ -157,6 +166,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
                             <SessionExpiredNotice />
                             {children}
                             <CommandPalette />
+                          </AssistantOpenProvider>
                             {/*
                              * Epic 57 — `?` pops a live listing of every
                              * registered shortcut. Mounted once at the shell so

@@ -63,7 +63,7 @@ jest.mock('@/app-layer/usecases/agent-proposals', () => ({
     createAgentProposal: jest.fn(),
 }));
 
-import { askAssistant } from '@/app-layer/usecases/assistant';
+import { askAssistant, streamAssistant } from '@/app-layer/usecases/assistant';
 import { enforceFeatureGate } from '@/app-layer/ai/risk-assessment/feature-gate';
 import { checkRateLimit, recordGeneration } from '@/app-layer/ai/risk-assessment/rate-limiter';
 import { guardUntrustedInput, guardEgress } from '@/app-layer/ai/guard';
@@ -226,5 +226,85 @@ describe('askAssistant — the Art 12 decision row (#3828)', () => {
         logAiDecisionMock.mockRejectedValueOnce(new Error('db down'));
         const r = await askAssistant(ctx, { question: 'how many open findings?' });
         expect(r.message).toMatch(/open finding/);
+    });
+});
+
+describe('the STREAMING surface can do everything the ask surface can (#3899)', () => {
+    /**
+     * The regression this block exists for.
+     *
+     * `streamAssistant` used to re-implement a SUBSET of `produceAnswer`: it
+     * called `answerFromToolLoop` and fell back to `answerFromKeywords`. Both
+     * answer READ questions — the loop runs `readOnly: true` — so the propose
+     * intents, which live only in `produceAnswer`, were unreachable from the
+     * SSE route.
+     *
+     * Nothing failed. `/assistant/ask` still proposed and had no caller, while
+     * the UI streamed and rendered a queued-proposal block that nothing could
+     * ever produce. An e2e asking for a finding through the real UI is what
+     * surfaced it, which is why these assertions are at the usecase level now:
+     * an e2e catches it in fifteen minutes, this catches it in one second.
+     */
+    const collect = async (question: string) => {
+        const events: Array<Record<string, unknown>> = [];
+        await streamAssistant(ctx, { question }, {
+            emit: (e: unknown) => events.push(e as Record<string, unknown>),
+        } as never);
+        return events;
+    };
+
+    it('PROPOSES on a "raise a finding" request, as the ask surface does', async () => {
+        (createAgentProposal as jest.Mock).mockResolvedValue({
+            id: 'prop-s1',
+            kind: 'FINDING',
+            status: 'PENDING',
+        });
+
+        const events = await collect('raise a finding about missing MFA on the VPN');
+
+        expect(createAgentProposal).toHaveBeenCalledTimes(1);
+        const answer = events.find((e) => e.type === 'answer');
+        expect(answer).toBeDefined();
+        // The id and status travel as DATA on the event, so the UI can render
+        // "queued" with a link without parsing the sentence (#3847).
+        expect(answer?.proposal).toMatchObject({ id: 'prop-s1', status: 'PENDING' });
+    });
+
+    it('carries QUARANTINED through as the status, not as a queued proposal', async () => {
+        // The safety property the UI depends on. If the status did not travel,
+        // the UI would have to infer it from prose — which is exactly how
+        // "quarantined" becomes "queued".
+        (createAgentProposal as jest.Mock).mockResolvedValue({
+            id: 'prop-s2',
+            kind: 'FINDING',
+            status: 'QUARANTINED',
+        });
+
+        const events = await collect('raise a finding about missing MFA on the VPN');
+
+        const answer = events.find((e) => e.type === 'answer');
+        expect(answer?.proposal).toMatchObject({ status: 'QUARANTINED' });
+        expect(answer?.proposal).not.toMatchObject({ status: 'PENDING' });
+    });
+
+    it('still answers a READ question without proposing anything', async () => {
+        // The control. A stream path that proposed on every question would
+        // satisfy the two tests above and be far worse than the bug.
+        const events = await collect('how many high risks?');
+
+        expect(createAgentProposal).not.toHaveBeenCalled();
+        const answer = events.find((e) => e.type === 'answer');
+        expect(answer).toBeDefined();
+        expect(answer?.proposal).toBeUndefined();
+    });
+
+    it('emits a terminal `done` on every path', async () => {
+        // Asserted here as well as in the transport suite because this is the
+        // producer: a path that returns without `done` leaves the client unable
+        // to tell a finished turn from a dropped connection.
+        for (const q of ['how many high risks?', 'raise a finding about MFA']) {
+            const events = await collect(q);
+            expect(events.at(-1)?.type).toBe('done');
+        }
     });
 });

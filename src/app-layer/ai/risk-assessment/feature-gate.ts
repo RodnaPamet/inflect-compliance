@@ -111,6 +111,26 @@ const AI_ACCESS_ALLOWLIST: ReadonlyArray<(ctx: RequestContext, feature: AiFeatur
     // `enforceFeatureGate`, AFTER every predicate here has passed.
 ];
 
+/**
+ * Is this feature's ENV kill switch on?
+ *
+ * Distinct from `checkFeatureGate`, which also weighs the tenant's plan and
+ * the access allowlist and therefore needs a `RequestContext`. A layout
+ * deciding whether to render a button has no context to spare — resolving one
+ * would mean a database round trip on every page render.
+ *
+ * The split is deliberate rather than a shortcut, and it decides two
+ * different questions:
+ *   - KILL SWITCH OFF → the surface should not exist. Rendering a button that
+ *     always errors is worse than no button.
+ *   - PLAN-GATED → the surface exists and the refusal explains why. Hiding it
+ *     would leave the user unable to discover a feature they could buy, and
+ *     the refusal path already states its reason (#3849).
+ */
+export function isAiFeatureEnabled(feature: AiFeature): boolean {
+    return FEATURE_ENABLED[feature];
+}
+
 export function checkFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk'): FeatureGateResult {
     // Default-deny: return the FIRST failing predicate's reason; reaching the
     // end (every predicate passed) is the only allow path.
