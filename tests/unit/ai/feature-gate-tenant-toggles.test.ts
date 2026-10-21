@@ -183,3 +183,172 @@ describe('enforceFeatureGate shares the predicate', () => {
         );
     });
 });
+
+/*
+    ═══ EVERY CALL SITE MUST AWAIT, AND THAT IS NEW ═══
+
+    `enforceFeatureGate` used to throw SYNCHRONOUSLY whenever a sync predicate
+    refused — the env flags and the role — and returned a promise only for the
+    plan check. Adding the per-tenant toggle made it `async`, so it now throws
+    nothing: every refusal is a rejected promise.
+
+    For a caller that awaits, nothing changed. For one that does not, the
+    refusal became an unhandled rejection and execution CONTINUES — a gate that
+    silently allows. All six call sites await today; this keeps the seventh
+    honest, because nothing else would notice.
+
+    Folded into this suite rather than given its own file in tests/guards:
+    `no-epic-named-ratchets` caps the number of guard files precisely so that a
+    property belonging to one change does not become a file, and this property
+    belongs to the change this suite is about.
+*/
+import * as fs from 'fs';
+import * as path from 'path';
+
+/** Strip comments so a mention in prose is not read as a call. */
+function codeOnly(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
+/**
+ * Call sites of `enforceFeatureGate` that neither await nor return the promise.
+ *
+ * Exported shape so it can be driven with inputs that DO fail — an inline scan
+ * would stay green once src/ was clean, and would stay green if neutered.
+ */
+export function unawaitedCalls(source: string): string[] {
+    /*
+        STATEMENT-SCOPED, not line-scoped — the first version of this demanded
+        `await` IMMEDIATELY before the call and reported all 16 real call sites
+        as offenders, because every one of them reads
+        `await expect(gate.enforceFeatureGate(...)).rejects...`. It was a check
+        capable of failing that was aimed at the wrong shape.
+
+        So: walk back to the nearest `;`, `{` or `}` — the start of the
+        statement — and ask whether an `await` or `return` governs the call
+        anywhere in it. That admits the multi-line form too, where the `await`
+        and the call sit on different lines.
+    */
+    const code = codeOnly(source);
+    const needle = 'enforceFeatureGate(';
+    const found: string[] = [];
+    for (let i = code.indexOf(needle); i !== -1; i = code.indexOf(needle, i + needle.length)) {
+        const line = code.slice(0, i).split('\n').length;
+        const stmtStart = Math.max(
+            code.lastIndexOf(';', i),
+            code.lastIndexOf('{', i),
+            code.lastIndexOf('}', i),
+        );
+        const before = code.slice(stmtStart + 1, i).replace(/\s+/g, ' ');
+
+        // `expect(() => enforceFeatureGate(...))` is an offender even though an
+        // `await` may govern the expect: an async function returns a promise
+        // rather than throwing, so `toThrow` sees nothing, the assertion can
+        // never pass, AND the promise goes unhandled — which kills the jest
+        // worker and reports as "Test suite failed to run" with zero failed
+        // tests. That shape is how this bug hid in two suites.
+        const insideArrow = /=>\s*[\w.]*$/.test(before);
+        const governed = /\b(await|return)\b/.test(before);
+        if (insideArrow || !governed) found.push(`${line}: ...${before.trim()}${needle}`);
+    }
+    return found;
+}
+
+function tsFilesUnder(dir: string): string[] {
+    const out: string[] = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...tsFilesUnder(full));
+        else if (/\.tsx?$/.test(entry.name)) out.push(full);
+    }
+    return out;
+}
+
+describe('every enforceFeatureGate call site awaits it', () => {
+    const SRC = path.join(process.cwd(), 'src');
+    const DEFINITION = path.join(SRC, 'app-layer/ai/risk-assessment/feature-gate.ts');
+    /*
+        `src/` ONLY, and the scope is a decision rather than a shortcut.
+
+        `expect(() => enforceFeatureGate(ctx)).toThrow()` is CORRECT in a test:
+        the gate throws its env and role refusals synchronously on purpose, and
+        `feature-gate-plan-entitlement` asserts exactly that under "a forgotten
+        `await` can never weaken the gate". Scanning tests/ would flag those
+        deliberate assertions.
+
+        In `src/`, though, a dropped promise now costs more than it used to. The
+        synchronous prologue still refuses on the env flags and the role, so a
+        non-awaiting caller is not wide open — but the per-tenant toggle lives
+        in the promise tail, and it is ALWAYS on, unlike the plan check which is
+        opt-in and off by default. So a forgotten `await` would enforce two
+        predicates and silently skip the one a workspace actually set.
+    */
+    const files = tsFilesUnder(SRC).filter((f) => f !== DEFINITION);
+
+    it('finds the call sites at all (the scan is not vacuous)', () => {
+        // A scan that silently matched nothing would make the assertion below
+        // pass forever. The denominator is what proves it looked.
+        const callSites = files.flatMap((f) => {
+            const code = codeOnly(fs.readFileSync(f, 'utf8'));
+            return code.includes('enforceFeatureGate(') ? [f] : [];
+        });
+        expect(files.length).toBeGreaterThan(500);
+        expect(callSites.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('no call site drops the promise', () => {
+        const offenders = files.flatMap((f) => {
+            const bad = unawaitedCalls(fs.readFileSync(f, 'utf8'));
+            return bad.map((b) => `${path.relative(process.cwd(), f)}:${b}`);
+        });
+        expect(offenders).toEqual([]);
+    });
+});
+
+describe('unawaitedCalls can fail, in both directions', () => {
+    it('flags a bare call', () => {
+        expect(unawaitedCalls('enforceFeatureGate(ctx, "risk");')).toHaveLength(1);
+    });
+
+    it('accepts an awaited call', () => {
+        expect(unawaitedCalls('await enforceFeatureGate(ctx, "risk");')).toEqual([]);
+    });
+
+    it('accepts the awaited-expect form every suite actually uses', () => {
+        expect(
+            unawaitedCalls("await expect(gate.enforceFeatureGate(c, 'risk')).rejects.toThrow();"),
+        ).toEqual([]);
+    });
+
+    it('accepts the awaited-expect form split across lines', () => {
+        expect(
+            unawaitedCalls('await expect(\n  gate.enforceFeatureGate(c),\n).rejects.toThrow();'),
+        ).toEqual([]);
+    });
+
+    it('FLAGS the arrow form even though an await governs the expect', () => {
+        // The shape that can never pass against an async gate.
+        expect(
+            unawaitedCalls("await expect(() => gate.enforceFeatureGate(c)).toThrow();"),
+        ).toHaveLength(1);
+        expect(unawaitedCalls('expect(() => enforceFeatureGate(ctx)).toThrow();')).toHaveLength(1);
+    });
+
+    it('accepts a returned call', () => {
+        expect(unawaitedCalls('return enforceFeatureGate(ctx);')).toEqual([]);
+    });
+
+    it('ignores a mention inside a comment', () => {
+        // The pipeline docblocks in `assistant.ts` and `questionnaire.ts` both
+        // name the call in prose: `enforceFeatureGate → checkRateLimit → …`.
+        // Without the stripper those read as unawaited call sites.
+        expect(unawaitedCalls('// enforceFeatureGate(ctx) is called below')).toEqual([]);
+        expect(unawaitedCalls('/* enforceFeatureGate(ctx) */')).toEqual([]);
+    });
+
+    it('is not fooled by the import line', () => {
+        expect(
+            unawaitedCalls("import { enforceFeatureGate } from '@/app-layer/ai';"),
+        ).toEqual([]);
+    });
+});

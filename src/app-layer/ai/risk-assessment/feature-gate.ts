@@ -250,17 +250,40 @@ export async function checkFeatureGateWithPlan(
  * existed — a missing `await` can never make the gate weaker than it
  * was. Only the plan gate rides on the returned Promise.
  */
-export async function enforceFeatureGate(
-    ctx: RequestContext,
-    feature: AiFeature = 'risk',
-): Promise<void> {
-    // `async` now rather than a hand-rolled promise chain: the per-tenant
-    // toggle below is a database read that runs on EVERY call, so the
-    // `Promise.resolve()` fast path this used to take no longer exists.
-    const result = await checkFeatureGateWithPlan(ctx, feature);
-    if (!result.allowed) {
-        throw forbidden(result.reason ?? 'This AI feature is not available');
+export function enforceFeatureGate(ctx: RequestContext, feature: AiFeature = 'risk'): Promise<void> {
+    /*
+        NOT `async`, and that is load-bearing.
+
+        `feature-gate-plan-entitlement` carries a describe block named "a
+        forgotten `await` can never weaken the gate", which calls this WITHOUT
+        awaiting and asserts the flag/role refusal still throws. Marking this
+        function `async` would move that refusal into a rejected promise, and a
+        caller treating the gate as synchronous would sail straight through it.
+
+        All six call sites in `src/` await today, so nothing was broken in
+        practice — but the property exists precisely so the seventh cannot be.
+        Every predicate that needs no I/O therefore keeps throwing from the
+        synchronous prologue; only the two that must read the database are
+        deferred to the promise tail below.
+    */
+    const sync = checkFeatureGate(ctx, feature);
+    if (!sync.allowed) {
+        throw forbidden(sync.reason ?? 'This AI feature is not available');
     }
+
+    return checkTenantToggle(ctx, feature).then((tenant) => {
+        if (!tenant.allowed) {
+            throw forbidden(tenant.reason ?? 'This AI feature is not available');
+        }
+        // Opted out of plan gating (the default) — nothing further to do.
+        if (!AI_RISK_PLAN_REQUIRED) return;
+
+        return checkPlanEntitlement(ctx).then((plan) => {
+            if (!plan.allowed) {
+                throw forbidden(plan.reason ?? 'This AI feature is not available');
+            }
+        });
+    });
 }
 
 /**

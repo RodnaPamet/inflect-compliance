@@ -11,6 +11,25 @@
  *
  * Tests: privacy sanitizer, rate limiter, feature gate.
  */
+/*
+    THE GATE READS THE DATABASE NOW, so this unit needs the seam.
+
+    `enforceFeatureGate` checks the tenant's four AI toggles through
+    `runInTenantContext`, which is a real transaction. Without this mock the
+    cases below reach the live pool, and under contention the read fails with
+    "Unable to start a transaction in the given time" — whereupon the gate
+    FAILS CLOSED and refuses, which looks exactly like a broken feature gate
+    rather than an absent mock.
+
+    `findUnique` resolving to `null` is the right default here: no settings row
+    means "never configured", the four columns default to true, and all-on is
+    the state every case in this file assumes.
+*/
+jest.mock('@/lib/db-context', () => ({
+    runInTenantContext: async (_ctx: unknown, fn: (db: unknown) => unknown) =>
+        fn({ tenantSecuritySettings: { findUnique: async () => null } }),
+}));
+
 import { sanitizeAsset, sanitizeProviderInput, describePayload } from '@/app-layer/ai/risk-assessment/privacy-sanitizer';
 import { checkRateLimit, recordGeneration, getUsageInfo, _resetForTesting, LIMITS } from '@/app-layer/ai/risk-assessment/rate-limiter';
 import { checkFeatureGate, enforceFeatureGate, isAIRiskEnabled } from '@/app-layer/ai/risk-assessment/feature-gate';
@@ -296,6 +315,10 @@ describe('Feature Gate', () => {
             role: 'READER',
             permissions: { canRead: true, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
         });
+        // SYNCHRONOUSLY. A role refusal needs no I/O, so it is thrown from the
+        // gate's synchronous prologue even though the gate also has database
+        // predicates now — see "a forgotten `await` can never weaken the gate"
+        // in feature-gate-plan-entitlement for why that split is deliberate.
         expect(() => enforceFeatureGate(ctx)).toThrow(AppError);
         try {
             enforceFeatureGate(ctx);
@@ -304,9 +327,13 @@ describe('Feature Gate', () => {
         }
     });
 
-    it('enforceFeatureGate does not throw for allowed users', () => {
+    it('enforceFeatureGate does not throw for allowed users', async () => {
         const ctx = makeCtx();
         expect(() => enforceFeatureGate(ctx)).not.toThrow();
+        // AND the promise tail resolves. `not.toThrow()` alone only covers the
+        // synchronous prologue; the tenant-toggle predicate lives past it, so
+        // without this the case would pass while every real caller was refused.
+        await expect(enforceFeatureGate(ctx)).resolves.toBeUndefined();
     });
 
     it('isAIRiskEnabled returns boolean', () => {
