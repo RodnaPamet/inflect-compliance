@@ -114,6 +114,43 @@ function clientValues(name: string): string[] | null {
     return Object.keys(e as Record<string, string>);
 }
 
+/**
+ * The values an enum DECLARES that its physical type does not accept.
+ *
+ * ═══ WHY THIS IS A PURE FUNCTION AND NOT A LOOP INSIDE THE TEST ═══
+ *
+ * Found by mutation-proving this file: with the loop inline, deleting its
+ * `missing.push(...)` left all seven tests green. The live database currently
+ * has zero missing values, so `missing` is empty whether the comparison works
+ * or not — the assertion that matters was passing for the wrong reason and
+ * could not fail.
+ *
+ * The `NO_SUCH_SOURCE_VALUE` control proves the SET LOOKUP works. It does not
+ * prove the LOOP pairs each enum's client values with the right type's set,
+ * which is the part a mapping error would break.
+ *
+ * Pulled out, it can be driven with inputs that DO have a missing value, so
+ * the comparison is falsifiable without waiting for a real migration to fail.
+ */
+export function missingValues(
+    enums: readonly SchemaEnum[],
+    db: ReadonlyMap<string, ReadonlySet<string>>,
+    valuesOf: (name: string) => string[] | null,
+): string[] {
+    const missing: string[] = [];
+    for (const e of enums) {
+        const have = db.get(e.pgType);
+        // A type that does not exist at all is a different condition, reported
+        // by its own test. Folding it in here would report every one of its
+        // values as missing and bury the real finding under the noise.
+        if (have === undefined) continue;
+        for (const v of valuesOf(e.name) ?? []) {
+            if (!have.has(v)) missing.push(`${e.pgType}.${v}`);
+        }
+    }
+    return missing;
+}
+
 /** Every enum type in `public`, with its values. ONE query, not 163. */
 async function pgEnums(): Promise<Map<string, Set<string>>> {
     const rows = await prisma.$queryRaw<Array<{ typname: string; enumlabel: string }>>`
@@ -185,15 +222,7 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         // message says which migration did not take rather than leaving a
         // reader to find it from a feature suite's stack trace.
         const db = await pgEnums();
-        const missing: string[] = [];
-        for (const e of schemaEnums()) {
-            const have = db.get(e.pgType);
-            if (have === undefined) continue; // reported by the test above
-            for (const v of clientValues(e.name) ?? []) {
-                if (!have.has(v)) missing.push(`${e.pgType}.${v}`);
-            }
-        }
-        expect(missing).toEqual([]);
+        expect(missingValues(schemaEnums(), db, clientValues)).toEqual([]);
     });
 
     it('pins the #3903 instance specifically', async () => {
@@ -204,6 +233,53 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         expect(db.get('WorkItemSource')).toBeDefined();
         expect([...(db.get('WorkItemSource') ?? [])]).toContain('GRANT_EXPIRY');
         expect(clientValues('TaskSource')).toContain('GRANT_EXPIRY');
+    });
+
+    it('the COMPARISON reports a missing value — driven, not waited for', () => {
+        // #3903 reproduced as inputs: a mapped enum whose client declares a
+        // value the physical type does not have. With the loop inline this
+        // could not be expressed, so deleting the loop body changed nothing.
+        const enums: SchemaEnum[] = [
+            { name: 'TaskSource', pgType: 'WorkItemSource', mapped: true },
+        ];
+        const db = new Map<string, ReadonlySet<string>>([
+            ['WorkItemSource', new Set(['MANUAL', 'RISK_MONITOR'])],
+        ]);
+        const got = missingValues(enums, db, () => ['MANUAL', 'RISK_MONITOR', 'GRANT_EXPIRY']);
+        expect(got).toEqual(['WorkItemSource.GRANT_EXPIRY']);
+    });
+
+    it('the comparison follows @@map, not the Prisma name', () => {
+        // The mapping half, which an identity-mapped enum cannot exercise. If
+        // the lookup used `name` instead of `pgType` it would miss
+        // `WorkItemSource` entirely, find no set, and report NOTHING — a
+        // mapping error reading as agreement.
+        const enums: SchemaEnum[] = [
+            { name: 'TaskSource', pgType: 'WorkItemSource', mapped: true },
+        ];
+        const dbByPgName = new Map<string, ReadonlySet<string>>([
+            ['WorkItemSource', new Set(['MANUAL'])],
+        ]);
+        expect(missingValues(enums, dbByPgName, () => ['MANUAL', 'GRANT_EXPIRY'])).toEqual([
+            'WorkItemSource.GRANT_EXPIRY',
+        ]);
+
+        // Keyed by the PRISMA name instead: the type is absent, so this is the
+        // missing-type condition and the value check stays silent by design.
+        const dbByPrismaName = new Map<string, ReadonlySet<string>>([
+            ['TaskSource', new Set(['MANUAL'])],
+        ]);
+        expect(missingValues(enums, dbByPrismaName, () => ['MANUAL', 'GRANT_EXPIRY'])).toEqual([]);
+    });
+
+    it('reports a CLEAN pair as clean, so it is not simply always failing', () => {
+        const enums: SchemaEnum[] = [
+            { name: 'TaskSource', pgType: 'WorkItemSource', mapped: true },
+        ];
+        const db = new Map<string, ReadonlySet<string>>([
+            ['WorkItemSource', new Set(['MANUAL', 'GRANT_EXPIRY'])],
+        ]);
+        expect(missingValues(enums, db, () => ['MANUAL', 'GRANT_EXPIRY'])).toEqual([]);
     });
 
     it('the comparison can fail — a value the type lacks is detected', async () => {
