@@ -42,7 +42,15 @@ export function jsonName(protoFieldName: string): string {
     return protoFieldName.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
 }
 
-const FIELD = /^(?<mods>(?:repeated|optional)\s+)?(?<type>map<[^>]+>|[A-Za-z_][\w.]*)\s+(?<name>[a-z_][\w]*)\s*=\s*\d+\s*(?<opts>\[[^\]]*\])?\s*;/;
+/**
+ * One field declaration. POSITIONAL groups, not named ones: this tsconfig
+ * targets below ES2018, so `(?<name>…)` is a typecheck error even though jest
+ * runs it happily — the second time that gap has bitten in this work, after a
+ * `/s` flag in #3863.
+ *
+ *   1 modifiers (`repeated` / `optional`)   2 type   3 name   4 options
+ */
+const FIELD = /^(?:(repeated|optional)\s+)?(map<[^>]+>|[A-Za-z_][\w.]*)\s+([a-z_][\w]*)\s*=\s*\d+\s*(\[[^\]]*\])?\s*;/;
 
 /**
  * Every top-level message, mapped to its fields.
@@ -86,14 +94,14 @@ export function protoMessages(src: string): Map<string, readonly ProtoField[]> {
         if (!top || top.name.startsWith('__enum__')) continue;
 
         const m = FIELD.exec(line);
-        if (!m?.groups) continue;
-        const mods = m.groups.mods ?? '';
+        if (!m) continue;
+        const mods = m[1] ?? '';
         top.fields.push({
-            name: m.groups.name,
-            type: m.groups.type,
+            name: m[3],
+            type: m[2],
             repeated: mods.includes('repeated'),
             optional: mods.includes('optional'),
-            required: (m.groups.opts ?? '').includes('REQUIRED'),
+            required: (m[4] ?? '').includes('REQUIRED'),
         });
     }
     return out;

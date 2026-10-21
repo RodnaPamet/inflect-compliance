@@ -250,6 +250,198 @@ export type InflectHostConsumerCard = UnsignedInflectHostConsumerCard & InflectC
 /** Either variant, before signing. What `signInflectAgentCard` accepts. */
 export type UnsignedInflectCardVariant = UnsignedInflectAgentCard | UnsignedInflectHostConsumerCard;
 
+/**
+ * THE EXTENSION URI Inflect's card data travels under on a v1.0 card (#3866).
+ *
+ * A URN, not an https URL, and deliberately. The spec wants a URI as an
+ * IDENTIFIER; an https URL invites a client to fetch it, and there is nothing
+ * at the other end. A per-deployment URL was the other candidate and is worse:
+ * the same extension would then have a different identity on every deployment,
+ * so no client could recognise it as the same thing twice.
+ */
+export const INFLECT_V1_CARD_EXTENSION_URI = 'urn:inflect:a2a:card-extension:1';
+
+/** One entry of a v1.0 card's `supportedInterfaces`. */
+export interface InflectV1AgentInterface {
+    readonly url: string;
+    /** `protocol_binding` in the proto; JSONRPC is what this endpoint speaks. */
+    readonly protocolBinding: 'JSONRPC';
+    readonly protocolVersion: string;
+    /** v1.0's native tenant scoping, which the per-tenant URL already encodes. */
+    readonly tenant: string;
+}
+
+/**
+ * THE v1.0 HOST-CONSUMER CARD (#3866).
+ *
+ * Not a re-spelling of the v0.3 card — a different shape. v1.0 replaces the
+ * top-level `url` / `protocolVersion` / `preferredTransport` with a REQUIRED
+ * `supportedInterfaces`, and renames `security` to `securityRequirements`.
+ * Measured from the vendored proto, not from the migration guide: `AgentCard`
+ * requires name, description, supportedInterfaces, version, capabilities,
+ * defaultInputModes, defaultOutputModes and skills.
+ *
+ * ## Inflect's data rides in a DECLARED EXTENSION, not an `x-` member
+ *
+ * v1.0 has no `x-` convention and protobuf JSON rejects unknown fields, so a
+ * top-level `x-inflect` would make the card unparseable to a strict client.
+ * v1.0 does have `capabilities.extensions[]`, which is exactly the mechanism
+ * for this, so the identity, the receipt format, the signing keys AND the
+ * Ed25519 signature travel in its `params` (owner decision, #3866).
+ *
+ * **`required: false`, and that is load-bearing.** The spec obliges a server to
+ * return `ExtensionSupportRequiredError` when it marks an extension `required`
+ * and the client does not declare support (§3.3.4). Marking this one required
+ * would therefore refuse every v1.0 client that has never heard of Inflect —
+ * which is every v1.0 client. The extension is additive information, so it
+ * says so.
+ *
+ * ## The signature is ours, inside the extension
+ *
+ * v1.0 defines its own `signatures` field expecting JWS over RFC 8785
+ * canonicalisation. We do not produce one: it is a second crypto surface and a
+ * second canonicalisation that would have to agree byte-for-byte with the first
+ * or every signature is silently wrong. Keeping the existing
+ * Ed25519-over-`canonicalJson` signature means ONE signing path for both card
+ * versions. An Inflect-aware client verifies it; a generic v1.0 client ignores
+ * an extension it does not know, which is what extensions are for.
+ */
+/** The Inflect extension's params BEFORE signing. */
+export interface InflectV1ExtensionParams {
+    readonly format: typeof INFLECT_AGENT_CARD_VERSION;
+    readonly identity: string;
+    readonly receipt: typeof A2A_RECEIPT_VERSION;
+    readonly signingKeys: readonly InflectCardKey[];
+}
+
+/** The same params once signed. The signature lives HERE, not at the top level. */
+export interface InflectV1ExtensionParamsSigned extends InflectV1ExtensionParams {
+    readonly signature: InflectCardSignature['x-inflect-signature'];
+}
+
+/**
+ * The v1.0 card, parameterised on whether its extension carries a signature.
+ *
+ * Generic rather than an intersection: spreading a signed signature into an
+ * unsigned tuple type does not widen it, so the two states are two
+ * instantiations of one shape instead of one shape plus a patch.
+ */
+export type InflectV1CardOver<P> = {
+    readonly name: string;
+    readonly description: string;
+    readonly version: string;
+    readonly supportedInterfaces: readonly InflectV1AgentInterface[];
+    readonly capabilities: {
+        readonly streaming: false;
+        readonly pushNotifications: false;
+        readonly extensions: readonly [
+            {
+                readonly uri: typeof INFLECT_V1_CARD_EXTENSION_URI;
+                readonly description: string;
+                readonly required: false;
+                readonly params: P;
+            },
+        ];
+    };
+    readonly defaultInputModes: readonly string[];
+    readonly defaultOutputModes: readonly string[];
+    readonly skills: readonly A2aPublicSkill[];
+    readonly securitySchemes: UnsignedInflectHostConsumerCard['securitySchemes'];
+    readonly securityRequirements: readonly [{ readonly hostConsumerOAuth2: readonly [] }];
+};
+
+export type UnsignedInflectV1Card = InflectV1CardOver<InflectV1ExtensionParams>;
+export type InflectV1Card = InflectV1CardOver<InflectV1ExtensionParamsSigned>;
+
+/**
+ * Build the v1.0 card.
+ *
+ * `supportedInterfaces` lists BOTH bindings at the same URL, because they are
+ * the same endpoint: the version is chosen per request by the `A2A-Version`
+ * header, not by the address. A v1.0 client reading this learns it may speak
+ * either, which is the whole point of the field.
+ */
+export function buildInflectV1Card(
+    input: InflectAgentCardInput & { readonly skills: readonly A2aPublicSkill[] },
+): UnsignedInflectV1Card {
+    const host = buildInflectHostConsumerCard(input);
+    const endpoint = `${input.origin}${inflectA2aEndpointPath(input.tenantSlug)}`;
+    return {
+        name: host.name,
+        description: host.description,
+        version: host.version,
+        supportedInterfaces: [
+            { url: endpoint, protocolBinding: 'JSONRPC', protocolVersion: '0.3.0', tenant: input.tenantSlug },
+            { url: endpoint, protocolBinding: 'JSONRPC', protocolVersion: '1.0.1', tenant: input.tenantSlug },
+        ],
+        capabilities: {
+            streaming: false,
+            pushNotifications: false,
+            extensions: [
+                {
+                    uri: INFLECT_V1_CARD_EXTENSION_URI,
+                    description:
+                        "Inflect's A2A identity, receipt format and signing keys. Additive: a client that "
+                        + 'does not understand it can ignore it and still call every interface above.',
+                    required: false,
+                    params: host['x-inflect'],
+                },
+            ],
+        },
+        defaultInputModes: host.defaultInputModes,
+        defaultOutputModes: host.defaultOutputModes,
+        skills: host.skills,
+        securitySchemes: host.securitySchemes,
+        securityRequirements: [{ hostConsumerOAuth2: [] }],
+    };
+}
+
+/**
+ * Sign a v1.0 card.
+ *
+ * ONE CRYPTO PATH, two placements. The bytes signed are `signedBytes()` over
+ * the canonical card without its signature — the same function, the same
+ * domain separator and the same key rule as every other variant. What differs
+ * is only WHERE the result is written: v0.3 carries it as the top-level
+ * `x-inflect-signature`, and v1.0 cannot, because protobuf JSON rejects
+ * unknown top-level fields. So it goes in the extension's params, beside the
+ * keys it was made with.
+ *
+ * Separate from `signInflectAgentCard` rather than a branch inside it: that
+ * function reads `card['x-inflect']` to check the key it was handed is the one
+ * the card names as CURRENT, and the v1.0 card keeps those keys somewhere
+ * else. A branch would have made that check conditional, which is the half of
+ * it that must never be skipped.
+ */
+export function signInflectV1Card(
+    card: UnsignedInflectV1Card,
+    key: { readonly privateKey: KeyObject; readonly fingerprint: string },
+): InflectV1Card {
+    const current = card.capabilities.extensions[0].params.signingKeys.find((k) => k.status === 'CURRENT');
+    if (!current || current.fingerprint !== key.fingerprint) {
+        throw new Error('An Inflect agent card is signed only by the key it names as current');
+    }
+    const value = cryptoSign(null, signedBytes(card as unknown as Record<string, unknown>), key.privateKey).toString(
+        'hex',
+    );
+    const ext = card.capabilities.extensions[0];
+    return {
+        ...card,
+        capabilities: {
+            ...card.capabilities,
+            extensions: [
+                {
+                    ...ext,
+                    params: {
+                        ...ext.params,
+                        signature: { alg: 'Ed25519' as const, keyFingerprint: key.fingerprint, value },
+                    },
+                },
+            ],
+        },
+    };
+}
+
 /** Whether a retired key is still within the grace period at `now`. */
 export function previousKeyInGrace(retiredAt: Date, now: Date): boolean {
     const age = now.getTime() - retiredAt.getTime();

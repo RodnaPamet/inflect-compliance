@@ -37,6 +37,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { a2aRefusal } from '@/lib/agentic/a2a/protocol';
 import { A2A_RECEIPT_HEADER } from '@/lib/agentic/a2a/receipt';
+import { A2A_VERSION_HEADER } from '@/lib/agentic/a2a/version';
 import { readA2aBody } from '@/lib/agentic/a2a/body';
 import { handleInboundA2a } from '@/app-layer/usecases/a2a-inbound';
 
@@ -52,6 +53,7 @@ export const POST = withApiErrorHandling(
             peerId,
             authorization: req.headers.get('authorization'),
             receiptHeader: req.headers.get(A2A_RECEIPT_HEADER),
+            protocolVersion: req.headers.get(A2A_VERSION_HEADER),
             body: read.body,
             requestId: req.headers.get('x-request-id') ?? crypto.randomUUID(),
         });
