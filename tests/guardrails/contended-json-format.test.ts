@@ -166,7 +166,19 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // found it was `docs-accuracy`'s "every doc on disk is classified" —
         // the ADR had been committed three commits earlier and never
         // classified, which no amount of reading the diff had surfaced.
-        keyOrderSha: '68f40485eea65d19758584af9cff0c8f12ed0c2491b4bf18f05b4a16a1a3753f',
+        // Moved 2026-10-21 by one sorted ADDITION, docs/runbooks/joule-byoa.md
+        // (#3865, the Joule BYOA runbook): +3/-0 against main.
+        //
+        // Worth recording what went wrong first, since this pin is aimed at it.
+        // The first attempt appended THREE entries at the end of the map with a
+        // Python `json.dump(indent=4)` — so the keys were out of sorted position
+        // AND two of them were `docs/implementation-notes/**`, which this file's
+        // own `description` field says in as many words must never appear here
+        // because that subtree is classified BY PATH. The file documented its own
+        // constraint and I added the entries anyway. CI caught it three ways at
+        // once: this digest, the round-trip, and docs-accuracy's path-derived
+        // check.
+        keyOrderSha: 'cfc537917f1f44a20f531da779ded5c84998084c6c8631e13839507940c9f330',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

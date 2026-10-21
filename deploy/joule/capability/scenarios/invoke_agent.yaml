@@ -1,0 +1,30 @@
+# User intent → function (#3865).
+#
+# ── THE DESCRIPTION IS NOT WRITTEN HERE ────────────────────────────────────
+#
+# It is the `a2aSkill.description` of the `sap-transaction-review` workflow,
+# copied verbatim, and `tests/guards/joule-package-matches-the-card.test.ts`
+# fails if the two ever differ.
+#
+# That is deliberate rather than tidy. Joule routes on THIS text while a
+# spec-reading host routes on the card's skill description, so two independently
+# edited copies would send Joule requests the card does not advertise, or stop
+# it sending ones it does. One of them has to be the source, and the card's is
+# the one a reviewer already reads.
+description: >
+  Tests facts about SAP documents — who created and approved them, amounts, dates, line items — against this workspace controls, and reports what it found: the document, the control, and the reason. Judges only the facts supplied and states what it was not given, so a clean result is never presented as proof of compliance. Reads no SAP system and changes nothing.
+
+target:
+  type: function
+  name: call_agent
+  parameters:
+    - name: contextId
+      value: $capability_context.contextId
+    - name: taskId
+      value: $capability_context.taskId
+
+capability_context:
+  - name: contextId
+    value: $target_result.contextId
+  - name: taskId
+    value: $target_result.taskId

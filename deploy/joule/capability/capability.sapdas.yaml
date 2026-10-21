@@ -1,0 +1,36 @@
+# Capability metadata and the BTP destination alias (#3865).
+#
+# ── TWO VALUES THAT MUST BE EXACTLY THESE ──────────────────────────────────
+#
+# `schema_version: 3.28.0` is required for `agent-request` support, and
+# `metadata.namespace: joule.ext` is MANDATORY — any other namespace makes
+# `joule deploy` fail with a namespace validation error.
+#
+# Both confirmed from SAP's toolkit at `skills/joule-a2a-agent/SKILL.md:318-319`.
+# Note the toolkit CONTRADICTS ITSELF here: its own reference examples
+# (`references/joule-capability.md`, section 2) show `namespace: com.sap.paa`.
+# The gotchas section wins, because it names the failure mode rather than
+# illustrating a shape.
+schema_version: 3.28.0
+
+metadata:
+  namespace: joule.ext
+  name: inflect_compliance_review_a2a
+  version: 1.0.0
+  display_name: "Inflect compliance review"
+  # Joule matches intent on this description, so it says what the agent judges
+  # and — just as importantly — that it reads no SAP system. A description
+  # implying it can fetch SAP documents would route requests here that this
+  # agent structurally cannot serve (the receiving agent holds no external tool
+  # grant; see `a2a-host-consumer-policy.ts`).
+  description: >
+    Tests facts about SAP documents against an Inflect compliance workspace's own
+    controls and reports what it found. Reads no SAP system: the facts must be supplied
+    in the request.
+
+# The alias is referenced by `functions/call_agent.yaml`. The value must match
+# the BTP destination's name EXACTLY, and that destination must live in the same
+# subaccount as Joule. See the README for its configuration.
+system_aliases:
+  InflectComplianceReview:
+    destination: INFLECT_COMPLIANCE_REVIEW_A2A
