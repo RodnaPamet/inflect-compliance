@@ -117,10 +117,36 @@ const MIN_CHUNK_PRESENCE = 0.95;
  * saying in the PR what grew and why.
  */
 const BUDGETS_KB: Record<string, number> = {
-    // measured max 574.4 KB — /t/[tenantSlug]/(app)/controls/dashboard/page (8 routes)
-    'dashboard': 605,
-    // measured max 605.8 KB — /t/[tenantSlug]/(app)/risks/[riskId]/page (16 routes)
-    'risks': 640,
+    /*
+        RAISED BY THE NEXT 16.4.2 SECURITY BUMP (two unauthenticated RCEs), and
+        the numbers are worth reading before the next raise.
+
+        Measured on CI's own webpack build, main versus this branch — the only
+        difference between them is the framework version:
+
+              route                        main      16.4.2    delta
+              controls/dashboard/page      603.7     606.0     +2.3
+              risks/[riskId]/page          639.7     642.0     +2.3
+              policies/[policyId]/page     667.9     671.0     +3.1
+
+        So the framework cost 2-3 KB a route and three budgets were already
+        spent: main sat 0.3 to 2.1 KB under them. The headroom this file's
+        header describes as "~5%" had become ~0.3% without anything recording
+        that, because the `measured max` comments below had gone stale — the
+        dashboard one read 574.4 KB against a main that measured 603.7. A
+        comment that is supposed to carry the measurement is the only way a
+        reader can see how much room is left, so they are corrected here too.
+
+        The new budgets are measured + ~4 KB. Deliberately tight: enough to
+        absorb a chunk-hash or zlib-version change, not enough for another
+        framework bump to land silently. If the next one fails here too, that
+        is the gate working, and the answer is to look at what these three
+        routes ship rather than to keep adding 5.
+    */
+    // measured max 606.0 KB — /t/[tenantSlug]/(app)/controls/dashboard/page (8 routes)
+    'dashboard': 610,
+    // measured max 642.0 KB — /t/[tenantSlug]/(app)/risks/[riskId]/page (16 routes)
+    'risks': 646,
     // measured max 613.1 KB — /t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page (7 routes)
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
@@ -135,8 +161,8 @@ const BUDGETS_KB: Record<string, number> = {
     // route was one of the 64, 647.4 → 651.0 KB.
     'controls': 655,
     // Catch-all for any other tenant page.
-    // measured max 637.5 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
-    'tenant-default': 670,
+    // measured max 671.0 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
+    'tenant-default': 675,
     // Auth / public / org pages.
     // measured max 545.3 KB — /org/[orgSlug]/(app)/tenants/new/page (23 routes)
     'root': 575,
