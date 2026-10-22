@@ -240,16 +240,54 @@ export async function startWorkflowRun(
          * the input's place is a mistake the compiler cannot see.
          */
         parentExecutionId?: string | null;
+        /**
+         * THIS RUN NEEDS ONLY READ AUTHORITY (#3868 step 2, owner decision
+         * 2026-10-22).
+         *
+         * Starting a run normally asserts WRITE, which is right for every
+         * caller that existed before: an automation rule, a recertification
+         * pass, an audit narrative. It is wrong for a person asking a question,
+         * and the contradiction was found by an integration test rather than by
+         * reading — five unit suites mock this function, so none of them could
+         * see it. A READER could not start a run at all, while ADR 0004 had
+         * determined by test that the answer cannot exceed the asker's own
+         * reach and both routes were gated reader-level.
+         *
+         * VERIFIED, NOT TRUSTED. The claim is refused below unless the resolved
+         * definition actually declares `readOnly: true` — so a caller cannot
+         * claim read authority for a workflow that can propose. That check is
+         * the whole safety of this option: without it the flag would be a way
+         * to ask for less authority than the work requires.
+         */
+        readOnlyAuthority?: boolean;
     } = {},
 ): Promise<StartWorkflowResult> {
     if (ctx.apiKeyId) {
         enforceMcpCapability(ctx, 'orchestrate');
+    } else if (opts.readOnlyAuthority) {
+        // The narrowed assert. Its claim is checked against the definition a
+        // few lines down, before anything else happens.
+        assertCanRead(ctx);
     } else {
         assertCanWrite(ctx);
     }
 
     const def = getWorkflowDefinition(workflowKey);
     if (!def) throw badRequest(`Unknown workflow: ${workflowKey}`);
+
+    // THE CARVE-OUT, VERIFIED. Deliberately here and not above: keeping the
+    // authority check first means an unauthorised caller still cannot learn
+    // whether a workflow key exists. Nothing happens between the two but a
+    // registry lookup — no database read, no side effect — so a caller that
+    // claimed read authority for a propose-capable workflow passes the first
+    // check and gains nothing from it.
+    if (opts.readOnlyAuthority && def.readOnly !== true) {
+        throw forbidden(
+            `read_only_authority_requires_a_read_only_workflow: ${workflowKey} does not declare ` +
+                'readOnly, so it may be offered the propose surface and starting it needs write ' +
+                'authority. A caller cannot ask for less authority than the work requires.',
+        );
+    }
 
     // PRE-FLIGHT: the inputs this definition cannot run without (#3600).
     //
