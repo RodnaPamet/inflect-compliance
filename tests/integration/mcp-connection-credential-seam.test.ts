@@ -82,14 +82,29 @@ beforeAll(async () => {
     await prisma.user.create({ data: { id: USER, email: `${USER}@example.test`, name: USER } });
     await createTenantWithDek({ id: TENANT, name: TENANT, slug: TENANT });
     await prisma.tenantMembership.create({
-        data: { tenantId: TENANT, userId: USER, role: 'OWNER', status: 'ACTIVE' },
+        // ADMIN, not OWNER, and the role is load-bearing for TEARDOWN rather
+        // than for the test. `upsertIntegrationConnection` gates on
+        // `ctx.permissions.canAdmin`, which this suite constructs directly — the
+        // DB role is never read by it. But the trigger
+        // `tenant_membership_last_owner_guard` refuses any DELETE leaving a
+        // tenant with zero ACTIVE OWNERs, so a lone OWNER membership cannot be
+        // cleaned up: the membership delete is refused by the trigger and the
+        // tenant delete is refused by `TenantMembership_tenantId_fkey`. An ADMIN
+        // row is outside the guard and deletes cleanly.
+        data: { tenantId: TENANT, userId: USER, role: 'ADMIN', status: 'ACTIVE' },
     });
 });
 
 afterAll(async () => {
+    // Order matters and each step has a reason. Audit rows first: they carry
+    // real foreign keys to Tenant and User and are protected by immutability
+    // triggers, so the helper is the only way to clear them. Then the
+    // connection, then the membership — an ADMIN, so the last-OWNER trigger has
+    // no opinion — and only then the tenant, whose FK from TenantMembership is
+    // NOT a cascade.
     await deleteAuditRowsForTenants(prisma, [TENANT]);
-    await prisma.tenantMembership.deleteMany({ where: { tenantId: TENANT } });
     await prisma.integrationConnection.deleteMany({ where: { tenantId: TENANT } });
+    await prisma.tenantMembership.deleteMany({ where: { tenantId: TENANT } });
     await prisma.tenant.deleteMany({ where: { id: TENANT } });
     await prisma.user.deleteMany({ where: { id: USER } });
 });
