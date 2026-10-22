@@ -105,19 +105,12 @@ interface CapLatch {
     halt: RunCapHalt | null;
 }
 
-/**
- * What a run says when it could reach no tools at all.
- *
- * One sentence naming the cause and the remedy, in the vocabulary
- * `driver-plan.ts` uses for every other operator-actionable gap — this lands
- * in `WorkflowRun.errorMessage`, which the run list and run detail render, so
- * a bare code would be something to go and look up while a run sits there
- * looking successful.
- */
-export const EMPTY_TOOLSET_MESSAGE =
-    'flue_no_tools_granted: this agent holds no MCP tool grants, so the run had ' +
-    'nothing to read and its conclusion is based on no data. Grant the tools the ' +
-    'workflow declares on the agent\'s Tools tab, then run it again.';
+// MOVED to a leaf module (#3869). This file imports `@flue/runtime`, an
+// ESM-only optional dependency absent from the node/jsdom Jest projects, so an
+// app-layer reader importing the constant from here failed to LOAD rather than
+// failing an assertion. Re-exported so every existing importer is unaffected.
+export { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
+import { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
 
 
 /**

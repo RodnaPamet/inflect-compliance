@@ -33,6 +33,7 @@ import {
     INVITE_REDEEM_LIMIT,
     MFA_VERIFY_LIMIT,
     MFA_ENROLL_VERIFY_LIMIT,
+    AGENT_QUESTION_LIMIT,
     TENANT_INVITE_CREATE_LIMIT,
     clearAllRateLimits,
 } from '@/lib/security/rate-limit-middleware';
@@ -423,6 +424,11 @@ describe('Preset policy sanity', () => {
         ['INVITE_REDEEM_LIMIT', INVITE_REDEEM_LIMIT, 10, 60 * 1000, undefined],
         ['MFA_VERIFY_LIMIT', MFA_VERIFY_LIMIT, 5, 15 * 60 * 1000, 5 * 60 * 1000],
         ['MFA_ENROLL_VERIFY_LIMIT', MFA_ENROLL_VERIFY_LIMIT, 10, 15 * 60 * 1000, undefined],
+        // #3869 — the first preset meant to bind a PERSON rather than an IP.
+        // No external anchor, so pinned to what it is. `undefined` lockout is
+        // the point rather than an omission: a person who asks too fast should
+        // wait out the window, not be shut out for an hour.
+        ['AGENT_QUESTION_LIMIT', AGENT_QUESTION_LIMIT, 20, 60 * 60 * 1000, undefined],
     ];
 
     it('the pinned table covers every preset the module exports', () => {
