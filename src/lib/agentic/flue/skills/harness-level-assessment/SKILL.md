@@ -4,7 +4,7 @@ description: Judge one discovered agent against each harness-ladder criterion an
 license: proprietary
 metadata:
   sourceRef: original guidance; criteria are the Inflect harness ladder ids
-  version: '1'
+  version: '2'
   requiredInput: discoveredAgent
   output: report
   controls: A.5.16, A.5.18, A.8.2, ASI03
@@ -56,7 +56,12 @@ Name each criterion by its id, written exactly as below.
   guarded (`H3.payloads_guarded`), writes queued for approval
   (`H3.propose_not_commit`) with prior state read first
   (`H3.prior_state_reads`), skills declared and licensed (`H3.skills_declared`),
-  and delegation narrowing (`H3.delegation_narrows`).
+  delegation narrowing (`H3.delegation_narrows`), and outbound network access
+  enforced against an allow-list (`H3.egress_enforced`).
+- For `H3.egress_enforced`, enforced is not the same as configured. A policy that
+  logs a forbidden request and forwards it anyway has an allow-list and no
+  enforcement, so it evidences nothing — and that is the documented default of at
+  least one runtime, not a hypothetical. Rules existing is not rules binding.
 - H4 and H5 ask for observed operation: ledgers with a baseline
   (`H4.ledger_baseline`), receipts (`H4.receipts`), a drill within 30 days
   (`H4.kill_switch_drilled`), budgets (`H4.token_budget`), coverage

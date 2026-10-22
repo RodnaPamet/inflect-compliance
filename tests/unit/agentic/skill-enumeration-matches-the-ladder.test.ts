@@ -13,16 +13,17 @@
  * evaluation set — they fire when the SKILL changes without re-recording, and
  * say nothing about the ladder.
  *
- * MEASURED, on a branch that adds one: a new criterion on the H3 rung left the
- * skill a criterion short and every suite green — 48 agentic suites, 1,063
- * tests, and the flue project's 12/70. `iam-skill-outputs` comes closest and
- * tests the answer PARSER against a ladder-DERIVED fixture, which is why it
+ * MEASURED, on the change that added `H3.egress_enforced`: the new criterion
+ * left the skill a criterion short and every suite green — 48 agentic suites,
+ * 1,063 tests, and the flue project's 12/70. `iam-skill-outputs` comes closest
+ * and tests the answer PARSER against a ladder-DERIVED fixture, which is why it
  * stayed green too. So the only thing that noticed was reading the diff.
  *
- * This guard ships ahead of that criterion deliberately. The two agree on
- * `main` today, so it is green here and does its work on whoever adds the next
- * one — which is the point of a guard that exists because a precondition was
- * recorded in prose and nothing checked it.
+ * This guard shipped BEFORE that criterion, deliberately: the two agreed on
+ * `main` at the time, so it was green on arrival and did its work on the very
+ * next criterion added — which was the one that had exposed the gap. Both are
+ * now on `main`, so the worked example above is history rather than a pending
+ * change.
  *
  * So the drift is silent in exactly the direction that matters. An assessor
  * working from a stale enumeration returns verdicts for six H3 criteria when the

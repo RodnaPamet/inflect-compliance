@@ -86,6 +86,31 @@ export const HARNESS_CRITERIA = {
         'H3.prior_state_reads',
         'H3.skills_declared',
         'H3.delegation_narrows',
+        /*
+            `H3.egress_enforced` — the agent's outbound network access is
+            enforced against an allow-list, with evidence (#3947).
+
+            WORDED FOR THE PROPERTY, NOT THE PRODUCT. A kernel sandbox is one
+            source of this evidence; so is a Kubernetes NetworkPolicy, a cloud
+            egress firewall, or a mediating proxy that fails closed. A criterion
+            meaning "runs in <vendor>" would turn the ladder into a vendor
+            checklist and could never be met by the next mechanism, which is the
+            opposite of what a ladder is for.
+
+            ENFORCED is the load-bearing word, and it is not the same as
+            CONFIGURED. A policy that logs a forbidden request and forwards it
+            anyway has an allow-list and no enforcement — and that is the
+            DOCUMENTED DEFAULT of at least one runtime we expect to meet this
+            criterion, so the distinction is not hypothetical. Evidence that
+            rules exist is not evidence that they bind; a verdict needs the
+            second.
+
+            Sits on H3 ("Guarded") beside `payloads_guarded`: both are about
+            what leaves the loop. `tools_allowlisted` on H2 asks which hosts the
+            agent was CONFIGURED to reach; this asks whether anything stops it
+            reaching others.
+        */
+        'H3.egress_enforced',
     ],
     H4: [
         'H4.ledger_baseline',
