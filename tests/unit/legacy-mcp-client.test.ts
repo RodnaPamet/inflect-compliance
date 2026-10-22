@@ -803,6 +803,45 @@ describe('1b client — production cannot bypass safeFetch', () => {
         expect(carriers.length).toBeLessThan(12);
     });
 
+    it('follows the graph TRANSITIVELY, proved on a graph that has depth', () => {
+        /**
+         * WHY SYNTHETIC, AND WHY TWO OBVIOUS VERSIONS PROVED NOTHING.
+         *
+         * First attempt: assert transitivity by naming `a2a-outbound` as "two
+         * hops out". It is not — it imports `WireFetch` from `wire-transport`
+         * DIRECTLY, as do both other carriers. Every real carrier today is one
+         * hop, so limiting the walker to a single pass changed nothing and the
+         * assertion passed either way.
+         *
+         * Second attempt: a synthetic three-level graph, inserted root-first.
+         * That passed under a single pass too, because the inner loop visits
+         * every file per pass — in dependency order one pass reaches the whole
+         * chain. The ORDER was doing the work the loop was being credited for.
+         *
+         * So the entries below are in REVERSE dependency order, which is what
+         * makes a single pass insufficient: `three` is visited before `two` is a
+         * carrier, and `two` before `one` is. Mutating the bound to 1 now fails
+         * here, which is the only reason the loop is worth keeping while no real
+         * carrier is multi-hop.
+         */
+        const synthetic = new Map([
+            ['src/c/three.ts', "import { y } from '@/b/two';\nconst o = { fetchImpl: y.fetchImpl };"],
+            ['src/b/two.ts', "import { x } from '@/a/one';\nconst o = { fetchImpl: x.fetchImpl };"],
+            ['src/a/one.ts', "import type { W } from '@/lib/mcp/wire-transport';\nlet fetchImpl;"],
+            // Imports a carrier but never mentions the option: out of scope. Its
+            // absence is what keeps this from flagging the thirteen unrelated
+            // files that inject their own fetch for their own reasons.
+            ['src/d/four.ts', "import { z } from '@/c/three';\nconst o = { timeoutMs: 1 };"],
+            [ROOT, 'export interface W { readonly fetchImpl?: WireFetch }'],
+        ]);
+        const found = deriveCarriers(synthetic);
+
+        expect(found).toContain('src/a/one.ts');
+        expect(found).toContain('src/b/two.ts');
+        expect(found).toContain('src/c/three.ts');
+        expect(found).not.toContain('src/d/four.ts');
+    });
+
     it('no file under src/ ORIGINATES a fetchImpl, though it may forward one', () => {
         // THE PROPERTY, stated precisely. "No file mentions it" is too strong —
         // a layered test seam works by forwarding, and every real instance here
