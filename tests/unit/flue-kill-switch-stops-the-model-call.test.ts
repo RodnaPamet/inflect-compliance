@@ -55,7 +55,15 @@ jest.mock('@/lib/agentic/flue/runtime-start', () => ({
 }));
 jest.mock('@/lib/agentic/flue/providers', () => ({ flueModelIsRegistered: jest.fn(() => true) }));
 jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
-    flueToolsFor: jest.fn(() => ({ tools: [], omitted: [] })),
+    // ONE tool, not an empty list (#3869 deploy 2). An empty catalogue now
+    // settles EMPTY_CATALOGUE rather than COMPLETED, so an empty fixture here
+    // made this file's positive control assert the DEGENERATE outcome — a
+    // "runs normally" case that would have passed even if normal runs broke.
+    // A kill-switch test should not depend on the no-tools state at all.
+    flueToolsFor: jest.fn(() => ({
+        tools: [{ name: 'list_risks', description: 'stub', input: undefined, run: async () => '' }],
+        omitted: [],
+    })),
 }));
 jest.mock('@/lib/mcp/tools/propose-tools', () => ({
     isProposeTool: () => false,
