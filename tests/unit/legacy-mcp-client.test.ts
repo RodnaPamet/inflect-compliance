@@ -771,11 +771,20 @@ describe('1b client — production cannot bypass safeFetch', () => {
      * fifth consumer is in scope the day it is written, which a named predicate
      * cannot be.
      */
-    const seamCarriers = (): readonly string[] => {
-        const carriers = new Set(['src/lib/mcp/wire-transport.ts']);
-        const sources = new Map(srcFiles().map((f) => [f, codeIn(f)]));
-        // A fixed point, not one pass: a2a-outbound reaches the seam through
-        // a2a/client, so one hop from wire-transport would miss it.
+    const ROOT = 'src/lib/mcp/wire-transport.ts';
+
+    /**
+     * Carriers of the seam, to a FIXED POINT. Pure, and separated from the file
+     * read, so its transitivity can be tested on a graph that actually has
+     * depth — see the test below and the two failed attempts recorded in it.
+     *
+     * Every real carrier today imports `wire-transport` DIRECTLY, so the loop is
+     * currently unexercised by the repository. It is kept for the fifth consumer
+     * reached through another module, which will arrive without anyone
+     * remembering this exists.
+     */
+    const deriveCarriers = (sources: ReadonlyMap<string, string>): readonly string[] => {
+        const carriers = new Set([ROOT]);
         for (let pass = 0; pass < 12; pass += 1) {
             const before = carriers.size;
             for (const [rel, src] of sources) {
@@ -788,14 +797,18 @@ describe('1b client — production cannot bypass safeFetch', () => {
             }
             if (carriers.size === before) break;
         }
-        return [...carriers].filter((c) => c !== 'src/lib/mcp/wire-transport.ts');
+        return [...carriers].filter((c) => c !== ROOT);
     };
 
-    it('the derived carrier set reaches past the first hop', () => {
-        // The denominator beside the result. A walker that found only the direct
-        // importers would reproduce the bug this replaced, and its offender list
-        // would still be empty — so the SHAPE of the population is asserted, not
-        // just the verdict. `a2a-outbound` is two hops out and is the discriminator.
+    const seamCarriers = (): readonly string[] =>
+        deriveCarriers(new Map(srcFiles().map((f) => [f, codeIn(f)])));
+
+    it('finds every DIRECT importer of the seam that mentions it', () => {
+        // The denominator beside the result: an offender list is only as good as
+        // the population it ranged over, and an empty list over an empty
+        // population is exactly the failure this block replaced. All three are
+        // ONE hop — the transitivity claim is tested separately and synthetically,
+        // because nothing real is multi-hop.
         const carriers = seamCarriers();
         expect(carriers).toContain('src/lib/mcp/client/index.ts');
         expect(carriers).toContain('src/lib/agentic/a2a/client.ts');
