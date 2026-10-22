@@ -330,5 +330,10 @@ export {
     MFA_ENROLL_VERIFY_LIMIT,
     TENANT_INVITE_CREATE_LIMIT,
     INVITE_REDEEM_LIMIT,
+    // #3869. Re-exported rather than left to be imported from `rate-limit`
+    // directly: this list is how a route author finds the presets, and the one
+    // preset missing from it is described in the tests as a GAP rather than a
+    // pattern to copy.
+    AGENT_QUESTION_LIMIT,
 } from './rate-limit';
 export type { RateLimitConfig, RateLimitResult } from './rate-limit';

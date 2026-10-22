@@ -4,6 +4,7 @@ import { parseJsonBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 import { askAdHocQuestion } from '@/app-layer/usecases/ad-hoc-question';
 import { AGENT_QUESTION_LIMIT } from '@/lib/security/rate-limit';
+import { env } from '@/env';
 import { z } from 'zod';
 
 /**
@@ -61,9 +62,14 @@ export const POST = withApiErrorHandling(
             config: AGENT_QUESTION_LIMIT,
             scope: 'agent-question',
             // THE PER-USER KEY. From the session only.
+            // `env.AUTH_SECRET`, never `process.env` — raw access is refused by
+            // `no-fallbacks`, and the reason is the one `env.ts` exists for: a
+            // var read directly is a var nothing validated at boot, so a
+            // missing secret becomes a silent `undefined` here and every key
+            // falls back to `anon` with no error anywhere.
             getUserId: async (request) => {
                 const { getToken } = await import('next-auth/jwt');
-                const token = await getToken({ req: request, secret: process.env.AUTH_SECRET });
+                const token = await getToken({ req: request, secret: env.AUTH_SECRET });
                 return typeof token?.sub === 'string' ? token.sub : null;
             },
         },
