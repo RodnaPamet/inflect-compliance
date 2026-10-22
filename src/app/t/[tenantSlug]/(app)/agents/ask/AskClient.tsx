@@ -104,6 +104,21 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
     const [result, setResult] = useState<AskResult | null>(null);
     const [refusal, setRefusal] = useState<string | null>(null);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /**
+     * The LATEST `poll`, so the recursive tick does not capture the first one.
+     *
+     * `poll` schedules itself, which means referencing it inside its own
+     * `useCallback` — and that captures the function as it was when the
+     * closure was created. Its dependencies do not change during a run today,
+     * so the stale closure is harmless NOW; that is a safety argument resting
+     * on a fact nothing enforces, and the React Compiler's rule says so in as
+     * many words: "prevents the earlier access from updating when this value
+     * changes over time".
+     *
+     * A ref kept current in an effect removes the capture entirely rather than
+     * arguing about when it would matter.
+     */
+    const pollRef = useRef<((runId: string, attempt: number) => Promise<void>) | null>(null);
 
     // Cleared on unmount so a pending poll cannot set state on a gone
     // component — and so navigating away actually stops the requests.
@@ -141,10 +156,16 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                 setPhase('refused');
                 return;
             }
-            timer.current = setTimeout(() => void poll(runId, attempt + 1), POLL_MS);
+            timer.current = setTimeout(() => void pollRef.current?.(runId, attempt + 1), POLL_MS);
         },
         [tenantSlug, t],
     );
+
+    // In an effect, not during render: assigning a ref while rendering is its
+    // own rule violation, and this is exactly what effects are for.
+    useEffect(() => {
+        pollRef.current = poll;
+    }, [poll]);
 
     const submit = useCallback(async () => {
         setPhase('running');

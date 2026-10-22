@@ -23,6 +23,7 @@
  */
 import * as React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { axe } from 'jest-axe';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
@@ -248,5 +249,60 @@ describe('running', () => {
         // rather than settling on a run that has not finished.
         await waitFor(() => expect(screen.getByRole('button', { name: 'Asking…' })).toBeInTheDocument());
         expect(screen.queryByText(/Three controls/)).toBeNull();
+    });
+});
+
+describe('accessibility, in both themes', () => {
+    /**
+     * M3 asks for axe in both themes with zero critical or serious violations.
+     *
+     * ── WHAT THIS DOES AND DOES NOT CHECK ───────────────────────────────────
+     *
+     * Asserted on IMPACT rather than with `toHaveNoViolations`, which fails on
+     * any violation at all. That is deliberate: the requirement is
+     * critical/serious, and a blanket matcher would make a `minor` advisory
+     * block a merge while telling nobody which bar was actually missed. The
+     * lesser violations are still surfaced in the failure message when the
+     * named ones fire.
+     *
+     * It checks STRUCTURE — accessible names, roles, label associations, list
+     * semantics. It does NOT check rendered colour contrast: jsdom computes no
+     * styles from the stylesheet, so every element is effectively unstyled and
+     * axe's contrast rules cannot run. Reading this as a contrast guarantee
+     * would be reading it as something it cannot be; contrast in both themes is
+     * what the token tests and the DAST per-role scans cover.
+     *
+     * Both themes are still exercised because the attribute is real and
+     * component markup can branch on it — an icon-only control that gains a
+     * label in one theme and loses it in the other would fail here.
+     */
+    const NAMED = new Set(['critical', 'serious']);
+
+    afterEach(() => {
+        document.documentElement.removeAttribute('data-theme');
+    });
+
+    it.each([['light'], ['dark']])('no critical or serious violations on the %s theme', async (theme) => {
+        document.documentElement.setAttribute('data-theme', theme);
+        wireFetch(
+            settled({
+                toolCalls: [
+                    { seq: 1, tool: 'list_controls', outcome: 'DONE', refusal: null, guardVerdict: null },
+                    { seq: 2, tool: 'list_risks', outcome: 'FAILED', refusal: 'agent_suspended', guardVerdict: 'BLOCK' },
+                ],
+            }),
+        );
+        // The ANSWERED state, not idle: it is the one with the most structure —
+        // a list of calls, a definition list, badges — so scanning only the
+        // empty page would be scanning the easy case.
+        const { container } = render(<AskClient tenantSlug="acme" maxChars={MAX} />);
+        await ask();
+        await waitFor(() => expect(screen.getByText(/Three controls have no evidence/)).toBeInTheDocument());
+
+        const results = await axe(container);
+        const named = results.violations.filter((v) => NAMED.has(String(v.impact)));
+        // The message names the rule ids, so a failure says WHAT to fix rather
+        // than only that something is wrong.
+        expect(named.map((v) => `${v.impact}: ${v.id}`)).toEqual([]);
     });
 });
