@@ -54,6 +54,7 @@ import {
     isSessionExpired,
     noteUnauthorized,
 } from '@/lib/auth/session-expiry';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const POLL_INTERVAL_MS = 2000;
 // EP-4 — after this many consecutive poll failures (throw / non-ok) the
@@ -255,10 +256,8 @@ export function EvidenceBulkImportModal({
                 const msg =
                     err instanceof UploadHttpError
                         ? (() => {
-                              const body = err.parsedBody as
-                                  | { error?: string; message?: string }
-                                  | null;
-                              return body?.error || body?.message || err.message;
+                              const body: unknown = err.parsedBody;
+                              return apiErrorMessage(body, err.message);
                           })()
                         : err instanceof Error
                           ? err.message

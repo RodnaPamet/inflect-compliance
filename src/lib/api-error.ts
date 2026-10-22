@@ -14,15 +14,28 @@
  * the canonical `{ error: { message } }` envelope, a flat `{ error: 'string' }`,
  * and a bare `{ message: 'string' }`.
  */
+/**
+ * A blank string is ABSENT, not a message (#3984). A whitespace-only sentence
+ * renders an empty alert, which a reader cannot tell apart from a broken page,
+ * so the caller's own fallback is strictly better. This applies at all three
+ * shapes, because any of them can carry `''` — and the three are tried in
+ * order, so a blank at one shape now falls through to the next rather than
+ * ending the search.
+ */
+const text = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() !== '' ? value : undefined;
+
 export function apiErrorMessage(body: unknown, fallback: string): string {
     if (body && typeof body === 'object') {
         const b = body as { error?: unknown; message?: unknown };
-        if (typeof b.error === 'string') return b.error;
+        const flat = text(b.error);
+        if (flat !== undefined) return flat;
         if (b.error && typeof b.error === 'object') {
-            const inner = b.error as { message?: unknown };
-            if (typeof inner.message === 'string') return inner.message;
+            const inner = text((b.error as { message?: unknown }).message);
+            if (inner !== undefined) return inner;
         }
-        if (typeof b.message === 'string') return b.message;
+        const bare = text(b.message);
+        if (bare !== undefined) return bare;
     }
     return fallback;
 }

@@ -48,6 +48,7 @@ import { Heading } from '@/components/ui/typography';
 import { Card } from '@/components/ui/card';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { apiErrorMessage } from '@/lib/api-error';
 
 interface RiskMatrixAdminClientProps {
     tenantSlug: string;
@@ -237,10 +238,10 @@ export function RiskMatrixAdminClient({
                 },
             );
             if (!res.ok) {
-                const body = (await res
-                    .json()
-                    .catch(() => ({}))) as { error?: string };
-                throw new Error(body.error || t('riskMatrix.saveFailedStatus', { status: res.status }));
+                const body: unknown = await res.json().catch(() => ({}));
+                throw new Error(
+                    apiErrorMessage(body, t('riskMatrix.saveFailedStatus', { status: res.status })),
+                );
             }
             const next = (await res.json()) as RiskMatrixConfigShape;
             setConfig(cloneConfig(next));

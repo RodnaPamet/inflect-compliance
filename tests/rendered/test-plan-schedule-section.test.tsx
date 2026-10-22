@@ -272,7 +272,12 @@ describe('TestPlanScheduleSection — save interaction', () => {
 
     test('API error surfaces inline without calling onSaved', async () => {
         global.fetch = jest.fn().mockResolvedValue(
-            fakeError(400, { error: 'Invalid cron' }),
+            // THE REAL ENVELOPE (#3984) -- see the note in
+            // `identity-write-ladder.test.tsx`. This sent `{ error: 'string' }`,
+            // the shape the cast claimed rather than the one the server sends.
+            fakeError(400, {
+                error: { code: 'VALIDATION_ERROR', message: 'Invalid cron', requestId: 'req_test' },
+            }),
         );
         const onSaved = jest.fn();
         const user = userEvent.setup();

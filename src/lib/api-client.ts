@@ -47,8 +47,18 @@ export class ApiClientError extends Error {
 
 /**
  * Parse a non-2xx response into ApiClientError.
- * Tries to parse the standard { error: { code, message, ... } } shape.
- * Falls back to generic error if the body is not parseable.
+ * Reads the `error` envelope ONLY, and narrows every field (#3984). Falls back
+ * to generic error if the body is not parseable.
+ *
+ * Deliberately NOT `apiErrorMessage` from `@/lib/api-error`, though that is
+ * the right reader for a raw-`fetch` call site. The two contracts differ on
+ * purpose and the tests below pin both: that helper is lenient, accepting a
+ * bare `{ message }` and a flat `{ error: 'string' }` because all three shapes
+ * occur in the wild, whereas this client speaks to our OWN API, where the
+ * envelope is guaranteed -- so a top-level `message` is not an API error
+ * message here, and an empty string is absent rather than a message. Routing
+ * this through the lenient reader turns both of those into silent behaviour
+ * changes.
  */
 async function handleErrorResponse(res: Response): Promise<never> {
     let code = 'UNKNOWN';
@@ -57,12 +67,35 @@ async function handleErrorResponse(res: Response): Promise<never> {
     let requestId: string | undefined;
 
     try {
-        const body = await res.json();
-        if (body?.error) {
-            code = body.error.code || code;
-            message = body.error.message || message;
-            details = body.error.details;
-            requestId = body.error.requestId;
+        const body: unknown = await res.json();
+        // NARROWED, not cast. This was four `||` reads against an `any`, and
+        // the message one carried a milder form of the defect that crashed
+        // three pages (#3984): an OBJECT passes `||`, so it reached
+        // `new Error(...)` and coerced to `[object Object]`, discarding BOTH
+        // the reason and the `Request failed with status N` fallback computed
+        // just above. It never crashed a page only because `Error` stringifies
+        // its argument. `res.json()` is typed `any`, so nothing upstream
+        // checked any of this.
+        //
+        // A blank string stays ABSENT, which is what `||` gave and what the
+        // test below pins: a whitespace-only message renders an empty alert,
+        // indistinguishable from a broken page, so the status sentence is
+        // strictly better.
+        const envelope =
+            typeof body === 'object' && body !== null
+                ? (body as { error?: unknown }).error
+                : undefined;
+        if (typeof envelope === 'object' && envelope !== null) {
+            const fields = envelope as Record<string, unknown>;
+            const text = (value: unknown): string | undefined =>
+                typeof value === 'string' && value.trim() !== '' ? value : undefined;
+            code = text(fields.code) ?? code;
+            message = text(fields.message) ?? message;
+            requestId = text(fields.requestId);
+            // `details` is unconstrained by the contract (Zod issues, for
+            // instance), so it passes through as `unknown` and stays the
+            // caller's to narrow.
+            details = fields.details;
         }
     } catch {
         // Body is not JSON — use defaults

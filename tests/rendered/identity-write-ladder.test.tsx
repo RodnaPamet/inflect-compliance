@@ -99,7 +99,25 @@ function mockFetch(response: { ok: boolean; error?: string } = { ok: true }) {
         bodies.push(JSON.parse(String(init?.body)));
         return {
             ok: response.ok,
-            json: async () => (response.ok ? {} : { error: response.error }),
+            // THE REAL ENVELOPE (#3984). This sent `{ error: '<string>' }` --
+            // the shape the client's cast CLAIMED, not the shape
+            // `withApiErrorHandling` sends, which is
+            // `{ error: { code, message, requestId } }`. So the refusal test
+            // below passed while the real page handed that object to JSX and
+            // threw React #31, dying in place of the alert the test asserted.
+            // The helper's own signature keeps taking a plain string, because
+            // what a caller cares about is the sentence; what the WIRE carries
+            // is this module's business and must match production.
+            json: async () =>
+                response.ok
+                    ? {}
+                    : {
+                          error: {
+                              code: 'FORBIDDEN',
+                              message: response.error,
+                              requestId: 'req_test',
+                          },
+                      },
         } as Response;
     });
     global.fetch = fn as unknown as typeof fetch;
