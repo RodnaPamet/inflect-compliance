@@ -273,6 +273,12 @@ export async function startInteractiveRun(
         throw forbidden(`${resolved.refusal}: ${resolved.detail}`);
     }
     const { startWorkflowRun } = await import('./workflow-runs');
-    const started = await startWorkflowRun(interactiveRunContext(ctx, resolved.agentId), workflowKey, input);
+    // `readOnlyAuthority`, because a person asking a question is not making a
+    // write. Verified inside `startWorkflowRun` against the definition's own
+    // `readOnly` declaration, so this is a claim that cannot be made falsely —
+    // and `ad-hoc-question` declares it.
+    const started = await startWorkflowRun(interactiveRunContext(ctx, resolved.agentId), workflowKey, input, {
+        readOnlyAuthority: true,
+    });
     return { runId: started.runId };
 }
