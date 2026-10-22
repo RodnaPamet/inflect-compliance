@@ -39,6 +39,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { makeRequestContext } from '../helpers/make-context';
 import type { RequestContext } from '@/app-layer/types';
@@ -144,6 +145,22 @@ describeFn('a question asked and read back (integration)', () => {
     });
 
     afterAll(async () => {
+        // AUDIT ROWS FIRST, with the immutability triggers disabled.
+        //
+        // `AuditLog` has real foreign keys to Tenant and User, and every suite
+        // that drives a usecase writes audit rows — this one starts real runs,
+        // so it writes several. Deleting the parents without clearing them
+        // fails, and whether it fails depends on whether the table happens to
+        // be empty, which depends on which sibling suite ran first. That is an
+        // order-dependent teardown, which is worse than a failing one.
+        //
+        // Through the helper rather than a raw delete: the rows are protected
+        // by immutability triggers, so a plain `deleteMany` cannot remove them.
+        // By TENANT is enough: every audit row this suite writes carries this
+        // tenantId, and the user is only ever an actor on those rows. There is
+        // no `deleteAuditRowsForUsers` helper, which is consistent with that.
+        await deleteAuditRowsForTenants(prisma, [TENANT_ID]);
+
         const t = { tenantId: TENANT_ID };
         for (const m of [
             'aiDecisionLog',
