@@ -47,7 +47,23 @@ export interface A2aSendRequest {
     readonly body: string;
     readonly receiptHeader: string;
     readonly timeoutMs?: number;
-    /** Test seam, passed straight to `wirePost`. No file under src/ passes one. */
+    /**
+     * Test seam, passed straight to `wirePost`.
+     *
+     * It said "No file under src/ passes one", and that was false (#3983):
+     * `usecases/a2a-outbound.ts` forwards one from its own
+     * `A2aNetworkOptions.fetchImpl`, which in turn appears on the options of
+     * `external-write-dispatch` and `external-write-reconcile`. The accurate
+     * claim is the one the guard now holds — no file under `src/` ORIGINATES a
+     * `fetchImpl`; the chain only forwards what a caller supplied, and in
+     * production nobody supplies one.
+     *
+     * The distinction matters because a forward is how a layered seam works,
+     * while originating one is the diff that routes around `safeFetch` looking
+     * like dependency injection. `tests/unit/legacy-mcp-client.test.ts` derives
+     * the carrier set from the import graph, so this file being two hops from
+     * `wire-transport` no longer puts it outside the check.
+     */
     readonly fetchImpl?: WireFetch;
 }
 

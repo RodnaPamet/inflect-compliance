@@ -753,20 +753,82 @@ describe('1b client — production cannot bypass safeFetch', () => {
         expect(offenders).toEqual([]);
     });
 
-    it('no file under src/ passes fetchImpl to the client', () => {
-        // The seam is for tests. A production caller supplying one would route
-        // around the SSRF defence in a diff that looks like dependency injection.
+    /**
+     * THE SEAM'S CARRIERS, DERIVED RATHER THAN NAMED (#3983).
+     *
+     * `fetchImpl` is declared on `wire-transport`, and the previous version of
+     * this scope named ONE way to reach it —
+     * `/@\/lib\/mcp\/client/ || /pullSnapshot\s*\(/`. `wire-transport` has four
+     * consumers under `src/` and that predicate matched one:
+     *
+     *   src/lib/mcp/client/index.ts                 matched
+     *   src/app-layer/integrations/mcp/client.ts    not matched (declares no seam)
+     *   src/lib/agentic/a2a/client.ts               NOT MATCHED, forwards the seam
+     *   src/app-layer/usecases/a2a-outbound.ts      NOT MATCHED, forwards the seam
+     *
+     * So this walks the import graph to a fixed point instead: a file is a
+     * carrier if it imports a carrier AND mentions the option. Deriving means a
+     * fifth consumer is in scope the day it is written, which a named predicate
+     * cannot be.
+     */
+    const seamCarriers = (): readonly string[] => {
+        const carriers = new Set(['src/lib/mcp/wire-transport.ts']);
+        const sources = new Map(srcFiles().map((f) => [f, codeIn(f)]));
+        // A fixed point, not one pass: a2a-outbound reaches the seam through
+        // a2a/client, so one hop from wire-transport would miss it.
+        for (let pass = 0; pass < 12; pass += 1) {
+            const before = carriers.size;
+            for (const [rel, src] of sources) {
+                if (carriers.has(rel) || !/\bfetchImpl\b/.test(src)) continue;
+                const importsCarrier = [...carriers].some((c) => {
+                    const spec = c.replace(/^src\//, '@/').replace(/(\/index)?\.ts$/, '');
+                    return src.includes(`'${spec}'`) || src.includes(`"${spec}"`);
+                });
+                if (importsCarrier) carriers.add(rel);
+            }
+            if (carriers.size === before) break;
+        }
+        return [...carriers].filter((c) => c !== 'src/lib/mcp/wire-transport.ts');
+    };
+
+    it('the derived carrier set reaches past the first hop', () => {
+        // The denominator beside the result. A walker that found only the direct
+        // importers would reproduce the bug this replaced, and its offender list
+        // would still be empty — so the SHAPE of the population is asserted, not
+        // just the verdict. `a2a-outbound` is two hops out and is the discriminator.
+        const carriers = seamCarriers();
+        expect(carriers).toContain('src/lib/mcp/client/index.ts');
+        expect(carriers).toContain('src/lib/agentic/a2a/client.ts');
+        expect(carriers).toContain('src/app-layer/usecases/a2a-outbound.ts');
+        expect(carriers.length).toBeLessThan(12);
+    });
+
+    it('no file under src/ ORIGINATES a fetchImpl, though it may forward one', () => {
+        // THE PROPERTY, stated precisely. "No file mentions it" is too strong —
+        // a layered test seam works by forwarding, and every real instance here
+        // is a forward (`fetchImpl: net.fetchImpl`). What must never appear is a
+        // file ORIGINATING one: a function literal, an imported fetch,
+        // `globalThis.fetch`. That is the diff which routes around `safeFetch`
+        // while looking like dependency injection, and it is what the seam's own
+        // docstring is afraid of.
+        //
+        // Stated this way the guard needs no exemption list. Widening the old
+        // predicate to all four consumers would have flagged two files that only
+        // forward, and the fix for that would have been an allowlist — which is
+        // the trap this block's own history names: a guard with an exemption list
+        // is measuring the list.
         const offenders: string[] = [];
-        for (const rel of srcFiles()) {
-            if (rel === 'src/lib/mcp/client/index.ts') continue; // declares the option
+        for (const rel of seamCarriers()) {
             const src = codeIn(rel);
-            // Narrowed to files that actually reach this client. The first version
-            // flagged any `fetchImpl:` anywhere and named thirteen unrelated files
-            // that inject their own fetch for their own reasons — a guard that
-            // fires on an unrelated population gets an exemption list, and then it
-            // is measuring the list.
-            const reachesClient = /@\/lib\/mcp\/client/.test(src) || /pullSnapshot\s*\(/.test(src);
-            if (reachesClient && /\bfetchImpl\s*:/.test(src)) offenders.push(rel);
+            // `fetchImpl?:` is a DECLARATION and is not matched: `\s*` does not
+            // cross the `?`. A non-optional declaration is matched and excluded
+            // by its value being a bare type name.
+            for (const m of src.matchAll(/\bfetchImpl\s*:\s*([^,;)}\n]+)/g)) {
+                const value = m[1].trim();
+                if (/\.fetchImpl$/.test(value)) continue; // forwarded from a caller
+                if (/^(WireFetch|FetchImpl|typeof fetch)\b/.test(value)) continue; // a declaration
+                offenders.push(`${rel} -> fetchImpl: ${value}`);
+            }
         }
         expect(offenders).toEqual([]);
     });
