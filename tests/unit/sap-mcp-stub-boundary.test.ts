@@ -22,6 +22,8 @@
  * `$metadata`, no release or authorisation design. A green run here means M4's
  * code can be written and exercised, not that it will work against S/4.
  */
+import { readFileSync } from 'node:fs';
+
 import {
     ANCHOR,
     BILLING_DOCUMENTS,
@@ -177,6 +179,54 @@ describe('sales_orders_by_creator', () => {
         expect((wide.payload.orders as { sales_order: string }[]).map((o) => o.sales_order)).toContain(
             yesterday?.sales_order,
         );
+    });
+
+    it('compares UTC calendar days by construction, not local-time getters', async () => {
+        /**
+         * THE BEHAVIOURAL TEST ABOVE CANNOT CATCH THIS IN CI, SO THIS DOES.
+         *
+         * A local-offset filter and a UTC one are INDISTINGUISHABLE on a UTC
+         * machine, and GitHub runners default to UTC while this was written on
+         * Europe/Sofia. Mutating the handler to `getDate()` therefore fails the
+         * boundary test locally and is a NO-OP in CI — the assertion could not
+         * express the failure it names on the machine that decides whether the
+         * branch merges.
+         *
+         * Forcing the zone in-process does not work either: `process.env.TZ`
+         * reassignment has no effect once Node has resolved the timezone, and
+         * Jest's own setup touches `Date` long before any test body runs. A
+         * first attempt here did exactly that and its control assertion caught
+         * it — the zone never changed, so the test would have passed while
+         * proving nothing.
+         *
+         * What IS independent of the runner is the implementation's shape. The
+         * correct filter slices the ISO string; every local-time getter reads
+         * the ambient zone and is therefore wrong here whatever that zone
+         * happens to be. This is narrow on purpose: one small file, one list of
+         * identifiers, and the mutation it is aimed at is the one a reviewer
+         * would most plausibly introduce as a tidy-up.
+         */
+        const src = readFileSync(
+            require.resolve('../../packages/sap-mcp-stub/src/handler.ts'),
+            'utf8',
+        );
+        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+        for (const getter of [
+            'getFullYear',
+            'getMonth',
+            'getDate',
+            'getHours',
+            'getTimezoneOffset',
+            'toLocaleDateString',
+        ]) {
+            expect(code).not.toContain(getter);
+        }
+        // The positive half: it really does slice the ISO string, so the
+        // absences above are the chosen mechanism rather than an empty file or
+        // a date comparison that moved somewhere this cannot see.
+        expect(code).toContain("iso.slice(0, 10)");
+        expect(code).toContain('const utcDay');
     });
 
     it('answers "nothing" for a user with no orders, distinguishably from a failure', async () => {
