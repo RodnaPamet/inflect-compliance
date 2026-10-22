@@ -753,20 +753,134 @@ describe('1b client — production cannot bypass safeFetch', () => {
         expect(offenders).toEqual([]);
     });
 
-    it('no file under src/ passes fetchImpl to the client', () => {
-        // The seam is for tests. A production caller supplying one would route
-        // around the SSRF defence in a diff that looks like dependency injection.
+    /**
+     * THE SEAM'S CARRIERS, DERIVED RATHER THAN NAMED (#3983).
+     *
+     * `fetchImpl` is declared on `wire-transport`, and the previous version of
+     * this scope named ONE way to reach it —
+     * `/@\/lib\/mcp\/client/ || /pullSnapshot\s*\(/`. `wire-transport` has four
+     * consumers under `src/` and that predicate matched one:
+     *
+     *   src/lib/mcp/client/index.ts                 matched
+     *   src/app-layer/integrations/mcp/client.ts    not matched (declares no seam)
+     *   src/lib/agentic/a2a/client.ts               NOT MATCHED, forwards the seam
+     *   src/app-layer/usecases/a2a-outbound.ts      NOT MATCHED, forwards the seam
+     *
+     * So this walks the import graph to a fixed point instead: a file is a
+     * carrier if it imports a carrier AND mentions the option. Deriving means a
+     * fifth consumer is in scope the day it is written, which a named predicate
+     * cannot be.
+     */
+    const ROOT = 'src/lib/mcp/wire-transport.ts';
+
+    /**
+     * Carriers of the seam, to a FIXED POINT. Pure, and separated from the file
+     * read, so its transitivity can be tested on a graph that actually has
+     * depth — see the test below and the two failed attempts recorded in it.
+     *
+     * Every real carrier today imports `wire-transport` DIRECTLY, so the loop is
+     * currently unexercised by the repository. It is kept for the fifth consumer
+     * reached through another module, which will arrive without anyone
+     * remembering this exists.
+     */
+    const deriveCarriers = (sources: ReadonlyMap<string, string>): readonly string[] => {
+        const carriers = new Set([ROOT]);
+        for (let pass = 0; pass < 12; pass += 1) {
+            const before = carriers.size;
+            for (const [rel, src] of sources) {
+                if (carriers.has(rel) || !/\bfetchImpl\b/.test(src)) continue;
+                const importsCarrier = [...carriers].some((c) => {
+                    const spec = c.replace(/^src\//, '@/').replace(/(\/index)?\.ts$/, '');
+                    return src.includes(`'${spec}'`) || src.includes(`"${spec}"`);
+                });
+                if (importsCarrier) carriers.add(rel);
+            }
+            if (carriers.size === before) break;
+        }
+        return [...carriers].filter((c) => c !== ROOT);
+    };
+
+    const seamCarriers = (): readonly string[] =>
+        deriveCarriers(new Map(srcFiles().map((f) => [f, codeIn(f)])));
+
+    it('finds every DIRECT importer of the seam that mentions it', () => {
+        // The denominator beside the result: an offender list is only as good as
+        // the population it ranged over, and an empty list over an empty
+        // population is exactly the failure this block replaced. All three are
+        // ONE hop — the transitivity claim is tested separately and synthetically,
+        // because nothing real is multi-hop.
+        const carriers = seamCarriers();
+        expect(carriers).toContain('src/lib/mcp/client/index.ts');
+        expect(carriers).toContain('src/lib/agentic/a2a/client.ts');
+        expect(carriers).toContain('src/app-layer/usecases/a2a-outbound.ts');
+        expect(carriers.length).toBeLessThan(12);
+    });
+
+    it('follows the graph TRANSITIVELY, proved on a graph that has depth', () => {
+        /**
+         * WHY SYNTHETIC, AND WHY TWO OBVIOUS VERSIONS PROVED NOTHING.
+         *
+         * First attempt: assert transitivity by naming `a2a-outbound` as "two
+         * hops out". It is not — it imports `WireFetch` from `wire-transport`
+         * DIRECTLY, as do both other carriers. Every real carrier today is one
+         * hop, so limiting the walker to a single pass changed nothing and the
+         * assertion passed either way.
+         *
+         * Second attempt: a synthetic three-level graph, inserted root-first.
+         * That passed under a single pass too, because the inner loop visits
+         * every file per pass — in dependency order one pass reaches the whole
+         * chain. The ORDER was doing the work the loop was being credited for.
+         *
+         * So the entries below are in REVERSE dependency order, which is what
+         * makes a single pass insufficient: `three` is visited before `two` is a
+         * carrier, and `two` before `one` is. Mutating the bound to 1 now fails
+         * here, which is the only reason the loop is worth keeping while no real
+         * carrier is multi-hop.
+         */
+        const synthetic = new Map([
+            ['src/c/three.ts', "import { y } from '@/b/two';\nconst o = { fetchImpl: y.fetchImpl };"],
+            ['src/b/two.ts', "import { x } from '@/a/one';\nconst o = { fetchImpl: x.fetchImpl };"],
+            ['src/a/one.ts', "import type { W } from '@/lib/mcp/wire-transport';\nlet fetchImpl;"],
+            // Imports a carrier but never mentions the option: out of scope. Its
+            // absence is what keeps this from flagging the thirteen unrelated
+            // files that inject their own fetch for their own reasons.
+            ['src/d/four.ts', "import { z } from '@/c/three';\nconst o = { timeoutMs: 1 };"],
+            [ROOT, 'export interface W { readonly fetchImpl?: WireFetch }'],
+        ]);
+        const found = deriveCarriers(synthetic);
+
+        expect(found).toContain('src/a/one.ts');
+        expect(found).toContain('src/b/two.ts');
+        expect(found).toContain('src/c/three.ts');
+        expect(found).not.toContain('src/d/four.ts');
+    });
+
+    it('no file under src/ ORIGINATES a fetchImpl, though it may forward one', () => {
+        // THE PROPERTY, stated precisely. "No file mentions it" is too strong —
+        // a layered test seam works by forwarding, and every real instance here
+        // is a forward (`fetchImpl: net.fetchImpl`). What must never appear is a
+        // file ORIGINATING one: a function literal, an imported fetch,
+        // `globalThis.fetch`. That is the diff which routes around `safeFetch`
+        // while looking like dependency injection, and it is what the seam's own
+        // docstring is afraid of.
+        //
+        // Stated this way the guard needs no exemption list. Widening the old
+        // predicate to all four consumers would have flagged two files that only
+        // forward, and the fix for that would have been an allowlist — which is
+        // the trap this block's own history names: a guard with an exemption list
+        // is measuring the list.
         const offenders: string[] = [];
-        for (const rel of srcFiles()) {
-            if (rel === 'src/lib/mcp/client/index.ts') continue; // declares the option
+        for (const rel of seamCarriers()) {
             const src = codeIn(rel);
-            // Narrowed to files that actually reach this client. The first version
-            // flagged any `fetchImpl:` anywhere and named thirteen unrelated files
-            // that inject their own fetch for their own reasons — a guard that
-            // fires on an unrelated population gets an exemption list, and then it
-            // is measuring the list.
-            const reachesClient = /@\/lib\/mcp\/client/.test(src) || /pullSnapshot\s*\(/.test(src);
-            if (reachesClient && /\bfetchImpl\s*:/.test(src)) offenders.push(rel);
+            // `fetchImpl?:` is a DECLARATION and is not matched: `\s*` does not
+            // cross the `?`. A non-optional declaration is matched and excluded
+            // by its value being a bare type name.
+            for (const m of src.matchAll(/\bfetchImpl\s*:\s*([^,;)}\n]+)/g)) {
+                const value = m[1].trim();
+                if (/\.fetchImpl$/.test(value)) continue; // forwarded from a caller
+                if (/^(WireFetch|FetchImpl|typeof fetch)\b/.test(value)) continue; // a declaration
+                offenders.push(`${rel} -> fetchImpl: ${value}`);
+            }
         }
         expect(offenders).toEqual([]);
     });
