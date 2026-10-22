@@ -57,8 +57,9 @@ any criterion that depends on them.
 
 A tool-mediation rule approved through the advisor may have lost the field that
 names which tool it covers, in which case it permits every tool on that server
-while the prover still reports clean. Treat such a rule as unverified unless
-the evidence carries its tool list.
+while the prover still reports clean. Such a rule does not evidence any
+criterion unless the evidence carries its tool list, so report the criterion as
+not evidenced and name the field you looked for.
 
 ## An absent field and a dropped field look the same
 
