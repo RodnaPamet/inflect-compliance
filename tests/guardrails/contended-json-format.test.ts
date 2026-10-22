@@ -198,7 +198,16 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // So the two halves of this Format caught different things: the
         // `escapeNonAscii` round-trip would have caught the revert-worthy part,
         // and this digest caught the honest addition. Neither sees the other's.
-        keyOrderSha: 'e3f48bbacf28751ee84701e851c8231302a8e2253c049fb6e6c7d7db63f51b17',
+        //
+        // Moved 2026-10-22 for `docs/sap/metadata/README.md` (#3871 prep), a
+        // +3/-0 textual insert. The digest changes on ANY added key, so this
+        // line moving is expected and is not evidence of a reorder — the
+        // failure message's "shape of a sort_keys rewrite" hint fits the
+        // reorder case and reads as an accusation in the addition case. Both
+        // writers were tried here and produced the SAME digest, because the
+        // file is already fully sorted; the textual insert was kept anyway, per
+        // the note above.
+        keyOrderSha: '76775fd56b4f1eb4c17c0abb99a68d58144ee7059efb4f4699854caa6486aeaa',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

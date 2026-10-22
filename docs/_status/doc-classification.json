@@ -395,6 +395,9 @@
         "docs/sap-agent-integration-roadmap.md": {
             "class": "living"
         },
+        "docs/sap/metadata/README.md": {
+            "class": "authoritative"
+        },
         "docs/scheduled-notification-system.md": {
             "class": "authoritative"
         },
