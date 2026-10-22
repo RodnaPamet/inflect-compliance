@@ -40,6 +40,10 @@
 export const ASSISTANT_NAV_ROUTES: readonly string[] = Object.freeze([
     '/admin',
     '/agents',
+    // #3870 — the asking surface. Listed because this table is asserted to
+    // EQUAL the real nav in both directions, so a sidebar entry that is not
+    // here is a divergence rather than an omission.
+    '/agents/ask',
     '/assets',
     '/audits',
     '/calendar',

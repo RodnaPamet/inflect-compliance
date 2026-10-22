@@ -116,6 +116,11 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [
  * affordance is forbidden here.
  */
 export const MAIN_PAGES: readonly string[] = [
+    // #3870 — ASK. A sidebar destination with NO parent inside the tenant
+    // scope, which is this list's definition. The absent parent is deliberate
+    // rather than missing: `/agents` is admin-gated, so a breadcrumb there
+    // would hand a reader-level page's own audience a link that forbids them.
+    '/agents/ask',
     // `/access-reviews` was here and is now a SUBPAGE of `/tests` (#3252). All
     // three clauses of the docstring above were false for it: it has not been in
     // the sidebar since #1538 removed it deliberately, its only link in the whole
