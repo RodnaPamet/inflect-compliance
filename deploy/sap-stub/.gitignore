@@ -1,0 +1,5 @@
+# The dev certificate and its PRIVATE KEY. Generated per machine by
+# make-dev-cert.sh, never committed: a committed private key is a committed
+# private key even when the thing it protects is a fixture server, and
+# `tests/guardrails/no-secrets.test.ts` is right to refuse one.
+.certs/
