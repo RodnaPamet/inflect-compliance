@@ -51,6 +51,7 @@ import { ingestHarnessReport } from '@/app-layer/usecases/agent-harness-scans';
 import { addHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
 import { getDiscoveredAgentFacts } from '@/app-layer/usecases/agent-harness-facts';
 import { getWorkflowRun, startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
+import { DISCOVERED_AGENT_REVIEW_SKILLS } from '@/lib/agentic/workflows/discovered-agent-review';
 import { loadSkill } from '@/lib/agentic/flue/skills';
 import { skillContentHash } from '@/lib/agentic/flue/skills/evaluation-record';
 import { resetSkillCache } from '@/lib/agentic/flue/skills/resolve';
@@ -219,14 +220,14 @@ describe('a run without its required input is refused before its row exists', ()
     });
 });
 
-describe('the workflow mounts exactly the two IAM skills, through the real mount gate', () => {
-    it('pins a Flue run to the two skills, by name, version and hash, and hands it to the worker', async () => {
+describe('the workflow mounts exactly its declared skills, through the real mount gate', () => {
+    it('pins a Flue run to those skills, by name, version and hash, and hands it to the worker', async () => {
         asFlue();
         const { runId, status } = await startWorkflowRun(ownerCtx(T1), KEY, { discoveredAgentId });
         expect(status).toBe('RUNNING');
         const row = await prisma.workflowRun.findUniqueOrThrow({ where: { id: runId }, select: { mountedSkills: true } });
         expect(row.mountedSkills).toEqual(
-            ['harness-level-assessment', 'nhi-ownership-attribution'].map((name) => {
+            [...DISCOVERED_AGENT_REVIEW_SKILLS].map((name) => {
                 const s = loadSkill(name);
                 return { name, version: s.metadata.version, contentHash: skillContentHash(s.instructions) };
             }),
