@@ -1,0 +1,13 @@
+{
+  "name": "@inflect/sap-mcp-stub",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "A stub SAP MCP server exposing the three tools M4 will build against, plus the shared fixture set. See README.md.",
+  "main": "./src/handler.ts",
+  "types": "./src/handler.ts",
+  "files": [
+    "src"
+  ],
+  "sideEffects": false
+}
