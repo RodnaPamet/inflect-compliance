@@ -725,17 +725,37 @@ export async function executeFlueRun(
         // return expression stays the literal the output guard pins — that
         // assertion is about model text never escaping through the return
         // value, and this change has no bearing on it.
-        if (tools.length === 0) {
+        // DEPLOY 2 of #3869. The condition, the counter and the message all
+        // existed; what was wrong is that this then settled COMPLETED, so a run
+        // offered no tools "sits there looking successful" in the words of
+        // `EMPTY_TOOLSET_MESSAGE`'s own docstring. Now it settles in its own
+        // terminal state.
+        //
+        // Safe to WRITE only because deploy 1 is in production: a Prisma client
+        // that predates an enum value fails the whole read of a row carrying
+        // it, which on this table is every agent run a tenant has. Verified
+        // rather than assumed — the migration is applied, `EMPTY_CATALOGUE` is
+        // in the live enum, and the app and worker run one identical image
+        // digest.
+        const emptyCatalogue = tools.length === 0;
+        if (emptyCatalogue) {
             stepFailures += 1;
         }
 
+        // ONE write, so the two outcomes cannot drift apart in the fields they
+        // share — only `status` and `errorMessage` differ.
         await updateRun(ctx, runId, {
-            status: 'COMPLETED',
+            status: emptyCatalogue ? 'EMPTY_CATALOGUE' : 'COMPLETED',
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
-            ...(tools.length === 0 ? { errorMessage: EMPTY_TOOLSET_MESSAGE } : {}),
+            ...(emptyCatalogue ? { errorMessage: EMPTY_TOOLSET_MESSAGE } : {}),
         });
+        // TWO literal returns rather than one ternary, deliberately. The output
+        // guard pins each return expression as a literal — the assertion is
+        // that model prose never escapes through the return value — so a
+        // ternary would hide both statuses from it. Each is pinned there.
+        if (emptyCatalogue) return { status: 'EMPTY_CATALOGUE', stepFailures };
         return { status: 'COMPLETED', stepFailures };
     } catch (err) {
         // FIRST, BEFORE ANY SETTLE: the calls that happened before the throw
