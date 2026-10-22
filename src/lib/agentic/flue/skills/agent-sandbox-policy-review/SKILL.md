@@ -5,7 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance; cites the sandbox policy schema version by identifier only
   version: '1'
-  requiredInput: discoveredAgentId
+  requiredInput: discoveredAgent
   output: report
   controls: A.5.15, A.8.20, A.8.21, A.8.22, ASI03, ASI10
   evaluation: evaluation-set.json

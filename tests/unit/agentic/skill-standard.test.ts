@@ -14,7 +14,14 @@ import {
 } from '@/lib/agentic/flue/skills/evaluation-record';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 
-const DRAFTED = ['harness-level-assessment', 'nhi-ownership-attribution'] as const;
+const DRAFTED = [
+    'harness-level-assessment',
+    'nhi-ownership-attribution',
+    // #3953. Added to this list, not alongside it: the list IS the
+    // coverage, so a drafted skill left out of it passes every assertion
+    // below without being looked at.
+    'agent-sandbox-policy-review',
+] as const;
 
 function doc(metadataLines: string[], body = 'Do the thing.\n'): string {
     return [
@@ -58,7 +65,7 @@ describe('the optional metadata keys the standard defines', () => {
     });
 });
 
-describe('the two drafted IAM skills', () => {
+describe('the drafted skills', () => {
     const corpus = loadAllSkills();
 
     it.each(DRAFTED)('%s ships with a licence, a source, a version and an evaluation set that matches it', (name) => {
@@ -73,7 +80,8 @@ describe('the two drafted IAM skills', () => {
     });
 
     it('is declared by exactly one workflow, the discovered-agent review (#3668)', () => {
-        // 0b drafted them undeclared; 1d declared both on one workflow. The
+        // 0b drafted them undeclared; 1d declared the first two on one
+        // workflow, and #3958 the third on the same one. The
         // mount itself is proved in `discovered-agent-review-workflow.test.ts`.
         for (const name of DRAFTED) {
             expect(listWorkflowDefinitions().filter((d) => (d.skills ?? []).includes(name)).map((d) => d.key)).toEqual([
