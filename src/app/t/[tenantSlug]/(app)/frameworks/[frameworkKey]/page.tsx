@@ -20,6 +20,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { frameworkOrderKey } from '../framework-order';
+import { apiErrorMessage } from '@/lib/api-error';
 
 type Tab = 'requirements' | 'packs' | 'coverage' | 'builder';
 
@@ -184,8 +185,8 @@ export default function FrameworkDetailPage() {
             body: JSON.stringify(body),
         });
         if (!res.ok) {
-            const j = (await res.json().catch(() => ({}))) as { error?: string };
-            throw new Error(j.error ?? t('detail.reorderFailed', { status: res.status }));
+            const j: unknown = await res.json().catch(() => ({}));
+            throw new Error(apiErrorMessage(j, t('detail.reorderFailed', { status: res.status })));
         }
         // Refetch the tree so the explorer reflects the new order.
         const fresh = await fetch(apiUrl(`/frameworks/${frameworkKey}/tree`));

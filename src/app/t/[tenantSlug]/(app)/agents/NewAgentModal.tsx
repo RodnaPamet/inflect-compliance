@@ -37,6 +37,7 @@ import {
     AGENT_AUTONOMY_MAX,
     AGENT_AUTONOMY_MIN,
 } from '@/app-layer/schemas/agent-registry.schemas';
+import { apiErrorMessage } from '@/lib/api-error';
 
 export interface OwnerOption {
     id: string;
@@ -164,8 +165,8 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                 }),
             });
             if (!res.ok) {
-                const body = (await res.json().catch(() => null)) as { error?: string } | null;
-                throw new Error(body?.error ?? t('register.new.errorFallback'));
+                const body: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, t('register.new.errorFallback')));
             }
             const created = (await res.json()) as { id: string };
             await onCreated(created.id);

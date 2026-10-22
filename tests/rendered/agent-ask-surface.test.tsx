@@ -250,10 +250,15 @@ describe('refused', () => {
         // crash the page, because the reader's alert is the last thing between
         // a named refusal and a support request.
         for (const body of [
-            { error: 'NO_AGENT_DESIGNATED: a bare string, as the old cast claimed' },
+            // A flat `{ error: 'string' }` is NOT in this list: it is one of
+            // the three shapes `apiErrorMessage` legitimately reads, so it
+            // surfaces as the reason rather than falling back. That is correct
+            // -- the property under test is that a NON-STRING never renders.
             { error: { code: 'FORBIDDEN', requestId: 'req_test' } },
             { error: { code: 'FORBIDDEN', message: '   ' } },
             { error: null },
+            { error: 42 },
+            { error: { message: { nested: true } } },
             // A non-JSON body is NOT in this list, deliberately: `wireFetch`
             // coalesces `postBody ?? { runId }`, so a `null` here is served as
             // a success body and the case would pass for a reason other than

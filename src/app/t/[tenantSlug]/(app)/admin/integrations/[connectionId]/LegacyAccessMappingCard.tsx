@@ -45,6 +45,7 @@ import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Input } from '@/components/ui/input';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const LEGACY_PROVIDER = 'legacy-mcp';
 
@@ -218,15 +219,14 @@ export function LegacyAccessMappingCard({ connectionId }: { connectionId: string
                     confirmedColumns: profile.observedColumns,
                 }),
             });
-            const body = (await res.json().catch(() => null)) as
-                | { mapping?: { version: number }; error?: string }
-                | null;
+            const body: unknown = await res.json().catch(() => null);
+            const mapping = (body as { mapping?: { version: number } } | null)?.mapping;
             if (!res.ok) {
                 // The server reports EVERY problem at once, so this is shown
                 // verbatim rather than reduced to "invalid".
-                throw new Error(body?.error ?? String(res.status));
+                throw new Error(apiErrorMessage(body, String(res.status)));
             }
-            setMsg({ ok: true, text: t('saved', { version: body?.mapping?.version ?? 0 }) });
+            setMsg({ ok: true, text: t('saved', { version: mapping?.version ?? 0 }) });
             await readColumns();
         } catch (e) {
             setMsg({

@@ -25,6 +25,7 @@ import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const ClassifyAiSystemModal = dynamic(() => import('./ClassifyAiSystemModal').then((m) => m.ClassifyAiSystemModal));
 
@@ -114,8 +115,8 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                 body: JSON.stringify({ docType }),
             });
             if (!res.ok) {
-                const body = (await res.json().catch(() => null)) as { error?: string } | null;
-                throw new Error(body?.error ?? tx('aiSystems.detail.errorFallback'));
+                const body: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('aiSystems.detail.errorFallback')));
             }
             setQueued((q) => [...q, docType]);
         } catch (e) {

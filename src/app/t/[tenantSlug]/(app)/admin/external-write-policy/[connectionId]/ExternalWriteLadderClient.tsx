@@ -64,6 +64,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { formatDate } from '@inflect/ui/lib/format-date';
+import { apiErrorMessage } from '@/lib/api-error';
 
 /** Authority rises left to right, so the badge should too. */
 const MODE_VARIANT: Record<ExternalWriteMode, StatusBadgeVariant> = {
@@ -122,8 +123,8 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
                     // this route raises names a date, a rung or a count the client
                     // does not have, and #2843 finding 31 is the record of what a
                     // refusal an operator can disprove costs.
-                    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-                    const message = body?.error ?? t('externalWriteLadder.saveError');
+                    const body: unknown = await res.json().catch(() => null);
+                    const message = apiErrorMessage(body, t('externalWriteLadder.saveError'));
                     setSaveError(message);
                     throw new Error(message);
                 }

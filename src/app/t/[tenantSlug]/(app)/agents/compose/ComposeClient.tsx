@@ -37,6 +37,7 @@ import { FormField } from '@/components/ui/form-field';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { apiErrorMessage } from '@/lib/api-error';
 
 interface Template {
     id: string;
@@ -102,20 +103,19 @@ export function ComposeClient({
                 const res = await fetch(
                     apiUrl(`/agent-proposals/compose?parameterSetId=${encodeURIComponent(id)}`),
                 );
-                const body = (await res.json().catch(() => null)) as
-                    | { fields?: WireField[]; error?: string }
-                    | null;
+                const body: unknown = await res.json().catch(() => null);
+                const fields = (body as { fields?: WireField[] } | null)?.fields;
                 // A LATER selection has already won; this answer is about a
                 // template the operator has moved on from.
                 if (seq !== selectionRef.current) return;
                 if (!res.ok) {
                     setNotice({
                         ok: false,
-                        text: t('compose.loadFailed', { reason: body?.error ?? String(res.status) }),
+                        text: t('compose.loadFailed', { reason: apiErrorMessage(body, String(res.status)) }),
                     });
                     return;
                 }
-                setFields(body?.fields ?? []);
+                setFields(fields ?? []);
             } catch {
                 if (seq === selectionRef.current) {
                     setNotice({ ok: false, text: t('compose.loadFailed', { reason: '—' }) });
@@ -137,13 +137,14 @@ export function ComposeClient({
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ parameterSetId: templateId, openFieldValues: values }),
             });
-            const body = (await res.json().catch(() => null)) as
-                | { proposalId?: string; status?: string; guardVerdict?: string | null; error?: string }
+            const body: unknown = await res.json().catch(() => null);
+            const outcome = body as
+                | { proposalId?: string; status?: string; guardVerdict?: string | null }
                 | null;
             if (!res.ok) {
                 setNotice({
                     ok: false,
-                    text: t('compose.failed', { reason: body?.error ?? String(res.status) }),
+                    text: t('compose.failed', { reason: apiErrorMessage(body, String(res.status)) }),
                 });
                 return;
             }
@@ -151,15 +152,15 @@ export function ComposeClient({
             // proposal that never enters the queue would describe a wait that
             // nobody is going to end.
             setNotice(
-                body?.status === 'QUARANTINED'
+                outcome?.status === 'QUARANTINED'
                     ? {
                           ok: false,
                           text: t('compose.quarantined', {
-                              verdict: body?.guardVerdict ?? '—',
-                              id: body?.proposalId ?? '—',
+                              verdict: outcome?.guardVerdict ?? '—',
+                              id: outcome?.proposalId ?? '—',
                           }),
                       }
-                    : { ok: true, text: t('compose.queued', { id: body?.proposalId ?? '—' }) },
+                    : { ok: true, text: t('compose.queued', { id: outcome?.proposalId ?? '—' }) },
             );
         } catch {
             setNotice({ ok: false, text: t('compose.failed', { reason: '—' }) });
