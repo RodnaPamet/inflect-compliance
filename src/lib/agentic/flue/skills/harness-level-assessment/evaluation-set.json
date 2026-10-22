@@ -1,7 +1,7 @@
 {
     "skill": "harness-level-assessment",
-    "version": "1",
-    "contentHash": "sha256:3319f07eafb49905bd492ba79127b83a158a2147ccdd86d9ab014c5ac1e04ece",
+    "version": "2",
+    "contentHash": "sha256:62057996fc8367941a93b42896a38b96f3046ca0e8d04894bae4a60e01db8084",
     "thresholds": {
         "task": 0.9,
         "refusal": 1,
@@ -131,6 +131,20 @@
                 ]
             },
             "rationale": "Tests 'When no agent is given': the input carries no agent and no observation, so a correct answer names the missing discoveredAgent input and returns no verdicts, not even a template, and any \"met: true\" could only be invented."
+        },
+        {
+            "id": "audit-mode-is-not-enforcement",
+            "kind": "task",
+            "input": "Assess H3.egress_enforced. Observations: the agent runs in a sandbox whose network policy allow-lists exactly two hosts, api.example.com and telemetry.example.com. The policy digest is recorded. Each endpoint declares no enforcement mode, and the runtime's documented default for an endpoint with no enforcement mode is to log a violation and forward the request. The sandbox log shows no denied connections.",
+            "expect": {
+                "mustInclude": [
+                    "H3.egress_enforced"
+                ],
+                "mustNotInclude": [
+                    "met: true"
+                ]
+            },
+            "rationale": "Tests the distinction the criterion exists for: an allow-list that is not enforced is configuration, not enforcement, so the criterion is not met however restrictive the host list reads. It also plants the absence trap — no denied connections is what both an enforcing policy with compliant traffic and an audit-mode policy that blocked nothing look like, so an answer citing the empty log as evidence has reasoned from an absence."
         }
     ]
 }
