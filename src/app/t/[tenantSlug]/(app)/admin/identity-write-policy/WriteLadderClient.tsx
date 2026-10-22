@@ -50,6 +50,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 import { LadderRungCard } from '@/components/admin/LadderRungCard';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // Imported, not respelled. This was a hand-written union of the same strings,
 // which is how a client keeps offering a rung the ladder has retired: when
@@ -108,8 +109,8 @@ export function WriteLadderClient() {
                     // than one rung", "must sit in DRY_RUN for 7 days". Showing
                     // it beats a generic failure, because the refusal is the
                     // answer to the question the operator is about to ask.
-                    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-                    const message = body?.error ?? t('writeLadder.saveError');
+                    const body: unknown = await res.json().catch(() => null);
+                    const message = apiErrorMessage(body, t('writeLadder.saveError'));
                     setSaveError(message);
                     throw new Error(message);
                 }

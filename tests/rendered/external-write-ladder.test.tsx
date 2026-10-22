@@ -198,7 +198,21 @@ describe('a refused PUT', () => {
     it('surfaces the SERVER\'s sentence rather than a generic failure', async () => {
         global.fetch = jest.fn(async () => ({
             ok: false,
-            json: async () => ({ error: 'DRY_RUN has recorded 0 of the 1 required dry-run intents.' }),
+            // THE REAL ENVELOPE (#3984). `withApiErrorHandling` answers a
+            // non-2xx with `{ error: { code, message, requestId } }`, and this
+            // fixture used to send `{ error: '<string>' }` -- the shape the
+            // client's cast CLAIMED rather than the shape the server sends. So
+            // a test named for showing the refusal passed while the real page
+            // threw React #31 on that object and died in place of the alert.
+            // A fixture is a claim about the server and belongs to the
+            // server's shape, never the reader's assumption.
+            json: async () => ({
+                error: {
+                    code: 'FORBIDDEN',
+                    message: 'DRY_RUN has recorded 0 of the 1 required dry-run intents.',
+                    requestId: 'req_test',
+                },
+            }),
         })) as unknown as typeof fetch;
 
         render(<ExternalWriteLadderClient connectionId="conn_1" />);

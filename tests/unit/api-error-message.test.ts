@@ -63,6 +63,19 @@ describe('apiErrorMessage', () => {
         }
     });
 
+    it('treats a blank message as absent at every shape, and keeps looking', () => {
+        // #3984 — a whitespace-only sentence renders an EMPTY alert, which a
+        // reader cannot tell apart from a broken page. Each shape is tried in
+        // order, so a blank at one must fall through rather than end the
+        // search: the third case carries a real message behind two blanks.
+        expect(apiErrorMessage({ error: '   ' }, FALLBACK)).toBe(FALLBACK);
+        expect(apiErrorMessage({ error: { code: 'X', message: '' } }, FALLBACK)).toBe(FALLBACK);
+        expect(apiErrorMessage({ error: '', message: '\t' }, FALLBACK)).toBe(FALLBACK);
+        expect(apiErrorMessage({ error: { message: '  ' }, message: 'outer' }, FALLBACK)).toBe(
+            'outer',
+        );
+    });
+
     it('returns the fallback for an unparseable or empty body', () => {
         expect(apiErrorMessage(null, FALLBACK)).toBe(FALLBACK);
         expect(apiErrorMessage({}, FALLBACK)).toBe(FALLBACK);

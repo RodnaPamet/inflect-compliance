@@ -86,6 +86,30 @@ describe('the two refusal families are told apart by status', () => {
         await expect(askAdHocQuestion(ctx(), '')).rejects.toMatchObject({ status: 400, code: 'BAD_REQUEST' });
     });
 
+    it('the monthly BUDGET refusal reaches the caller with its named reason', async () => {
+        // #3869 asks for this by name. The budget is enforced by
+        // `assertWithinMonthlyBudget`, which `startWorkflowRun` pre-flights
+        // before any row exists — so the refusal arrives here as a thrown
+        // `forbidden` carrying both numbers, and the only thing this usecase
+        // can get wrong is swallowing it or flattening it into its own message.
+        //
+        // Asserted on the TEXT reaching the caller rather than on the mechanism:
+        // the mechanism has its own suite (`agent-monthly-budget`), and
+        // re-testing it through two extra layers would measure the double.
+        const { forbidden } = await import('@/lib/errors/types');
+        startThrows = forbidden(
+            'agent_monthly_token_budget_exceeded: this workspace has used 1,000,000 of its ' +
+                '1,000,000 token budget for October.',
+        );
+        await expect(askAdHocQuestion(ctx(), 'A real question?')).rejects.toThrow(
+            /agent_monthly_token_budget_exceeded/,
+        );
+        // Both numbers survive. A refusal that says "budget exceeded" without
+        // them leaves an operator unable to tell a tenant near its ceiling from
+        // one whose budget was set to zero by mistake.
+        await expect(askAdHocQuestion(ctx(), 'A real question?')).rejects.toThrow(/1,000,000 of its/);
+    });
+
     it("a bad CALLER keeps the starter's 403, which this usecase does not rewrite", async () => {
         // Authority refusals belong to `startInteractiveRun` and reach the
         // client unchanged, carrying their code. Collapsing the families would

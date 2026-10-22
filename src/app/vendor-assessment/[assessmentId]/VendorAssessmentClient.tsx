@@ -242,7 +242,18 @@ export function VendorAssessmentClient({
                 },
             );
             if (!res.ok) {
+                // A FLAT STRING IS THE CONTRACT HERE, not a mistake (#3984).
+                // These vendor-assessment routes are deliberately NOT wrapped in
+                // `withApiErrorHandling`, and answer with
+                // `{ error: 'access_denied' }` / `{ error: 'validation_failed' }`
+                // as a machine-readable DISCRIMINATOR the branches below compare
+                // with `===`. It is never rendered, so it cannot reach a render
+                // path, and routing it through `apiErrorMessage` would turn a code
+                // the client switches on into display prose and break both
+                // branches. The disable sits on the member because that is where
+                // the selector matches, not on the statement.
                 const body = (await res.json().catch(() => ({}))) as {
+                    // eslint-disable-next-line no-restricted-syntax -- see above
                     error?: string;
                     fieldErrors?: Array<{
                         questionId: string | null;

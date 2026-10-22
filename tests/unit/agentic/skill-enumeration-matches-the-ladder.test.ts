@@ -7,12 +7,23 @@
  * is the only prose in the repository that does, and nothing compared it to
  * `HARNESS_CRITERIA`.
  *
- * The OpenShell roadmap assumed the mount gate covered this: "the mount gate
- * refuses SET_MISMATCH and HASH_MISMATCH until somebody" updates the skill. It
- * does not. Those refusals bind a record to the skill's own text, version and
+ * A roadmap assumed the mount gate covered this: "the mount gate refuses
+ * SET_MISMATCH and HASH_MISMATCH until somebody" updates the skill. It does
+ * not. Those refusals bind a record to the skill's own text, version and
  * evaluation set — they fire when the SKILL changes without re-recording, and
- * say nothing about the ladder. Measured: adding `H3.egress_enforced` to the
- * ladder left the skill a criterion short and every suite green.
+ * say nothing about the ladder.
+ *
+ * MEASURED, on the change that added `H3.egress_enforced`: the new criterion
+ * left the skill a criterion short and every suite green — 48 agentic suites,
+ * 1,063 tests, and the flue project's 12/70. `iam-skill-outputs` comes closest
+ * and tests the answer PARSER against a ladder-DERIVED fixture, which is why it
+ * stayed green too. So the only thing that noticed was reading the diff.
+ *
+ * This guard shipped BEFORE that criterion, deliberately: the two agreed on
+ * `main` at the time, so it was green on arrival and did its work on the very
+ * next criterion added — which was the one that had exposed the gap. Both are
+ * now on `main`, so the worked example above is history rather than a pending
+ * change.
  *
  * So the drift is silent in exactly the direction that matters. An assessor
  * working from a stale enumeration returns verdicts for six H3 criteria when the

@@ -22,6 +22,7 @@ import {
     ANNEX_III_AREAS,
     ART50_TRANSPARENCY_CASES,
 } from '@/lib/eu-ai-act/classification';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const NONE = { value: '', label: 'None / not applicable' };
 const toOptions = (opts: readonly { id: string; clause: string; label: string }[]) => [
@@ -101,8 +102,8 @@ export function NewAiSystemModal({ tenantSlug, onClose, onCreated }: Props) {
                 }),
             });
             if (!res.ok) {
-                const body = (await res.json().catch(() => null)) as { error?: string } | null;
-                throw new Error(body?.error ?? tx('aiSystems.new.errorFallback'));
+                const body: unknown = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('aiSystems.new.errorFallback')));
             }
             const created = (await res.json()) as { id: string };
             await onCreated(created.id);

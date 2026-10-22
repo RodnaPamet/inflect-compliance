@@ -28,6 +28,14 @@ const MIGRATED_PAGES = [
     // the two assertions below actually RUN against it, rather than counted
     // as debt it never incurred.
     'admin/modules/page.tsx',
+    // #3870 — the asking surface, design-system-native from birth: semantic
+    // content/spacing tokens only, Heading / Button / Textarea / StatusBadge /
+    // EmptyState primitives, no raw palette greys. Listed so the two
+    // assertions below RUN against it rather than counting it as debt it never
+    // incurred — which is what this file asks for instead of bumping the floor.
+    // Relative to TENANT_ROUTES_DIR, like every entry here — not to src/app.
+    'agents/ask/page.tsx',
+    'agents/ask/AskClient.tsx',
     'admin/modules/ModulesClient.tsx',
     // Identity write journal (#2877 f52) — the surface for what a disable
     // replaced and which writes never settled. Design-system-native from

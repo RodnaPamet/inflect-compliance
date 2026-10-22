@@ -86,6 +86,7 @@ import {
     uploadWithProgress,
     UploadHttpError,
 } from '@/lib/upload/upload-with-progress';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // ─── Constraints ────────────────────────────────────────────────────
 // 25 MB per file — generous enough for a signed PDF or scanned policy
@@ -426,11 +427,9 @@ export function UploadEvidenceModal({
                 const msg =
                     err instanceof UploadHttpError
                         ? (() => {
-                              const body = err.parsedBody as
-                                  | { error?: string; message?: string }
-                                  | null;
+                              const body: unknown = err.parsedBody;
                               return (
-                                  body?.error || body?.message || err.message
+                                  apiErrorMessage(body, err.message)
                               );
                           })()
                         : err instanceof Error

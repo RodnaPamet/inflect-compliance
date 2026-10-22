@@ -27,6 +27,30 @@ import { AGENTIC_PATH_GLOBS } from './eslint-rules/agentic-path.js';
 // there rather than adding to it, so such a block spreads it back in.
 const PLATFORM_SYNTAX_BANS = [
     {
+        // #3984 — the API error envelope is `{ error: { code, message } }`, so
+        // a body cast to `{ error: string }` is read as `body.error` and that
+        // OBJECT reaches a render path. Three pages crashed on it with React
+        // error #31 ("objects are not valid as a React child"), including both
+        // write-ladder admin surfaces, where a refused change is exactly when
+        // the operator needs to read the reason.
+        //
+        // `apiErrorMessage` in `src/lib/api-error.ts` already handled this and
+        // was already imported by 38 files, its docstring already describing
+        // this bug and saying to always use it. Nine sites got it wrong anyway,
+        // which is what an unenforced convention buys. A cast is also what hid
+        // it from the compiler AND from the tests: `res.json()` is typed `any`,
+        // and a fixture written to match the cast agrees with the bug rather
+        // than catching it.
+        //
+        // The flat `{ error: 'string' }` shape does occur in the wild, so this
+        // bans the CAST, not the shape — `apiErrorMessage` reads that shape
+        // too, so there is no remaining reason to assert it by hand.
+        selector:
+            "TSAsExpression TSPropertySignature[key.name='error'] > TSTypeAnnotation > TSStringKeyword",
+        message:
+            'The API error envelope is { error: { code, message, requestId } }, not { error: string } — casting to the flat shape puts an OBJECT on a render path (React #31). Read it with apiErrorMessage(body, fallback) from @/lib/api-error, which narrows and handles every shape seen in the wild.',
+    },
+    {
         // Was tests/guards/no-inline-clipboard.test.ts (Epic 56).
         selector:
             "CallExpression[callee.object.object.name='navigator'][callee.object.property.name='clipboard'][callee.property.name=/^(writeText|write)$/]",

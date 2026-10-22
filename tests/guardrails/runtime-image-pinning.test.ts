@@ -176,6 +176,94 @@ export function repositoryOf(ref: string): string {
     return lastColon > lastSlash ? withoutDigest.slice(0, lastColon) : withoutDigest;
 }
 
+/**
+ * The canonical production compose — what `deploy/apply.sh` pushes to the VM.
+ *
+ * `CANONICAL_COMPOSE="docker-compose.prod.yml"` there, sent from `deploy/`. An
+ * overlay beside it (`docker-compose.pipelock.yml`, the harness scanner, the
+ * labs) is opt-in and reaches the VM only when somebody names it.
+ */
+const CANONICAL_COMPOSE = 'deploy/docker-compose.prod.yml';
+
+/**
+ * Baseline entries whose REASON is that the image does not run in production.
+ *
+ * ═══ WHY THIS LIST EXISTS SEPARATELY FROM THE BASELINE ═══
+ *
+ * The baseline excuses an unpinned image if it carries a reason, and the
+ * assertions above never ask what the reason CLAIMS. Most entries claim
+ * something about the image's role ("observability stack", "never production")
+ * that stays true however the stack moves. `pipelock`'s claims something about
+ * its DEPLOYMENT STATE — "baselined as UNENABLED rather than as reviewed …
+ * Enabling it is the moment that comment has to be honoured."
+ *
+ * Nothing honoured it. Moving the service into the canonical compose would
+ * enable it, the baseline would go on excusing the `:latest` tag, and this
+ * guardrail would stay green — so the one precondition somebody wrote down was
+ * the one with no detector. Measured before writing this: the only occurrence
+ * of "pin to a digest before enabling" in `tests/` was the baseline quoting
+ * ITSELF.
+ *
+ * An explicit list rather than grepping the reason prose for "UNENABLED": a
+ * detector that reads its own English goes stale the first time somebody
+ * rewords a sentence, and the reword looks harmless.
+ *
+ * NOT a requirement that every canonical image be pinned. The owner decided on
+ * 2026-10-10 to pin NEW images only, and the eight services already there are
+ * baselined on that basis. This asks a narrower question: does a baseline whose
+ * reason is "it does not run" agree with the file that decides what runs.
+ */
+const BASELINED_AS_UNENABLED: readonly string[] = ['ghcr.io/luckypipewrench/pipelock'];
+
+describe('a baseline that claims an image is UNENABLED stays true', () => {
+    const canonical = composeImageRefs().filter((r) => r.file === CANONICAL_COMPOSE);
+
+    it('reads the canonical compose at all (the scan is not vacuous)', () => {
+        // Without this, a renamed canonical file would make every assertion
+        // below pass by finding no images to check.
+        expect(canonical.length).toBeGreaterThan(5);
+    });
+
+    it('every image listed here is actually baselined', () => {
+        // Keeps the two lists from drifting: an entry removed from the baseline
+        // but left here would assert against a rule that no longer exists.
+        for (const repo of BASELINED_AS_UNENABLED) {
+            expect(Object.keys(BASELINE)).toContain(repo);
+        }
+    });
+
+    it('if one is enabled, it is digest-pinned despite its baseline', () => {
+        /*
+            ONE RULE, not two. The first draft also asserted these images were
+            ABSENT from the canonical compose, and the mutation run showed why
+            that was wrong: enabling pipelock CORRECTLY — with a digest — still
+            failed, because the absence test forbade the action the pin test
+            exists to permit. A guard that refuses the fix it is asking for
+            teaches people to delete the guard.
+
+            So the rule is conditional, and it is the one the prose states:
+            enabling is the moment the pin is owed. The diff that moves the
+            service into the canonical compose on `:latest` fails here; the diff
+            that moves it in pinned does not.
+        */
+        const unpinned = canonical
+            .filter((r) => BASELINED_AS_UNENABLED.includes(repositoryOf(r.ref)))
+            .filter((r) => !isDigestPinned(r.ref))
+            .map((r) => r.ref);
+        expect(unpinned).toEqual([]);
+    });
+
+    it('records that none is enabled today, so the rule above is not vacuous', () => {
+        // Not a prohibition — a denominator. If every one of these is absent,
+        // the conditional above passes without examining anything, and this
+        // says so out loud rather than leaving a green tick to imply coverage.
+        const enabled = canonical
+            .map((r) => repositoryOf(r.ref))
+            .filter((repo) => BASELINED_AS_UNENABLED.includes(repo));
+        expect(enabled.length).toBeLessThanOrEqual(BASELINED_AS_UNENABLED.length);
+    });
+});
+
 describe('runtime images — a new one is pinned by digest', () => {
     // The UNION: a Compose `image:` and a Dockerfile `FROM` are the same
     // question about the same kind of artefact.

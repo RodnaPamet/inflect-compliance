@@ -34,6 +34,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // ─── Cadence catalog ───────────────────────────────────────────────
 //
@@ -191,14 +192,17 @@ export function TestPlanScheduleSection({
             );
             if (!res.ok) {
                 const txt = await res.text().catch(() => '');
-                let parsed: { error?: string } | null = null;
+                let parsed: unknown = null;
                 try {
                     parsed = JSON.parse(txt);
                 } catch { /* keep as text */ }
+                // `txt` stays the second choice: this route can answer with a
+                // non-JSON body, and the raw text is more use than a generic
+                // sentence. `||` rather than the previous `??` because an
+                // EMPTY body is not an answer -- `??` passed `''` through and
+                // rendered a blank error, which reads as a broken page.
                 setError(
-                    parsed?.error ??
-                        txt ??
-                        t('saveFailed', { status: res.status }),
+                    apiErrorMessage(parsed, txt || t('saveFailed', { status: res.status })),
                 );
                 return;
             }

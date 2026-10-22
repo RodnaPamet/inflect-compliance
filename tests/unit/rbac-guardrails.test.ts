@@ -191,7 +191,12 @@ describe('RBAC Guardrail Scans', () => {
             // handed to a shared permission predicate (#3710 —
             // `mayReadAgentInventory(perms.admin)`); either way it is the
             // source.
-            expect(content.match(/visible:\s*(?:\w+\()?perms\./g)).toHaveLength(2);
+            // 3 since #3870: the asking surface's entry is perms-derived like
+            // the other two (`Boolean(perms.controls?.view)`). This number is a
+            // CENSUS of perms-gated entries, not a ceiling — it grows when a
+            // gated entry is added, and the regression it catches is an entry
+            // that is NOT gated, which would leave the count behind.
+            expect(content.match(/visible:\s*(?:\w+\()?perms\./g)).toHaveLength(3);
             expect(content).toMatch(/\.filter\(/);
         });
     });
