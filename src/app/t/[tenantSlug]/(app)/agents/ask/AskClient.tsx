@@ -8,6 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge } from '@/components/ui/status-badge';
+// The sanctioned heading, not an inline <hN className>: `typography-eradication`
+// is a zero ratchet over app code, and level 3 is this scale's
+// sub-section/panel step — which is what a card heading is.
+import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 
@@ -246,7 +250,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                         <EmptyState title={t('noAnswerTitle')} description={t('noAnswerDescription')} />
                     ) : (
                         <div className={cn(cardVariants(), 'p-4')}>
-                            <h2 className="text-sm font-medium text-content-muted">{t('answerHeading')}</h2>
+                            <Heading level={3}>{t('answerHeading')}</Heading>
                             <p
                                 id="agent-answer"
                                 className="mt-2 whitespace-pre-wrap text-sm text-content-default"
@@ -257,7 +261,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                     )}
 
                     <div className={cn(cardVariants(), 'space-y-default p-4')}>
-                        <h2 className="text-sm font-medium text-content-muted">{t('callsHeading')}</h2>
+                        <Heading level={3}>{t('callsHeading')}</Heading>
                         {result.toolCalls.length === 0 ? (
                             // Stated, never blank. "Nothing was consulted" is a
                             // finding about the answer, not an absence of UI.
