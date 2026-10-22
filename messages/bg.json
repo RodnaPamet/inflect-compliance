@@ -343,7 +343,8 @@
     "accountMenuFor": "Меню на акаунта – {name}",
     "account": "Акаунт",
     "signOut": "Изход",
-    "closeNavigationDrawer": "Затвори навигационния панел"
+    "closeNavigationDrawer": "Затвори навигационния панел",
+    "agentsAsk": "Попитай"
   },
   "dashboard": {
     "title": "Табло за съответствие",

@@ -172,6 +172,26 @@ export function useNavSections(): NavSectionDef[] {
                     // strict boolean, as the filter requires.
                     visible: mayReadAgentInventory(perms.admin),
                 },
+                // #3870 — ASK. The one agent surface that is NOT the register,
+                // and the only one here gated on a content key rather than an
+                // admin one: it shows a person their own answer, bounded by
+                // their own permissions (ADR 0004), so `controls.view` is the
+                // gate the page and both its routes assert.
+                //
+                // It needs its OWN entry rather than living under the Views
+                // menu on `/agents`, because that page is admin-gated — a
+                // reader-level surface reachable only from a page that forbids
+                // readers is unreachable in practice, which is what
+                // `agentic-route-inbound-links` is really checking.
+                //
+                // Coerced, because the filter above is FAIL-CLOSED: a gate
+                // resolving to `undefined` disappears silently with no error.
+                {
+                    href: tenantHref('/agents/ask'),
+                    label: t('agentsAsk'),
+                    icon: Robot,
+                    visible: Boolean(perms.controls?.view),
+                },
                 // R25-PR-A — Processes canvas. Visual mapping of
                 // business + IT processes with controls placed on
                 // the connections between steps. Sits under Manage

@@ -343,7 +343,8 @@
     "accountMenuFor": "Account menu for {name}",
     "account": "Account",
     "signOut": "Sign out",
-    "closeNavigationDrawer": "Close navigation drawer"
+    "closeNavigationDrawer": "Close navigation drawer",
+    "agentsAsk": "Ask"
   },
   "dashboard": {
     "title": "Compliance Dashboard",

@@ -76,8 +76,24 @@ export interface AskResult {
 const LIVE_STATUSES = new Set(['RUNNING', 'AWAITING_APPROVAL', 'PAUSED']);
 
 const POLL_MS = 1_500;
-/** A run that has not settled in two minutes is reported, not awaited. */
-const POLL_DEADLINE_MS = 120_000;
+/**
+ * A run that has not settled in roughly two minutes is reported, not awaited.
+ *
+ * Expressed as an ATTEMPT COUNT rather than a deadline, and that is not a
+ * stylistic choice. A deadline means comparing against the wall clock, and
+ * `hydration-clock-in-render` refuses a new client component that does —
+ * `new Date()` or `Date.now()` in a client component differs between the SSR
+ * pass and hydration, which is React error #418: invisible in development,
+ * intermittent in production, and with a minified stack that names no
+ * component.
+ *
+ * The comparison here was inside an async callback rather than a render body,
+ * so it was not actually that hazard. But that guard is a DOWNWARD ratchet
+ * whose own docstring says entries LEAVE its baseline as sites are migrated —
+ * so exempting a new file was the wrong answer, and counting attempts needs no
+ * clock at all.
+ */
+const POLL_MAX_ATTEMPTS = Math.ceil(120_000 / POLL_MS);
 
 type Phase = 'idle' | 'running' | 'settled' | 'refused';
 
@@ -102,7 +118,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
     const empty = question.trim() === '';
 
     const poll = useCallback(
-        async (runId: string, deadline: number) => {
+        async (runId: string, attempt: number) => {
             const res = await fetch(`/api/t/${tenantSlug}/agents/questions/${runId}`);
             if (!res.ok) {
                 const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -117,7 +133,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                 setPhase('settled');
                 return;
             }
-            if (Date.now() >= deadline) {
+            if (attempt >= POLL_MAX_ATTEMPTS) {
                 // The run is still live and we have stopped waiting. Said as a
                 // timeout rather than left spinning: a spinner that never ends
                 // is indistinguishable from a page that is broken.
@@ -125,7 +141,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                 setPhase('refused');
                 return;
             }
-            timer.current = setTimeout(() => void poll(runId, deadline), POLL_MS);
+            timer.current = setTimeout(() => void poll(runId, attempt + 1), POLL_MS);
         },
         [tenantSlug, t],
     );
@@ -150,7 +166,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
             return;
         }
         const { runId } = (await res.json()) as { runId: string };
-        await poll(runId, Date.now() + POLL_DEADLINE_MS);
+        await poll(runId, 1);
     }, [tenantSlug, question, poll, t]);
 
     return (
