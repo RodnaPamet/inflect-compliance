@@ -118,9 +118,29 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
  * agent had been registered, risk-assessed and activated, and nobody had
  * granted it a single tool.
  *
- * COMPLETED STANDS: the engine did what it was asked, and failing the run
- * would report a tenant's configuration gap as an engine fault. What is
- * asserted here is that the gap is COUNTED and NAMED.
+ * ── WHAT CHANGED, AND WHY THE OLD ARGUMENT WAS NOT WRONG (#3869 deploy 2) ───
+ *
+ * This file used to read: "COMPLETED STANDS: the engine did what it was asked,
+ * and failing the run would report a tenant's configuration gap as an engine
+ * fault. What is asserted here is that the gap is COUNTED and NAMED."
+ *
+ * That CONCLUSION still holds and is not being overridden. What the roadmap
+ * (#3869, and M5 item 2 of #3859) asks for is a DISTINCT NON-SUCCESS state —
+ * not `FAILED`. The old argument's unstated premise was that the only
+ * alternative to COMPLETED was FAILED, and with only six statuses that was
+ * true. `EMPTY_CATALOGUE` removes the premise rather than contradicting the
+ * conclusion:
+ *
+ *   FAILED           would say the engine broke. It did not.
+ *   COMPLETED        says the run succeeded. It did not: the answer is based
+ *                    on no data, which is what the message already says.
+ *   EMPTY_CATALOGUE  says the run finished and reached nothing, and names the
+ *                    tenant's configuration as the thing to fix.
+ *
+ * So the gap is still COUNTED (`stepFailures` is incremented) and NAMED
+ * (`errorMessage` is unchanged). What is new is that it is no longer
+ * indistinguishable in the run list from a posture review that worked — which
+ * is the defect the 2026-09-24 production measurement above actually described.
  */
 const CTX: RequestContext = { ...makeRequestContext('ADMIN'), agentId: 'agent-1' };
 const DEF = { key: 'k', label: 'K', steps: [{ kind: 'READ', tool: 'list_risks', label: 'read' }] } as unknown as WorkflowDefinition;
@@ -140,14 +160,14 @@ beforeEach(() => {
 });
 
 describe('a run offered NO tools', () => {
-    it('completes, but counts the gap as a step failure', async () => {
+    it('settles EMPTY_CATALOGUE, and still counts the gap as a step failure', async () => {
         offeredTools = [];
 
         const outcome = await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), 'anthropic/claude');
 
         // COMPLETED, because the engine is not what is broken — and a
         // non-zero count, because the run reasoned over nothing.
-        expect(outcome).toEqual({ status: 'COMPLETED', stepFailures: 1 });
+        expect(outcome).toEqual({ status: 'EMPTY_CATALOGUE', stepFailures: 1 });
     });
 
     it('names the gap on the run row, in the operator vocabulary', async () => {
@@ -160,7 +180,7 @@ describe('a run offered NO tools', () => {
         // looking successful.
         const completing = (updateRun as jest.Mock).mock.calls
             .map((c) => c[2] as Record<string, unknown>)
-            .filter((d) => d.status === 'COMPLETED');
+            .filter((d) => d.status === 'EMPTY_CATALOGUE');
         expect(completing).toHaveLength(1);
         expect(String(completing[0].errorMessage)).toContain('flue_no_tools_granted');
     });

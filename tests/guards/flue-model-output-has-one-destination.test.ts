@@ -215,6 +215,11 @@ describe('output that becomes nothing reaches ONE column', () => {
         // The third way output could escape: handed back to the caller, which
         // for a queued run is the job executor and then the API.
         expect(engine).toContain("return { status: 'COMPLETED', stepFailures };");
+        // The EMPTY_CATALOGUE settle (#3869 deploy 2) is a SECOND return on
+        // this path and is pinned for the same reason — an unpinned return is
+        // one this assertion says nothing about. Both are literals rather than
+        // one ternary precisely so each can be named here.
+        expect(engine).toContain("return { status: 'EMPTY_CATALOGUE', stepFailures };");
         expect(engine).not.toContain('text: reply');
         expect(engine).not.toContain('summary: reply.text');
     });
