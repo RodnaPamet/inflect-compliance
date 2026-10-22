@@ -1901,6 +1901,41 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             + 'design — see the note above; a streaming transport grants no '
             + 'additional read.',
     },
+    {
+        // Asking the workspace a question (#3869). SAME KEY as the assistant
+        // above, and the argument for reader level is strictly stronger here:
+        // `ad-hoc-question` declares `readOnly: true`, so the run is offered no
+        // propose surface at all — where the assistant's note has to argue that
+        // a proposal is harmless because it only queues, this one has nothing
+        // to queue. ADR 0004 determined by test that the answer cannot reach
+        // data the asker could not reach through the UI.
+        //
+        // An admin key here would be wrong rather than merely strict: it would
+        // make the feature admin-only to guard against something that cannot
+        // happen.
+        path: new RegExp(`^${T}\\/agents\\/questions$`),
+        methods: ['POST'],
+        permission: 'controls.view',
+        note:
+            'Starts a read-only agent run that answers a typed question. '
+            + 'Reader-level because the workflow withholds the propose surface '
+            + 'entirely and the answer is bounded by the asker\'s own '
+            + 'permissions.',
+    },
+    {
+        // The result read. The ROUTE key is not the whole gate: the usecase
+        // narrows to the asker's own directly-started runs unless the caller
+        // holds the agent-inventory key. A route-level key cannot express "your
+        // own row", so the row rule lives in the WHERE clause.
+        path: new RegExp(`^${T}\\/agents\\/questions\\/[^/]+$`),
+        methods: ['GET'],
+        permission: 'controls.view',
+        note:
+            'Reads one question run: answer, ordered tool calls with outcome, '
+            + 'model, token cost, and whether the catalogue was empty. Narrowed '
+            + 'again in the usecase to the asker\'s own run, or any run for an '
+            + 'agent-inventory reader.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

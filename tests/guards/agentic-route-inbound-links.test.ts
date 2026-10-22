@@ -451,6 +451,18 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/access-reviews/[reviewId]/agent-packs/route.ts',
     't/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route.ts',
     't/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route.ts',
+    // #3869 — asking the workspace a question, and reading what came back. The
+    // only agentic routes NOT under `admin/`, and deliberately so: ADR 0004
+    // determined by test that the answer cannot reach data the asker could not
+    // reach through the UI, so the feature is reader-level (`controls.view`,
+    // the assistant's key) rather than admin-only. Putting them under `admin/`
+    // would also put them behind the edge gate, which refuses any session whose
+    // built-in role in the tenant is not ADMIN or OWNER — i.e. it would refuse
+    // every person the feature exists for.
+    //
+    // API-only for now: M3 (#3870) is the asking surface.
+    't/[tenantSlug]/agents/questions/route.ts',
+    't/[tenantSlug]/agents/questions/[runId]/route.ts',
 ] as const;
 
 /** Every `.ts`/`.tsx` file under `src/`, comment-stripped, by repo-relative path. */

@@ -222,6 +222,50 @@ export const API_READ_LIMIT: RateLimitConfig = {
  * that chain and leave a denser audit trail. Legitimate churn (a
  * user rotating a handful of keys) is comfortably under 5/hr.
  */
+/**
+ * Asking the workspace a question: 20 per hour, PER USER (#3869).
+ *
+ * The first preset in this file intended to bind a PERSON rather than an IP,
+ * and it only works because the route supplies the `getUserId` resolver the
+ * middleware has always accepted and no route has ever passed. Without it the
+ * key is `<scope>:ip:<ip>:anon` and co-NAT'd colleagues share one budget —
+ * which for a question endpoint means one busy user silently starves a floor.
+ *
+ * ── WHY A PER-USER LIMIT AT ALL, GIVEN THE MONTHLY BUDGET ───────────────────
+ *
+ * `assertWithinMonthlyBudget` already bounds what a TENANT spends, and it
+ * pre-flights every run start. It does not bound who spends it: one person can
+ * exhaust a whole workspace's month, and the others learn about it from a
+ * refusal that names a budget they did not use. The two limits answer different
+ * questions and neither replaces the other.
+ *
+ * ── WHAT 20/HOUR IS AND IS NOT ──────────────────────────────────────────────
+ *
+ * A person asking in earnest asks a handful of questions an hour; twenty is
+ * comfortably above that and far below a script's rate. It is NOT a cost
+ * control — a model call's cost varies by orders of magnitude with context, so
+ * bounding request COUNT cannot bound spend. The monthly budget is the cost
+ * control, and this is the one that keeps a single caller from monopolising it.
+ *
+ * No lockout beyond the window: a person who asks too fast should wait, not be
+ * shut out for an hour. Compare `API_KEY_CREATE_LIMIT` below, where the lockout
+ * is deliberate because minting credentials is not something to retry at speed.
+ *
+ * `lockoutMs` is OMITTED rather than set to 0. The check is
+ * `if (config.lockoutMs && …)`, so the two behave identically — and an explicit
+ * zero reads like a configured duration that happens to be short, where absence
+ * says there is no lockout at all.
+ *
+ * Note the storage this rides on is an in-process Map, so with N app instances
+ * the effective ceiling is N x 20. That is a property of the mutation tier
+ * rather than of this preset, and it is recorded here because a reader checking
+ * whether 20 is enforceable deserves to find it.
+ */
+export const AGENT_QUESTION_LIMIT: RateLimitConfig = {
+    maxAttempts: 20,
+    windowMs: 60 * 60 * 1000,
+};
+
 export const API_KEY_CREATE_LIMIT: RateLimitConfig = {
     maxAttempts: 5,
     windowMs: 60 * 60 * 1000,
