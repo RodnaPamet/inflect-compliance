@@ -99,6 +99,37 @@ const POLL_MS = 1_500;
  */
 const POLL_MAX_ATTEMPTS = Math.ceil(120_000 / POLL_MS);
 
+/**
+ * THE REFUSAL, READ AS THE ENVELOPE ACTUALLY IS.
+ *
+ * `withApiErrorHandling` sends `ApiErrorResponse` — `{ error: { code,
+ * message, requestId? } }`. This file read `body.error` and handed that
+ * OBJECT to JSX, which is React error #31, "objects are not valid as a React
+ * child": the alert never rendered, the page crashed in its place, and the
+ * e2e reported three unrelated-looking failures.
+ *
+ * The `as { error?: string }` that said otherwise is why it survived both
+ * review and the rendered suite — the fixture was written to the shape the
+ * cast CLAIMED, so the test agreed with the bug rather than catching it. A
+ * cast is a claim about bytes that arrived over a socket, so this NARROWS
+ * instead: anything but a non-empty string message yields the generic
+ * sentence, and no object can reach the DOM whatever the server sends.
+ *
+ * `message` is the named reason and not a genericised apology because
+ * `ForbiddenError` is constructed `expose: true` — `toApiErrorResponse`
+ * substitutes "An error occurred" only for an unexposed error. That is the
+ * property M3 asks for, so it is read rather than assumed; `code` is the
+ * generic `FORBIDDEN` for every refusal in this funnel and would name none
+ * of them.
+ */
+function refusalFrom(body: unknown, fallback: string): string {
+    if (typeof body !== 'object' || body === null) return fallback;
+    const { error } = body as { error?: unknown };
+    if (typeof error !== 'object' || error === null) return fallback;
+    const { message } = error as { message?: unknown };
+    return typeof message === 'string' && message.trim() !== '' ? message : fallback;
+}
+
 type Phase = 'idle' | 'running' | 'settled' | 'refused';
 
 export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxChars: number }) {
@@ -140,8 +171,8 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
         async (runId: string, attempt: number) => {
             const res = await fetch(`/api/t/${tenantSlug}/agents/questions/${runId}`);
             if (!res.ok) {
-                const body = (await res.json().catch(() => null)) as { error?: string } | null;
-                setRefusal(body?.error ?? t('refusedUnknown'));
+                const body: unknown = await res.json().catch(() => null);
+                setRefusal(refusalFrom(body, t('refusedUnknown')));
                 setPhase('refused');
                 return;
             }
@@ -185,8 +216,8 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
             // code and a sentence — "designate an agent", "lift the kill
             // switch", "ask a shorter question" — and flattening them into one
             // "something went wrong" is what makes a support request necessary.
-            const body = (await res.json().catch(() => null)) as { error?: string } | null;
-            setRefusal(body?.error ?? t('refusedUnknown'));
+            const body: unknown = await res.json().catch(() => null);
+            setRefusal(refusalFrom(body, t('refusedUnknown')));
             setPhase('refused');
             return;
         }

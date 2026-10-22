@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures';
+import { safeGoto, waitForHydration } from './e2e-utils';
 
 /**
  * E2E — THE ASKING SURFACE IS REACHED FROM THE SIDEBAR AND ANSWERS WITH A
@@ -46,12 +47,38 @@ test('reached from the sidebar, and a refusal arrives with its named reason', as
     authedPage,
     isolatedTenant,
 }) => {
-    await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/controls`);
+    await safeGoto(authedPage, `/t/${isolatedTenant.tenantSlug}/controls`, {
+        waitUntil: 'domcontentloaded',
+    });
 
-    // THE INBOUND LINK, exercised. Scoped to the navigation landmark so a
-    // stray "Ask" elsewhere on the page cannot satisfy it.
-    await authedPage.getByRole('navigation').getByRole('link', { name: 'Ask' }).click();
-    await expect(authedPage).toHaveURL(new RegExp(`/t/${isolatedTenant.tenantSlug}/agents/ask`));
+    // THE INBOUND LINK, exercised — by the `nav-<slug>` testid every sibling
+    // spec uses, not by its accessible name. Three reasons, each one a way the
+    // first draft of this line failed or could:
+    //
+    //   * HYDRATION. The sidebar is OUTSIDE `main`, so the default hydration
+    //     wait watches a subtree unrelated to the thing being clicked. A click
+    //     landing before the App Router has hydrated does nothing at all, and
+    //     the symptom is a URL that never changes — which is exactly what CI
+    //     reported while the page itself was fine.
+    //   * THE NAME IS NOT A KEY. `nav.agentsAsk` is the string "Ask", and so
+    //     is `assistant.send`. Selecting on display text makes this spec fail
+    //     the day a second affordance is labelled the same way or this one is
+    //     relabelled, neither of which is a regression in what is claimed.
+    //   * `nav-ask` IS the href. `<NavItem>` derives it as the last segment of
+    //     `/t/<slug>/agents/ask`, so the locator cannot drift away from the
+    //     route it is asserting reaches.
+    await waitForHydration(authedPage, '[data-testid="nav-ask"]');
+    const navEntry = authedPage
+        .getByRole('navigation')
+        .locator('[data-testid="nav-ask"]')
+        .first();
+    await expect(navEntry).toBeVisible({ timeout: 30_000 });
+    await navEntry.click();
+    // `expect.poll` on the pathname rather than `toHaveURL`, whose 5s default
+    // is shorter than a cold client-side navigation under two CI workers.
+    await expect
+        .poll(() => new URL(authedPage.url()).pathname, { timeout: 30_000 })
+        .toBe(`/t/${isolatedTenant.tenantSlug}/agents/ask`);
 
     const main = authedPage.getByRole('main');
     await expect(main.getByRole('heading', { name: 'Ask a question' })).toBeVisible();

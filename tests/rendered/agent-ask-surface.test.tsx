@@ -213,10 +213,23 @@ describe('empty catalogue — the state most likely to be mistaken for an answer
 
 describe('refused', () => {
     it('shows the funnel refusal with its named reason, as given', async () => {
+        // THE REAL ENVELOPE. `withApiErrorHandling` sends `ApiErrorResponse`
+        // — `{ error: { code, message, requestId? } }` — and this fixture
+        // said `{ error: '<string>' }`, matching a cast in the client rather
+        // than anything the server sends. So the suite agreed with the bug:
+        // the component handed that object to JSX, React threw #31 ("objects
+        // are not valid as a React child"), and only the e2e, which talks to
+        // a real route, could see it. A fixture is a claim about the server
+        // and belongs to the server's shape, never the reader's assumption.
         wireFetch(null, {
             postStatus: 403,
             postBody: {
-                error: 'NO_AGENT_DESIGNATED: this workspace has designated no interactive agent.',
+                error: {
+                    code: 'FORBIDDEN',
+                    message:
+                        'NO_AGENT_DESIGNATED: this workspace has designated no interactive agent.',
+                    requestId: 'req_test',
+                },
             },
         });
         render(<AskClient tenantSlug="acme" maxChars={MAX} />);
@@ -227,6 +240,33 @@ describe('refused', () => {
         // is what turns a self-service fix into a support request.
         expect(screen.getByText(/NO_AGENT_DESIGNATED/)).toBeInTheDocument();
         expect(screen.getByText(/designated no interactive agent/)).toBeInTheDocument();
+    });
+
+    it('cannot render a non-string reason, whatever shape the body arrives in', async () => {
+        // The defect this pins is not a missing field but a WRONG TYPE
+        // reaching JSX. `{ error: '<string>' }` is the shape the old cast
+        // claimed; an object with no `message` is the shape a future envelope
+        // change could bring. Both must land on the stated copy rather than
+        // crash the page, because the reader's alert is the last thing between
+        // a named refusal and a support request.
+        for (const body of [
+            { error: 'NO_AGENT_DESIGNATED: a bare string, as the old cast claimed' },
+            { error: { code: 'FORBIDDEN', requestId: 'req_test' } },
+            { error: { code: 'FORBIDDEN', message: '   ' } },
+            { error: null },
+            // A non-JSON body is NOT in this list, deliberately: `wireFetch`
+            // coalesces `postBody ?? { runId }`, so a `null` here is served as
+            // a success body and the case would pass for a reason other than
+            // the one it names. The sibling test covers `{}`.
+        ]) {
+            wireFetch(null, { postStatus: 403, postBody: body });
+            const { unmount } = render(<AskClient tenantSlug="acme" maxChars={MAX} />);
+            await ask();
+            await waitFor(() =>
+                expect(screen.getByText(/refused and no reason was given/i)).toBeInTheDocument(),
+            );
+            unmount();
+        }
     });
 
     it('falls back to stated copy when the server sends no reason', async () => {
