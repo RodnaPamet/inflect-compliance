@@ -109,7 +109,45 @@ advertising nothing. Those are **different** failures, which is why there are
 two — "the agent had nothing to call" has its own `WorkflowRunStatus` precisely
 because it is not "the agent failed".
 
-## 6 · Verify, before involving Inflect at all
+## 6 · Verify the real egress path, in one command
+
+```
+SKIP_ENV_VALIDATION=1 NODE_EXTRA_CA_CERTS=$PWD/.certs/stub-cert.pem \
+  npx tsx verify-egress.ts
+```
+
+Drives Inflect's own modules — the save-time `checkWebhookUrl`, the use-time
+`assertPublicAddress` that re-resolves DNS and re-checks every address, then the
+real MCP tool client, which reaches the network through `safeFetch` and nothing
+else. No mock and no test seam.
+
+**It runs both configurations itself**, because a passing egress check is
+worthless on its own: it cannot be told apart from a check that never ran. The
+allowlist is read once and cached, so one process holds one configuration — the
+script re-executes itself as two children and prints both rows. There is no
+second command to remember and no way to get the pass without the refusal beside
+it.
+
+```
+  CONTROL — allowlist unset. This MUST be refused.
+    checkWebhookUrl      -> ok=false  reason=private address 192.168.56.1
+
+  LIVE — allowlist 192.168.56.0/24, SELFHOSTED. This must reach the stub.
+    checkWebhookUrl      -> ok=true
+    assertPublicAddress  -> 192.168.56.1
+    listTools            -> resolve_entities, sales_orders_by_creator, billing_exists_…
+    callTool             -> 2 orders, currencies EUR/SEK
+
+  PASS — refused without the allowlist, reached with it.
+```
+
+It exits non-zero in **both** directions: if the LIVE run cannot reach the stub,
+and also if the CONTROL run SUCCEEDS — the latter meaning the guard admitted a
+private address with no allowlist, which is a finding about the guard rather than
+about the stub. A third outcome, `broken`, is kept distinct from `refused`, because
+a child that crashes must not be read as the guard refusing.
+
+## 6b · Or by hand, before involving Inflect at all
 
 One call that proves TLS, trust and the fixtures together:
 
