@@ -198,7 +198,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
         <div className="space-y-section">
             <PageHeader title={t('title')} description={t('description')} />
 
-            <div className={cn(cardVariants(), 'space-y-default p-4')}>
+            <div className={cn(cardVariants(), 'space-y-default')}>
                 <Textarea
                     id="agent-question"
                     aria-label={t('inputLabel')}
@@ -214,8 +214,21 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                     error={tooLong ? t('tooLong', { max: maxChars }) : undefined}
                     description={t('counter', { count: question.length, max: maxChars })}
                 />
+                {/*
+                  * SECONDARY, and the reason is the ratchet's own rule rather
+                  * than a judgement about this control. `primary-secondary-ratio`
+                  * caps the absolute primary count and its history states the
+                  * bargain in as many words: "the next primary still pays with a
+                  * demotion". Raising the ceiling is not a sanctioned move, and
+                  * reaching into an unrelated surface to demote somebody else's
+                  * button to buy a slot here would be worse.
+                  *
+                  * The cost is small HERE specifically: primary emphasis exists
+                  * to disambiguate among several actions, and this page has
+                  * exactly one control. It is not competing with anything.
+                  */}
                 <Button
-                    variant="primary"
+                    variant="secondary"
                     onClick={() => void submit()}
                     disabled={phase === 'running' || tooLong || empty}
                 >
@@ -224,7 +237,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
             </div>
 
             {phase === 'refused' && refusal !== null && (
-                <div className={cn(cardVariants(), 'p-4')} role="alert">
+                <div className={cn(cardVariants())} role="alert">
                     <StatusBadge variant="error">{t('refusedBadge')}</StatusBadge>
                     {/* TEXT, like the answer. A refusal carries a server string. */}
                     <p className="mt-2 whitespace-pre-wrap text-sm text-content-default">{refusal}</p>
@@ -249,7 +262,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                     ) : result.answer === null ? (
                         <EmptyState title={t('noAnswerTitle')} description={t('noAnswerDescription')} />
                     ) : (
-                        <div className={cn(cardVariants(), 'p-4')}>
+                        <div className={cn(cardVariants())}>
                             <Heading level={3}>{t('answerHeading')}</Heading>
                             <p
                                 id="agent-answer"
@@ -260,7 +273,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                         </div>
                     )}
 
-                    <div className={cn(cardVariants(), 'space-y-default p-4')}>
+                    <div className={cn(cardVariants(), 'space-y-default')}>
                         <Heading level={3}>{t('callsHeading')}</Heading>
                         {result.toolCalls.length === 0 ? (
                             // Stated, never blank. "Nothing was consulted" is a
@@ -269,7 +282,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                         ) : (
                             <ol id="agent-tool-calls" className="space-y-tight">
                                 {result.toolCalls.map((c) => (
-                                    <li key={c.seq} className="flex flex-wrap items-center gap-2 text-sm">
+                                    <li key={c.seq} className="flex flex-wrap items-center gap-tight text-sm">
                                         <span className="font-mono text-content-muted">{c.seq}</span>
                                         <span className="text-content-default">{c.tool ?? t('unnamedTool')}</span>
                                         <StatusBadge variant={c.outcome === 'DONE' ? 'success' : 'error'}>
@@ -290,7 +303,7 @@ export function AskClient({ tenantSlug, maxChars }: { tenantSlug: string; maxCha
                         )}
                     </div>
 
-                    <dl className="flex flex-wrap gap-6 text-sm">
+                    <dl className="flex flex-wrap gap-section text-sm">
                         <div>
                             <dt className="text-content-muted">{t('model')}</dt>
                             {/* Null when nothing ran. Shown as such rather than

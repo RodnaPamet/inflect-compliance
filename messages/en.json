@@ -10026,7 +10026,7 @@
       "model": "Model",
       "noAnswerDescription": "The run finished without producing an answer. The calls it made are listed below.",
       "noAnswerTitle": "No answer was produced",
-      "noCalls": "Nothing was consulted. Any answer above is not based on this workspace's records.",
+      "noCalls": "Nothing was consulted, so an answer here is not based on this workspace's records",
       "noModel": "none ran",
       "placeholder": "Which controls have no evidence this quarter?",
       "refusedBadge": "Refused",
