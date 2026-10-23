@@ -132,8 +132,19 @@ export function MetricCard({
               }
           }
         : undefined;
-    const resolvedAriaLabel =
-        ariaLabel ?? (typeof eyebrow === 'string' ? eyebrow : undefined);
+    // NO EYEBROW FALLBACK. Naming a clickable card with its eyebrow alone is a
+    // 2.5.3 failure: the eyebrow is one line of what the reader sees and the
+    // card also shows the metric VALUE, so the accessible name was a strict
+    // SUBSET of its own visible text. axe reported it on every metric card of
+    // every dashboard once 4.14 enabled `label-content-name-mismatch`, and this
+    // file is where the name was synthesised — not at any call site.
+    //
+    // With no label the name comes from the content — "Controls 87% …" rather
+    // than "Controls" — which satisfies the comparison by construction AND
+    // tells a screen-reader user the figure a sighted user can read. An
+    // explicit `aria-label` from a caller is still honoured, for a card whose
+    // visible label is genuinely ambiguous; it is simply no longer invented.
+    const resolvedAriaLabel = ariaLabel;
 
     return (
         <div

@@ -488,12 +488,19 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
             screen.getByRole('region').getAttribute('aria-label'),
             'Table contents (scrollable)',
         );
-        expectLocalised(
-            document
-                .querySelector('[data-virtual-table-header] button')
-                ?.getAttribute('aria-label'),
-            'Sort by column',
+        // THE SORT BUTTON NO LONGER CARRIES AN `aria-label`, and that is the
+        // point rather than a gap in this file's coverage. It was the constant
+        // `t('sortByColumn')` — "Sort by column" — on every sortable header,
+        // which is a WCAG 2.5.3 (Label in Name) failure: the visible text is
+        // the column name, so the label named something the reader cannot see
+        // and every column answered to the same thing. There is no localised
+        // string left here to keep honest; the name comes from the column
+        // header, and `aria-sort` carries the state.
+        const sortButton = document.querySelector(
+            '[data-virtual-table-header] button',
         );
+        expect(sortButton?.getAttribute('aria-label')).toBeNull();
+        expect(sortButton?.textContent).toContain('Name');
     });
 
     it('NavBar: the brand link and the menu button names', () => {
@@ -503,9 +510,12 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
                 <NavBarMobileMenu onClick={() => {}} />
             </>,
         );
+        // The initials are part of the name now, not just decoration behind
+        // `aria-hidden` — WCAG 2.5.3 compares the accessible name against what
+        // a sighted reader SEES, and the glyph is on screen either way.
         expectLocalised(
             screen.getByRole('link').getAttribute('aria-label'),
-            'Inflect Compliance — go to dashboard',
+            'IC: Inflect Compliance — go to dashboard',
         );
         expectLocalised(screen.getByRole('button').getAttribute('aria-label'), 'Open navigation menu');
     });

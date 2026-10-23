@@ -474,10 +474,22 @@ describe("DataTable — virtualized sort buttons", () => {
         const header = container.querySelector(
             "[data-virtual-table-header]",
         ) as HTMLElement;
-        // Sort button label: "Sort by column"
-        const buttons = within(header).getAllByLabelText("Sort by column");
+        // NO `aria-label` TO SELECT ON, DELIBERATELY. It used to be the
+        // constant "Sort by column" on every sortable header, which is a WCAG
+        // 2.5.3 failure: the button's visible text is the COLUMN NAME, so a
+        // name that replaces it leaves a speech-input user saying "click Code"
+        // and reaching nothing. The accessible name now falls back to the
+        // content, so these are selected by role and the name is ASSERTED
+        // below rather than used as the handle.
+        const buttons = within(header).getAllByRole("button");
         // Two sortable columns → two buttons; click the first.
         expect(buttons.length).toBe(2);
+        // The fix itself: each button is named by what the reader can see, and
+        // the two differ — the old constant made every column one name.
+        const names = buttons.map((b) => b.textContent?.trim());
+        expect(names.every((n) => n && n.length > 0)).toBe(true);
+        expect(new Set(names).size).toBe(2);
+        expect(buttons[0]!.hasAttribute("aria-label")).toBe(false);
         fireEvent.click(buttons[0]!);
         expect(onSortChange).toHaveBeenCalledTimes(1);
     });

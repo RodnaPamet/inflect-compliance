@@ -442,7 +442,13 @@ export function NavBarBrand({ href, initials, ariaLabel }: NavBarBrandProps) {
     return (
         <Link
             href={href}
-            aria-label={ariaLabel ?? t('brandHome')}
+            // WCAG 2.1 SP 2.5.3 (Label in Name). The visible text here is the
+            // initials glyph, and `aria-hidden` on that span does NOT take it
+            // out of scope: the rule compares the accessible name against what
+            // a SIGHTED user sees, and aria-hidden hides from the a11y tree,
+            // not from the screen. So the name has to carry the initials — a
+            // speech-input user reads "IC" and must be able to say it.
+            aria-label={ariaLabel ?? t('brandHomeNamed', { initials })}
             className={NAV_BAR_BRAND_CLASS}
             data-testid="nav-bar-brand"
         >
