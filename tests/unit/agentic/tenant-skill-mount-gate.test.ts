@@ -152,9 +152,21 @@ describe('the resolver mounts repository and tenant skills together', () => {
 
     it('mounts the declared repository skills, then the tenant skill, and pins both kinds', () => {
         const { documents, pins } = resolveRunSkills(def.skills, [version()]);
+        /*
+            THE BOUNDARY IS DERIVED, not written as a number. The line above was
+            already derived and survived the third skill (#3953); the two below
+            hardcoded the same fact as `slice(0, 2)` and `pins[2]`, so a third
+            repository skill moved the tenant pin to index 3 and `pins[2]`
+            became a repository pin that happens to lack `origin` — a failure
+            that reads as a defect in the resolver and is a stale index.
+        */
+        const repoCount = DISCOVERED_AGENT_REVIEW_SKILLS.length;
         expect(documents.map((d) => d.name)).toEqual([...DISCOVERED_AGENT_REVIEW_SKILLS, NAME]);
-        expect(pins.slice(0, 2).every((p) => !('origin' in p))).toBe(true);
-        expect(pins[2]).toEqual(expect.objectContaining({ name: NAME, origin: 'tenant', versionId: 'ver-1' }));
+        expect(pins).toHaveLength(repoCount + 1);
+        expect(pins.slice(0, repoCount).every((p) => !('origin' in p))).toBe(true);
+        expect(pins[repoCount]).toEqual(
+            expect.objectContaining({ name: NAME, origin: 'tenant', versionId: 'ver-1' }),
+        );
     });
 
     it('fails the run closed on a tenant version the gate refuses', () => {

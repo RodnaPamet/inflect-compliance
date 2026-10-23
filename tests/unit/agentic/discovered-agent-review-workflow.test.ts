@@ -1,13 +1,14 @@
 /**
- * The discovered-agent review workflow and its two IAM skills (#3668, step 1d).
+ * The discovered-agent review workflow and its three review skills (#3668 step 1d,
+ * #3958).
  *
  * Hardening items proved here, against the SHIPPED corpus and the real gate —
  * nothing below is mocked:
  *
- *   • BOTH SKILLS PASS THE EVALUATION GATE AND THE LOAD-TIME SCAN.
- *   • THE WORKFLOW MOUNTS EXACTLY THE TWO SKILLS — the mount test: the resolver
- *     a run uses hands it exactly these two documents and pins exactly these
- *     two, by name, version and hash. `tests/integration/discovered-agent-review.test.ts`
+ *   • ALL THREE SKILLS PASS THE EVALUATION GATE AND THE LOAD-TIME SCAN.
+ *   • THE WORKFLOW MOUNTS EXACTLY THE THREE SKILLS — the mount test: the
+ *     resolver a run uses hands it exactly these three documents and pins
+ *     exactly these three, by name, version and hash. `tests/integration/discovered-agent-review.test.ts`
  *     proves the same pin reaches the run row through the real start path.
  *
  * The admission refusal of a run without its required input is proved against
@@ -38,7 +39,18 @@ import {
 import type { ReadStepDef, SynthesisStepDef } from '@/lib/agentic/workflow-types';
 
 const KEY = 'discovered-agent-review';
-const IAM_SKILLS = ['harness-level-assessment', 'nhi-ownership-attribution'] as const;
+/*
+    DECLARATION ORDER, not alphabetical — the pin test below asserts the order
+    a run records, and `DISCOVERED_AGENT_REVIEW_SKILLS` is the authority on it.
+    Named for what the set IS rather than for IAM: the third skill reviews a
+    sandbox policy, so the old `REVIEW_SKILLS` would have been a name that
+    disagreed with its own contents.
+*/
+const REVIEW_SKILLS = [
+    'harness-level-assessment',
+    'nhi-ownership-attribution',
+    'agent-sandbox-policy-review',
+] as const;
 
 const corpus = loadSkillCorpus();
 const skillOf = (name: string): LoadedSkill => {
@@ -49,8 +61,8 @@ const skillOf = (name: string): LoadedSkill => {
 
 beforeEach(() => resetSkillCache());
 
-describe('both IAM skills pass the evaluation gate and the load-time scan', () => {
-    it.each(IAM_SKILLS)('%s loads, and the text scan refuses none of it', (name) => {
+describe('all three review skills pass the evaluation gate and the load-time scan', () => {
+    it.each(REVIEW_SKILLS)('%s loads, and the text scan refuses none of it', (name) => {
         expect(corpus.refused.map((r) => r.name)).not.toContain(name);
         const skill = skillOf(name);
         expect(
@@ -62,7 +74,7 @@ describe('both IAM skills pass the evaluation gate and the load-time scan', () =
         ).toEqual({ rules: [], guardRules: [] });
     });
 
-    it.each(IAM_SKILLS)('%s passes the mount gate on its committed evaluation record', (name) => {
+    it.each(REVIEW_SKILLS)('%s passes the mount gate on its committed evaluation record', (name) => {
         const skill = skillOf(name);
         expect(checkSkillMountable(skill)).toEqual({
             ok: true,
@@ -70,34 +82,34 @@ describe('both IAM skills pass the evaluation gate and the load-time scan', () =
         });
     });
 
-    it.each(IAM_SKILLS)('%s: its evaluation set has task, refusal, injection and missing-input cases', (name) => {
+    it.each(REVIEW_SKILLS)('%s: its evaluation set has task, refusal, injection and missing-input cases', (name) => {
         const set = readEvaluationSet(skillOf(name)) as SkillEvaluationSet;
         expect(CASE_KINDS.filter((kind) => !set.cases.some((c) => c.kind === kind))).toEqual([]);
         expect(CASE_KINDS).toEqual(['task', 'refusal', 'injection', 'missing-input']);
     });
 });
 
-describe('the workflow mounts exactly the two IAM skills', () => {
+describe('the workflow mounts exactly the three review skills', () => {
     const def = getWorkflowDefinition(KEY);
 
-    it('is registered, and declares the two skills and nothing else', () => {
+    it('is registered, and declares the three skills and nothing else', () => {
         expect(def).toBe(discoveredAgentReviewWorkflow);
-        expect([...(def?.skills ?? [])]).toEqual([...IAM_SKILLS]);
-        expect(DISCOVERED_AGENT_REVIEW_SKILLS).toEqual(IAM_SKILLS);
+        expect([...(def?.skills ?? [])]).toEqual([...REVIEW_SKILLS]);
+        expect(DISCOVERED_AGENT_REVIEW_SKILLS).toEqual(REVIEW_SKILLS);
     });
 
-    it('a run is handed exactly those two documents — the resolver a Flue run uses', () => {
+    it('a run is handed exactly those three documents — the resolver a Flue run uses', () => {
         const mounted = resolveSkillsFor(def?.skills);
-        expect(mounted.map((s) => s.name)).toEqual([...IAM_SKILLS]);
+        expect(mounted.map((s) => s.name)).toEqual([...REVIEW_SKILLS]);
         for (const doc of mounted) {
             const shipped = skillOf(doc.name);
             expect(doc).toEqual({ name: shipped.name, description: shipped.description, instructions: shipped.instructions });
         }
     });
 
-    it('and is pinned to exactly those two, by name, version and hash, in declaration order', () => {
+    it('and is pinned to exactly those three, by name, version and hash, in declaration order', () => {
         expect(resolveSkillPins(def?.skills)).toEqual(
-            IAM_SKILLS.map((name) => {
+            REVIEW_SKILLS.map((name) => {
                 const skill = skillOf(name);
                 return { name, version: skill.metadata.version, contentHash: skillContentHash(skill.instructions) };
             }),
@@ -117,7 +129,7 @@ describe('the workflow mounts exactly the two IAM skills', () => {
 
     it('is the only registered workflow that declares either skill', () => {
         const declaring = listWorkflowDefinitions()
-            .filter((d) => (d.skills ?? []).some((s) => (IAM_SKILLS as readonly string[]).includes(s)))
+            .filter((d) => (d.skills ?? []).some((s) => (REVIEW_SKILLS as readonly string[]).includes(s)))
             .map((d) => d.key);
         expect(declaring).toEqual([KEY]);
     });
@@ -131,8 +143,8 @@ describe('its required input, and how it becomes the skills’ input', () => {
         expect(discoveredAgentReviewWorkflow.requiredInput).toEqual(['discoveredAgentId']);
     });
 
-    it('reads the agent under the name both skills give their required input', () => {
-        for (const name of IAM_SKILLS) expect(skillOf(name).metadata.requiredInput).toBe('discoveredAgent');
+    it('reads the agent under the name all three skills give their required input', () => {
+        for (const name of REVIEW_SKILLS) expect(skillOf(name).metadata.requiredInput).toBe('discoveredAgent');
         expect(read).toMatchObject({ kind: 'READ', label: 'discoveredAgent', tool: 'get_discovered_agent' });
         expect(read.args?.({ input: { discoveredAgentId: 'da_1' }, outputs: {} })).toEqual({ discoveredAgentId: 'da_1' });
     });

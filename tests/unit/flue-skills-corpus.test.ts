@@ -54,6 +54,11 @@ describe('the Flue skill corpus', () => {
         // below vacuously.
         expect(skills.length).toBeGreaterThanOrEqual(6);
         expect(skills.map((s) => s.name).sort()).toEqual([
+            // #3953 — phase 3 of the OpenShell roadmap. Reviews a sandbox's
+            // policy: teaches that audit mode is not enforcement, that a
+            // best-effort Landlock ruleset is not confinement, and that an
+            // absent field is never evidence of a restriction.
+            'agent-sandbox-policy-review',
             'dora-register-duties',
             'eu-ai-act-classification',
             'evidence-sufficiency',

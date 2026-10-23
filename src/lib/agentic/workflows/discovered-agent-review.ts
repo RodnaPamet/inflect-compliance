@@ -40,7 +40,27 @@ import type { WorkflowContext, WorkflowDefinition } from '../workflow-types';
 import { requiredString } from './required-input';
 
 /** The two IAM skills, by name — the whole of what a run of this workflow is taught. */
-export const DISCOVERED_AGENT_REVIEW_SKILLS = ['harness-level-assessment', 'nhi-ownership-attribution'] as const;
+export const DISCOVERED_AGENT_REVIEW_SKILLS = [
+    'harness-level-assessment',
+    'nhi-ownership-attribution',
+    /*
+        `agent-sandbox-policy-review` (#3958) — the third skill, and it answers a
+        question the other two cannot.
+
+        `harness-level-assessment` scores an agent against every criterion from
+        what a scan observed. This one reads the SANDBOX evidence behind one
+        rung's newest criterion, `H3.egress_enforced`, where the distinction that
+        decides the verdict is not visible to a general assessor: an allow-list
+        that is not enforced is configuration, and an endpoint with no
+        enforcement mode declared is logged-and-forwarded rather than blocked.
+
+        Declared here rather than in a workflow of its own because the input is
+        the same — `discoveredAgentId` — and so is the shape: READ the agent's
+        observations, then SYNTHESIS. A second workflow would duplicate both and
+        split one question about one agent across two runs.
+    */
+    'agent-sandbox-policy-review',
+] as const;
 
 interface Facts {
     discoveredId?: string;
