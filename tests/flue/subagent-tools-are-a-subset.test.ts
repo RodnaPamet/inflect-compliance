@@ -41,6 +41,7 @@ import { InflectAgent } from '@/lib/agentic/flue/agent';
 import { bindRun, releaseRun, type FlueRunBinding } from '@/lib/agentic/flue/run-binding';
 import { SPECIALISTS, narrowTools, narrowSkills } from '@/lib/agentic/flue/subagents';
 import { _resetDelegationCounts } from '@/lib/agentic/flue/delegation-gate';
+import { declaredToolNames, systemPromptText } from './declared-tools';
 
 /** A tool shaped as the adapter emits one, without importing the adapter. */
 function tool(name: string): FlueRunBinding['tools'][number] {
@@ -128,8 +129,8 @@ const granted = (s: Served): string[] =>
     s.tools.filter((n) => !RUNTIME_TOOLS.has(n)).sort();
 
 const served = (context: Context): Served => ({
-    tools: (context.tools ?? []).map((t) => t.name),
-    prompt: context.systemPrompt ?? '',
+    tools: declaredToolNames(context),
+    prompt: systemPromptText(context),
 });
 
 /**
@@ -293,7 +294,7 @@ describe('every specialist is declared to the runtime', () => {
         });
         faux.setResponses([
             (context: Context) => {
-                prompt = context.systemPrompt ?? '';
+                prompt = systemPromptText(context);
                 return fauxAssistantMessage('seen');
             },
         ]);
