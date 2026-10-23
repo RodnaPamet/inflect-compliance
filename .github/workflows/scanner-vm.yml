@@ -68,7 +68,7 @@ jobs:
                   service_account: ${{ vars.GCP_VM_OPERATOR_SA }}
 
             - name: Set up gcloud
-              uses: google-github-actions/setup-gcloud@v2
+              uses: google-github-actions/setup-gcloud@v3
 
             - name: Write the configuration and the credential lines
               if: inputs.action == 'configure'
