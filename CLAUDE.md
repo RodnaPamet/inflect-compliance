@@ -3249,6 +3249,17 @@ undo by "simplifying":
 the site keeps it out of the site's navigation and search. A secret never goes
 in `docs/` at all. See `docs/docs-site.md`.
 
+**Page guides** (`docs/guide/<sidebar section>/<page>.md`) and how-tos
+(`docs/how-to/`) are the one exception to publishing by name: the manifest
+lists their FOLDER, and they are classified `authoritative` by path, so a new
+guide needs neither a manifest line nor a classification entry (adding the
+latter fails docs-accuracy). A guide names its page in `route:` frontmatter and
+writes on-screen labels as `{{ui:<key>}}` from `messages/en.json`. The docs
+build refuses a route that matches no `page.tsx` and a key that does not
+resolve; the Ratchets guardrail deliberately checks neither, so renaming a label
+in the app never fails a code PR. Template and rules: `docs/docs-site.md` →
+"Writing a page guide".
+
 ## UI Platform — Epics 51–60
 
 The following epics established shared primitives, guardrail tests, and
