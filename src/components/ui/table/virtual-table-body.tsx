@@ -607,6 +607,18 @@ function VirtualTableHeader<T extends TableRowData>({
                         <div
                             key={header.id}
                             role="columnheader"
+                            // Same 2.5.3 fix as `table.tsx` — the two header
+                            // implementations shared the one constant label,
+                            // so they shared the defect and must share the fix.
+                            aria-sort={
+                                isSortable
+                                    ? sortBy === header.column.id
+                                        ? sortOrder === "asc"
+                                            ? "ascending"
+                                            : "descending"
+                                        : "none"
+                                    : undefined
+                            }
                             className={headerCellClassName(
                                 header.column.id,
                                 hasSelectBefore,
@@ -621,7 +633,6 @@ function VirtualTableHeader<T extends TableRowData>({
                                     {isSortable ? (
                                         <button
                                             type="button"
-                                            aria-label={t("sortByColumn")}
                                             className="flex items-center gap-tight"
                                             onClick={() =>
                                                 onSortChange?.({

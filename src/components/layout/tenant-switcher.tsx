@@ -48,7 +48,7 @@ import Link from 'next/link';
 import { Check, ChevronsUpDown } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
-import { InitialsAvatar } from '@/components/ui/initials-avatar';
+import { InitialsAvatar, getInitials } from '@/components/ui/initials-avatar';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
@@ -239,7 +239,12 @@ export function TenantSwitcher({
             <button
                 type="button"
                 className={SWITCHER_PILL_CLASS}
-                aria-label={`Current workspace: ${tenantName}. Click to switch.`}
+                // 2.5.3: the visible text is the avatar initials FOLLOWED BY
+                // the tenant name, so a label carrying only the name omits
+                // what the reader sees first. `getInitials` is the same
+                // function `InitialsAvatar` renders with, so the two cannot
+                // drift apart into a name that merely looks right.
+                aria-label={`${getInitials(tenantSlug, 'slug')} ${tenantName} — current workspace. Click to switch.`}
                 aria-expanded={open}
                 aria-haspopup="menu"
                 data-testid="top-chrome-tenant-switcher"

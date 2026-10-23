@@ -270,7 +270,20 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                     <button
                         type="button"
                         onClick={onToggleCollapse}
-                        aria-label={collapsed ? tn('expandSidebar') : tn('collapseSidebar')}
+                        // WCAG 2.1 SP 2.5.3 (Label in Name). EXPANDED, this
+                        // button's visible text is the app name, so a label of
+                        // "Collapse sidebar" named something the reader cannot
+                        // see — "click Inflect" reached nothing. The label now
+                        // contains it. COLLAPSED there is no visible text at
+                        // all (icon only), so the plain form is correct there
+                        // and 2.5.3 does not apply. `OrgSidebarNav` already
+                        // held this shape by accident: its visible text is
+                        // "Collapse", which its label contains.
+                        aria-label={
+                            collapsed
+                                ? tn('expandSidebar')
+                                : tn('collapseSidebarNamed', { app: tc('appName') })
+                        }
                         aria-pressed={collapsed}
                         data-testid="sidebar-collapse-toggle"
                         className={cn(
@@ -355,7 +368,16 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                     'mx-2 mb-2 flex items-center rounded-lg border border-border-subtle bg-bg-default px-3 py-2 text-xs text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
                     collapsed ? 'justify-center' : 'gap-tight',
                 )}
-                aria-label={tn('openCommandPalette')}
+                // 2.5.3 again, same shape: expanded, the visible text is
+                // `common.search`, and the label has to carry it. The ellipsis
+                // is part of that visible string, so it is interpolated rather
+                // than re-spelled — a hand-written "Search" would not match
+                // what is on screen.
+                aria-label={
+                    collapsed
+                        ? tn('openCommandPalette')
+                        : tn('openCommandPaletteNamed', { label: tc('search') })
+                }
                 data-testid="sidebar-search-anchor"
             >
                 <svg

@@ -1469,6 +1469,30 @@ export function Table<T extends TableRowData>({
 
                       return (
                         <th
+                          // WCAG 2.1 SP 2.5.3 (Label in Name). The sort
+                          // button's visible text IS the column name, so it
+                          // must not carry an `aria-label` naming something
+                          // else: `t("table.sortByColumn")` was the constant
+                          // "Sort by column" on EVERY sortable header, which
+                          // meant a speech-input user looking at "Status"
+                          // could say "click Status" and reach nothing, and
+                          // every column answered to the same name. Removing
+                          // it lets the accessible name fall back to the
+                          // content, which is the column name — the label was
+                          // worse than none.
+                          //
+                          // `aria-sort` is what carries the state the label
+                          // used to imply, and carries it better: it names the
+                          // DIRECTION, which the old constant never did.
+                          aria-sort={
+                            isSortableColumn
+                              ? sortBy === header.column.id
+                                ? sortOrder === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                              : undefined
+                          }
                           key={header.id}
                           colSpan={header.colSpan}
                           data-column-id={header.column.id}
@@ -1535,7 +1559,6 @@ export function Table<T extends TableRowData>({
                               {...(isSortableColumn && {
                                 type: "button",
                                 disabled: !isSortableColumn,
-                                "aria-label": t("table.sortByColumn"),
                                 onClick: () =>
                                   onSortChange?.({
                                     sortBy: header.column.id,
