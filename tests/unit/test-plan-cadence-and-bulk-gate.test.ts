@@ -313,8 +313,12 @@ describe('scheduleTestPlan — a schedule edit does not restart the review clock
         expect(written.nextDueAt).toEqual(overdueDue);
     });
 
-    it('seeds nextDueAt from createdAt when the plan has never had one', async () => {
-        const created = new Date(Date.now() - 400 * DAY);
+    it('seeds nextDueAt from createdAt when the plan has never had one, clamping to the month end', async () => {
+        // A FIXED month end, built from LOCAL components so it is the 31st in
+        // whatever zone this runs in. It was `Date.now() - 400 * DAY`, which
+        // made the test's verdict depend on the calendar — see the expectation
+        // below for what that cost.
+        const created = new Date(2025, 7, 31, 5, 32, 39, 767);
         mockTx.controlTestPlan.findFirst.mockResolvedValue({
             id: 'plan_1',
             tenantId: 'tenant-1',
@@ -332,10 +336,40 @@ describe('scheduleTestPlan — a schedule edit does not restart the review clock
             automationType: 'MANUAL',
         } as any);
 
+        // THE EXPECTATION RESTATES THE RULE; IT DOES NOT RE-DERIVE THE BUG.
+        //
+        // This was `setMonth(getMonth() + 1)` — the naive rollover that
+        // `computeNextDueAt` exists to avoid, and which agrees with the product
+        // only by luck. `created` used to be 400 days ago, so the two diverged
+        // exactly on the days when that landed on a 31st followed by a 30-day
+        // month: on 2026-10-05 it was 31 August 2025, naive said 1 October, the
+        // product said 30 September, and that disagreement false-reddened an
+        // unrelated dependency PR (#3183) for eighteen days. Roughly a dozen
+        // days a year; invisible, and green, on all the rest.
+        //
+        // So: one month on, with the day clamped to what the target month has.
+        // Both sides read wall-clock getters, matching `addMonthsClamped`, so
+        // this asserts the same thing in every timezone — and because `created`
+        // is now pinned to a month end, a revert to the naive form reddens this
+        // on every day of the year rather than on twelve of them.
         const written = mockTx.controlTestPlan.update.mock.calls[0][0].data;
-        const expected = new Date(created);
-        expected.setMonth(expected.getMonth() + 1);
-        expect(written.nextDueAt.toISOString()).toBe(expected.toISOString());
+        const due: Date = written.nextDueAt;
+
+        const target = new Date(created);
+        target.setDate(1);
+        target.setMonth(target.getMonth() + 1);
+        const daysInTarget = new Date(
+            target.getFullYear(),
+            target.getMonth() + 1,
+            0,
+        ).getDate();
+
+        expect(due.getFullYear()).toBe(target.getFullYear());
+        expect(due.getMonth()).toBe(target.getMonth());
+        expect(due.getDate()).toBe(Math.min(created.getDate(), daysInTarget));
+        // The time of day rides along untouched — a due date moves months, not hours.
+        expect(due.getHours()).toBe(created.getHours());
+        expect(due.getMinutes()).toBe(created.getMinutes());
     });
 
     /** The two-clocks invariant this must not break. */
