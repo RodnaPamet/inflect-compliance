@@ -650,6 +650,10 @@ module.exports = {
     // not their own bug). Restarting the ballooned worker keeps heaps bounded
     // and the run reproducible. Belt-and-braces with the per-worker DB
     // isolation from the flake-fix (#951).
+    // ONE heap-summary block per run (#3977). Deliberately not
+    // `logHeapUsage`, which appends a figure to every PASS line —
+    // ~1,650 lines of noise. See the reporter's own docstring.
+    reporters: ['default', '<rootDir>/tests/reporters/heap-summary-reporter.cjs'],
     workerIdleMemoryLimit: '512MB',
     // forceExit DELIBERATELY OFF — Jest exits naturally once the
     // disconnect-after-suite hook in tests/setup/disconnect-after-suite.ts
