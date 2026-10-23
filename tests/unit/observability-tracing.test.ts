@@ -7,7 +7,7 @@
  * RUN: npx jest tests/unit/observability-tracing.test.ts --verbose
  */
 
-import { SpanStatusCode } from '@opentelemetry/api';
+import { SpanStatusCode, context, trace } from '@opentelemetry/api';
 import { traceUsecase, traceOperation, getTracer } from '@/lib/observability/tracing';
 import { runWithRequestContext } from '@/lib/observability/context';
 import type { RequestContext } from '@/app-layer/types';
@@ -15,18 +15,23 @@ import { getPermissionsForRole } from '@/lib/permissions';
 
 // We use the InMemorySpanExporter to capture spans for assertions.
 // This requires setting up a real (but in-memory) tracer provider.
-import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { TracerProvider } from '@opentelemetry/sdk-trace';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace';
+import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 
 let exporter: InMemorySpanExporter;
-let provider: NodeTracerProvider;
+let provider: TracerProvider;
 
 beforeAll(() => {
     exporter = new InMemorySpanExporter();
-    provider = new NodeTracerProvider({
-        spanProcessors: [new SimpleSpanProcessor(exporter)],
+    provider = new TracerProvider({
+        spanProcessors: [new SimpleSpanProcessor({ exporter })],
     });
-    provider.register();
+    // sdk-trace 3.0.0 dropped `register()`; set the global provider and the
+    // async context manager explicitly. Both matter here — the spans this suite
+    // reads are created across awaits inside the traced usecases.
+    trace.setGlobalTracerProvider(provider);
+    context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 });
 
 afterAll(async () => {

@@ -19,7 +19,8 @@
 // ─── Mutable mock state, read by the module factories below ───────────
 
 interface ProviderSpy {
-    register: jest.Mock<void, []>;
+    /** Absent on the tracer provider since sdk-trace 3.0.0 dropped `register()`. */
+    register?: jest.Mock<void, []>;
     shutdown: jest.Mock<Promise<void>, []>;
 }
 
@@ -57,6 +58,11 @@ function makeShutdown(kind: 'trace' | 'meter'): jest.Mock<Promise<void>, []> {
 }
 
 const setGlobalMeterProvider = jest.fn<void, [unknown]>();
+const setGlobalTracerProvider = jest.fn<void, [unknown]>();
+const setGlobalContextManager = jest.fn<void, [unknown]>();
+const setGlobalPropagator = jest.fn<void, [unknown]>();
+const propagatorsComposed: unknown[][] = [];
+const contextManagersEnabled: unknown[] = [];
 const diagSetLogger = jest.fn<void, [unknown, unknown]>();
 const pinoInfo = jest.fn<void, [unknown, string]>();
 
@@ -65,6 +71,39 @@ jest.mock('@opentelemetry/api', () => ({
     DiagConsoleLogger: class DiagConsoleLogger {},
     DiagLogLevel: { INFO: 'INFO' },
     metrics: { setGlobalMeterProvider: (p: unknown) => setGlobalMeterProvider(p) },
+    // `register()` is gone in sdk-trace 3.0.0; these two are what replaced it.
+    trace: { setGlobalTracerProvider: (p: unknown) => setGlobalTracerProvider(p) },
+    context: { setGlobalContextManager: (m: unknown) => setGlobalContextManager(m) },
+    propagation: { setGlobalPropagator: (p: unknown) => setGlobalPropagator(p) },
+}));
+
+// The THIRD thing `register()` did. Omitting it is why
+// `tests/integration/job-execution-with-trace.test.ts` went red: with no
+// global propagator, `job-trace.ts` injects an EMPTY carrier and every job
+// starts its own trace instead of continuing the request's.
+jest.mock('@opentelemetry/core', () => ({
+    W3CTraceContextPropagator: class W3CTraceContextPropagator {
+        readonly kind = 'tracecontext';
+    },
+    W3CBaggagePropagator: class W3CBaggagePropagator {
+        readonly kind = 'baggage';
+    },
+    CompositePropagator: class CompositePropagator {
+        constructor(cfg: { propagators: unknown[] }) {
+            propagatorsComposed.push(cfg.propagators);
+        }
+    },
+}));
+
+// The async context manager is the half that would fail SILENTLY: without it
+// every span is a root, because the parent cannot be read back across an await.
+jest.mock('@opentelemetry/context-async-hooks', () => ({
+    AsyncLocalStorageContextManager: class AsyncLocalStorageContextManager {
+        enable() {
+            contextManagersEnabled.push(this);
+            return this;
+        }
+    },
 }));
 
 jest.mock('@opentelemetry/resources', () => ({
@@ -76,19 +115,22 @@ jest.mock('@opentelemetry/resources', () => ({
 
 jest.mock('@opentelemetry/semantic-conventions', () => semConv);
 
-jest.mock('@opentelemetry/sdk-trace-node', () => ({
-    NodeTracerProvider: class NodeTracerProvider {
-        register: jest.Mock<void, []>;
+// `@opentelemetry/sdk-trace-node` HAS NO 3.x — it consolidated into
+// `@opentelemetry/sdk-trace`. This is a `jest.mock` STRING, so `tsc` cannot see
+// it: a clean typecheck does not certify a package rename, and this mock naming
+// a module that no longer exists is what reddened shard 6/6 while typecheck
+// reported zero errors.
+jest.mock('@opentelemetry/sdk-trace', () => ({
+    TracerProvider: class TracerProvider {
         shutdown: jest.Mock<Promise<void>, []>;
         constructor(_cfg: unknown) {
-            this.register = jest.fn<void, []>();
             this.shutdown = makeShutdown('trace');
-            traceProviders.push({ register: this.register, shutdown: this.shutdown });
+            traceProviders.push({ shutdown: this.shutdown });
         }
     },
     BatchSpanProcessor: class BatchSpanProcessor {
-        constructor(exporter: unknown) {
-            spanProcessorArgs.push(exporter);
+        constructor(cfg: unknown) {
+            spanProcessorArgs.push(cfg);
         }
     },
 }));
@@ -180,6 +222,11 @@ beforeEach(() => {
     shutdownBehaviour.trace = 'resolve';
     shutdownBehaviour.meter = 'resolve';
     setGlobalMeterProvider.mockClear();
+    setGlobalTracerProvider.mockClear();
+    setGlobalContextManager.mockClear();
+    setGlobalPropagator.mockClear();
+    propagatorsComposed.length = 0;
+    contextManagersEnabled.length = 0;
     diagSetLogger.mockClear();
     pinoInfo.mockClear();
     _resetForTesting();
@@ -295,7 +342,34 @@ describe('initTelemetry — enabled bootstrap', () => {
         await initTelemetry();
 
         expect(traceProviders).toHaveLength(1);
-        expect(traceProviders[0].register).toHaveBeenCalledTimes(1);
+
+        // `register()` used to do this; since sdk-trace 3.0.0 it is two explicit
+        // calls, and BOTH are asserted because only one of them fails loudly.
+        expect(setGlobalTracerProvider).toHaveBeenCalledTimes(1);
+        const registeredTracer = setGlobalTracerProvider.mock.calls[0][0] as {
+            shutdown?: unknown;
+        };
+        // Same argument the meter provider gets below: registering a DIFFERENT
+        // instance is how traces silently stop being exported.
+        expect(registeredTracer.shutdown).toBe(traceProviders[0].shutdown);
+
+        // And the context manager, which is the half CI cannot otherwise see:
+        // without it every span is a root and the traces are structurally
+        // wrong while still arriving.
+        expect(setGlobalContextManager).toHaveBeenCalledTimes(1);
+        expect(contextManagersEnabled).toHaveLength(1);
+        expect(setGlobalContextManager.mock.calls[0][0]).toBe(contextManagersEnabled[0]);
+
+        // AND the propagator — the third of register()'s three jobs, and the
+        // one whose absence is invisible until a trace id crosses a process
+        // boundary. Both W3C propagators, because `job-trace.ts` reads
+        // `traceparent` and the baggage half rides with it by convention.
+        expect(setGlobalPropagator).toHaveBeenCalledTimes(1);
+        expect(propagatorsComposed).toHaveLength(1);
+        expect(
+            (propagatorsComposed[0] as Array<{ kind?: string }>).map((x) => x.kind).sort(),
+        ).toEqual(['baggage', 'tracecontext']);
+
         expect(meterProviders).toHaveLength(1);
         expect(setGlobalMeterProvider).toHaveBeenCalledTimes(1);
 
@@ -313,7 +387,10 @@ describe('initTelemetry — enabled bootstrap', () => {
         // exporter ships every metric to /v1/traces, and a `toBeDefined()`
         // here cannot see it.
         expect((metricReaderArgs[0].exporter as { signal?: string }).signal).toBe('metrics');
-        expect((spanProcessorArgs[0] as { signal?: string }).signal).toBe('traces');
+        // 3.0.0 passes an options bag, so the exporter is one level in.
+        expect(
+            (spanProcessorArgs[0] as { exporter?: { signal?: string } }).exporter?.signal,
+        ).toBe('traces');
         expect(spanProcessorArgs).toHaveLength(1);
     });
 
