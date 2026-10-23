@@ -2,7 +2,7 @@
  * Integration test — distributed trace continuity across the
  * web → BullMQ-worker boundary.
  *
- * Stands up a REAL OTel SDK (NodeTracerProvider + an in-memory span
+ * Stands up a REAL OTel SDK (TracerProvider + an in-memory span
  * exporter + the default W3C TraceContext propagator) and drives the
  * actual propagation seam end to end:
  *
@@ -25,11 +25,12 @@ import {
     SpanStatusCode,
 } from '@opentelemetry/api';
 import {
-    NodeTracerProvider,
+    TracerProvider,
     InMemorySpanExporter,
     SimpleSpanProcessor,
     type ReadableSpan,
-} from '@opentelemetry/sdk-trace-node';
+} from '@opentelemetry/sdk-trace';
+import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import {
     runJobInTraceContext,
     readTraceCarrier,
@@ -38,7 +39,7 @@ import {
 } from '@/lib/observability/job-trace';
 
 let exporter: InMemorySpanExporter;
-let provider: NodeTracerProvider;
+let provider: TracerProvider;
 
 beforeAll(() => {
     // Reset any globals a prior test file in this worker may have set,
@@ -48,10 +49,17 @@ beforeAll(() => {
     propagation.disable();
 
     exporter = new InMemorySpanExporter();
-    provider = new NodeTracerProvider({
-        spanProcessors: [new SimpleSpanProcessor(exporter)],
+    provider = new TracerProvider({
+        spanProcessors: [new SimpleSpanProcessor({ exporter })],
     });
-    provider.register();
+    // `register()` is gone in sdk-trace 3.0.0. It set the global provider AND
+    // the async context manager, and this suite needs BOTH: it asserts
+    // parent-child structure across the job runner's awaits, which is exactly
+    // what the context manager carries. Setting only the provider would leave
+    // every span a root and the nesting assertions would fail for a reason that
+    // has nothing to do with the job runner.
+    trace.setGlobalTracerProvider(provider);
+    context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 });
 
 afterAll(async () => {

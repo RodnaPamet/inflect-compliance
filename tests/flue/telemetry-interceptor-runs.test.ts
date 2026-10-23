@@ -3,10 +3,10 @@ import { init } from '@flue/runtime';
 import { start } from '@flue/runtime/node';
 import { trace } from '@opentelemetry/api';
 import {
-    BasicTracerProvider,
+    TracerProvider,
     InMemorySpanExporter,
     SimpleSpanProcessor,
-} from '@opentelemetry/sdk-trace-base';
+} from '@opentelemetry/sdk-trace';
 import * as v from 'valibot';
 
 import { InflectAgent } from '@/lib/agentic/flue/agent';
@@ -88,8 +88,8 @@ async function runThroughProductionInterceptor(opts: {
     ledgerSeq?: number;
 }): Promise<Outcome> {
     const exporter = new InMemorySpanExporter();
-    const provider = new BasicTracerProvider({
-        spanProcessors: [new SimpleSpanProcessor(exporter)],
+    const provider = new TracerProvider({
+        spanProcessors: [new SimpleSpanProcessor({ exporter })],
     });
     trace.disable();
     trace.setGlobalTracerProvider(provider);

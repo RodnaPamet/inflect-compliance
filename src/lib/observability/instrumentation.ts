@@ -49,7 +49,7 @@ export async function initTelemetry(): Promise<void> {
     const semConvMod = await import('@opentelemetry/semantic-conventions');
     const ATTR_SERVICE_NAME = semConvMod.ATTR_SERVICE_NAME ?? 'service.name';
     const ATTR_SERVICE_VERSION = semConvMod.ATTR_SERVICE_VERSION ?? 'service.version';
-    const { NodeTracerProvider, BatchSpanProcessor } = await import('@opentelemetry/sdk-trace-node');
+    const { TracerProvider, BatchSpanProcessor } = await import('@opentelemetry/sdk-trace');
     const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http');
     const { MeterProvider, PeriodicExportingMetricReader } = await import('@opentelemetry/sdk-metrics');
     const { OTLPMetricExporter } = await import('@opentelemetry/exporter-metrics-otlp-http');
@@ -65,11 +65,31 @@ export async function initTelemetry(): Promise<void> {
         url: `${otlpEndpoint}/v1/traces`,
     });
 
-    const tracerProvider = new NodeTracerProvider({
+    const tracerProvider = new TracerProvider({
         resource,
-        spanProcessors: [new BatchSpanProcessor(traceExporter)],
+        // 3.0.0 takes an OPTIONS BAG, not the exporter positionally.
+        spanProcessors: [new BatchSpanProcessor({ exporter: traceExporter })],
     });
-    tracerProvider.register();
+
+    // `register()` IS GONE IN 3.0.0, AND IT DID TWO THINGS. The consolidated
+    // `@opentelemetry/sdk-trace` replaced `sdk-trace-node` (which has no 3.x at
+    // all) and its `TracerProvider` carries only `getTracer`, `forceFlush` and
+    // `shutdown` — so both halves of the old call have to be made explicitly.
+    //
+    // The second half is the one that would go wrong quietly. Setting the
+    // global provider alone makes spans record; without the async context
+    // manager every span is a ROOT, because the parent cannot be read back
+    // across an await. Traces would still arrive, still look plausible, and
+    // carry no parent-child structure — which is not something a green CI run
+    // can see.
+    const { AsyncLocalStorageContextManager } = await import(
+        '@opentelemetry/context-async-hooks'
+    );
+    const { trace, context: otelContext } = await import('@opentelemetry/api');
+    otelContext.setGlobalContextManager(
+        new AsyncLocalStorageContextManager().enable(),
+    );
+    trace.setGlobalTracerProvider(tracerProvider);
 
     // ── Metrics ──
     const metricExporter = new OTLPMetricExporter({
