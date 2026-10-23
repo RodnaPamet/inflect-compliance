@@ -3224,6 +3224,31 @@ both PRs are green, and main is wrong by one with no suspicious diff for a
 reviewer to catch. A clean merge was the dangerous case, so the header is
 gone rather than monitored.
 
+### The public docs site
+
+`docs/` is also published at https://rodnapamet.github.io/inflect-compliance/
+(Starlight, built and deployed by `.github/workflows/docs-site.yml`), but only
+the docs listed in `site/published-docs.json`. **That file is an ALLOWLIST: a
+new doc is NOT published until somebody adds it**, so writing a doc never
+publishes it by accident. To publish one, add its path to the right section;
+`tests/guardrails/docs-site-publication.test.ts` then holds it on every PR.
+
+Two rules in `site/scripts/stage-docs.js` refuse the build, and are easy to
+undo by "simplifying":
+
+- **`NEVER_PUBLISH`** is the owner's decision of 2026-10-23 — the deployment
+  and production-VM guides, the runbooks and the DPA template stay off the
+  site. The guardrail restates that list, so emptying the constant fails CI.
+- **`FORBIDDEN_CONTENT`** refuses a published doc that names a coordinate of
+  the production estate: the GCP project id, the VM's host path, zone or
+  access command, a person's `@inflect.bg` address, the production env file.
+  The fix for a hit is to rewrite the line in the doc, never to loosen the rule.
+
+**Exclusion is not confidentiality.** The repository is public; every file in
+`docs/` — and this file — is already readable on github.com. Keeping a doc off
+the site keeps it out of the site's navigation and search. A secret never goes
+in `docs/` at all. See `docs/docs-site.md`.
+
 ## UI Platform — Epics 51–60
 
 The following epics established shared primitives, guardrail tests, and

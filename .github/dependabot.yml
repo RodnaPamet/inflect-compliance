@@ -268,3 +268,28 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+  # ── npm, docs site (weekly) ──
+  # site/ is the public docs site (Starlight + Astro) with its own lockfile,
+  # kept apart from the application's tree (docs/docs-site.md). Starlight is
+  # 0.x, so a "minor" here can break the build — the docs-site workflow builds
+  # every PR that touches site/, which is what catches it.
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Sofia
+    open-pull-requests-limit: 2
+    reviewers:
+      - h0mele55
+    labels:
+      - dependencies
+      - automated
+    groups:
+      docs-site:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

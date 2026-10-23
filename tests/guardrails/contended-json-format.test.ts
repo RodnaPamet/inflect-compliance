@@ -124,7 +124,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // harness scanner's image for Inflect's own estate. A pure append, +5/-0.
         // And again the same day: `scanner-vm.yml:scanner-vm`, the dispatch-only
         // workflow that configures and starts that scanner on the VM. +5/-0.
-        keyOrderSha: '2773ce0a15a95c8263edecf47c7abe8ccd47f32702bed1da938acd7e92b8a44b',
+        // Updated 2026-10-23: two entries for the public docs site —
+        // `docs-site.yml:deploy` (main-only Pages deploy) and
+        // `docs-site.yml:pull_request.paths` (its path-scoped PR build). A
+        // textual insert before `ghcr-publish.yml`, +10/-0; no key moved.
+        keyOrderSha: 'b37593a5929c0d01989083b9831d9be624b2d30150627f13d89166271c7d8a92',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
@@ -207,7 +211,10 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // writers were tried here and produced the SAME digest, because the
         // file is already fully sorted; the textual insert was kept anyway, per
         // the note above.
-        keyOrderSha: '76775fd56b4f1eb4c17c0abb99a68d58144ee7059efb4f4699854caa6486aeaa',
+        //
+        // Moved 2026-10-23 for `docs/docs-site.md` (the public docs site), a
+        // +3/-0 textual insert in sorted position.
+        keyOrderSha: '4af16a092e28e26113bd7b2a6f2b7c380c34aea0f73358a88f3af92d8d8f7df0',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

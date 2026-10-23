@@ -1,0 +1,19 @@
+{
+    "name": "inflect-compliance-docs-site",
+    "private": true,
+    "description": "The public documentation site, built with Starlight from an allowlist of docs/. See docs/docs-site.md.",
+    "engines": {
+        "node": ">=24.0.0 <25.0.0",
+        "npm": ">=10.0.0"
+    },
+    "scripts": {
+        "stage": "node scripts/stage-docs.js",
+        "build": "node scripts/stage-docs.js && ASTRO_TELEMETRY_DISABLED=1 astro build",
+        "dev": "node scripts/stage-docs.js && ASTRO_TELEMETRY_DISABLED=1 astro dev",
+        "preview": "astro preview"
+    },
+    "dependencies": {
+        "@astrojs/starlight": "0.42.7",
+        "astro": "7.4.2"
+    }
+}

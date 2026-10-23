@@ -1,0 +1,189 @@
+{
+    "$comment": "ALLOWLIST of the docs published at https://rodnapamet.github.io/inflect-compliance/. A doc not listed here is not published, so a new doc stays off the public site until somebody adds it. site/scripts/stage-docs.js refuses the build when a listed doc is on its NEVER_PUBLISH list or carries a production coordinate (FORBIDDEN_CONTENT), and tests/guardrails/docs-site-publication.test.ts holds the same rules at PR time. Order here is sidebar order. See docs/docs-site.md.",
+    "sections": [
+        {
+            "label": "Start here",
+            "docs": [
+                "CONTRIBUTING.md",
+                "docs/docs-site.md",
+                "docs/new-subsystem-checklist.md",
+                "docs/app-layer.md",
+                "docs/typescript-contracts.md"
+            ]
+        },
+        {
+            "label": "Architecture",
+            "docs": [
+                "docs/rls-tenant-isolation.md",
+                "docs/database-routing.md",
+                "docs/encryption-data-protection.md",
+                "docs/immutable-audit-trail.md",
+                "docs/editable-lifecycle.md",
+                "docs/automation-events.md",
+                "docs/scheduled-notification-system.md",
+                "docs/framework-library-system.md",
+                "docs/requirement-mapping-sets.md",
+                "docs/domain-import-export.md",
+                "docs/cloud-storage.md",
+                "docs/response-caching.md",
+                "docs/pagination.md",
+                "docs/rsc-guidelines.md",
+                "docs/validation.md",
+                "docs/billing.md",
+                "docs/infrastructure-runtime.md",
+                "docs/worker-autoscaling.md",
+                "docs/sizing.md",
+                "docs/multi-region.md"
+            ]
+        },
+        {
+            "label": "Security",
+            "docs": [
+                "docs/epic-a-security.md",
+                "docs/epic-b-encryption.md",
+                "docs/epic-c-security.md",
+                "docs/epic-d-completeness.md",
+                "docs/epic-f-finishing-touches.md",
+                "docs/rate-limiting.md",
+                "docs/security-hardening.md",
+                "docs/frontend-assurance-model.md",
+                "docs/dast.md",
+                "docs/security/aisvs-self-assessment.md"
+            ]
+        },
+        {
+            "label": "Identity and access",
+            "docs": [
+                "docs/auth.md",
+                "docs/epic-1-access-control.md",
+                "docs/admin-rbac-scim.md",
+                "docs/enterprise-sso.md",
+                "docs/mfa-session-security.md",
+                "docs/enterprise-identity-custom-roles-api-keys.md",
+                "docs/jml-joiner-design.md",
+                "docs/jml-hris-write-back-design.md",
+                "docs/legacy-mcp-access-contract.md"
+            ]
+        },
+        {
+            "label": "Agentic AI governance",
+            "docs": [
+                "docs/agent-skill-standard.md",
+                "docs/agent-harness-contract.md",
+                "docs/agent-harness-scanner-onboarding.md",
+                "docs/agentic-audit-procedures.md",
+                "docs/agentic-audit-reliance-memo.md",
+                "docs/agentic-iam-managed-service.md",
+                "docs/integration-passport.md",
+                "docs/a2a-mapping.md",
+                "docs/a2a-threat-model.md",
+                "docs/sap-agent-integration-roadmap.md"
+            ]
+        },
+        {
+            "label": "Compliance and data protection",
+            "docs": [
+                "docs/data-residency.md",
+                "docs/data-retention.md",
+                "docs/dsar.md",
+                "docs/sub-processor-change-policy.md",
+                "docs/change-management-policy.md",
+                "docs/verification-policy.md",
+                "docs/risk-quantification.md",
+                "docs/rq3-roadmap-complete.md",
+                "docs/vendor-monitoring.md",
+                "docs/device-monitoring.md",
+                "docs/attributions.md"
+            ]
+        },
+        {
+            "label": "Integrations and API",
+            "docs": [
+                "docs/api-consumer-guide.md",
+                "docs/integration-framework.md",
+                "docs/integration-registry-sync-architecture.md",
+                "docs/integration-observability.md",
+                "docs/aws-posture-connector.md",
+                "docs/sharepoint.md",
+                "docs/control-task-authoring.md"
+            ]
+        },
+        {
+            "label": "Observability",
+            "docs": [
+                "docs/observability.md",
+                "docs/observability-reliability.md",
+                "docs/epic-e-observability.md",
+                "docs/observability/README.md",
+                "docs/observability/02-otel-collector.md",
+                "docs/observability/03-prometheus-grafana.md",
+                "docs/observability/05-job-tracing.md",
+                "docs/observability/06-business-kpis.md",
+                "docs/perf/README.md"
+            ]
+        },
+        {
+            "label": "UI platform",
+            "docs": [
+                "docs/design-system.md",
+                "docs/primitives-api-reference.md",
+                "docs/token-cheatsheet.md",
+                "docs/typography-tones.md",
+                "docs/ui-buttons.md",
+                "docs/epic-52-list-page-shell.md",
+                "docs/filters.md",
+                "docs/modal-sheet-strategy.md",
+                "docs/combobox-form-strategy.md",
+                "docs/tooltip-and-copy-strategy.md",
+                "docs/keyboard-shortcuts.md",
+                "docs/date-picker.md",
+                "docs/charts.md",
+                "docs/charts-elegance.md",
+                "docs/charts-fluid.md",
+                "docs/epic-60-shared-hooks-and-polish.md",
+                "docs/destructive-actions.md",
+                "docs/list-virtualization.md",
+                "docs/loading-states.md",
+                "docs/kpi-filterables.md",
+                "docs/i18n.md",
+                "docs/lickable-sidebar.md",
+                "docs/living-sidebar.md",
+                "docs/living-topbar.md",
+                "docs/r17-dashboard-reimagined.md",
+                "docs/right-rail-aside-roadmap.md",
+                "docs/shared-ui-policy.md",
+                "docs/shared-ui-package-design.md",
+                "docs/processes-canvas.md",
+                "docs/processes-canvas-semantics.md",
+                "docs/processes-canvas-world-class-review.md",
+                "docs/processes-realtime-collab.md",
+                "docs/audits-surface-do-not-touch.md",
+                "docs/calendar-surface-do-not-touch.md"
+            ]
+        },
+        {
+            "label": "Engineering practice",
+            "docs": [
+                "docs/testing.md",
+                "docs/test-portfolio.md",
+                "docs/coverage-policy.md",
+                "docs/ci-local.md",
+                "docs/ci-cd-pipeline-integrity.md",
+                "docs/codebase-hygiene.md",
+                "docs/dependency-policy.md",
+                "docs/dependency-governance.md",
+                "docs/dependency-risk-review.md",
+                "docs/prisma-upgrade-path.md"
+            ]
+        },
+        {
+            "label": "Decision records",
+            "docs": [
+                "docs/adr/0001-ui-primitive-stack.md",
+                "docs/adr/0002-agent-behaviour-window-retention.md",
+                "docs/adr/0003-a2a-host-consumers.md",
+                "docs/adr/0004-interactive-agent-runs.md"
+            ]
+        }
+    ]
+}

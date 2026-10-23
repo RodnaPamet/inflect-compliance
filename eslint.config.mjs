@@ -108,6 +108,12 @@ const config = [
             // (committed; see scripts/copy-swagger-ui.js). Linting minified
             // third-party JS is pointless and slow.
             'public/**',
+            // The docs site's build output, Astro's generated types and the
+            // content collection the stager regenerates on every build
+            // (docs/docs-site.md). Generated, never source.
+            'site/dist/**',
+            'site/.astro/**',
+            'site/src/content/docs/**',
         ],
     },
     {
