@@ -75,14 +75,23 @@ const REVIEWED: Record<string, { major: number }> = {
     // image, exactly as the valibot entry below did. An undeclared direct
     // import resolves only by hoisting luck.
     //
-    // Pinned EXACTLY at 0.83.0. npm would treat ^0.83.0 as patch-only anyway,
-    // but inheriting tightness from semver's 0.x rule is not the same as
-    // stating it — and this is the layer that talks to the providers.
+    // Pinned EXACTLY at 1.4.0, for the same reason the 0.83.0 pin was exact:
+    // this is the layer that talks to the providers, and inheriting tightness
+    // from semver's 0.x rule is not the same as stating it — which matters more
+    // now, because on 1.x a caret would admit every future minor by default.
     //
-    // Major 0: the floor below is therefore 0, which the guard reads as "must
-    // not fall below 0". That is weaker than the other entries by nature, and
-    // the exact pin plus this section is what carries the weight instead.
-    '@earendil-works/pi-ai': { major: 0 },
+    // Major 1 since 2026-10-23, reviewed in docs/dependency-risk-review.md.
+    // NOT a discretionary upgrade: @flue/runtime 2.3.0 requires ^1.1.0, so
+    // holding 0.83.0 does not keep us on the reviewed major — it makes npm
+    // install BOTH, and two copies of this package are two nominally distinct
+    // `Provider` types (#4010). The review covers where the major actually
+    // lands, which is pi-ai's own pinned SDKs: openai 6->7 and the two
+    // proxy-agents 7->9 sit under the egress path this entry exists for.
+    //
+    // The guard is exact major EQUALITY, not a floor — see "Why these
+    // packages" in the review doc. So 2.x will fail CI until somebody repeats
+    // the exercise, which is the intent for a credential-resolving layer.
+    '@earendil-works/pi-ai': { major: 1 },
     '@flue/runtime': { major: 2 },
     // Reviewed in the same diff. Qualifies because it VALIDATES MODEL-SUPPLIED
     // TOOL ARGUMENTS — untrusted input by construction. Already present

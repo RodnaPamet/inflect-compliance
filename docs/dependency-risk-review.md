@@ -307,6 +307,83 @@ No package is added to the image and no new advisory is introduced — the
 resolved tree is byte-identical, and the lockfile diff is the single line that
 records the root requirement.
 
+## Review — 2026-10-23 — the provider layer crosses a major
+
+`@flue/runtime` 2.3.0 requires `@earendil-works/pi-ai ^1.1.0`. Holding the
+exact `0.83.0` pin against it does not keep us on the reviewed major — it makes
+npm install **both**, and two copies of this package are two nominally distinct
+`Provider` types, which is the Typecheck failure on #4006 (#4010). So the choice
+is not "0 or 1", it is "1, or two copies of the layer that holds the provider
+credentials". That is what forces this review.
+
+### `@earendil-works/pi-ai` — `1.4.0` (exact)
+
+**1. Where is it used?** The same four import sites as the 2026-09-22 review,
+unchanged — `providers.ts` is still the only value importer, and `runtime-start`
+/ `runtime-bootstrap` are still type-only. The bump needed **zero source edits**
+and `tsc --noEmit` is clean, so the eight imported symbols and all four subpaths
+survive the major intact.
+
+**2. Is it classified correctly?** `dependencies`, unchanged, for the reason the
+earlier section gives: the Flue driver constructs its own providers at runtime.
+
+**3. Version + exposure risk.** The package's own surface barely moved; its
+**pinned dependencies** did, and that is where this major actually lands, because
+criterion (b) — credentials and egress — is carried by the model SDKs underneath:
+
+| pi-ai's pinned dep | 0.83.0 | 1.4.0 | note |
+| --- | --- | --- | --- |
+| `openai` | 6.26.0 | 7.19.0 | **major**; under `./api/openai-completions.lazy`, which we import |
+| `@anthropic-ai/sdk` | 0.91.1 | 0.129.0 | under `./api/anthropic-messages.lazy`, which we import |
+| `@google/genai` | 1.52.0 | 2.21.0 | **major**; not reachable from our imports |
+| `http-proxy-agent` / `https-proxy-agent` | 7.x | 9.1.0 | **major**, both; egress path |
+| `@aws-sdk/client-bedrock-runtime` | 3.1048.0 | 3.1127.0 | not reachable from our imports |
+| `@mistralai/mistralai` | 2.2.6 | **removed** | we never imported Mistral |
+| `@opentelemetry/api` | 1.9.0 | **removed** | replaced, see below |
+| `@earendil-works/pi-telemetry` | — | **added** 1.4.0 | new first-party package in the image |
+
+Two of those deserve a sentence each.
+
+`@earendil-works/pi-telemetry` is new in the production image, so it was read
+rather than assumed: zero dependencies, described as "vendor-neutral telemetry
+contracts and typed schema utilities", and its `dist/` contains **no literal
+endpoint and no `fetch` / `XMLHttpRequest` / `http.request`**. It is a contracts
+layer replacing `@opentelemetry/api`, and introduces no egress of its own.
+
+The **subpath** surface gains `./models` and `./utils/*` only. `./bedrock-provider`,
+`./oauth`, `./bun-oauth` and `./compat` were all present at 0.83.0 — this major
+adds no new *category* of provider reachable by a careless import.
+
+What did change behaviourally is the **parsing** surface, criterion (a). From
+0.87 a provider receives a `TranscriptContext`, and the type says why: "the
+prompt and tool declarations are carried by the transcript's system messages".
+`Context.tools` and `Context.systemPrompt` therefore read empty. Nothing in
+`src/` reads either — only the flue test seam did, which is why the suite went
+red and the product did not. Model responses and tool-call arguments are still
+decoded in this package, so the criterion that put pi-ai in this document is
+unchanged in kind.
+
+The residency property the 2026-09-22 review was written to protect — that a key
+merely present in the environment must not create a route under
+`aiResidency: LOCAL_ONLY` — is decided in `providers.ts`, which this bump does
+not touch. It is structurally preserved rather than re-argued.
+
+**4. Decision.** Adopt `1.4.0`, exact-pinned, in `dependencies`, and move the
+`REVIEWED` major from 0 to 1. Note the direction this entry now depends on:
+the guard is exact major equality (see "Why these packages"), so pi-ai 2.x will
+fail CI until somebody repeats this exercise — which is the intent, for the layer
+that resolves provider credentials.
+
+### Summary — 2026-10-23
+
+| Package | Classification | Version | Decision |
+|---------|----------------|---------|----------|
+| `@earendil-works/pi-ai` | `dependencies` ✓ | `1.4.0` exact | Adopt across the major; forced by `@flue/runtime` 2.3.0, whose alternative is two copies |
+
+No new advisory is introduced and no package is removed from the image.
+`@earendil-works/pi-telemetry` is added and carries no network code;
+`@mistralai/mistralai` and `@opentelemetry/api` leave the tree.
+
 ## Review — 2026-09-29 — the canvas SDK
 
 ### `tldraw` — `^3.15.6`

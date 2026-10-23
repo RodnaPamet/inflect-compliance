@@ -60,6 +60,7 @@ import {
     FLUE_RUNTIME_TOOLS,
     runtimeToolNamesFor,
 } from '@/lib/agentic/flue/runtime-tools';
+import { declaredToolNames } from './declared-tools';
 
 /**
  * Two skill documents with DISTINCTIVE instruction text.
@@ -213,7 +214,7 @@ describe('the tools a run is handed, beyond the ones it was granted', () => {
     */
     it('hands a run with NO tools and NO skills the runtime’s own `task`', async () => {
         const ctx = await contextFor([], 'run-tools-none-declared');
-        expect((ctx.tools ?? []).map((t) => t.name).sort()).toEqual(['task']);
+        expect(declaredToolNames(ctx)).toEqual(['task']);
     });
 
     it('adds `activate_skill` only once a skill is mounted', async () => {
@@ -221,7 +222,7 @@ describe('the tools a run is handed, beyond the ones it was granted', () => {
         // `task` specifically rather than of "the runtime adds tools". One
         // follows what we mounted; the other does not follow anything we said.
         const ctx = await contextFor([DECLARED], 'run-tools-with-a-skill');
-        expect((ctx.tools ?? []).map((t) => t.name).sort()).toEqual(['activate_skill', 'task']);
+        expect(declaredToolNames(ctx)).toEqual(['activate_skill', 'task']);
     });
 
     /*
@@ -241,11 +242,11 @@ describe('the tools a run is handed, beyond the ones it was granted', () => {
     */
     it('the declared runtime-tool list matches what the runtime actually sends', async () => {
         const withoutSkills = await contextFor([], 'run-tools-declared-none');
-        expect((withoutSkills.tools ?? []).map((t) => t.name).sort())
+        expect(declaredToolNames(withoutSkills))
             .toEqual(runtimeToolNamesFor({ skillsMounted: false }));
 
         const withSkills = await contextFor([DECLARED], 'run-tools-declared-some');
-        expect((withSkills.tools ?? []).map((t) => t.name).sort())
+        expect(declaredToolNames(withSkills))
             .toEqual(runtimeToolNamesFor({ skillsMounted: true }));
     });
 
