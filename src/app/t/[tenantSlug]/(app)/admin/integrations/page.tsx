@@ -5,7 +5,7 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { coerceDeclaredBooleans } from '@/lib/integrations/config-form-values';
+import { buildConnectionBody } from '@/lib/integrations/config-form-values';
 import { useEffect, useState, useCallback } from 'react';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -176,29 +176,20 @@ export default function AdminIntegrationsPage() {
         setSaving(true);
         setMessage(null);
         try {
-            // Form state is all strings; the API needs real JSON booleans for the
-            // fields a provider declares boolean. See coerceDeclaredBooleans for
-            // why a ticked checkbox otherwise saved as the string 'true' and left
-            // the feature off with no error anywhere.
-            const declaredBoolean = new Set(
-                (providers.find(p => p.id === formProvider)?.configSchema.configFields ?? [])
-                    .filter(f => f.type === 'boolean')
-                    .map(f => f.key),
-            );
-            const configJson = coerceDeclaredBooleans(formConfig, declaredBoolean);
-
-            const body: Record<string, unknown> = {
+            // Both decisions this body encodes — omitting `secrets` unless one
+            // was typed, and sending declared booleans as booleans — live in
+            // `buildConnectionBody`, where they are unit-tested. They were
+            // untestable here: see #4008 for the eight mocks a page-level test
+            // needed before still timing out.
+            const body = buildConnectionBody({
                 provider: formProvider,
                 name: formName,
-                configJson,
-            };
-            if (editingId) body.id = editingId;
-
-            // Only send secrets if any field has a value
-            const hasSecrets = Object.values(formSecrets).some(v => v.trim().length > 0);
-            if (hasSecrets) {
-                body.secrets = formSecrets;
-            }
+                config: formConfig,
+                secrets: formSecrets,
+                editingId,
+                configFields:
+                    providers.find(p => p.id === formProvider)?.configSchema.configFields ?? [],
+            });
 
             const res = await fetch(apiUrl('/admin/integrations'), {
                 method: 'POST',
