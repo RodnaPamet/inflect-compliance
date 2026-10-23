@@ -39,6 +39,16 @@
         "reason": "Nightly ZAP baseline scan against a booted stack; it has no pull_request trigger because it needs the full app running and takes far longer than a PR check should.",
         "coveredBy": "CodeQL SAST and the Security job cover the static half at PR time. Dynamic findings are accepted as post-merge, reported nightly to the Security tab."
     },
+    "docs-site.yml:deploy": {
+        "kind": "never",
+        "reason": "Publishes the built docs site to GitHub Pages. Runs only on main (push or manual dispatch) and only once Pages is enabled for the repository; a pull request must never deploy the public site.",
+        "coveredBy": "docs-site.yml `Build docs site` runs at PR time on every change to docs/ or site/ and performs the identical stage + astro build, and tests/guardrails/docs-site-publication.test.ts holds the publication policy in Ratchets on every PR. RESIDUAL: only the Pages upload and the deployment itself (deploy-pages and the github-pages environment) are exercised post-merge."
+    },
+    "docs-site.yml:pull_request.paths": {
+        "kind": "conditional",
+        "reason": "`Build docs site` runs only on pull requests that touch docs/, site/, CONTRIBUTING.md or the workflow itself. Those paths are the whole input of the build: the stager reads only the allowlisted docs, the landing page and the manifest, so a PR outside them cannot change what the site builds from.",
+        "coveredBy": "tests/guardrails/docs-site-publication.test.ts runs in Ratchets on EVERY pull request, unfiltered, and holds the publication policy (allowlist, never-publish list, no production coordinates, landing-page links). RESIDUAL: a source file that a published doc links to can be deleted by a PR outside the filter; the next docs build renders that link as plain text and logs a warning rather than failing."
+    },
     "ghcr-publish.yml:build-push": {
         "kind": "never",
         "reason": "Publishes the image to GHCR on push to main; publishing cannot meaningfully happen from a PR.",

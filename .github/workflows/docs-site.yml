@@ -1,0 +1,108 @@
+# ───────────────────────────────────────────────────────────────
+#  Docs site — https://rodnapamet.github.io/inflect-compliance/
+#
+#  Builds the public documentation site from the ALLOWLIST in
+#  site/published-docs.json and deploys it to GitHub Pages. A doc is
+#  published only when it is listed there; site/scripts/stage-docs.js
+#  refuses the build if a listed doc is one the owner kept off the site or
+#  carries a production coordinate. See docs/docs-site.md.
+#
+#  BUILD runs on every pull request that touches the docs or the site, so a
+#  broken page or a refused doc fails the PR that caused it. The same policy
+#  is also held on EVERY pull request, whatever it touches, by
+#  tests/guardrails/docs-site-publication.test.ts in the Ratchets job.
+#
+#  DEPLOY runs only on main, and only once GitHub Pages is enabled for the
+#  repository with "GitHub Actions" as its source (Settings → Pages). Until
+#  then it reports skipped and the build leaves a warning saying why. That
+#  setting is a repository admin's act; this workflow never enables Pages
+#  itself, because GITHUB_TOKEN cannot and a PAT for it would be a standing
+#  admin credential in CI.
+# ───────────────────────────────────────────────────────────────
+name: Docs site
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'site/**'
+      - 'CONTRIBUTING.md'
+      - '.github/workflows/docs-site.yml'
+  # Not a required check, but every pull_request workflow answers the merge
+  # queue so that making it required later can never hang the queue
+  # (tests/guardrails/merge-queue-trigger-coverage.test.ts).
+  merge_group:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'site/**'
+      - 'CONTRIBUTING.md'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-site-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ASTRO_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build:
+    name: Build docs site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # The site has its own package.json and lockfile, so the application's
+      # dependency tree is neither installed nor touched here.
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci --no-audit --no-fund
+
+      - name: Stage the allowlisted docs and build
+        working-directory: site
+        run: npm run build
+
+      - name: Say why nothing will deploy
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.event_name != 'merge_group' && !github.event.repository.has_pages
+        run: echo "::warning title=Docs site not deployed::GitHub Pages is not enabled for this repository. A repository admin enables it at Settings → Pages with 'GitHub Actions' as the source, then re-runs this workflow."
+
+      - name: Upload the site for Pages
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.event.repository.has_pages
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    name: Deploy docs site
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.event.repository.has_pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # One deployment at a time, and never cancel one in flight: a cancelled
+    # Pages deployment can leave the previous site half-replaced.
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
