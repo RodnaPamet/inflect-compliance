@@ -701,6 +701,18 @@ jobs:
           # fails as a legible V8 OOM rather than a kernel kill.
           NODE_OPTIONS: "--max-old-space-size=10240"
         run: |
+          # ── MEASUREMENT BRANCH (#3977) — NOT FOR MERGE ──────────────────
+          # The premise, RECORDED rather than asserted. ci.yml currently says
+          # two incompatible things about this machine: the sizing block says
+          # public repos get 4 vCPU / 16 GB and corrects an earlier 2-vCPU
+          # claim as "wrong in the direction that matters", while the WORKER
+          # COUNT block keeps `--runInBand` on a measurement taken "on hosted
+          # 2-core ubuntu-latest runners" and concludes "forking buys no
+          # parallelism on 2 cores". Neither measured it.
+          echo "::group::runner shape"
+          nproc
+          free -m
+          echo "::endgroup::"
           # `--selectProjects node jsdom` EXCLUDES the `flue` project, which
           # has its own job. Without it `--shard` spreads all three projects
           # across these four legs, and the flue suite runs here WITHOUT
@@ -708,7 +720,13 @@ jobs:
           # token 'export'", shard 4/4, cascading to `Test` and `Coverage`.
           # The flag cannot simply be added here either: it breaks five
           # node-project suites (see the `flue` job for that measurement).
-          npx jest --runInBand --coverage --coverageReporters=json \
+          # THE EXPERIMENT: `--runInBand` -> 2 workers with the idle memory
+          # limit that is INERT in-band (#3320). In-band peaks at 10,337 MB
+          # against a 10,240 MB cap on main, which is why shard 2/6 OOMs
+          # intermittently rather than always. Worker recycling is the only
+          # configuration in which that accumulation is ever released.
+          npx jest --maxWorkers=2 --workerIdleMemoryLimit=512MB \
+            --coverage --coverageReporters=json \
             --selectProjects node jsdom \
             --shard=${{ matrix.shard }}/${{ matrix.total }}
 
