@@ -142,12 +142,43 @@ const BUDGETS_KB: Record<string, number> = {
         framework bump to land silently. If the next one fails here too, that
         is the gate working, and the answer is to look at what these three
         routes ship rather than to keep adding 5.
+
+        ─── RAISED AGAIN 2026-10-23 BY THE RADIX 1.3.x BUMP (#4011/#4020) ───
+
+        The paragraph above asked the next person not to just add 5, so this
+        raise owes an argument. It is an owner decision, taken with the
+        attribution in hand rather than instead of it.
+
+        #4020 carries ONLY the eleven Radix bumps, which makes its build a
+        single-variable measurement:
+
+              route                              before   after   delta
+              controls/dashboard/page             606.0    611.6   +5.6
+              risks/[riskId]/page                 642.0    649.4   +7.4
+              controls/…/tests/[planId]/page      651.0    658.4   +7.4
+              policies/[policyId]/page            671.0    677.6   +6.6
+
+        That is about half of the 49-package production group's growth
+        (#4006 measured 681.3 / 662.2 / 652.8 on three of these), so Radix is
+        the larger single contributor and the rest is still unattributed.
+
+        It is NOT an import-shape regression, which is the case the paragraph
+        above is really warning about: the bump adds 108 packages and moves the
+        internals wholesale (dismissable-layer, focus-scope, popper, a new
+        use-layout-effect). There is no barrel to unpick and nothing to
+        tree-shake back — it is genuinely more code, and the alternative is
+        declining a maintained UI library's bumps indefinitely.
+
+        The `measured max` comments were stale AGAIN, in the direction that
+        hides headroom: `controls` read 613.1 KB for a route that measured
+        651.0 in the table above it. All four are corrected here. If they rot a
+        third time the comment is not the right home for the number.
     */
-    // measured max 606.0 KB — /t/[tenantSlug]/(app)/controls/dashboard/page (8 routes)
-    'dashboard': 610,
-    // measured max 642.0 KB — /t/[tenantSlug]/(app)/risks/[riskId]/page (16 routes)
-    'risks': 646,
-    // measured max 613.1 KB — /t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page (7 routes)
+    // measured max 611.6 KB — /t/[tenantSlug]/(app)/controls/dashboard/page (8 routes)
+    'dashboard': 616,
+    // measured max 649.4 KB — /t/[tenantSlug]/(app)/risks/[riskId]/page (16 routes)
+    'risks': 653,
+    // measured max 658.4 KB — /t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page (7 routes)
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
@@ -159,10 +190,10 @@ const BUDGETS_KB: Record<string, number> = {
     // and /account/* by about 44 KB each), 64 got larger by at most 3.6 KB,
     // where webpack regrouped the shared chunks those modules land in. This
     // route was one of the 64, 647.4 → 651.0 KB.
-    'controls': 655,
+    'controls': 662,
     // Catch-all for any other tenant page.
-    // measured max 671.0 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
-    'tenant-default': 675,
+    // measured max 677.6 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
+    'tenant-default': 682,
     // Auth / public / org pages.
     // measured max 545.3 KB — /org/[orgSlug]/(app)/tenants/new/page (23 routes)
     'root': 575,

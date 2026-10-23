@@ -1,4 +1,12 @@
 {
+  "@radix-ui/react-dismissable-layer": {
+    "kind": "peer-bridge",
+    "reason": "Keeps every Radix dismissable surface on ONE copy of the layer stack. This package holds shared state \u2014 the stack that nested dismissable layers register in \u2014 so a split graph is two independent stacks, and a popover opened inside a dialog registers somewhere the dialog cannot see it. Measured on the 1.3.x bump (#4011): react-popover resolved its own 1.2.1 while the hoisted copy stayed 1.1.19, and 7 rendered suites failed with the popover content never mounting at all \u2014 not hidden, absent. Same shape as the @typescript-eslint entry one layer down, and as the pi-ai Provider mismatch in #4010. If a future Radix bump moves this package, this pin moves with it or it holds the stack at a stale version."
+  },
+  "@radix-ui/react-focus-scope": {
+    "kind": "peer-bridge",
+    "reason": "Pinned beside react-dismissable-layer for the same reason: focus containment is the other half of a dismissable surface, and the two are versioned together by Radix. Keeping the layer stack single while letting focus scope split would leave the trap and the stack disagreeing about which surface is on top, which is the same class of defect with a quieter symptom."
+  },
   "mysql2": {
     "kind": "security",
     "advisory": "GHSA-rgwj-5xj2-c3m3",
