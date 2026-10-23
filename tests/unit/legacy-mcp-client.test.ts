@@ -800,8 +800,34 @@ describe('1b client — production cannot bypass safeFetch', () => {
         return [...carriers].filter((c) => c !== ROOT);
     };
 
-    const seamCarriers = (): readonly string[] =>
-        deriveCarriers(new Map(srcFiles().map((f) => [f, codeIn(f)])));
+    /**
+     * FILTERED DURING THE READ, not after (#3977-adjacent).
+     *
+     * The first version was `new Map(srcFiles().map((f) => [f, codeIn(f)]))`,
+     * which holds every one of the 2810 files under `src/` at once — measured at
+     * **+47 MB retained**, built once per test that calls this. Streaming the
+     * same files and keeping none measures +0 MB.
+     *
+     * A carrier must MENTION the option (the walk requires it), and 42 of 2810
+     * files do. So the filter belongs inside the loop: every other source is
+     * garbage the moment the next iteration overwrites it. `.map().filter()`
+     * would read identically and still materialise all 2810 in the intermediate
+     * array.
+     *
+     * 47 MB is 0.6% of the `Test` shard's 8 GB cap and cannot by itself explain
+     * an OOM. It is removed because it is avoidable and because that shard is
+     * documented in #3977 as failing on "a PR that added one small unit test" —
+     * a guard that reads the whole tree should not be adding to the pressure it
+     * would otherwise be diagnosing.
+     */
+    const seamCarriers = (): readonly string[] => {
+        const mentions = new Map<string, string>();
+        for (const f of srcFiles()) {
+            const src = codeIn(f);
+            if (/\bfetchImpl\b/.test(src)) mentions.set(f, src);
+        }
+        return deriveCarriers(mentions);
+    };
 
     it('finds every DIRECT importer of the seam that mentions it', () => {
         // The denominator beside the result: an offender list is only as good as
