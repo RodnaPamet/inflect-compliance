@@ -653,7 +653,7 @@ module.exports = {
     // ONE heap-summary block per run (#3977). Deliberately not
     // `logHeapUsage`, which appends a figure to every PASS line —
     // ~1,650 lines of noise. See the reporter's own docstring.
-    reporters: ['default', '<rootDir>/tests/reporters/heap-summary-reporter.cjs'],
+    reporters: ['default', '<rootDir>/tests/reporters/heap-summary-reporter.js'],
     workerIdleMemoryLimit: '512MB',
     // forceExit DELIBERATELY OFF — Jest exits naturally once the
     // disconnect-after-suite hook in tests/setup/disconnect-after-suite.ts

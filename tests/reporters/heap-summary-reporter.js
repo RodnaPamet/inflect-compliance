@@ -76,9 +76,14 @@ class HeapSummaryReporter {
             `  rss first → last  ${mb(first.rss)} → ${mb(last.rss)}`,
             `  rss peak          ${mb(this._peak.rss)}  (heapUsed ${mb(this._peak.heap)})`,
             `  peak after        ${rel(this._peak.path)}`,
-            `  largest step      ${signed(worst.delta)} after ${rel(worst.path)}`,
-            `  steps that receded ${receded} of ${this._samples.length - 1}`,
         ];
+        // Only when there IS a step. With one file there are no deltas, and the
+        // sentinel printed `-Infinity MB after null` — a line that looks like a
+        // crash in the thing meant to explain crashes.
+        if (this._samples.length > 1) {
+            lines.push(`  largest step      ${signed(worst.delta)} after ${rel(worst.path)}`);
+            lines.push(`  steps that receded ${receded} of ${this._samples.length - 1}`);
+        }
         if (receded <= 2 && this._samples.length > 10) {
             // The discriminator between "the suite is big" and "something is
             // retained": genuine per-suite weight comes back down after GC.
