@@ -131,13 +131,31 @@ describe('an edit with no secrets preserves the stored one', () => {
         });
     });
 
-    it('does not leave the row with an empty secret when sent empty strings', async () => {
-        // The form builds `formSecrets` from every declared field, so an
-        // untouched form is `{ authorization: '' }` rather than `{}`. Its
-        // `hasSecrets` guard is what stops that being sent — but if a future
-        // caller sends it anyway, writing `{"authorization":""}` over a real
-        // credential is the same outage as deleting it, so the behaviour is
-        // pinned rather than assumed either way.
+    it('OVERWRITES with an empty string when sent one — which is why the client guard matters', async () => {
+        /**
+         * The behaviour, asserted rather than hedged.
+         *
+         * The first version of this test asserted
+         * `stored.authorization === SECRET || stored.authorization === ''`,
+         * which passes whichever happens and therefore says nothing — the same
+         * inexpressive-assertion defect this suite's siblings exist to catch.
+         *
+         * What actually happens: `integrations.ts:308` gates on
+         * `Object.keys(input.secrets).length > 0`, and `{ authorization: '' }`
+         * HAS a key. So it validates, encrypts and overwrites. A usable
+         * credential becomes an empty string, which is the same outage as
+         * deleting it.
+         *
+         * That is not a defect in the usecase — it cannot distinguish "the
+         * operator cleared this field" from "the form sent its empty default".
+         * It is why the CLIENT guard is load-bearing: `page.tsx:197` builds
+         * `formSecrets` from every declared field, so an untouched form is
+         * `{ authorization: '' }`, and its `hasSecrets` check is the only thing
+         * standing between renaming a connection and destroying its
+         * credential. Pinned here so that if the server ever starts ignoring
+         * empty strings, whoever changes it sees that the client relies on the
+         * current behaviour.
+         */
         const created = await upsertIntegrationConnection(ctx(), {
             provider: 'mcp-server',
             name: 'empty-strings',
@@ -159,13 +177,7 @@ describe('an edit with no secrets preserves the stored one', () => {
         const after = await prisma.integrationConnection.findUniqueOrThrow({
             where: { id: created.id },
         });
-        const stored = JSON.parse(decryptField(after.secretEncrypted!)) as Record<string, unknown>;
-        // Whatever the policy is, it must not be "a usable credential became an
-        // empty string". Recorded as observed: this documents the behaviour the
-        // next caller inherits.
-        expect(stored.authorization === SECRET || stored.authorization === '').toBe(true);
-        if (stored.authorization === '') {
-            expect(before.secretEncrypted).not.toBe(after.secretEncrypted);
-        }
+        expect(after.secretEncrypted).not.toBe(before.secretEncrypted);
+        expect(JSON.parse(decryptField(after.secretEncrypted!))).toEqual({ authorization: '' });
     });
 });
