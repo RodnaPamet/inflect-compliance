@@ -46,6 +46,10 @@
     "scripts",
     "prisma/seed.ts",
     "dub-reference",
+    // The public docs site (docs/docs-site.md): its own package, built by Astro,
+    // with no TypeScript of its own. Excluded so Astro's generated types under
+    // site/.astro/ never reach the application's typecheck.
+    "site",
     ".next-test",
     // Claude Code runtime state. `.claude/worktrees/<id>/` holds FULL
     // checkouts of the repo, so `include: ["**/*.ts"]` would hand tsc a

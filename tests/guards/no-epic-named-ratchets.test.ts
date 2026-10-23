@@ -525,7 +525,19 @@ describe('epic-named ratchets are not added back', () => {
         // THE BACKSTOP IS INTACT: the assertion above that names epic-named
         // files individually is green and unchanged, and this file is named for
         // an invariant rather than a PR, epic or roadmap item.
-        expect(guardFiles().length).toBeLessThan(798);
+        //
+        // RAISED 798 -> 799 on 2026-10-23, for ONE file:
+        // `docs-site-publication.test.ts`, named for the invariant it holds —
+        // the public docs site publishes only allowlisted docs, never one the
+        // owner kept off it, and never a coordinate of the production estate.
+        //
+        // It is not folded into `docs-accuracy`, the nearest guard: that one
+        // asks whether a doc's TENSE is honest for its class, over every file
+        // in docs/. This one asks whether a doc may be PUBLIC, over the site's
+        // allowlist, and fails on a host path or a project id that
+        // docs-accuracy has no reason to read. Different population, different
+        // failure.
+        expect(guardFiles().length).toBeLessThan(799);
     });
 
     /**

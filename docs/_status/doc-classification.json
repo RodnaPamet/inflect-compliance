@@ -158,6 +158,9 @@
         "docs/disaster-recovery.md": {
             "class": "authoritative"
         },
+        "docs/docs-site.md": {
+            "class": "authoritative"
+        },
         "docs/domain-import-export.md": {
             "class": "authoritative"
         },
