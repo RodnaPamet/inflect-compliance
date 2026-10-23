@@ -85,11 +85,33 @@ export async function initTelemetry(): Promise<void> {
     const { AsyncLocalStorageContextManager } = await import(
         '@opentelemetry/context-async-hooks'
     );
-    const { trace, context: otelContext } = await import('@opentelemetry/api');
+    const {
+        trace,
+        context: otelContext,
+        propagation,
+    } = await import('@opentelemetry/api');
+    const { CompositePropagator, W3CTraceContextPropagator, W3CBaggagePropagator } =
+        await import('@opentelemetry/core');
+
     otelContext.setGlobalContextManager(
         new AsyncLocalStorageContextManager().enable(),
     );
     trace.setGlobalTracerProvider(tracerProvider);
+    // THE THIRD THING. `register()` installed a propagator too, and leaving it
+    // out is not a test detail — `job-trace.ts` injects a W3C `traceparent`
+    // into every job payload through `propagation.inject`, so with no global
+    // propagator the carrier comes back EMPTY and each job starts its own
+    // trace instead of continuing the request's. Caught by
+    // `tests/integration/job-execution-with-trace.test.ts`, which is the only
+    // thing in CI that reads a trace id across the enqueue boundary.
+    propagation.setGlobalPropagator(
+        new CompositePropagator({
+            propagators: [
+                new W3CTraceContextPropagator(),
+                new W3CBaggagePropagator(),
+            ],
+        }),
+    );
 
     // ── Metrics ──
     const metricExporter = new OTLPMetricExporter({

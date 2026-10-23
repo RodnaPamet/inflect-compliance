@@ -60,6 +60,8 @@ function makeShutdown(kind: 'trace' | 'meter'): jest.Mock<Promise<void>, []> {
 const setGlobalMeterProvider = jest.fn<void, [unknown]>();
 const setGlobalTracerProvider = jest.fn<void, [unknown]>();
 const setGlobalContextManager = jest.fn<void, [unknown]>();
+const setGlobalPropagator = jest.fn<void, [unknown]>();
+const propagatorsComposed: unknown[][] = [];
 const contextManagersEnabled: unknown[] = [];
 const diagSetLogger = jest.fn<void, [unknown, unknown]>();
 const pinoInfo = jest.fn<void, [unknown, string]>();
@@ -72,6 +74,25 @@ jest.mock('@opentelemetry/api', () => ({
     // `register()` is gone in sdk-trace 3.0.0; these two are what replaced it.
     trace: { setGlobalTracerProvider: (p: unknown) => setGlobalTracerProvider(p) },
     context: { setGlobalContextManager: (m: unknown) => setGlobalContextManager(m) },
+    propagation: { setGlobalPropagator: (p: unknown) => setGlobalPropagator(p) },
+}));
+
+// The THIRD thing `register()` did. Omitting it is why
+// `tests/integration/job-execution-with-trace.test.ts` went red: with no
+// global propagator, `job-trace.ts` injects an EMPTY carrier and every job
+// starts its own trace instead of continuing the request's.
+jest.mock('@opentelemetry/core', () => ({
+    W3CTraceContextPropagator: class W3CTraceContextPropagator {
+        readonly kind = 'tracecontext';
+    },
+    W3CBaggagePropagator: class W3CBaggagePropagator {
+        readonly kind = 'baggage';
+    },
+    CompositePropagator: class CompositePropagator {
+        constructor(cfg: { propagators: unknown[] }) {
+            propagatorsComposed.push(cfg.propagators);
+        }
+    },
 }));
 
 // The async context manager is the half that would fail SILENTLY: without it
@@ -203,6 +224,8 @@ beforeEach(() => {
     setGlobalMeterProvider.mockClear();
     setGlobalTracerProvider.mockClear();
     setGlobalContextManager.mockClear();
+    setGlobalPropagator.mockClear();
+    propagatorsComposed.length = 0;
     contextManagersEnabled.length = 0;
     diagSetLogger.mockClear();
     pinoInfo.mockClear();
@@ -336,6 +359,16 @@ describe('initTelemetry — enabled bootstrap', () => {
         expect(setGlobalContextManager).toHaveBeenCalledTimes(1);
         expect(contextManagersEnabled).toHaveLength(1);
         expect(setGlobalContextManager.mock.calls[0][0]).toBe(contextManagersEnabled[0]);
+
+        // AND the propagator — the third of register()'s three jobs, and the
+        // one whose absence is invisible until a trace id crosses a process
+        // boundary. Both W3C propagators, because `job-trace.ts` reads
+        // `traceparent` and the baggage half rides with it by convention.
+        expect(setGlobalPropagator).toHaveBeenCalledTimes(1);
+        expect(propagatorsComposed).toHaveLength(1);
+        expect(
+            (propagatorsComposed[0] as Array<{ kind?: string }>).map((x) => x.kind).sort(),
+        ).toEqual(['baggage', 'tracecontext']);
 
         expect(meterProviders).toHaveLength(1);
         expect(setGlobalMeterProvider).toHaveBeenCalledTimes(1);

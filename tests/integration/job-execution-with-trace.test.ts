@@ -32,6 +32,11 @@ import {
 } from '@opentelemetry/sdk-trace';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import {
+    CompositePropagator,
+    W3CTraceContextPropagator,
+    W3CBaggagePropagator,
+} from '@opentelemetry/core';
+import {
     runJobInTraceContext,
     readTraceCarrier,
     stripTraceCarrier,
@@ -60,6 +65,14 @@ beforeAll(() => {
     // has nothing to do with the job runner.
     trace.setGlobalTracerProvider(provider);
     context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
+    // `propagation.disable()` above cleared the propagator and `register()` is
+    // no longer here to put one back — without it `carrier.traceparent` is
+    // undefined and the job span lands in a different trace.
+    propagation.setGlobalPropagator(
+        new CompositePropagator({
+            propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+        }),
+    );
 });
 
 afterAll(async () => {
