@@ -195,8 +195,25 @@ const BUDGETS_KB: Record<string, number> = {
     // measured max 677.6 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
     'tenant-default': 682,
     // Auth / public / org pages.
-    // measured max 545.3 KB — /org/[orgSlug]/(app)/tenants/new/page (23 routes)
-    'root': 575,
+    // measured max 576.4 KB — /org/[orgSlug]/(app)/tenants/new/page (23 routes)
+    //
+    // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.
+    // The block above corrected four `measured max` comments and left this
+    // fifth, which was the most rotted of the lot: it read 545.3 KB for a route
+    // that measured 574.1 on main the same day — a 29 KB drift, so the stated
+    // headroom was 0.9 KB, about 0.16%, where the file header still describes
+    // ~5%. Nothing failed while that was true, which is precisely the failure
+    // mode the block above describes; it simply had not reached this bucket yet.
+    //
+    // The remaining production-group bumps (#4023, 37 packages — tiptap,
+    // sentry, lucide and the rest, with Radix already on main) add +2.3 KB
+    // here, taking it to 576.4 and 1.4 KB past the old ceiling. Measured
+    // single-variable: main 574.1 -> #4023 576.4.
+    //
+    // 580 is measured + ~4, the convention above. That is the THIRD rot of
+    // these comments, which is the point at which a hand-maintained number
+    // beside its own source stops being worth defending — filed separately.
+    'root': 580,
 };
 
 /** Map an app route key to a budget key. */
