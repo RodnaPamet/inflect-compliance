@@ -373,11 +373,19 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                 // is part of that visible string, so it is interpolated rather
                 // than re-spelled — a hand-written "Search" would not match
                 // what is on screen.
-                aria-label={
-                    collapsed
-                        ? tn('openCommandPalette')
-                        : tn('openCommandPaletteNamed', { label: tc('search') })
-                }
+                // SECOND ATTEMPT, and the first is worth recording. Putting
+                // `common.search` INTO the label was not enough: axe curates
+                // both sides with `removeUnicode(…, {punctuations: true})` and
+                // asks `acc.includes(visible)`, and this button's visible run
+                // does not stop at "Search…" — it ends with the ⌘/K shortcut
+                // badge below, so the visible text curated to roughly
+                // "search k", which no label naming only the word contains.
+                //
+                // Dropping the label when EXPANDED makes the accessible name
+                // the content, so the comparison holds by construction whatever
+                // the badge renders. Collapsed, the button is icon-only with no
+                // visible text, so a label is required and 2.5.3 is silent.
+                aria-label={collapsed ? tn('openCommandPalette') : undefined}
                 data-testid="sidebar-search-anchor"
             >
                 <svg

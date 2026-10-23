@@ -48,7 +48,7 @@ import Link from 'next/link';
 import { Check, ChevronsUpDown } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
-import { InitialsAvatar, getInitials } from '@/components/ui/initials-avatar';
+import { InitialsAvatar } from '@/components/ui/initials-avatar';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
@@ -244,7 +244,19 @@ export function TenantSwitcher({
                 // what the reader sees first. `getInitials` is the same
                 // function `InitialsAvatar` renders with, so the two cannot
                 // drift apart into a name that merely looks right.
-                aria-label={`${getInitials(tenantSlug, 'slug')} ${tenantName} — current workspace. Click to switch.`}
+                // SECOND ATTEMPT. Interpolating the initials was not enough:
+                // the avatar and the name are ADJACENT text nodes with no
+                // whitespace between them, so axe's visible text curates to
+                // "acacme corp" while any label written with a separator reads
+                // "ac acme corp", and `acc.includes(visible)` fails on the
+                // missing space. Reconstructing the exact concatenation would
+                // hold only until somebody put a space in the markup.
+                //
+                // The name therefore comes from the content, which satisfies
+                // the comparison by construction. Nothing a reader needs is
+                // lost: `aria-haspopup="menu"` and `aria-expanded` already say
+                // it opens a menu, and the current workspace is what a
+                // switcher's name SHOULD be.
                 aria-expanded={open}
                 aria-haspopup="menu"
                 data-testid="top-chrome-tenant-switcher"
