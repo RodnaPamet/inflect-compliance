@@ -1146,25 +1146,34 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
  * against the 1404 ceiling.
  */
 /*
-    1405 -> 1406 for `openshell-source.test.ts` (#3937).
+    1405 -> 1408 for the two OpenShell test files (#3937, #3936).
 
-    The one assertion the detector cannot read is a needle it cannot resolve to
-    a literal. That test holds the OpenShell reader to reporting no policy
-    content, and it does so with marker strings centralised in one `MARKERS`
-    object — so the fixture that SERVES a marker and the assertion that denies
-    it in the report cannot drift apart. Reading them as `MARKERS.credValue` and
-    as a loop variable is what makes them non-literal.
+    Both carry assertions whose NEEDLE this detector cannot resolve to a
+    literal, and in both cases that is the better test rather than a shortcut.
 
-    Inlining the literals would satisfy this detector and make the test worse:
-    each marker would then appear twice, once in the fixture and once in the
-    assertion, with nothing holding the two copies equal. That is the defect
-    `a-needle-loses-the-thread-at-a-rename` describes, traded for a count.
+    `openshell-source.test.ts` holds the reader to reporting no policy content,
+    using marker strings centralised in one `MARKERS` object — so the fixture
+    that SERVES a marker and the assertion that denies it in the report cannot
+    drift apart. Reading them as `MARKERS.credValue` and as a loop variable is
+    what makes them non-literal.
 
-    One assertion that WAS removable went in the same diff rather than here: a
-    `not.toContain(host)` on a digest, sitting below a
+    `scanner-never-reads-credential-values.test.ts` asserts that no file in the
+    scanner package names `ProviderClient` or any gateway RPC returning
+    credential material. The symbols are one declared list driven through
+    `it.each`, so the needle is a loop variable.
+
+    Inlining literals in either would satisfy this detector and make the tests
+    worse: each symbol would appear twice with nothing holding the copies equal,
+    which is the defect `a-needle-loses-the-thread-at-a-rename` describes,
+    traded for a count.
+
+    MEASURED, not incremented: main sits at 1405 and is green there, this tree
+    measures 1408, and the figure is the measurement rather than a guess at how
+    many each file adds. One assertion that WAS removable went in the same work
+    rather than here — a `not.toContain(host)` on a digest, below a
     `toMatch(/^sha256:[0-9a-f]{64}$/)` that already made it impossible to fail.
 */
-const UNANALYSABLE_READ_BASELINE = 1406;
+const UNANALYSABLE_READ_BASELINE = 1408;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

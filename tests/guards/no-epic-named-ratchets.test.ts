@@ -571,7 +571,6 @@ describe('epic-named ratchets are not added back', () => {
         // they add two, so 800 would have landed one short and the next guard
         // file would have failed for no reason anybody could see in the diff.
         expect(guardFiles().length).toBeLessThan(801);
-        expect(guardFiles().length).toBeLessThan(800);
     });
 
     /**
