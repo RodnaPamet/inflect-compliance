@@ -56,6 +56,10 @@ jest.mock('@/lib/prisma', () => {
         $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
         verificationToken: {
             create: jest.fn(async ({ data }: any) => {
+                // `token` is unique in the schema; the database refuses a second row.
+                if (db.tokens.some((r) => r.token === data.token)) {
+                    throw Object.assign(new Error('Unique constraint failed on the fields: (`token`)'), { code: 'P2002' });
+                }
                 db.tokens.push({ ...data });
                 return data;
             }),
@@ -364,6 +368,19 @@ describe('the round trip is bound to the browser that started it', () => {
         const res = await runCallback(protocol, flow.id, flow.cookie);
         expect(setCookie(res, 'inflect_sso_flow')).toMatch(/Max-Age=0/i);
     });
+
+    it('saml: the server refuses the same flow a second time, though the browser kept the cookie', async () => {
+        // Clearing the cookie asks the browser to forget it; a HAR export or a
+        // proxy log still holds it beside the SAMLResponse. The flow is spent on
+        // the server too (src/lib/auth/sso-flow-spend.ts).
+        const flow = await startFlow('saml');
+        const first = await runCallback('saml', flow.id, flow.cookie);
+        expect(new URL(first.headers.get('location')!).pathname).not.toBe('/login');
+
+        const replay = await runCallback('saml', flow.id, flow.cookie);
+        expect(replay.status).toBe(303);
+        expect(new URL(replay.headers.get('location')!).searchParams.get('error')).toBe('invalid_relay');
+    });
 });
 
 describe('the SSO callbacks hand off to NextAuth', () => {
@@ -396,9 +413,11 @@ describe('the SSO callbacks hand off to NextAuth', () => {
         // The hand-off, and the spent flow — never a session cookie of its own.
         const names = res.headers.getSetCookie().map((c: string) => c.split('=')[0]);
         expect(names.sort()).toEqual(['inflect_sso_flow', 'inflect_sso_handoff']);
-        expect(db.tokens).toHaveLength(1);
+        // One hand-off row (a SAML callback also records its spent flow).
+        const handoffs = db.tokens.filter((r) => r.identifier.startsWith('sso-handoff:'));
+        expect(handoffs).toHaveLength(1);
         // Stored hashed: the cookie's value is not in the table.
-        expect(db.tokens[0].token).not.toBe(cookieValue(handoff!));
+        expect(handoffs[0].token).not.toBe(cookieValue(handoff!));
     });
 
     it('a membership that is not ACTIVE gets no hand-off', async () => {
