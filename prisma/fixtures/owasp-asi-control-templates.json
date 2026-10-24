@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "OWASP Agentic AI Top 10 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Production has never held this framework — not the framework row, not the templates, not the pack. Extracted from a database seeded by the inline block, so the shape is carried over exactly rather than re-derived from the grouping logic.",
-    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline seed.ts block produced. The tasks and their steps are Inflect-authored against the risk index and Inflect governance summaries in src/data/libraries/owasp-agentic-top10.yaml; no OWASP risk prose is reproduced, in keeping with that library's CC-BY-SA attribution note.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -126,6 +126,36 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every agent in service from the agent inventory"
+              }
+            },
+            {
+              "text": {
+                "en": "Write for each agent the outcome it is permitted to pursue"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the actions each agent must refuse even when a request asks for them"
+              },
+              "hint": {
+                "en": "The refusals are what an injected instruction tries to override"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person accountable for each objective statement"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every agent still in service with no objective statement as not yet covered"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -137,6 +167,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Trace for each agent everything that reaches the text it reads as direction"
+              }
+            },
+            {
+              "text": {
+                "en": "Include retrieved documents, tool results and file or message contents, not only the requester's words"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each source as controlled by the organisation or not"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the per-agent source list with the untrusted sources identified"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -148,6 +200,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each source marked untrusted from the per-agent source list"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what now stops content from that source restating the agent's objective"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date each treatment took effect and who made the change"
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any untrusted source still left without a treatment"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -159,6 +233,31 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw a sample of runs from the period for each agent"
+              }
+            },
+            {
+              "text": {
+                "en": "Read what each sampled run was asked to do and what the agent went on to do"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every run that pursued something outside the agent's recorded objective"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause of each deviation and the action taken"
+              },
+              "hint": {
+                "en": "An instruction arriving through a retrieved document or tool result is a goal hijack, not a misunderstanding"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The sampled run records for the period with the reviewer's finding on each, and for every run judged out of objective the cause identified and the action taken."
           },
@@ -173,6 +272,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Set each objective statement beside the work the sampled runs show people sending the agent"
+              }
+            },
+            {
+              "text": {
+                "en": "Judge for each agent whether the statement still describes its job"
+              }
+            },
+            {
+              "text": {
+                "en": "List statements for agents no longer running and agents in service with no statement"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the corrections agreed and who agreed them"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         }
       ]
@@ -199,6 +320,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every tool or action each agent can call"
+              }
+            },
+            {
+              "text": {
+                "en": "Classify each tool as reading, changing or spending something, and name the target system"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner of each target system on the list"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the per-agent tool list with the system owners recorded"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -210,6 +353,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the arguments each tool call is permitted to carry"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the targets in range and the size, value or count a call may not exceed"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what happens to a call that falls outside those limits"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the limits record against each entry on the tool list"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -221,6 +386,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare each agent's tool list with what its recorded work needs"
+              }
+            },
+            {
+              "text": {
+                "en": "Remove each surplus tool from the agent's reach"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was withdrawn, from which agent and on what date"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason and the acceptor for any surplus tool that is kept"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -232,6 +419,36 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the tool invocations agents made during the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Pick out calls that breached a limit, targeted an unlisted system or were refused"
+              },
+              "hint": {
+                "en": "Chained calls that are each within limits can still add up to misuse"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision reached on each flagged call"
+              }
+            },
+            {
+              "text": {
+                "en": "Raise follow-up for each call that indicates a real attempt at misuse"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the invocations examined and that none breached a limit when nothing was flagged"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The invocation records examined for the period, the calls flagged with the disposition reached and the follow-up raised for each — or, where nothing was flagged, the records examined and the statement that no call fell outside the recorded limits."
           },
@@ -246,6 +463,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Group the period's flagged and refused calls by the limit they hit"
+              }
+            },
+            {
+              "text": {
+                "en": "Judge for each limit whether it blocked legitimate work or caught nothing it should have"
+              }
+            },
+            {
+              "text": {
+                "en": "Record each limit changed with the reasoning behind the change"
+              }
+            },
+            {
+              "text": {
+                "en": "Record who approved each change to a tool limit"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         }
       ]
@@ -272,6 +511,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the account or credential each agent presents to every system it reaches"
+              }
+            },
+            {
+              "text": {
+                "en": "List the rights each of those accounts holds on its system"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person accountable for each agent identity"
+              }
+            },
+            {
+              "text": {
+                "en": "Record any agent that authenticates as a person or shares an identity with another agent"
+              }
+            }
+          ],
           "suggestedRole": "IT Operations"
         },
         {
@@ -283,6 +544,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify every agent that acts on behalf of a person"
+              }
+            },
+            {
+              "text": {
+                "en": "Record how the requesting person is carried into each target system's own record"
+              }
+            },
+            {
+              "text": {
+                "en": "Check that an action can be traced to both the agent and the person who asked for it"
+              }
+            },
+            {
+              "text": {
+                "en": "List the cases where the target system records only the agent"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -294,6 +577,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Record who may issue each identity on the register"
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each secret is held and who can reach it"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the event that triggers withdrawal of each identity and who performs it"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the issue, custody and withdrawal record against each register entry"
+              }
+            }
+          ],
           "suggestedRole": "IT Operations"
         },
         {
@@ -305,6 +610,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the agents taken out of service during the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Remove every identity each retired agent held on the systems named on the register"
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm with each target system that the withdrawn access no longer works"
+              }
+            },
+            {
+              "text": {
+                "en": "Record any identity that could not be withdrawn, and why"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The identities withdrawn in the period with the agent, the date, the person who requested it, and the confirmation from each target system that access no longer works."
           },
@@ -319,6 +646,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Read back the rights each target system currently grants every agent identity"
+              }
+            },
+            {
+              "text": {
+                "en": "Compare those rights with the register and with the work the agent is authorised to do"
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a reduction for each right the register does not show or the work does not need"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason and acceptor for each right kept deliberately"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision taken on each identity shared with a person or another agent"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         }
       ]
@@ -345,6 +699,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the models each agent relies on, with supplier and version"
+              }
+            },
+            {
+              "text": {
+                "en": "List the tool integrations, MCP servers and prompt or skill packs each agent loads"
+              }
+            },
+            {
+              "text": {
+                "en": "List any third-party agents each agent delegates to"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the per-agent component list with the supplier named against every entry"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -356,6 +732,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record where each listed component came from and how it was obtained"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was examined about the component before it went into service"
+              }
+            },
+            {
+              "text": {
+                "en": "Name who accepted each component on that basis"
+              }
+            },
+            {
+              "text": {
+                "en": "List components already in use with no acceptance record for retrospective assessment"
+              }
+            }
+          ],
           "suggestedRole": "Procurement"
         },
         {
@@ -367,6 +765,26 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Record for each supplier how a new version, defect or withdrawal is announced"
+              }
+            },
+            {
+              "text": {
+                "en": "Name who in the organisation receives each supplier's notices and what they do with them"
+              }
+            },
+            {
+              "text": {
+                "en": "List the suppliers for which no notification route exists"
+              },
+              "hint": {
+                "en": "Silent auto-updates count as a route with no human on it"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -378,6 +796,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Log every new version, defect notice or withdrawal received in the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was assessed about each change before it reached an agent"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision to adopt, defer or refuse and replace"
+              }
+            },
+            {
+              "text": {
+                "en": "Record who decided and the date the decision took effect"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The component changes received in the period, each with the assessment recorded, the decision to adopt, defer or refuse, the decider and the date."
           },
@@ -392,6 +832,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the component versions each agent in service is actually running"
+              }
+            },
+            {
+              "text": {
+                "en": "Compare them with the suppliers and versions recorded on the component list"
+              }
+            },
+            {
+              "text": {
+                "en": "Record each unassessed version, missing listed component and unlisted dependency found"
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a correction for every discrepancy"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         }
       ]
@@ -418,6 +880,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify every point where an agent's code, query, command or configuration is run rather than read"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the system that executes the output at each point"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person who owns each executing system"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the list of execution points per agent"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -429,6 +913,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the data available to whatever runs the agent's output at each execution point"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the networks and accounts the executing environment can use"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what the executing environment is prevented from reaching"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark any execution point whose boundary is assumed rather than verified"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -440,6 +946,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the reach recorded at each execution point with what the agent's work needs"
+              }
+            },
+            {
+              "text": {
+                "en": "Remove the access that is not needed"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was removed, at which execution point and on what date"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason and acceptor where reach beyond the need is kept"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -451,6 +979,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the executions carried out for agents during the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Pick out executions that failed, were refused or touched something outside the recorded boundary"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause of each one picked out"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action taken for each"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The execution records for the period with the reviewer's note on every execution that failed, was refused, or reached beyond the recorded boundary, and the action taken for each."
           },
@@ -465,6 +1015,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Revisit each execution point on the list"
+              }
+            },
+            {
+              "text": {
+                "en": "Judge whether the output must run automatically or could go to a person to act on"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision and reasoning for each execution point"
+              }
+            },
+            {
+              "text": {
+                "en": "Retire the execution points no longer justified and record the date"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         }
       ]
@@ -491,6 +1063,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the stores each agent reads back into a later run: prior conversations, its own notes, indexes, caches"
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each store is held"
+              }
+            },
+            {
+              "text": {
+                "en": "Record how long entries in each store persist"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the catalogue of retained stores per agent"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -502,6 +1096,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the people, systems and agents able to add or alter entries in each store"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the writers the organisation does not control"
+              }
+            },
+            {
+              "text": {
+                "en": "Identify any store that anyone can write to"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the writer record against each store in the catalogue"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -513,6 +1129,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Record what each store keeps with an entry to show where it came from"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each store keeps to show when an entry arrived"
+              }
+            },
+            {
+              "text": {
+                "en": "Check that a suspect entry can be traced to its source and its siblings found"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the stores whose entries currently carry no origin"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -524,6 +1162,36 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Assemble the entries identified as untrusted or incorrect by the origin review, user reports and incidents"
+              }
+            },
+            {
+              "text": {
+                "en": "Remove each entry from its store and from anything derived from it"
+              },
+              "hint": {
+                "en": "Summaries and embeddings built from a poisoned entry keep it alive"
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the agent no longer returns the removed content"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was removed, from which store and on whose authority"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the stores and routes checked and that nothing needed removal, if none was identified"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "For the period, the removals made — the entry, the store, the person who authorised it and confirmation the agent no longer returns the content — or, where nothing was identified, the dated record of the stores checked, the routes consulted and the statement that no entry required removal."
           },
@@ -538,6 +1206,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw a sample of entries from each retained store"
+              }
+            },
+            {
+              "text": {
+                "en": "Check that each sampled entry carries its origin"
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each origin with the writers recorded for that store"
+              }
+            },
+            {
+              "text": {
+                "en": "Raise follow-up for entries with no origin or an origin not on the record"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         }
       ]
@@ -564,6 +1254,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Record every path along which one agent passes work, results or direction to another"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the agent at each end of every path"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the paths where either end sits outside the organisation"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each message on the path carries"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -575,6 +1287,23 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record what each receiving agent relies on to accept the sender is who it claims to be"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each sender relies on to know it reached the intended receiver"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the paths on which neither end establishes anything"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -586,6 +1315,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Record what prevents a message being read in transit on each path"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what prevents a message being altered or replayed on each path"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what the receiver does with a message that fails that protection"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the protection record against each path on the map"
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -597,6 +1348,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the inter-agent messages rejected, failing protection or unattributable in the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause of each one"
+              }
+            },
+            {
+              "text": {
+                "en": "Classify each as a configuration fault or an attempt to inject a message into a chain"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action taken on each refused or unattributed exchange"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The refused or unattributed exchanges for the period, each with its cause, the classification reached, and the action taken."
           },
@@ -611,6 +1384,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the inter-agent paths actually used during the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Compare them with the paths on the exchange map"
+              }
+            },
+            {
+              "text": {
+                "en": "Record each exchange on an unmapped path and each mapped path no longer used"
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a correction for each difference"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         }
       ]
@@ -637,6 +1432,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Record what consumes each agent's output: another agent, a system change or an onward message"
+              }
+            },
+            {
+              "text": {
+                "en": "Follow each chain to the first point where a person sees the result"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the longest unattended stretch on each chain"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the chain descriptions"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -648,6 +1465,23 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Agree the ceiling past which each chain stops: actions, volume changed, spend or elapsed time"
+              }
+            },
+            {
+              "text": {
+                "en": "Record who set each bound and the basis for it"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the bound against its chain"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -659,6 +1493,31 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the means by which each chain is stopped mid-flight"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the people able to invoke the stop and the hours each is available"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what holds the chain at hours when nobody is available"
+              },
+              "hint": {
+                "en": "Its bound, or a rule that it does not run unattended then"
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the state left behind when the chain stops part-way"
+              }
+            }
+          ],
           "suggestedRole": "IT Operations"
         },
         {
@@ -670,6 +1529,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Choose a chain from the map to exercise"
+              }
+            },
+            {
+              "text": {
+                "en": "Stop it by the recorded means and time it from decision to full stop"
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether it stopped completely and what was left part-done"
+              }
+            },
+            {
+              "text": {
+                "en": "Record any step of the halt procedure that did not work as written"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The exercise record: the chain halted, who invoked it, the elapsed time from decision to full stop, what was left part-done, and any step of the procedure found to be wrong."
           },
@@ -684,6 +1565,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the highest counts, volumes, spend and durations each chain reached in the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Compare them with each chain's recorded bound"
+              }
+            },
+            {
+              "text": {
+                "en": "List the bounds never approached and those that halted legitimate work"
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the adjustments with the person accountable for each chain and record them"
+              }
+            }
+          ],
           "suggestedRole": "Management"
         }
       ]
@@ -710,6 +1613,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Record every audience each agent communicates with: staff, customers, suppliers"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the channel used for each audience"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the channels where the person cannot tell they are dealing with an agent"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the list with those channels marked"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -721,6 +1646,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Agree the wording that tells a person they are dealing with an agent"
+              }
+            },
+            {
+              "text": {
+                "en": "Decide where in the exchange the disclosure appears on each channel"
+              }
+            },
+            {
+              "text": {
+                "en": "Put the disclosure in place on each channel and record the wording used"
+              }
+            },
+            {
+              "text": {
+                "en": "Record any channel judged not to need disclosure and who accepted that"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -732,6 +1679,31 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the decisions within these agents' reach where a person must judge before acting"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person who makes each of those decisions"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what that person is given to judge with"
+              },
+              "hint": {
+                "en": "The evidence behind the output, not only the agent's recommendation"
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which outputs are advisory and which are acted on directly"
+              }
+            }
+          ],
           "suggestedRole": "Management"
         },
         {
@@ -743,6 +1715,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify the staff who receive requests originating from an agent"
+              }
+            },
+            {
+              "text": {
+                "en": "Brief them on what an agent will and will not ask of them"
+              }
+            },
+            {
+              "text": {
+                "en": "Brief them on the route for reporting a request outside that"
+              }
+            },
+            {
+              "text": {
+                "en": "Record who was briefed, on what date, and the material given"
+              }
+            }
+          ],
           "suggestedRole": "HR"
         },
         {
@@ -754,6 +1748,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the reports of suspicious agent requests raised in the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Establish for each whether the request came from a sanctioned agent, one outside its remit, or an imitation"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the finding and the action taken for each report"
+              }
+            },
+            {
+              "text": {
+                "en": "Answer each person who reported, and note any report left unanswered"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The reports received in the period, each with the finding on where the request originated, the action taken, and the response given to the person who reported it."
           },
@@ -783,6 +1799,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List each agent the organisation has approved to run and what it is for"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person accountable for each agent while it runs"
+              }
+            },
+            {
+              "text": {
+                "en": "Record who granted each approval"
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the register as the reference for judging anything found running"
+              }
+            }
+          ],
           "suggestedRole": "Management"
         },
         {
@@ -794,6 +1832,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record who may approve an agent to run"
+              }
+            },
+            {
+              "text": {
+                "en": "Record what an approver is shown before deciding"
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each approval is stored so it can be found afterwards"
+              }
+            },
+            {
+              "text": {
+                "en": "Name the routes by which an agent could reach production without approval"
+              }
+            }
+          ],
           "suggestedRole": "Management"
         },
         {
@@ -805,6 +1865,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List the places an agent could be operating: platforms, tenants, schedulers, code repositories"
+              }
+            },
+            {
+              "text": {
+                "en": "Search each place and record every agent found"
+              }
+            },
+            {
+              "text": {
+                "en": "Match each agent found against the register"
+              }
+            },
+            {
+              "text": {
+                "en": "Trace the owner of each unmatched agent and record the disposition decided"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The search performed for the period, the agents found, and for each unmatched agent the owner traced and the disposition decided."
           },
@@ -819,6 +1901,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Stop each unapproved agent identified by the search"
+              }
+            },
+            {
+              "text": {
+                "en": "Withdraw the access and credentials each stopped agent held"
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each stopped agent is no longer running"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the retrospective approval and approver for any agent judged legitimate instead"
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "For each unapproved agent: the date it was stopped, who authorised that, the access and credentials withdrawn with it, and confirmation it is no longer running."
           },
@@ -833,6 +1937,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each unregistered agent found in the period"
+              }
+            },
+            {
+              "text": {
+                "en": "Establish why it escaped the register: an approval gap, a departed owner or a bypass into production"
+              }
+            },
+            {
+              "text": {
+                "en": "Agree a change to close each gap"
+              }
+            },
+            {
+              "text": {
+                "en": "Record the changes agreed and who owns each"
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         }
       ]

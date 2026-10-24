@@ -251,6 +251,22 @@ const IMPERATIVE_VERBS = new Set([
     'Declare',
     'Describe',
     'Give',
+
+    // ── Agentic-security vocabulary (OWASP Agentic AI Top 10) ─────────
+    // Same cause as the MGF batch: ASI's titles had no steps, so this ratchet
+    // never read them. Each is the act its control is about, read in context —
+    // `Withdraw` a tool or an identity from an agent (ASI02, ASI03), `Reduce`
+    // an execution environment's reach (ASI05), `Purge` poisoned memory
+    // (ASI06), `Halt` a running chain (ASI08), `Disclose` that the
+    // counterparty is an agent and `Brief` the staff it addresses (ASI09),
+    // `Decommission` an unapproved agent (ASI10).
+    'Brief',
+    'Decommission',
+    'Disclose',
+    'Halt',
+    'Purge',
+    'Reduce',
+    'Withdraw',
 ]);
 
 /**
