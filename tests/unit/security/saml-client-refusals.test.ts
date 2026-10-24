@@ -29,11 +29,20 @@ import {
     generateAuthnRequest,
     validateSamlResponse,
     generateSpMetadata,
+    newSamlRequestBinding,
 } from '@/lib/security/saml-client';
 import type { SamlConfig } from '@/app-layer/schemas/sso-config.schemas';
 
 const CALLBACK_URL = 'https://app.example.com/api/auth/sso/saml/callback';
 const SP_ISSUER = 'https://app.example.com/sp';
+
+/**
+ * The request the flow under test sent. Every instance is built for it, and
+ * a response must answer it (tests/unit/security/saml-request-binding.test.ts
+ * holds that binding against real signed responses).
+ */
+const REQUEST = newSamlRequestBinding();
+const EXPECTED = { callbackUrl: CALLBACK_URL, requestId: REQUEST.id };
 
 /**
  * A syntactically well-formed but throwaway base64 blob. `@node-saml`
@@ -88,7 +97,9 @@ const UNSIGNED_SAML_RESPONSE = Buffer.from(
         '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"' +
         ' xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"' +
         ' ID="_r1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z"' +
-        ` Destination="${CALLBACK_URL}">` +
+        // Answers this flow's request, so the refusal under test is the
+        // signature's and not the earlier InResponseTo check.
+        ` Destination="${CALLBACK_URL}" InResponseTo="${REQUEST.id}">` +
         '<saml:Issuer>https://idp.example.com/entity</saml:Issuer>' +
         '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>' +
         '<saml:Assertion ID="_a1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z">' +
@@ -119,9 +130,40 @@ function samlConfig(overrides: Partial<SamlConfig> = {}): SamlConfig {
  */
 type PostResponseResult = Awaited<ReturnType<SAML['validatePostResponseAsync']>>;
 
+/**
+ * The assertion node-saml would hand back for a response that answers
+ * `REQUEST` at `CALLBACK_URL`, so the stubbed profiles pass the client's
+ * bearer-confirmation check and these tests reach the attribute extraction.
+ */
+const BOUND_ASSERTION = {
+    Assertion: {
+        Subject: [
+            {
+                SubjectConfirmation: [
+                    {
+                        $: { Method: 'urn:oasis:names:tc:SAML:2.0:cm:bearer' },
+                        SubjectConfirmationData: [
+                            {
+                                $: {
+                                    Recipient: CALLBACK_URL,
+                                    InResponseTo: REQUEST.id,
+                                    NotOnOrAfter: new Date(Date.now() + 60 * 60_000).toISOString(),
+                                },
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    },
+};
+
 function stubSamlReturning(result: PostResponseResult): SAML {
+    const bound: PostResponseResult = result.profile
+        ? { ...result, profile: { getAssertion: () => BOUND_ASSERTION, ...result.profile } }
+        : result;
     const validatePostResponseAsync = jest.fn(
-        async (_container: Record<string, string>): Promise<PostResponseResult> => result,
+        async (_container: Record<string, string>): Promise<PostResponseResult> => bound,
     );
     return { validatePostResponseAsync } as unknown as SAML;
 }
@@ -147,18 +189,19 @@ describe('buildSamlInstance', () => {
                 samlConfig({ certificate: undefined }),
                 CALLBACK_URL,
                 SP_ISSUER,
+                REQUEST,
             ),
         ).toThrow(/idpCert is required/i);
     });
 
     it('REFUSES to build an instance for a config whose certificate is empty', () => {
         expect(() =>
-            buildSamlInstance(samlConfig({ certificate: '' }), CALLBACK_URL, SP_ISSUER),
+            buildSamlInstance(samlConfig({ certificate: '' }), CALLBACK_URL, SP_ISSUER, REQUEST),
         ).toThrow(/idpCert is required/i);
     });
 
     it('LOOSENS wantAssertionsSigned below the library default', () => {
-        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
+        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER, REQUEST);
         // node-saml's DEFAULT_WANT_ASSERTIONS_SIGNED is `true`
         // (node_modules/@node-saml/node-saml/lib/constants.js). We
         // deliberately set `false`, so the per-assertion signature is
@@ -180,6 +223,7 @@ describe('buildSamlInstance', () => {
             }),
             CALLBACK_URL,
             SP_ISSUER,
+            REQUEST,
         );
         expect(saml.options.entryPoint).toBe('https://idp.example.com/sso');
         // idpIssuer is what makes an assertion minted by a DIFFERENT IdP
@@ -196,12 +240,13 @@ describe('buildSamlInstance', () => {
             samlConfig({ nameIdFormat: persistent }),
             CALLBACK_URL,
             SP_ISSUER,
+            REQUEST,
         );
         expect(saml.options.identifierFormat).toBe(persistent);
     });
 
     it('pins SHA-256 for both signature and digest algorithms', () => {
-        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
+        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER, REQUEST);
         expect(saml.options.signatureAlgorithm).toBe('sha256');
         expect(saml.options.digestAlgorithm).toBe('sha256');
     });
@@ -211,11 +256,13 @@ describe('buildSamlInstance', () => {
             samlConfig({ ssoUrl: 'https://a.example.com/sso' }),
             CALLBACK_URL,
             SP_ISSUER,
+            REQUEST,
         );
         const b = buildSamlInstance(
             samlConfig({ ssoUrl: 'https://b.example.com/sso' }),
             CALLBACK_URL,
             SP_ISSUER,
+            REQUEST,
         );
         expect(a).not.toBe(b);
         expect(a.options.entryPoint).toBe('https://a.example.com/sso');
@@ -227,7 +274,7 @@ describe('buildSamlInstance', () => {
 
 describe('generateAuthnRequest', () => {
     it('redirects to the tenant IdP carrying the RelayState verbatim', async () => {
-        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
+        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER, REQUEST);
         const url = await generateAuthnRequest(saml, 'relay-state-token-abc');
 
         const parsed = new URL(url);
@@ -242,7 +289,7 @@ describe('generateAuthnRequest', () => {
 describe('validateSamlResponse — refusals', () => {
     it('REFUSES a validated response that carries no profile', async () => {
         const saml = stubSamlReturning({ profile: null, loggedOut: false });
-        await expect(validateSamlResponse(saml, 'anything')).rejects.toThrow(
+        await expect(validateSamlResponse(saml, 'anything', EXPECTED)).rejects.toThrow(
             'SAML response validation failed: no profile returned',
         );
     });
@@ -258,24 +305,24 @@ describe('validateSamlResponse — refusals', () => {
             },
             loggedOut: false,
         });
-        await expect(validateSamlResponse(saml, 'anything')).rejects.toThrow(
+        await expect(validateSamlResponse(saml, 'anything', EXPECTED)).rejects.toThrow(
             'SAML response missing NameID',
         );
     });
 
     it('propagates the library rejection unchanged (signature / XML failures)', async () => {
         const saml = stubSamlRejecting(new Error('Invalid signature'));
-        await expect(validateSamlResponse(saml, 'anything')).rejects.toThrow(
+        await expect(validateSamlResponse(saml, 'anything', EXPECTED)).rejects.toThrow(
             'Invalid signature',
         );
     });
 
     it('rejects a genuinely malformed POST body through the real validator', async () => {
-        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
+        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER, REQUEST);
         // Not base64-decodable to XML at all — the very first thing an
         // attacker probing the ACS endpoint will send.
         await expect(
-            validateSamlResponse(saml, 'this-is-not-a-saml-response'),
+            validateSamlResponse(saml, 'this-is-not-a-saml-response', EXPECTED),
         ).rejects.toThrow(/Not a valid XML document/i);
     });
 
@@ -303,9 +350,10 @@ describe('validateSamlResponse — refusals', () => {
             samlConfig({ certificate: PARSEABLE_IDP_CERT }),
             CALLBACK_URL,
             SP_ISSUER,
+            REQUEST,
         );
         await expect(
-            validateSamlResponse(saml, UNSIGNED_SAML_RESPONSE),
+            validateSamlResponse(saml, UNSIGNED_SAML_RESPONSE, EXPECTED),
         ).rejects.toThrow(/Invalid document signature/i);
     });
 });
@@ -327,13 +375,13 @@ function profileWith(extra: Record<string, unknown>): PostResponseResult {
 describe('validateSamlResponse — email extraction', () => {
     it('prefers the explicit email attribute and lowercases it', async () => {
         const saml = stubSamlReturning(profileWith({ email: 'Alice@ACME.com' }));
-        const result = await validateSamlResponse(saml, 'x');
+        const result = await validateSamlResponse(saml, 'x', EXPECTED);
         expect(result.email).toBe('alice@acme.com');
     });
 
     it('falls back to the mail attribute when email is absent', async () => {
         const saml = stubSamlReturning(profileWith({ mail: 'BOB@Acme.COM' }));
-        const result = await validateSamlResponse(saml, 'x');
+        const result = await validateSamlResponse(saml, 'x', EXPECTED);
         expect(result.email).toBe('bob@acme.com');
     });
 
@@ -344,7 +392,7 @@ describe('validateSamlResponse — email extraction', () => {
         const saml = stubSamlReturning(
             profileWith({ email: ['a@acme.com', 'b@acme.com'], mail: 'Fallback@Acme.com' }),
         );
-        const result = await validateSamlResponse(saml, 'x');
+        const result = await validateSamlResponse(saml, 'x', EXPECTED);
         expect(result.email).toBe('fallback@acme.com');
     });
 
@@ -357,7 +405,7 @@ describe('validateSamlResponse — email extraction', () => {
             },
             loggedOut: false,
         });
-        const result = await validateSamlResponse(saml, 'x');
+        const result = await validateSamlResponse(saml, 'x', EXPECTED);
         expect(result.email).toBe('carol@acme.com');
     });
 
@@ -366,7 +414,7 @@ describe('validateSamlResponse — email extraction', () => {
         // the opaque id AS an email would create a user record keyed on a
         // non-address; null is the correct refusal to guess.
         const saml = stubSamlReturning(profileWith({}));
-        const result = await validateSamlResponse(saml, 'x');
+        const result = await validateSamlResponse(saml, 'x', EXPECTED);
         expect(result.email).toBeNull();
         expect(result.nameId).toBe('subject-id-1');
     });
@@ -375,36 +423,36 @@ describe('validateSamlResponse — email extraction', () => {
 describe('validateSamlResponse — display name extraction', () => {
     it('prefers displayName verbatim (no case folding — it is a name)', async () => {
         const saml = stubSamlReturning(profileWith({ displayName: 'Alice Smith' }));
-        expect((await validateSamlResponse(saml, 'x')).name).toBe('Alice Smith');
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice Smith');
     });
 
     it('joins givenName + familyName when displayName is absent', async () => {
         const saml = stubSamlReturning(
             profileWith({ givenName: 'Alice', familyName: 'Smith' }),
         );
-        expect((await validateSamlResponse(saml, 'x')).name).toBe('Alice Smith');
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice Smith');
     });
 
     it('uses givenName alone when familyName is absent (no trailing space)', async () => {
         const saml = stubSamlReturning(profileWith({ givenName: 'Alice' }));
-        expect((await validateSamlResponse(saml, 'x')).name).toBe('Alice');
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice');
     });
 
     it('uses familyName alone when givenName is absent (no leading space)', async () => {
         const saml = stubSamlReturning(profileWith({ familyName: 'Smith' }));
-        expect((await validateSamlResponse(saml, 'x')).name).toBe('Smith');
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Smith');
     });
 
     it('ignores a non-string displayName and falls through to the name parts', async () => {
         const saml = stubSamlReturning(
             profileWith({ displayName: ['A', 'B'], givenName: 'Alice', familyName: 'Smith' }),
         );
-        expect((await validateSamlResponse(saml, 'x')).name).toBe('Alice Smith');
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice Smith');
     });
 
     it('returns name=null when no name attribute is present at all', async () => {
         const saml = stubSamlReturning(profileWith({}));
-        expect((await validateSamlResponse(saml, 'x')).name).toBeNull();
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBeNull();
     });
 });
 
@@ -419,7 +467,7 @@ describe('validateSamlResponse — sessionIndex', () => {
             },
             loggedOut: false,
         });
-        expect((await validateSamlResponse(saml, 'x')).sessionIndex).toBe('idx-42');
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).sessionIndex).toBe('idx-42');
     });
 
     it('normalises an absent sessionIndex to null, not undefined', async () => {
@@ -431,7 +479,7 @@ describe('validateSamlResponse — sessionIndex', () => {
             },
             loggedOut: false,
         });
-        const result = await validateSamlResponse(saml, 'x');
+        const result = await validateSamlResponse(saml, 'x', EXPECTED);
         // toStrictEqual, not toEqual — toEqual treats an `undefined`
         // property as absent and would pass either way.
         expect(result).toStrictEqual({
@@ -447,7 +495,7 @@ describe('validateSamlResponse — sessionIndex', () => {
 
 describe('generateSpMetadata', () => {
     it('publishes the SP entity id and the ACS location the IdP must POST to', () => {
-        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
+        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER, REQUEST);
         const xml = generateSpMetadata(saml);
 
         expect(xml).toContain(`entityID="${SP_ISSUER}"`);
@@ -461,7 +509,7 @@ describe('generateSpMetadata', () => {
         // `buildSamlInstance` configures no privateKey, so the SP cannot
         // sign anything — the metadata must not claim otherwise or IdPs
         // will start rejecting our unsigned AuthnRequests.
-        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER);
+        const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER, REQUEST);
         expect(generateSpMetadata(saml)).toContain('AuthnRequestsSigned="false"');
     });
 });
@@ -474,7 +522,7 @@ describe('validateSamlResponse — degenerate name attributes', () => {
         // end of the join, the user record would get a blank display name
         // instead of an absent one.
         const saml = stubSamlReturning(profileWith({ givenName: [] }));
-        expect((await validateSamlResponse(saml, 'x')).name).toBeNull();
+        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBeNull();
     });
 });
 
