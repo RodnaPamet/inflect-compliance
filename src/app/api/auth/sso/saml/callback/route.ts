@@ -10,6 +10,7 @@ import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { issueSsoHandoff, ssoHandoffResponse } from '@/lib/auth/sso-handoff';
 import { clearSsoFlow, readBoundSsoFlow } from '@/lib/auth/sso-flow';
+import { spendSsoFlowOnce } from '@/lib/auth/sso-flow-spend';
 import { sanitizeRedirectPath } from '@/lib/auth/guard';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
 
@@ -57,6 +58,29 @@ export async function POST(req: NextRequest) {
         return redirectToLogin(req, 'invalid_relay', 'Invalid RelayState');
     }
 
+    // ── One callback per flow, held on the server (src/lib/auth/sso-flow-spend.ts) ──
+    // Spent before the response is read: a replay of the same cookie and
+    // response, from any browser, stops here, and so does a second try after a
+    // failure. A store that cannot be reached refuses rather than lets through.
+    let spent: boolean;
+    try {
+        spent = await spendSsoFlowOnce(relayStateRaw);
+    } catch (err) {
+        ssoLog('error', 'SAML flow could not be spent', {
+            requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
+            providerId: relayState.providerId, stage: 'state_validation',
+            meta: { error: (err as Error).message },
+        });
+        return redirectToLogin(req, 'sso_error');
+    }
+    if (!spent) {
+        ssoLog('warn', 'SAML flow presented a second time', {
+            requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
+            providerId: relayState.providerId, stage: 'state_validation',
+        });
+        return redirectToLogin(req, 'invalid_relay', 'Invalid RelayState');
+    }
+
     // ── Resolve tenant ──
     const tenant = await prisma.tenant.findUnique({
         where: { slug: relayState.tenantSlug },
@@ -97,12 +121,17 @@ export async function POST(req: NextRequest) {
     const callbackUrl = `${baseUrl}/api/auth/sso/saml/callback`;
     const spIssuer = `${baseUrl}/saml/metadata/${tenant.slug}`;
 
-    const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer);
+    const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer, relayState.request);
 
     // ── Validate SAML response ──
+    // It must answer this flow's request, with a bearer confirmation for this
+    // callback (src/lib/security/saml-client.ts).
     let validatedResponse;
     try {
-        validatedResponse = await validateSamlResponse(saml, samlResponse);
+        validatedResponse = await validateSamlResponse(saml, samlResponse, {
+            callbackUrl,
+            requestId: relayState.request.id,
+        });
     } catch (err) {
         ssoLog('error', 'SAML response validation failed', {
             requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',

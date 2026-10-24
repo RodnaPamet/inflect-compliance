@@ -910,6 +910,17 @@ its `[customFetch]`. Only the issuer is typed by an administrator; the other
 two URLs come from the IdP's own discovery document, so guarding the issuer
 alone guards nothing (`tests/guards/ssrf-egress-coverage.test.ts`).
 
+**A SAML response must answer this flow's request** (`buildSamlInstance` /
+`validateSamlResponse` in `src/lib/security/saml-client.ts`). `/start` picks
+the AuthnRequest ID and seals it into the flow. The callback requires
+`InResponseTo` to match it (`validateInResponseTo: 'always'`, through a cache
+that knows only that ID), a bearer confirmation whose `Recipient` is this
+callback with a live `NotOnOrAfter`, and an assertion no older than
+`SAML_MAX_ASSERTION_AGE_MS`. The flow is also spent on the server
+(`src/lib/auth/sso-flow-spend.ts`), because a cleared cookie binds nothing. Do
+not drop back to node-saml's default `never`: under it a captured response
+signed its subject in from any browser.
+
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
 
 **GAP-04 — type augmentation pattern.** `src/auth.ts` declares two module augmentations: `next-auth` for `Session.user` (id/tenantId/role/mfaPending/memberships) and `next-auth/jwt` for the full JWT shape (every custom field the codebase stores). Middleware reads typed `token.role` / `token.memberships` directly via `getToken({ req, secret })`. There are zero `as any` casts in the auth-critical path; the structural guardrail at `tests/guardrails/auth-stack-pinning.test.ts` fails CI if any are reintroduced.
