@@ -40,7 +40,7 @@ puts at Anthropic:
 
 | Shape | What happens | Data at Anthropic, held by whom | Verdict |
 | --- | --- | --- | --- |
-| **MA-B. Connect an agent built in the Console** | The customer builds the agent in *their own* Anthropic Console. Inflect generates the MCP server entry and a bound key. Inflect governs it through `/api/mcp` | the customer's agent and transcripts, under the customer's own Anthropic contract | **Recommended**, after two fixes to `/api/mcp` (below). It shares the connect wizard with the Agent SDK's Route B |
+| **MA-B. Connect an agent built in the Console** | The customer builds the agent in *their own* Anthropic Console. Inflect generates the MCP server entry and a bound key. Inflect governs it through `/api/mcp` | the customer's agent and transcripts, under the customer's own Anthropic contract | **Recommended.** Its two prerequisites on `/api/mcp` are met (#4111). It shares the connect wizard with the Agent SDK's Route B |
 | **MA-C2. Inflect provisions into the customer's workspace** | The customer connects an Anthropic workspace to Inflect. The agent builder provisions and runs Managed Agents there, with Inflect's tools as custom tools | as above, plus the tool results Inflect sends at the customer's direction | **Later.** Viable as a per-tenant integration, like GitHub or SharePoint |
 | **MA-C1. Inflect hosts in its own Anthropic organisation** | The builder's agents run as Managed Agents in Inflect's organisation | every opted-in tenant's prompts and transcripts, stored by Inflect's sub-processor in the US, without ZDR | **Planned** (owner decision, 2026-10-24), for tenants with no Anthropic account of their own. It does not wait for ZDR or EU storage. It is a sub-processor change, so it starts only 30 days after customers are notified, and only for a tenant that opts in knowing where its data goes |
 
@@ -55,14 +55,18 @@ puts at Anthropic:
   call goes through `authorizeToolCall`: kill switch first, then audience,
   credential, exposure, grants, policy card, autonomy ceiling, and the same
   permission check a human route uses.
-- **Two gaps on that route matter for hosted callers.**
-  - **Rate limit.** The `POST` handler takes the default mutation tier through
-    `withApiErrorHandling`: 60 per minute, keyed by caller IP, with no actor
-    (`docs/rate-limiting.md`). Every Managed Agent, from every customer, calls
-    from Anthropic's egress addresses, so they would share one budget.
-  - **AI Guard.** The route authorizes but runs no AI Guard on a read's
-    arguments or result (`docs/claude-agent-sdk-design.md` → Route B, decision 6).
-    Proposals are still guarded at the queue.
+- **The route is ready for hosted callers (#4111).** Two gaps that mattered
+  for them are closed:
+  - **Rate limit.** Each verified API key has its own budget, 60 JSON-RPC
+    messages a minute (`MCP_PER_KEY_LIMIT`), charged per message. A per-IP
+    ceiling of 600 requests a minute sits in front of authentication. Every
+    Managed Agent calls from Anthropic's egress addresses, and they no longer
+    share one budget (`docs/rate-limiting.md`, "The MCP endpoint").
+  - **AI Guard.** A read tool's arguments pass the same egress scan that
+    `runGuardedTool` applies to Inflect's own engines, before the funnel
+    (`src/lib/mcp/argument-guard.ts`). Proposals are guarded at the queue, as
+    before. A read's *result* is not scanned on this route, because the model
+    that consumes it is not Inflect's.
 - **Integrations have a provider registry and a signed webhook route.**
   `src/app-layer/integrations/providers/` and
   `src/app/api/integrations/webhooks/[provider]/route.ts`. The route reads the
@@ -178,11 +182,11 @@ This is the Agent SDK's Route B with a different client, and it shares the wizar
    No CLI on either side.
 3. Inflect governs every call at `/api/mcp`, exactly as it governs any other key.
 
-**Two prerequisites, both on `/api/mcp`:**
+**Its two prerequisites on `/api/mcp` are met (#4111):**
 
-- **A per-key rate limit.** Key the route's tier by the authenticated
-  credential (`apiKeyId`), not by IP. Otherwise one busy customer's hosted agent
-  throttles every other customer's.
+- **A per-key rate limit.** The route's budget is keyed by the verified
+  `apiKeyId`, not by IP, so one busy customer's hosted agent cannot throttle
+  another customer's.
 - **The AI Guard egress slice on arguments** (Agent SDK design, decision 6).
 
 What Inflect cannot see in this shape: the agent's model calls. There is no
@@ -300,7 +304,8 @@ before the window closes, but tenant data may not reach the new processing.
    in scope, and it no longer waits for Anthropic to offer ZDR or EU storage.
    What it still waits for is decision 6 and the 30-day notice.
 2. **Fix `/api/mcp` first.** A per-key rate limit and the argument guard. Both
-   are worth doing for any external agent, and hosted callers make them urgent.
+   are worth doing for any external agent, and hosted callers made them urgent.
+   **Done in #4111.**
 3. **For MA-C2, accept a weaker Art 12 row.** The per-call prompt is not visible
    to Inflect. The alternative is OpenTelemetry content-mode tracing from the
    customer's organisation, which means a second data path to secure.

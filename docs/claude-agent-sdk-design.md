@@ -405,17 +405,14 @@ Every call still lands on `/api/mcp`, so the funnel's authorization applies
 unchanged: kill switch, grants, policy card, autonomy ceiling, audit,
 propose-not-commit. Route B adds no authority, no sub-processor and no engine.
 
-One control does **not** come with it. The AI Guard slices that sit around
-Flue's tool calls (`runGuardedTool`: egress on arguments, untrusted-input on
-results) are not on the direct MCP route. `src/app/api/mcp/route.ts` and
-`src/lib/mcp/` call neither `guardEgress` nor `guardUntrustedInput`. A proposal
-is still guarded, because `createAgentProposal` scans each item at the queue.
-A read is not. For a customer-hosted agent the injection risk in a read's
-*result* lands in the customer's own model, which Inflect does not run. The
-argument scan is a different matter: it is Inflect's own egress control, and
-it applies only to engines Inflect runs. Whether to add it to `/api/mcp` is a
-decision of its own (decision 6 below), and it is worth making before Route B
-invites more external agents in.
+One AI Guard slice comes with it and one does not. `runGuardedTool` guards
+Flue's tool calls on both sides: egress on the arguments, untrusted input on the
+results. Since #4111 the direct MCP route applies the first one:
+`assertMcpArgumentsAllowed` (`src/lib/mcp/argument-guard.ts`) scans a read
+tool's arguments before the funnel. A proposal is guarded at the queue, because
+`createAgentProposal` scans each item. A read's *result* is not scanned on this
+route. For a customer-hosted agent, the injection risk in a result lands in the
+customer's own model, which Inflect does not run (decision 6 below).
 
 ## Route C: Managed Agents
 
@@ -455,11 +452,11 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    that adds `Agent` back with a subset-only definition.
 5. **Branding.** The builder says "Agent", and names Claude as "Powered by
    Claude" where the model is shown. It never says "Claude Code".
-6. **The AI Guard on the direct MCP route.** Today `/api/mcp` authorizes but
-   does not guard a read's arguments or result. Proposed: add the egress slice on
-   arguments to the route, sharing `runGuardedTool`'s step 1. Leave the result
-   scan to the engine that consumes the result, because only Inflect's own
-   engines put a result into Inflect's model.
+6. **The AI Guard on the direct MCP route.** **Done in #4111:** the egress
+   slice on a read's arguments runs on the route, the same check as
+   `runGuardedTool`'s step 1. The result scan is left to the engine that
+   consumes the result, because only Inflect's own engines put a result into
+   Inflect's model.
 
 ## Roadmap (future direction)
 
@@ -643,8 +640,8 @@ Each phase's hardening step fills its row.
 
 ### Phase 0 — Foundations
 
-Make the engine seam ready for more than Flue, and close the two gaps on
-`/api/mcp` before more outside agents call it.
+Make the engine seam ready for more than Flue. The two gaps on `/api/mcp`
+were closed first, by #4111 (Step 0d).
 
 #### Step 0a — Engine-neutral tool core
 
