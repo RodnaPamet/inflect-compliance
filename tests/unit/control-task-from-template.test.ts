@@ -12,6 +12,9 @@ import {
     checklistFromSteps,
 } from '@/app-layer/usecases/control/task-from-template';
 import { TaskChecklistSchema } from '@/app-layer/schemas/task-checklist.schemas';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
 
 const ctx = { tenantId: 't1', userId: 'u1' };
 
@@ -108,6 +111,62 @@ describe('checklist sanitisation', () => {
 
     it('drops a step with no usable text rather than writing an empty item', () => {
         expect(checklistFromSteps([{ hint: 'no text here' }, 42, null])).toBeUndefined();
+    });
+});
+
+describe('the catalogue\'s own step shape', () => {
+    // Every test above feeds `{ text: 'a string' }`. The catalogue never
+    // writes that: `CatalogTaskSchema` steps are `{ text: { en }, hint?: { en } }`
+    // and `reconcileTemplateTasks` stores them into `stepsJson` verbatim. The
+    // projection read only the bare string, so every catalogue step was
+    // dropped and no installed task carried a checklist — while every test
+    // here stayed green. These read the real fixtures, so the shape under test
+    // is the shape that ships.
+    type FixtureStep = { text: { en: string }; hint?: { en: string } };
+    type FixtureTask = { title: { en: string }; steps?: FixtureStep[] };
+
+    const fixtures = repoRelativeFiles().filter(
+        (f) =>
+            /^prisma\/fixtures\/[^/]+-control-templates\.json$/.test(f) ||
+            f === 'prisma/fixtures/internal-controls.json',
+    );
+    const stepped: Array<{ file: string; task: FixtureTask }> = fixtures.flatMap((file) => {
+        const data = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8')) as {
+            templates?: Array<{ tasks?: FixtureTask[] }>;
+            controls?: Array<{ tasks?: FixtureTask[] }>;
+        };
+        return [...(data.templates ?? []), ...(data.controls ?? [])].flatMap((t) =>
+            (t.tasks ?? []).filter((k) => Array.isArray(k.steps)).map((task) => ({ file, task })),
+        );
+    });
+
+    it('reads a population, not an empty set', () => {
+        // ISO 42001, EU AI Act, AISVS and COSO carry steps on every task.
+        expect(new Set(stepped.map((s) => s.file)).size).toBeGreaterThanOrEqual(4);
+        expect(stepped.length).toBeGreaterThan(500);
+    });
+
+    it('turns every authored step of every fixture into a checklist item, text and hint intact', () => {
+        const lost = stepped.flatMap(({ file, task }) => {
+            const items = checklistFromSteps(task.steps) ?? [];
+            const want = (task.steps ?? []).map((s) => ({ text: s.text.en.trim(), hint: s.hint?.en.trim() }));
+            const got = items.map((i) => ({ text: i.text, hint: i.hint }));
+            return JSON.stringify(got) === JSON.stringify(want) ? [] : [`${file}: ${task.title.en}`];
+        });
+        expect(lost).toEqual([]);
+    });
+
+    it('installs a fixture task with its checklist, end to end through the projection', () => {
+        const { task } = stepped[0];
+        const row = taskFromTemplateTask(
+            { id: 'tt-real', title: task.title.en, description: null, stepsJson: task.steps },
+            ctx,
+            'c-1',
+        );
+        const parsed = TaskChecklistSchema.safeParse(row.checklistJson);
+        expect(parsed.success && parsed.data.map((i) => i.text)).toEqual(
+            (task.steps ?? []).map((s) => s.text.en.trim()),
+        );
     });
 });
 

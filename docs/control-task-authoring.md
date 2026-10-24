@@ -201,6 +201,11 @@ likely to be closed without doing anything.
   genuinely decomposes into actions somebody ticks off; omit them where the
   description is the whole instruction. When present: 3–8 steps, none shorter
   than 25 characters. A step that repeats the description is a reject.
+  Install copies them onto the tenant's task as a checklist, which the task
+  page shows under **Steps** and an editor ticks one at a time. Steps added to
+  a template after a tenant installed it reach that tenant's open tasks on the
+  next deploy (`scripts/backfill-task-checklists.ts`), never replacing a
+  checklist the task already has.
 - **`suggestedRole`** comes from: IT Operations, Security engineering,
   Engineering lead, HR, Legal/DPO, Facilities, Management, Procurement. Where a
   control genuinely spans owners, put the *accountable* role here and name the

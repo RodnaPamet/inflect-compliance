@@ -7912,6 +7912,22 @@
       "ASSET": "Asset",
       "RISK": "Risk",
       "EVIDENCE": "Evidence"
+    },
+    "checklist": {
+      "heading": "Steps",
+      "progress": "{done} of {total} steps done",
+      "toggleFailed": "Couldn't update the step. Try again.",
+      "stepAria": "Step {position}: {text}",
+      "guidanceHeading": "From the control template",
+      "phase": "Phase",
+      "suggestedRole": "Suggested role",
+      "evidenceHint": "Evidence to attach",
+      "phaseLabels": {
+        "SCOPE": "Scope",
+        "IMPLEMENT": "Implement",
+        "OPERATE": "Operate",
+        "REVIEW": "Review"
+      }
     }
   },
   "processes": {

@@ -21,7 +21,6 @@
  * @module schemas/task-checklist
  */
 import { z } from 'zod';
-import { badRequest } from '@/lib/errors/types';
 
 /**
  * Bounds. Chosen from the authoring rules rather than invented: a template
@@ -47,19 +46,3 @@ export const TaskChecklistSchema = z.array(ChecklistItemSchema).max(MAX_CHECKLIS
 
 export type ChecklistItem = z.infer<typeof ChecklistItemSchema>;
 export type TaskChecklist = z.infer<typeof TaskChecklistSchema>;
-
-/**
- * Validate a checklist, or throw 400.
- *
- * Accepts null/undefined and returns undefined, so an optional column reads
- * naturally at every call site — the same shape `validateAuditDetailsJson`
- * uses two files over.
- */
-export function validateTaskChecklist(input: unknown): TaskChecklist | undefined {
-    if (input === undefined || input === null) return undefined;
-    const result = TaskChecklistSchema.safeParse(input);
-    if (!result.success) {
-        throw badRequest('Invalid task checklist structure', result.error.issues);
-    }
-    return result.data;
-}

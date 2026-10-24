@@ -238,6 +238,19 @@ const IMPERATIVE_VERBS = new Set([
     'Age',
     'Despatch',
     'Re-evaluate',
+
+    // ── AI-governance vocabulary (IMDA MGF) ──────────────────────────
+    // MGF's titles were authored in #2372 but carried no steps, so this
+    // ratchet never read them; giving them steps put them in its population
+    // for the first time. Three verbs it did not know, each read in context:
+    // `Declare` an agent's authority limits — the MGF's own word (MGF-1.3,
+    // "declared and enforced"); `Describe` capabilities and limits in
+    // user-facing terms (MGF-4.2); `Give` reviewers the failure modes they
+    // must catch (MGF-2.4), where the act is handing material over. None is
+    // colloquial in the way the refused Fit, Fix, Seat and Stand were.
+    'Declare',
+    'Describe',
+    'Give',
 ]);
 
 /**
