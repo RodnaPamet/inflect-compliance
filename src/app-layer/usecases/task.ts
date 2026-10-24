@@ -26,6 +26,11 @@ import { getSlaStatus } from '../services/sla';
 import { reconcileTaskSource } from './task-source-reconcile';
 import { restoreEntity } from './soft-delete-operations';
 
+// Every tasks route reaches the domain through this module (see
+// tests/unit/tasks-routes-authz.test.ts); the checklist verb lives in its own
+// file and is re-exported here so that stays true.
+export { setTaskChecklistItem } from './task-checklist';
+
 // ─── Type-Specific Validation ───
 
 type TaskType = 'AUDIT_FINDING' | 'CONTROL_GAP' | 'INCIDENT' | 'IMPROVEMENT' | 'TASK';

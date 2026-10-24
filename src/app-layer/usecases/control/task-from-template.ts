@@ -63,6 +63,27 @@ interface AuthoredStep {
 }
 
 /**
+ * The English text of an authored string: a bare string, or a locale map.
+ *
+ * The catalogue stores every step as `{ text: { en, bg? }, hint?: { en, bg? } }`
+ * — `CatalogTaskSchema`'s shape, written verbatim into `stepsJson` by
+ * `reconcileTemplateTasks`. This file read only a bare-string `text`, and its
+ * tests fed it only that, so every catalogue step failed the `typeof` check,
+ * every checklist came out empty and was omitted, and from 2026-09-04 no task
+ * installed from any framework carried a single step — ISO 42001, whose every
+ * task has steps, included. `en` because the task's scalar columns carry `en`
+ * (see `reconcileTemplateTasks`); the checklist is read beside them.
+ */
+function authoredText(value: unknown): string | undefined {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object') {
+        const en = (value as { en?: unknown }).en;
+        if (typeof en === 'string') return en;
+    }
+    return undefined;
+}
+
+/**
  * Build a checklist from authored steps.
  *
  * Sanitises here rather than at the caller, and that placement is the whole
@@ -80,14 +101,15 @@ export function checklistFromSteps(stepsJson: unknown): TaskChecklist | undefine
 
     const items = stepsJson.slice(0, MAX_CHECKLIST_ITEMS).flatMap((raw): TaskChecklist => {
         const step = (raw ?? {}) as AuthoredStep;
-        // Authored content may be a bare string or a { text, hint } object;
-        // both shapes exist in the wild and neither is wrong.
-        const rawText = typeof raw === 'string' ? raw : step.text;
-        if (typeof rawText !== 'string') return [];
+        // A step may be a bare string or a { text, hint } object, and text and
+        // hint may each be a bare string or a locale map — the catalogue writes
+        // the locale map. See `authoredText`.
+        const rawText = typeof raw === 'string' ? raw : authoredText(step.text);
+        if (rawText === undefined) return [];
         const text = sanitizePlainText(rawText).trim().slice(0, MAX_CHECKLIST_TEXT);
         if (!text) return [];
 
-        const rawHint = typeof step.hint === 'string' ? step.hint : undefined;
+        const rawHint = typeof raw === 'string' ? undefined : authoredText(step.hint);
         const hint = rawHint
             ? sanitizePlainText(rawHint).trim().slice(0, MAX_CHECKLIST_HINT) || undefined
             : undefined;

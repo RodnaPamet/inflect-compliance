@@ -109,6 +109,17 @@ echo ""
 echo "→ Seeding control-template tasks..."
 node dist/seed-control-template-tasks.mjs || echo "⚠ control-template task seed skipped (non-fatal)"
 
+# ── 1f. Backfill installed tasks' checklists from their template steps ──
+#
+# After both seeders above, and the order is load-bearing: this reads the
+# template steps they just wrote. Install copies a template task's steps onto
+# the tenant's task once, so a task installed before its template had steps
+# would otherwise never get them. Fills only a task that records its template,
+# is open and has no checklist — never replaces one. Safe to re-run. Non-fatal.
+echo ""
+echo "→ Backfilling task checklists..."
+node dist/backfill-task-checklists.mjs || echo "⚠ task-checklist backfill skipped (non-fatal)"
+
 # ── 2. Create upload directory if missing ──
 FILE_DIR="${FILE_STORAGE_ROOT:-/data/uploads}"
 mkdir -p "$FILE_DIR" 2>/dev/null || true

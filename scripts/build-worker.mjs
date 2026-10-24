@@ -126,6 +126,14 @@ await build({
     outfile: 'dist/seed-framework-catalogs.mjs',
 });
 
+// Runs after the two seeders above: fills the checklist of an already-installed
+// template task from the steps its template now carries.
+await build({
+    ...common,
+    entryPoints: ['scripts/backfill-task-checklists.ts'],
+    outfile: 'dist/backfill-task-checklists.mjs',
+});
+
 await build({
     ...common,
     entryPoints: ['scripts/catalog-check.ts'],
@@ -141,4 +149,4 @@ await build({
     outfile: 'dist/seed-vendor-questionnaires.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/catalog-check.mjs');
+console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/backfill-task-checklists.mjs + dist/catalog-check.mjs');

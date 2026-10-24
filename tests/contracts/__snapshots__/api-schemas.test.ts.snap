@@ -4775,6 +4775,21 @@ exports[`API contract — per-schema snapshots schema: TaskAssignRequest 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TaskChecklistItemSetRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "done": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "done"
+  ],
+  "description": "Mark one checklist step of a task done or not done. The step is addressed by its id in the path; its text is the template's and cannot be changed here. Returns the whole checklist after the change."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TaskCommentAddRequest 1`] = `
 "{
   "type": "object",

@@ -31,6 +31,7 @@
     "db:seed-policy-templates": "tsx scripts/seed-policy-templates.ts",
     "db:seed-control-tasks": "tsx scripts/seed-control-template-tasks.ts",
     "db:seed-catalogs": "tsx scripts/seed-framework-catalogs.ts",
+    "db:backfill-task-checklists": "tsx scripts/backfill-task-checklists.ts",
     "catalog:check": "tsx scripts/catalog-check.ts",
     "skills:evaluate": "tsx scripts/skills-evaluate.ts",
     "db:seed-vendor-questionnaires": "tsx scripts/seed-vendor-questionnaires.ts",

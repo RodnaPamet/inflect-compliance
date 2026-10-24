@@ -62,6 +62,7 @@ const USECASE_NAMES = [
     'removeTaskLink',
     'removeTaskWatcher',
     'restoreTask',
+    'setTaskChecklistItem',
     'setTaskStatus',
     'unlinkTaskEvidence',
     'updateTask',
@@ -216,6 +217,8 @@ function requestFor(method: string): NextRequest {
         // `LinkTaskEvidenceSchema` — evidence attaches by URL.
         url: 'https://example.test/evidence.pdf',
         note: null,
+        // `SetTaskChecklistItemSchema` — a tick names the state it wants.
+        done: true,
     };
     return {
         method,
@@ -236,6 +239,7 @@ const routeArgs = {
         taskId: 'task-1',
         evidenceId: 'ev-1',
         linkId: 'link-1',
+        itemId: 'item-1',
     }),
 };
 
