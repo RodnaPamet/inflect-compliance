@@ -104,6 +104,15 @@
         "docs/ci-local.md": {
             "class": "authoritative"
         },
+        "docs/claude-agent-sdk-design.md": {
+            "class": "living"
+        },
+        "docs/claude-managed-agents-design.md": {
+            "class": "living"
+        },
+        "docs/claude-tool-runner-design.md": {
+            "class": "living"
+        },
         "docs/cloud-storage.md": {
             "class": "authoritative"
         },

@@ -226,7 +226,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // before `docs/a2a-mapping.md` because 'h' < 'm'. No existing entry
         // moved, which is the distinction this digest exists to draw — the
         // round-trip cannot tell one added key from a `sort_keys` rewrite.
-        keyOrderSha: '217f3ca9983883c4f3388b93bba31fa40d5ad816d8392ec435dcdeb84b978cf3',
+        // Moved 2026-10-24 by three sorted ADDITIONS, the Claude agent designs
+        // (docs/claude-agent-sdk-design.md, docs/claude-managed-agents-design.md,
+        // docs/claude-tool-runner-design.md), one contiguous textual insert
+        // between `docs/ci-local.md` and `docs/cloud-storage.md`: +9/-0.
+        keyOrderSha: '89576449fd9001551aa131d753dab3fe4e14291ba391d22e32cc59675315fe40',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
