@@ -1,4 +1,5 @@
 import { PrismaTx } from '@/lib/db-context';
+import { LIVE_TEMPLATE_TASKS } from './ControlTemplateRepository';
 
 export class FrameworkRepository {
     static async listFrameworks(db: PrismaTx) {
@@ -47,7 +48,7 @@ export class FrameworkRepository {
                     include: {
                         template: {
                             include: {
-                                tasks: { orderBy: { sortOrder: 'asc' } },
+                                tasks: LIVE_TEMPLATE_TASKS,
                                 requirementLinks: { include: { requirement: true } },
                             },
                         },
