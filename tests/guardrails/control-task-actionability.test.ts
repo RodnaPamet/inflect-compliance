@@ -1,7 +1,10 @@
 /**
  * An authored control task must be something a practitioner can DO.
  *
- * The bar, applied to every task that carries authored `steps`:
+ * The bar:
+ *   • every authored task carries steps, with no exceptions
+ *
+ * and, applied to every task that carries them:
  *   • the title starts with an imperative verb
  *   • 3-8 steps, none shorter than 25 characters
  *   • an OPERATE task names the proof artifact (`evidenceHint`)
@@ -16,13 +19,14 @@
  * omit them, and "the allowlist is empty" would certify nothing about the
  * 161 templates it could not name.
  *
- * ═══ WHY THIS PASSES TODAY WITHOUT ASSERTING ANYTHING ═══
+ * ═══ WHY "EVERY TASK CARRIES STEPS" IS ITS OWN RULE ═══
  *
- * No template has authored steps yet — this PR is plumbing, the content comes
- * in the PRs after it. So the rules below currently apply to an empty set.
- * That is stated rather than hidden: the `it` that counts the population is
- * what will start failing the moment content lands unchecked, and the
- * allowlist shrinks as each content PR removes its prefix.
+ * The other rules read only tasks that already have steps, so on their own
+ * they pass a task with none. That is how 873 tasks under four frameworks
+ * (IMDA MGF, OWASP ASI, ISO 27001, NIST Privacy), and 1,040 more beside
+ * stepped siblings, shipped with no checklist: an installed MGF control showed
+ * nothing to tick, and nothing here failed.
+ * Every task carries steps since 2026-10-24, and the rule keeps it so.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -466,6 +470,28 @@ function titleOf(task: AuthoredTaskLike): string {
 
 describe('authored control tasks are actionable', () => {
     const held = heldToTheBar();
+
+    it('every authored task carries steps', () => {
+        // Over EVERY shipped template, not `held`: `held` admits a template
+        // only once one of its tasks has steps, so a whole framework without
+        // them would never be read. No allowlist either. A task with no steps
+        // installs with no checklist, and an exemption here would be the only
+        // record that a framework ships that way.
+        const tasks = allTemplates().flatMap((t) =>
+            (t.tasks ?? []).map((task) => ({ code: t.code ?? '(no code)', task })),
+        );
+
+        // A DENOMINATOR guard, as in 'sees the population it claims to guard'
+        // below: 3,483 tasks across 17 fixtures when this rule landed. An empty
+        // or shrunken scan passes the check that follows, so this moves only for
+        // a deliberate deletion, with the reason here.
+        expect(tasks.length).toBeGreaterThanOrEqual(3400);
+
+        const bare = tasks
+            .filter(({ task }) => !Array.isArray(task.steps) || task.steps.length === 0)
+            .map(({ code, task }) => `${code}: ${titleOf(task)}`);
+        expect(bare).toEqual([]);
+    });
 
     it('titles start with an imperative verb', () => {
         const bad = held.flatMap((t) =>
