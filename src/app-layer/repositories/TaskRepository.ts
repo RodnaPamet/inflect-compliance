@@ -603,6 +603,39 @@ export class TaskRepository {
         return db.task.update({ where: { id }, data: updateData });
     }
 
+    /**
+     * The task's checklist, read `FOR UPDATE` — the row lock is held until the
+     * caller's transaction ends.
+     *
+     * A checklist is one JSON column, so ticking an item is a read-modify-write
+     * of the whole array. Two people ticking different steps at the same moment
+     * would otherwise each write back the array they read, and one tick would
+     * vanish with nothing to say so. The lock serialises them: the second waits
+     * for the first to commit and then reads its result. Prisma has no locking
+     * read, hence the raw statement; it runs on the caller's tenant-bound
+     * client, under RLS.
+     */
+    static async lockChecklist(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+    ): Promise<{ id: string; checklistJson: unknown } | null> {
+        const rows = await db.$queryRaw<Array<{ id: string; checklistJson: unknown }>>`
+            SELECT "id", "checklistJson"
+              FROM "Task"
+             WHERE "id" = ${id} AND "tenantId" = ${ctx.tenantId} AND "deletedAt" IS NULL
+               FOR UPDATE`;
+        return rows[0] ?? null;
+    }
+
+    static async setChecklist(db: PrismaTx, ctx: RequestContext, id: string, checklist: Prisma.InputJsonValue) {
+        const res = await db.task.updateMany({
+            where: { id, tenantId: ctx.tenantId },
+            data: { checklistJson: checklist },
+        });
+        return res.count === 1;
+    }
+
     static async setStatus(db: PrismaTx, ctx: RequestContext, id: string, status: string, resolution?: string | null) {
         const existing = await db.task.findFirst({ where: { id, tenantId: ctx.tenantId } });
         if (!existing) return null;

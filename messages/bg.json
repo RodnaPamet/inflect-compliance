@@ -7925,6 +7925,22 @@
       "ASSET": "Актив",
       "RISK": "Риск",
       "EVIDENCE": "Доказателство"
+    },
+    "checklist": {
+      "heading": "Стъпки",
+      "progress": "{done} от {total} стъпки изпълнени",
+      "toggleFailed": "Стъпката не можа да бъде обновена. Опитайте отново.",
+      "stepAria": "Стъпка {position}: {text}",
+      "guidanceHeading": "От шаблона на контрола",
+      "phase": "Фаза",
+      "suggestedRole": "Препоръчителна роля",
+      "evidenceHint": "Доказателство за прикачване",
+      "phaseLabels": {
+        "SCOPE": "Обхват",
+        "IMPLEMENT": "Внедряване",
+        "OPERATE": "Изпълнение",
+        "REVIEW": "Преглед"
+      }
     }
   },
   "processes": {

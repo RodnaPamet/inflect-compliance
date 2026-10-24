@@ -6,6 +6,12 @@
             "docs": [
                 "docs/user/guide/govern/"
             ]
+        },
+        {
+            "label": "Set up your workspace",
+            "docs": [
+                "docs/user/how-to/set-up/"
+            ]
         }
     ]
 }

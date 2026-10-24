@@ -736,6 +736,12 @@ export const SetTaskStatusSchema = z.object({
     description: 'Lifecycle transition for a task. resolution is required (by convention) when moving to RESOLVED/CLOSED to provide context for the audit trail.',
 });
 
+export const SetTaskChecklistItemSchema = z.object({
+    done: z.boolean(),
+}).strip().openapi('TaskChecklistItemSetRequest', {
+    description: 'Mark one checklist step of a task done or not done. The step is addressed by its id in the path; its text is the template\'s and cannot be changed here. Returns the whole checklist after the change.',
+});
+
 export const AssignTaskSchema = z.object({
     assigneeUserId: z.string().nullable(),
 }).strip().openapi('TaskAssignRequest', {

@@ -48,6 +48,11 @@ import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 // TP-4 — the task edit surface is now the shared inline autosave
 // TaskEditPanel (form variant), retiring the divergent EditTaskModal.
 import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
+import {
+    TaskChecklistPanel,
+    parseTaskChecklist,
+    parseTaskTemplateGuidance,
+} from '@/components/controls-shared/TaskChecklistPanel';
 import { Pen2, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 import { IconAction } from '@/components/ui/icon-action';
 import { Textarea } from '@/components/ui/textarea';
@@ -208,6 +213,9 @@ interface TaskDetail {
     assigneeUserId: string | null;
     reviewerUserId: string | null;
     metadataJson: { findingSource?: string | null; controlGapType?: string | null } | null;
+    // The authored steps of a template task (TaskChecklistSchema). Untyped
+    // here on purpose: `parseTaskChecklist` is the one reader.
+    checklistJson?: unknown;
     assignee: { name: string | null } | null;
     createdBy: { name: string | null } | null;
     // TP-6 — reviewer + watchers, both returned by getById.
@@ -286,6 +294,8 @@ export default function TaskDetailPage() {
     const [savingReviewer, setSavingReviewer] = useState(false);
     // TP-6 — watch/unwatch in-flight flag (UI-disable only).
     const [watchPending, setWatchPending] = useState(false);
+    // The checklist step whose tick is in flight (one at a time per step).
+    const [pendingChecklistItemId, setPendingChecklistItemId] = useState<string | null>(null);
 
     // Link form state.
     const [showLinkForm, setShowLinkForm] = useState(false);
@@ -454,6 +464,32 @@ export default function TaskDetailPage() {
             ),
         optimisticUpdate: (cur, reviewerUserId) =>
             cur ? { ...cur, reviewerUserId } : cur,
+    });
+
+    const checklistMutation = useTenantMutation<
+        TaskDetail,
+        { itemId: string; done: boolean },
+        Response
+    >({
+        key: `/tasks/${taskId}`,
+        mutationFn: async ({ itemId, done }) =>
+            okOrThrow(
+                await fetch(apiUrl(`/tasks/${taskId}/checklist/${encodeURIComponent(itemId)}`), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ done }),
+                }),
+                t('checklist.toggleFailed'),
+            ),
+        optimisticUpdate: (cur, { itemId, done }) =>
+            cur
+                ? {
+                      ...cur,
+                      checklistJson: parseTaskChecklist(cur.checklistJson).map((item) =>
+                          item.id === itemId ? { ...item, done } : item,
+                      ),
+                  }
+                : cur,
     });
 
     // No `optimisticUpdate`: the watchers array is server-shaped (it carries
@@ -638,6 +674,19 @@ export default function TaskDetailPage() {
             setReviewerDraft(undefined);
         } finally {
             setSavingReviewer(false);
+        }
+    };
+
+    // One checklist step at a time. Optimistic, like status: the tick lands
+    // at once and `okOrThrow` rolls it back if the write is refused.
+    const toggleChecklistItem = async (itemId: string, done: boolean) => {
+        setPendingChecklistItemId(itemId);
+        try {
+            await checklistMutation.trigger({ itemId, done });
+        } catch (e) {
+            toast.error(errorMessage(e, t('checklist.toggleFailed')));
+        } finally {
+            setPendingChecklistItemId(null);
         }
     };
 
@@ -1318,6 +1367,14 @@ export default function TaskDetailPage() {
                             </div>
                         )}
                     </div>
+
+                    <TaskChecklistPanel
+                        items={parseTaskChecklist(task.checklistJson)}
+                        guidance={parseTaskTemplateGuidance(task.metadataJson)}
+                        canEdit={!!permissions.canWrite}
+                        onToggle={toggleChecklistItem}
+                        pendingItemId={pendingChecklistItemId}
+                    />
 
                     {/* Audit / Finding Fields from metadataJson */}
                     {(task.type === 'AUDIT_FINDING' || task.type === 'CONTROL_GAP') && (metadata.findingSource || metadata.controlGapType) && (
