@@ -241,7 +241,9 @@ runbook in `docs/rate-limiting.md`.
 `withApiErrorHandling` gets `API_MUTATION_LIMIT` (60/min) on
 POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
-`{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route today because no route supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
+`{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route except `agents/questions`, the only one that supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
+
+`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
 
 **Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
 through `API_READ_LIMIT` (120/min) at the Edge middleware via
