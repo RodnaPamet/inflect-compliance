@@ -65,8 +65,10 @@ CI stays green — is structurally blocked, not left to memory:
   the count of rendered behavioural tests, E2E specs, and registered
   high-risk primitives must each stay at or above a floor that only
   ever rises. It is the inverse of the `as any` downward ratchet:
-  deleting verification trips CI, and a surplus over the floor must
-  be locked in by raising the floor in the same PR. Roadmap-4's <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
+  deleting verification trips CI, and every release locks the surplus
+  in: `scripts/raise-coverage-floors.mjs` runs as semantic-release's
+  prepare step and raises each floor in `tests/guards/coverage-floors.json`
+  to its live count, so a pull request never edits a floor. Roadmap-4's <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
   registry froze a *named* set; this keeps the whole rendered/E2E
   *population* from eroding.
 - **The guardrails themselves** → `verification-integrity.test.ts`
