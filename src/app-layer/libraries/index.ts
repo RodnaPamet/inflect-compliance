@@ -48,6 +48,7 @@ export {
     validateParentReferences,
     scanLibraryDirectory,
     loadAllFromDirectory,
+    computeLibraryTextHash,
     LibraryParseError,
     LibraryValidationError,
     LibraryUrnCollisionError,

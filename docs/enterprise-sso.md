@@ -262,7 +262,7 @@ AUTH_SECRET=<your-auth-secret>       # NextAuth.js secret for JWT signing
 | "No matching account" | User doesn't exist or has no membership | Invite user first, or enable JIT provisioning |
 | "Identity conflict" | User already linked to a different IdP subject | Contact admin to unlink the existing identity |
 | "Cross-tenant login blocked" | Identity link exists for a different tenant | User must log into the correct tenant |
-| "SAML response validation failed" | Certificate mismatch or expired assertion | Verify the X.509 certificate matches the IdP |
+| "SAML response validation failed" | Certificate mismatch, an expired or replayed assertion, or a response that does not answer this sign-in's request | Verify the X.509 certificate matches the IdP, the IdP app's ACS URL is exactly the one the admin page shows (it must equal the assertion's `Recipient`), and the sign-in was started from Inflect and finished within 10 minutes |
 | OIDC sign-in fails, and the `discovery`, `token_exchange` or `id_token_verification` (`keys_unavailable`) log line names `only https`, a `private address`, `cannot resolve` or a redirect | The SSRF guard refused the issuer, the discovery-URL override, or an endpoint the discovery document names | Use the https URL the IdP finally answers at. On a self-hosted install with an internal IdP, add its range to `EGRESS_PRIVATE_CIDR_ALLOWLIST` |
 
 ### Diagnostic Logs

@@ -346,7 +346,7 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop
     'src/components/dev/swr-devtools.tsx': 9, // no-intl, 6 jsx + 3 prop
     'src/components/layout/MobileNavDrawer.tsx': 1, // partial, 1 prop
-    'src/components/layout/org-workspace-switcher.tsx': 6, // no-intl, 5 jsx + 1 prop
+    'src/components/layout/org-workspace-switcher.tsx': 5, // intl wired #3209; 5 jsx remain
     'src/components/layout/tenant-switcher.tsx': 5, // no-intl, 4 jsx + 1 prop
     'src/components/onboarding/Nis2SelfAssessmentStep.tsx': 14, // no-intl, 9 jsx + 5 prop
     'src/components/onboarding/OnboardingWizard.tsx': 3, // partial, 3 jsx

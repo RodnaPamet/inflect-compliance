@@ -7,6 +7,7 @@
 import {
     encodeSamlRelayState,
     decodeSamlRelayState,
+    newSamlRequestBinding,
     type SamlRelayState,
 } from '../../src/lib/security/saml-client';
 import { SamlConfigSchema } from '../../src/app-layer/schemas/sso-config.schemas';
@@ -19,6 +20,7 @@ describe('SAML Client', () => {
             tenantSlug: 'acme-corp',
             providerId: 'provider-123',
             returnTo: '/dashboard',
+            request: newSamlRequestBinding(),
         };
 
         it('round-trips a valid RelayState payload', () => {
@@ -31,6 +33,7 @@ describe('SAML Client', () => {
             const payload: SamlRelayState = {
                 tenantSlug: 'acme',
                 providerId: 'p1',
+                request: newSamlRequestBinding(),
             };
             const encoded = encodeSamlRelayState(payload);
             const decoded = decodeSamlRelayState(encoded);
@@ -120,6 +123,7 @@ describe('SAML Flow Logic', () => {
             tenantSlug: 'acme-corp',
             providerId: 'p1',
             returnTo: '/settings',
+            request: newSamlRequestBinding(),
         });
 
         // RelayState should be a non-empty string (base64url encoded)
@@ -153,6 +157,7 @@ describe('SAML Flow Logic', () => {
         const attackerState = encodeSamlRelayState({
             tenantSlug: 'victim-corp',
             providerId: 'attacker-provider',
+            request: newSamlRequestBinding(),
         });
         const decoded = decodeSamlRelayState(attackerState);
         // The callback will reject because 'attacker-provider' won't exist

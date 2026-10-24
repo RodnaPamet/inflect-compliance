@@ -42,6 +42,7 @@ copyright: >
   prose. Requirement identifiers (MGF-<dimension>.<n>) are Inflect-assigned;
   they are not IMDA clause numbers. Not legal advice.
 version: 1
+text_hash: e85b3fbf627658e945b6cd8328b25dcc31ccf50f4b5386b196f11cab2a8f56ce
 publication_date: "2026-05"
 provider: IMDA Singapore
 packager: inflect
