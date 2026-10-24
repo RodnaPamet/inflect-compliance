@@ -4428,7 +4428,7 @@
       "how1": "Users must already have an account and tenant membership to login via SSO",
       "how2": "SSO links are created automatically on first successful login",
       "how3": "When enforced, only owners and admins with a password can bypass SSO, by signing in with it (break-glass)",
-      "how4": "Email domains help auto-discover SSO on the login page",
+      "how4": "People find SSO on the sign-in page by workspace name; email domains only limit which addresses can use it",
       "deleteTitle": "Delete SSO configuration?",
       "deleteDesc": "Users will need to use local login until SSO is reconfigured. This cannot be undone.",
       "deleteConfirm": "Delete configuration"
@@ -4709,7 +4709,7 @@
       "beforeRequiredTitle": "Before enabling Required MFA:",
       "beforeRequired1": "Ensure you (the admin) have enrolled in MFA first",
       "beforeRequired2": "Users without MFA will be redirected to enrollment on their next login",
-      "beforeRequired3": "Break-glass admin access is preserved via SSO if configured",
+      "beforeRequired3": "Single sign-on does not skip the code, and there are no backup codes: keep more than one admin enrolled",
       "sessionSettingsTitle": "Session Settings",
       "sessionSettingsDesc": "Configure session timeout for your organization. Leave blank for the default.",
       "maxSessionAgeLabel": "Maximum Session Age (minutes)",
