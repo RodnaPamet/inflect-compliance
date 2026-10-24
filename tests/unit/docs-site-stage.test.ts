@@ -11,9 +11,9 @@
 import * as stage from '../../site/scripts/stage-docs.js';
 
 const published = new Map([
-    ['docs/auth.md', 'auth'],
-    ['docs/adr/0001-ui-primitive-stack.md', 'adr/0001-ui-primitive-stack'],
-    ['CONTRIBUTING.md', 'contributing'],
+    ['docs/auth.md', '/inflect-compliance/developers/auth/'],
+    ['docs/adr/0001-ui-primitive-stack.md', '/inflect-compliance/developers/adr/0001-ui-primitive-stack/'],
+    ['CONTRIBUTING.md', '/inflect-compliance/developers/contributing/'],
 ]);
 const onDisk: Record<string, 'file' | 'dir'> = {
     'docs/auth.md': 'file',
@@ -33,6 +33,7 @@ describe('slugFor — the page address', () => {
         ['docs/adr/0001-ui-primitive-stack.md', 'adr/0001-ui-primitive-stack'],
         ['docs/observability/README.md', 'observability/readme'],
         ['CONTRIBUTING.md', 'contributing'],
+        ['docs/user/guide/govern/risks.md', 'guide/govern/risks'],
     ])('%s → %s', (input, slug) => {
         expect(stage.slugFor(input)).toBe(slug);
     });
@@ -52,15 +53,15 @@ describe('splitTitle — the first "# " heading becomes the page title', () => {
 describe('transformMarkdown — links', () => {
     it('sends a link to a published doc to its page, keeping the fragment', () => {
         expect(rewrite('See [auth](auth.md#sessions).').text).toBe(
-            'See [auth](/inflect-compliance/auth/#sessions).',
+            'See [auth](/inflect-compliance/developers/auth/#sessions).',
         );
     });
 
     it('resolves relative paths from the linking doc, across directories', () => {
         expect(rewrite('[ADR](../adr/0001-ui-primitive-stack.md)', 'docs/observability/README.md').text).toBe(
-            '[ADR](/inflect-compliance/adr/0001-ui-primitive-stack/)',
+            '[ADR](/inflect-compliance/developers/adr/0001-ui-primitive-stack/)',
         );
-        expect(rewrite('[guide](../CONTRIBUTING.md)').text).toBe('[guide](/inflect-compliance/contributing/)');
+        expect(rewrite('[guide](../CONTRIBUTING.md)').text).toBe('[guide](/inflect-compliance/developers/contributing/)');
     });
 
     it('keeps the words but drops the link for a doc that is not published', () => {
@@ -91,7 +92,7 @@ describe('transformMarkdown — links', () => {
     });
 
     it('rewrites a link whose label is code', () => {
-        expect(rewrite('[`auth.md`](auth.md)').text).toBe('[`auth.md`](/inflect-compliance/auth/)');
+        expect(rewrite('[`auth.md`](auth.md)').text).toBe('[`auth.md`](/inflect-compliance/developers/auth/)');
     });
 });
 
@@ -103,7 +104,7 @@ describe('transformMarkdown — code is never rewritten', () => {
 
     it('keeps an inline code span verbatim even when it wraps across a line break', () => {
         const md = 'Set `KEY=<old>,\nOTHER=<new>` then [auth](auth.md).';
-        expect(rewrite(md).text).toBe('Set `KEY=<old>,\nOTHER=<new>` then [auth](/inflect-compliance/auth/).');
+        expect(rewrite(md).text).toBe('Set `KEY=<old>,\nOTHER=<new>` then [auth](/inflect-compliance/developers/auth/).');
     });
 
     it('ends a fence only on a closing run of the same character and at least the same length', () => {
@@ -187,47 +188,91 @@ describe('sidebarFrom', () => {
     });
 });
 
-describe('folder entries — docs/guide/ and docs/how-to/ only', () => {
+describe('folder entries — each site lists only its own folders', () => {
     const files = [
-        'docs/guide/govern/risks.md',
-        'docs/guide/govern/assets.md',
-        'docs/guide/govern/controls.md',
-        'docs/guide/govern/notes.txt',
-        'docs/guide/comply/audits.md',
+        'docs/user/guide/govern/risks.md',
+        'docs/user/guide/govern/assets.md',
+        'docs/user/guide/govern/controls.md',
+        'docs/user/guide/govern/notes.txt',
+        'docs/user/guide/comply/audits.md',
     ];
     const listFolder = (folder: string) => files.filter((f) => f.startsWith(folder));
+    const users = stage.SITES.users;
 
     it('adds every doc under the folder in path order, after the ones the section lists by name', () => {
-        const m = { sections: [{ label: 'Govern', docs: ['docs/guide/govern/risks.md', 'docs/guide/govern/'] }] };
-        expect(stage.manifestDocs(m, listFolder)).toEqual([
-            'docs/guide/govern/risks.md',
-            'docs/guide/govern/assets.md',
-            'docs/guide/govern/controls.md',
+        const m = { sections: [{ label: 'Govern', docs: ['docs/user/guide/govern/risks.md', 'docs/user/guide/govern/'] }] };
+        expect(stage.manifestDocs(m, listFolder, users)).toEqual([
+            'docs/user/guide/govern/risks.md',
+            'docs/user/guide/govern/assets.md',
+            'docs/user/guide/govern/controls.md',
         ]);
     });
 
-    it('passes a folder inside a public folder that holds docs', () => {
-        const m = { sections: [{ label: 'Govern', docs: ['docs/guide/govern/'] }] };
-        expect(stage.publicationRefusals(m, () => '# T\n', listFolder)).toEqual([]);
+    it('passes a folder inside the site\'s own folder that holds docs', () => {
+        const m = { sections: [{ label: 'Govern', docs: ['docs/user/guide/govern/'] }] };
+        expect(stage.publicationRefusals(m, () => '# T\n', listFolder, users)).toEqual([]);
     });
 
     it('refuses a folder anywhere else, so the rest of docs/ is still published only by name', () => {
         const m = { sections: [{ label: 'A', docs: ['docs/', 'docs/observability/'] }] };
-        expect(stage.publicationRefusals(m, () => '# T\n', () => ['docs/x.md', 'docs/observability/y.md'])).toEqual([
-            'docs/: only docs/guide/ and docs/how-to/, or a folder inside them, may be listed as a folder — anywhere else a doc is published by name',
-            'docs/observability/: only docs/guide/ and docs/how-to/, or a folder inside them, may be listed as a folder — anywhere else a doc is published by name',
+        expect(
+            stage.publicationRefusals(m, () => '# T\n', () => ['docs/x.md', 'docs/observability/y.md'], stage.SITES.developers),
+        ).toEqual([
+            'docs/: the developers site may list only docs/reference/, or a folder inside it, as a folder — anywhere else a doc is published by name',
+            'docs/observability/: the developers site may list only docs/reference/, or a folder inside it, as a folder — anywhere else a doc is published by name',
         ]);
     });
 
     it('refuses a folder that holds no docs, and a never-publish doc a folder would pick up', () => {
-        const empty = { sections: [{ label: 'A', docs: ['docs/how-to/'] }] };
-        expect(stage.publicationRefusals(empty, () => '# T\n', () => [])).toEqual(['docs/how-to/: lists no docs']);
-        const m = { sections: [{ label: 'A', docs: ['docs/how-to/'] }] };
+        const empty = { sections: [{ label: 'A', docs: ['docs/user/how-to/'] }] };
+        expect(stage.publicationRefusals(empty, () => '# T\n', () => [], users)).toEqual(['docs/user/how-to/: lists no docs']);
+        const m = { sections: [{ label: 'A', docs: ['docs/user/how-to/'] }] };
         expect(
-            stage.publicationRefusals(m, (p: string) => (p === 'docs/how-to/x.md' ? '# X\n\nOn hazel-design-419410.\n' : null), () => [
-                'docs/how-to/x.md',
-            ]),
-        ).toEqual(['docs/how-to/x.md:3: carries the production GCP project id (gcp-project-id)']);
+            stage.publicationRefusals(
+                m,
+                (p: string) => (p === 'docs/user/how-to/x.md' ? '# X\n\nOn hazel-design-419410.\n' : null),
+                () => ['docs/user/how-to/x.md'],
+                users,
+            ),
+        ).toEqual(['docs/user/how-to/x.md:3: carries the production GCP project id (gcp-project-id)']);
+    });
+});
+
+describe('the two sites keep to their own audiences', () => {
+    it('refuses a developer doc on the user site, and a user doc on the developer site', () => {
+        expect(stage.publicationRefusals({ sections: [{ label: 'A', docs: ['docs/auth.md'] }] }, () => '# T\n', undefined, stage.SITES.users)).toEqual([
+            'docs/auth.md: the users site publishes only docs/user/',
+        ]);
+        expect(
+            stage.publicationRefusals({ sections: [{ label: 'A', docs: ['docs/user/guide/x.md'] }] }, () => '# T\n', undefined, stage.SITES.developers),
+        ).toEqual(['docs/user/guide/x.md: docs/user/ is published on the users site, not the developers site']);
+    });
+
+    it('gives each doc the address of the site that carries it, so a link crosses between them', () => {
+        const sites = [
+            { site: stage.SITES.users, manifest: { sections: [{ label: 'Govern', docs: ['docs/user/guide/govern/risks.md'] }] } },
+            { site: stage.SITES.developers, manifest: { sections: [{ label: 'Security', docs: ['docs/auth.md'] }] } },
+        ];
+        const { published, refusals } = stage.publishedAddresses(sites, () => []);
+        expect(refusals).toEqual([]);
+        expect([...published.entries()]).toEqual([
+            ['docs/user/guide/govern/risks.md', '/inflect-compliance/guide/govern/risks/'],
+            ['docs/auth.md', '/inflect-compliance/developers/auth/'],
+        ]);
+        const r = stage.transformMarkdown('See [the guide](user/guide/govern/risks.md).', 'docs/auth.md', { published, kindOf: () => 'file' });
+        expect(r.text).toBe('See [the guide](/inflect-compliance/guide/govern/risks/).');
+    });
+
+    it('refuses one doc listed by both sites — a doc has one home', () => {
+        const both = { sections: [{ label: 'A', docs: ['docs/x.md'] }] };
+        const { refusals } = stage.publishedAddresses(
+            [
+                { site: stage.SITES.users, manifest: both },
+                { site: stage.SITES.developers, manifest: both },
+            ],
+            () => [],
+        );
+        expect(refusals).toEqual(['docs/x.md: listed by more than one site']);
     });
 });
 
@@ -235,15 +280,15 @@ describe('sidebarFrom — groups', () => {
     it('nests each section in its group, groups in the order their first section appears', () => {
         const m = {
             sections: [
-                { group: 'User guide', label: '{{ui:nav.govern}}', docs: ['docs/guide/govern/risks.md'] },
-                { group: 'Developers', label: 'Security', docs: ['docs/auth.md'] },
-                { group: 'User guide', label: 'Comply', docs: ['docs/guide/comply/audits.md'] },
+                { group: 'Page guides', label: '{{ui:nav.govern}}', docs: ['docs/user/guide/govern/risks.md'] },
+                { group: 'How-tos', label: 'Getting started', docs: ['docs/user/how-to/invite-a-colleague.md'] },
+                { group: 'Page guides', label: 'Comply', docs: ['docs/user/guide/comply/audits.md'] },
             ],
         };
         const label = (t: string) => t.replace('{{ui:nav.govern}}', 'Govern');
-        expect(stage.sidebarFrom(m, undefined, label)).toEqual([
+        expect(stage.sidebarFrom(m, undefined, label, stage.SITES.users)).toEqual([
             {
-                label: 'User guide',
+                label: 'Page guides',
                 collapsed: false,
                 items: [
                     { label: 'Govern', collapsed: true, items: [{ slug: 'guide/govern/risks' }] },
@@ -251,9 +296,9 @@ describe('sidebarFrom — groups', () => {
                 ],
             },
             {
-                label: 'Developers',
+                label: 'How-tos',
                 collapsed: false,
-                items: [{ label: 'Security', collapsed: true, items: [{ slug: 'auth' }] }],
+                items: [{ label: 'Getting started', collapsed: true, items: [{ slug: 'how-to/invite-a-colleague' }] }],
             },
         ]);
     });
@@ -265,7 +310,7 @@ describe('label tokens — {{ui:<key>}} prints the app’s own label', () => {
         risks: { pipe: 'A | B', star: '*Bold*', angle: '<Tag>', count: '{count} risks', bulk: { delete: 'Delete' } },
     };
     const withLabels = { ...ctx, messages };
-    const resolve = (md: string) => stage.transformMarkdown(md, 'docs/guide/govern/risks.md', withLabels);
+    const resolve = (md: string) => stage.transformMarkdown(md, 'docs/user/guide/govern/risks.md', withLabels);
 
     it('resolves a nested key in prose, in a table and in a list', () => {
         expect(resolve('Open **{{ui:nav.risks}}**.\n\n| {{ui:risks.bulk.delete}} | x |\n\n- {{ui:nav.govern}}').text).toBe(
@@ -316,7 +361,7 @@ describe('page guides — frontmatter and the route they document', () => {
         'src/app/(auth)/login/page.tsx',
     ]);
     const guideCtx = { ...ctx, messages: { risks: { title: 'Risk Register' } }, routes };
-    const guide = (md: string) => stage.stagePage(md, 'docs/guide/govern/risks.md', guideCtx);
+    const guide = (md: string) => stage.stagePage(md, 'docs/user/guide/govern/risks.md', guideCtx);
 
     it('reads every page.tsx as a URL, dropping route groups', () => {
         expect([...routes].sort()).toEqual(['/', '/login', '/t/[tenantSlug]/risks']);
@@ -327,12 +372,10 @@ describe('page guides — frontmatter and the route they document', () => {
         expect(stage.displayRoute('/org/[orgSlug]/members')).toBe('/org/<organisation>/members');
     });
 
-    it('stages a guide whose route matches a page, with its address and a resolved title', () => {
+    it('stages a guide whose route matches a page, with its title resolved and its frontmatter consumed', () => {
         const r = guide('---\nroute: /t/[tenantSlug]/risks\n---\n\n# {{ui:risks.title}}\n\nBody.\n');
         expect(r.problems).toEqual([]);
-        expect(r.page).toBe(
-            '---\ntitle: "Risk Register"\n---\n\n**Page address:** `/t/<workspace>/risks`\n\nBody.\n',
-        );
+        expect(r.page).toBe('---\ntitle: "Risk Register"\n---\n\nBody.\n');
     });
 
     it('refuses a guide with no route, and one whose route matches no page', () => {
@@ -352,7 +395,52 @@ describe('page guides — frontmatter and the route they document', () => {
         });
     });
 
-    it('needs no route outside docs/guide/', () => {
-        expect(stage.stagePage('# T\n', 'docs/how-to/x.md', guideCtx).problems).toEqual([]);
+    it('needs no route outside docs/user/guide/', () => {
+        expect(stage.stagePage('# T\n', 'docs/user/how-to/x.md', guideCtx).problems).toEqual([]);
+    });
+});
+
+describe('generated fragments — {{generated:<name>}}', () => {
+    const fragments: Record<string, string> = { 'roles-matrix': '| a | b |\n| --- | --- |\n| 1 | 2 |\n' };
+    const generated = (name: string) => fragments[name] ?? null;
+
+    it('replaces a line holding only the directive with the fragment', () => {
+        const problems: string[] = [];
+        expect(stage.expandGenerated('Intro.\n\n{{generated:roles-matrix}}\n\nAfter.', generated, problems)).toBe(
+            'Intro.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nAfter.',
+        );
+        expect(problems).toEqual([]);
+    });
+
+    it('refuses a directive whose fragment was not generated, rather than publishing the page without it', () => {
+        const problems: string[] = [];
+        stage.expandGenerated('{{generated:page-actions}}', generated, problems);
+        expect(problems).toEqual([
+            '{{generated:page-actions}} has no fragment: run `npx tsx scripts/docs-reference/generate.ts` before staging',
+        ]);
+    });
+
+    it('leaves the directive alone in fenced code and inside a sentence, so a doc can show it', () => {
+        const md = '```md\n{{generated:roles-matrix}}\n```\nWrite `{{generated:roles-matrix}}` on its own line.';
+        const problems: string[] = [];
+        expect(stage.expandGenerated(md, generated, problems)).toBe(md);
+        expect(problems).toEqual([]);
+    });
+
+    it('stages a page through the directive, rewriting the fragment\'s links like any other', () => {
+        const page = stage.stagePage('# T\n\n{{generated:x}}\n', 'docs/reference/x.md', {
+            ...ctx,
+            generated: () => 'See [auth](/docs/auth.md) and [perms](/src/lib/permissions.ts#L3).\n',
+        });
+        expect(page.problems).toEqual([]);
+        expect(page.page).toBe(
+            '---\ntitle: "T"\n---\n\nSee [auth](/inflect-compliance/developers/auth/) and ' +
+                '[perms](https://github.com/RodnaPamet/inflect-compliance/blob/main/src/lib/permissions.ts#L3).\n',
+        );
+    });
+
+    it('encodes a route group\'s parentheses in a github.com link so the link does not end early', () => {
+        const r = stage.resolveLink('/src/app/t/%28app%29/page.tsx', 'docs/reference/x.md', { published: new Map(), kindOf: () => 'file' }, false);
+        expect(r).toEqual({ kind: 'github', href: 'https://github.com/RodnaPamet/inflect-compliance/blob/main/src/app/t/%28app%29/page.tsx' });
     });
 });

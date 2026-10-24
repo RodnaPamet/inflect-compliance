@@ -116,12 +116,15 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
         // The path that reaches production. Asserted separately and by NAME,
         // because its absence is what made the first version of this guard
         // green while the gate was wrong.
-        // 15, and that is the measured figure rather than a margin below it.
+        // 17, and that is the measured figure rather than a margin below it.
         // It was 18 with a floor of 17; deleting the ISO 9001 / 39001 / 28000
-        // fixtures on retirement took three away. Set to the population itself
-        // so a fixture silently dropping out of the production seeder reddens
-        // here instead of being absorbed by slack.
-        expect(applied.length).toBeGreaterThanOrEqual(15);
+        // fixtures on retirement took three away, leaving a floor of 15. COSO
+        // ICF 2013 then added one without moving the floor, which left a margin
+        // of one — exactly the slack this line exists to refuse — and AIUC-1
+        // added another. Set to the population itself so a fixture silently
+        // dropping out of the production seeder reddens here instead of being
+        // absorbed by slack.
+        expect(applied.length).toBeGreaterThanOrEqual(17);
         expect(applied.map((a) => a.key)).toEqual(
             expect.arrayContaining(['ISO27701', 'ISO42001', 'ISO27001', 'SOC2']),
         );
@@ -153,7 +156,10 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
         // The pinned list IS the decision record. A new framework lands here as
         // a failure naming itself, and whoever adds it says yes or no.
         //
-        // 35 keys, not the 22 this guard first pinned. The 12 it missed were
+        // 29 keys with AIUC-1 (this line said 35 before ISO 9001 / 39001 /
+        // 28000 were retired and was not updated when they went). Whatever the
+        // count, it is not the 22 this guard first pinned: the 12 that version
+        // missed were
         // every key from the CatalogFile path — the one production runs — which
         // is why it stayed green while `ISO27701` and `ISO42001` were losing
         // their SoA. The duplicate-looking pairs (ISO27701 / ISO27701-2019,
@@ -163,6 +169,16 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
         // got (usecases/framework/coverage.ts:18-22).
         expect(allKeys).toEqual([
             'AISVS-1.0',
+            // AIUC-1 gets NO product Statement of Applicability, and this one
+            // is a closer call than COSO, so the reasoning is written down.
+            // AIUC-1 does scope every audit with an auditor-signed statement of
+            // which requirements and controls apply. But the artifact this gate
+            // turns on is Annex-A-shaped by construction — "All N Annex A
+            // controls" in the PDFs and an `AnnexAKey` CSV column — and AIUC-1
+            // has no annex. Saying yes would print a document about an annex
+            // the standard does not have. Its scoping is recorded the way every
+            // non-annex framework's is: per-requirement applicability.
+            'AIUC-1',
             'CIS-CONTROLS-V8',
             'CIS-V8',
             // COSO gets NO Statement of Applicability, and the reason is the

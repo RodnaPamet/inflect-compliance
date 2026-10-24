@@ -108,13 +108,27 @@ const MIN_CHUNK_PRESENCE = 0.95;
  * MEASURED, not aspirational. The previous values (150-400) were the file's
  * own admitted "starting targets, not measured ceilings" and had never once
  * been evaluated — see the dead-source note above. The numbers below are the
- * worst route in each bucket from a real `next build --webpack` on
- * 46fa954b7, plus ~5% headroom (enough to absorb a chunk-hash or zlib-version
- * wobble, tight enough that a genuine regression trips).
+ * worst route in each bucket from a real `next build --webpack`, plus ~4 KB.
+ *
+ * THAT IS ~0.6%, NOT "~5%". This header said ~5% from 46fa954b7 until
+ * 2026-10-24, and the blocks below spent two separate raises complaining that
+ * the real figure had become ~0.3% while this sentence still promised ~5% —
+ * without either of them correcting the sentence. Measured across the five
+ * buckets today it is 0.54% to 0.71%, which is what "measured + ~4 KB" means
+ * on routes of 580-680 KB. The tightness is deliberate; the ~5% was not a
+ * decision, it was a number nobody re-derived.
+ *
+ * WHERE THE LIVE FIGURE LIVES. Not in a comment. The suite derives the worst
+ * route and remaining margin per bucket and prints them on the PASSING path,
+ * so a reader of a green Build job sees how much room is left. The
+ * hand-maintained `measured max` comments that used to sit beside each budget
+ * are gone: they rotted four times (#4024), every time in the direction that
+ * hid the margin, and nothing could fail while they were wrong.
  *
  * Tightening these towards the measured maxima, or shrinking the payload so
  * they can come down, is a separate and welcome diff. Raising one requires
- * saying in the PR what grew and why.
+ * saying in the PR what grew and why — and the headroom line in the Build log
+ * is the evidence for that claim.
  */
 const BUDGETS_KB: Record<string, number> = {
     /*
@@ -132,7 +146,7 @@ const BUDGETS_KB: Record<string, number> = {
         So the framework cost 2-3 KB a route and three budgets were already
         spent: main sat 0.3 to 2.1 KB under them. The headroom this file's
         header describes as "~5%" had become ~0.3% without anything recording
-        that, because the `measured max` comments below had gone stale — the
+        that, because the `measured max` comments then below had gone stale — the
         dashboard one read 574.4 KB against a main that measured 603.7. A
         comment that is supposed to carry the measurement is the only way a
         reader can see how much room is left, so they are corrected here too.
@@ -171,14 +185,13 @@ const BUDGETS_KB: Record<string, number> = {
 
         The `measured max` comments were stale AGAIN, in the direction that
         hides headroom: `controls` read 613.1 KB for a route that measured
-        651.0 in the table above it. All four are corrected here. If they rot a
-        third time the comment is not the right home for the number.
+        651.0 in the table above it. All four were corrected in that PR. If they
+        rot a third time the comment is not the right home for the number.
+        They did rot a third time, and it isn't: #4041 deleted them and derives
+        the headroom at run time instead.
     */
-    // measured max 611.6 KB — /t/[tenantSlug]/(app)/controls/dashboard/page (8 routes)
     'dashboard': 616,
-    // measured max 649.4 KB — /t/[tenantSlug]/(app)/risks/[riskId]/page (16 routes)
     'risks': 653,
-    // measured max 658.4 KB — /t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page (7 routes)
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
@@ -192,17 +205,17 @@ const BUDGETS_KB: Record<string, number> = {
     // route was one of the 64, 647.4 → 651.0 KB.
     'controls': 662,
     // Catch-all for any other tenant page.
-    // measured max 677.6 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
     'tenant-default': 682,
     // Auth / public / org pages.
-    // measured max 576.4 KB — /org/[orgSlug]/(app)/tenants/new/page (23 routes)
     //
     // RAISED 575 -> 580 on 2026-10-23, and this entry is the cautionary one.
     // The block above corrected four `measured max` comments and left this
     // fifth, which was the most rotted of the lot: it read 545.3 KB for a route
     // that measured 574.1 on main the same day — a 29 KB drift, so the stated
-    // headroom was 0.9 KB, about 0.16%, where the file header still describes
-    // ~5%. Nothing failed while that was true, which is precisely the failure
+    // headroom was 0.9 KB, about 0.16%, where the file header still described
+    // ~5% AT THE TIME (#4041 has since removed these comments and corrected
+    // that header to the measured figure, so read this block as history).
+    // Nothing failed while that was true, which is precisely the failure
     // mode the block above describes; it simply had not reached this bucket yet.
     //
     // The remaining production-group bumps (#4023, 37 packages — tiptap,
@@ -408,6 +421,46 @@ describe('bundle-size budget', () => {
                 ...measured
                     .sort((a, b) => b.sizeKb - a.sizeKb || (a.pageKey < b.pageKey ? -1 : 1))
                     .map((m) => `  ${m.sizeKb.toFixed(1).padStart(7)} KB / ${m.budget} KB  ${m.pageKey}`),
+            ].join('\n'),
+        );
+
+        // HEADROOM, DERIVED — the thing the `measured max` comments used to
+        // carry by hand and got wrong four times (#4024). Each drift hid how
+        // little room was left: the `controls` comment read 613.1 KB for a
+        // route measuring 651.0, and `root` read 545.3 for one measuring 574.1
+        // against a 575 budget — 0.9 KB of real margin, with nothing anywhere
+        // saying so, one bump before it failed.
+        //
+        // It is printed on the PASSING path deliberately. A green run is the
+        // only moment this number is actionable and the only moment nobody
+        // looks, which is exactly how a comment beside the budget goes stale
+        // without anything failing.
+        //
+        // NOT a floor. The obvious next step is to fail below some margin, and
+        // measured, that is wrong: this file's own "measured + ~4 KB"
+        // convention IS 0.54-0.71% across the five buckets, so a 1% floor
+        // would fail all five the day it landed.
+        const worstPerBucket = new Map<string, (typeof measured)[number]>();
+        for (const m of measured) {
+            const bucket = budgetKeyFor(m.pageKey);
+            const held = worstPerBucket.get(bucket);
+            if (!held || m.sizeKb > held.sizeKb) worstPerBucket.set(bucket, m);
+        }
+        console.log(
+            [
+                '[bundle-size-budget] headroom by bucket (derived here, not from a comment):',
+                ...[...worstPerBucket.entries()]
+                    .sort((a, b) => a[0] < b[0] ? -1 : 1)
+                    .map(([bucket, m]) => {
+                        const left = m.budget - m.sizeKb;
+                        const pct = (100 * left) / m.budget;
+                        return (
+                            `  ${bucket.padEnd(15)} ${m.sizeKb.toFixed(1).padStart(7)} KB` +
+                            ` / ${String(m.budget).padStart(4)} KB` +
+                            `  ${left.toFixed(1).padStart(6)} KB left (${pct.toFixed(2)}%)` +
+                            `  ${m.pageKey}`
+                        );
+                    }),
             ].join('\n'),
         );
         expect(violations).toEqual([]);

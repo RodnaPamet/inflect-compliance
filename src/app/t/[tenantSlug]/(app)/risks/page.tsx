@@ -5,6 +5,7 @@ import type { RiskFilters } from '@/app-layer/repositories/RiskRepository';
 import { getRiskMatrixConfig } from '@/app-layer/usecases/risk-matrix-config';
 import { cachedSsrPayload } from '@/lib/cache/ssr-cache';
 import { RisksClient } from './RisksClient';
+import { riskBulkPermissions } from './_shared/bulk-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +108,7 @@ export default async function RisksPage({
             matrixConfig={matrixConfig}
             tenantSlug={tenantSlug}
             permissions={ctx.permissions}
+            bulkPermissions={riskBulkPermissions(ctx)}
             translations={{
                 title: t('title'),
                 listDescription: t('listDescription'),

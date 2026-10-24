@@ -1,16 +1,8 @@
 {
-    "$comment": "ALLOWLIST of the docs published at https://rodnapamet.github.io/inflect-compliance/. A doc not listed here is not published, so a new doc stays off the public site until somebody adds it. site/scripts/stage-docs.js refuses the build when a listed doc is on its NEVER_PUBLISH list or carries a production coordinate (FORBIDDEN_CONTENT), and tests/guardrails/docs-site-publication.test.ts holds the same rules at PR time. Order here is sidebar order; a section names the top-level group it sits in. docs/guide/ and docs/how-to/ may be listed as folders, which publish every doc under them; no other folder can be. See docs/docs-site.md.",
+    "$comment": "ALLOWLIST of the docs published on the DEVELOPER site, https://rodnapamet.github.io/inflect-compliance/developers/. A doc not listed here is not published, so a new doc stays off the site until somebody adds it. site/scripts/stage-docs.js refuses the build when a listed doc is on its NEVER_PUBLISH list or carries a production coordinate (FORBIDDEN_CONTENT), and tests/guardrails/docs-site-publication.test.ts holds the same rules at PR time. Order here is sidebar order, and each section is a sidebar group. Only docs/reference/ may be listed as a folder here, and nothing under docs/user/: that is the user site's (site/users/manifest.json). See docs/docs-site.md.",
     "sections": [
         {
-            "group": "User guide",
-            "label": "{{ui:nav.govern}}",
-            "docs": [
-                "docs/guide/govern/"
-            ]
-        },
-        {
             "label": "Start here",
-            "group": "Developers",
             "docs": [
                 "CONTRIBUTING.md",
                 "docs/docs-site.md",
@@ -20,8 +12,17 @@
             ]
         },
         {
+            "label": "Generated reference",
+            "docs": [
+                "docs/reference/roles-and-permissions.md",
+                "docs/reference/page-inventory.md",
+                "docs/reference/page-actions.md",
+                "docs/reference/refusal-codes.md",
+                "docs/reference/"
+            ]
+        },
+        {
             "label": "Architecture",
-            "group": "Developers",
             "docs": [
                 "docs/rls-tenant-isolation.md",
                 "docs/database-routing.md",
@@ -47,7 +48,6 @@
         },
         {
             "label": "Security",
-            "group": "Developers",
             "docs": [
                 "docs/epic-a-security.md",
                 "docs/epic-b-encryption.md",
@@ -63,7 +63,6 @@
         },
         {
             "label": "Identity and access",
-            "group": "Developers",
             "docs": [
                 "docs/auth.md",
                 "docs/epic-1-access-control.md",
@@ -78,7 +77,6 @@
         },
         {
             "label": "Agentic AI governance",
-            "group": "Developers",
             "docs": [
                 "docs/agent-skill-standard.md",
                 "docs/agent-harness-contract.md",
@@ -94,7 +92,6 @@
         },
         {
             "label": "Compliance and data protection",
-            "group": "Developers",
             "docs": [
                 "docs/data-residency.md",
                 "docs/data-retention.md",
@@ -111,7 +108,6 @@
         },
         {
             "label": "Integrations and API",
-            "group": "Developers",
             "docs": [
                 "docs/api-consumer-guide.md",
                 "docs/integration-framework.md",
@@ -124,7 +120,6 @@
         },
         {
             "label": "Observability",
-            "group": "Developers",
             "docs": [
                 "docs/observability.md",
                 "docs/observability-reliability.md",
@@ -139,7 +134,6 @@
         },
         {
             "label": "UI platform",
-            "group": "Developers",
             "docs": [
                 "docs/design-system.md",
                 "docs/primitives-api-reference.md",
@@ -179,7 +173,6 @@
         },
         {
             "label": "Engineering practice",
-            "group": "Developers",
             "docs": [
                 "docs/testing.md",
                 "docs/test-portfolio.md",
@@ -195,7 +188,6 @@
         },
         {
             "label": "Decision records",
-            "group": "Developers",
             "docs": [
                 "docs/adr/0001-ui-primitive-stack.md",
                 "docs/adr/0002-agent-behaviour-window-retention.md",
