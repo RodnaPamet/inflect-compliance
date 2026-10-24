@@ -764,3 +764,85 @@ describe('the in-band shard is bounded by the V8 ceiling (#3320)', () => {
         expect(Number(cap[1])).toBeGreaterThan(0);
     });
 });
+
+/**
+ * QUEUE FAILURE ATTRIBUTION CAN ONLY COMMENT (#3307).
+ *
+ * `queue-failure-attribution.yml` exists to tell a PR owner whether a
+ * merge-queue candidate's red belongs to their diff. Its whole safety argument
+ * is that it has no other power: it cannot cancel, eject, dequeue, re-run or
+ * merge, so the worst outcome of a misread is a misleading sentence — strictly
+ * better than today's misleading red check with no sentence.
+ *
+ * A docblock cannot hold that. These assertions do, because the argument is
+ * only true while the script calls nothing that mutates queue or run state,
+ * and the obvious way to "improve" this workflow later is to have it act on
+ * what it found.
+ */
+describe('queue failure attribution only comments (#3307)', () => {
+    const WF = '.github/workflows/queue-failure-attribution.yml';
+    const wf = () => read(WF);
+
+    it('triggers on workflow_run ONLY — never pull_request', () => {
+        // `on:` parses as the BOOLEAN true under YAML 1.1 and as the string
+        // 'on' under the 1.2 core schema, so read both — the same dual access
+        // merge-queue-trigger-coverage uses, and for the same reason: one of
+        // them is silently undefined and `Object.keys(undefined)` throws.
+        const doc = yaml.load(wf()) as Record<string, unknown>;
+        const on = (doc[true as unknown as string] ?? doc.on) as Record<string, unknown>;
+        expect(Object.keys(on)).toEqual(['workflow_run']);
+        // A `pull_request` trigger would put it inside
+        // merge-queue-trigger-coverage's invariant ("every pull_request
+        // workflow declares merge_group:"), and this one must not answer
+        // merge_group — it reacts to that event's run rather than joining it.
+        expect(Object.keys(on)).not.toContain('pull_request');
+    });
+
+    it('holds exactly the permissions it needs, and no write beyond comments', () => {
+        const doc = yaml.load(wf()) as { permissions?: Record<string, string> };
+        expect(doc.permissions).toEqual({
+            contents: 'read',
+            actions: 'read',
+            'pull-requests': 'write',
+        });
+    });
+
+    it('acts only on a merge_group candidate that did not succeed', () => {
+        const body = wf();
+        // Without both halves it would comment on green candidates, or on
+        // ordinary pull_request runs that have nothing to do with the queue.
+        expect(body).toContain("github.event.workflow_run.event == 'merge_group'");
+        expect(body).toContain("github.event.workflow_run.conclusion != 'success'");
+    });
+
+    it('calls NO api that mutates queue, run or merge state', () => {
+        const body = wf();
+        // The safety argument, pinned. Each of these is a way a later edit
+        // could give this workflow teeth it is explicitly not supposed to have.
+        for (const forbidden of [
+            'cancelWorkflowRun',
+            'reRunWorkflow',
+            'createWorkflowDispatch',
+            'dequeuePullRequest',
+            'removeFromMergeQueue',
+            'rest.pulls.merge',
+            'rest.pulls.update',
+            'deleteComment',
+        ]) {
+            expect(body).not.toContain(forbidden);
+        }
+        // And it does write a comment, so the test above is not passing
+        // merely because the script does nothing at all.
+        expect(body).toContain('issues.createComment');
+    });
+
+    it('reports an unreadable log as unreadable rather than as innocence', () => {
+        // The failure mode this guards is `absence-reads-as-success`: a failed
+        // job inside a still-running run serves no logs, and a log can expire.
+        // Saying "no failing file matched your diff" in that case would imply
+        // the diff is clear when nothing was compared.
+        const body = wf();
+        expect(body).toContain('logsReadable');
+        expect(body).toContain('not evidence either way');
+    });
+});
