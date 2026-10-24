@@ -1,0 +1,218 @@
+# ───────────────────────────────────────────────────────────────
+#  Queue Failure Attribution (#3307)
+#
+#  When a merge-queue candidate fails, the failure is reported as the PULL
+#  REQUEST's red `Test`. The owner reading their checks cannot tell "my diff
+#  broke this" from "a queue-mate did", "the infrastructure did", or "the
+#  candidate was cancelled" — and the information that would tell them lives in
+#  three places, none of which is the PR:
+#
+#    Did my PR fail?      the PR's checks            — says `Test` failed
+#    Was it MY diff?      nowhere on the PR
+#    Why was I dequeued?  the ISSUE TIMELINE         — removed_from_merge_queue
+#    Which job failed?    the CANDIDATE RUN's jobs   — not the PR's
+#
+#  The worked example on #3307: a FOUR-FILE DOCUMENTATION diff (#3246) was
+#  ejected twice, the second time reported as
+#  `FAIL tests/integration/bowtie-api.test.ts` — a transaction-start timeout.
+#  A docs diff cannot reach a bow-tie projection. Two sessions spent part of a
+#  day reconstructing from merge-group run conclusions what one line could have
+#  said. The cost is never the ejection; it is that the honest next action
+#  ("go and read the bow-tie code") leads somewhere with nothing wrong in it.
+#
+#  WHAT THIS DOES, AND THE THREE THINGS #3307 ASKS FOR
+#  ───────────────────────────────────────────────────
+#   1. SAYS WHY THE PR LEFT THE QUEUE — one comment naming the candidate run
+#      and its conclusion, on the PR the candidate was built for.
+#   2. DISTINGUISHES YOUR DIFF FROM THE CANDIDATE — reads `FAIL <path>` lines
+#      out of the failed jobs' logs and compares them against the PR's changed
+#      files. Disjoint is the discriminator worth having: it means the failing
+#      suite is one this diff does not touch.
+#   3. DOES NOT REPORT A CANCELLED CANDIDATE AS A TEST FAILURE — `ci.yml`'s own
+#      docblock records that a cancelled merge-queue run reports FAILURE, and
+#      the Queue Candidate Sweep cancels candidates whose entry is already
+#      gone. A cancellation is not a failing test and is labelled as such here.
+#
+#  WHY IT IS SAFE TO BE WRONG
+#  ──────────────────────────
+#  It only ever COMMENTS. It cannot cancel, eject, dequeue, re-run or merge
+#  anything, so the worst outcome of a misread is a misleading sentence on a
+#  pull request — which is strictly better than today's misleading RED CHECK
+#  with no sentence at all. That is deliberately the opposite risk profile from
+#  queue-candidate-sweep.yml, which CAN eject a healthy PR and is therefore
+#  written to keep anything it cannot prove is dead.
+#
+#  It also never ASSERTS an attribution it cannot support: where the logs cannot
+#  be read, or no `FAIL` line is found, it says the comparison was not possible
+#  rather than implying the diff is innocent. An absence of evidence is reported
+#  as an absence ([[absence-reads-as-success]] is the failure mode).
+#
+#  WHY `workflow_run` AND NOT `pull_request`
+#  ─────────────────────────────────────────
+#  The candidate run is what holds the evidence, and it exists only after CI
+#  has finished for a `merge_group` event. A `pull_request` trigger would also
+#  put this workflow in scope for merge-queue-trigger-coverage's invariant
+#  ("every pull_request workflow declares merge_group:"), and this one must not
+#  answer merge_group — it reacts to that event's run rather than taking part.
+# ───────────────────────────────────────────────────────────────
+name: Queue Failure Attribution
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  # Per candidate run. Two attributions for one run would double-comment; two
+  # for DIFFERENT runs must both proceed, because a batch can eject more than
+  # one entry and each deserves its own sentence.
+  group: queue-attribution-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  attribute:
+    name: Attribute the queue failure
+    runs-on: ubuntu-latest
+    # Only merge-queue candidates, and only ones that did not succeed. A green
+    # candidate needs no explanation.
+    if: >-
+      github.event.workflow_run.event == 'merge_group' &&
+      github.event.workflow_run.conclusion != 'success'
+    steps:
+      - name: Comment the attribution on the pull request
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const { owner, repo } = context.repo;
+
+            // ── WHICH PR WAS THIS CANDIDATE BUILT FOR ──────────────────────
+            // The merge-queue ref is `gh-readonly-queue/<base>/pr-<n>-<sha>`.
+            // Parsed rather than assumed: an unrecognised ref means we do not
+            // know whose PR this is, and guessing would put a sentence on
+            // somebody else's.
+            const ref = run.head_branch ?? '';
+            const m = /^gh-readonly-queue\/(?<base>.+)\/pr-(?<pr>\d+)-(?<sha>[0-9a-f]+)$/.exec(ref);
+            if (!m) {
+              core.info(`ref "${ref}" is not a merge-queue candidate ref — nothing to attribute`);
+              return;
+            }
+            const prNumber = Number(m.groups.pr);
+            const baseBranch = m.groups.base;
+
+            // ── ITEM 3: A CANCELLATION IS NOT A TEST FAILURE ───────────────
+            const cancelled = run.conclusion === 'cancelled';
+
+            // ── WHICH JOBS FAILED ──────────────────────────────────────────
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              { owner, repo, run_id: run.id, per_page: 100 },
+            );
+            const failed = jobs.filter((j) => j.conclusion === 'failure');
+            const stillRunning = jobs.filter((j) => j.status !== 'completed');
+
+            // ── ITEM 2: WAS THE FAILING SUITE IN THIS PR'S DIFF ────────────
+            // Read `FAIL <path>` out of the failed jobs' logs. Bounded: only
+            // failed jobs, and the log is scanned for that one line shape.
+            const failingFiles = new Set();
+            let logsReadable = true;
+            for (const job of failed) {
+              try {
+                const res = await github.request(
+                  'GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs',
+                  { owner, repo, job_id: job.id },
+                );
+                const text = typeof res.data === 'string' ? res.data : String(res.data ?? '');
+                for (const line of text.split('\n')) {
+                  const f = /\bFAIL\s+(?:node|jsdom|flue)?\s*(tests\/[^\s]+)/.exec(line);
+                  if (f) failingFiles.add(f[1]);
+                }
+              } catch (e) {
+                // A failed job inside a still-running RUN serves no logs, and a
+                // log can expire. Either way: say so, never infer innocence.
+                logsReadable = false;
+                core.info(`could not read logs for job ${job.id}: ${e.message}`);
+              }
+            }
+
+            let changed = [];
+            try {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number: prNumber, per_page: 100,
+              });
+              changed = files.map((f) => f.filename);
+            } catch (e) {
+              core.info(`could not list PR files: ${e.message}`);
+            }
+            const changedSet = new Set(changed);
+            const failingArr = [...failingFiles];
+            const touched = failingArr.filter((f) => changedSet.has(f));
+            const untouched = failingArr.filter((f) => !changedSet.has(f));
+
+            // ── THE SENTENCE ───────────────────────────────────────────────
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${run.id}`;
+            const lines = [];
+            lines.push('### Merge-queue candidate did not pass');
+            lines.push('');
+            lines.push(`This PR's \`Test\` check may read red. That red belongs to a **merge-queue candidate**, not to a run of your branch. Candidate: [\`${ref}\`](${runUrl}) → \`${run.conclusion}\`.`);
+            lines.push('');
+
+            if (cancelled) {
+              lines.push('**The candidate was CANCELLED, which is not a failing test.** A cancelled merge-queue run reports `failure` to GitHub, and the Queue Candidate Sweep cancels candidates whose queue entry is already gone. If your entry was removed for another reason, that removal is the cause and this cancellation is a consequence of it.');
+            } else if (failingArr.length === 0) {
+              lines.push(logsReadable
+                ? '**No `FAIL <path>` line was found in the failed jobs\' logs**, so this was probably not an assertion failure — an OOM (exit 134), a setup step, or an infrastructure error. The failing jobs are listed below; their logs are the next place to look.'
+                : '**The failed jobs\' logs could not be read**, so no comparison against your diff was possible. This is not evidence either way about your changes.');
+            } else if (untouched.length > 0 && touched.length === 0) {
+              lines.push(`**Every failing suite is outside this PR's diff.** The failing ${untouched.length === 1 ? 'suite is' : 'suites are'} not among the ${changed.length} file(s) this PR changes, so the most likely causes are a queue-mate's changes, the base the candidate was built on, or infrastructure — not this diff.`);
+              lines.push('');
+              lines.push('Failing, and untouched by this PR:');
+              for (const f of untouched.slice(0, 10)) lines.push(`- \`${f}\``);
+            } else if (touched.length > 0) {
+              lines.push(`**At least one failing suite IS in this PR's diff**, so this one is worth reading as yours:`);
+              for (const f of touched.slice(0, 10)) lines.push(`- \`${f}\``);
+              if (untouched.length) {
+                lines.push('');
+                lines.push('Also failing, but outside the diff:');
+                for (const f of untouched.slice(0, 10)) lines.push(`- \`${f}\``);
+              }
+            }
+
+            if (failed.length) {
+              lines.push('');
+              lines.push('Failed jobs:');
+              for (const j of failed.slice(0, 12)) lines.push(`- [${j.name}](${j.html_url}) — \`${j.conclusion}\``);
+            }
+            if (stillRunning.length) {
+              lines.push('');
+              lines.push(`${stillRunning.length} job(s) were still running when the candidate ended — a candidate can be ejected before its siblings finish, so a short job list here is not the whole picture.`);
+            }
+            lines.push('');
+            lines.push(`Base: \`${baseBranch}\`. Why the entry left the queue is recorded on this PR's **timeline** as \`removed_from_merge_queue\` — not in its checks, which is the gap #3307 exists for.`);
+            lines.push('');
+            lines.push('<sub>Posted by Queue Failure Attribution (#3307). This workflow only comments — it cannot eject, cancel or merge anything.</sub>');
+
+            const body = lines.join('\n');
+
+            // ── ONE COMMENT PER CANDIDATE RUN ──────────────────────────────
+            // Keyed on the run id, which is unique per candidate, so a re-run
+            // of THIS workflow updates rather than appends. #3540 learned the
+            // same lesson for the main-CI notice: every red adding a comment
+            // turned one incident into a wall.
+            const marker = `<!-- queue-failure-attribution:${run.id} -->`;
+            const existing = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: prNumber, per_page: 100,
+            });
+            const mine = existing.find((c) => (c.body ?? '').includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body: `${marker}\n${body}` });
+              core.info(`updated comment ${mine.id} on #${prNumber}`);
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: `${marker}\n${body}` });
+              core.info(`commented on #${prNumber}`);
+            }
