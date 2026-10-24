@@ -322,6 +322,13 @@ export async function deactivateTenantMember(
         // Safety: prevent self-deactivation
         assertNotSelfDeactivation(ctx, membership.userId);
 
+        // Safety: only an OWNER deactivates an OWNER — the boundary the role
+        // change holds above. Without it an ADMIN, who cannot so much as change
+        // an OWNER's role, could switch one off whenever another OWNER remained.
+        if (membership.role === 'OWNER' && !ctx.appPermissions.admin.owner_management) {
+            throw forbidden('Only OWNERs can deactivate an OWNER membership.');
+        }
+
         // Safety: last-OWNER protection — cannot deactivate the only OWNER.
         if (membership.role === 'OWNER') {
             const ownerCount = await db.tenantMembership.count({
@@ -380,8 +387,9 @@ export async function deactivateTenantMember(
  * Hard-remove a member from the tenant (deletes the TenantMembership row).
  * Distinct from deactivate (soft, revocable): this fully detaches the user.
  * Works on ACTIVE or already-DEACTIVATED members. Same guardrails as
- * deactivate — no self-removal, no removing the last ACTIVE OWNER (the
- * `tenant_membership_last_owner_guard` DB trigger is the fail-closed backstop).
+ * deactivate — no self-removal, an OWNER only by an OWNER, no removing the last
+ * ACTIVE OWNER (the `tenant_membership_last_owner_guard` DB trigger is the
+ * fail-closed backstop).
  */
 export async function removeTenantMember(
     ctx: RequestContext,
@@ -405,6 +413,12 @@ export async function removeTenantMember(
         // Safety: prevent self-removal.
         if (ctx.userId === membership.userId) {
             throw forbidden('Cannot remove your own membership. Ask another admin.');
+        }
+
+        // Safety: only an OWNER removes an OWNER, ACTIVE or DEACTIVATED — the
+        // same boundary as deactivation and the role change.
+        if (membership.role === 'OWNER' && !ctx.appPermissions.admin.owner_management) {
+            throw forbidden('Only OWNERs can remove an OWNER membership.');
         }
 
         // Safety: last-OWNER protection — cannot remove the only ACTIVE OWNER.

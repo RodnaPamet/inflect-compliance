@@ -904,6 +904,9 @@ export default function MembersAdminPage() {
                 cell: ({ row }) => {
                     const m = row.original;
                     const isActive = m.status === 'ACTIVE';
+                    // Only an OWNER deactivates or removes an OWNER; the
+                    // server refuses anyone else, so they are not offered it.
+                    const mayEndMembership = canManageOwnerRoles || m.role !== 'OWNER';
                     return (
                         // R3 fix — the old in-cell absolute dropdown was clipped
                         // by the DataTable's overflow container (so clicking the
@@ -939,24 +942,28 @@ export default function MembersAdminPage() {
                                                 >
                                                     {t('members.viewSessions')}
                                                 </Popover.Item>
-                                                <Popover.Item
-                                                    icon={<UserMinus className="w-3.5 h-3.5" />}
-                                                    destructive
-                                                    onClick={() => handleDeactivate(m.id, m.user.email)}
-                                                    id={`action-deactivate-${m.id}`}
-                                                >
-                                                    {t('members.deactivate')}
-                                                </Popover.Item>
+                                                {mayEndMembership && (
+                                                    <Popover.Item
+                                                        icon={<UserMinus className="w-3.5 h-3.5" />}
+                                                        destructive
+                                                        onClick={() => handleDeactivate(m.id, m.user.email)}
+                                                        id={`action-deactivate-${m.id}`}
+                                                    >
+                                                        {t('members.deactivate')}
+                                                    </Popover.Item>
+                                                )}
                                             </>
                                         )}
-                                        <Popover.Item
-                                            icon={<Trash2 className="w-3.5 h-3.5" />}
-                                            destructive
-                                            onClick={() => handleRemove(m.id, m.user.email)}
-                                            id={`action-remove-${m.id}`}
-                                        >
-                                            {t('members.remove')}
-                                        </Popover.Item>
+                                        {mayEndMembership && (
+                                            <Popover.Item
+                                                icon={<Trash2 className="w-3.5 h-3.5" />}
+                                                destructive
+                                                onClick={() => handleRemove(m.id, m.user.email)}
+                                                id={`action-remove-${m.id}`}
+                                            >
+                                                {t('members.remove')}
+                                            </Popover.Item>
+                                        )}
                                     </Popover.Menu>
                                 }
                             >
