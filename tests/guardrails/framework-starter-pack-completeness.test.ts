@@ -78,6 +78,11 @@ const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> =
     // is bare no longer. Deleting it instead would have lost the record that
     // it was ever bare, which is what the bare registry exists to show.
     'COSO-ICF-2013': { frameworkKey: 'COSO-ICF-2013', packKey: 'COSO_ICF_BASELINE' },
+    // Shipped WITH its starter pack from the first commit — one authored
+    // control per requirement — so it never had a bare entry to move out of.
+    // The library ref_id and the catalogue key are the same string on purpose:
+    // both writers converge on one Framework row.
+    'AIUC-1': { frameworkKey: 'AIUC-1', packKey: 'AIUC_1_BASELINE' },
 };
 
 /** Library frameworks intentionally shipped WITHOUT a starter pack. */

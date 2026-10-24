@@ -1,0 +1,918 @@
+# AIUC-1 — the AI agent standard (Q4-2026 release, 15 October 2026) — Framework Library
+#
+# WHY THIS FRAMEWORK EXISTS IN INFLECT: AIUC-1 is an auditable certification
+# standard written specifically for AI AGENTS — systems that call tools, act on
+# a user's behalf and run in production — rather than for AI as a content
+# producer. It sits beside the OWASP Agentic AI Top 10 (the threat model) and the
+# IMDA MGF (the accountability structure) as the third agent-specific source, and
+# it is the one an accredited auditor certifies against.
+#
+# LICENSING POSITION — READ THIS BEFORE EDITING ANY STRING IN THIS FILE.
+#
+# AIUC-1 is published by the Artificial Intelligence Underwriting Company (AIUC)
+# at https://www.aiuc-1.com/ and is "© AIUC — all rights reserved". Its terms of
+# use grant a personal, non-commercial licence to the site and prohibit copying,
+# redistributing or creating derivative works from its content. So what is
+# reproduced here is the ENUMERATION only:
+#
+#   * the six domain names (A. Data & Privacy … F. Society), and
+#   * each requirement's identifier (A001 … F002) and its short title.
+#
+# Identifiers and short titles are what lets a tenant cite a requirement to their
+# auditor and have it resolve; they are names, not prose. What is NOT reproduced,
+# and must never be added here:
+#
+#   * the requirement statements, keywords and crosswalk tables;
+#   * the control activities beneath each requirement (A001.1, A001.2, …) and
+#     their evidence guidance — the part an implementer is most tempted to paste.
+#
+# Every `description` below is written in our own words. Each one says what an
+# organisation must be able to DEMONSTRATE for the requirement, which is the job
+# a description has to do in this product. A legal review is advisable before
+# this ships to customers; see
+# docs/implementation-notes/2026-10-24-aiuc-1-framework.md.
+#
+# WHICH REQUIREMENTS ARE HERE. The 50 requirements in force in the Q4-2026
+# release. AIUC-1 retires a requirement rather than renumbering the ones after
+# it, so the identifiers have gaps, and those gaps are correct:
+#
+#   C011, C012  retired Q4-2026 — folded into C010 (third-party safety testing)
+#   D002        retired Q4-2026 — folded into D004 (third-party reliability testing)
+#   E007        retired in an earlier release
+#   E014        retired in an earlier release
+#
+# A retired requirement places no obligation on anybody, so it is not modelled as
+# an assessable row; inventing one so the numbering looks continuous would give a
+# tenant something to be "compliant with" that the standard no longer asks for.
+#
+# THE KEY CARRIES NO EDITION. AIUC-1 is revised every quarter IN PLACE (15
+# January, April, July and October), keeping each requirement's identifier. With
+# the edition in `ref_id`, every quarterly release would import as a second
+# framework and strand every control link, assessment and piece of evidence pinned
+# to the first — the same reasoning that keeps `OWASP-ASI-TOP10` unsuffixed. A
+# release is a content-hash update on the same rows. `publication_date` names the
+# release this file reflects.
+#
+# APPLICABILITY. AIUC-1 marks eight requirements optional and scopes some to an
+# agent capability (code generation, text generation, taking actions, being
+# externally facing). Those facts are stated in the description of each affected
+# requirement, because the description is what reaches a tenant's database; a
+# tenant records the outcome with per-framework applicability.
+#
+# ONE FRAMEWORK ROW. `prisma/fixtures/aiuc-1-control-templates.json` declares
+# this same key, so the library import and the catalogue converge on a single
+# `Framework` row (the COSO precedent), rather than the two-row split most older
+# frameworks carry. Its requirements are generated from this file.
+
+urn: urn:inflect:library:aiuc-1
+locale: en
+ref_id: AIUC-1
+name: AIUC-1 AI Agent Standard
+description: >
+  AIUC-1 is a certification standard for AI agents, organised into six domains —
+  data and privacy, security, safety, reliability, accountability and society —
+  and audited by accredited auditors against what an agent can actually do, how
+  it is built and where it runs. It is revised every quarter. Inflect
+  carries the requirement identifiers and short titles and describes, in its own
+  words, what each requirement asks an organisation to demonstrate.
+copyright: >
+  AIUC-1 is published by the Artificial Intelligence Underwriting Company (AIUC),
+  (c) AIUC, all rights reserved. Source: https://www.aiuc-1.com/. Inflect stores
+  the domain names, requirement identifiers and short titles with attribution to
+  AIUC; every description is Inflect's own. AIUC's requirement statements,
+  control activities, evidence guidance and crosswalks are not reproduced. Not
+  legal advice, and not a substitute for an accredited AIUC-1 audit.
+version: 1
+publication_date: "2026-10-15"
+provider: Artificial Intelligence Underwriting Company (AIUC)
+packager: inflect
+kind: INDUSTRY_STANDARD
+
+objects:
+  framework:
+    urn: urn:inflect:framework:aiuc-1
+    ref_id: AIUC-1
+    name: AIUC-1 AI Agent Standard
+    description: >
+      Fifty requirements for AI agents across six domains, from the Q4-2026
+      release. Identifiers and titles are AIUC's; the descriptions are Inflect's
+      account of what each requirement asks an organisation to demonstrate.
+    requirement_nodes:
+      # ─── A. Data & Privacy ─────────────────────────────────────────────
+      - urn: urn:inflect:req:aiuc-1:a
+        ref_id: A
+        name: Data & Privacy
+        description: >-
+          How what goes into and comes out of the agent is governed as data: what
+          customers are told about its use and retention, what the agent may
+          read, and the protections that stop confidential, personal,
+          cross-customer and secret material leaving through it.
+        depth: 1
+        assessable: false
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a001
+        ref_id: A001
+        name: Establish input data policy
+        description: >-
+          Customers can read, before they send anything, what happens to the data
+          they give the agent: whether it is used to train or tune models, how it
+          is processed to answer a request, how long it is kept and what they can
+          ask to have done with it. The retention periods the organisation states
+          are carried out by an automated deletion mechanism rather than left to
+          manual clean-up.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a002
+        ref_id: A002
+        name: Establish output data policy
+        description: >-
+          Customers are told who owns what the agent produces for them, what the
+          organisation itself may do with those outputs, how a customer opts in to
+          or out of that use, and how an output is deleted on request; wherever an
+          opt-out or a deletion is offered, the system actually honours it.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a003
+        ref_id: A003
+        name: Limit AI agent data access
+        description: >-
+          What the agent can retrieve or read is bounded by the task in hand, the
+          user it is acting for, its own role and the context of the session, and
+          those bounds are enforced in retrieval and permission logic rather than
+          in the prompt. Where proportionate, each agent holds an identity of its
+          own, so its access can be granted, reviewed and withdrawn like anyone
+          else's.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a004
+        ref_id: A004
+        name: Protect IP & trade secrets
+        description: >-
+          The organisation's own confidential information and intellectual
+          property do not leave through the agent. Staff are told what may not be
+          entered into or released by AI systems, the protection model providers
+          give submitted material is known, and, where proportionate, outputs are
+          screened for proprietary content and suspected disclosures are reviewed.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a005
+        ref_id: A005
+        name: Prevent cross-customer data exposure
+        description: >-
+          Data belonging to one customer cannot surface in another customer's
+          session, retrieval results, fine-tuning or outputs. Separation is
+          enforced by tenant identifiers in code and storage, and any pooling of
+          data across customers rests on consent recorded in the customer's terms
+          and on de-identification strong enough to resist reversal.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a006
+        ref_id: A006
+        name: Prevent PII leakage
+        description: >-
+          Personal data is detected and filtered in what the agent receives, in
+          what it returns and in the logs it leaves behind, so that personal
+          identifiers do not reach a person, a log or a downstream system that
+          should not hold them. Detection can be extended by routing output
+          through an existing data-loss-prevention service.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a007
+        ref_id: A007
+        name: Prevent IP violations
+        description: >-
+          What the agent produces does not infringe copyright, trademarks or other
+          rights belonging to third parties. The organisation knows what indemnity
+          or protection its model providers give, screens outputs for protected
+          material where the use case warrants it, and warns users before
+          operations that carry infringement risk. Applies to externally facing
+          agents.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a008
+        ref_id: A008
+        name: Prevent leakage of credentials and secrets
+        description: >-
+          Secrets — API keys, tokens, passwords, private keys — are caught when a
+          user pastes one in, kept out of code the agent writes, held in a secret
+          manager when a user hands the agent a credential to use, and redacted
+          from logs and stored artefacts. Applies to agents that generate code.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      - urn: urn:inflect:req:aiuc-1:a009
+        ref_id: A009
+        name: Third-party testing for data & privacy risk
+        description: >-
+          An independent evaluator with the relevant expertise tests the system
+          every quarter for data and privacy failures — infringing outputs,
+          personal data and credentials leaking, business data and system
+          instructions surfacing — scoped against the organisation's risk
+          taxonomy, with each finding tracked to a fix and a retest.
+        parent_urn: urn:inflect:req:aiuc-1:a
+        depth: 2
+        assessable: true
+        section: A. Data & Privacy
+        category: A. Data & Privacy
+
+      # ─── B. Security ───────────────────────────────────────────────────
+      - urn: urn:inflect:req:aiuc-1:b
+        ref_id: B
+        name: Security
+        description: >-
+          Defences against adversaries: independent testing, detection and
+          filtering of hostile input, protection of endpoints and of the
+          environment the system runs in, limits on what agents and users may
+          reach, and safe defaults in the code an agent writes.
+        depth: 1
+        assessable: false
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b001
+        ref_id: B001
+        name: Third-party testing for security risk
+        description: >-
+          An independent evaluator tests the system every quarter for security
+          failures — actions, transactions, messages and data transfers the agent
+          was never authorised to make, outputs carrying unsafe links or code, and
+          actions that install insecure code or execute destructively — driven by
+          attack techniques such as prompt injection and jailbreaking, with the
+          scope drawn from the organisation's risk taxonomy.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b002
+        ref_id: B002
+        name: Detect adversarial input
+        description: >-
+          Prompt-injection attempts and other adversarial input are detected while
+          the system runs, raise an alert that somebody acts on, and are handled as
+          incidents with a record of what happened. The detection rules are
+          revisited every quarter in the light of the attacks actually seen.
+          Optional under AIUC-1.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b003
+        ref_id: B003
+        name: Manage public release of technical details
+        description: >-
+          What the organisation says in public about its AI systems — models,
+          architecture, guardrails, suppliers, security posture — passes a defined
+          approval before release, so that marketing copy, documentation and
+          conference talks do not hand an attacker a map of the system. Optional
+          under AIUC-1.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b004
+        ref_id: B004
+        name: Prevent AI endpoint scraping
+        description: >-
+          Externally reachable AI endpoints are protected against probing, bulk
+          extraction and model theft: per-caller rate limits and quotas, detection
+          of anomalous usage, an external penetration test aimed at the endpoints,
+          and a tracked path to remediation for every weakness that test finds.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b005
+        ref_id: B005
+        name: Implement real-time input filtering
+        description: >-
+          Input passes through an automated moderation layer before the model acts
+          on it, with block, warn or modify actions and confidence thresholds the
+          organisation chose deliberately. Where proportionate, users are told when
+          an input is blocked, flagged input is logged with privacy in mind, and
+          the filter's error rates are measured. Optional under AIUC-1, and
+          applies to agents that generate text, speech or images.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b006
+        ref_id: B006
+        name: Prevent unauthorized AI agent actions
+        description: >-
+          An agent can act only within its intended scope and the privileges it
+          was granted: technical controls restrict its reach into backend services
+          and APIs, the security-relevant actions it takes are monitored and alert
+          on misuse, and, where proportionate, its execution is contained in a
+          sandbox. Applies to agents that take actions.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b007
+        ref_id: B007
+        name: Enforce user access privileges to AI systems
+        description: >-
+          People's access to the AI system — its configuration, prompts, models,
+          data and administrative functions — follows role- or attribute-based
+          rules derived from policy, and that access is reviewed every quarter
+          with each change and its justification recorded.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b008
+        ref_id: B008
+        name: Protect AI system deployment environment
+        description: >-
+          The environment the AI system runs in authenticates every caller of its
+          APIs and agent interfaces and encrypts their traffic in transit; where
+          proportionate it also verifies model artefacts before loading them,
+          protects the integrity of messages exchanged with agents, and hardens the
+          hosts and containers that serve models.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b009
+        ref_id: B009
+        name: Limit output over-exposure
+        description: >-
+          Output is capped in volume and, where precision would leak information,
+          in fidelity — token and result limits, rounding or banding of sensitive
+          figures — so that repeated querying cannot reconstruct the data or the
+          model behind it, and users are told when an answer has been truncated or
+          coarsened. Applies to agents that generate text, speech or images.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      - urn: urn:inflect:req:aiuc-1:b010
+        ref_id: B010
+        name: Promote secure patterns in generated code
+        description: >-
+          Code the agent writes defaults to secure patterns for the common
+          vulnerability classes, for authentication and authorisation and for the
+          choice of dependencies, and — where proportionate — for sessions and
+          cookies, input validation, error handling and logging. Applies to agents
+          that generate code.
+        parent_urn: urn:inflect:req:aiuc-1:b
+        depth: 2
+        assessable: true
+        section: B. Security
+        category: B. Security
+
+      # ─── C. Safety ─────────────────────────────────────────────────────
+      - urn: urn:inflect:req:aiuc-1:c
+        ref_id: C
+        name: Safety
+        description: >-
+          Keeping what the agent says and does inside the organisation's tolerance
+          for harm: a taxonomy of AI risk, testing before release, guardrails
+          against harmful, out-of-scope and agent-specific high-risk output, human
+          review, monitoring in production, and users' ability to intervene.
+        depth: 1
+        assessable: false
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c001
+        ref_id: C001
+        name: Define AI risk taxonomy
+        description: >-
+          The organisation keeps its own taxonomy of AI risk, built from what its
+          systems can do and where they are deployed, with severity levels and
+          concrete examples for every category, and reviews it at least once a
+          year. Testing, guardrails, monitoring and failure plans elsewhere in the
+          standard are scoped against this taxonomy.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c002
+        ref_id: C002
+        name: Conduct pre-deployment testing
+        description: >-
+          Before a change that needs formal approval reaches users, it is tested
+          across the categories of the risk taxonomy; the issues found are rated
+          and either fixed or accepted by a recorded decision, and release is
+          approved on the strength of the results. Where proportionate the tests
+          run as a gate in the delivery pipeline, artefacts and dependencies are
+          scanned for vulnerabilities, and a changed open-weight model is
+          regression-tested before it ships.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c003
+        ref_id: C003
+        name: Prevent harmful outputs
+        description: >-
+          Output that could hurt a user — distressing or hostile replies, dangerous
+          guidance, offensive material, biased treatment, deception — is detected and
+          blocked or reshaped by filters and guardrails; where proportionate, the
+          organisation also measures how well those controls perform. Applies to
+          agents that generate text, speech or images.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c004
+        ref_id: C004
+        name: Prevent out-of-scope outputs
+        description: >-
+          The agent declines subjects outside the purpose it was deployed for — a
+          political opinion or medical guidance from an agent built for something
+          else — through blocking rules or defensive prompting; attempts to push it
+          out of scope are logged and used to adjust its boundaries, and users are
+          told what it is for. Applies to agents that generate text or speech.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c005
+        ref_id: C005
+        name: Prevent agent-specific high risk outputs
+        description: >-
+          Beyond the generic categories of harm, the organisation names in its risk
+          taxonomy the high-risk outputs particular to this agent and its domain,
+          and maps each one to detection logic and a defined response — block,
+          modify, or hand to a person.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c006
+        ref_id: C006
+        name: Prevent output vulnerabilities
+        description: >-
+          Output that a person or a system will render, run or follow is sanitised
+          so it cannot carry script, shell or link injection into its destination,
+          and content that came from an untrusted source is marked as such wherever
+          it is shown. Applies to agents that generate code, text or speech.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c007
+        ref_id: C007
+        name: Flag high risk outputs for human review
+        description: >-
+          The organisation defines which outputs are risky enough to need a
+          person's review, detects them as they occur, and routes them to a
+          reviewer through a defined workflow before they take effect or reach the
+          user. Optional under AIUC-1.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c008
+        ref_id: C008
+        name: Monitor AI risk categories
+        description: >-
+          Production output is sampled and tracked against each category of the
+          risk taxonomy, so that a rising failure rate or a new kind of failure is
+          noticed, recorded and fed back into the taxonomy and its controls; where
+          the organisation runs security operations, the monitoring data reaches
+          them. Optional under AIUC-1.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c009
+        ref_id: C009
+        name: Enable real-time feedback and intervention
+        description: >-
+          Users can stop, pause or redirect the agent while it works and report a
+          problem with what it produced; those controls are accessible, and the
+          feedback and interventions they generate are reviewed and acted on.
+          Optional under AIUC-1.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      - urn: urn:inflect:req:aiuc-1:c010
+        ref_id: C010
+        name: Third-party testing for safety risk
+        description: >-
+          An independent evaluator tests the system every quarter for safety
+          failures — content that risks physical or emotional harm, inappropriate,
+          biased or out-of-scope output, advice in high-risk domains such as
+          medicine, law and finance, and the risks the organisation defined for
+          itself — against its risk taxonomy, with each finding tracked to a fix
+          and a retest.
+        parent_urn: urn:inflect:req:aiuc-1:c
+        depth: 2
+        assessable: true
+        section: C. Safety
+        category: C. Safety
+
+      # ─── D. Reliability ────────────────────────────────────────────────
+      - urn: urn:inflect:req:aiuc-1:d
+        ref_id: D
+        name: Reliability
+        description: >-
+          Whether the agent's answers and actions can be relied on: output that is
+          grounded and shows where it came from, tool use held to what is
+          authorised, and independent testing of both.
+        depth: 1
+        assessable: false
+        category: D. Reliability
+
+      - urn: urn:inflect:req:aiuc-1:d001
+        ref_id: D001
+        name: Prevent hallucinated outputs
+        description: >-
+          Output is checked against the sources it claims to rest on, users are
+          shown the citations behind an answer, and — where proportionate — the
+          agent signals its own uncertainty, so that a fabricated statement is
+          caught, or at least visible, rather than presented as fact. Applies to
+          agents that generate text, speech or code.
+        parent_urn: urn:inflect:req:aiuc-1:d
+        depth: 2
+        assessable: true
+        section: D. Reliability
+        category: D. Reliability
+
+      - urn: urn:inflect:req:aiuc-1:d003
+        ref_id: D003
+        name: Restrict unsafe tool calls
+        description: >-
+          Every tool or function call is checked before it runs: the tool is on an
+          allowlist, its parameters are validated, the request is authorised, use
+          stays inside call-rate limits and caps on value, sensitive or irreversible
+          operations wait for a person's approval, and each call is logged with
+          where it came from. Applies to agents that take actions.
+        parent_urn: urn:inflect:req:aiuc-1:d
+        depth: 2
+        assessable: true
+        section: D. Reliability
+        category: D. Reliability
+
+      - urn: urn:inflect:req:aiuc-1:d004
+        ref_id: D004
+        name: Third-party testing for reliability risk
+        description: >-
+          An independent evaluator tests the system every quarter for reliability
+          failures — generated or stated content that is wrong, fabricated or
+          falsely confident, and tool calls that are mistaken, unprompted or left
+          incomplete — scoped against the organisation's risk taxonomy, with each
+          finding tracked to a fix and a retest.
+        parent_urn: urn:inflect:req:aiuc-1:d
+        depth: 2
+        assessable: true
+        section: D. Reliability
+        category: D. Reliability
+
+      # ─── E. Accountability ─────────────────────────────────────────────
+      - urn: urn:inflect:req:aiuc-1:e
+        ref_id: E
+        name: Accountability
+        description: >-
+          Who answers for the system and how that is evidenced: failure plans,
+          named owners for changes, supplier and model due diligence, logging,
+          acceptable use, regulatory tracking, quality management and honesty with
+          users about what they are dealing with.
+        depth: 1
+        assessable: false
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e001
+        ref_id: E001
+        name: AI failure plan for security breaches
+        description: >-
+          A written plan covers a privacy or security breach involving the AI
+          system: who leads the response, who must be told and by when, how the
+          system is contained and repaired, and which outside parties — legal
+          counsel, communications, insurers, forensic support — are brought in.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e002
+        ref_id: E002
+        name: AI failure plan for harmful outputs
+        description: >-
+          A written plan covers an output that does a customer significant harm:
+          who owns the response, how the output is stopped and the customer put
+          right, and which outside parties are engaged, with the kinds of harm it
+          covers tied back to the risk taxonomy. Applies to externally facing
+          agents.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e003
+        ref_id: E003
+        name: AI failure plan for hallucinations
+        description: >-
+          A written plan covers a fabricated or incorrect output that costs a
+          customer substantial money: who owns the response, how the error is
+          traced and corrected, how affected customers are found and compensated,
+          and which outside parties are engaged. Applies to externally facing
+          agents.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e004
+        ref_id: E004
+        name: Assign accountability
+        description: >-
+          The organisation states which changes to an AI system, anywhere from
+          development to deployment, need formal review or approval, names an
+          accountable lead for each kind, and keeps the approval and its supporting
+          evidence for every such change; where proportionate, AI components are
+          signed and the signature is checked in the delivery pipeline.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e005
+        ref_id: E005
+        name: Document data storage security
+        description: >-
+          How the AI system's data is stored — where it is hosted, how it is
+          encrypted and who can read it — is written down for each store and
+          justified against how sensitive the data is, the regulations that apply
+          to it and the operational need for it.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e006
+        ref_id: E006
+        name: Conduct vendor and model due diligence
+        description: >-
+          Foundation-model and other upstream AI providers are assessed before use,
+          and again on a cycle, for how they handle data and personal information,
+          their security and their compliance, with the decision to approve them
+          recorded; where an open-weight model is used, its source, integrity and
+          licence are verified before it is deployed.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e008
+        ref_id: E008
+        name: Review internal processes
+        description: >-
+          The key processes behind the AI system are reviewed every quarter, with
+          each review, the decisions it took and their approval recorded, and
+          with feedback from outside the organisation — security advisories,
+          customer reports, researchers — weighed as part of it.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e009
+        ref_id: E009
+        name: Monitor third-party access
+        description: >-
+          Connections that third parties make to the AI system — API sessions,
+          integrations, data access — are logged in enough detail to reconstruct
+          who reached what and when, and, where proportionate, anomalous
+          third-party access raises an alert.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e010
+        ref_id: E010
+        name: Establish AI acceptable use policy
+        description: >-
+          An acceptable use policy states what users may and may not do with the AI
+          system; breaches of it are detected in use, the user is told when they
+          have crossed the line, and, where the risk warrants it, further
+          guardrails enforce it.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e011
+        ref_id: E011
+        name: Record processing locations
+        description: >-
+          The organisation knows and writes down where the AI system's data is
+          processed — its own cloud regions and inference locations and those of
+          each AI sub-processor — and, where data crosses a border, the transfer
+          mechanism that makes that lawful.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e012
+        ref_id: E012
+        name: Document regulatory compliance
+        description: >-
+          The AI laws, regulations and standards that apply to the system are
+          identified, together with the data protections each one requires and the
+          organisation's approach to meeting it, and that register is reviewed at
+          least every six months as the law moves.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e013
+        ref_id: E013
+        name: Implement quality management system
+        description: >-
+          A quality management system scaled to the size of the organisation
+          governs its AI systems: quality objectives and metrics, an approach to
+          risk, change management, and issue tracking through to corrective action,
+          with procedures for data management and for communicating with
+          stakeholders where proportionate. Optional under AIUC-1.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e015
+        ref_id: E015
+        name: Log AI system activity
+        description: >-
+          The AI system's processes, actions and outputs are logged, wherever the
+          law and the customer's terms allow it, in enough detail to investigate an
+          incident, support an audit and explain why the system behaved as it did.
+          The logs are retained, access-controlled and sanitised, an agent's
+          execution can be attributed to it, and log integrity is protected where
+          proportionate.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e016
+        ref_id: E016
+        name: Implement AI disclosure mechanisms
+        description: >-
+          Users are told plainly, in every modality the system works in — text,
+          voice, generated media, automated actions — that they are dealing with an
+          AI system rather than a person.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e017
+        ref_id: E017
+        name: Document system transparency policy
+        description: >-
+          The organisation keeps a transparency policy and current transparency
+          documentation for each major system (model cards, datasheets, AI bills
+          of materials), says when and with whom that material is shared, and
+          documents how security responsibilities divide between the platform and
+          whoever deploys it. Optional under AIUC-1.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      - urn: urn:inflect:req:aiuc-1:e018
+        ref_id: E018
+        name: Third-party testing for accountability risk
+        description: >-
+          An independent evaluator tests the system every quarter for
+          accountability failures — above all an agent that conceals, denies or
+          can be talked out of disclosing that it is an AI — against the
+          organisation's risk taxonomy, with each finding tracked to a fix and a
+          retest.
+        parent_urn: urn:inflect:req:aiuc-1:e
+        depth: 2
+        assessable: true
+        section: E. Accountability
+        category: E. Accountability
+
+      # ─── F. Society ────────────────────────────────────────────────────
+      - urn: urn:inflect:req:aiuc-1:f
+        ref_id: F
+        name: Society
+        description: >-
+          Harm the agent could do beyond its own users: being used to mount cyber
+          attacks, or to help bring about chemical, biological, radiological or
+          nuclear harm.
+        depth: 1
+        assessable: false
+        category: F. Society
+
+      - urn: urn:inflect:req:aiuc-1:f001
+        ref_id: F001
+        name: Prevent AI cyber misuse
+        description: >-
+          The organisation knows what its foundation models can do to assist a
+          cyber attack, from the providers' own assessments, and puts or documents
+          guardrails that stop the agent being used to write malicious code or to
+          plan and carry out exploitation; a model it has modified is reassessed
+          rather than assumed to keep the provider's results. Applies to agents
+          that generate text, speech or code, or that take actions.
+        parent_urn: urn:inflect:req:aiuc-1:f
+        depth: 2
+        assessable: true
+        section: F. Society
+        category: F. Society
+
+      - urn: urn:inflect:req:aiuc-1:f002
+        ref_id: F002
+        name: Prevent catastrophic misuse
+        description: >-
+          The organisation knows what each foundation model it uses can contribute
+          to chemical, biological, radiological or nuclear harm, from the
+          providers' own assessments, and puts or documents guardrails against that
+          use, monitoring for it where proportionate. Applies to agents that
+          generate text, speech or images.
+        parent_urn: urn:inflect:req:aiuc-1:f
+        depth: 2
+        assessable: true
+        section: F. Society
+        category: F. Society

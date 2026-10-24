@@ -71,6 +71,11 @@ const PAIRS: Record<string, Pair> = {
     'owasp-aisvs-control-templates.json': { library: 'owasp-aisvs-1.0.yaml', join: { kind: 'exact' } },
     'owasp-asi-control-templates.json': { library: 'owasp-agentic-top10.yaml', join: { kind: 'exact' } },
     'coso-icf-2013-control-templates.json': { library: 'coso-icf-2013.yaml', join: { kind: 'exact' } },
+    // Exact by construction: the fixture's requirements are generated from the
+    // library, and both are keyed on AIUC's own identifiers (A001 … F002). The
+    // five retired identifiers are absent from BOTH sides, so they cannot show
+    // up here as a missing obligation.
+    'aiuc-1-control-templates.json': { library: 'aiuc-1.yaml', join: { kind: 'exact' } },
 
     'iso27001-control-templates.json': {
         library: 'iso27001-2022.yaml',

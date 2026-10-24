@@ -64,7 +64,10 @@ const DEV_SEEDER = 'prisma/seed.ts';
 // Cross-checked against the applied catalogue below, so a rename on either
 // delivery path fails CI here first — forcing this list AND the gate set to be
 // updated together.
-const AI_FRAMEWORK_KEYS = ['OWASP-AISVS', 'ISO42001', 'EU-AI-ACT'];
+// AIUC-1 is the AI-agent standard; it is delivered only by its CatalogFile (it
+// is not in prisma/seed.ts at all), so the CatalogFile case below is the one
+// that proves it.
+const AI_FRAMEWORK_KEYS = ['OWASP-AISVS', 'ISO42001', 'EU-AI-ACT', 'AIUC-1'];
 
 describe('AI-governance step — declared keys drive the gate', () => {
     it('the applied catalogue is non-empty', () => {

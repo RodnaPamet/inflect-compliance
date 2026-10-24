@@ -19,7 +19,7 @@ Open **{{ui:nav.risks}}** under **{{ui:nav.govern}}** in the sidebar. The breadc
 | Set status or assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. The selection bar is shown to every role, but only the roles above can apply its actions. Anyone else sees the message **{{ui:risks.bulk.actionFailed}}**
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply. A role that can apply none of them sees no actions there.
 
 ## What it is for
 
@@ -91,7 +91,7 @@ Click **{{ui:risks.addRisk}}**. The **{{ui:risks.new.title}}** dialog asks for a
 
 ### Change many risks at once
 
-Tick the rows you want, up to 100 at a time, and pick an action in the selection bar:
+Tick the rows you want, up to 100 at a time, and pick an action in the selection bar. It lists only the actions your role can apply:
 
 - **{{ui:risks.bulk.setStatus}}** moves every selected risk to the status you choose.
 - **{{ui:risks.bulk.assignOwner}}** gives them all one owner. Leave the owner empty to unassign them.
@@ -115,5 +115,5 @@ Open **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}** to load risks f
 | --- | --- | --- |
 | **{{ui:panels.riskFirstRun.title}}** | The workspace has no risks yet | Click **{{ui:panels.riskFirstRun.cta}}**, or import risks |
 | **{{ui:risks.emptyFilter.title}}** | Risks exist, but none match the search and filters | Click **{{ui:risks.emptyFilter.clearFilters}}** |
-| **{{ui:risks.bulk.actionFailed}}** | A bulk action was refused. Usually your role cannot apply it, or more than 100 rows were selected | Check the role table above, or select fewer rows |
+| **{{ui:risks.bulk.actionFailed}}** | A bulk action did not go through, usually because more than 100 rows were selected | Select fewer rows and try again |
 | A banner saying the list is truncated | The register holds more than 5,000 risks, more than the page loads at once | Narrow the list with a filter or the search |
