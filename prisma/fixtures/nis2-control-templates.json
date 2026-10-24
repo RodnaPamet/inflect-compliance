@@ -12,7 +12,8 @@
     "name": "NIS2 Directive",
     "version": "2022/2555",
     "kind": "EU_DIRECTIVE",
-    "description": "Directive (EU) 2022/2555 on measures for a high common level of cybersecurity across the Union."
+    "description": "Directive (EU) 2022/2555 on measures for a high common level of cybersecurity across the Union.",
+    "sourceUrn": "urn:inflect:library:nis2-2022"
   },
   "requirements": [
     {

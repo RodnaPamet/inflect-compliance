@@ -126,6 +126,17 @@ await build({
     outfile: 'dist/seed-framework-catalogs.mjs',
 });
 
+// Library + mapping-set sync — runs from the entrypoint after the catalogue
+// seed. Unlike the seeders above it inlines app code (the library importer and
+// its delta propagation), and it reads the YAML from disk rather than having it
+// inlined: the Dockerfile copies src/data/libraries into the image, and the
+// script passes that directory explicitly because `__dirname` here is `dist/`.
+await build({
+    ...common,
+    entryPoints: ['scripts/sync-framework-libraries.ts'],
+    outfile: 'dist/sync-framework-libraries.mjs',
+});
+
 // Runs after the two seeders above: fills the checklist of an already-installed
 // template task from the steps its template now carries.
 await build({
@@ -149,4 +160,4 @@ await build({
     outfile: 'dist/seed-vendor-questionnaires.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/backfill-task-checklists.mjs + dist/catalog-check.mjs');
+console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/seed-self-assessments.mjs + dist/seed-policy-templates.mjs + dist/seed-vendor-questionnaires.mjs + dist/seed-control-template-tasks.mjs + dist/seed-framework-catalogs.mjs + dist/sync-framework-libraries.mjs + dist/backfill-task-checklists.mjs + dist/catalog-check.mjs');

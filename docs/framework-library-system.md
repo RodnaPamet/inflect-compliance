@@ -136,6 +136,32 @@ await syncAllLibraries(db, { force: true });
 await syncAllLibraries(db, { strategy: 'preserve' });
 ```
 
+### Delivery to a deployed database
+
+Every container start runs `dist/sync-framework-libraries.mjs`
+(`scripts/sync-framework-libraries.ts`, `npm run db:sync-libraries` in a
+checkout) right after the catalogue seed. It calls `syncLibrariesAtStartup`,
+which imports every library and mapping set whose content hash has changed and
+skips the rest, so an unchanged start writes nothing.
+
+- **A row with a pack belongs to the catalogue.** `AIUC-1` and `COSO-ICF-2013`
+  are written by their catalogue fixture under the library's own key, so the
+  sync does not import those two libraries. Their mapping sets still import:
+  they resolve against the catalogue's row by key and code.
+- **The YAML ships in the image.** The Dockerfile copies `src/data/libraries`
+  into `/app`, and the script passes that directory explicitly. `LIBRARIES_DIR`
+  resolves from `__dirname`, which in a bundle is `dist/`.
+- **The offer lists show one row per framework.** `listFrameworks` (the
+  Frameworks page, its API and the MCP resource) and the control-mapping picker
+  leave out a library row whose family also has an installable catalogue row,
+  through `withoutReferenceTwins`. A library-only framework, such as GDPR or
+  NIST CSF 2.0, is listed.
+
+The "framework libraries reach production" block of
+`tests/guardrails/catalogue-reaches-production.test.ts` holds the wiring, and
+`tests/integration/framework-library-startup-sync.test.ts` holds what the sync
+writes.
+
 ### Deduplication
 
 Every library has a SHA-256 content hash computed from its URN, version, and all requirement node URNs. On import:

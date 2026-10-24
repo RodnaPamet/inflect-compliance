@@ -11,7 +11,8 @@
     "name": "Digital Operational Resilience Act",
     "version": "2022/2554",
     "kind": "REGULATION",
-    "description": "Regulation (EU) 2022/2554 on digital operational resilience for the financial sector."
+    "description": "Regulation (EU) 2022/2554 on digital operational resilience for the financial sector.",
+    "sourceUrn": "urn:inflect:library:dora-2022"
   },
   "requirements": [
     {
