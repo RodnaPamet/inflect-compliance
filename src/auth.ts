@@ -48,6 +48,11 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { graphHeaders } from '@/lib/http/graph-headers';
 import { SSO_HANDOFF_COOKIE, SSO_HANDOFF_PROVIDER_ID } from '@/lib/auth/sso-session';
 import type { SignInMethod } from '@/lib/auth/sso-enforcement';
+import {
+    pendingAfterMembershipRefresh,
+    workspacesAskingForCode,
+    workspacesStillAskingForCode,
+} from '@/lib/auth/workspace-mfa';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -130,6 +135,13 @@ declare module 'next-auth/jwt' {
         tenantSlug?: string | null;
         role?: Role;
         mfaPending?: boolean;
+        /**
+         * The session's OTHER workspaces whose MFA policy still wants a code
+         * from it: the edge holds each one's paths until its own challenge is
+         * passed (`src/lib/auth/workspace-mfa.ts`). The primary workspace is
+         * `mfaPending`, which holds the whole session.
+         */
+        mfaPendingTenantIds?: string[];
         mfaFailClosed?: boolean;
         /** Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS. */
         memberships?: MembershipEntry[];
@@ -580,6 +592,33 @@ async function readInviteTokenFromCookies(): Promise<{
 
 // ─── NextAuthOptions ────────────────────────────────────────────────
 
+/** The workspaces a token's claims name. */
+function membershipTenantIds(token: JWT): Set<string> {
+    return new Set((token.memberships ?? []).map((m) => m.tenantId));
+}
+
+/**
+ * Bring `mfaPendingTenantIds` in line with re-read memberships: a workspace
+ * the session left drops out, and one it gained since sign-in is asked whether
+ * it wants a code, as sign-in would have asked (`pendingAfterMembershipRefresh`).
+ * A failed read leaves the set as it was.
+ */
+async function refreshPendingMfaWorkspaces(token: JWT, before: ReadonlySet<string>): Promise<void> {
+    if (!token.userId) return;
+    try {
+        token.mfaPendingTenantIds = await pendingAfterMembershipRefresh(token.userId, {
+            pending: token.mfaPendingTenantIds ?? [],
+            // A token minted before the set existed has never asked its other
+            // workspaces: every one of them counts as gained.
+            before: token.mfaPendingTenantIds === undefined ? new Set<string>() : before,
+            after: (token.memberships ?? []).map((m) => m.tenantId),
+            primaryTenantId: token.tenantId,
+        });
+    } catch {
+        // Unchanged.
+    }
+}
+
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma) as NextAuthOptions['adapter'],
     providers,
@@ -848,6 +887,24 @@ export const authOptions: NextAuthOptions = {
                     }
                 }
 
+                // ── MFA for every OTHER workspace the session can reach ──
+                // The block above asks only the primary workspace, the oldest
+                // membership. A workspace that requires MFA but was joined
+                // later was never asked, so its members got in on a password
+                // alone (src/lib/auth/workspace-mfa.ts).
+                token.mfaPendingTenantIds = [];
+                const otherTenantIds = (token.memberships ?? [])
+                    .map((m) => m.tenantId)
+                    .filter((id) => id !== activeTenantId);
+                if (otherTenantIds.length > 0 && token.userId) {
+                    try {
+                        token.mfaPendingTenantIds = await workspacesAskingForCode(token.userId, otherTenantIds);
+                    } catch {
+                        // Fails open, as the primary workspace does unless it
+                        // is set to fail closed.
+                    }
+                }
+
                 // ── Epic C.3 — record operational session row ──
                 try {
                     const { recordNewSession } = await import(
@@ -876,7 +933,9 @@ export const authOptions: NextAuthOptions = {
             // gate immediately, with no full re-login. Falls through to the
             // session-revocation + OAuth-refresh checks below.
             if (trigger === 'update' && token.email) {
+                const before = membershipTenantIds(token);
                 await applyMembershipClaims(token);
+                await refreshPendingMfaWorkspaces(token, before);
             }
 
             // Epic C.3 — verify session row still exists + isn't revoked.
@@ -943,6 +1002,22 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
+            // The same check for the session's other pending workspaces: each
+            // leaves the set once its own challenge was passed since this token
+            // was issued. A read failure leaves them pending; the person can
+            // still pass the challenge.
+            if (token.mfaPendingTenantIds?.length && token.userId) {
+                try {
+                    token.mfaPendingTenantIds = await workspacesStillAskingForCode(
+                        token.userId,
+                        token.mfaPendingTenantIds,
+                        (token.iat as number | undefined) ?? 0,
+                    );
+                } catch {
+                    // Stays pending.
+                }
+            }
+
             // Throttled revocation check AND membership-claims refresh
             // (5-minute interval, one shared timestamp).
             //
@@ -987,7 +1062,9 @@ export const authOptions: NextAuthOptions = {
                         // breach — but the gate was answering from a token that
                         // no longer described reality).
                         if (token.email) {
+                            const before = membershipTenantIds(token);
                             await applyMembershipClaims(token);
+                            await refreshPendingMfaWorkspaces(token, before);
                         }
                         // Stamped LAST so a failed read retries on the next
                         // request instead of being skipped for five minutes.

@@ -862,6 +862,16 @@ All structured logging, tracing, and metrics flow through `src/lib/observability
 
 NextAuth v4.24.15 (stable, exact-pinned in `package.json`) is configured in `src/auth.ts`. Providers: Google OAuth, Microsoft Entra ID (via the v4 `azure-ad` provider — same OAuth endpoints, Microsoft renamed the product), enterprise SSO — SAML and OIDC (via `src/app/api/auth/sso/saml/` and `src/app/api/auth/sso/oidc/`), and Credentials. The JWT carries `tenantId`, `role`, `mfaPending`, `memberships[]`, and the Epic C.3 `userSessionId`. Token refresh logic lives in `src/lib/auth/refresh.ts`.
 
+**MFA is asked of every workspace a session can reach** (`src/lib/auth/workspace-mfa.ts`).
+`mfaPending` is the PRIMARY workspace's flag (the oldest membership): it holds the whole
+session at that workspace's challenge. Every OTHER workspace whose policy wants a code
+goes in `mfaPendingTenantIds`. The edge holds that workspace's paths, and org paths,
+until its own challenge is passed (`pendingMfaWorkspaceSlug` in `src/lib/auth/guard.ts`).
+The challenge verifies the code against the workspace in its URL, so a pending primary is
+sent to the primary's own challenge page. Sign-in used to ask only the primary, so a
+workspace that required MFA but was joined later let its members in on a password alone.
+Do not narrow it back to the primary.
+
 **SSO sign-in goes through NextAuth, and its session reaches one workspace.**
 The SAML and OIDC callbacks do not mint a session. They verify the identity
 provider's answer and issue a single-use, 60-second hand-off
