@@ -13,6 +13,7 @@ import { badRequest, forbidden, notFound, unauthorized } from '@/lib/errors/type
 import prisma from '@/lib/prisma';
 import { getOrgPermissions, getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 import { logger } from '@/lib/observability/logger';
+import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
 
 /**
  * Generates or extracts a request ID.
@@ -70,6 +71,11 @@ export async function getTenantCtx(
 
     // This checks membership and resolves the tenant UUID & role
     const ctx = await resolveTenantContext(params, session.userId);
+    // A session opened by another tenant's single sign-on is not a sign-in
+    // here, whatever memberships the account holds.
+    if (isOutsideSsoScope(session.ssoTenantId, ctx.tenant.id)) {
+        throw forbidden(SSO_SCOPE_REFUSAL);
+    }
 
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.
@@ -104,6 +110,9 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
 
     // Resolve tenant context from session's tenantId (verifies membership)
     const ctx = await resolveTenantContext({ tenantId: session.tenantId }, session.userId);
+    if (isOutsideSsoScope(session.ssoTenantId, ctx.tenant.id)) {
+        throw forbidden(SSO_SCOPE_REFUSAL);
+    }
 
     // Enrich the observability context with tenant and user info
     mergeRequestContext({ tenantId: ctx.tenant.id, userId: session.userId });
@@ -186,6 +195,19 @@ export async function getOrgCtx(
     // real reason for ops diagnostics.
     const externalNotFound = () =>
         notFound('Organization not found or access not permitted');
+
+    // A single-sign-on session vouches for one tenant, never for an
+    // organization above it — see `src/lib/auth/sso-session.ts`.
+    if (session.ssoTenantId != null) {
+        logger.warn('org-ctx.access_denied', {
+            component: 'org-ctx',
+            reason: 'sso_scoped_session',
+            orgSlug,
+            userId: session.userId,
+            requestId,
+        });
+        throw externalNotFound();
+    }
 
     const org = await prisma.organization.findUnique({
         where: { slug: orgSlug },

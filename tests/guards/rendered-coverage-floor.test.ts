@@ -15,23 +15,35 @@
  *      registered high-risk primitives must each stay AT OR ABOVE a
  *      floor. Deleting verification trips CI.
  *   2. A slack sentinel: when the live count runs well above its
- *      floor, the floor MUST be raised in the same PR. That is the
- *      "staged" part — added verification is locked in as the new
- *      minimum, so a later PR cannot silently spend the surplus.
+ *      floor, the floor has fallen behind. That is the "staged" part —
+ *      added verification is locked in as the new minimum, so a later
+ *      PR cannot silently spend the surplus.
  *
- * Floors only ever move UP. After a PR that adds rendered/E2E tests,
- * raise the matching floor here to the new count.
+ * Floors only ever move UP, and since 2026-10-24 nobody raises them by
+ * hand. They live in `tests/guards/coverage-floors.json`, and every
+ * release raises each one to its live count
+ * (`scripts/raise-coverage-floors.mjs`, run as semantic-release's
+ * prepare step; the release commit carries the file to main). A pull
+ * request that adds a test therefore never edits a floor, so two of them
+ * can no longer conflict on the same line in the merge queue, which they
+ * did four times on 2026-10-24 alone. The slack sentinel is now the
+ * backstop: it fails only when more tests have merged since the last
+ * release than the slack allows.
  *
  * See docs/verification-policy.md and docs/frontend-assurance-model.md.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { FLOORS_FILE, FLOOR_KEYS, countCoverage, readFloors } from '../../scripts/lib/coverage-floors.js';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /**
- * Coverage floors. UPWARD ratchet — only ever edited higher, in the
- * same PR that adds the tests. History:
+ * Coverage floors. UPWARD ratchet. Until 2026-10-24 each was raised by
+ * hand, in the same PR that added the tests, and this is the record of
+ * that era; `git log -- tests/guards/coverage-floors.json` is the rest.
+ * History:
  *   • 2026-05-22 — Roadmap-7 P4: established at the post-roadmap-4
  *     population (126 rendered / 36 E2E / 5 registered primitives).
  */
@@ -350,7 +362,17 @@ const ROOT = path.resolve(__dirname, '../..');
 // risks-list-bulk-surface.test.tsx (#4046) and the others merged since 381,
 // measured by this guard's own counter on this branch merged with main
 // (3.302.2). The merge queue found it again.
-const RENDERED_TEST_FLOOR = 390;
+//   393 (2026-10-24): + mfa-enrolment-qr-code.test.tsx and the others merged
+// since 390, measured by this guard's own counter on this branch merged with
+// main (3.305.1). Raised ahead of the queue this time: eight more rendered
+// tests were in flight, which would have put the count past floor + slack.
+//   400 (2026-10-24): + members-change-role-from-menu.test.tsx and the others
+// merged since 393, measured by this guard's own counter on this branch merged
+// with main (3.306.1). #4072, #4073 and #4078 each add one more and leave this
+// line alone, so the merge queue cannot conflict on it; they land in the slack.
+// From here on the release raises the floors (see the header).
+const FLOORS = readFloors(ROOT) as Record<'rendered' | 'e2e' | 'registry', number>;
+const RENDERED_TEST_FLOOR = FLOORS.rendered;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
@@ -374,29 +396,14 @@ const RENDERED_TEST_FLOOR = 390;
 // prop renders only when the list is non-empty. MEASURED at 54, not 50 — four
 // of the five arrived from other branches, which is exactly why this comment
 // records the measurement rather than the arithmetic.
-const E2E_SPEC_FLOOR = 54;
-const REGISTRY_FLOOR = 5;
+const E2E_SPEC_FLOOR = FLOORS.e2e;
+const REGISTRY_FLOOR = FLOORS.registry;
 
 /** Max a live count may exceed its floor before the floor must rise. */
 const SLACK = { rendered: 8, e2e: 4, registry: 3 } as const;
 
-function countFiles(rel: string, suffix: string): number {
-    const dir = path.join(ROOT, rel);
-    return fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).length;
-}
-
-function registrySize(): number {
-    const src = fs.readFileSync(
-        path.join(ROOT, 'tests/guards/behavioural-coverage-registry.test.ts'),
-        'utf8',
-    );
-    return (src.match(/primitive:\s*'/g) ?? []).length;
-}
-
 describe('rendered / browser coverage floor — staged upward ratchet', () => {
-    const rendered = countFiles('tests/rendered', '.test.tsx');
-    const e2e = countFiles('tests/e2e', '.spec.ts');
-    const registry = registrySize();
+    const { rendered, e2e, registry } = countCoverage(ROOT);
 
     it.each([
         ['rendered behavioural tests', rendered, RENDERED_TEST_FLOOR],
@@ -422,13 +429,37 @@ describe('rendered / browser coverage floor — staged upward ratchet', () => {
         if (count - floor > slack) {
             throw new Error(
                 `${name} is ${floor} but the live count is ${count} ` +
-                    `(slack ${count - floor} > ${slack}). Raise ${name} to ` +
-                    `${count} in this PR so the added verification is locked ` +
-                    `in as the new minimum — an upward ratchet only works if ` +
-                    `the floor tracks the gains.`,
+                    `(slack ${count - floor} > ${slack}). Each release raises ` +
+                    `the floors in ${FLOORS_FILE}, so more tests have merged ` +
+                    `since the last release than the slack allows. Raise it to ` +
+                    `${count} there in this PR, or check that releases are ` +
+                    `still running scripts/raise-coverage-floors.mjs.`,
             );
         }
         expect(count - floor).toBeLessThanOrEqual(slack);
+    });
+
+    it('the floors file holds exactly the three floors, as integers', () => {
+        expect(Object.keys(FLOORS).sort()).toEqual([...FLOOR_KEYS].sort());
+        for (const key of FLOOR_KEYS) expect(Number.isInteger(FLOORS[key as keyof typeof FLOORS])).toBe(true);
+    });
+
+    it('every release raises the floors, and carries them to main', () => {
+        // Without both halves the floors stop moving: the prepare step raises
+        // them in the release's working tree, and only an asset reaches main.
+        const releaserc = JSON.parse(fs.readFileSync(path.join(ROOT, '.releaserc.json'), 'utf8')) as {
+            plugins: (string | [string, Record<string, unknown>])[];
+        };
+        const config = (name: string) =>
+            releaserc.plugins
+                .filter((p): p is [string, Record<string, unknown>] => Array.isArray(p) && p[0] === name)
+                .map((p) => p[1]);
+        expect(config('@semantic-release/exec').map((c) => c.prepareCmd)).toContain(
+            'node scripts/raise-coverage-floors.mjs',
+        );
+        expect(config('@semantic-release/git')[0]?.assets).toContain(FLOORS_FILE);
+        const order = releaserc.plugins.map((p) => (Array.isArray(p) ? p[0] : p));
+        expect(order.indexOf('@semantic-release/exec')).toBeLessThan(order.indexOf('@semantic-release/git'));
     });
 
     it('the floors are a genuine population, not a vacuous zero', () => {

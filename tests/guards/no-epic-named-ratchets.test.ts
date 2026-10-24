@@ -539,6 +539,16 @@ describe('epic-named ratchets are not added back', () => {
         // failure.
         //
         // RAISED 799 -> 800 on 2026-10-24, for ONE file:
+        // `vendored-openshell-skills.test.ts` (#3968). It is the only guard
+        // over `.claude/skills/`, a tree the product's own text scan does not
+        // cover, holding third-party text that every Claude Code session in
+        // this repository reads as instructions. Nothing already in guards or
+        // guardrails ranges over that path, so it cannot be folded in.
+        //
+        // The number is this branch's LIVE count plus one, not a remembered
+        // ceiling: main raised 798 -> 799 for `docs-site-publication` while
+        // this change was in flight, and two branches each raising "to 799"
+        // is how a shared floor lands one short.
         // `scanner-never-reads-credential-values.test.ts` (#3936's hardening
         // gate). It asserts that no file in the scanner package names
         // `ProviderClient` or any gateway RPC that returns credential MATERIAL
@@ -554,6 +564,13 @@ describe('epic-named ratchets are not added back', () => {
         // (#4058) also raises this line, so whichever lands second will
         // conflict here — and the resolution is to re-derive from the live
         // count, not to take either side's integer.
+        //
+        // RE-DERIVED AT THE MERGE, not taken from either side. Both branches
+        // raised this line to 800 against their own live counts, and both were
+        // right in isolation: each added ONE file to a tree of 799. Together
+        // they add two, so 800 would have landed one short and the next guard
+        // file would have failed for no reason anybody could see in the diff.
+        expect(guardFiles().length).toBeLessThan(801);
         expect(guardFiles().length).toBeLessThan(800);
     });
 

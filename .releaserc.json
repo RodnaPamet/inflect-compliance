@@ -116,12 +116,20 @@
       }
     ],
     [
+      "@semantic-release/exec",
+      {
+        "_comment": "Raises the verification-population floors in tests/guards/coverage-floors.json to the live counts (rendered tests, E2E specs, registered primitives), so pull requests never edit a floor and cannot conflict on one in the merge queue. Runs in prepare, BEFORE @semantic-release/git, which commits the file as an asset. The script only raises, and never exits non-zero: a failing prepare step would stop the release, and a floor left where it was is recovered by the next release. See scripts/raise-coverage-floors.mjs and tests/guards/rendered-coverage-floor.test.ts.",
+        "prepareCmd": "node scripts/raise-coverage-floors.mjs"
+      }
+    ],
+    [
       "@semantic-release/git",
       {
         "assets": [
           "CHANGELOG.md",
           "package.json",
-          "package-lock.json"
+          "package-lock.json",
+          "tests/guards/coverage-floors.json"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
         "_comment": "Assets committed with the release. `infra/helm/inflect/Chart.yaml` was removed from this list on 2026-09-02 together with `infra/helm/` itself \u2014 the chart described a Kubernetes deployment that was never provisioned. The paired `@semantic-release/exec` step that ran `scripts/sync-chart-version.mjs` went with it: that script exits non-zero when its regex misses, so leaving it would have failed the PREPARE phase of every release once the file was gone, taking the release pipeline dark on the next push to main."

@@ -229,6 +229,10 @@ export default function MembersAdminPage() {
     // Absolute invite link from the last "add member" — a share-anywhere
     // fallback so access never depends on the invite email arriving.
     const [inviteLink, setInviteLink] = useState<string | null>(null);
+    // Whether the server says that invite was actually emailed. False when
+    // no mailer is configured or the send failed — the link is then the
+    // only way the invitee hears about it.
+    const [inviteEmailed, setInviteEmailed] = useState(false);
 
     // Invite form
     const [showInvite, setShowInvite] = useState(false);
@@ -305,6 +309,7 @@ export default function MembersAdminPage() {
         setError(null);
         setSuccess(null);
         setInviteLink(null);
+        setInviteEmailed(false);
         setInviting(true);
 
         try {
@@ -323,7 +328,16 @@ export default function MembersAdminPage() {
             const data = await res.json();
             // The member is authorised the moment they sign in with this
             // email — access no longer depends on the invite email arriving.
-            setSuccess(t('members.memberAddedLoginHint', { email: inviteEmail, role: inviteRole }));
+            // Say "emailed" only when the server says it was: a deployment
+            // with no mailer sends nothing, and the admin must share the link.
+            const emailed = data?.emailSent === true;
+            setInviteEmailed(emailed);
+            const hintArgs = { email: inviteEmail, role: inviteRole };
+            setSuccess(
+                emailed
+                    ? t('members.memberAddedEmailed', hintArgs)
+                    : t('members.memberAddedNotEmailed', hintArgs),
+            );
             setInviteLink(
                 typeof data?.url === 'string' ? `${window.location.origin}${data.url}` : null,
             );
@@ -655,6 +669,24 @@ export default function MembersAdminPage() {
     // ─── Filter (R14-PR7 — search retired; full list shown) ───
     const filteredMembers = members;
 
+    // Only an OWNER changes an OWNER's or an AI_ADMIN's role
+    // (`OWNER_MANAGED_ROLES`), and neither membership takes a custom role
+    // (#3720, #3699), so for anyone else there is nothing to edit on the row.
+    // One rule for both ways into the editor — the role badge and the row
+    // menu's "Change role" — so neither offers what the other refuses.
+    const mayChangeRole = (m: Member) =>
+        m.status === 'ACTIVE' && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
+
+    // Seed the editor from the member's CURRENT role and custom role. A
+    // leftover pending custom role is either another member's or null, and
+    // Save sends any difference — so it would assign the wrong one or clear
+    // the member's own.
+    const openRoleEditor = (m: Member) => {
+        setEditingRoleId(m.id);
+        setPendingRole(m.role);
+        setPendingCustomRoleId(m.customRoleId);
+    };
+
     // ─── Members DataTable columns ───
     const memberColumns = useMemo(
         () => createColumns<Member>([
@@ -733,6 +765,8 @@ export default function MembersAdminPage() {
                                         size="xs"
                                         onClick={() => setEditingRoleId(null)}
                                         icon={<XCircle className="w-3.5 h-3.5" />}
+                                        id={`role-cancel-${m.id}`}
+                                        aria-label={t('members.cancelRoleChange')}
                                     />
                                 </div>
                                 {customRoleBlocksPromotion && !legacyCustomRole && (
@@ -771,11 +805,7 @@ export default function MembersAdminPage() {
                             </div>
                         );
                     }
-                    // Only an OWNER changes an OWNER's or an AI_ADMIN's role
-                    // (`OWNER_MANAGED_ROLES`), and neither membership takes a
-                    // custom role (#3720, #3699), so for anyone else there is
-                    // nothing to edit on the row.
-                    const editable = m.status === 'ACTIVE' && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
+                    const editable = mayChangeRole(m);
                     return (
                         <div className="flex items-center gap-1 flex-wrap">
                             <Tooltip
@@ -794,11 +824,7 @@ export default function MembersAdminPage() {
                                     )}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        if (editable) {
-                                            setEditingRoleId(m.id);
-                                            setPendingRole(m.role);
-                                            setPendingCustomRoleId(m.customRoleId);
-                                        }
+                                        if (editable) openRoleEditor(m);
                                     }}
                                     aria-disabled={!editable || undefined}
                                     id={`role-badge-${m.id}`}
@@ -904,6 +930,9 @@ export default function MembersAdminPage() {
                 cell: ({ row }) => {
                     const m = row.original;
                     const isActive = m.status === 'ACTIVE';
+                    // Only an OWNER deactivates or removes an OWNER; the
+                    // server refuses anyone else, so they are not offered it.
+                    const mayEndMembership = canManageOwnerRoles || m.role !== 'OWNER';
                     return (
                         // R3 fix — the old in-cell absolute dropdown was clipped
                         // by the DataTable's overflow container (so clicking the
@@ -918,17 +947,18 @@ export default function MembersAdminPage() {
                                     <Popover.Menu>
                                         {isActive && (
                                             <>
-                                                <Popover.Item
-                                                    icon={<Shield className="w-3.5 h-3.5" />}
-                                                    onClick={() => {
-                                                        setEditingRoleId(m.id);
-                                                        setPendingRole(m.role);
-                                                        setOpenMenuId(null);
-                                                    }}
-                                                    id={`action-change-role-${m.id}`}
-                                                >
-                                                    {t('members.changeRole')}
-                                                </Popover.Item>
+                                                {mayChangeRole(m) && (
+                                                    <Popover.Item
+                                                        icon={<Shield className="w-3.5 h-3.5" />}
+                                                        onClick={() => {
+                                                            openRoleEditor(m);
+                                                            setOpenMenuId(null);
+                                                        }}
+                                                        id={`action-change-role-${m.id}`}
+                                                    >
+                                                        {t('members.changeRole')}
+                                                    </Popover.Item>
+                                                )}
                                                 <Popover.Item
                                                     icon={<Monitor className="w-3.5 h-3.5" />}
                                                     onClick={() => {
@@ -939,24 +969,28 @@ export default function MembersAdminPage() {
                                                 >
                                                     {t('members.viewSessions')}
                                                 </Popover.Item>
-                                                <Popover.Item
-                                                    icon={<UserMinus className="w-3.5 h-3.5" />}
-                                                    destructive
-                                                    onClick={() => handleDeactivate(m.id, m.user.email)}
-                                                    id={`action-deactivate-${m.id}`}
-                                                >
-                                                    {t('members.deactivate')}
-                                                </Popover.Item>
+                                                {mayEndMembership && (
+                                                    <Popover.Item
+                                                        icon={<UserMinus className="w-3.5 h-3.5" />}
+                                                        destructive
+                                                        onClick={() => handleDeactivate(m.id, m.user.email)}
+                                                        id={`action-deactivate-${m.id}`}
+                                                    >
+                                                        {t('members.deactivate')}
+                                                    </Popover.Item>
+                                                )}
                                             </>
                                         )}
-                                        <Popover.Item
-                                            icon={<Trash2 className="w-3.5 h-3.5" />}
-                                            destructive
-                                            onClick={() => handleRemove(m.id, m.user.email)}
-                                            id={`action-remove-${m.id}`}
-                                        >
-                                            {t('members.remove')}
-                                        </Popover.Item>
+                                        {mayEndMembership && (
+                                            <Popover.Item
+                                                icon={<Trash2 className="w-3.5 h-3.5" />}
+                                                destructive
+                                                onClick={() => handleRemove(m.id, m.user.email)}
+                                                id={`action-remove-${m.id}`}
+                                            >
+                                                {t('members.remove')}
+                                            </Popover.Item>
+                                        )}
                                     </Popover.Menu>
                                 }
                             >
@@ -1092,7 +1126,9 @@ export default function MembersAdminPage() {
                         {inviteLink && (
                             <div className="flex items-center gap-tight text-xs">
                                 <span className="text-content-muted shrink-0">
-                                    {t('members.inviteLinkLabel')}
+                                    {inviteEmailed
+                                        ? t('members.inviteLinkLabel')
+                                        : t('members.inviteLinkLabelNotEmailed')}
                                 </span>
                                 <CopyText
                                     value={inviteLink}
