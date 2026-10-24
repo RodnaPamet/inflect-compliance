@@ -161,7 +161,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'fair-recompute.test.ts',
     'finding-create-modal.test.ts',
     'framework-delta.test.ts',
-    'inherited-control-data-usecase.test.ts',
     'invite-redemption.test.ts',
     'invite-routes.test.ts',
     'kri-readings.test.ts',

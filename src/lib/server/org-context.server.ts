@@ -40,9 +40,28 @@ export interface OrgServerContext {
 export async function getOrgServerContext(params: {
     orgSlug: string;
     userId: string;
+    /**
+     * The session's single-sign-on scope (`session.user.ssoTenantId`).
+     * Required so no caller can forget it: `null` for a session that did not
+     * come from SSO.
+     */
+    ssoTenantId: string | null | undefined;
 }): Promise<OrgServerContext> {
     const slug = params.orgSlug.trim();
     if (!slug) {
+        throw new NotFoundError('Organization not found or access not permitted');
+    }
+
+    // A single-sign-on session vouches for one tenant, never for an
+    // organization above it — see `src/lib/auth/sso-session.ts`.
+    if (params.ssoTenantId != null) {
+        logger.warn('org-ctx.access_denied', {
+            component: 'org-ctx',
+            surface: 'server',
+            reason: 'sso_scoped_session',
+            orgSlug: slug,
+            userId: params.userId,
+        });
         throw new NotFoundError('Organization not found or access not permitted');
     }
 

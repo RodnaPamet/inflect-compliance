@@ -117,7 +117,20 @@ export function getEmailProvider(): EmailProvider {
     return provider;
 }
 
-export async function sendEmail(msg: EmailMessage): Promise<void> {
+/**
+ * What a send did with the message.
+ *
+ * `delivered` is false when the message went to the console sink: no
+ * SMTP transport is configured (self-hosted without SMTP, dev), so the
+ * message was logged and reached nobody. A caller that tells a person
+ * "we emailed it" must read this — a send that resolves is not, by
+ * itself, a delivery.
+ */
+export interface EmailDelivery {
+    delivered: boolean;
+}
+
+export async function sendEmail(msg: EmailMessage): Promise<EmailDelivery> {
     // Lazy, per-module-instance init from env. Next's bundler can load
     // mailer.ts in a DIFFERENT chunk for a route handler than the one
     // `instrumentation.ts` initialized at startup, leaving the route's
@@ -131,7 +144,11 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
         envInitAttempted = true;
         initMailerFromEnv();
     }
-    await provider.send(msg);
+    // Read the provider once, so the answer describes the transport that
+    // actually took this message.
+    const transport = provider;
+    await transport.send(msg);
+    return { delivered: !(transport instanceof ConsoleEmailProvider) };
 }
 
 /**

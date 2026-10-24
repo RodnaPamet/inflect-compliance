@@ -16,6 +16,7 @@ import { previewInviteByToken } from '@/app-layer/usecases/tenant-invites';
 import { formatDateLong } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { InviteAcceptButton } from './InviteAcceptButton';
 
 interface InvitePageProps {
     params: Promise<{ token: string }>;
@@ -55,8 +56,9 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
     const expiryLabel = formatDateLong(preview.expiresAt);
 
     // If the user is signed in as the invitee, show the direct accept button.
-    // The POST goes to /api/invites/:token which calls redeemInvite and
-    // returns JSON; a thin client form handles the redirect.
+    // `InviteAcceptButton` POSTs to /api/invites/:token (which calls
+    // redeemInvite and returns JSON), re-mints the session's membership
+    // claims, then navigates into the workspace.
     const isReady = session && preview.matchesSession;
 
     // start-signin sets the inflect_invite_token cookie then redirects to /login.
@@ -95,7 +97,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
                 )}
 
                 {isReady ? (
-                    <InviteAcceptForm token={token} label={t('acceptInvitation')} />
+                    <InviteAcceptButton token={token} />
                 ) : (
                     <a
                         href={loginUrl}
@@ -117,26 +119,5 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
                 )}
             </div>
         </main>
-    );
-}
-
-/**
- * Thin client component that POSTs to the redeem endpoint and redirects.
- * Kept minimal — no heavy UI library imports needed.
- */
-function InviteAcceptForm({ token, label }: { token: string; label: string }) {
-    return (
-        <form
-            action={`/api/invites/${token}`}
-            method="POST"
-            onSubmit={undefined}
-        >
-            <button
-                type="submit"
-                className="w-full rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
-            >
-                {label}
-            </button>
-        </form>
     );
 }

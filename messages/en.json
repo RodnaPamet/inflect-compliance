@@ -295,7 +295,21 @@
     "aisvsBadge": "AISVS L2 compliant",
     "registrationFailed": "Registration failed",
     "loginFailed": "Login failed",
-    "invalidCredentials": "Invalid credentials"
+    "invalidCredentials": "Invalid credentials",
+    "errors": {
+      "signInFailed": "Sign-in didn't complete. Try again.",
+      "accountNotLinked": "This email address already signs in a different way. Sign in the way you did before.",
+      "ssoIncomplete": "Single sign-on didn't complete. Try again, or ask your workspace administrator for help.",
+      "ssoNoAccount": "There's no account for you in this workspace yet. Ask your workspace administrator to add you.",
+      "ssoDomainNotAllowed": "Your email address isn't allowed by this workspace's single sign-on settings. Ask your workspace administrator.",
+      "ssoUnavailable": "Single sign-on isn't available for this workspace right now. Ask your workspace administrator.",
+      "ssoStartFromSignIn": "For your security, single sign-on has to be started from this sign-in page."
+    },
+    "ssoComplete": {
+      "title": "Single sign-on",
+      "inProgress": "Finishing signing you in…",
+      "backToSignIn": "Back to sign in"
+    }
   },
   "nav": {
     "dashboard": "Board",
@@ -4615,8 +4629,10 @@
       "invitationSent": "Invitation sent to {email}",
       "reactivated": "Reactivated {email}",
       "addedAs": "Added {email} as {role}",
-      "memberAddedLoginHint": "{email} will get {role} access as soon as they sign in with this email. We also emailed them an invite link.",
+      "memberAddedEmailed": "{email} will get {role} access as soon as they sign in with this email. We also emailed them an invite link.",
+      "memberAddedNotEmailed": "{email} will get {role} access as soon as they sign in with this email. The invite was not emailed — copy the link below and send it to them.",
       "inviteLinkLabel": "Or share this link:",
+      "inviteLinkLabelNotEmailed": "Invite link:",
       "copyInviteLink": "Copy invite link",
       "roleChangeFailed": "Role change failed",
       "roleUpdated": "Role updated successfully",
@@ -5976,7 +5992,7 @@
       "bindingLabel": "Agent binding",
       "bindingAria": "About agent binding",
       "bindingTooltip": "The registered agent this credential acts as. When this workspace enforces agent registration, a credential with no binding is refused at the tool boundary — it can still be created, but it will not work.",
-      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. Someone with agent register access can bind it after creation.",
+      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. A credential's agent can be set only when it is created, never afterwards. For a credential that acts as an agent, ask someone who can also read the agent register to create it.",
       "agentPlaceholder": "No agent — unbound credential",
       "autonomyLabel": "Autonomy ceiling",
       "autonomyAria": "About the autonomy ceiling",
@@ -10580,6 +10596,7 @@
     "step1": "1. Open your authenticator app (Google Authenticator, Authy, 1Password, etc.)",
     "step2": "2. Scan this QR code or manually enter the setup key",
     "cannotScan": "If you cannot scan, use the setup key below",
+    "qrCodeAlt": "QR code for adding this account to your authenticator app",
     "setupKey": "Setup Key",
     "copied": "Copied!",
     "copy": "Copy",
@@ -11307,6 +11324,7 @@
     "expires": "Expires {date}",
     "signInToAccept": "Sign in to accept",
     "acceptInvitation": "Accept invitation",
+    "acceptFailed": "Could not accept the invitation. Please try again.",
     "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it."
   },
   "roles": {

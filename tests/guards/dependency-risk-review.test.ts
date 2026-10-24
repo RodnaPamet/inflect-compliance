@@ -147,6 +147,13 @@ const REVIEWED: Record<string, { major: number }> = {
     // tests/guards/tiptap-proto-merge-is-fixed.test.ts, which holds the
     // property that exemption rests on.
     tldraw: { major: 3 },
+    // Reviewed 2026-10-24 on adoption, for the personal MFA page's enrolment
+    // QR code. Qualifies because it HANDLES A CREDENTIAL: its one input is the
+    // otpauth:// URI, which carries the TOTP shared secret. It encodes that
+    // string in the browser and makes no network call, so the secret never
+    // leaves the page. Runtime, not dev: the page's client bundle needs it, and
+    // so does the server render of the same page.
+    qrcode: { major: 1 },
 };
 
 /** Major of a caret/tilde/plain semver range (`^8.0.7` → 8). */
