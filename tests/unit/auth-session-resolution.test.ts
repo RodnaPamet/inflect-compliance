@@ -99,6 +99,7 @@ describe('getSession', () => {
             email: 'alice@example.com',
             role: 'ADMIN',
             ssoTenantId: null,
+            signInMethod: null,
         });
     });
 
@@ -140,6 +141,7 @@ describe('getSession', () => {
             email: '',
             role: 'READER',
             ssoTenantId: null,
+            signInMethod: null,
         });
     });
 });
@@ -168,6 +170,7 @@ describe('getSessionOrThrow', () => {
             email: 'a@b.com',
             role: 'EDITOR',
             ssoTenantId: null,
+            signInMethod: null,
         });
     });
 });

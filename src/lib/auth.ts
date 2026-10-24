@@ -29,6 +29,7 @@ import prisma from './prisma';
 import type { Role, User } from '@prisma/client';
 import { env } from '@/env';
 import { unauthorized, forbidden } from '@/lib/errors/types';
+import type { SignInMethod } from '@/lib/auth/sso-enforcement';
 
 export interface JwtPayload {
     userId: string;
@@ -41,6 +42,8 @@ export interface JwtPayload {
      * `src/lib/auth/sso-session.ts`.
      */
     ssoTenantId?: string | null;
+    /** How the session was opened; "Enforce SSO" reads it (`src/lib/auth/sso-enforcement.ts`). */
+    signInMethod?: SignInMethod | null;
 }
 
 // Legacy JWT secret — used only for reading old cookies during migration
@@ -62,6 +65,7 @@ export async function getSession(): Promise<JwtPayload | null> {
             email: session.user.email ?? '',
             role: session.user.role ?? 'READER',
             ssoTenantId: session.user.ssoTenantId ?? null,
+            signInMethod: session.user.signInMethod ?? null,
         };
     }
 

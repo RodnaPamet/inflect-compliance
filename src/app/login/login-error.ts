@@ -13,6 +13,7 @@ export type LoginErrorKey =
     | 'errors.accountNotLinked'
     | 'errors.ssoIncomplete'
     | 'errors.ssoStartFromSignIn'
+    | 'errors.ssoRequired'
     | 'errors.ssoNoAccount'
     | 'errors.ssoDomainNotAllowed'
     | 'errors.ssoUnavailable';
@@ -36,7 +37,23 @@ const SSO_INCOMPLETE = new Set([
     'validation_failed',
 ]);
 
+/**
+ * `sso_required:<workspace>`: the person signed in some other way, and every
+ * workspace they belong to enforces single sign-on (src/lib/auth/sso-enforcement.ts).
+ * The workspace is inside the code because, for a password sign-in, the
+ * next-auth client hands the page the error alone.
+ */
+const SSO_REQUIRED = 'sso_required:';
+
+/** The workspace an `sso_required:` code names, if it names a plausible one. */
+export function ssoRequiredWorkspace(code: string | null | undefined): string | undefined {
+    if (!code?.startsWith(SSO_REQUIRED)) return undefined;
+    const slug = code.slice(SSO_REQUIRED.length);
+    return /^[a-z0-9][a-z0-9-]*$/.test(slug) ? slug : undefined;
+}
+
 export function loginErrorKey(code: string): LoginErrorKey {
+    if (code.startsWith(SSO_REQUIRED)) return 'errors.ssoRequired';
     if (code === 'OAuthAccountNotLinked') return 'errors.accountNotLinked';
     if (code === 'sso_start_refused') return 'errors.ssoStartFromSignIn';
     if (code === 'domain_mismatch') return 'errors.ssoDomainNotAllowed';

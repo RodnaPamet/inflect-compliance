@@ -7,6 +7,7 @@ import { forbidden, notFound } from '@/lib/errors/types';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { BREAK_GLASS_ROLES, isBreakGlassRole } from '@/lib/auth/sso-enforcement';
 
 /**
  * Enterprise SSO Usecases
@@ -123,7 +124,7 @@ export async function toggleTenantSso(
  * When enforced:
  *   - Users cannot log in with credentials
  *   - SSO is the only authentication method
- *   - Break-glass: ADMIN users who have passwordHash set can still use local login
+ *   - Break-glass: OWNER and ADMIN users who have passwordHash set can still use local login
  */
 export async function setTenantSsoEnforced(
     ctx: RequestContext,
@@ -141,8 +142,10 @@ export async function setTenantSsoEnforced(
 
     // Safety check: if enabling enforcement, ensure at least one admin has SSO linked
     if (enforced) {
+        // OWNER counts: an OWNER-run workspace with no ADMIN could otherwise
+        // never turn enforcement on.
         const adminMembers = await prisma.tenantMembership.findMany({
-            where: { tenantId: ctx.tenantId, role: 'ADMIN' },
+            where: { tenantId: ctx.tenantId, role: { in: [...BREAK_GLASS_ROLES] }, status: 'ACTIVE' },
             include: { user: true },
         });
 
@@ -439,7 +442,7 @@ function extractJitConfig(provider: { configJson: unknown } | null): {
  * Returns false if SSO is enforced AND the user is not a break-glass admin.
  *
  * Break-glass criteria:
- *   1. User has ADMIN role in tenant
+ *   1. User has the OWNER or ADMIN role in tenant
  *   2. User has a local passwordHash set
  *   Both conditions must be true.
  */
@@ -459,7 +462,7 @@ export async function isLocalLoginAllowed(
         where: { tenantId_userId: { tenantId, userId } },
     });
 
-    if (membership?.role !== 'ADMIN') return false;
+    if (!membership || !isBreakGlassRole(membership.role)) return false;
 
     // Admin — check if they have a local password (break-glass)
     const user = await prisma.user.findUnique({
@@ -522,7 +525,7 @@ export async function checkSsoEnforcementForEmail(
 
         if (enforcedProvider) {
             // SSO is enforced in this tenant — check break-glass
-            const isBreakGlass = membership.role === 'ADMIN' && !!user.passwordHash;
+            const isBreakGlass = isBreakGlassRole(membership.role) && !!user.passwordHash;
 
             if (!isBreakGlass) {
                 return {
