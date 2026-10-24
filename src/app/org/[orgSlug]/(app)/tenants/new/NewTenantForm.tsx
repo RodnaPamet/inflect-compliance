@@ -21,7 +21,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { getCsrfToken } from 'next-auth/react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { cardVariants } from '@/components/ui/card';
@@ -32,6 +31,7 @@ import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
+import { refreshSessionClaims } from '@/lib/auth/refresh-session-claims';
 
 interface Props {
     orgSlug: string;
@@ -72,37 +72,6 @@ function slugify(input: string): string {
 interface FieldErrors {
     name?: string;
     slug?: string;
-}
-
-/**
- * Re-mint the NextAuth JWT cookie so the OWNER membership the server
- * just granted on the new tenant is reflected in the token BEFORE we
- * navigate into the tenant. Without this the Edge tenant-access gate —
- * which reads membership claims straight from the JWT with no DB hit —
- * would bounce the redirect to /no-tenant, because those claims are
- * otherwise frozen at sign-in.
- *
- * The app deliberately mounts no <SessionProvider> (session is resolved
- * server-side via `auth()`), so we can't use `useSession().update()`.
- * We POST the NextAuth session-update endpoint directly — exactly what
- * `update()` does internally — which re-runs the `jwt` callback with
- * `trigger: 'update'`; see `applyMembershipClaims` in `src/auth.ts`.
- * Best-effort — a failure here just means the user may need a manual
- * refresh, never a broken create.
- */
-async function refreshSessionClaims(): Promise<void> {
-    try {
-        const csrfToken = await getCsrfToken();
-        if (!csrfToken) return;
-        await fetch('/api/auth/session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ csrfToken, data: {} }),
-        });
-    } catch {
-        /* best-effort — navigation below still proceeds */
-    }
 }
 
 function validate({ name, slug }: { name: string; slug: string }, t: OrgTranslate): FieldErrors {
@@ -187,7 +156,7 @@ export function NewTenantForm({ orgSlug }: Props) {
                 const body = (await res.json()) as { tenant: { slug: string } };
                 const newSlug = body.tenant.slug;
                 // Pick up the just-granted OWNER membership in the JWT
-                // before navigating into the new tenant (see helper above).
+                // before navigating into the new tenant (see `refreshSessionClaims`).
                 await refreshSessionClaims();
                 if (framework === 'later') {
                     router.push(`/t/${newSlug}/dashboard`);

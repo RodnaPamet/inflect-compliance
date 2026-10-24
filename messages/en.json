@@ -4641,8 +4641,10 @@
       "invitationSent": "Invitation sent to {email}",
       "reactivated": "Reactivated {email}",
       "addedAs": "Added {email} as {role}",
-      "memberAddedLoginHint": "{email} will get {role} access as soon as they sign in with this email. We also emailed them an invite link.",
+      "memberAddedEmailed": "{email} will get {role} access as soon as they sign in with this email. We also emailed them an invite link.",
+      "memberAddedNotEmailed": "{email} will get {role} access as soon as they sign in with this email. The invite was not emailed — copy the link below and send it to them.",
       "inviteLinkLabel": "Or share this link:",
+      "inviteLinkLabelNotEmailed": "Invite link:",
       "copyInviteLink": "Copy invite link",
       "roleChangeFailed": "Role change failed",
       "roleUpdated": "Role updated successfully",
@@ -11333,6 +11335,7 @@
     "expires": "Expires {date}",
     "signInToAccept": "Sign in to accept",
     "acceptInvitation": "Accept invitation",
+    "acceptFailed": "Could not accept the invitation. Please try again.",
     "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it."
   },
   "roles": {

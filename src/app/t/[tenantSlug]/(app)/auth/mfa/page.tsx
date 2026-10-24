@@ -14,6 +14,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { ShieldCheck, KeyRound, AlertTriangle } from 'lucide-react';
 import { Heading } from '@/components/ui/typography';
 import { Card } from '@/components/ui/card';
+import { refreshSessionCookie } from '@/lib/auth/refresh-session-cookie';
 
 /**
  * MFA Challenge Page — shown when mfaPending is true.
@@ -70,8 +71,10 @@ export default function MfaChallengePage() {
             const data = await res.json();
 
             if (data.success) {
-                // MFA challenge complete — redirect to original target
-                // The JWT will be refreshed on next request, clearing mfaPending
+                // MFA challenge complete. Rewrite the session cookie first:
+                // the edge gate reads `mfaPending` from it, and nothing else
+                // re-signs it, so navigating straight on returns here.
+                await refreshSessionCookie();
                 window.location.href = next;
             } else {
                 setAttempts(a => a + 1);

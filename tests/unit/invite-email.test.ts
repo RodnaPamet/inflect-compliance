@@ -30,7 +30,7 @@ describe('sendInviteEmail', () => {
     beforeEach(() => sendEmailMock.mockReset());
 
     it('sends to the recipient with the acceptance URL in the body', async () => {
-        sendEmailMock.mockResolvedValue(undefined);
+        sendEmailMock.mockResolvedValue({ delivered: true });
         const res = await sendInviteEmail(baseParams);
 
         expect(res).toEqual({ sent: true });
@@ -51,8 +51,14 @@ describe('sendInviteEmail', () => {
         });
     });
 
+    it('reports { sent: false } when no transport is configured (the console sink delivers nothing)', async () => {
+        sendEmailMock.mockResolvedValue({ delivered: false });
+        await expect(sendInviteEmail(baseParams)).resolves.toEqual({ sent: false });
+        expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    });
+
     it('handles a missing inviter name gracefully', async () => {
-        sendEmailMock.mockResolvedValue(undefined);
+        sendEmailMock.mockResolvedValue({ delivered: true });
         await sendInviteEmail({ ...baseParams, invitedByName: null });
         const msg = sendEmailMock.mock.calls[0][0];
         expect(msg.text).toContain("You've been invited");
