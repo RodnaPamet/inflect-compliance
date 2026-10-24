@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import { rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-rollup';
 import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence';
 import { toCsv } from '@/lib/csv/format-csv';
+import { LIVE_TEMPLATE_TASKS } from '../../repositories/ControlTemplateRepository';
 import {
     collapseLinksToOwnRequirements,
     resolveFamilyRequirementAliases,
@@ -182,7 +183,7 @@ export async function listTemplates(
     const templates = await db.controlTemplate.findMany({
         where,
         include: {
-            tasks: { orderBy: { sortOrder: 'asc' } },
+            tasks: LIVE_TEMPLATE_TASKS,
             requirementLinks: { include: { requirement: { include: { framework: true } } } },
             packLinks: { include: { pack: true } },
         },
