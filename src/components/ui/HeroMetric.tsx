@@ -42,6 +42,7 @@ import { cardVariants } from "./card";
 import { MiniAreaChart, type MiniAreaChartVariant } from "./mini-area-chart";
 import type { SparklineData } from "@/components/ui/charts";
 
+import { useTranslations } from 'next-intl';
 // ─── Types ────────────────────────────────────────────────────────
 
 export type HeroMetricFormat = "number" | "percent" | "compact";
@@ -164,6 +165,7 @@ export function HeroMetric({
     className,
     "data-testid": dataTestId,
 }: HeroMetricProps) {
+    const t = useTranslations('common.ui');
     // Non-finite (`NaN`, `±Infinity`) is "no data", exactly like
     // null/undefined — a 72px masthead must never print `NaN%`. The
     // local narrows to `number` so the animated branch stays typed
@@ -285,7 +287,7 @@ export function HeroMetric({
                             variant={
                                 SEMANTIC_SPARKLINE_VARIANT[deltaInfo.semantic]
                             }
-                            aria-label={`Trend sparkline — last ${sparkline.length} data points`}
+                            aria-label={t('trendSparkline', { count: sparkline.length })}
                         />
                     </div>
                 )}

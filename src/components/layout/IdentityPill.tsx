@@ -25,16 +25,18 @@ import { useOrgContext } from '@/lib/org-context-provider';
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 
+import { useTranslations } from 'next-intl';
 const PILL_CLASS =
     `relative inline-flex items-center gap-tight rounded-full border border-border-subtle bg-bg-default px-3 py-1 text-xs font-medium text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${HIT_AREA_CLASS}`;
 
 export function TenantIdentityPill() {
+    const t = useTranslations('common.ui');
     const { tenantName } = useTenantContext();
     return (
         <Link
             href="/tenants"
             className={PILL_CLASS}
-            aria-label={`Current tenant: ${tenantName}. Click to switch.`}
+            aria-label={t('currentTenant', { name: tenantName })}
             data-testid="top-chrome-tenant-pill"
         >
             <InitialsAvatar value={tenantName} />
@@ -44,6 +46,7 @@ export function TenantIdentityPill() {
 }
 
 export function OrgIdentityPill() {
+    const t = useTranslations('common.ui');
     const { orgName } = useOrgContext();
     // No dedicated /orgs picker today — `/tenants` is the unified
     // post-sign-in picker (Tenant + Organization memberships both
@@ -54,7 +57,7 @@ export function OrgIdentityPill() {
         <Link
             href="/tenants"
             className={PILL_CLASS}
-            aria-label={`Current organization: ${orgName}. Click to switch.`}
+            aria-label={t('currentOrganization', { name: orgName })}
             data-testid="top-chrome-org-pill"
         >
             <InitialsAvatar value={orgName} />

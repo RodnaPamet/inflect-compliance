@@ -137,7 +137,19 @@
       "openPdfNamed": "Отвори PDF: {title}",
       "loadingIndicator": "Зареждане",
       "listRailLeft": "Ориентиране",
-      "listRailRight": "Контекст"
+      "listRailRight": "Контекст",
+      "currentTenant": "Текущ наемател: {name}. Щракнете, за да смените.",
+      "currentOrganization": "Текуща организация: {name}. Щракнете, за да смените.",
+      "switchContext": "Смяна на контекста",
+      "freshnessLabel": "Актуалност: {label}",
+      "freshnessLabelWithAge": "Актуалност: {label}, {age}",
+      "trendSparkline": "Графика на тенденцията — последни {count} точки от данните",
+      "expandPanel": "Разгъни панела {title}",
+      "resizePanel": "Преоразмери панела {title}",
+      "collapsePanel": "Свий панела {title}",
+      "countValue": "Брой {value}",
+      "percentOfTotal": "{percent} от общо",
+      "labelValueOfTotal": "{label}: {value} от {total}"
     },
     "calendar": {
       "prevYear": "Към предходната година",
