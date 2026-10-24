@@ -76,6 +76,7 @@ import { RiskAleChip } from './_shared/RiskAleChip';
 import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';
 import { deriveMatrixMovements } from './_shared/matrix-movements';
 import { RiskBandChip } from './_shared/RiskBandChip';
+import type { RiskBulkPermissions } from './_shared/bulk-permissions';
 import { detectCellCollisions } from '@/lib/risk-collisions';
 import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -182,6 +183,8 @@ interface RisksClientProps {
         canAudit: boolean;
         canExport: boolean;
     };
+    /** Which bulk actions to offer; see `riskBulkPermissions`. */
+    bulkPermissions: RiskBulkPermissions;
     translations: {
         title: string;
         listDescription: string;
@@ -270,6 +273,7 @@ function RisksPageInner({
     matrixConfig,
     tenantSlug,
     permissions,
+    bulkPermissions,
     translations: t,
 }: RisksClientProps) {
     const tx = useTranslations('risks');
@@ -468,8 +472,9 @@ function RisksPageInner({
             setBulkApplying(false);
         }
     };
-    const riskBulkActions: BulkActionDef[] = useMemo(
-        () => [
+    const riskBulkActions: BulkActionDef[] = useMemo(() => {
+        const defs: BulkActionDef[] = [];
+        if (bulkPermissions.canEdit) defs.push(
             {
                 value: 'status',
                 label: tx('bulk.setStatus'),
@@ -514,13 +519,13 @@ function RisksPageInner({
                     />
                 ),
             },
-            // No `confirm` — bulk delete is a reversible soft delete surfaced
-            // through the Epic 67 undo-toast in handleBulkApply, not a
-            // blocking confirm dialog.
-            { value: 'delete', label: tx('bulk.delete') },
-        ],
-        [tenantSlug, tx],
-    );
+        );
+        // No `confirm` — bulk delete is a reversible soft delete surfaced
+        // through the Epic 67 undo-toast in handleBulkApply, not a
+        // blocking confirm dialog.
+        if (bulkPermissions.canDelete) defs.push({ value: 'delete', label: tx('bulk.delete') });
+        return defs;
+    }, [tenantSlug, tx, bulkPermissions.canEdit, bulkPermissions.canDelete]);
 
     // ─── PR-1: org-parity sortable headers ───
     const [sortBy, setSortBy] = useState<string | undefined>(undefined);
@@ -1431,15 +1436,22 @@ function RisksPageInner({
                         onRowSelectionChange={(rows) =>
                             setSelected(new Set(rows.map((r) => r.original.id)))
                         }
-                        selectionControls={() => (
-                            <BulkActionBar
-                                actions={riskBulkActions}
-                                onApply={handleBulkApply}
-                                applying={bulkApplying}
-                                selectedCount={selected.size}
-                                entityLabel={tx('entityRisks')}
-                            />
-                        )}
+                        // Selection stays on for every role (the table's
+                        // default); the bar appears only when this user has a
+                        // bulk action the server will accept.
+                        selectionControls={
+                            riskBulkActions.length > 0
+                                ? () => (
+                                      <BulkActionBar
+                                          actions={riskBulkActions}
+                                          onApply={handleBulkApply}
+                                          applying={bulkApplying}
+                                          selectedCount={selected.size}
+                                          entityLabel={tx('entityRisks')}
+                                      />
+                                  )
+                                : undefined
+                        }
                         emptyState={
                             hasActive ? (
                                 <EmptyState
