@@ -344,6 +344,7 @@
     "openOrgNavigationMenu": "Отвори навигационното меню на организацията",
     "accountMenuFor": "Меню на акаунта – {name}",
     "account": "Акаунт",
+    "multiFactorAuth": "Многофакторно удостоверяване",
     "signOut": "Изход",
     "closeNavigationDrawer": "Затвори навигационния панел",
     "agentsAsk": "Попитай"

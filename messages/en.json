@@ -344,6 +344,7 @@
     "openOrgNavigationMenu": "Open organization navigation menu",
     "accountMenuFor": "Account menu for {name}",
     "account": "Account",
+    "multiFactorAuth": "Multi-factor authentication",
     "signOut": "Sign out",
     "closeNavigationDrawer": "Close navigation drawer",
     "agentsAsk": "Ask"
