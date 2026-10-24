@@ -236,7 +236,7 @@ directory rather than editing rows by hand.
 | `AISVS-1.0` | `NIST-CSF-2.0` | `aisvs-to-nist-csf.yaml` | 13 |
 | `AIUC-1` | `EU-AI-ACT-2024` | `aiuc-1-to-eu-ai-act.yaml` | 39 |
 | `AIUC-1` | `IMDA-MGF-2026` | `aiuc-1-to-imda-mgf.yaml` | 49 |
-| `AIUC-1` | `ISO27001-2022` | `aiuc-1-to-iso27001.yaml` | 46 |
+| `AIUC-1` | `ISO27001-2022` | `aiuc-1-to-iso27001.yaml` | 59 |
 | `AIUC-1` | `ISO42001-2023` | `aiuc-1-to-iso-42001.yaml` | 62 |
 | `AIUC-1` | `OWASP-ASI-TOP10` | `aiuc-1-to-owasp-agentic.yaml` | 46 |
 | `AIUC-1` | `SOC2-2017` | `aiuc-1-to-soc2.yaml` | 23 |
@@ -250,7 +250,7 @@ directory rather than editing rows by hand.
 | `IMDA-MGF-2026` | `AIUC-1` | `imda-mgf-to-aiuc-1.yaml` | 49 |
 | `IMDA-MGF-2026` | `ISO42001-2023` | `imda-mgf-to-iso-42001.yaml` | 47 |
 | `IMDA-MGF-2026` | `OWASP-ASI-TOP10` | `imda-mgf-to-owasp-agentic.yaml` | 27 |
-| `ISO27001-2022` | `AIUC-1` | `iso27001-to-aiuc-1.yaml` | 46 |
+| `ISO27001-2022` | `AIUC-1` | `iso27001-to-aiuc-1.yaml` | 59 |
 | `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 14 |
 | `ISO27001-2022` | `NIST-CSF-2.0` | `iso27001-to-nist-csf.yaml` | 14 |
 | `ISO27001-2022` | `OWASP-ASI-TOP10` | `iso27001-to-owasp-agentic.yaml` | 39 |
@@ -291,7 +291,7 @@ alone.
 Because the reverse of a `SUBSET` is a `SUPERSET` — which gap analysis reads
 as `COVERED` — every symmetric pair reserves either for an edge where meeting
 the broader requirement as written necessarily meets the narrower one. None of
-the AIUC-1 sets' 265 edges clears that bar. Of the nineteen such edges the
+the AIUC-1 sets' 278 edges clears that bar. Of the nineteen such edges the
 earlier agentic pairs carried, eighteen failed it on review (2026-10-24) and
 are now `INTERSECT`; the one left is OWASP ASI07 → IMDA MGF-3.6, whose four
 named failures are exactly what MGF-3.6 requires closed.

@@ -17,6 +17,11 @@
  *      `A.6.2.8`, which the mapping (authored against `ISO42001-2023`) only
  *      reaches through the family collapse. Also the cross-tenant probe.
  *   C  nothing at all: nothing reached, and nothing leaked in from A or B.
+ *   D  the ISO 27001 holder: one control on the SEEDED Annex A row `8.16`
+ *      (monitoring), spelled the way the catalogue spells it. A.8.16 is one of
+ *      the five controls added to the library so the ISO 27001 ⇄ AIUC-1 pair
+ *      could reach the requirements it bears on; without the node, or without
+ *      the `8.16` ⇄ `A.8.16` reconciliation, this tenant sees nothing.
  *
  * Frameworks and mappings are GLOBAL rows, imported through the production
  * importers from the shipped YAML, so this exercises the real data.
@@ -48,7 +53,8 @@ const ISO_LIBRARY_URN = 'urn:inflect:library:iso-42001';
 const TA = 'inhcov-tenant-a';
 const TB = 'inhcov-tenant-b';
 const TC = 'inhcov-tenant-c';
-const TENANTS = [TA, TB, TC];
+const TD = 'inhcov-tenant-d';
+const TENANTS = [TA, TB, TC, TD];
 const userIds: Record<string, string> = {};
 
 const ctxFor = (tenantId: string) =>
@@ -94,7 +100,13 @@ describeFn('framework coverage inherited from other frameworks', () => {
 
         await importLibraryFromFile(prisma, path.join(LIB_DIR, 'iso-42001.yaml'), { propagateDelta: false });
         await importLibraryFromFile(prisma, path.join(LIB_DIR, 'aiuc-1.yaml'), { propagateDelta: false });
-        for (const file of ['iso-42001-to-aiuc-1.yaml', 'aiuc-1-to-iso-42001.yaml']) {
+        await importLibraryFromFile(prisma, path.join(LIB_DIR, 'iso27001-2022.yaml'), { propagateDelta: false });
+        for (const file of [
+            'iso-42001-to-aiuc-1.yaml',
+            'aiuc-1-to-iso-42001.yaml',
+            'iso27001-to-aiuc-1.yaml',
+            'aiuc-1-to-iso27001.yaml',
+        ]) {
             const set = parseMappingSetFile(path.join(LIB_DIR, 'mappings', file));
             const result = await importMappingSet(prisma, set, computeMappingSetHash(set));
             expect(result.errors).toEqual([]);
@@ -110,6 +122,18 @@ describeFn('framework coverage inherited from other frameworks', () => {
         });
         const seededLogging = await prisma.frameworkRequirement.create({
             data: { frameworkId: isoSeed.id, code: 'A.6.2.8', title: 'Event logs', sortOrder: 0 },
+        });
+
+        // The ISO 27001 catalogue row tenants actually install: key `ISO27001`,
+        // Annex A spelled without the `A.` prefix the library uses.
+        const iso27001Seed = await prisma.framework.create({
+            data: {
+                key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', kind: 'ISO_STANDARD',
+                sourceUrn: 'urn:inflect:library:iso27001-2022',
+            },
+        });
+        const seededMonitoring = await prisma.frameworkRequirement.create({
+            data: { frameworkId: iso27001Seed.id, code: '8.16', title: 'Monitoring activities', sortOrder: 0 },
         });
 
         for (const tenantId of TENANTS) {
@@ -132,6 +156,9 @@ describeFn('framework coverage inherited from other frameworks', () => {
 
         // B: logging, on the SEEDED row only.
         await linkControl(TB, 'B-6.2.8', seededLogging.id);
+
+        // D: monitoring, on the seeded ISO 27001 row only.
+        await linkControl(TD, 'D-8.16', seededMonitoring.id);
     });
 
     afterAll(async () => {
@@ -200,6 +227,27 @@ describeFn('framework coverage inherited from other frameworks', () => {
         expect(c.requirements).toEqual([]);
         expect(c.sourceFrameworks).toEqual([]);
         expect(c.summary).toEqual({ direct: 0, partiallyCovered: 0, reviewNeeded: 0, notCovered: 50 });
+    });
+
+    it('reaches AIUC-1 from a control on the seeded ISO 27001 monitoring row', async () => {
+        const report = await computeInheritedCoverage(ctxFor(TD), 'AIUC-1');
+
+        expect(Object.fromEntries(report.requirements.map((r) => [r.code, r.status]))).toEqual({
+            B002: 'PARTIALLY_COVERED',
+            B004: 'PARTIALLY_COVERED',
+            B006: 'PARTIALLY_COVERED',
+            C008: 'REVIEW_NEEDED',
+            E009: 'PARTIALLY_COVERED',
+        });
+        // Reported under the library key and spelling the mapping cites,
+        // holding the control that hangs off the seeded `8.16` row.
+        const adversarialInput = report.requirements.find((r) => r.code === 'B002')!;
+        expect(
+            adversarialInput.routes.map((r) => [r.frameworkKey, r.requirementCode, r.strength, r.controls.map((c) => c.code)]),
+        ).toEqual([['ISO27001-2022', 'A.8.16', 'INTERSECT', ['D-8.16']]]);
+        expect(report.sourceFrameworks).toEqual([
+            { key: 'ISO27001-2022', name: expect.any(String), requirements: 5 },
+        ]);
     });
 
     it('works in the other direction: an AIUC-1 control reaches ISO 42001', async () => {
