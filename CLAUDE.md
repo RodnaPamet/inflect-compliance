@@ -885,7 +885,8 @@ cookie and sends the IdP only a random id as OIDC `state` / SAML `RelayState`,
 and the callback refuses without that cookie. `/start` also refuses a
 cross-site initiation (`Sec-Fetch-Site`). Never put flow contents back in the
 URL: that is login CSRF, and a verifier beside its code is no PKCE.
-The OIDC ID token is VERIFIED, not decoded (`verifyIdToken` in
+
+**The OIDC ID token is VERIFIED, not decoded** (`verifyIdToken` in
 `src/lib/security/oidc-client.ts`, via `jose`): signature by a key at the
 IdP's `jwks_uri`, an asymmetric-only `algorithms` allowlist, `iss` exactly the
 discovery document's issuer, `aud`/`azp` naming the client, `exp`/`iat`, and
