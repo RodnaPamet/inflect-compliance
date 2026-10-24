@@ -267,6 +267,47 @@ const IMPERATIVE_VERBS = new Set([
     'Purge',
     'Reduce',
     'Withdraw',
+
+    // ── ISO/IEC 27001:2022 Annex A vocabulary ────────────────────────
+    // The 493 Annex A titles were authored long before they had steps, so
+    // this ratchet read none of them until steps arrived. Each verb was read
+    // in its title: `Bring` a room, system or media holding up to what its
+    // record requires; `Carry out` and `Present` an independent review;
+    // `Fail over` to a redundant component; `Point` a system at the approved
+    // time source; `Project` demand against capacity; `Have` management
+    // approve the policy and `Make` a field mandatory, both causative rather
+    // than colloquial; `Show` a protection still stands. None is in the
+    // refused set (Fit, Fix, Seat, Stand), and that set stays refused.
+    'Attempt',
+    'Automate',
+    'Break',
+    'Bring',
+    'Carry',
+    'Change',
+    'Circulate',
+    'Clear',
+    'Create',
+    'Decide',
+    'Fail',
+    'Have',
+    'Insert',
+    'Make',
+    'Place',
+    'Point',
+    'Present',
+    'Project',
+    'Protect',
+    'Provision',
+    'Pursue',
+    'Re-assess',
+    'Re-examine',
+    'Read',
+    'Reconfirm',
+    'Replace',
+    'Reposition',
+    'Retrieve',
+    'Show',
+    'Split',
 ]);
 
 /**
@@ -362,7 +403,10 @@ describe('authored control tasks are actionable', () => {
         const bad = held.flatMap((t) =>
             (t.tasks ?? [])
                 .filter((k) => Array.isArray(k.steps))
-                .filter((k) => !IMPERATIVE_VERBS.has(titleOf(k).split(/\s+/)[0] ?? ''))
+                // A title may open with its verb and then a comma — "Add, amend and
+                // retire entries…", "Write, in the words staff use, …" — so the
+                // first word is read without trailing punctuation.
+                .filter((k) => !IMPERATIVE_VERBS.has((titleOf(k).split(/\s+/)[0] ?? '').replace(/[,;:]$/, '')))
                 .map((k) => `${t.code}: ${titleOf(k)}`),
         );
         expect(bad).toEqual([]);
