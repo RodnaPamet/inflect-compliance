@@ -1,7 +1,8 @@
 # API Rate Limiting
 
 Inflect Compliance has **three distinct rate-limit tiers**, each scoped
-to a different traffic class. None of them share a budget — a runaway
+to a different traffic class, and `/api/mcp` replaces the mutation tier
+with a pair of budgets of its own (see *The MCP endpoint*). None of them share a budget — a runaway
 script that exhausts the read tier can still log in, and a credential
 spray attack does not consume the read budget for legitimate users.
 
@@ -12,6 +13,7 @@ spray attack does not consume the read budget for legitimate users.
 | **Auth** | tiered (10/30/60 per min) | 10/min for sign-in callbacks; 30/min for session probes; 60/min for `/csrf` and `/providers` | Edge middleware | `(IP, ua-hash)` |
 | **Mutation** | `API_MUTATION_LIMIT` | 60 per minute | Node route handlers via `withApiErrorHandling` | `(IP, userId)` |
 | **Read** | `API_READ_LIMIT` | 120 per minute | Edge middleware | `(IP, userId, tenantSlug)` for a browser session; **`(IP, key-digest)` plus a shared `(IP)` bucket for an `iflk_` API-key request** — see *API-key callers* below |
+| **MCP** (`/api/mcp` only, in place of the mutation tier) | `MCP_PER_KEY_LIMIT` + `MCP_IP_CEILING_LIMIT` | 60 JSON-RPC messages per minute per key; 600 requests per minute per IP | Node route handler | `(apiKeyId)` after authentication; `(IP)` before it — see *The MCP endpoint* below |
 
 All numbers are sized for normal interactive use — a real user filling
 forms or paginating lists is well below every threshold. Scripts and
@@ -26,6 +28,7 @@ budget.
 | Auth | `src/lib/rate-limit/authRateLimit.ts` | same file | Upstash + memory fallback |
 | Mutation | `src/lib/security/rate-limit.ts` (`API_MUTATION_LIMIT`) | `src/lib/security/rate-limit-middleware.ts::withRateLimit` | in-process Map (Node runtime) |
 | Read | `src/lib/security/rate-limit.ts` (`API_READ_LIMIT`) | `src/lib/rate-limit/apiReadRateLimit.ts` | Upstash + memory fallback |
+| MCP | `src/lib/security/rate-limit.ts` (`MCP_PER_KEY_LIMIT`, `MCP_IP_CEILING_LIMIT`) | `src/app/api/mcp/route.ts` via `enforceApiKeyRateLimit` and `withApiErrorHandling` | in-process Map (Node runtime) |
 
 The **read** tier was added as part of GAP-17 closure. Pre-GAP-17 the
 codebase had only auth + mutation tiers; tenant-scoped GETs were
@@ -140,6 +143,37 @@ Two differences from the session path, both deliberate:
 - **The scope carries a digest, never the token.** `checkApiReadRateLimit` logs
   its scope at WARN on a 429, and a truncated key in a log line is a credential
   in a log line.
+
+## The MCP endpoint
+
+`/api/mcp` does not use the mutation tier. That tier keys every caller by IP
+with no actor, and for this endpoint the IP is the wrong unit: a hosted MCP
+client (Anthropic's Managed Agents, the Messages API's MCP connector) calls
+from its provider's egress addresses, so every customer agent hosted there
+would share one 60/min bucket — itself shared with every other mutation route
+called from that address.
+
+So the endpoint carries two budgets, the same fairness/containment split as
+*API-key callers* above:
+
+| Budget | Preset | Key | Charged |
+| --- | --- | --- | --- |
+| per key (fairness) | `MCP_PER_KEY_LIMIT`, 60/min | `mcp-api-key:key:<apiKeyId>` | after authentication, **per JSON-RPC message** |
+| per IP (containment) | `MCP_IP_CEILING_LIMIT`, 600/min | `mcp-ip:ip:<ip>:anon` | before authentication, per HTTP request |
+
+Three details are deliberate:
+
+- **The per-key bucket is the verified key**, not a digest of the presented
+  token. An exchanged token resolves to its issuing key, so exchange cannot
+  multiply the budget, and the key carries no IP, so calling from many
+  addresses does not either.
+- **A batch is charged per message, all or nothing.** One POST can carry a
+  JSON-RPC batch, so a per-request budget would let one call carry any number
+  of tool calls. A batch that does not fit is refused whole, without spending
+  the budget left; a batch larger than 60 can never fit and is a 400.
+- **The ceiling is sized at ten keys' worth**, so callers sharing a hosted
+  provider's address do not meet it in ordinary use, while one address still
+  cannot drive more than ten key lookups a second.
 
 ## Bucketing
 
