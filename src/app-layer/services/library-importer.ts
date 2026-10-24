@@ -318,11 +318,16 @@ export async function importLibraryFromFile(
 /**
  * Import all libraries from a directory.
  * Returns results for each library, including skipped ones.
+ *
+ * `skipFrameworkKeys` names framework rows another writer owns. A library
+ * whose key is listed is not imported and gets no result row, so the caller
+ * reports it separately rather than as a hash-match skip.
  */
 export async function importAllFromDirectory(
     db: PrismaClient,
     dirPath: string,
     options?: ImportOptions,
+    skipFrameworkKeys: ReadonlySet<string> = new Set(),
 ): Promise<ImportResult[]> {
     const { scanLibraryDirectory, parseLibraryFile: parse, loadLibrary: load } = await import('../libraries');
     const entries = scanLibraryDirectory(dirPath);
@@ -333,6 +338,14 @@ export async function importAllFromDirectory(
     for (const entry of entries) {
         const stored = parse(entry.filePath);
         const loaded = load(stored, entry.filePath);
+        if (skipFrameworkKeys.has(loaded.refId)) {
+            logger.info('Library skipped — its framework row has another writer', {
+                component: 'library-importer',
+                urn: loaded.urn,
+                key: loaded.refId,
+            });
+            continue;
+        }
         loadedLibraries.push(loaded);
     }
 
