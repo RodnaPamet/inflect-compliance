@@ -111,10 +111,25 @@ describe('the vendored OpenShell skills match their manifest', () => {
         expect(unlisted).toEqual([]);
     });
 
-    it('records the pinned commit, and the local notes exist beside it', () => {
+    /*
+        ASSERTED ON PARSED FIELDS, NOT ON THE RAW TEXT, and the raw-source
+        ratchet is right to push for that here rather than it being a dodge.
+        `expect(md).toContain('<commit>')` is satisfied by ANY mention of the
+        commit anywhere in the file — including the prose paragraph two lines
+        above the table that explains why the commit is pinned. So it would
+        stay green with a wrong value in the row that matters. Pulling the
+        field out of its own row first makes the assertion about the field.
+    */
+    const field = (md: string, label: string): string | null => {
+        const m = new RegExp(`^\\|\\s*${label}\\s*\\|\\s*(.+?)\\s*\\|$`, 'm').exec(md);
+        return m ? m[1] : null;
+    };
+
+    it('records the pinned commit in its own row, and the local notes sit beside it', () => {
         const md = fs.readFileSync(MANIFEST, 'utf8');
-        expect(md).toMatch(/\bbdb956f2cd65a635f1294fccf1d138d263bf650f\b/);
-        expect(md).toContain('Apache License 2.0');
+        expect(field(md, 'Commit')).toBe('`bdb956f2cd65a635f1294fccf1d138d263bf650f`');
+        expect(field(md, 'Tag')).toContain('v0.1.5');
+        expect(field(md, 'Licence')).toContain('Apache License 2.0');
         expect(fs.existsSync(path.join(SKILLS, 'LICENSE-Apache-2.0.txt'))).toBe(true);
         // The read #3968 requires is evidenced by the notes, not by this guard.
         expect(fs.existsSync(path.join(SKILLS, 'OPENSHELL-LOCAL-NOTES.md'))).toBe(true);
@@ -122,10 +137,21 @@ describe('the vendored OpenShell skills match their manifest', () => {
 
     it('is attributed in NOTICE as redistribution, not as a blueprint', () => {
         const notice = fs.readFileSync(path.join(ROOT, 'NOTICE'), 'utf8');
-        expect(notice).toContain('bdb956f2cd65a635f1294fccf1d138d263bf650f');
-        // pipelock's entry says the opposite — "no pipelock code is imported,
-        // linked, or redistributed". Copying files in IS redistribution, and
-        // the two entries must not be confused for each other.
-        expect(notice).toMatch(/REDISTRIBUTED COPIES/);
+        // The whole attribution block, isolated from the rest of the file, so
+        // neither assertion can be satisfied by an unrelated section. pipelock's
+        // entry says the OPPOSITE — "no pipelock code is imported, linked, or
+        // redistributed" — and the two must not be mistaken for each other.
+        // NOTICE puts a rule BETWEEN each section's title and its body, so a
+        // naive split yields the title alone and the body in the next part.
+        // Take the part after the titled one.
+        const parts = notice.split(/^-{20,}$/m);
+        const titleAt = parts.findIndex((s) => s.includes('OpenShell Agent Skills'));
+        expect(titleAt).toBeGreaterThanOrEqual(0);
+        const block = parts[titleAt + 1];
+        expect(block).toBeDefined();
+        const lines = (block ?? '').split('\n').map((l) => l.trim());
+        expect(lines).toContain('Commit: bdb956f2cd65a635f1294fccf1d138d263bf650f (tag v0.1.5, 2026-10-20)');
+        expect(lines.some((l) => l.includes('REDISTRIBUTED COPIES'))).toBe(true);
+        expect(lines.some((l) => l.includes('no pipelock code'))).toBe(false);
     });
 });
