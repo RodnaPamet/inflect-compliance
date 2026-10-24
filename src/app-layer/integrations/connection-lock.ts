@@ -117,7 +117,12 @@ export const SYNC_LOCK_TTL_MS = 30 * 60_000;
  * are a single atomic statement — a read-then-write would leave exactly the race
  * this exists to close.
  *
- * @returns the lock token, or `null` if another run holds a fresh lock.
+ * @returns the lock token, or `null` if another run holds a fresh lock OR the
+ *   connection does not exist. The two are indistinguishable in the return
+ *   value and deliberately so — no caller needs to branch on it — but they are
+ *   distinguished in the LOG LINE and the `integration.sync.lock` metric
+ *   (`busy` vs `absent`), which is where the difference was costing operator
+ *   time (#3316).
  */
 export async function acquireSyncLock(
     db: PrismaTx,
@@ -150,6 +155,33 @@ export async function acquireSyncLock(
     });
 
     if (r.count === 0) {
+        // TWO CAUSES, AND THEY WANT DIFFERENT REMEDIES (#3316). `count === 0`
+        // means either the lock is genuinely held, or NO ROW MATCHED the id at
+        // all — a deleted connection, a wrong id, a cross-tenant one. Both used
+        // to log "sync already running" and count as `busy`, so an operator who
+        // had deleted and recreated a connection was told to wait for a lease
+        // that would never clear (SYNC_LOCK_TTL_MS is 30 minutes), and
+        // "contention" on a dashboard silently included every dispatch at a
+        // dangling reference.
+        //
+        // The read above already has the answer, and using it here does not
+        // weaken the claim: the claim is still the conditional UPDATE alone.
+        //
+        // BEST-EFFORT, for the same reason the comment above gives. The read
+        // precedes the UPDATE, so a connection deleted between the two reports
+        // `busy` when it was in fact absent. That mislabels a counter and a log
+        // line; it cannot admit a second concurrent sync, and it cannot report
+        // `absent` for a connection that exists — which is the direction that
+        // would mislead an operator into ignoring real contention.
+        if (existing === null) {
+            logger.info('no such connection — sync skipped, nothing to wait for', {
+                component: 'integrations',
+                connectionId,
+            });
+            recordSyncLock({ component: 'integrations', outcome: 'absent' });
+            return null;
+        }
+
         logger.info('sync already running for connection — skipping', {
             component: 'integrations',
             connectionId,
