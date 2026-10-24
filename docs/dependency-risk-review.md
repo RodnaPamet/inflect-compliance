@@ -497,6 +497,27 @@ never runs.
 | **Blast radius** | The scanner's own process, in the client's estate. What leaves it is a signed report the ingest verifies against its own strict schema, which a mis-parse cannot widen. |
 | **Decision** | **Reviewed — adopted in the scanner image at the version the repository's tests run against.** The `REVIEWED` floor (major 5) is unchanged. Dependabot proposes the image's updates as a group (`.github/dependabot.yml`). |
 
+## Review — 2026-10-24 — `jose` for OIDC sign-in
+
+### `jose` — `^6.2.12`
+
+OIDC sign-in read the ID token's claims without checking who signed it. It
+now verifies the token against the keys the identity provider publishes, and
+signature verification is not something to write by hand: algorithm
+confusion, `none`, and key-type mismatches are each a known way to get it
+wrong. `jose` is the reference JOSE implementation for JavaScript, and it was
+already in the tree.
+
+| | |
+|---|---|
+| **Runtime use** | `src/lib/security/oidc-client.ts`, `verifyIdToken`: `jwtVerify` against `createRemoteJWKSet(discovery.jwks_uri)`. One call per OIDC sign-in, in the callback route (Node runtime). |
+| **Input** | The `id_token` from the IdP's token endpoint, and the IdP's JSON Web Key Set. Both arrive from a host the workspace administrator configured. |
+| **Exposure** | `algorithms` is an explicit allowlist of asymmetric algorithms (`ID_TOKEN_SIGNING_ALGORITHMS`), so neither `none` nor an HMAC keyed with a public key can verify. Issuer, audience, `exp` and `iat` are required claims. The key set is fetched with a 10-second timeout, cached for 10 minutes, and re-fetched for an unknown key at most every 30 seconds (the library's defaults). |
+| **Blast radius** | The OIDC callback. A defect that accepted a bad token would sign in whoever the token names in that one workspace; the session is scoped to it (`ssoTenantId`). A defect that refused good tokens stops OIDC sign-in, and password sign-in for break-glass admins is unaffected. |
+| **Classification** | `dependencies`: the callback imports it at runtime. |
+| **Version** | `6.2.12`, the version `@modelcontextprotocol/client` already resolved. No new package enters the image, and `npm audit` reports nothing for it. `next-auth` keeps its own nested `jose` 4. |
+| **Decision** | **Adopt.** Declare explicitly; the `REVIEWED` floor is major 6. |
+
 ## Re-running this review
 
 When auditing the next batch of dependencies, copy the per-package

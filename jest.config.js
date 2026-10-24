@@ -268,6 +268,10 @@ const nodeProject = {
     modulePathIgnorePatterns: ['<rootDir>/.claude/'],
     transform: {
         '^.+\\.(ts|tsx)$': 'ts-jest',
+        // jose BEFORE the general `.js` entry below (Jest uses the first
+        // pattern that matches): its minified error classes need an ES2022
+        // target, or constructing one throws. See tests/setup/jose-transform.js.
+        '/node_modules/jose/.+\\.js$': '<rootDir>/tests/setup/jose-transform.js',
         // Transpile the NextAuth ESM graph so middleware-importing
         // tests load without `SyntaxError: Cannot use import statement
         // outside a module`.
