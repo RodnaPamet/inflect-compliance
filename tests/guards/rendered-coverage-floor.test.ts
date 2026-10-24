@@ -346,7 +346,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // 372, measured by this guard's own counter on this branch merged with main
 // (3.272.x). Each PR stayed inside the slack alone; together they did not, and
 // the merge queue found it.
-const RENDERED_TEST_FLOOR = 381;
+//   390: the two invite-flow fixes' suites (members-invite-email-claim,
+// invite-accept-lands-in-workspace). main stood at 389 against 381 (slack 8
+// of 8), so either one alone crossed it; measured by this guard's own counter
+// on each branch (3.303.0). With both merged the count is 391, slack 1.
+const RENDERED_TEST_FLOOR = 390;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

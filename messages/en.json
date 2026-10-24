@@ -11291,6 +11291,7 @@
     "expires": "Expires {date}",
     "signInToAccept": "Sign in to accept",
     "acceptInvitation": "Accept invitation",
+    "acceptFailed": "Could not accept the invitation. Please try again.",
     "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it."
   },
   "roles": {
