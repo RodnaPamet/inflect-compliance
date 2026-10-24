@@ -269,7 +269,7 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
   # ── npm, docs site (weekly) ──
-  # site/ is the public docs site (Starlight + Astro) with its own lockfile,
+  # site/ holds the two docs sites (Starlight + Astro) with their own lockfile,
   # kept apart from the application's tree (docs/docs-site.md). Starlight is
   # 0.x, so a "minor" here can break the build — the docs-site workflow builds
   # every PR that touches site/, which is what catches it.
