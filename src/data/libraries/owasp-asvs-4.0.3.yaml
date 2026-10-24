@@ -32,6 +32,7 @@ copyright: >
   BY-SA share-alike term is incompatible with embedding the text in a proprietary product. The full standard is
   at https://owasp.org/www-project-application-security-verification-standard/
 version: 1
+text_hash: 19b3d45be132db36f92902d5058a0c2ededc4ddc001a81ffc0fb77b7478f1cac
 publication_date: "2021-10-01"
 provider: OWASP Foundation
 packager: inflect

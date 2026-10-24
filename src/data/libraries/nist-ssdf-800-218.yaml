@@ -26,6 +26,7 @@ copyright: >
   Information presented on NIST sites is considered public information
   and may be distributed or copied.
 version: 1
+text_hash: fc767fbb03e10dc219eb327449b400dfbbb9a3f54652e3bd2a9f687c3a114b7b
 publication_date: "2022-02-03"
 provider: NIST
 packager: inflect
