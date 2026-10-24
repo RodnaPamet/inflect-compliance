@@ -43,6 +43,19 @@ const SP_ISSUER = 'https://app.example.com/sp';
  */
 const REQUEST = newSamlRequestBinding();
 const EXPECTED = { callbackUrl: CALLBACK_URL, requestId: REQUEST.id };
+const IDP_ENTITY = 'https://idp.example.com/entity';
+
+/** Allowed signature and digest declarations, which every response must make. */
+const DECLARED_ALGORITHMS =
+    '<ds:SignatureMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>' +
+    '<ds:DigestMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>';
+
+/**
+ * The body handed to a stubbed instance. The stub never reads it, but the
+ * client checks its algorithm declarations before validation, so it makes
+ * them (tests/unit/security/saml-issuer-and-algorithms.test.ts).
+ */
+const STUB_BODY = Buffer.from(`<x>${DECLARED_ALGORITHMS}</x>`, 'utf8').toString('base64');
 
 /**
  * A syntactically well-formed but throwaway base64 blob. `@node-saml`
@@ -101,6 +114,10 @@ const UNSIGNED_SAML_RESPONSE = Buffer.from(
         // signature's and not the earlier InResponseTo check.
         ` Destination="${CALLBACK_URL}" InResponseTo="${REQUEST.id}">` +
         '<saml:Issuer>https://idp.example.com/entity</saml:Issuer>' +
+        // Allowed algorithm declarations with no signature around them, so
+        // the refusal under test is node-saml's and not the client's earlier
+        // "names no signature or digest algorithm".
+        `<samlp:Extensions>${DECLARED_ALGORITHMS}</samlp:Extensions>` +
         '<samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>' +
         '<saml:Assertion ID="_a1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z">' +
         '<saml:Issuer>https://idp.example.com/entity</saml:Issuer>' +
@@ -165,7 +182,7 @@ function stubSamlReturning(result: PostResponseResult): SAML {
     const validatePostResponseAsync = jest.fn(
         async (_container: Record<string, string>): Promise<PostResponseResult> => bound,
     );
-    return { validatePostResponseAsync } as unknown as SAML;
+    return { validatePostResponseAsync, options: { idpIssuer: IDP_ENTITY } } as unknown as SAML;
 }
 
 function stubSamlRejecting(err: Error): SAML {
@@ -174,7 +191,7 @@ function stubSamlRejecting(err: Error): SAML {
             throw err;
         },
     );
-    return { validatePostResponseAsync } as unknown as SAML;
+    return { validatePostResponseAsync, options: { idpIssuer: IDP_ENTITY } } as unknown as SAML;
 }
 
 // ─── buildSamlInstance ───────────────────────────────────────────────
@@ -226,8 +243,10 @@ describe('buildSamlInstance', () => {
             REQUEST,
         );
         expect(saml.options.entryPoint).toBe('https://idp.example.com/sso');
-        // idpIssuer is what makes an assertion minted by a DIFFERENT IdP
-        // fail validation — an unexpected-issuer refusal.
+        // idpIssuer is the issuer the client requires of the assertion.
+        // node-saml 5 itself reads it only for logout messages; the
+        // comparison is validateSamlResponse's own
+        // (tests/unit/security/saml-issuer-and-algorithms.test.ts).
         expect(saml.options.idpIssuer).toBe('https://idp.example.com/entity');
         expect(saml.options.callbackUrl).toBe(CALLBACK_URL);
         expect(saml.options.issuer).toBe(SP_ISSUER);
@@ -289,7 +308,7 @@ describe('generateAuthnRequest', () => {
 describe('validateSamlResponse — refusals', () => {
     it('REFUSES a validated response that carries no profile', async () => {
         const saml = stubSamlReturning({ profile: null, loggedOut: false });
-        await expect(validateSamlResponse(saml, 'anything', EXPECTED)).rejects.toThrow(
+        await expect(validateSamlResponse(saml, STUB_BODY, EXPECTED)).rejects.toThrow(
             'SAML response validation failed: no profile returned',
         );
     });
@@ -305,25 +324,27 @@ describe('validateSamlResponse — refusals', () => {
             },
             loggedOut: false,
         });
-        await expect(validateSamlResponse(saml, 'anything', EXPECTED)).rejects.toThrow(
+        await expect(validateSamlResponse(saml, STUB_BODY, EXPECTED)).rejects.toThrow(
             'SAML response missing NameID',
         );
     });
 
     it('propagates the library rejection unchanged (signature / XML failures)', async () => {
         const saml = stubSamlRejecting(new Error('Invalid signature'));
-        await expect(validateSamlResponse(saml, 'anything', EXPECTED)).rejects.toThrow(
+        await expect(validateSamlResponse(saml, STUB_BODY, EXPECTED)).rejects.toThrow(
             'Invalid signature',
         );
     });
 
-    it('rejects a genuinely malformed POST body through the real validator', async () => {
+    it('rejects a genuinely malformed POST body before it reaches the parser', async () => {
         const saml = buildSamlInstance(samlConfig(), CALLBACK_URL, SP_ISSUER, REQUEST);
         // Not base64-decodable to XML at all — the very first thing an
-        // attacker probing the ACS endpoint will send.
+        // attacker probing the ACS endpoint will send. It declares no
+        // signature algorithm, so the client refuses it before node-saml
+        // parses anything.
         await expect(
             validateSamlResponse(saml, 'this-is-not-a-saml-response', EXPECTED),
-        ).rejects.toThrow(/Not a valid XML document/i);
+        ).rejects.toThrow(/names no signature or digest algorithm/);
     });
 
     it('REFUSES a completely unsigned <Response> at the DOCUMENT level', async () => {
@@ -375,13 +396,13 @@ function profileWith(extra: Record<string, unknown>): PostResponseResult {
 describe('validateSamlResponse — email extraction', () => {
     it('prefers the explicit email attribute and lowercases it', async () => {
         const saml = stubSamlReturning(profileWith({ email: 'Alice@ACME.com' }));
-        const result = await validateSamlResponse(saml, 'x', EXPECTED);
+        const result = await validateSamlResponse(saml, STUB_BODY, EXPECTED);
         expect(result.email).toBe('alice@acme.com');
     });
 
     it('falls back to the mail attribute when email is absent', async () => {
         const saml = stubSamlReturning(profileWith({ mail: 'BOB@Acme.COM' }));
-        const result = await validateSamlResponse(saml, 'x', EXPECTED);
+        const result = await validateSamlResponse(saml, STUB_BODY, EXPECTED);
         expect(result.email).toBe('bob@acme.com');
     });
 
@@ -392,7 +413,7 @@ describe('validateSamlResponse — email extraction', () => {
         const saml = stubSamlReturning(
             profileWith({ email: ['a@acme.com', 'b@acme.com'], mail: 'Fallback@Acme.com' }),
         );
-        const result = await validateSamlResponse(saml, 'x', EXPECTED);
+        const result = await validateSamlResponse(saml, STUB_BODY, EXPECTED);
         expect(result.email).toBe('fallback@acme.com');
     });
 
@@ -405,7 +426,7 @@ describe('validateSamlResponse — email extraction', () => {
             },
             loggedOut: false,
         });
-        const result = await validateSamlResponse(saml, 'x', EXPECTED);
+        const result = await validateSamlResponse(saml, STUB_BODY, EXPECTED);
         expect(result.email).toBe('carol@acme.com');
     });
 
@@ -414,7 +435,7 @@ describe('validateSamlResponse — email extraction', () => {
         // the opaque id AS an email would create a user record keyed on a
         // non-address; null is the correct refusal to guess.
         const saml = stubSamlReturning(profileWith({}));
-        const result = await validateSamlResponse(saml, 'x', EXPECTED);
+        const result = await validateSamlResponse(saml, STUB_BODY, EXPECTED);
         expect(result.email).toBeNull();
         expect(result.nameId).toBe('subject-id-1');
     });
@@ -423,36 +444,36 @@ describe('validateSamlResponse — email extraction', () => {
 describe('validateSamlResponse — display name extraction', () => {
     it('prefers displayName verbatim (no case folding — it is a name)', async () => {
         const saml = stubSamlReturning(profileWith({ displayName: 'Alice Smith' }));
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice Smith');
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).name).toBe('Alice Smith');
     });
 
     it('joins givenName + familyName when displayName is absent', async () => {
         const saml = stubSamlReturning(
             profileWith({ givenName: 'Alice', familyName: 'Smith' }),
         );
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice Smith');
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).name).toBe('Alice Smith');
     });
 
     it('uses givenName alone when familyName is absent (no trailing space)', async () => {
         const saml = stubSamlReturning(profileWith({ givenName: 'Alice' }));
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice');
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).name).toBe('Alice');
     });
 
     it('uses familyName alone when givenName is absent (no leading space)', async () => {
         const saml = stubSamlReturning(profileWith({ familyName: 'Smith' }));
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Smith');
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).name).toBe('Smith');
     });
 
     it('ignores a non-string displayName and falls through to the name parts', async () => {
         const saml = stubSamlReturning(
             profileWith({ displayName: ['A', 'B'], givenName: 'Alice', familyName: 'Smith' }),
         );
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBe('Alice Smith');
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).name).toBe('Alice Smith');
     });
 
     it('returns name=null when no name attribute is present at all', async () => {
         const saml = stubSamlReturning(profileWith({}));
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBeNull();
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).name).toBeNull();
     });
 });
 
@@ -467,7 +488,7 @@ describe('validateSamlResponse — sessionIndex', () => {
             },
             loggedOut: false,
         });
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).sessionIndex).toBe('idx-42');
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).sessionIndex).toBe('idx-42');
     });
 
     it('normalises an absent sessionIndex to null, not undefined', async () => {
@@ -479,7 +500,7 @@ describe('validateSamlResponse — sessionIndex', () => {
             },
             loggedOut: false,
         });
-        const result = await validateSamlResponse(saml, 'x', EXPECTED);
+        const result = await validateSamlResponse(saml, STUB_BODY, EXPECTED);
         // toStrictEqual, not toEqual — toEqual treats an `undefined`
         // property as absent and would pass either way.
         expect(result).toStrictEqual({
@@ -522,7 +543,7 @@ describe('validateSamlResponse — degenerate name attributes', () => {
         // end of the join, the user record would get a blank display name
         // instead of an absent one.
         const saml = stubSamlReturning(profileWith({ givenName: [] }));
-        expect((await validateSamlResponse(saml, 'x', EXPECTED)).name).toBeNull();
+        expect((await validateSamlResponse(saml, STUB_BODY, EXPECTED)).name).toBeNull();
     });
 });
 
