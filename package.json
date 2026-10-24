@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.310.0",
+  "version": "3.311.0",
   "private": true,
   "license": "BUSL-1.1",
   "workspaces": [
