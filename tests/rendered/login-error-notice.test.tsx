@@ -9,7 +9,6 @@
  * per code, and never the description: anyone can write a link to `/login`
  * carrying whatever text they like.
  */
-import * as React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 
 let searchParams = new URLSearchParams();
