@@ -7,8 +7,11 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 const require = createRequire(import.meta.url);
-const { sidebarFrom, SITE_BASE } = require('./scripts/stage-docs.js');
+const { repoIo, sidebarFrom, sidebarLabel, SITE_BASE } = require('./scripts/stage-docs.js');
 const manifest = JSON.parse(readFileSync(new URL('./published-docs.json', import.meta.url), 'utf8'));
+// The same reads the stager makes, so a folder entry expands to the same pages
+// here and a section label prints the same app label.
+const io = repoIo();
 
 export default defineConfig({
     site: 'https://rodnapamet.github.io',
@@ -22,11 +25,11 @@ export default defineConfig({
         starlight({
             title: 'Inflect Compliance',
             description:
-                'Architecture, security and contributor documentation for Inflect Compliance, a multi-tenant GRC platform.',
+                'User guides, how-tos and developer documentation for Inflect Compliance, a multi-tenant GRC platform.',
             social: [
                 { icon: 'github', label: 'GitHub', href: 'https://github.com/RodnaPamet/inflect-compliance' },
             ],
-            sidebar: [{ label: 'Overview', link: '/' }, ...sidebarFrom(manifest)],
+            sidebar: [{ label: 'Overview', link: '/' }, ...sidebarFrom(manifest, io.listFolder, sidebarLabel(io))],
             // Each page sets its own editUrl to the doc in docs/, because the
             // staged copy is not what anybody should edit.
             credits: false,

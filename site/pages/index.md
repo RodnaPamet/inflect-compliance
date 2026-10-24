@@ -1,6 +1,6 @@
 ---
 title: Inflect Compliance documentation
-description: Architecture, security and contributor documentation for Inflect Compliance.
+description: User guides and developer documentation for Inflect Compliance.
 editUrl: https://github.com/RodnaPamet/inflect-compliance/edit/main/site/pages/index.md
 ---
 
@@ -10,6 +10,7 @@ These pages are generated from the `docs/` folder of the [repository](https://gi
 
 ## Where to start
 
+- **Using the product:** the **User guide** documents the app page by page, under the same headings as the app's sidebar. Start with the [{{ui:risks.title}}](../../docs/guide/govern/risks.md).
 - **New contributor:** read [Contributing](../../CONTRIBUTING.md), then the [application layer guide](../../docs/app-layer.md).
 - **Adding a subsystem:** follow the [new-subsystem checklist](../../docs/new-subsystem-checklist.md).
 - **Evaluating the security model:** start with [tenant isolation](../../docs/epic-a-security.md), [row-level security](../../docs/rls-tenant-isolation.md) and [field encryption](../../docs/epic-b-encryption.md).
