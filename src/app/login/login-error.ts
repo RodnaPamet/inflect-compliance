@@ -12,6 +12,7 @@ export type LoginErrorKey =
     | 'errors.signInFailed'
     | 'errors.accountNotLinked'
     | 'errors.ssoIncomplete'
+    | 'errors.ssoStartFromSignIn'
     | 'errors.ssoNoAccount'
     | 'errors.ssoDomainNotAllowed'
     | 'errors.ssoUnavailable';
@@ -37,6 +38,7 @@ const SSO_INCOMPLETE = new Set([
 
 export function loginErrorKey(code: string): LoginErrorKey {
     if (code === 'OAuthAccountNotLinked') return 'errors.accountNotLinked';
+    if (code === 'sso_start_refused') return 'errors.ssoStartFromSignIn';
     if (code === 'domain_mismatch') return 'errors.ssoDomainNotAllowed';
     if (SSO_NO_ACCOUNT.has(code)) return 'errors.ssoNoAccount';
     if (SSO_UNAVAILABLE.has(code)) return 'errors.ssoUnavailable';

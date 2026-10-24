@@ -11,11 +11,15 @@
  * leave a single-use hand-off for the `sso-handoff` NextAuth provider, and
  * NextAuth opens the session.
  *
- * This runs the real pieces — the real OIDC and SAML callback routes, the real
- * NextAuth handler with the real `authorize`, `signIn` and `jwt` callbacks, and
- * the real middleware reading the cookie NextAuth wrote — with Prisma doubled
- * in memory and the identity provider's network calls stubbed:
+ * This runs the real pieces — the real OIDC and SAML start and callback
+ * routes, the real NextAuth handler with the real `authorize`, `signIn` and
+ * `jwt` callbacks, and the real middleware reading the cookie NextAuth wrote —
+ * with Prisma doubled in memory and the identity provider's network calls
+ * stubbed:
  *
+ *   0. the round trip is bound to the browser that started it: a callback
+ *      without that browser's flow cookie is refused (login CSRF), another
+ *      site cannot start one, and the PKCE verifier never leaves the cookie;
  *   1. both callbacks hand off: a scoped HttpOnly cookie and the completion
  *      page, never a session cookie of their own;
  *   2. redeeming the hand-off opens a NextAuth session that the edge lets into
@@ -117,16 +121,24 @@ jest.mock('@/lib/security/session-tracker', () => ({
 
 // ── The identity provider ────────────────────────────────────────────
 
+// The state codecs and PKCE helpers are real; only the network calls are not.
 jest.mock('@/lib/security/oidc-client', () => ({
-    decodeState: jest.fn(() => ({ tenantSlug: 'beta', providerId: 'idp-1', codeVerifier: 'v', nonce: 'n' })),
-    discoverOidc: jest.fn(async () => ({})),
+    ...jest.requireActual('@/lib/security/oidc-client'),
+    discoverOidc: jest.fn(async () => ({
+        issuer: 'https://idp.example',
+        authorization_endpoint: 'https://idp.example/authorize',
+        token_endpoint: 'https://idp.example/token',
+        jwks_uri: 'https://idp.example/jwks',
+    })),
     exchangeCodeForTokens: jest.fn(async () => ({ id_token: 'id-token' })),
     validateIdTokenNonce: jest.fn(() => true),
     extractIdTokenClaims: jest.fn(() => ({ sub: 'ext-1', email: 'member@example.com' })),
 }));
 jest.mock('@/lib/security/saml-client', () => ({
-    decodeSamlRelayState: jest.fn(() => ({ tenantSlug: 'beta', providerId: 'idp-1' })),
+    ...jest.requireActual('@/lib/security/saml-client'),
     buildSamlInstance: jest.fn(() => ({})),
+    generateAuthnRequest: jest.fn(async (_saml: unknown, relayState: string) =>
+        `https://idp.example/sso?RelayState=${encodeURIComponent(relayState)}`),
     validateSamlResponse: jest.fn(async () => ({ nameId: 'ext-1', email: 'member@example.com', name: 'Mem Ber' })),
 }));
 jest.mock('@/app-layer/usecases/sso', () => ({
@@ -155,11 +167,15 @@ jest.mock('../../src/lib/rate-limit/apiReadRateLimit', () => ({
     extractTenantSlug: jest.fn().mockReturnValue(null),
 }));
 
+import { createHash } from 'crypto';
 import { NextRequest } from 'next/server';
 import { decode } from 'next-auth/jwt';
 import { GET as nextAuthGet, POST as nextAuthPost } from '@/app/api/auth/[...nextauth]/route';
+import { GET as oidcStart } from '@/app/api/auth/sso/oidc/start/route';
+import { GET as samlStart } from '@/app/api/auth/sso/saml/start/route';
 import { GET as oidcCallback } from '@/app/api/auth/sso/oidc/callback/route';
 import { POST as samlCallback } from '@/app/api/auth/sso/saml/callback/route';
+import { exchangeCodeForTokens } from '@/lib/security/oidc-client';
 import middleware from '../../src/middleware';
 
 const SECRET = process.env.AUTH_SECRET as string;
@@ -171,22 +187,52 @@ function setCookie(res: Response, name: string): string | undefined {
 }
 const cookieValue = (header: string) => header.split(';')[0].split('=').slice(1).join('=');
 
-async function runOidcCallback(): Promise<Response> {
-    const req = new NextRequest(`${ORIGIN}/api/auth/sso/oidc/callback?code=abc&state=xyz`);
+type Protocol = 'oidc' | 'saml';
+/** What a browser holds after /start: the flow cookie, and the id the IdP will send back. */
+interface StartedFlow { id: string; cookie: string | null; location: URL; res: Response }
+
+/** GET /start as a browser would, from our own page unless told otherwise. */
+async function startFlow(protocol: Protocol, site: string | null = 'same-origin'): Promise<StartedFlow> {
+    const headers: Record<string, string> = {};
+    if (site) headers['sec-fetch-site'] = site;
+    const req = new NextRequest(`${ORIGIN}/api/auth/sso/${protocol}/start?tenant=beta&provider=idp-1`, { headers });
     currentRequest = req;
-    return oidcCallback(req);
+    const res = await (protocol === 'oidc' ? oidcStart : samlStart)(req, {} as never);
+    const location = new URL(res.headers.get('location')!);
+    const set = setCookie(res, 'inflect_sso_flow');
+    return {
+        id: location.searchParams.get(protocol === 'oidc' ? 'state' : 'RelayState') ?? '',
+        cookie: set ? cookieValue(set) : null,
+        location,
+        res,
+    };
 }
 
-async function runSamlCallback(): Promise<Response> {
-    const body = new URLSearchParams({ SAMLResponse: 'PHNhbWw+', RelayState: 'relay' });
-    const req = new NextRequest(`${ORIGIN}/api/auth/sso/saml/callback`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-    });
+/** The IdP's answer arriving in a browser holding `cookie` (or none). */
+async function runCallback(protocol: Protocol, id: string, cookie: string | null): Promise<Response> {
+    const headers: Record<string, string> = {};
+    if (cookie) headers.cookie = `inflect_sso_flow=${cookie}`;
+    let req: NextRequest;
+    if (protocol === 'oidc') {
+        req = new NextRequest(`${ORIGIN}/api/auth/sso/oidc/callback?code=abc&state=${encodeURIComponent(id)}`, { headers });
+    } else {
+        req = new NextRequest(`${ORIGIN}/api/auth/sso/saml/callback`, {
+            method: 'POST',
+            headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ SAMLResponse: 'PHNhbWw+', RelayState: id }).toString(),
+        });
+    }
     currentRequest = req;
-    return samlCallback(req);
+    return protocol === 'oidc' ? oidcCallback(req) : samlCallback(req);
 }
+
+/** A whole round trip in one browser. */
+async function signInThroughIdp(protocol: Protocol): Promise<Response> {
+    const flow = await startFlow(protocol);
+    return runCallback(protocol, flow.id, flow.cookie);
+}
+const runOidcCallback = () => signInThroughIdp('oidc');
+const runSamlCallback = () => signInThroughIdp('saml');
 
 /**
  * What `signIn('sso-handoff', { redirect: false })` does from the completion
@@ -243,6 +289,74 @@ beforeEach(() => {
     db.mfaPolicy = {};
 });
 
+describe('the round trip is bound to the browser that started it', () => {
+    it.each<[Protocol]>([['oidc'], ['saml']])(
+        '%s: the identity provider\'s answer opened in another browser is refused — no hand-off',
+        async (protocol) => {
+            const flow = await startFlow(protocol);
+            const res = await runCallback(protocol, flow.id, null);
+            const location = new URL(res.headers.get('location')!);
+            expect(location.pathname).toBe('/login');
+            expect(location.searchParams.get('error')).toBe(protocol === 'oidc' ? 'invalid_state' : 'invalid_relay');
+            expect(setCookie(res, 'inflect_sso_handoff')).toBeUndefined();
+            expect(db.tokens).toHaveLength(0);
+        },
+    );
+
+    it.each<[Protocol]>([['oidc'], ['saml']])(
+        '%s: a browser holding a different flow is refused too',
+        async (protocol) => {
+            const mine = await startFlow(protocol);
+            const theirs = await startFlow(protocol);
+            const res = await runCallback(protocol, theirs.id, mine.cookie);
+            expect(new URL(res.headers.get('location')!).pathname).toBe('/login');
+            expect(db.tokens).toHaveLength(0);
+        },
+    );
+
+    it.each<[Protocol, string | null]>([
+        ['oidc', 'cross-site'],
+        ['saml', 'cross-site'],
+        ['oidc', 'same-site'],
+        ['oidc', null],
+    ])('%s: a start another site initiated (Sec-Fetch-Site %s) is refused and binds nothing', async (protocol, site) => {
+        const { res, location, cookie } = await startFlow(protocol, site);
+        expect(res.status).toBe(303);
+        expect(location.pathname).toBe('/login');
+        expect(location.searchParams.get('error')).toBe('sso_start_refused');
+        expect(cookie).toBeNull();
+    });
+
+    it('OIDC: the identity provider sees a flow id and a code challenge, never the verifier', async () => {
+        const flow = await startFlow('oidc');
+        expect(flow.location.origin).toBe('https://idp.example');
+        // The old `state` was base64 JSON carrying `codeVerifier`.
+        expect(Buffer.from(flow.id, 'base64url').toString('utf8')).not.toMatch(/codeVerifier|tenantSlug/);
+        expect(flow.location.toString()).not.toMatch(/codeVerifier/);
+
+        await runCallback('oidc', flow.id, flow.cookie);
+        const verifier = (exchangeCodeForTokens as jest.Mock).mock.calls.at(-1)![4] as string;
+        const challenge = createHash('sha256').update(verifier).digest('base64url');
+        expect(flow.location.searchParams.get('code_challenge')).toBe(challenge);
+    });
+
+    it('oidc: the flow cookie goes only to the callback, out of reach of page scripts', async () => {
+        const { res } = await startFlow('oidc');
+        expect(setCookie(res, 'inflect_sso_flow')).toMatch(/Path=\/api\/auth\/sso\/oidc\/callback.*HttpOnly.*SameSite=lax/i);
+    });
+
+    it('saml: the flow cookie goes only to the callback, and survives the IdP\'s cross-site POST', async () => {
+        const { res } = await startFlow('saml');
+        expect(setCookie(res, 'inflect_sso_flow')).toMatch(/Path=\/api\/auth\/sso\/saml\/callback.*Secure.*HttpOnly.*SameSite=none/i);
+    });
+
+    it.each<[Protocol]>([['oidc'], ['saml']])('%s: a callback spends the flow', async (protocol) => {
+        const flow = await startFlow(protocol);
+        const res = await runCallback(protocol, flow.id, flow.cookie);
+        expect(setCookie(res, 'inflect_sso_flow')).toMatch(/Max-Age=0/i);
+    });
+});
+
 describe('the SSO callbacks hand off to NextAuth', () => {
     it('SAML: a refusal reaches the sign-in page as a GET', async () => {
         db.memberships[1].status = 'DEACTIVATED';
@@ -270,8 +384,9 @@ describe('the SSO callbacks hand off to NextAuth', () => {
         expect(handoff).toMatch(/HttpOnly/i);
         expect(handoff).toMatch(/Max-Age=60/i);
 
+        // The hand-off, and the spent flow — never a session cookie of its own.
         const names = res.headers.getSetCookie().map((c: string) => c.split('=')[0]);
-        expect(names).toEqual(['inflect_sso_handoff']);
+        expect(names.sort()).toEqual(['inflect_sso_flow', 'inflect_sso_handoff']);
         expect(db.tokens).toHaveLength(1);
         // Stored hashed: the cookie's value is not in the table.
         expect(db.tokens[0].token).not.toBe(cookieValue(handoff!));

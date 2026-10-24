@@ -12,7 +12,12 @@ decrypts a JWE, so the edge gate never saw the cookie. Every SSO sign-in went
 back to `/login`.
 
 ```
+browser ──▶ /api/auth/sso/{oidc,saml}/start   (refused unless Sec-Fetch-Site is same-origin or none)
+          flow (tenant, provider, returnTo, PKCE verifier, nonce) sealed into
+          Set-Cookie: inflect_sso_flow; HttpOnly; HMAC-signed; Path=<that protocol's callback>
+          IdP gets only the flow id, as OIDC `state` / SAML `RelayState`
 IdP ──▶ /api/auth/sso/{oidc,saml}/callback
+          the flow cookie must be present, ours, unexpired, and name the id the IdP sent back
           verify answer, link identity, membership must be ACTIVE
           issueSsoHandoff()  → VerificationToken (sha256, 60 s, single use)
           303 → /login/sso-complete?next=<sanitised>
@@ -41,12 +46,26 @@ admin sign a shared member in to tenant A. So an SSO session carries
   `getOrgServerContext` refuse every organization with their usual 404.
 - `/tenants` lists only the SSO tenant.
 
+The binding. Before this change, the OIDC `state` and the SAML `RelayState`
+carried the whole flow as unsigned base64 JSON, the PKCE verifier included,
+and a callback accepted whatever came back. Once callbacks produced real
+sessions, anyone who completed a sign-in could hand the callback URL (or an
+auto-submitting SAML form) to someone else and sign that person's browser in
+to the sender's account: login CSRF. And a verifier carried in the same URL
+as the code it protects is no PKCE at all. Now `src/lib/auth/sso-flow.ts`
+keeps the flow in an HttpOnly, HMAC-signed cookie, and the IdP sees only a
+random id. `/start` refuses a sign-in another site initiated. Without that,
+a hostile page could start the flow in the victim's own browser, against an
+IdP the attacker controls, and the binding would hold.
+
 ## Files
 
 | File | Role |
 | --- | --- |
 | `src/lib/auth/sso-session.ts` | Pure, client-safe names (provider id, cookie, paths) and `isOutsideSsoScope` |
 | `src/lib/auth/sso-handoff.ts` | Issue / redeem the hand-off; the callbacks' shared 303 response |
+| `src/lib/auth/sso-flow.ts` | Seal the flow into a signed cookie at `/start`; read it back at the callback; refuse a cross-site start |
+| `src/app/api/auth/sso/{oidc,saml}/start/route.ts` | Bind the flow; send the IdP only its id; refuse a cross-site start |
 | `src/auth.ts` | `sso-handoff` provider; signIn early return; `ssoTenantId` on token, session and claims |
 | `src/lib/auth.ts` | `JwtPayload.ssoTenantId` |
 | `src/app-layer/context.ts`, `src/lib/server/{tenant,org}-context.server.ts` | DB-backed gates honour the scope |
@@ -79,7 +98,20 @@ admin sign a shared member in to tenant A. So an SSO session carries
 - **`error_description` is never rendered.** Anyone can write a `/login` link
   with any text in it. Codes map to a fixed set of messages, and an unknown code
   gets the generic one.
-- **Out of scope, still open:** the OIDC `state` and SAML `RelayState` are
-  unsigned and not bound to the browser that started the flow. The login page
-  has no way to start SSO yet. The OIDC ID token's signature is not verified.
-  Each is its own change.
+- **The flow cookie is signed, not encrypted.** It is HttpOnly and sent only
+  to its protocol's callback, so nothing else reads it. What has to hold is
+  that it was written by us, so it carries an HMAC under a key derived from
+  `AUTH_SECRET`.
+- **SAML's flow cookie is `SameSite=None; Secure`.** The IdP POSTs the
+  response from its own origin, and a Lax cookie is not sent on a cross-site
+  POST. OIDC's callback is a top-level GET, so its cookie stays Lax.
+- **Fetch metadata, not POST plus a CSRF token, guards `/start`.** A link on
+  our own sign-in page sends `same-origin`; a typed URL sends `none`. A
+  browser that sends no `Sec-Fetch-Site` at all is refused. One flow per
+  protocol per browser: a second start replaces the first, and the first
+  tab's callback is refused.
+- **`returnTo` absent stays absent.** `/start` used to default it to `/`,
+  which made the callbacks' dashboard fallback dead code. The end-to-end test
+  found it once the test drove the real `/start`.
+- **Out of scope, still open:** the login page has no way to start SSO yet,
+  and the OIDC ID token's signature is not verified. Each is its own change.

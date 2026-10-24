@@ -9,6 +9,7 @@ import {
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { issueSsoHandoff, ssoHandoffResponse } from '@/lib/auth/sso-handoff';
+import { clearSsoFlow, readBoundSsoFlow } from '@/lib/auth/sso-flow';
 import { sanitizeRedirectPath } from '@/lib/auth/guard';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
 
@@ -47,7 +48,11 @@ export async function POST(req: NextRequest) {
         return redirectToLogin(req, 'missing_relay', 'Missing RelayState parameter');
     }
 
-    const relayState = decodeSamlRelayState(relayStateRaw);
+    // RelayState is the flow's id; the flow itself is in the cookie /start
+    // set (src/lib/auth/sso-flow.ts). A SAML response posted into any other
+    // browser — the login-CSRF shape — has no matching cookie and stops here.
+    const boundRelay = readBoundSsoFlow(req, 'saml', relayStateRaw);
+    const relayState = boundRelay ? decodeSamlRelayState(boundRelay) : null;
     if (!relayState) {
         return redirectToLogin(req, 'invalid_relay', 'Invalid RelayState');
     }
@@ -159,9 +164,9 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Redirect to app ──
-    // `returnTo` originates in the UNAUTHENTICATED /start query string and
-    // rides here inside an UNSIGNED state blob, so it is attacker-controlled
-    // end to end. `new URL(returnTo, baseUrl)` does not constrain it:
+    // `returnTo` originates in the UNAUTHENTICATED /start query string, so
+    // whoever wrote that link chose it: it is attacker-controlled even though
+    // the flow cookie that carries it here is signed. `new URL(returnTo, baseUrl)` does not constrain it:
     // `new URL('https://evil.com', base)` and `new URL('//evil.com', base)`
     // both resolve to the attacker's origin, which is a phishing link served
     // from our own domain.
@@ -178,7 +183,9 @@ export async function POST(req: NextRequest) {
         ? sanitizeRedirectPath(relayState.returnTo)
         : `/t/${tenant.slug}/dashboard`;
     const handoff = await issueSsoHandoff({ userId: linkedUserId, tenantId: tenant.id });
-    return ssoHandoffResponse(baseUrl, returnTo, handoff);
+    const res = ssoHandoffResponse(baseUrl, returnTo, handoff);
+    clearSsoFlow(res, 'saml');
+    return res;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -197,6 +204,9 @@ function redirectToLogin(
         loginUrl.searchParams.set('error_description', errorMessage);
     }
     // 303: this answers the identity provider's POST, and a 307 would have
-    // the browser POST it on to the sign-in page.
-    return NextResponse.redirect(loginUrl, 303);
+    // the browser POST it on to the sign-in page. A failed callback spends
+    // the flow too.
+    const res = NextResponse.redirect(loginUrl, 303);
+    clearSsoFlow(res, 'saml');
+    return res;
 }
