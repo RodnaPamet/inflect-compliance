@@ -214,7 +214,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         //
         // Moved 2026-10-23 for `docs/docs-site.md` (the public docs site), a
         // +3/-0 textual insert in sorted position.
-        keyOrderSha: '4af16a092e28e26113bd7b2a6f2b7c380c34aea0f73358a88f3af92d8d8f7df0',
+        // Moved 2026-10-24 for `docs/a2a-host-consumer-pilot-runbook.md`
+        // (#4054), the same shape: a +3/-0 textual insert in sorted position,
+        // before `docs/a2a-mapping.md` because 'h' < 'm'. No existing entry
+        // moved, which is the distinction this digest exists to draw — the
+        // round-trip cannot tell one added key from a `sort_keys` rewrite.
+        keyOrderSha: '217f3ca9983883c4f3388b93bba31fa40d5ad816d8392ec435dcdeb84b978cf3',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
