@@ -669,6 +669,24 @@ export default function MembersAdminPage() {
     // ─── Filter (R14-PR7 — search retired; full list shown) ───
     const filteredMembers = members;
 
+    // Only an OWNER changes an OWNER's or an AI_ADMIN's role
+    // (`OWNER_MANAGED_ROLES`), and neither membership takes a custom role
+    // (#3720, #3699), so for anyone else there is nothing to edit on the row.
+    // One rule for both ways into the editor — the role badge and the row
+    // menu's "Change role" — so neither offers what the other refuses.
+    const mayChangeRole = (m: Member) =>
+        m.status === 'ACTIVE' && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
+
+    // Seed the editor from the member's CURRENT role and custom role. A
+    // leftover pending custom role is either another member's or null, and
+    // Save sends any difference — so it would assign the wrong one or clear
+    // the member's own.
+    const openRoleEditor = (m: Member) => {
+        setEditingRoleId(m.id);
+        setPendingRole(m.role);
+        setPendingCustomRoleId(m.customRoleId);
+    };
+
     // ─── Members DataTable columns ───
     const memberColumns = useMemo(
         () => createColumns<Member>([
@@ -785,11 +803,7 @@ export default function MembersAdminPage() {
                             </div>
                         );
                     }
-                    // Only an OWNER changes an OWNER's or an AI_ADMIN's role
-                    // (`OWNER_MANAGED_ROLES`), and neither membership takes a
-                    // custom role (#3720, #3699), so for anyone else there is
-                    // nothing to edit on the row.
-                    const editable = m.status === 'ACTIVE' && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
+                    const editable = mayChangeRole(m);
                     return (
                         <div className="flex items-center gap-1 flex-wrap">
                             <Tooltip
@@ -808,11 +822,7 @@ export default function MembersAdminPage() {
                                     )}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        if (editable) {
-                                            setEditingRoleId(m.id);
-                                            setPendingRole(m.role);
-                                            setPendingCustomRoleId(m.customRoleId);
-                                        }
+                                        if (editable) openRoleEditor(m);
                                     }}
                                     aria-disabled={!editable || undefined}
                                     id={`role-badge-${m.id}`}
@@ -935,17 +945,18 @@ export default function MembersAdminPage() {
                                     <Popover.Menu>
                                         {isActive && (
                                             <>
-                                                <Popover.Item
-                                                    icon={<Shield className="w-3.5 h-3.5" />}
-                                                    onClick={() => {
-                                                        setEditingRoleId(m.id);
-                                                        setPendingRole(m.role);
-                                                        setOpenMenuId(null);
-                                                    }}
-                                                    id={`action-change-role-${m.id}`}
-                                                >
-                                                    {t('members.changeRole')}
-                                                </Popover.Item>
+                                                {mayChangeRole(m) && (
+                                                    <Popover.Item
+                                                        icon={<Shield className="w-3.5 h-3.5" />}
+                                                        onClick={() => {
+                                                            openRoleEditor(m);
+                                                            setOpenMenuId(null);
+                                                        }}
+                                                        id={`action-change-role-${m.id}`}
+                                                    >
+                                                        {t('members.changeRole')}
+                                                    </Popover.Item>
+                                                )}
                                                 <Popover.Item
                                                     icon={<Monitor className="w-3.5 h-3.5" />}
                                                     onClick={() => {
