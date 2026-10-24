@@ -537,7 +537,19 @@ describe('epic-named ratchets are not added back', () => {
         // allowlist, and fails on a host path or a project id that
         // docs-accuracy has no reason to read. Different population, different
         // failure.
-        expect(guardFiles().length).toBeLessThan(799);
+        //
+        // RAISED 799 -> 800 on 2026-10-24, for ONE file:
+        // `vendored-openshell-skills.test.ts` (#3968). It is the only guard
+        // over `.claude/skills/`, a tree the product's own text scan does not
+        // cover, holding third-party text that every Claude Code session in
+        // this repository reads as instructions. Nothing already in guards or
+        // guardrails ranges over that path, so it cannot be folded in.
+        //
+        // The number is this branch's LIVE count plus one, not a remembered
+        // ceiling: main raised 798 -> 799 for `docs-site-publication` while
+        // this change was in flight, and two branches each raising "to 799"
+        // is how a shared floor lands one short.
+        expect(guardFiles().length).toBeLessThan(800);
     });
 
     /**

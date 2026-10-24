@@ -75,12 +75,12 @@ mapping_entries:
     rationale: "[curated] Determining the scope of the AIMS bounds the organisation, not the individual agent."
   - source_ref: "MGF-1.4"
     target_ref: "8.2"
-    strength: SUPERSET
-    rationale: "[curated] The AI risk assessment addresses systems one at a time; the May 2026 revision asks for risk at the level of the composed agent system."
+    strength: INTERSECT
+    rationale: "[curated] The AI risk assessment addresses systems one at a time; the May 2026 revision asks for risk at the level of the composed agent system, and only for agent systems: shared ground, not containment."
   - source_ref: "MGF-1.4"
     target_ref: "8.4"
-    strength: SUPERSET
-    rationale: "[curated] The AI system impact assessment covers a single system's effects, a proper part of multi-agent risk."
+    strength: INTERSECT
+    rationale: "[curated] The AI system impact assessment covers a single system's effects on people, part of multi-agent risk; it is about impact rather than risk, so neither contains the other."
   - source_ref: "MGF-1.4"
     target_ref: "6.1"
     strength: RELATED

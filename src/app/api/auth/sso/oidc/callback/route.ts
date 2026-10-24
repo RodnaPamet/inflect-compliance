@@ -5,8 +5,8 @@ import {
     discoverOidc,
     decodeState,
     exchangeCodeForTokens,
-    extractIdTokenClaims,
-    validateIdTokenNonce,
+    IdTokenRefusedError,
+    verifyIdToken,
 } from '@/lib/security/oidc-client';
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic';
  * Handles the OIDC callback after IdP authentication:
  * 1. Validates state (tenant + provider + PKCE verifier)
  * 2. Exchanges authorization code for tokens
- * 3. Extracts and validates ID token claims
+ * 3. Verifies the ID token: signature, issuer, audience, expiry, nonce
  * 4. Links external identity to local user (via usecase)
  * 5. Hands off to NextAuth, which opens the session (`src/lib/auth/sso-handoff.ts`)
  * 6. Redirects through the completion page to the app
@@ -129,26 +129,25 @@ export async function GET(req: NextRequest) {
         return redirectToLogin(req, 'token_error', 'Failed to exchange authorization code');
     }
 
-    // ── Validate nonce ──
-    if (!validateIdTokenNonce(tokens.id_token, state.nonce)) {
-        ssoLog('error', 'Nonce mismatch — possible replay attack', {
-            requestId, tenantSlug: state.tenantSlug, providerType: 'OIDC',
-            providerId: state.providerId, stage: 'nonce_validation',
-        });
-        return redirectToLogin(req, 'nonce_mismatch');
-    }
-
-    // ── Extract claims ──
+    // ── Verify the ID token ──
+    // Signature against the IdP's published keys, then issuer, audience,
+    // expiry and this flow's nonce (`verifyIdToken`). The person sees one
+    // generic message; the reason is logged for their administrator.
     let claims;
     try {
-        claims = extractIdTokenClaims(tokens.id_token);
-    } catch (err) {
-        ssoLog('error', 'Failed to extract ID token claims', {
-            requestId, tenantSlug: state.tenantSlug, providerType: 'OIDC',
-            providerId: state.providerId, stage: 'claims_extraction',
-            meta: { error: (err as Error).message },
+        claims = await verifyIdToken(tokens.id_token, {
+            discovery,
+            clientId: oidcConfig.clientId,
+            nonce: state.nonce,
         });
-        return redirectToLogin(req, 'claims_error');
+    } catch (err) {
+        const reason = err instanceof IdTokenRefusedError ? err.reason : 'unknown';
+        ssoLog('error', 'ID token refused', {
+            requestId, tenantSlug: state.tenantSlug, providerType: 'OIDC',
+            providerId: state.providerId, stage: 'id_token_verification',
+            meta: { reason, error: (err as Error).message },
+        });
+        return redirectToLogin(req, reason === 'nonce' ? 'nonce_mismatch' : 'id_token_invalid');
     }
 
     if (!claims.email) {

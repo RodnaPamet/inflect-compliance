@@ -105,8 +105,8 @@ const ISO_LIBRARY_URN = 'urn:inflect:library:iso-42001';
 const ISMS_LIBRARY_URN = 'urn:inflect:library:iso27001-2022';
 
 /**
- * The six Annex A controls this mapping names as sources for ASI03, four of
- * them SUBSET — spelled the way the LIBRARY spells them, which is how
+ * The six Annex A controls this mapping names as sources for ASI03, all
+ * INTERSECT — spelled the way the LIBRARY spells them, which is how
  * `iso27001-to-owasp-agentic.yaml` had to be authored (the importer resolves
  * refs against library keys). Tenant F holds a control on the SEEDED row for
  * each, spelled without the `A.`.
@@ -343,8 +343,8 @@ describeFn('per-agent agentic-risk coverage', () => {
         await linkControl(TD, 'D-ISO-A42', isoSeed.get('A.4.2')!);
 
         // F: an ISMS and nothing else. One control per ASI03 source row, on
-        // the SEEDED Annex A numbering. Six controls, four of the six edges
-        // SUBSET — the posture the "we already run an ISO 27001 ISMS"
+        // the SEEDED Annex A numbering. Six controls, six INTERSECT edges —
+        // the posture the "we already run an ISO 27001 ISMS"
         // customer walks in with, and the population the ISMS-side route was
         // built for.
         for (const libraryCode of ISMS_ASI03_SOURCES) {
@@ -471,7 +471,7 @@ describeFn('per-agent agentic-risk coverage', () => {
 
             // Nothing is COVERED: inherited coverage is capped, on purpose.
             expect(report.summary.covered).toEqual([]);
-            // A.4.2 → ASI10 (SUBSET) and A.9.4 → ASI01 / ASI02 (INTERSECT).
+            // A.4.2 → ASI10 and A.9.4 → ASI01 / ASI02, all INTERSECT.
             expect(report.summary.partiallyCovered).toEqual(['ASI01', 'ASI02', 'ASI10']);
             expect(report.summary.uncovered).toEqual([
                 'ASI03', 'ASI04', 'ASI05', 'ASI06', 'ASI07', 'ASI08', 'ASI09',
@@ -484,11 +484,11 @@ describeFn('per-agent agentic-risk coverage', () => {
 
             expect(rogue.status).toBe('PARTIALLY_COVERED');
             expect(rogue.directControls).toEqual([]);
-            // Strongest route first: A.4.2 is SUBSET, A.9.4 is RELATED.
+            // Strongest route first: A.4.2 is INTERSECT, A.9.4 is RELATED.
             expect(
                 rogue.inheritedFrom.map((i) => [i.frameworkKey, i.requirementCode, i.strength]),
             ).toEqual([
-                ['ISO42001-2023', 'A.4.2', 'SUBSET'],
+                ['ISO42001-2023', 'A.4.2', 'INTERSECT'],
                 ['ISO42001-2023', 'A.9.4', 'RELATED'],
             ]);
             expect(rogue.inheritedFrom[0].controls.map((c) => c.code)).toEqual(['C-ISO-A42']);
@@ -553,12 +553,14 @@ describeFn('per-agent agentic-risk coverage', () => {
             expect(
                 identity.inheritedFrom.map((i) => [i.requirementCode, i.strength]),
             ).toEqual([
-                ['A.5.15', 'SUBSET'],
-                ['A.5.17', 'SUBSET'],
-                ['A.8.2', 'SUBSET'],
-                ['A.8.5', 'SUBSET'],
+                // One strength, so the tie-break decides: framework key, then
+                // requirement code as a plain string (A.5.3 after A.5.17).
+                ['A.5.15', 'INTERSECT'],
+                ['A.5.17', 'INTERSECT'],
                 ['A.5.3', 'INTERSECT'],
                 ['A.8.15', 'INTERSECT'],
+                ['A.8.2', 'INTERSECT'],
+                ['A.8.5', 'INTERSECT'],
             ]);
 
             // Each route reports the tenant's own control, held against the
@@ -566,10 +568,10 @@ describeFn('per-agent agentic-risk coverage', () => {
             expect(identity.inheritedFrom.map((i) => i.controls.map((c) => c.code))).toEqual([
                 ['F-ISMS-5.15'],
                 ['F-ISMS-5.17'],
-                ['F-ISMS-8.2'],
-                ['F-ISMS-8.5'],
                 ['F-ISMS-5.3'],
                 ['F-ISMS-8.15'],
+                ['F-ISMS-8.2'],
+                ['F-ISMS-8.5'],
             ]);
             // The route is reported under the framework the MAPPING cites.
             expect([...new Set(identity.inheritedFrom.map((i) => i.frameworkKey))]).toEqual([

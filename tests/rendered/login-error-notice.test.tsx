@@ -56,6 +56,7 @@ describe('sign-in page — ?error=', () => {
         ['domain_mismatch', en.login.errors.ssoDomainNotAllowed],
         ['provider_disabled', en.login.errors.ssoUnavailable],
         ['nonce_mismatch', en.login.errors.ssoIncomplete],
+        ['id_token_invalid', en.login.errors.ssoIncomplete],
         ['OAuthAccountNotLinked', en.login.errors.accountNotLinked],
     ])('%s reads as its own message', async (code, message) => {
         await renderWith(`error=${code}`);

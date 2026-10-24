@@ -26,7 +26,7 @@ const SSO_INCOMPLETE = new Set([
     'invalid_state',
     'token_error',
     'nonce_mismatch',
-    'claims_error',
+    'id_token_invalid',
     'no_email',
     'cross_tenant',
     'subject_conflict',

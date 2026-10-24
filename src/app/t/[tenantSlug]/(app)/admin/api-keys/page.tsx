@@ -394,6 +394,10 @@ export default function ApiKeysPage() {
      */
     const [agents, setAgents] = useState<AgentOption[]>([]);
     const [agentsRefused, setAgentsRefused] = useState(false);
+    // The register answered with something other than a refusal or a list, or
+    // did not answer at all. Kept apart from `agentsRefused`, whose message
+    // tells the admin they lack a permission, which this does not mean.
+    const [agentsLoadFailed, setAgentsLoadFailed] = useState(false);
     const [createdKey, setCreatedKey] = useState<CreatedKeyResponse | null>(null);
     // Pending revocation — drives the ConfirmDialog. Replaces the
     // previous window.confirm() call.
@@ -415,15 +419,16 @@ export default function ApiKeysPage() {
         try {
             const res = await fetch(apiUrl('/admin/agents?status=ACTIVE'));
             if (res.status === 403) { setAgentsRefused(true); return; }
-            if (!res.ok) return;
+            // Any other failure is UNKNOWN, not "no agents": an empty selector
+            // reads as a definite answer we do not have.
+            if (!res.ok) { setAgentsLoadFailed(true); return; }
             const body = await res.json();
             const rows: AgentOption[] = Array.isArray(body) ? body : (body.agents ?? []);
             setAgents(rows);
         } catch {
-            // A failed probe means UNKNOWN, not "no agents". Leaving the list
-            // empty without `agentsRefused` renders the selector with nothing in
-            // it, which reads as a definite answer we do not have.
-            setAgentsRefused(true);
+            // A failed probe means UNKNOWN: not "no agents", and not "you may
+            // not read the register" either, which is what it used to say.
+            setAgentsLoadFailed(true);
         }
     }, [apiUrl]);
 
@@ -786,6 +791,10 @@ export default function ApiKeysPage() {
                         {agentsRefused ? (
                             <p className="text-xs text-content-muted" id="key-binding-unavailable">
                                 {t('apiKeys.bindingUnavailable')}
+                            </p>
+                        ) : agentsLoadFailed ? (
+                            <p className="text-xs text-content-muted" id="key-binding-load-failed">
+                                {t('apiKeys.bindingLoadFailed')}
                             </p>
                         ) : (
                             <>

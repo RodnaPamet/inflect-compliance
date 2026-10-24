@@ -268,6 +268,10 @@ const nodeProject = {
     modulePathIgnorePatterns: ['<rootDir>/.claude/'],
     transform: {
         '^.+\\.(ts|tsx)$': 'ts-jest',
+        // jose BEFORE the general `.js` entry below (Jest uses the first
+        // pattern that matches): its minified error classes need an ES2022
+        // target, or constructing one throws. See tests/setup/jose-transform.js.
+        '/node_modules/jose/.+\\.js$': '<rootDir>/tests/setup/jose-transform.js',
         // Transpile the NextAuth ESM graph so middleware-importing
         // tests load without `SyntaxError: Cannot use import statement
         // outside a module`.
@@ -654,6 +658,26 @@ module.exports = {
     // `logHeapUsage`, which appends a figure to every PASS line —
     // ~1,650 lines of noise. See the reporter's own docstring.
     reporters: ['default', '<rootDir>/tests/reporters/heap-summary-reporter.js'],
+    // INERT ON CI, AND THE PARAGRAPH ABOVE DESCRIBES A MECHANISM THAT DOES
+    // NOT FIRE THERE (#3320). The argument above is sound for a WORKER run —
+    // which is what `npm test` does locally. CI's shard step does not: it
+    // invokes `jest --runInBand`, one process for all ~354 of a shard's files,
+    // and there is no worker to recycle, so nothing above keeps heaps bounded
+    // on the only machine that decides whether a branch merges. Jest does not
+    // warn; the setting is simply never consulted.
+    //
+    // What actually bounds that run is the explicit V8 ceiling on the shard
+    // step's `NODE_OPTIONS` (`--max-old-space-size`, 12288 since #4039, set
+    // against a MEASURED peak of 10,337 MB on shard 2/6). The in-band heap is
+    // observed by the heap-summary reporter wired just above, which is the
+    // only thing that can see it — `workerIdleMemoryLimit` cannot, because
+    // worker recycling is what it acts on.
+    //
+    // Kept rather than deleted, because it is live for every LOCAL worker run
+    // and would be live again the day the shard step drops `--runInBand`
+    // (#4033 measured that: it clears the OOM but costs ~1.8x wall-clock).
+    // `tests/guards/in-band-shard-heap-bound.test.ts` asserts the ceiling this
+    // comment points at is really there, so the claim cannot rot into prose.
     workerIdleMemoryLimit: '512MB',
     // forceExit DELIBERATELY OFF — Jest exits naturally once the
     // disconnect-after-suite hook in tests/setup/disconnect-after-suite.ts

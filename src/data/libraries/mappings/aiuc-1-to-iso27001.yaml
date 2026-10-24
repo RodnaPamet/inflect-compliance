@@ -13,12 +13,13 @@
 # strongest on AIUC-1's Security domain and on the data-protection half of
 # Data & Privacy; it says nothing about harmful, out-of-scope or fabricated
 # output, which is why those requirements are reached from ISO 42001 instead.
-# Refs are the library's condensed Annex A subset; mapping-targets-exist holds
-# every one of them to a node that library carries. That subset omits A.5.18
-# (access rights), A.5.31 (legal requirements), A.5.32 (intellectual property),
-# A.8.12 (data leakage prevention) and A.8.16 (monitoring) — the strongest
-# routes to B007, E012, A007, A004 / A006 and B002 / B004 / E009 — so a gap
-# analysis from ISO 27001 understates those until the library carries them.
+# Refs are the library's Annex A subset (34 of the 93 controls);
+# mapping-targets-exist holds every one of them to a node that library carries.
+# A.5.18 (access rights), A.5.31 (legal requirements), A.5.32 (intellectual
+# property), A.8.12 (data leakage prevention) and A.8.16 (monitoring) were added
+# to it for this pair, because they are the strongest routes to B007, E012,
+# A007, A004 / A006 / A008 and B002 / B004 / B006 / E009. Before that, a gap
+# analysis from ISO 27001 understated those requirements.
 #
 # Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
 # part of either publication, authored from the requirement texts this
@@ -59,6 +60,10 @@ mapping_entries:
     target_ref: "A.5.15"
     strength: INTERSECT
     rationale: "[curated] Access-control rules applied to an agent's retrieval bound what it can read; scoping by task and session, and an identity per agent, are AIUC-1's additions."
+  - source_ref: "A003"
+    target_ref: "A.5.18"
+    strength: INTERSECT
+    rationale: "[curated] Provisioning, reviewing and removing access rights applies to an agent that holds an identity of its own; bounding retrieval by task, user and session in the permission logic is AIUC-1's addition."
   - source_ref: "A004"
     target_ref: "A.5.12"
     strength: INTERSECT
@@ -71,6 +76,10 @@ mapping_entries:
     target_ref: "A.5.14"
     strength: RELATED
     rationale: "[curated] Rules for transferring information cover material submitted to a model provider, whose protection of it AIUC-1 asks the organisation to know."
+  - source_ref: "A004"
+    target_ref: "A.8.12"
+    strength: INTERSECT
+    rationale: "[curated] Leakage-prevention measures on what is submitted to and released by AI systems keep confidential material in; telling staff what may not be entered, and knowing a provider's protection of submitted material, are AIUC-1's other parts."
   - source_ref: "A005"
     target_ref: "A.5.15"
     strength: INTERSECT
@@ -83,10 +92,18 @@ mapping_entries:
     target_ref: "A.5.34"
     strength: INTERSECT
     rationale: "[curated] Protecting PII is the obligation; detecting and filtering personal data in an agent's inputs, outputs and logs is how an agent meets it."
+  - source_ref: "A006"
+    target_ref: "A.8.12"
+    strength: INTERSECT
+    rationale: "[curated] Leakage-prevention measures applied to an agent's output screen it for personal data; detecting personal data in its inputs and in the logs it leaves are AIUC-1's additions."
   - source_ref: "A007"
     target_ref: "A.5.19"
     strength: RELATED
     rationale: "[curated] Managing supplier relationships is where a model provider's IP indemnity is established; screening outputs for protected material is outside ISO 27001."
+  - source_ref: "A007"
+    target_ref: "A.5.32"
+    strength: INTERSECT
+    rationale: "[curated] Procedures that respect others' intellectual property apply to what an agent produces; knowing a provider's indemnity, screening outputs for protected material and warning users are AIUC-1's additions."
   - source_ref: "A008"
     target_ref: "A.5.17"
     strength: INTERSECT
@@ -95,6 +112,10 @@ mapping_entries:
     target_ref: "A.8.15"
     strength: RELATED
     rationale: "[curated] Protecting logs includes keeping credentials and secrets out of them."
+  - source_ref: "A008"
+    target_ref: "A.8.12"
+    strength: INTERSECT
+    rationale: "[curated] Credentials are sensitive information whose disclosure leakage prevention exists to stop, in pasted input and stored artefacts alike; keeping secrets out of code the agent writes is AIUC-1's addition."
   - source_ref: "B001"
     target_ref: "A.8.8"
     strength: INTERSECT
@@ -107,6 +128,10 @@ mapping_entries:
     target_ref: "A.5.26"
     strength: INTERSECT
     rationale: "[curated] A detected injection attempt is handled as an incident with a record, which is incident response under documented procedures."
+  - source_ref: "B002"
+    target_ref: "A.8.16"
+    strength: INTERSECT
+    rationale: "[curated] Watching systems for abnormal behaviour and acting on what may be an incident covers alerting on adversarial input at run time; detecting prompt injection as such, and revisiting the rules each quarter, are AIUC-1's additions."
   - source_ref: "B003"
     target_ref: "A.5.12"
     strength: RELATED
@@ -115,6 +140,10 @@ mapping_entries:
     target_ref: "A.8.8"
     strength: INTERSECT
     rationale: "[curated] An external penetration test of AI endpoints with tracked remediation is vulnerability management applied to them; rate limits and usage-anomaly detection are outside it."
+  - source_ref: "B004"
+    target_ref: "A.8.16"
+    strength: INTERSECT
+    rationale: "[curated] Detecting anomalous use of an AI endpoint is monitoring applied to it; per-caller rate limits, quotas and an external test aimed at the endpoints are other controls."
   - source_ref: "B006"
     target_ref: "A.5.15"
     strength: INTERSECT
@@ -123,6 +152,10 @@ mapping_entries:
     target_ref: "A.8.2"
     strength: INTERSECT
     rationale: "[curated] Restricting privileged access applies to the standing privileges an agent holds in backend systems."
+  - source_ref: "B006"
+    target_ref: "A.8.16"
+    strength: INTERSECT
+    rationale: "[curated] Monitoring the security-relevant actions an agent takes and alerting on misuse is activity monitoring applied to the agent; restricting its reach and sandboxing its execution are other controls."
   - source_ref: "B007"
     target_ref: "A.5.15"
     strength: INTERSECT
@@ -131,6 +164,10 @@ mapping_entries:
     target_ref: "A.8.2"
     strength: INTERSECT
     rationale: "[curated] The AI system's administrative functions are privileged access, to be restricted and managed."
+  - source_ref: "B007"
+    target_ref: "A.5.18"
+    strength: INTERSECT
+    rationale: "[curated] Granting, reviewing and removing people's access to the AI system is access-rights management; the quarterly cadence and a recorded justification for each change are AIUC-1's specifics."
   - source_ref: "B008"
     target_ref: "A.8.5"
     strength: INTERSECT
@@ -163,6 +200,10 @@ mapping_entries:
     target_ref: "A.8.25"
     strength: RELATED
     rationale: "[curated] Secure development covers output encoding in the organisation's own applications; sanitising agent output for wherever it is rendered or run is not named."
+  - source_ref: "C008"
+    target_ref: "A.8.16"
+    strength: RELATED
+    rationale: "[curated] Security monitoring is where AIUC-1 sends the data from tracking production output against the risk taxonomy; sampling output for each risk category is outside it."
   - source_ref: "D003"
     target_ref: "A.5.15"
     strength: RELATED
@@ -219,6 +260,10 @@ mapping_entries:
     target_ref: "A.5.19"
     strength: RELATED
     rationale: "[curated] Managing supplier relationships includes the access suppliers are given to the AI system."
+  - source_ref: "E009"
+    target_ref: "A.8.16"
+    strength: INTERSECT
+    rationale: "[curated] Alerting on anomalous third-party access is monitoring for abnormal behaviour; logging each third-party session in detail is logging's part."
   - source_ref: "E011"
     target_ref: "A.5.23"
     strength: INTERSECT
@@ -227,6 +272,14 @@ mapping_entries:
     target_ref: "A.5.34"
     strength: RELATED
     rationale: "[curated] PII protection obligations include the lawful basis for cross-border transfers that a processing-location record names."
+  - source_ref: "E011"
+    target_ref: "A.5.31"
+    strength: RELATED
+    rationale: "[curated] A register of legal obligations includes the cross-border transfer rules that a record of processing locations has to name the mechanism for."
+  - source_ref: "E012"
+    target_ref: "A.5.31"
+    strength: INTERSECT
+    rationale: "[curated] Identifying and documenting the legal and regulatory requirements that apply, and how each is met, is the register AIUC-1 asks for; extending it to AI law and reviewing it every six months are AIUC-1's specifics."
   - source_ref: "E015"
     target_ref: "A.8.15"
     strength: INTERSECT

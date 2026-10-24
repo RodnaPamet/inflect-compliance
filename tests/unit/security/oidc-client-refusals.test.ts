@@ -2,7 +2,8 @@
  * Refusal-path tests for `src/lib/security/oidc-client.ts`.
  *
  * The existing `tests/unit/oidc-flow.test.ts` covers the pure helpers
- * (PKCE, state codec, claim extraction, nonce compare). The two network
+ * (PKCE, state codec, authorization URL), and
+ * `oidc-id-token-verification.test.ts` covers the ID token. The two network
  * functions — `discoverOidc` and `exchangeCodeForTokens` — are the ones
  * reached from `/api/auth/sso/oidc/{start,callback}` and they were
  * entirely untested, including every one of their refusals: a
@@ -16,14 +17,10 @@
  * document from an earlier test silently satisfies a later one and the
  * refusal never runs.
  */
-import { ZodError } from 'zod';
-
 import {
     discoverOidc,
     exchangeCodeForTokens,
-    extractIdTokenClaims,
     _clearDiscoveryCache,
-    validateIdTokenNonce,
     encodeState,
     decodeState,
     type OidcDiscoveryDocument,
@@ -102,29 +99,6 @@ function requestedUrl(callIndex = 0): string {
     return String(mockFetch.mock.calls[callIndex][0]);
 }
 
-/**
- * Assert that `fn` throws a ZodError carrying an issue at `path` with the
- * given `code`. Typed against Zod's own error class rather than `any`, so
- * a schema change that moves the issue shape is a compile error here
- * before it is a test failure.
- */
-function expectZodIssue(
-    fn: () => unknown,
-    expected: { path: readonly (string | number)[]; code: string },
-): void {
-    let caught: unknown;
-    try {
-        fn();
-    } catch (err) {
-        caught = err;
-    }
-    expect(caught).toBeInstanceOf(ZodError);
-    const issues = (caught as ZodError).issues;
-    expect(
-        issues.map((i) => ({ path: i.path.map(String), code: String(i.code) })),
-    ).toContainEqual({ path: expected.path.map(String), code: expected.code });
-}
-
 // ─── discoverOidc — refusals ─────────────────────────────────────────
 
 describe('discoverOidc — refusals', () => {
@@ -158,6 +132,15 @@ describe('discoverOidc — refusals', () => {
     it('REFUSES a document with no token_endpoint', async () => {
         mockFetch.mockResolvedValueOnce(
             jsonResponse({ ...FULL_DISCOVERY, token_endpoint: undefined }),
+        );
+        await expect(discoverOidc(oidcConfig())).rejects.toThrow(
+            'OIDC discovery document missing required fields',
+        );
+    });
+
+    it('REFUSES a document with no jwks_uri: the ID token could not be verified', async () => {
+        mockFetch.mockResolvedValueOnce(
+            jsonResponse({ ...FULL_DISCOVERY, jwks_uri: undefined }),
         );
         await expect(discoverOidc(oidcConfig())).rejects.toThrow(
             'OIDC discovery document missing required fields',
@@ -348,104 +331,6 @@ describe('exchangeCodeForTokens — request shape', () => {
     });
 });
 
-// ─── extractIdTokenClaims — malformed payloads ───────────────────────
-
-describe('extractIdTokenClaims — malformed payloads', () => {
-    function tokenWithRawPayload(payloadSegment: string): string {
-        const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
-        return `${header}.${payloadSegment}.${Buffer.from('sig').toString('base64url')}`;
-    }
-
-    it('REFUSES a token whose payload segment is not JSON', () => {
-        const token = tokenWithRawPayload(
-            Buffer.from('definitely-not-json').toString('base64url'),
-        );
-        // Specifically a JSON.parse failure, NOT a Zod refusal — asserting
-        // the class distinguishes "the payload was unreadable" from "the
-        // payload parsed but carried bad claims". A bare `.toThrow()`
-        // could not tell those apart.
-        expect(() => extractIdTokenClaims(token)).toThrow(SyntaxError);
-    });
-
-    it('REFUSES a token whose email claim is not a valid address', () => {
-        const payload = Buffer.from(
-            JSON.stringify({ sub: 'u1', email: 'not-an-email' }),
-        ).toString('base64url');
-        // The Zod refusal matters: an unparsable address flowing into user
-        // provisioning would create an account keyed on garbage. Assert the
-        // ISSUE, not merely that something threw — dropping `.email()` from
-        // the schema must fail this test.
-        expectZodIssue(() => extractIdTokenClaims(tokenWithRawPayload(payload)), {
-            path: ['email'],
-            code: 'invalid_format',
-        });
-    });
-
-    it('REFUSES a token whose sub claim is an empty string', () => {
-        const payload = Buffer.from(JSON.stringify({ sub: '' })).toString('base64url');
-        // `sub` is the IdP's stable subject identifier — an empty one would
-        // collapse every unidentified user onto a single account record.
-        expectZodIssue(() => extractIdTokenClaims(tokenWithRawPayload(payload)), {
-            path: ['sub'],
-            code: 'too_small',
-        });
-    });
-
-    it('REFUSES a two-segment token with the specific format error', () => {
-        expect(() => extractIdTokenClaims('header.payload')).toThrow(
-            'Invalid ID token format',
-        );
-    });
-
-    it('REFUSES a four-segment token (JWE-shaped) with the format error', () => {
-        expect(() => extractIdTokenClaims('a.b.c.d')).toThrow('Invalid ID token format');
-    });
-
-    it('drops unknown claims rather than passing them through', () => {
-        const payload = Buffer.from(
-            JSON.stringify({ sub: 'u1', is_admin: true, groups: ['x'] }),
-        ).toString('base64url');
-        const claims = extractIdTokenClaims(tokenWithRawPayload(payload));
-        // An IdP-supplied `is_admin` must never reach the caller as a
-        // claim it might trust.
-        expect(claims).toStrictEqual({ sub: 'u1' });
-    });
-});
-
-// ─── validateIdTokenNonce — malformed payloads ───────────────────────
-
-describe('validateIdTokenNonce — malformed payloads', () => {
-    function tokenWith(payloadSegment: string): string {
-        const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
-        return `${header}.${payloadSegment}.${Buffer.from('sig').toString('base64url')}`;
-    }
-
-    it('REFUSES (false) a token whose payload is not JSON, rather than throwing', () => {
-        // The callback route calls this before anything else; a throw here
-        // would surface as a 500 instead of a clean auth refusal.
-        const token = tokenWith(Buffer.from('}{not json').toString('base64url'));
-        expect(validateIdTokenNonce(token, 'expected')).toBe(false);
-    });
-
-    it('REFUSES a token that carries no nonce claim at all', () => {
-        // Replay protection is the whole point — an absent nonce is not a
-        // match, and must not compare equal to an absent expectation.
-        const token = tokenWith(
-            Buffer.from(JSON.stringify({ sub: 'u1' })).toString('base64url'),
-        );
-        expect(validateIdTokenNonce(token, 'expected')).toBe(false);
-    });
-
-    it('accepts only an exact nonce match', () => {
-        const token = tokenWith(
-            Buffer.from(JSON.stringify({ sub: 'u1', nonce: 'abc' })).toString('base64url'),
-        );
-        expect(validateIdTokenNonce(token, 'abc')).toBe(true);
-        expect(validateIdTokenNonce(token, 'abc ')).toBe(false);
-        expect(validateIdTokenNonce(token, 'ABC')).toBe(false);
-    });
-});
-
 // ─── decodeState — PKCE / replay field guards ────────────────────────
 //
 // `decodeState` is the callback route's FIRST parse of attacker-supplied
@@ -480,7 +365,7 @@ describe('decodeState — required-field refusals', () => {
 
     it('REFUSES a state carrying no nonce — replay protection would be lost', () => {
         // The nonce is compared against the ID token later; an absent one
-        // means `validateIdTokenNonce` has nothing to check against.
+        // means `verifyIdToken` has nothing to check against.
         expect(decodeState(stateWithout('nonce'))).toBeNull();
     });
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { randomBytes, createHash } from 'crypto';
+import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from 'jose';
 import type { OidcConfig } from '@/app-layer/schemas/sso-config.schemas';
 
 /**
@@ -9,9 +10,10 @@ import type { OidcConfig } from '@/app-layer/schemas/sso-config.schemas';
  * - OpenID Connect Discovery (well-known endpoint)
  * - Authorization URL construction with PKCE
  * - Token exchange (authorization_code → id_token + access_token)
- * - ID token validation and claim extraction
+ * - ID token verification against the IdP's published keys (`verifyIdToken`)
  *
- * Uses native fetch — no external OIDC libraries required.
+ * Uses native fetch for discovery and the token exchange, and `jose` for the
+ * one part that must not be hand-written: verifying the ID token's signature.
  */
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -77,8 +79,11 @@ export async function discoverOidc(config: OidcConfig): Promise<OidcDiscoveryDoc
 
     const doc = await res.json() as OidcDiscoveryDocument;
 
-    // Basic validation
-    if (!doc.issuer || !doc.authorization_endpoint || !doc.token_endpoint) {
+    // Basic validation. `jwks_uri` is required too: it is where the keys that
+    // sign the ID token are published, and a sign-in that cannot reach them
+    // cannot complete, so it is refused here, at the start, rather than after
+    // the person has been to their identity provider and back.
+    if (!doc.issuer || !doc.authorization_endpoint || !doc.token_endpoint || !doc.jwks_uri) {
         throw new Error('OIDC discovery document missing required fields');
     }
 
@@ -193,48 +198,157 @@ export async function exchangeCodeForTokens(
     return tokens;
 }
 
-// ─── ID Token Claims Extraction ──────────────────────────────────────
+// ─── ID Token Verification ───────────────────────────────────────────
 
 /**
- * Extract claims from an ID token (JWT).
+ * The algorithms an ID token may be signed with: asymmetric ones only.
  *
- * Note: This performs base64 decoding only — full signature validation
- * should be done with the IdP's JWKS in production. For enterprise SSO
- * behind TLS with PKCE, the token exchange itself provides sufficient
- * authenticity (the token came directly from the token endpoint over HTTPS).
+ * Never `none`, and never an HMAC (`HS*`). OIDC allows an HMAC keyed with the
+ * client secret, but a secret the IdP and this app share is not a key that
+ * only the IdP holds, and no IdP this product supports needs it.
  */
-export function extractIdTokenClaims(idToken: string): OidcUserClaims {
-    const parts = idToken.split('.');
-    if (parts.length !== 3) {
-        throw new Error('Invalid ID token format');
+export const ID_TOKEN_SIGNING_ALGORITHMS = [
+    'RS256', 'RS384', 'RS512',
+    'PS256', 'PS384', 'PS512',
+    'ES256', 'ES384', 'ES512',
+    'EdDSA',
+] as const;
+
+/** Clock skew tolerated between this server and the IdP, in seconds. */
+export const ID_TOKEN_CLOCK_TOLERANCE_SECONDS = 60;
+
+/**
+ * Why an ID token was refused. The callback logs it and shows the person one
+ * generic message: which check failed is for the administrator, not for
+ * whoever is holding the token.
+ */
+export type IdTokenRefusal =
+    | 'malformed'
+    | 'signature'
+    | 'keys_unavailable'
+    | 'issuer'
+    | 'audience'
+    | 'expired'
+    | 'nonce'
+    | 'claims';
+
+export class IdTokenRefusedError extends Error {
+    constructor(
+        readonly reason: IdTokenRefusal,
+        detail: string,
+    ) {
+        super(`ID token refused (${reason}): ${detail}`);
+        this.name = 'IdTokenRefusedError';
     }
-
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-
-    const ClaimsSchema = z.object({
-        sub: z.string().min(1),
-        email: z.string().email().optional(),
-        email_verified: z.boolean().optional(),
-        name: z.string().optional(),
-        given_name: z.string().optional(),
-        family_name: z.string().optional(),
-    });
-
-    return ClaimsSchema.parse(payload);
 }
 
 /**
- * Validate ID token nonce matches the expected value.
+ * The claims this app reads. Everything else the IdP sends is dropped, so an
+ * IdP-supplied `is_admin` or `groups` never reaches a caller as something it
+ * might trust.
  */
-export function validateIdTokenNonce(idToken: string, expectedNonce: string): boolean {
-    try {
-        const parts = idToken.split('.');
-        if (parts.length !== 3) return false;
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-        return payload.nonce === expectedNonce;
-    } catch {
-        return false;
+const IdTokenClaimsSchema = z.object({
+    sub: z.string().min(1),
+    email: z.string().email().optional(),
+    email_verified: z.boolean().optional(),
+    name: z.string().optional(),
+    given_name: z.string().optional(),
+    family_name: z.string().optional(),
+});
+
+/**
+ * One key set per `jwks_uri`. `createRemoteJWKSet` caches the keys it fetched
+ * (10 minutes) and fetches again when a token names a key it does not hold, at
+ * most every 30 seconds, which is how an IdP's key rotation is picked up.
+ */
+const signingKeysCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
+function signingKeysFor(jwksUri: string): ReturnType<typeof createRemoteJWKSet> {
+    let keys = signingKeysCache.get(jwksUri);
+    if (!keys) {
+        keys = createRemoteJWKSet(new URL(jwksUri), { timeoutDuration: 10_000 });
+        signingKeysCache.set(jwksUri, keys);
     }
+    return keys;
+}
+
+function refusalOf(err: unknown): IdTokenRefusal {
+    if (err instanceof joseErrors.JWTExpired) return 'expired';
+    if (err instanceof joseErrors.JWTClaimValidationFailed) {
+        if (err.claim === 'iss') return 'issuer';
+        if (err.claim === 'aud') return 'audience';
+        if (err.claim === 'nbf') return 'expired';
+        return 'claims';
+    }
+    if (
+        err instanceof joseErrors.JWSSignatureVerificationFailed ||
+        err instanceof joseErrors.JWKSNoMatchingKey ||
+        err instanceof joseErrors.JWKSMultipleMatchingKeys ||
+        err instanceof joseErrors.JOSEAlgNotAllowed ||
+        err instanceof joseErrors.JOSENotSupported
+    ) {
+        return 'signature';
+    }
+    if (err instanceof joseErrors.JWSInvalid || err instanceof joseErrors.JWTInvalid) return 'malformed';
+    // Anything else happened while fetching the key set: a timeout, a non-200
+    // answer, a body that is not a key set, a network error.
+    return 'keys_unavailable';
+}
+
+/**
+ * Verify an ID token from the token endpoint, and return the claims this app
+ * reads from it.
+ *
+ * Every check OpenID Connect Core 1.0 §3.1.3.7 lists for this flow:
+ *   - the signature, by a key the IdP publishes at its `jwks_uri`, with an
+ *     algorithm from `ID_TOKEN_SIGNING_ALGORITHMS`;
+ *   - `iss` is exactly the issuer the discovery document names;
+ *   - `aud` contains this provider's client id, and `azp`, when present (and
+ *     it must be when there is more than one audience), is that client id;
+ *   - `exp` has not passed and `iat` is present, with
+ *     `ID_TOKEN_CLOCK_TOLERANCE_SECONDS` of skew either way;
+ *   - `nonce` is the one this browser's flow sent.
+ *
+ * The issuer check is what keeps a provider to ONE directory. Microsoft's
+ * multi-tenant endpoints (`common`, `organizations`) publish an issuer with a
+ * literal `{tenantid}` placeholder, which no real token's `iss` equals, so a
+ * provider configured with one of them is refused rather than accepting
+ * sign-ins from every Microsoft tenant in the world.
+ *
+ * Throws `IdTokenRefusedError`; never returns claims it did not verify.
+ */
+export async function verifyIdToken(
+    idToken: string,
+    expected: { discovery: OidcDiscoveryDocument; clientId: string; nonce: string },
+): Promise<OidcUserClaims> {
+    let payload: JWTPayload;
+    try {
+        ({ payload } = await jwtVerify(idToken, signingKeysFor(expected.discovery.jwks_uri), {
+            algorithms: [...ID_TOKEN_SIGNING_ALGORITHMS],
+            issuer: expected.discovery.issuer,
+            audience: expected.clientId,
+            requiredClaims: ['exp', 'iat', 'sub'],
+            clockTolerance: ID_TOKEN_CLOCK_TOLERANCE_SECONDS,
+        }));
+    } catch (err) {
+        throw new IdTokenRefusedError(refusalOf(err), err instanceof Error ? err.message : String(err));
+    }
+
+    const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+    const azp = payload.azp;
+    if (azp !== undefined ? azp !== expected.clientId : audiences.length > 1) {
+        throw new IdTokenRefusedError('audience', 'the token was issued to another client (azp)');
+    }
+
+    if (typeof payload.nonce !== 'string' || payload.nonce !== expected.nonce) {
+        throw new IdTokenRefusedError('nonce', 'the nonce is not the one this sign-in sent');
+    }
+
+    const claims = IdTokenClaimsSchema.safeParse(payload);
+    if (!claims.success) {
+        throw new IdTokenRefusedError('claims', claims.error.issues.map((i) => i.path.join('.')).join(', '));
+    }
+    return claims.data;
 }
 
 // ─── Test Helpers ────────────────────────────────────────────────────
@@ -242,4 +356,5 @@ export function validateIdTokenNonce(idToken: string, expectedNonce: string): bo
 /** @internal — exposed for testing only */
 export function _clearDiscoveryCache(): void {
     discoveryCache.clear();
+    signingKeysCache.clear();
 }
