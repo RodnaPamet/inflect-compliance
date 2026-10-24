@@ -210,6 +210,54 @@ function hasBearerConfirmationFor(
     });
 }
 
+/** The signature and digest algorithms a response may be signed with. */
+const ALLOWED_SIGNATURE_METHODS: ReadonlySet<string> = new Set([
+    'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
+    'http://www.w3.org/2001/04/xmldsig-more#rsa-sha512',
+]);
+const ALLOWED_DIGEST_METHODS: ReadonlySet<string> = new Set([
+    'http://www.w3.org/2001/04/xmlenc#sha256',
+    'http://www.w3.org/2001/04/xmlenc#sha512',
+]);
+
+const ALGORITHM_ELEMENT = /<(?:[^\s<>/!?:]+:)?(SignatureMethod|DigestMethod)(?=[\s/>])([^>]*)>/g;
+const ALGORITHM_ATTRIBUTE = /\sAlgorithm\s*=\s*(?:"([^"]*)"|'([^']*)')/;
+
+/**
+ * Refuses a response signed or digested with anything but SHA-256 or SHA-512.
+ *
+ * `signatureAlgorithm: 'sha256'` in the SAML options governs only what WE sign.
+ * Verification takes whatever algorithm the response names, and xml-crypto
+ * accepts RSA-SHA1 and a SHA-1 digest, for which collisions are practical.
+ * node-saml builds its verifier internally, so the response's own declarations
+ * are read here, before it is verified.
+ *
+ * Read as text, so it is written as an allowlist and fails closed: every
+ * declaration must name an allowed algorithm literally, there must be at least
+ * one of each, and a document type declaration is refused, since entity
+ * expansion is the one way markup could reach the parser without being visible
+ * in the text. A SAML message has no business carrying one.
+ */
+function assertModernSignatureAlgorithms(samlResponseBody: string): void {
+    const xml = Buffer.from(samlResponseBody, 'base64').toString('utf8');
+    if (/<!DOCTYPE/i.test(xml)) {
+        throw new Error('SAML response carries a document type declaration');
+    }
+    const seen = { SignatureMethod: 0, DigestMethod: 0 };
+    for (const [, element, attributes] of xml.matchAll(ALGORITHM_ELEMENT)) {
+        const match = ALGORITHM_ATTRIBUTE.exec(attributes);
+        const algorithm = match ? (match[1] ?? match[2]) : undefined;
+        const allowed = element === 'SignatureMethod' ? ALLOWED_SIGNATURE_METHODS : ALLOWED_DIGEST_METHODS;
+        if (!algorithm || !allowed.has(algorithm)) {
+            throw new Error(`SAML response uses a refused ${element}: ${algorithm ?? 'none named'}`);
+        }
+        seen[element as keyof typeof seen] += 1;
+    }
+    if (seen.SignatureMethod === 0 || seen.DigestMethod === 0) {
+        throw new Error('SAML response names no signature or digest algorithm');
+    }
+}
+
 /**
  * Validate a SAML response (POST to ACS) and extract the authenticated profile.
  * `expected` is this callback's URL and the request the flow sent.
@@ -219,12 +267,23 @@ export async function validateSamlResponse(
     samlResponseBody: string,
     expected: { callbackUrl: string; requestId: string },
 ): Promise<SamlValidatedResponse> {
+    assertModernSignatureAlgorithms(samlResponseBody);
+
     const { profile } = await saml.validatePostResponseAsync({
         SAMLResponse: samlResponseBody,
     } as Record<string, string>);
 
     if (!profile) {
         throw new Error('SAML response validation failed: no profile returned');
+    }
+
+    // The assertion must come from the identity provider this workspace
+    // configured. node-saml 5 reads `idpIssuer` only for logout messages, so
+    // an assertion naming any issuer passed as long as the certificate signed
+    // it. `profile.issuer` is read from the verified assertion.
+    const idpIssuer = saml.options.idpIssuer;
+    if (!idpIssuer || profile.issuer !== idpIssuer) {
+        throw new Error('SAML assertion was issued by an unexpected identity provider');
     }
 
     if (!hasBearerConfirmationFor(profile, expected, Date.now())) {
