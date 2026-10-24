@@ -241,8 +241,26 @@ export function UserMenu({
             side="bottom"
             sideOffset={8}
             popoverContentClassName="w-[240px] p-1"
+            contentLabel={tNav('accountMenu')}
             content={
-                <Popover.Menu aria-label={tNav('accountMenu')}>
+                /* THE MENU OWNS ONLY MENU ITEMS (#3254).
+                   `role="menu"` may own menuitem, menuitemcheckbox,
+                   menuitemradio, group and separator — nothing else. The
+                   identity header, the theme toggle and the language
+                   radiogroup are none of those, and axe reported
+                   `aria-required-children` (CRITICAL, WCAG 1.3.1) on every
+                   UserMenu because of it.
+
+                   The role STAYS and the rows move, not the other way round:
+                   `moveMenuFocus` in popover.tsx implements the real ARIA menu
+                   pattern (Arrow/Home/End, wrapping, skipping disabled), so the
+                   role is a promise this component keeps. Dropping it to satisfy
+                   a rule would discard working keyboard navigation.
+
+                   Visual order is unchanged — header, theme, language, items —
+                   because the menu moves to the END rather than the rows moving
+                   past it. */
+                <>
                     {/* Identity header — name + email at the top.
                         Quiet typography so the eye reads the
                         actionable items below, not the header. */}
@@ -296,13 +314,18 @@ export function UserMenu({
                         </>
                     ) : null}
 
-                    {items ? (
-                        <>
-                            <Popover.Separator />
-                            {items({ close })}
-                        </>
-                    ) : null}
-                </Popover.Menu>
+                    {items ? <Popover.Separator /> : null}
+                    {/* Rendered UNCONDITIONALLY, even with no host items.
+                        Measured: an empty `role="menu"` does NOT trip axe's
+                        aria-required-children, and keeping it always present
+                        leaves it a stable anchor — seven assertions across the
+                        rendered suite use `getByRole('menu')` as their
+                        open/closed proxy. Making it conditional would have
+                        churned all seven to say the same thing another way. */}
+                    <Popover.Menu aria-label={tNav('accountMenu')}>
+                        {items ? items({ close }) : null}
+                    </Popover.Menu>
+                </>
             }
         >
             {trigger ?? (

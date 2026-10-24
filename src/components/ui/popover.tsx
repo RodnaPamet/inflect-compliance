@@ -65,11 +65,22 @@ export type PopoverProps = PropsWithChildren<{
    * this instead of a native `title=` on a popover trigger.
    */
   triggerTooltip?: string;
+  /**
+   * Accessible name for the popover CONTENT (#3254).
+   *
+   * Radix renders the content as `role="dialog"`, and a dialog with no name is
+   * axe `aria-dialog-name` (serious): a screen reader announces "dialog" and
+   * nothing else. There is nothing for this component to infer it from — the
+   * content is an opaque `ReactNode` — so the caller that knows what the
+   * popover is for passes it.
+   */
+  contentLabel?: string;
 }>;
 
 function PopoverRoot({
   children,
   content,
+  contentLabel,
   align = "center",
   side = "bottom",
   openPopover,
@@ -195,6 +206,7 @@ function PopoverRoot({
       )}
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
+            aria-label={contentLabel}
           // A forceDropdown popover (a searchable Combobox inside a modal) is
           // ALSO affected: the list hangs below the input and the keyboard
           // covers it. Cap it to the visible viewport too.
