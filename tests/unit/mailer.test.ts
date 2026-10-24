@@ -90,6 +90,22 @@ describe('provider singleton', () => {
         expect(stub.sentMessages).toEqual([BASE_MSG]);
     });
 
+    it('sendEmail reports a configured transport as delivered', async () => {
+        setEmailProvider(new StubEmailProvider());
+        await expect(sendEmail(BASE_MSG)).resolves.toEqual({ delivered: true });
+    });
+
+    it('sendEmail reports the console sink as NOT delivered — it only logs the message', async () => {
+        const smtpHost = process.env.SMTP_HOST;
+        delete process.env.SMTP_HOST; // the lazy env init keeps the console sink
+        try {
+            await expect(sendEmail(BASE_MSG)).resolves.toEqual({ delivered: false });
+            expect(getEmailProvider()).toBeInstanceOf(ConsoleEmailProvider);
+        } finally {
+            if (smtpHost !== undefined) process.env.SMTP_HOST = smtpHost;
+        }
+    });
+
     it('ConsoleEmailProvider.send resolves without throwing', async () => {
         await expect(
             new ConsoleEmailProvider().send(BASE_MSG),
