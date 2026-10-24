@@ -8,7 +8,7 @@
  * point of the answer is WHICH — a percentage tells an assessor nothing about
  * the risk that is open — so every assertion here names codes.
  *
- * Four tenants, each isolating one claim:
+ * Six tenants and a second agent (E, inside tenant A), each isolating one claim:
  *
  *   A  the ordinary case — scoped to all ten risks, controls for two of them.
  *      Asserts the COVERED and UNCOVERED lists exactly, element for element.
@@ -35,6 +35,13 @@
  *      representations agree on both axes; ISO 27001 agrees on NEITHER, and
  *      nothing in this suite built that shape, which is why an ISMS route
  *      that returned ten NOT_COVERED shipped looking correct.
+ *   G  the AIUC-1 holder. Two AIUC-1 controls and nothing else, reaching the
+ *      risks through `aiuc-1-to-owasp-agentic.yaml`. AIUC-1 is a single-row
+ *      framework (the library and its CatalogFile write one `Framework`), so
+ *      unlike D and F there is no second representation to collapse; what
+ *      this tenant proves is that a mapping whose SOURCE is an agent
+ *      standard, not a management system, flows into the per-agent answer —
+ *      and that a RELATED edge lands in `reviewNeeded`, never in coverage.
  *
  * Frameworks and mappings are GLOBAL rows (no tenantId, no RLS), so the suite
  * imports them through the production path and owns the catalogue outright:
@@ -70,6 +77,8 @@ const ISO_FILE = path.join(LIB_DIR, 'iso-42001.yaml');
 const ISMS_FILE = path.join(LIB_DIR, 'iso27001-2022.yaml');
 const MAP_FILE = path.join(LIB_DIR, 'mappings/iso-42001-to-owasp-agentic.yaml');
 const ISMS_MAP_FILE = path.join(LIB_DIR, 'mappings/iso27001-to-owasp-agentic.yaml');
+const AIUC_FILE = path.join(LIB_DIR, 'aiuc-1.yaml');
+const AIUC_MAP_FILE = path.join(LIB_DIR, 'mappings/aiuc-1-to-owasp-agentic.yaml');
 
 const ASI_CODES = [
     'ASI01', 'ASI02', 'ASI03', 'ASI04', 'ASI05',
@@ -81,7 +90,8 @@ const TB = 'agentcov-tenant-b';
 const TC = 'agentcov-tenant-c';
 const TD = 'agentcov-tenant-d';
 const TF = 'agentcov-tenant-f';
-const TENANTS = [TA, TB, TC, TD, TF];
+const TG = 'agentcov-tenant-g';
+const TENANTS = [TA, TB, TC, TD, TF, TG];
 
 /**
  * The library URN both representations of a framework carry — `prisma/seed.ts`
@@ -226,7 +236,8 @@ describeFn('per-agent agentic-risk coverage', () => {
         await importLibraryFromFile(prisma, ISO_FILE, { propagateDelta: false });
         await importLibraryFromFile(prisma, ISMS_FILE, { propagateDelta: false });
         await importLibraryFromFile(prisma, ASI_FILE, { propagateDelta: false });
-        for (const file of [MAP_FILE, ISMS_MAP_FILE]) {
+        await importLibraryFromFile(prisma, AIUC_FILE, { propagateDelta: false });
+        for (const file of [MAP_FILE, ISMS_MAP_FILE, AIUC_MAP_FILE]) {
             const mappingSet = parseMappingSetFile(file);
             const result = await importMappingSet(prisma, mappingSet, computeMappingSetHash(mappingSet));
             // Every curated entry has to have resolved — an unresolved ref is
@@ -236,6 +247,7 @@ describeFn('per-agent agentic-risk coverage', () => {
 
         const asi = await requirementIds('OWASP-ASI-TOP10');
         const iso = await requirementIds('ISO42001-2023');
+        const aiuc = await requirementIds('AIUC-1');
         asi02RequirementId = asi.get('ASI02')!;
 
         // The seeded representation of the same two frameworks, alongside the
@@ -339,6 +351,14 @@ describeFn('per-agent agentic-risk coverage', () => {
             const code = seededAnnexACode(libraryCode);
             await linkControl(TF, `F-ISMS-${code}`, ismsSeed.get(code)!);
         }
+
+        // G: AIUC-1 and nothing else — the tool-call gate (D003) and AI
+        // disclosure (E016). Chosen because between them they reach the risks
+        // by both strengths that are not coverage claims: D003 is INTERSECT
+        // with ASI02 and ASI08 and RELATED with ASI05; E016 is INTERSECT with
+        // ASI09.
+        await linkControl(TG, 'G-AIUC-D003', aiuc.get('D003')!);
+        await linkControl(TG, 'G-AIUC-E016', aiuc.get('E016')!);
 
         // A second agent in tenant A, on its own AI-system entry, with NO
         // requirement links, NO tool grants and autonomy 0 — the least-exposed
@@ -598,6 +618,33 @@ describeFn('per-agent agentic-risk coverage', () => {
                     data: { sourceUrn: null },
                 });
             }
+        });
+    });
+
+    describe('G — an AIUC-1 holder, through the agent standard\'s own mapping', () => {
+        it('inherits partial coverage from AIUC-1 controls, and RELATED stays out of it', async () => {
+            const report = await computeAgentRiskCoverage(ctxFor(TG), fx[TG].agentId);
+
+            // No AIUC-1 edge onto an ASI risk is SUPERSET, and inherited
+            // coverage is capped anyway, so nothing is COVERED.
+            expect(report.summary.covered).toEqual([]);
+            expect(report.summary.partiallyCovered).toEqual(['ASI02', 'ASI08', 'ASI09']);
+            // D003 → ASI05 is RELATED: where the control would live, which
+            // the readout must show without counting it.
+            expect(report.summary.reviewNeeded).toEqual(['ASI05']);
+            expect(report.summary.uncovered).toEqual(['ASI01', 'ASI03', 'ASI04', 'ASI06', 'ASI07', 'ASI10']);
+        });
+
+        it('names the AIUC-1 requirement and control behind the tool-misuse risk', async () => {
+            const report = await computeAgentRiskCoverage(ctxFor(TG), fx[TG].agentId);
+            const toolMisuse = report.entries.find((e) => e.code === 'ASI02')!;
+
+            expect(toolMisuse.status).toBe('PARTIALLY_COVERED');
+            expect(toolMisuse.directControls).toEqual([]);
+            expect(
+                toolMisuse.inheritedFrom.map((i) => [i.frameworkKey, i.requirementCode, i.strength]),
+            ).toEqual([['AIUC-1', 'D003', 'INTERSECT']]);
+            expect(toolMisuse.inheritedFrom[0].controls.map((c) => c.code)).toEqual(['G-AIUC-D003']);
         });
     });
 
