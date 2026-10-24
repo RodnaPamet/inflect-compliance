@@ -3734,7 +3734,7 @@
         },
         {
           "title": {
-            "en": "Run the designed tests in the pipeline against each build and file the report of every run"
+            "en": "Run the scoped static and dynamic analysis in the pipeline on every build and keep each run's report"
           },
           "description": {
             "en": "Execute the tests the scope calls for from the pipeline itself, so the static and dynamic analysis run against every build rather than when somebody remembers to start them, and keep the report of each run: what was tested, which build or version, when, under which credentials, what coverage was reached and what was found. Keep the reports of runs that found nothing as well, because a period with no findings and a period where the test never ran are otherwise the same absence. Attach the test reports for the period."
