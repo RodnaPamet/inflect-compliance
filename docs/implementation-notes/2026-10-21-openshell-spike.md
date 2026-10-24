@@ -49,7 +49,7 @@ found there is a question to re-ask, not a finding to carry forward.
 | 0.1d dropped-tool MCP defect | PENDING | Needs the issue tracker read at the pinned release |
 | 0.1e telemetry off | **VERIFIED** (v0.1.5 chart + binary) | One switch was named; there are **three independent channels**. See below |
 | 0.1f SDK module format | PENDING | Moot for now: the SDK is deferred. Still needed before it is ever taken |
-| 0.1g audit-log coverage | **PARTIAL** (mechanism verified, coverage not) | v0.1.5 ships a configurable gateway OCSF JSONL writer, **off by default**, default path non-persistent. What it records per decision kind still needs a running gateway |
+| 0.1g audit-log coverage | **PARTIAL** — blocker now NAMED | Per-decision records come from the SUPERVISOR, not the gateway; and a Docker-backed sandbox refuses to launch without gateway authentication. See below |
 
 ### 0.1e — one switch was named; there are three independent channels
 
@@ -136,6 +136,73 @@ Four facts the roadmap did not have:
   is reporting what was DECLARED to it, not what it is using.
 - `config preflight` validates and exits 0 without starting the service, which
   makes configuration checkable in CI without a running gateway.
+
+### 0.1g — measured as far as an unauthenticated gateway allows
+
+Attempted on 2026-10-24 against the running v0.1.5 gateway. 0.1g is still
+PARTIAL, but the blocker is now a specific named requirement rather than
+"needs a gateway", and four facts came out of the attempt.
+
+**1. A DOCKER-BACKED SANDBOX WILL NOT LAUNCH ON AN UNAUTHENTICATED GATEWAY.**
+`sandbox create` refuses:
+
+```
+code: 'The system is not in a state required for the operation's execution',
+message: "docker sandboxes require launch-scoped gateway authentication"
+```
+
+The gateway was healthy, the Docker driver was selected and polling, and the
+CLI reported `Status: Connected / Authentication: Not required`. That is not
+enough: the driver requires gateway-minted per-sandbox JWTs, so a plaintext
+evaluation gateway can serve health and create nothing.
+
+This bears directly on 0.3 and on phase 4. The roadmap treats the host as the
+gateway prerequisite; authentication material is a second one, and it is not
+optional for the Docker driver. `generate-certs --output-dir <DIR>` writes the
+PKI and a `jwt/` triple (`signing.pem`, `public.pem`, `kid`) to the filesystem
+rather than to Kubernetes Secrets, which is the local-binary route.
+
+**2. The gateway's own OCSF writer records nothing about sandbox decisions.**
+Started with the writer enabled, it created
+`openshell-ocsf.<date>.log` at **0 bytes** and stayed there. That is not a
+defect: per-decision records are the SUPERVISOR's, written to its stderr and
+collected with `docker logs <supervisor-container>`, gated on
+`ocsf_json_enabled`. The vendored `openshell-cli` and `debug-openshell-cluster`
+skills both say so. So 0.1g cannot be answered from the gateway alone — it
+needs a live sandbox, which needs item 1.
+
+`ocsf_json_enabled` itself is settable and took effect:
+`settings set --global --key ocsf_json_enabled --value true` returned
+`revision 1`.
+
+**3. `ocsf_log` HAS NO `enabled` KEY — the chart key and the TOML key differ.**
+The Helm chart exposes `server.ocsfLog.enabled`, recorded above. The gateway's
+own TOML has no such key: `[openshell.gateway.ocsf_log]` is enabled by the
+table's PRESENCE, and `path` is required. A config written from the chart's
+vocabulary is rejected as malformed. Both spellings are correct for their own
+surface, and neither page says the other exists.
+
+Also: `compute_driver` lives under `[openshell.gateway]`, not under
+`[openshell]`. The vendored cluster skill's phrasing — "requires
+`[openshell] version = 2`, a singular `compute_driver` selector" — reads as if
+both sit in `[openshell]`, and they do not.
+
+**4. `config preflight` names no offending field.** A malformed v2 file returns
+`category=malformed detected_version=2` and a documentation link, with no key,
+line or table. It does distinguish `missing_version` from `malformed`, so the
+category is real — but locating the bad key means bisecting the file by hand.
+Worth knowing before budgeting any gateway-configuration work.
+
+**Left unresolved deliberately.** The `[openshell.gateway.gateway_jwt]` table
+with `signing_key_path` is what the published configuration reference and the
+Helm path both describe, and v0.1.5's own preflight rejects it at that path,
+one level up, and as an inline table. `signing_key_path` does not appear as a
+standalone string in the binary. So either preflight is stricter than the
+runtime, or the local-binary gateway does not accept that table at this
+release. Settling it means reading the versioned configuration reference for
+0.1.5 rather than `latest` — which is finding 3 of the vendored-skill review
+in `.claude/skills/OPENSHELL-LOCAL-NOTES.md`, arriving from the other
+direction.
 
 ### Distribution, which the supply-chain phase can rely on
 
@@ -287,8 +354,10 @@ sound on the facts it was given.
 ## What this phase did not establish
 
 0.1e is now settled on v0.1.5 and is recorded above; it needed the chart and
-the binary rather than a running gateway. **One fact still needs a running
-gateway**: what the audit log records per decision kind (0.1g). Phase 5.1
+the binary rather than a running gateway. **0.1g needs a running gateway AND
+gateway authentication material** — a Docker-backed sandbox refuses to launch
+without it, and the per-decision records are the supervisor's rather than the
+gateway's. Both are recorded above. Phase 5.1
 depends on it — a decision OpenShell never records cannot be bridged into the
 hash-chained `AuditLog`, and claiming otherwise would put the gap in Inflect's
 compliance record instead of the vendor's. 0.1c's stated behaviour, that
