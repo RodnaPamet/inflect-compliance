@@ -20,7 +20,7 @@
 import * as path from 'node:path';
 import ts from 'typescript';
 import { type ApiRoute, type CallSegment, type HttpMethod, HTTP_METHODS, matchRoutes } from './api-routes';
-import { lineOf, literalText, parse, routeSegments, walk } from './source';
+import { lineOf, literalText, routeSegments, walk } from './source';
 
 /** Product code a page's reach may include; platform code it may not. */
 export function inReach(file: string): boolean {

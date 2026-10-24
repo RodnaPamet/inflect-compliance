@@ -14,6 +14,21 @@ export function cell(text: string): string {
     return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
+/**
+ * A link LABEL: a cell, plus the brackets that would close the label early.
+ *
+ * Written as its own single pass rather than `cell(text)` followed by a bracket
+ * replace. The composed form was CORRECT — `cell` doubles backslashes first, so
+ * the bracket escape could not be consumed by one — but correctness that
+ * depends on the order of two calls in a different function is correctness a
+ * reader has to reconstruct, and CodeQL read the second replace on its own as
+ * an incomplete escape (`js/incomplete-sanitization`, high). Backslash first,
+ * then every other dangerous character in ONE class, in the place it happens.
+ */
+export function linkLabel(text: string): string {
+    return text.replace(/\\/g, '\\\\').replace(/[|[\]]/g, '\\$&').replace(/\r?\n/g, ' ');
+}
+
 /** A link target with the characters Next.js route folders use, encoded for markdown. */
 export function repoHref(file: string, line?: number): string {
     const enc = `/${file}`.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/ /g, '%20');
@@ -22,7 +37,7 @@ export function repoHref(file: string, line?: number): string {
 
 export function repoLink(file: string, line?: number, label?: string): string {
     const text = label ?? `${file.split('/').pop()}${line ? `:${line}` : ''}`;
-    return `[${cell(text).replace(/[[\]]/g, '\\$&')}](${repoHref(file, line)})`;
+    return `[${linkLabel(text)}](${repoHref(file, line)})`;
 }
 
 /** `access_reviews` → `Access reviews`. */

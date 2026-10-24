@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
 import { matchRoutes, parseApiRoute, type ApiRoute } from '../../scripts/docs-reference/api-routes';
 import { areaOf, isRedirectOnly, sidebarSections } from '../../scripts/docs-reference/inventory';
-import { cell, repoHref } from '../../scripts/docs-reference/markdown';
+import { cell, linkLabel, repoHref } from '../../scripts/docs-reference/markdown';
 import { apiCalls, inReach, pageActions, pageReach, toSegments, UrlResolver, type Source } from '../../scripts/docs-reference/page-actions';
 import { domainCodes, errorClasses, refusals } from '../../scripts/docs-reference/refusals';
 import { enumValues, roleMatrix } from '../../scripts/docs-reference/roles';
@@ -305,6 +305,17 @@ describe('refusal codes', () => {
 describe('markdown', () => {
     it('keeps a pipe or a line break from ending a table cell', () => {
         expect(cell('a | b\nc')).toBe('a \\| b c');
+    });
+
+    it('escapes a link label so an input backslash cannot consume the bracket escape', () => {
+        // The case `js/incomplete-sanitization` named (high, #4043): a literal
+        // backslash immediately before a bracket. Escaping the bracket ALONE
+        // emits `\[`, whose backslash the input's own backslash has already
+        // claimed — so the bracket arrives unescaped and closes the label.
+        // Backslash-first is what makes the second pass safe.
+        expect(linkLabel(String.raw`a\[b`)).toBe(String.raw`a\\\[b`);
+        // A label is also a cell, so the pipe and newline duties still hold.
+        expect(linkLabel('a | b\nc]')).toBe('a \\| b c\\]');
     });
 
     it('encodes route-group parentheses in a source link', () => {
