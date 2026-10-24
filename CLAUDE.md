@@ -897,7 +897,11 @@ the flow's nonce. Do not add an unverified claims decoder back for
 convenience; the callback used one until 2026-10-24, and any token with any
 signature signed in whoever it named. The exact issuer match is also what
 refuses Microsoft's `common`/`organizations` endpoints, whose `{tenantid}`
-template no real token matches.
+template no real token matches. Every request the client makes goes through `safeFetch`:
+discovery, the token exchange, and the key set, which is handed to `jose` as
+its `[customFetch]`. Only the issuer is typed by an administrator; the other
+two URLs come from the IdP's own discovery document, so guarding the issuer
+alone guards nothing (`tests/guards/ssrf-egress-coverage.test.ts`).
 
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
 

@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { randomBytes, createHash } from 'crypto';
-import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from 'jose';
+import { createRemoteJWKSet, customFetch, errors as joseErrors, jwtVerify, type JWTPayload } from 'jose';
 import type { OidcConfig } from '@/app-layer/schemas/sso-config.schemas';
+import { safeFetch } from '@/app-layer/automation/webhook-safety';
 
 /**
  * Lightweight OIDC client for tenant-scoped enterprise SSO.
@@ -12,8 +13,20 @@ import type { OidcConfig } from '@/app-layer/schemas/sso-config.schemas';
  * - Token exchange (authorization_code → id_token + access_token)
  * - ID token verification against the IdP's published keys (`verifyIdToken`)
  *
- * Uses native fetch for discovery and the token exchange, and `jose` for the
- * one part that must not be hand-written: verifying the ID token's signature.
+ * Uses `jose` for the one part that must not be hand-written: verifying the ID
+ * token's signature.
+ *
+ * Every request to the identity provider goes through `safeFetch`, the SSRF
+ * guard: https only, every resolved address public, the connection pinned to
+ * the addresses checked, redirects refused. A workspace administrator types
+ * the issuer, and the discovery document it serves names the token endpoint
+ * and the key set, so all three URLs are chosen by somebody outside this
+ * deployment; without the guard, an issuer whose document says
+ * `"token_endpoint": "https://169.254.169.254/…"` turns a sign-in into a
+ * request from this server to wherever it likes. A self-hosted install whose
+ * identity provider is on its own network reaches it through the deployment's
+ * `EGRESS_PRIVATE_CIDR_ALLOWLIST` (`@/lib/security/egress-allowlist`), which
+ * no tenant can set, and inside which cloud metadata and loopback stay refused.
  */
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -68,7 +81,7 @@ export async function discoverOidc(config: OidcConfig): Promise<OidcDiscoveryDoc
         return cached.doc;
     }
 
-    const res = await fetch(discoveryUrl, {
+    const res = await safeFetch(discoveryUrl, {
         headers: { 'Accept': 'application/json' },
         signal: AbortSignal.timeout(10_000),
     });
@@ -174,7 +187,7 @@ export async function exchangeCodeForTokens(
         code_verifier: codeVerifier,
     });
 
-    const res = await fetch(discovery.token_endpoint, {
+    const res = await safeFetch(discovery.token_endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -260,13 +273,21 @@ const IdTokenClaimsSchema = z.object({
  * One key set per `jwks_uri`. `createRemoteJWKSet` caches the keys it fetched
  * (10 minutes) and fetches again when a token names a key it does not hold, at
  * most every 30 seconds, which is how an IdP's key rotation is picked up.
+ *
+ * It fetches through `safeFetch` (`[customFetch]`), not its default global
+ * `fetch`: the key-set URL comes from the IdP's discovery document like the
+ * token endpoint does. A refusal there reaches `refusalOf` as an error that is
+ * not one of jose's, so it reads as `keys_unavailable`.
  */
 const signingKeysCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 function signingKeysFor(jwksUri: string): ReturnType<typeof createRemoteJWKSet> {
     let keys = signingKeysCache.get(jwksUri);
     if (!keys) {
-        keys = createRemoteJWKSet(new URL(jwksUri), { timeoutDuration: 10_000 });
+        keys = createRemoteJWKSet(new URL(jwksUri), {
+            timeoutDuration: 10_000,
+            [customFetch]: (url, init) => safeFetch(url, init),
+        });
         signingKeysCache.set(jwksUri, keys);
     }
     return keys;

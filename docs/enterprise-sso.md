@@ -49,6 +49,19 @@ Navigate to: `/t/<your-tenant>/admin` → click **SSO & Identity** pill button.
 https://<your-domain>/api/auth/sso/oidc/callback
 ```
 
+**The identity provider must answer over https, at a public address.** Inflect
+fetches the discovery document, the token endpoint and the signing keys through
+its SSRF guard (`safeFetch` in `src/app-layer/automation/webhook-safety.ts`):
+https only, every address the host name resolves to must be public, and a
+redirect is refused rather than followed, so configure the URL the IdP finally
+answers at. The guard covers all three URLs because only the issuer is typed
+here: the discovery document the issuer serves names the other two.
+
+A self-hosted install whose IdP runs on its own network allows that range with
+`EGRESS_PRIVATE_CIDR_ALLOWLIST` (see `docs/deployment.md`). Loopback and cloud
+metadata stay refused inside it, so an IdP on the same machine as Inflect is
+reached at a non-loopback address.
+
 ### SAML Configuration Fields
 
 | Field | Required | Description |
@@ -250,6 +263,7 @@ AUTH_SECRET=<your-auth-secret>       # NextAuth.js secret for JWT signing
 | "Identity conflict" | User already linked to a different IdP subject | Contact admin to unlink the existing identity |
 | "Cross-tenant login blocked" | Identity link exists for a different tenant | User must log into the correct tenant |
 | "SAML response validation failed" | Certificate mismatch or expired assertion | Verify the X.509 certificate matches the IdP |
+| OIDC sign-in fails, and the `discovery`, `token_exchange` or `id_token_verification` (`keys_unavailable`) log line names `only https`, a `private address`, `cannot resolve` or a redirect | The SSRF guard refused the issuer, the discovery-URL override, or an endpoint the discovery document names | Use the https URL the IdP finally answers at. On a self-hosted install with an internal IdP, add its range to `EGRESS_PRIVATE_CIDR_ALLOWLIST` |
 
 ### Diagnostic Logs
 
