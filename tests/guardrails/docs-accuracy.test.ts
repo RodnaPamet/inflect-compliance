@@ -62,13 +62,17 @@ type DocClass = 'authoritative' | 'living' | 'historical' | 'deprecated';
  */
 const PATH_DERIVED_CLASSES: ReadonlyArray<readonly [string, DocClass]> = [
     ['docs/implementation-notes/', 'historical'],
-    // The public site's page guides and how-tos (docs/docs-site.md). Each one
-    // describes the product as it ships, which is what `authoritative` means,
-    // and there are about 190 of them to come — the same one-edit-per-file
-    // conflict as the notes above. A guide is never a `living` design or a
-    // `historical` record; one that stops being true is rewritten.
-    ['docs/guide/', 'authoritative'],
-    ['docs/how-to/', 'authoritative'],
+    // The user help site's page guides, how-tos and runbooks (docs/docs-site.md).
+    // Each one describes the product as it ships, which is what
+    // `authoritative` means, and there are about 190 of them to come — the
+    // same one-edit-per-file conflict as the notes above. A user doc is never
+    // a `living` design or a `historical` record; one that stops being true is
+    // rewritten.
+    ['docs/user/', 'authoritative'],
+    // The developer site's generated reference pages: a short introduction
+    // around a table the docs build generates from the code, so true by
+    // construction.
+    ['docs/reference/', 'authoritative'],
 ];
 
 /**

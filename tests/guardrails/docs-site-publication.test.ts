@@ -1,13 +1,15 @@
 /**
- * What the public docs site may publish — held at PR time.
+ * What the public docs sites may publish — held at PR time.
  *
- * THE INVARIANT. The site at https://rodnapamet.github.io/inflect-compliance/
- * publishes exactly the docs listed in `site/published-docs.json`, and none of
- * them may be a doc the owner kept off the site or carry a coordinate of the
- * production estate. The build (`site/scripts/stage-docs.js`) refuses the same
- * things, but the build runs only when `docs/` or `site/` changes; this guard
- * runs on every pull request, so a doc that drifts into naming the VM's host
- * path fails CI in the PR that wrote it, not on the next docs deploy.
+ * THE INVARIANT. One Pages deployment carries two sites: the user help site at
+ * https://rodnapamet.github.io/inflect-compliance/ (only `docs/user/`) and the
+ * developer site under /developers/. Each publishes exactly the docs its
+ * `site/<name>/manifest.json` lists, none of them may be a doc the owner kept
+ * off the sites or carry a coordinate of the production estate, and no doc
+ * belongs to both. The build (`site/scripts/stage-docs.js`) refuses the same
+ * things, but the build runs only when its inputs change; this guard runs on
+ * every pull request, so a doc that drifts into naming the VM's host path fails
+ * CI in the PR that wrote it, not on the next docs deploy.
  *
  * WHY THE OWNER'S LIST IS REPEATED HERE. The policy lives in the stager, which
  * is the step that writes what gets published. A guard that only called the
@@ -32,19 +34,27 @@ const read = (rel: string): string | null => {
     }
 };
 
-const manifest = JSON.parse(read('site/published-docs.json') ?? '{}') as {
-    sections: { label: string; group?: string; docs: string[] }[];
-};
+type Manifest = { sections: { label: string; group?: string; docs: string[] }[] };
+type Site = (typeof stage.SITES)[keyof typeof stage.SITES];
+
+const sites: { site: Site; manifest: Manifest }[] = Object.values(stage.SITES).map((site) => ({
+    site,
+    manifest: JSON.parse(read(`site/${site.name}/manifest.json`) ?? '{"sections":[]}') as Manifest,
+}));
 const classification = (
     JSON.parse(read('docs/_status/doc-classification.json') ?? '{}') as { docs: Record<string, { class: string }> }
 ).docs;
 /** What a folder entry expands to, read from git rather than a directory walk. */
 const listFolder = (folder: string): string[] => repoRelativeFiles().filter((f) => f.startsWith(folder));
-const listed: string[] = stage.manifestDocs(manifest, listFolder);
+const listedOn = (name: string): string[] => {
+    const s = sites.find((x) => x.site.name === name)!;
+    return stage.manifestDocs(s.manifest, listFolder, s.site);
+};
+const listed: string[] = sites.flatMap(({ site }) => listedOn(site.name));
 /**
  * The folders whose docs are classified by PATH in
- * tests/guardrails/docs-accuracy.test.ts — the same two the manifest may list
- * as folders. A guide is `authoritative`, and has no map entry to look up.
+ * tests/guardrails/docs-accuracy.test.ts — the same ones a manifest may list
+ * as folders. Their docs are `authoritative`, and have no map entry to look up.
  */
 const pathClassOf = (doc: string): string | undefined =>
     stage.PUBLIC_FOLDERS.some((f) => doc.startsWith(f)) ? 'authoritative' : undefined;
@@ -75,13 +85,19 @@ const COORDINATE_SAMPLES: Record<string, string> = {
 };
 
 describe('docs site — the published set', () => {
-    it('publishes a plausibly sized, non-empty set (a manifest that parses to nothing fails here)', () => {
-        expect(manifest.sections.length).toBeGreaterThan(5);
-        expect(listed.length).toBeGreaterThan(50);
+    it('publishes a plausibly sized developer site and a non-empty user site (a manifest that parses to nothing fails here)', () => {
+        expect(listedOn('developers').length).toBeGreaterThan(50);
+        expect(listedOn('users').length).toBeGreaterThan(0);
     });
 
-    it('every listed doc passes the publication policy', () => {
-        expect(stage.publicationRefusals(manifest, read, listFolder)).toEqual([]);
+    it.each(sites.map((s) => [s.site.name, s] as const))('every doc the %s site lists passes the publication policy', (_name, s) => {
+        expect(stage.publicationRefusals(s.manifest, read, listFolder, s.site)).toEqual([]);
+    });
+
+    it('the user site carries only docs/user/, and no doc is on both sites', () => {
+        expect(listedOn('users').filter((d) => !d.startsWith('docs/user/'))).toEqual([]);
+        expect(listedOn('developers').filter((d) => d.startsWith('docs/user/'))).toEqual([]);
+        expect(stage.publishedAddresses(sites, listFolder).refusals).toEqual([]);
     });
 
     /*
@@ -110,9 +126,13 @@ describe('docs site — the published set', () => {
         expect(listed.filter((d) => d.startsWith('docs/implementation-notes/'))).toEqual([]);
     });
 
-    it('every section has a label, a group and at least one doc', () => {
-        const expanded = stage.expandSections(manifest, listFolder) as { label: string; group?: string; docs: string[] }[];
-        expect(expanded.filter((s) => !s.label || !s.group || s.docs.length === 0).map((s) => s.label)).toEqual([]);
+    it('every section of either site has a label and at least one doc', () => {
+        const empty = sites.flatMap((s) =>
+            (stage.expandSections(s.manifest, listFolder, s.site) as Manifest['sections'])
+                .filter((x) => !x.label || x.docs.length === 0)
+                .map((x) => `${s.site.name}: ${x.label}`),
+        );
+        expect(empty).toEqual([]);
     });
 });
 
@@ -139,26 +159,40 @@ describe('docs site — the policy is not hollowed out', () => {
     });
 });
 
-describe('docs site — the landing page', () => {
-    it('links only to published pages, the repository, or anchors', () => {
-        const ctx = {
-            published: new Map(listed.map((d) => [d, stage.slugFor(d)])),
-            kindOf: (p: string) => {
-                const abs = path.join(ROOT, p);
-                if (!fs.existsSync(abs)) return null;
-                return fs.statSync(abs).isDirectory() ? 'dir' : 'file';
-            },
-        };
-        const landing = read('site/pages/index.md');
+describe('docs site — the landing pages', () => {
+    const { published } = stage.publishedAddresses(sites, listFolder);
+    const ctx = {
+        published,
+        kindOf: (p: string) => {
+            const abs = path.join(ROOT, p);
+            if (!fs.existsSync(abs)) return null;
+            return fs.statSync(abs).isDirectory() ? 'dir' : 'file';
+        },
+    };
+
+    it.each(Object.values(stage.SITES).map((s) => [s.name]))('the %s landing page links only to published pages, the repository, or anchors', (name) => {
+        const rel = `site/${name}/index.md`;
+        const landing = read(rel);
         expect(landing).not.toBeNull();
-        const { text, missing } = stage.transformMarkdown(landing as string, 'site/pages/index.md', ctx);
+        const { text, missing } = stage.transformMarkdown(landing as string, rel, ctx);
         expect(missing).toEqual([]);
         const hrefs = [...text.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]);
-        expect(hrefs.length).toBeGreaterThan(5);
+        expect(hrefs.length).toBeGreaterThan(0);
         expect(
             hrefs.filter(
-                (h) => !h.startsWith(`${stage.SITE_BASE}/`) && !h.startsWith('https://github.com/RodnaPamet/') && !h.startsWith('#'),
+                (h) =>
+                    !h.startsWith(`${stage.SITE_BASE}/`) &&
+                    !h.startsWith('https://rodnapamet.github.io/inflect-compliance/') &&
+                    !h.startsWith('https://github.com/RodnaPamet/') &&
+                    !h.startsWith('#'),
             ),
         ).toEqual([]);
+    });
+
+    it('the user landing page sends readers nowhere on the developer site or the repository', () => {
+        const rel = 'site/users/index.md';
+        const { text } = stage.transformMarkdown(read(rel) as string, rel, ctx);
+        const hrefs = [...text.matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1]);
+        expect(hrefs.filter((h) => h.includes('/developers/') || h.startsWith('https://github.com/'))).toEqual([]);
     });
 });

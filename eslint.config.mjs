@@ -112,8 +112,9 @@ const config = [
             // content collection the stager regenerates on every build
             // (docs/docs-site.md). Generated, never source.
             'site/dist/**',
-            'site/.astro/**',
-            'site/src/content/docs/**',
+            'site/*/dist/**',
+            'site/*/.astro/**',
+            'site/*/src/content/docs/**',
         ],
     },
     {

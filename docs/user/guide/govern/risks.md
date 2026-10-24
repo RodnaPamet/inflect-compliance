@@ -19,7 +19,7 @@ Open **{{ui:nav.risks}}** under **{{ui:nav.govern}}** in the sidebar. The breadc
 | Set status or assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-A custom role grants these through its own `risks` and `admin` permissions. The selection bar is shown to every role, but only the roles above can apply its actions. Anyone else sees the message **{{ui:risks.bulk.actionFailed}}**
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. The selection bar is shown to every role, but only the roles above can apply its actions. Anyone else sees the message **{{ui:risks.bulk.actionFailed}}**
 
 ## What it is for
 
@@ -106,7 +106,7 @@ Open **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}** to load risks f
 ## What happens next
 
 - Every status change, owner change and deletion writes one entry per risk to the workspace's audit log, naming who made it.
-- A deleted risk is soft-deleted. It leaves the register at once and is purged permanently after 90 days. This page has no restore button. Within those 90 days an Owner or Admin can restore the risk through the API.
+- A deleted risk leaves the register at once and is removed for good after 90 days. If one was deleted by mistake, an Owner or Admin can restore it within those 90 days; this page has no restore button, so they do it through the Inflect API.
 - The workspace dashboard's risk figures update to match.
 
 ## Empty and error states
@@ -117,7 +117,3 @@ Open **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}** to load risks f
 | **{{ui:risks.emptyFilter.title}}** | Risks exist, but none match the search and filters | Click **{{ui:risks.emptyFilter.clearFilters}}** |
 | **{{ui:risks.bulk.actionFailed}}** | A bulk action was refused. Usually your role cannot apply it, or more than 100 rows were selected | Check the role table above, or select fewer rows |
 | A banner saying the list is truncated | The register holds more than 5,000 risks, more than the page loads at once | Narrow the list with a filter or the search |
-
-## Related
-
-- Reading and changing risks from your own tools: the [API consumer guide](../../api-consumer-guide.md).

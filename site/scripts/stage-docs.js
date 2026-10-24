@@ -1,40 +1,52 @@
 'use strict';
 /**
- * Stage the published docs into Starlight's content collection.
+ * Stage the published docs into the two documentation sites.
  *
- * The public site at https://rodnapamet.github.io/inflect-compliance/ is built
- * from `docs/`, but not from all of it. `site/published-docs.json` is an
- * ALLOWLIST: a doc reaches the site only when somebody lists it there, so a
- * new doc is unpublished until a person decides otherwise. That is the
- * fail-closed direction, and the reason the manifest is not a denylist.
+ * One GitHub Pages deployment carries two separate Starlight sites, each with
+ * its own navigation and search (owner decision, 2026-10-24):
  *
- * Two policies ride on top of the allowlist and are enforced HERE, in the step
- * that actually writes what gets published, rather than only in a test:
+ *   - the USER site, at https://rodnapamet.github.io/inflect-compliance/, for
+ *     people who use the product: page guides, how-tos, runbooks. It publishes
+ *     only `docs/user/`, and nothing else may publish from there.
+ *   - the DEVELOPER site, at …/inflect-compliance/developers/, for people who
+ *     build, run or integrate with it: the architecture and contributor docs,
+ *     and the reference generated from the code.
+ *
+ * Each site's `manifest.json` is an ALLOWLIST: a doc reaches a site only when
+ * somebody lists it there, so a new doc is unpublished until a person decides
+ * otherwise. That is the fail-closed direction, and the reason a manifest is
+ * not a denylist. A site may list a FOLDER only among its own `folders`
+ * (`docs/user/` for users, `docs/reference/` for developers), which publishes
+ * every doc under it; anywhere else a doc is published by name.
+ *
+ * Two policies ride on top of the allowlists and are enforced HERE, in the
+ * step that actually writes what gets published, rather than only in a test:
  *
  *   - NEVER_PUBLISH: docs the owner excluded by name (2026-10-23) — the
  *     deployment and production-VM material and the DPA template. Listing one
- *     in the manifest stops the build.
+ *     in either manifest stops the build.
  *   - FORBIDDEN_CONTENT: coordinates of the production estate. A published doc
  *     carrying one stops the build, whatever the manifest says.
  *
  * WHAT EXCLUSION DOES NOT MEAN. The repository is public, so every file in
  * `docs/` is already readable on github.com. Excluding a doc keeps it off the
- * site, out of the site's search and out of its navigation; it does not make it
+ * sites, out of their search and out of their navigation; it does not make it
  * confidential. A secret never belongs in `docs/` at all, and the repo's secret
  * scanner (`.secret-patterns`) is what holds that.
  *
- * Guide pages and how-tos (`docs/guide/`, `docs/how-to/`) are written for the
- * product's users, so the manifest may list those two folders instead of each
- * file in them. No other folder can be listed that way: anywhere else a doc
- * reaches the site only by name.
- *
- * Two things in a page are generated rather than typed, and a build that
+ * Three things in a page are generated rather than typed, and a build that
  * cannot generate them fails rather than printing something wrong:
  *   - `{{ui:<key>}}` prints the app's own label from `messages/en.json`, so a
  *     renamed button renames itself in the docs on the next build;
  *   - a guide's `route:` frontmatter names the page it documents, and must
- *     match a `page.tsx` under `src/app/`.
- * Neither is checked by the Ratchets guardrail, which runs on every pull
+ *     match a `page.tsx` under `src/app/` — so removing a page shows up in the
+ *     pull request that removed it;
+ *   - a line holding only `{{generated:<name>}}` is replaced by the fragment
+ *     `scripts/docs-reference/generate.ts` wrote to `site/.generated/<name>.md`
+ *     from the code — the roles table, the page inventory, each page's API
+ *     calls, the refusal codes. A missing fragment refuses the page, so a
+ *     reference page is never published without its generated half.
+ * None is checked by the Ratchets guardrail, which runs on every pull
  * request: renaming a label in the app must never fail an unrelated code
  * change. The docs build, which is not a required check, is what reports it.
  *
@@ -62,25 +74,69 @@ const SITE_BASE = '/inflect-compliance';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SITE_DIR = path.resolve(__dirname, '..');
-const MANIFEST_PATH = path.join(SITE_DIR, 'published-docs.json');
-const CONTENT_DIR = path.join(SITE_DIR, 'src', 'content', 'docs');
-const LANDING_PAGE = 'site/pages/index.md';
 const MESSAGES_PATH = 'messages/en.json';
 const APP_DIR = 'src/app';
 
 /**
- * Folders whose every doc is written for the public, so the manifest may list
- * the folder rather than each file in it. Both are classified `authoritative`
- * by path in tests/guardrails/docs-accuracy.test.ts. Adding a folder here
- * publishes everything ever written in it, which is why the list is short.
+ * The two sites. `folders` are the folders a site's manifest may list whole;
+ * `only` restricts everything a site publishes to one folder, `never` keeps a
+ * folder off it. Together they make `docs/user/` the user site's alone.
  */
-const PUBLIC_FOLDERS = Object.freeze(['docs/guide/', 'docs/how-to/']);
+/**
+ * @typedef {Readonly<{
+ *   name: string,
+ *   title: string,
+ *   base: string,
+ *   folders: readonly string[],
+ *   only: string | null,
+ *   never: string | null,
+ * }>} Site
+ */
+
+/** @type {Readonly<{ users: Site, developers: Site }>} */
+const SITES = Object.freeze({
+    users: Object.freeze({
+        name: 'users',
+        title: 'Inflect Compliance Help',
+        base: SITE_BASE,
+        folders: Object.freeze(['docs/user/']),
+        only: 'docs/user/',
+        never: null,
+    }),
+    developers: Object.freeze({
+        name: 'developers',
+        title: 'Inflect Compliance for developers',
+        base: `${SITE_BASE}/developers`,
+        folders: Object.freeze(['docs/reference/']),
+        only: null,
+        never: 'docs/user/',
+    }),
+});
+
+const siteDir = (site) => path.join(SITE_DIR, site.name);
+const manifestPath = (site) => path.join(siteDir(site), 'manifest.json');
+const contentDir = (site) => path.join(siteDir(site), 'src', 'content', 'docs');
+const landingPage = (site) => `site/${site.name}/index.md`;
+
+/**
+ * Every folder a manifest may list whole, on either site. Each is classified
+ * `authoritative` by path in tests/guardrails/docs-accuracy.test.ts. Adding a
+ * folder publishes everything ever written in it, which is why the list is
+ * short.
+ */
+const PUBLIC_FOLDERS = Object.freeze([...SITES.users.folders, ...SITES.developers.folders]);
 
 /** A doc under this folder documents one page, and names it in `route:`. */
-const GUIDE_FOLDER = 'docs/guide/';
+const GUIDE_FOLDER = 'docs/user/guide/';
 
 /** The only frontmatter keys a doc may carry. Anything else is a typo. */
 const FRONTMATTER_KEYS = Object.freeze(['route']);
+
+/** Where `scripts/docs-reference/generate.ts` writes the reference fragments. */
+const GENERATED_DIR = path.join(SITE_DIR, '.generated');
+
+/** A line that is only `{{generated:<name>}}`. */
+const GENERATED_LINE_RE = /^\{\{generated:([a-z0-9-]+)\}\}\s*$/;
 
 /** `{{ui:risks.bulk.setStatus}}` — a label read from messages/en.json. */
 const UI_TOKEN_RE = /\{\{ui:([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\}\}/g;
@@ -131,9 +187,13 @@ const HTML_TAGS = new Set([
 
 // ── Pure helpers (unit-tested) ──────────────────────────────────────────────
 
-/** `docs/adr/0001-x.md` → `adr/0001-x`; `CONTRIBUTING.md` → `contributing`. */
+/**
+ * `docs/adr/0001-x.md` → `adr/0001-x`; `CONTRIBUTING.md` → `contributing`.
+ * A user doc loses `docs/user/` as well: the whole help site is user docs, so
+ * the segment would say nothing in every one of its addresses.
+ */
 function slugFor(repoPath) {
-    return repoPath.replace(/^docs\//, '').replace(/\.md$/i, '').toLowerCase();
+    return repoPath.replace(/^docs\/(user\/)?/, '').replace(/\.md$/i, '').toLowerCase();
 }
 
 /** A manifest entry ending in `/` names a folder rather than a doc. */
@@ -147,8 +207,12 @@ function isFolderEntry(entry) {
  * name — so a section can list a few docs first to put them in the order the
  * app shows them, and let the folder pick up the rest. `listFolder(folder)`
  * returns the repo paths of the files under `folder`, at any depth.
+ *
+ * @param {{ sections?: { label: string, group?: string, docs?: string[] }[] }} manifest
+ * @param {((folder: string) => string[]) | undefined} [listFolder]
+ * @param {Site} [site]
  */
-function expandSections(manifest, listFolder) {
+function expandSections(manifest, listFolder, site = SITES.developers) {
     const sections = Array.isArray(manifest.sections) ? manifest.sections : [];
     const named = new Set(sections.flatMap((s) => (s.docs ?? []).filter((d) => !isFolderEntry(d))));
     return sections.map((s) => ({
@@ -157,7 +221,7 @@ function expandSections(manifest, listFolder) {
             if (!isFolderEntry(entry)) return [entry];
             // A folder outside PUBLIC_FOLDERS expands to nothing; the policy
             // refuses it, and nothing in it is ever staged on the way there.
-            if (!listFolder || !PUBLIC_FOLDERS.some((f) => entry.startsWith(f))) return [];
+            if (!listFolder || !site.folders.some((f) => entry.startsWith(f))) return [];
             return listFolder(entry)
                 .filter((f) => f.startsWith(entry) && /\.md$/i.test(f) && !named.has(f))
                 .sort();
@@ -165,21 +229,32 @@ function expandSections(manifest, listFolder) {
     }));
 }
 
-/** Every doc in the manifest, in order, folder entries expanded. */
-function manifestDocs(manifest, listFolder) {
-    return expandSections(manifest, listFolder).flatMap((s) => s.docs);
+/**
+ * Every doc in the manifest, in order, folder entries expanded.
+ *
+ * @param {{ sections?: { label: string, group?: string, docs?: string[] }[] }} manifest
+ * @param {((folder: string) => string[]) | undefined} [listFolder]
+ * @param {Site} [site]
+ */
+function manifestDocs(manifest, listFolder, site = SITES.developers) {
+    return expandSections(manifest, listFolder, site).flatMap((s) => s.docs);
 }
 
 /**
  * Starlight sidebar groups, in manifest order. A section that names a
- * `group` sits inside it — "User guide", "Developers" — and groups appear in
+ * `group` sits inside it — "Page guides", "How-tos" — and groups appear in
  * the order their first section does. `label(text)` resolves `{{ui:…}}` in a
  * section's label, so a sidebar heading follows the app's own name for it.
+ *
+ * @param {{ sections?: { label: string, group?: string, docs?: string[] }[] }} manifest
+ * @param {((folder: string) => string[]) | undefined} [listFolder]
+ * @param {(text: string) => string} [label]
+ * @param {Site} [site]
  */
-function sidebarFrom(manifest, listFolder, label = (text) => text) {
+function sidebarFrom(manifest, listFolder, label = (text) => text, site = SITES.developers) {
     const out = [];
     const groups = new Map();
-    for (const s of expandSections(manifest, listFolder)) {
+    for (const s of expandSections(manifest, listFolder, site)) {
         const item = {
             label: label(s.label),
             collapsed: true,
@@ -221,23 +296,37 @@ function forbiddenContentIn(text) {
  * Refusals for a manifest, given each listed doc's text (`readDoc` returns
  * `null` when the file does not exist) and, for folder entries, the files
  * under a folder (`listFolder`). Empty means publishable.
+ *
+ * @param {{ sections?: { label: string, group?: string, docs?: string[] }[] }} manifest
+ * @param {(repoPath: string) => string | null} readDoc
+ * @param {((folder: string) => string[]) | undefined} [listFolder]
+ * @param {Site} [site]
  */
-function publicationRefusals(manifest, readDoc, listFolder) {
+function publicationRefusals(manifest, readDoc, listFolder, site = SITES.developers) {
     const refusals = [];
     const seen = new Set();
     if (!Array.isArray(manifest.sections) || manifest.sections.length === 0) {
         return ['the manifest lists no sections — an empty site is not a published site'];
     }
-    for (const entry of manifest.sections.flatMap((s) => s.docs ?? []).filter(isFolderEntry)) {
-        if (!PUBLIC_FOLDERS.some((f) => entry.startsWith(f))) {
+    const entries = manifest.sections.flatMap((s) => s.docs ?? []);
+    for (const entry of entries.filter(isFolderEntry)) {
+        if (!site.folders.some((f) => entry.startsWith(f))) {
             refusals.push(
-                `${entry}: only ${PUBLIC_FOLDERS.join(' and ')}, or a folder inside them, may be listed as a folder — anywhere else a doc is published by name`,
+                `${entry}: the ${site.name} site may list only ${site.folders.join(', ')}, or a folder inside it, as a folder — anywhere else a doc is published by name`,
             );
         } else if (!listFolder || !listFolder(entry).some((f) => f.startsWith(entry) && /\.md$/i.test(f))) {
             refusals.push(`${entry}: lists no docs`);
         }
     }
-    for (const doc of manifestDocs(manifest, listFolder)) {
+    for (const entry of entries) {
+        if (site.only && !entry.startsWith(site.only)) {
+            refusals.push(`${entry}: the ${site.name} site publishes only ${site.only}`);
+        }
+        if (site.never && entry.startsWith(site.never)) {
+            refusals.push(`${entry}: ${site.never} is published on the users site, not the ${site.name} site`);
+        }
+    }
+    for (const doc of manifestDocs(manifest, listFolder, site)) {
         if (seen.has(doc)) refusals.push(`${doc}: listed twice`);
         seen.add(doc);
         const never = neverPublishReason(doc);
@@ -353,6 +442,36 @@ function resolveUiTokens(text, messages, problems, escape = escapeLabel) {
     });
 }
 
+/**
+ * Replace each `{{generated:<name>}}` line, outside fenced code, with the
+ * fragment `generated(name)` returns, recording a problem when there is none.
+ */
+function expandGenerated(markdown, generated, problems) {
+    let fence = null;
+    return markdown
+        .split('\n')
+        .map((line) => {
+            const open = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+            if (fence) {
+                if (open && open[1][0] === fence[0] && open[1].length >= fence.length && line.trim() === open[1]) fence = null;
+                return line;
+            }
+            if (open) {
+                fence = open[1];
+                return line;
+            }
+            const m = GENERATED_LINE_RE.exec(line);
+            if (!m) return line;
+            const text = generated ? generated(m[1]) : null;
+            if (text === null) {
+                problems.push(`{{generated:${m[1]}}} has no fragment: run \`npx tsx scripts/docs-reference/generate.ts\` before staging`);
+                return line;
+            }
+            return text.replace(/\n+$/, '');
+        })
+        .join('\n');
+}
+
 /** The first `# ` heading becomes the page title; the body loses it. */
 function splitTitle(markdown) {
     const lines = markdown.split('\n');
@@ -369,7 +488,8 @@ function splitTitle(markdown) {
 }
 
 /**
- * Where a link should go on the site. `ctx.published` maps repo path → slug;
+ * Where a link should go on the site. `ctx.published` maps repo path → the
+ * page's address (`/inflect-compliance/developers/auth/`);
  * `ctx.kindOf(repoPath)` answers 'file' | 'dir' | null.
  */
 function resolveLink(href, fromPath, ctx, isImage) {
@@ -391,14 +511,18 @@ function resolveLink(href, fromPath, ctx, isImage) {
             : path.posix.normalize(path.posix.join(path.posix.dirname(fromPath), p))
     ).replace(/\/$/, '');
     if (target === '.' || target.startsWith('..')) return { kind: 'text', missing: href };
+    // `published` maps a repo path to its page on whichever site carries it,
+    // so a developer doc's link to a user guide crosses to the user site.
     if (ctx.published.has(target)) {
-        return { kind: 'site', href: `${SITE_BASE}/${ctx.published.get(target)}/${frag}` };
+        return { kind: 'site', href: `${ctx.published.get(target)}${frag}` };
     }
     const kind = ctx.kindOf(target);
     if (kind === null) return { kind: 'text', missing: target };
     if (target.startsWith('docs/') && /\.md$/i.test(target)) return { kind: 'text' };
-    if (kind === 'dir') return { kind: 'github', href: `${GITHUB}/tree/main/${target}` };
-    return { kind: 'github', href: isImage ? `${RAW}${target}` : `${GITHUB}/blob/main/${target}${frag}` };
+    // `(app)` route-group folders would end a markdown link at their `)`.
+    const enc = target.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/ /g, '%20');
+    if (kind === 'dir') return { kind: 'github', href: `${GITHUB}/tree/main/${enc}` };
+    return { kind: 'github', href: isImage ? `${RAW}${enc}` : `${GITHUB}/blob/main/${enc}${frag}` };
 }
 
 /** Mask the code spans in a chunk of prose, so rewrites never touch code. */
@@ -511,16 +635,13 @@ function stagePage(markdown, fromPath, ctx, extraFrontmatter = {}) {
     const split = splitTitle(fm.body);
     if (!split) throw new Error(`${fromPath}: no "# " title`);
     const title = resolveUiTokens(split.title, ctx.messages, problems, (v) => v);
-    let body = split.body;
+    const body = expandGenerated(split.body, ctx.generated, problems);
     const route = fm.data.route;
     if (fromPath.startsWith(GUIDE_FOLDER) && !route) {
         problems.push('a page guide names the page it documents in "route:" frontmatter');
     }
-    if (route) {
-        if (!ctx.routes || !ctx.routes.has(route)) {
-            problems.push(`route ${route} matches no page.tsx under ${APP_DIR}/`);
-        }
-        body = `**Page address:** \`${displayRoute(route)}\`\n\n${body}`;
+    if (route && (!ctx.routes || !ctx.routes.has(route))) {
+        problems.push(`route ${route} matches no page.tsx under ${APP_DIR}/`);
     }
     const { text, missing, problems: bodyProblems } = transformMarkdown(body, fromPath, ctx);
     problems.push(...bodyProblems);
@@ -588,6 +709,13 @@ function repoIo() {
         listFolder: listRepoFolder,
         messages,
         routes: appRoutes(listRepoFolder(`${APP_DIR}/`)),
+        generated: (name) => {
+            try {
+                return fs.readFileSync(path.join(GENERATED_DIR, `${name}.md`), 'utf8');
+            } catch {
+                return null;
+            }
+        },
     };
 }
 
@@ -596,81 +724,118 @@ function sidebarLabel(io) {
     return (text) => resolveUiTokens(text, io.messages, [], (v) => v);
 }
 
+/** Each site's manifest, read from disk. */
+function readManifests() {
+    return Object.values(SITES).map((site) => ({ site, manifest: JSON.parse(fs.readFileSync(manifestPath(site), 'utf8')) }));
+}
+
+/**
+ * Where every published doc lives: repo path → its page's address. One map
+ * for both sites, so a link from either one reaches the other. A doc listed
+ * by both is refused, because one doc has one home.
+ */
+function publishedAddresses(sites, listFolder) {
+    const published = new Map();
+    const refusals = [];
+    for (const { site, manifest } of sites) {
+        for (const doc of manifestDocs(manifest, listFolder, site)) {
+            if (published.has(doc)) refusals.push(`${doc}: listed by more than one site`);
+            published.set(doc, `${site.base}/${slugFor(doc)}/`);
+        }
+    }
+    return { published, refusals };
+}
+
 function main() {
     const io = repoIo();
-    const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
-    const refusals = publicationRefusals(manifest, io.readDoc, io.listFolder);
+    const sites = readManifests();
+    const refusals = sites.flatMap(({ site, manifest }) =>
+        publicationRefusals(manifest, io.readDoc, io.listFolder, site).map((r) => `[${site.name}] ${r}`),
+    );
+    const { published, refusals: shared } = publishedAddresses(sites, io.listFolder);
+    refusals.push(...shared);
     if (refusals.length) {
         process.stderr.write(`docs site: refusing to publish\n  ${refusals.join('\n  ')}\n`);
         process.exit(1);
     }
-    const docs = manifestDocs(manifest, io.listFolder);
-    const ctx = {
-        published: new Map(docs.map((d) => [d, slugFor(d)])),
-        kindOf: kindOnDisk,
-        messages: io.messages,
-        routes: io.routes,
-    };
+    const ctx = { published, kindOf: kindOnDisk, messages: io.messages, routes: io.routes, generated: io.generated };
 
     // Everything is staged in memory first, so a page that cannot be built
     // leaves the previous staging untouched rather than half-replaced.
-    const pages = new Map();
+    const staged = new Map();
     const problems = [];
     const warnings = [];
-    for (const label of manifest.sections.flatMap((s) => [s.group, s.label]).filter(Boolean)) {
-        const labelProblems = [];
-        resolveUiTokens(label, io.messages, labelProblems, (v) => v);
-        problems.push(...labelProblems.map((p) => `site/published-docs.json: ${p}`));
-    }
-    for (const doc of docs) {
-        const staged = stagePage(io.readDoc(doc), doc, ctx, { editUrl: `${GITHUB}/edit/main/${doc}` });
-        problems.push(...staged.problems.map((p) => `${doc}: ${p}`));
-        // Checked again AFTER labels are resolved: the source passed, but a
-        // label printed into it is text the policy has not seen yet.
-        for (const hit of forbiddenContentIn(staged.page)) {
-            problems.push(`${doc}: the built page carries ${hit.why} (${hit.id})`);
+    for (const { site, manifest } of sites) {
+        const pages = new Map();
+        const manifestRel = path.relative(REPO_ROOT, manifestPath(site));
+        for (const label of manifest.sections.flatMap((s) => [s.group, s.label]).filter(Boolean)) {
+            const labelProblems = [];
+            resolveUiTokens(label, io.messages, labelProblems, (v) => v);
+            problems.push(...labelProblems.map((p) => `${manifestRel}: ${p}`));
         }
-        for (const m of staged.missing) warnings.push(`${doc}: link to a missing target (${m})`);
-        pages.set(`${slugFor(doc)}.md`, staged.page);
-    }
-    // The landing page lives in site/ and links to docs by their repo paths,
-    // so it goes through the same rewrite and fails the same way if it points
-    // at a page that is not published.
-    const landing = transformMarkdown(io.readDoc(LANDING_PAGE), LANDING_PAGE, ctx);
-    problems.push(...landing.problems.map((p) => `${LANDING_PAGE}: ${p}`));
-    if (landing.missing.length || /\]\((?!https?:|\/inflect-compliance\/|#)/.test(landing.text)) {
-        problems.push(`${LANDING_PAGE}: links to something that is not a published page`);
+        const docs = manifestDocs(manifest, io.listFolder, site);
+        for (const doc of docs) {
+            // A developer can edit the doc a page came from; a reader of the
+            // help site is not offered the repository.
+            const extra = site.name === 'developers' ? { editUrl: `${GITHUB}/edit/main/${doc}` } : {};
+            const page = stagePage(io.readDoc(doc), doc, ctx, extra);
+            problems.push(...page.problems.map((p) => `${doc}: ${p}`));
+            // Checked again AFTER labels are resolved: the source passed, but a
+            // label printed into it is text the policy has not seen yet.
+            for (const hit of forbiddenContentIn(page.page)) {
+                problems.push(`${doc}: the built page carries ${hit.why} (${hit.id})`);
+            }
+            for (const m of page.missing) warnings.push(`${doc}: link to a missing target (${m})`);
+            pages.set(`${slugFor(doc)}.md`, page.page);
+        }
+        // A site's landing page links to docs by their repo paths, so it goes
+        // through the same rewrite and fails the same way if it points at a
+        // page that is not published.
+        const landingRel = landingPage(site);
+        const landing = transformMarkdown(io.readDoc(landingRel), landingRel, ctx);
+        problems.push(...landing.problems.map((p) => `${landingRel}: ${p}`));
+        if (landing.missing.length || /\]\((?!https?:|\/inflect-compliance\/|#)/.test(landing.text)) {
+            problems.push(`${landingRel}: links to something that is not a published page`);
+        }
+        pages.set('index.md', landing.text);
+        staged.set(site, { pages, count: docs.length });
     }
     if (problems.length) {
         process.stderr.write(`docs site: refusing to build\n  ${problems.join('\n  ')}\n`);
         process.exit(1);
     }
-    pages.set('index.md', landing.text);
 
-    fs.rmSync(CONTENT_DIR, { recursive: true, force: true });
-    for (const [rel, page] of pages) {
-        const dest = path.join(CONTENT_DIR, rel);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, page);
+    for (const [site, { pages, count }] of staged) {
+        const dir = contentDir(site);
+        fs.rmSync(dir, { recursive: true, force: true });
+        for (const [rel, page] of pages) {
+            const dest = path.join(dir, rel);
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.writeFileSync(dest, page);
+        }
+        process.stdout.write(`docs site: staged ${count} docs + landing page for the ${site.name} site into ${path.relative(REPO_ROOT, dir)}\n`);
     }
-
-    process.stdout.write(`docs site: staged ${docs.length} docs + landing page into ${path.relative(REPO_ROOT, CONTENT_DIR)}\n`);
     if (warnings.length) process.stdout.write(`docs site: ${warnings.length} warning(s)\n  ${warnings.join('\n  ')}\n`);
 }
 
 module.exports = {
     FORBIDDEN_CONTENT,
+    GENERATED_DIR,
+    SITES,
     GUIDE_FOLDER,
     NEVER_PUBLISH,
     PUBLIC_FOLDERS,
     SITE_BASE,
     appRoutes,
     displayRoute,
+    expandGenerated,
     expandSections,
     forbiddenContentIn,
     manifestDocs,
     neverPublishReason,
     publicationRefusals,
+    publishedAddresses,
+    readManifests,
     repoIo,
     resolveLink,
     resolveUiTokens,

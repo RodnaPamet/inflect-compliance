@@ -1,16 +1,19 @@
 # ───────────────────────────────────────────────────────────────
-#  Docs site — https://rodnapamet.github.io/inflect-compliance/
+#  Docs sites — one GitHub Pages deployment, two sites:
+#    https://rodnapamet.github.io/inflect-compliance/             help for users
+#    https://rodnapamet.github.io/inflect-compliance/developers/  for developers
 #
-#  Builds the public documentation site from the ALLOWLIST in
-#  site/published-docs.json and deploys it to GitHub Pages. A doc is
-#  published only when it is listed there; site/scripts/stage-docs.js
-#  refuses the build if a listed doc is one the owner kept off the site or
-#  carries a production coordinate. See docs/docs-site.md.
+#  Builds each site from the ALLOWLIST in site/<site>/manifest.json and
+#  deploys both together. A doc is published only when it is listed;
+#  site/scripts/stage-docs.js refuses the build if a listed doc is one the
+#  owner kept off the sites or carries a production coordinate, and keeps
+#  docs/user/ on the user site alone. See docs/docs-site.md.
 #
 #  BUILD runs on every pull request that touches the docs, the site, the
-#  English message catalogue or src/app/, so a broken page, a refused doc, a
-#  label that no longer exists or a guide whose page was removed fails the PR
-#  that caused it. This is not a required check: a label rename shows red here
+#  English message catalogue, src/ or the reference generator, so a broken
+#  page, a refused doc, a label that no longer exists or a guide whose page was
+#  removed fails the PR that caused it. It first generates the reference pages
+#  (roles, page inventory, page actions, refusal codes) from the code. This is not a required check: a label rename shows red here
 #  without blocking the merge. The publication policy — what may be published
 #  at all — is also held on EVERY pull request, whatever it touches, by
 #  tests/guardrails/docs-site-publication.test.ts in the Ratchets job.
@@ -31,10 +34,13 @@ on:
       - 'site/**'
       - 'CONTRIBUTING.md'
       # The build reads these too: `{{ui:…}}` labels come from the message
-      # catalogue and a guide's `route:` must match a page under src/app/, so
-      # renaming a label or removing a page is a change to the docs.
+      # catalogue, a guide's `route:` must match a page under src/app/, and
+      # the reference pages are generated from the permission code, the
+      # error classes, the sidebar and every page's API calls.
       - 'messages/en.json'
-      - 'src/app/**'
+      - 'src/**'
+      - 'prisma/schema/enums.prisma'
+      - 'scripts/docs-reference/**'
       - '.github/workflows/docs-site.yml'
   # Not a required check, but every pull_request workflow answers the merge
   # queue so that making it required later can never hang the queue
@@ -47,10 +53,13 @@ on:
       - 'site/**'
       - 'CONTRIBUTING.md'
       # The build reads these too: `{{ui:…}}` labels come from the message
-      # catalogue and a guide's `route:` must match a page under src/app/, so
-      # renaming a label or removing a page is a change to the docs.
+      # catalogue, a guide's `route:` must match a page under src/app/, and
+      # the reference pages are generated from the permission code, the
+      # error classes, the sidebar and every page's API calls.
       - 'messages/en.json'
-      - 'src/app/**'
+      - 'src/**'
+      - 'prisma/schema/enums.prisma'
+      - 'scripts/docs-reference/**'
       - '.github/workflows/docs-site.yml'
   workflow_dispatch:
 
@@ -76,21 +85,34 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: site/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            site/package-lock.json
 
-      # The site has its own package.json and lockfile, so the application's
-      # dependency tree is neither installed nor touched here.
+      # The developer reference is generated from the application's own code —
+      # the generator calls getPermissionsForRole and parses src/ with the
+      # TypeScript compiler — so it needs the application's dependencies.
+      # Install scripts are skipped: nothing it imports needs a generated
+      # Prisma client.
+      - name: Install application dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # The site has its own package.json and lockfile, kept apart from the
+      # application's dependency tree.
       - name: Install site dependencies
         working-directory: site
         run: npm ci --no-audit --no-fund
 
-      - name: Stage the allowlisted docs and build
+      # Generates the developer reference from the code, stages both sites,
+      # builds each, and assembles them: the user site at the root of
+      # site/dist/, the developer site under site/dist/developers/.
+      - name: Generate, stage and build both sites
         working-directory: site
         run: npm run build
 
       - name: Say why nothing will deploy
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.event_name != 'merge_group' && !github.event.repository.has_pages
-        run: echo "::warning title=Docs site not deployed::GitHub Pages is not enabled for this repository. A repository admin enables it at Settings → Pages with 'GitHub Actions' as the source, then re-runs this workflow."
+        run: echo "::warning title=Docs sites not deployed::GitHub Pages is not enabled for this repository. A repository admin enables it at Settings → Pages with 'GitHub Actions' as the source, then re-runs this workflow."
 
       - name: Upload the site for Pages
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.event.repository.has_pages

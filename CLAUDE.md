@@ -3224,21 +3224,35 @@ both PRs are green, and main is wrong by one with no suspicious diff for a
 reviewer to catch. A clean merge was the dangerous case, so the header is
 gone rather than monitored.
 
-### The public docs site
+### The public docs sites
 
-`docs/` is also published at https://rodnapamet.github.io/inflect-compliance/
-(Starlight, built and deployed by `.github/workflows/docs-site.yml`), but only
-the docs listed in `site/published-docs.json`. **That file is an ALLOWLIST: a
-new doc is NOT published until somebody adds it**, so writing a doc never
-publishes it by accident. To publish one, add its path to the right section;
-`tests/guardrails/docs-site-publication.test.ts` then holds it on every PR.
+One GitHub Pages deployment (Starlight, built and deployed by
+`.github/workflows/docs-site.yml`) carries TWO sites, each with its own
+navigation and search:
 
-Two rules in `site/scripts/stage-docs.js` refuse the build, and are easy to
-undo by "simplifying":
+- **The help site**, https://rodnapamet.github.io/inflect-compliance/, is for
+  people who USE the product and publishes `docs/user/` and nothing else —
+  page guides, how-tos, runbooks. No source paths, permission keys, API routes
+  or implementation detail: the owner rejected an engineering-flavoured page
+  guide on 2026-10-24, and that is the line.
+- **The developer site**, …/inflect-compliance/developers/, carries the
+  architecture, security and contributor docs and the generated reference in
+  `docs/reference/`. It never publishes `docs/user/`; a link from a developer
+  doc to a user doc crosses to the help site.
+
+Each site publishes only what `site/<site>/manifest.json` lists. **A manifest is
+an ALLOWLIST: a new doc is NOT published until somebody adds it**, so writing a
+doc never publishes it by accident. `SITES` in `site/scripts/stage-docs.js`
+holds which folders each site may list as a folder, and a doc listed by both
+sites stops the build. `tests/guardrails/docs-site-publication.test.ts` holds
+both manifests on every PR.
+
+Two more rules in the stager refuse the build, and are easy to undo by
+"simplifying":
 
 - **`NEVER_PUBLISH`** is the owner's decision of 2026-10-23 — the deployment
-  and production-VM guides, the runbooks and the DPA template stay off the
-  site. The guardrail restates that list, so emptying the constant fails CI.
+  and production-VM guides, the runbooks and the DPA template stay off BOTH
+  sites. The guardrail restates that list, so emptying the constant fails CI.
 - **`FORBIDDEN_CONTENT`** refuses a published doc that names a coordinate of
   the production estate: the GCP project id, the VM's host path, zone or
   access command, a person's `@inflect.bg` address, the production env file.
@@ -3246,19 +3260,28 @@ undo by "simplifying":
 
 **Exclusion is not confidentiality.** The repository is public; every file in
 `docs/` — and this file — is already readable on github.com. Keeping a doc off
-the site keeps it out of the site's navigation and search. A secret never goes
-in `docs/` at all. See `docs/docs-site.md`.
+the sites keeps it out of their navigation and search. A secret never goes in
+`docs/` at all. See `docs/docs-site.md`.
 
-**Page guides** (`docs/guide/<sidebar section>/<page>.md`) and how-tos
-(`docs/how-to/`) are the one exception to publishing by name: the manifest
-lists their FOLDER, and they are classified `authoritative` by path, so a new
-guide needs neither a manifest line nor a classification entry (adding the
-latter fails docs-accuracy). A guide names its page in `route:` frontmatter and
-writes on-screen labels as `{{ui:<key>}}` from `messages/en.json`. The docs
-build refuses a route that matches no `page.tsx` and a key that does not
-resolve; the Ratchets guardrail deliberately checks neither, so renaming a label
-in the app never fails a code PR. Template and rules: `docs/docs-site.md` →
-"Writing a page guide".
+**Help-site docs** (`docs/user/guide/<sidebar section>/<page>.md`,
+`docs/user/how-to/`) and the **generated reference** (`docs/reference/`) are
+classified `authoritative` BY PATH, so they need no classification entry
+(adding one fails docs-accuracy), and once a manifest lists their folder a new
+file needs no manifest line either. A page guide names its page in `route:`
+frontmatter and writes on-screen labels as `{{ui:<key>}}` from
+`messages/en.json`. The docs build refuses a route that matches no `page.tsx`
+and a key that does not resolve; the Ratchets guardrail deliberately checks
+neither, so renaming a label in the app never fails a code PR.
+
+**The developer reference is generated, never hand-written.** Each
+`docs/reference/*.md` is a short introduction around a line holding only
+`{{generated:<name>}}`; `scripts/docs-reference/generate.ts` writes the
+fragments (roles × permissions from `getPermissionsForRole`, the page
+inventory, each page's API calls and the permission each reaches, the refusal
+codes) into the gitignored `site/.generated/`, and a page whose fragment is
+missing stops the build. Its coverage figures (pages with no help guide, share
+of API calls matched) are notices, never a gate. Template and rules:
+`docs/docs-site.md`.
 
 ## UI Platform — Epics 51–60
 

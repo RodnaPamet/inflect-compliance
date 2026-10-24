@@ -690,7 +690,7 @@ jobs:
       - name: "Run tests: unit + integration (shard)"
         env:
           JEST_SKIP_RATCHETS: '1'
-          # 10240 for THIS step only; every other job keeps the workflow's
+          # 12288 for THIS step only; every other job keeps the workflow's
           # 8192. On 2026-10-18 `Test (shard 4/4)` OOM'd on #3721 ("Ineffective
           # mark-compacts near heap limit", exit 134, old space at 8047 of
           # 8192 MB) while #3717 passed the same shard on the same base: the
@@ -699,7 +699,35 @@ jobs:
           # only Postgres beside it: ~10 GB of old space plus Jest's native
           # memory stays well under the 16 GB runner, so an overrun still
           # fails as a legible V8 OOM rather than a kernel kill.
-          NODE_OPTIONS: "--max-old-space-size=10240"
+          #
+          # RAISED 10240 -> 12288 on 2026-10-24, and this time with the number
+          # that was missing. The #4007 heap reporter measured shard 2/6 on
+          # main:
+          #
+          #     files observed    354
+          #     rss first → last  690 MB → 10127 MB
+          #     rss peak          10337 MB   (heapUsed 9365 MB)
+          #
+          # The peak is 97 MB ABOVE the 10240 cap. That is the whole of the
+          # intermittency #3977 is about: the shard does not leak unboundedly,
+          # it finishes just over its own ceiling, so whether it dies is
+          # allocation timing. It reddened #4013, #4022 and #4023 as exit 134 —
+          # and then main itself, on 6835f51f (#4037).
+          #
+          # Why not re-shard or switch to workers, the two things tried before:
+          # #4033 measured both. Worker mode DOES clear this shard (no 134) but
+          # costs ~1.8x wall-clock (27m12s against 12m56s-16m12s in-band) and
+          # surfaces an isolation bug (#4038) that serial execution hides.
+          # Raising the shard count is what #3977 was filed to object to — it
+          # was done twice in two days without measuring what consumes the heap.
+          # This addresses the measured cause instead.
+          #
+          # 12288 leaves ~3.7 GB on the 16 GB runner for Jest's native memory,
+          # Postgres and the OS, so the "legible V8 OOM rather than a kernel
+          # kill" property above still holds. If a shard exceeds THIS, the
+          # answer is no longer another 2 GB: 354 files reaching 10 GB is the
+          # thing to fix.
+          NODE_OPTIONS: "--max-old-space-size=12288"
         run: |
           # `--selectProjects node jsdom` EXCLUDES the `flue` project, which
           # has its own job. Without it `--shard` spreads all three projects
