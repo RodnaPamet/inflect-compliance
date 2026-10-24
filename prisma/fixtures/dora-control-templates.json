@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "DORA control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "These 24 templates and their 133 authored tasks reached no production database. The templates were created only by prisma/seed.ts, which is not run on production deploys, so the task seeder that names this fixture found nothing to attach to and reported \"24 template(s) absent\" on every run while exiting 0.",
-    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/dora_requirements.json. Task content is unchanged from the bare-array fixture it replaces — this file is a shape conversion, not a re-authoring.",
+    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/dora_requirements.json. Task content is unchanged from the bare-array fixture it replaces — this file is a shape conversion, not a re-authoring. Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
     "join": "Every template.requirementCodes entry equals a requirement code exactly (24/24 resolve). The key rename matters: CatalogTemplateSchema reads requirementCodes and defaults it to [], so leaving the old `requirements` key would have parsed cleanly and produced 24 templates linked to nothing."
   },
@@ -271,6 +271,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record how the framework is defined and name the body that approves it."
+              }
+            },
+            {
+              "text": {
+                "en": "List the material that body must receive before it gives approval."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the route by which ICT risk reaches the body between approvals."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out how the responsibilities matrix is updated when a role holder changes."
+              }
+            },
+            {
+              "text": {
+                "en": "State in the policy that the management body stays accountable for the framework it approves."
+              }
+            },
+            {
+              "text": {
+                "en": "Pass the policy through the normal document-approval path, recording its version and approval date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved ICT governance policy showing its version, approval date and approving body"
           },
@@ -285,6 +317,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Minute the framework version placed before the management body at each approval or review."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the material the body was given ahead of that discussion."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the decision reached rather than minuting that the framework was noted."
+              }
+            },
+            {
+              "text": {
+                "en": "List each action raised with its owner and its due date."
+              }
+            },
+            {
+              "text": {
+                "en": "Extract the minutes for the period and attach them with the framework version they cover."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Minute extract recording the management body's approval or review decision, naming the framework version considered"
           },
@@ -299,6 +358,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain from HR the sessions scheduled in the period and the attendance captured at each."
+              }
+            },
+            {
+              "text": {
+                "en": "Record against each management-body member the session attended, its date and who delivered it."
+              }
+            },
+            {
+              "text": {
+                "en": "List the ICT-risk subjects each session or briefing covered."
+              }
+            },
+            {
+              "text": {
+                "en": "Note for every absent member the catch-up arranged and the date it took place."
+              }
+            },
+            {
+              "text": {
+                "en": "Compile the period's training record for the management body and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Board ICT risk training records showing the session, date and attendance for each management-body member"
           },
@@ -446,6 +532,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "State the digital operational resilience objectives the entity sets itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the methods chosen to reach each objective, citing the framework document for detail."
+              }
+            },
+            {
+              "text": {
+                "en": "List the resilience activities planned for the period against the objective each serves."
+              }
+            },
+            {
+              "text": {
+                "en": "Define the measure used to track progress against each objective and activity."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain approval and attach the strategy with its objectives and planned activities shown."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved digital operational resilience strategy listing the resilience objectives, planned activities and the measures of progress"
           },
@@ -460,6 +573,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the activities the resilience strategy commits to for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the budget approved against each listed activity."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the amount spent or committed to date beside each approved figure."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every committed activity with no budget and record where the gap was escalated."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the allocation record together with the evidence that the budget was approved."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Budget allocation record showing the approved digital operational resilience budget by activity, with the approval and the spend to date"
           },
@@ -571,6 +711,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the protocol versions a new or changed system, protocol or tool may use."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the redundancy expectations a system must meet before it goes into use."
+              }
+            },
+            {
+              "text": {
+                "en": "Carry the capacity headroom across from the capacity and reliability requirements schedule."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the technology-currency rule applied to running versions and support end dates."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how a deviation is requested, who may grant it and how long it remains valid."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain approval of the architecture standards and attach the approved version."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved architecture standards, including the deviation route and who may grant one"
           },
@@ -621,6 +793,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the ICT tools, protocols and platforms listed in the asset inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the running version, the vendor-supported version and the support end date for each."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every entry past its support end date or due to pass it before the next check."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner of the upgrade for each entry marked."
+              }
+            },
+            {
+              "text": {
+                "en": "List the out-of-support entries separately in the period's technology currency record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Technology currency record listing running version, supported version and end-of-support date per ICT tool, with the out-of-support entries called out"
           },
@@ -804,6 +1003,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Update the register entry when an asset is commissioned, moved, re-owned or retired."
+              }
+            },
+            {
+              "text": {
+                "en": "Log what changed, the date of the change and who made it."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark retired assets as retired in place rather than deleting their rows."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the register dated at period end and attach it with the change log."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated ICT asset inventory export for the period with the change log showing additions, changes and retirements"
           },
@@ -910,6 +1131,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the ICT systems the access control policy binds."
+              }
+            },
+            {
+              "text": {
+                "en": "State who may hold which access to those systems and who approves each grant type."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out how privileged access is treated differently from ordinary access."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how access is withdrawn when a holder's role changes or ends."
+              }
+            },
+            {
+              "text": {
+                "en": "Define the record kept for each grant so a reviewer can test it against the policy."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain approval for the policy and attach it with its version and approval date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved access control policy naming the systems it binds, the approver for each grant type and the record kept per grant"
           },
@@ -1006,6 +1259,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Raise a request for each change to an in-scope system and assess the ICT risk it carries."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the approval given by the approver the change management policy names."
+              }
+            },
+            {
+              "text": {
+                "en": "Create the release record when the approved change goes live."
+              }
+            },
+            {
+              "text": {
+                "en": "Note on each record whether the emergency route was used and the reason for using it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's change records, including every change taken by the emergency route."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "ICT change records for the period, each carrying the risk assessment, the named approval required by the ICT change management policy and the release record"
           },
@@ -1158,6 +1438,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Enable collection on every source named in the detection coverage list."
+              }
+            },
+            {
+              "text": {
+                "en": "Build a rule that implements each threshold held in the threshold register."
+              }
+            },
+            {
+              "text": {
+                "en": "Route each alert to the receiver the register names for it."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the deployed monitoring and alerting configuration rather than describing it."
+              }
+            },
+            {
+              "text": {
+                "en": "Map the export to the coverage rows it satisfies and attach the two together."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Monitoring and alerting configuration export showing collection enabled per source and a rule per threshold, mapped to the coverage rows it satisfies"
           },
@@ -1172,6 +1479,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the log sets the procedure covers and the reviewer role assigned to each."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe what the reviewer looks for in each log set."
+              }
+            },
+            {
+              "text": {
+                "en": "Specify the record a reviewer leaves when a review finds nothing."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out how a suspected anomaly is handed into the incident process."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain approval of the log review procedure and attach the approved copy."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved log review procedure naming the reviewer role, the log sets in scope and the record kept for a review that finds nothing"
           },
@@ -1186,6 +1520,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Record each alert raised in the period with the threshold that fired it and its arrival time."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person who triaged each alert and the conclusion they reached."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark whether each alert was escalated into the incident process."
+              }
+            },
+            {
+              "text": {
+                "en": "Give the reason against every alert closed as noise."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the triage record together with the period's completed log reviews."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Alert triage record for the period showing each alert, the threshold that fired it, the reviewer, the outcome and any escalation, with the completed log reviews"
           },
@@ -1297,6 +1658,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Estimate the operational, financial and client impact of disrupting each registered function."
+              }
+            },
+            {
+              "text": {
+                "en": "Show how each function's impact grows as the outage lengthens."
+              }
+            },
+            {
+              "text": {
+                "en": "Set a recovery time objective and a recovery point objective for each function from those figures."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the assumptions behind each estimate and who agreed them."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the impact estimate together with the recovery objectives it produced."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Impact and loss estimate per critical function, stating the assumptions relied on and the recovery time and recovery point objective agreed"
           },
@@ -1311,6 +1699,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Define the critical functions and ICT services the continuity policy covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who holds the authority to declare a disruption and activate the plans."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how activation is escalated and how the plans are stood down."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the recovery objectives committed to and the cycle on which plans are tested."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out how continuity work links to incident handling so one account of an event is kept."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the review owner, date and version the policy, and record the approval it was issued under."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved and dated ICT business continuity policy carrying its version, scope, activation authority, stand-down route, plan test cycle and named review owner"
           },
@@ -1366,6 +1786,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Schedule each plan's test on the cycle the policy sets, at least once a year."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the scenario, the plan and function exercised, and the participants in each test."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the recovery time and recovery point the test actually achieved."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every step that could not be completed and the reason it could not."
+              }
+            },
+            {
+              "text": {
+                "en": "File every result whether the objective was met or missed, and attach the period's results."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "BCP test results for the period: scenario, plan and function exercised, participants, recovery time and recovery point achieved, and every step not completed"
           },
@@ -1472,6 +1919,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Decide for each scope register row whether redundant ICT capacity is warranted."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reasoning behind each answer, including for systems judged not to need it."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the redundant capacity in place and where it runs for each system that warrants it."
+              }
+            },
+            {
+              "text": {
+                "en": "State how a switch to that capacity is made and who makes it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed redundant capacity record for the in-scope systems."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Redundant capacity records: each in-scope system, whether redundancy is warranted and why, the capacity in place, where it runs and how it is switched to"
           },
@@ -1486,6 +1960,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Derive the frequency and retention bands from the backup scope register."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each system in the register to its frequency and retention band."
+              }
+            },
+            {
+              "text": {
+                "en": "State that copies are held securely and separately from the systems they came from."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who may authorise a restore, who may perform one and the restoration test cycle."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each system that cannot meet its band as an exception with an owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Date and version the policy, record its approval and attach the approved copy."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved and dated backup policy stating the frequency and retention bands, the storage separation required, restore authority, the test cycle and any recorded exceptions"
           },
@@ -1541,6 +2047,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Run each scheduled restore by following the system's written procedure step by step."
+              }
+            },
+            {
+              "text": {
+                "en": "Log the system, the backup copy restored with its date, and the person who ran it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the elapsed restore time and whether the verification checks passed."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every departure from the written procedure that was needed to finish."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep failed and partial restores in the same log and attach the log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Recovery test logs for the period: system, backup copy restored, operator, elapsed time, verification result and any deviation from the written procedure"
           },
@@ -1555,6 +2088,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Match each recovery test log entry to its row in the backup scope register."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every register row tested and verified, tested and failed, or not tested."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each tested system's copies still sit on storage separate from that system."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause, owner and remediation date against every failure and untested row."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove rows for systems no longer in the estate and attach the reconciliation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Backup coverage reconciliation: every register row marked tested, failed or untested, storage separation confirmed per row, and an owner and date against each gap"
           },
@@ -1620,6 +2180,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Define the incidents that trigger a review, with major ICT-related incidents as a minimum."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the point after closure at which each review is held and who must attend."
+              }
+            },
+            {
+              "text": {
+                "en": "Specify the report contents: timeline, contributing causes, response performance and owned actions."
+              }
+            },
+            {
+              "text": {
+                "en": "State where review reports are filed so they can be found later."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the procedure owner, assign a version and publish the procedure."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Published post-incident review procedure naming the incidents in scope, the attendees required, the contents of the report and where reports are filed"
           },
@@ -1634,6 +2221,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Create the register with one row per lesson and a field for the source it came from."
+              }
+            },
+            {
+              "text": {
+                "en": "Add fields for the framework element changed, the named owner, the due date and the status."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold back any lesson from filing until a framework element is named against it."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the lessons already drawn from reviews, threat notifications, tests and audits."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the register showing both its structure and its current entries."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Lessons-learned register: the source of each lesson, the framework element it changes, the named owner, the due date and the current status"
           },
@@ -1648,6 +2262,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the major ICT-related incidents closed in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Convene a review for each one with the attendees the procedure names."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the report covering the timeline, contributing causes and how detection and response performed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each action with an owner and date, opening its lessons-learned row in the same session."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any major incident closed without a review and the reason it had none."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the post-incident review reports for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Post-incident review reports for the period, each carrying the timeline, contributing causes, the response assessment and the actions raised with owners and dates"
           },
@@ -1662,6 +2308,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain the audience list from HR for the training due in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the material delivered, the content covered and the delivery dates."
+              }
+            },
+            {
+              "text": {
+                "en": "Note which recent incidents or threat notifications changed the material."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture completion for each person or team in the audience."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the follow-up for each person outstanding and attach the programme records."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Awareness programme records for the period: material delivered, audience, dates, completion per participant and the follow-up for those outstanding"
           },
@@ -1732,6 +2405,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List clients, counterparts and the public with the staff, management body and service teams."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what brings each audience into scope for a given incident."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the channel that reaches each audience and who holds its contact list and where."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any contractual or arrangement-based commitment already made to inform an audience."
+              }
+            },
+            {
+              "text": {
+                "en": "Have Legal/DPO confirm the duty-creating commitments, then date and version-mark the map."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Stakeholder communication map: audience, what puts them in scope, the channel that reaches them, the contact-list holder and any commitment already made"
           },
@@ -1746,6 +2446,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "State the trigger that activates the plan and who decides external communication is warranted."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the order in which the mapped audiences are addressed."
+              }
+            },
+            {
+              "text": {
+                "en": "Define the approval a message needs before it is released."
+              }
+            },
+            {
+              "text": {
+                "en": "Draft the holding statement used while the facts are still being established."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how communications draw on the incident record and when the plan is next reviewed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the approval the plan was issued under, date and version it, and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved and dated crisis communication plan carrying its activation trigger, audience sequence, approval path and holding-statement content"
           },
@@ -1760,6 +2492,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Name a spokesperson and a deputy for each audience on the communication map."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each person's contact routes and the authority they hold to speak unaided."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the approver of external statements and the keeper of this record."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each assignment with the person named so nobody holds a role unknowingly."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the record where a responder can reach it out of hours and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Designated spokesperson records: audience, named spokesperson and deputy, their contact routes, and the authority each holds to speak unaided"
           },
@@ -1815,6 +2574,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one running communications log shared across all incidents."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter each message with its incident reference, audience, channel and release time."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who drafted each message and who approved its release."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the message text or a link to the exact version issued."
+              }
+            },
+            {
+              "text": {
+                "en": "Log corrections and follow-ups against the original entry, not as new events."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the communications log for the evidence period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Crisis communications log for the period: incident, audience, channel, release time, drafter, approver and the message version actually issued"
           },
@@ -1829,6 +2620,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Run the review after each incident with external communication, or at the plan's review point."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the audiences reached, approvals obtained and message timing with what the plan set."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each divergence with the amendment it needs and the owner of that amendment."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-verify the contact routes and spokesperson names, correct changes and note the date checked."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the communication review record with the re-verified entries."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Communication review record: each divergence from the plan with its amendment and owner, plus the re-verified contact and spokesperson entries with the date checked"
           },
@@ -1858,6 +2676,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List each criterion the simplified regime turns on."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the entity's position on each with the figures or facts relied on and their source."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any criterion near its boundary and set when that position is next checked."
+              }
+            },
+            {
+              "text": {
+                "en": "Have Legal/DPO make the determination on the evidence and state it with its date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who accepted the determination and when, and attach it with the supporting figures."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Eligibility determination for the simplified regime: each criterion, the entity's position with the figures relied on, the conclusion reached, and the date it was recorded"
           },
@@ -1872,6 +2717,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Describe the entity's size and the nature and complexity of the ICT services it runs."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the entity's interconnections and the critical functions it carries."
+              }
+            },
+            {
+              "text": {
+                "en": "State for each framework element what it does and why that depth suits the profile."
+              }
+            },
+            {
+              "text": {
+                "en": "Record everything deliberately left out of each element and the reasoning for leaving it out."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the assessment, name its author and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Proportionality assessment: the entity's risk profile, each framework element with the depth chosen for it, and the reasoning for everything left out"
           },
@@ -1927,6 +2799,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the open ICT risks and how each has moved since the previous cycle."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the incidents and disruptions that occurred during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the status of the measures protecting each critical function."
+              }
+            },
+            {
+              "text": {
+                "en": "Note whether continuity arrangements for each function were exercised or actually invoked."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag shifts in the risk profile for the re-check and attach the period's monitoring record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "ICT risk and continuity monitoring record for the period: open risks and their movement, incidents in the period, and the continuity status of each critical function"
           },
@@ -1941,6 +2840,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Gather the current figures behind each eligibility criterion at the set review point."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the ICT services, interconnections and critical functions now in place."
+              }
+            },
+            {
+              "text": {
+                "en": "Conclude whether the simplified regime still applies to the entity."
+              }
+            },
+            {
+              "text": {
+                "en": "Test each proportionality judgement against the current profile and record whether it holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the change, owner and due date wherever a position has moved."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a nil-change result with the figures checked and attach the re-verification."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Re-verification record: the current figures for each eligibility criterion, whether the regime still applies, and each proportionality judgement confirmed or changed"
           },
@@ -2047,6 +2978,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List each role the incident procedure relies on, from coordinator to escalation decider."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the current holder and a deputy for absence against every role."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the contact route for each holder and each deputy."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm with every named person that they know they hold the role."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the table on its last confirmation and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident-handling role assignment table: role, named holder, deputy, contact route and the date each holder confirmed the assignment"
           },
@@ -2097,6 +3055,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Register each ICT-related incident with an identifier, its detection source and detection time."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was affected and the roles that handled the incident."
+              }
+            },
+            {
+              "text": {
+                "en": "Log the escalations and notifications actually sent, with the time of each."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the actions taken and the resolution with its closure time."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep raised-then-dismissed incidents in the log with the reason for dismissal."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the incident log for the period and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident log export for the period: one row per ICT-related incident with detection source, times, handler, escalations sent, actions taken and resolution"
           },
@@ -2198,6 +3188,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each criterion from the classification matrix as its own row."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the major-incident threshold for each row and cite the provision it comes from."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the chosen value and reasoning wherever the rules leave the value to the entity."
+              }
+            },
+            {
+              "text": {
+                "en": "State explicitly against any criterion with no threshold that none applies."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove any figure that carries neither a cited provision nor a recorded reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Version the document and record the date it was last checked against the rules."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Materiality thresholds document: the threshold per classification criterion with the provision it is taken from, or the entity's chosen value and its reasoning, versioned and dated"
           },
@@ -2212,6 +3234,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Insert the major-incident determination as an explicit step in the incident workflow."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the point in incident handling at which the determination is made."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the role that makes the determination and the role that deputises."
+              }
+            },
+            {
+              "text": {
+                "en": "List the inputs placed before the decision-maker, including the matrix measurements and thresholds."
+              }
+            },
+            {
+              "text": {
+                "en": "Define what is written down for a yes answer and what for a no."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the amended workflow section showing the new step."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The amended incident workflow section showing the major-incident determination step, its required inputs, the named decision-making role and what is recorded either way"
           },
@@ -2226,6 +3280,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the measured value for each matrix criterion on every incident registered."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each measured value with its threshold and note the result."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the resulting classification and whether the incident was determined major."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who decided whether each incident was major and the date of that decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Record non-major incidents in the same detail and attach the period's classification records."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Classification decision records for the period: per incident the measured value against each criterion, the resulting classification, the major determination, the decider and the date"
           },
@@ -2240,6 +3321,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Open a threat record, separate from the incident log, for each threat reaching the team."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the threat's source and what it targets."
+              }
+            },
+            {
+              "text": {
+                "en": "Assess the threat against the significance criteria in use and record the conclusion."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the follow-up, and for a significant threat the decision that links it to any notification."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's threat assessment record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Cyber threat significance assessments for the period: source, target, assessment, conclusion and the follow-up decision recorded for each threat"
           },
@@ -2341,6 +3449,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the preparer of the initial, intermediate and final reports and the records each draws on."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify who reviews and approves each report before it is sent."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign the submitter of each report and the recorded channel they use."
+              }
+            },
+            {
+              "text": {
+                "en": "State what is kept as proof of submission at each stage."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how a report already sent is corrected or supplemented."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the reporting procedure for the three stages with a version number and issue date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The issued regulatory reporting procedure for major ICT-related incidents, naming the preparer, approver, submitter and retention point for each of the three report stages"
           },
@@ -2391,6 +3531,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Prepare each report stage for a major incident on the harmonised template."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain the approval the reporting procedure requires before a report is sent."
+              }
+            },
+            {
+              "text": {
+                "en": "Submit each approved report through the recorded channel."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the authority's acknowledgement or reference, or the channel's submission record if none is given."
+              }
+            },
+            {
+              "text": {
+                "en": "File the submitted copy and its proof against the incident record."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the submission time on the tracker entry for that stage."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "For each major incident: the submitted initial, intermediate and final reports on the harmonised templates, each with the proof of submission kept for it, being the authority's acknowledgement or reference where one was returned"
           },
@@ -2405,6 +3577,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List the cyber threats assessed as significant in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who considered notifying the competent authority about each threat."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reasoning and the decision reached, whether to notify or not."
+              }
+            },
+            {
+              "text": {
+                "en": "File the submission and its acknowledgement for every threat that was notified."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the decision record, with decisions not to notify set out as fully as the rest."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Voluntary threat-notification decision record for the period: threat, decision-maker, reasoning, decision, and the submission and acknowledgement where one was made"
           },
@@ -2419,6 +3618,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the tracker entries for every major incident in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each report stage to its filed submission and check the proof is on file."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each stage as submitted on time, submitted late or outstanding against its deadline."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause and the correction for every late or outstanding stage."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reconciliation together with the tracker export it was built from."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reporting reconciliation for the period: each major incident's three stages marked on time, late or outstanding, with the cause and correction for every exception, over the tracker export"
           },
@@ -2484,6 +3710,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Add an intake check that flags an incident against the in-scope payment services."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the payment-service owners notified when a payment-related incident is flagged."
+              }
+            },
+            {
+              "text": {
+                "en": "State how the classification and reporting steps apply to a flagged incident."
+              }
+            },
+            {
+              "text": {
+                "en": "Add any step payment operations need that the general procedure lacks, with the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the amended payment-incident procedure, marked with its version and issue date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The payment-incident handling procedure, versioned and dated, showing intake flagging against the in-scope payment services, the owners notified, and how classification and reporting apply"
           },
@@ -2498,6 +3751,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Register each operational or security payment-related incident with its payment flag set."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the payment service affected and how the incident was recognised as payment-related."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the classification decision reached for each flagged incident."
+              }
+            },
+            {
+              "text": {
+                "en": "Note whether each flagged incident was reported and the outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the period's log filtered to the payment-flagged entries and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident log export filtered to payment-related incidents for the period, showing the payment service affected, how it was recognised, the classification decision and the reporting outcome"
           },
@@ -2512,6 +3792,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the payment-flagged entries for the period from the incident log."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each entry carries a classification record and a major determination."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm every major payment incident has its report submissions and acknowledgements on file."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each missing step with its cause and the correction raised."
+              }
+            },
+            {
+              "text": {
+                "en": "List incidents flagged in error or left unflagged, then attach the completed check."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Payment-incident conformance check for the period: each payment-flagged incident marked complete or deficient, with the missing step, cause and correction, plus any incident flagged wrongly or not at all"
           },
@@ -2577,6 +3884,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "State what the testing programme sets out to establish and the test types it uses."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how the scope register's risk ratings decide what is tested and in what order."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the requirement that tests are performed by independent parties."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out how findings are prioritised and remediated."
+              }
+            },
+            {
+              "text": {
+                "en": "State where results feed back into the ICT risk management framework and name the accountable role."
+              }
+            },
+            {
+              "text": {
+                "en": "Release the testing programme document carrying its version and the date it was issued."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The issued digital operational resilience testing programme, versioned and dated, covering test types, risk-based prioritisation, tester independence, remediation and the link to the ICT risk management framework"
           },
@@ -2591,6 +3930,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Assign a test type to every system in the testing scope register."
+              }
+            },
+            {
+              "text": {
+                "en": "Place each system in a test window within the programme cycle."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the performing party and the access or environment each test depends on."
+              }
+            },
+            {
+              "text": {
+                "en": "Build a coverage view showing where each critical system is reached across the cycle."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the dated test plan and schedule with its coverage view."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Test plan and schedule: each in-scope system with its test type, test window, performing party, access dependencies, and the coverage view across the programme cycle"
           },
@@ -2605,6 +3971,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify the testing party before each test begins and its relationship to the system owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the party against the independence criteria and record the conclusion."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who accepted the conclusion and obtain their signature on the confirmation."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the engagement reference for an external party so its contract can be located."
+              }
+            },
+            {
+              "text": {
+                "en": "File the signed confirmation with the corresponding test record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Signed tester independence confirmation for each test performed in the period, naming the testing party, its relationship to the system owner, the criteria checked and the acceptor"
           },
@@ -2619,6 +4012,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Enter each finding in the remediation tracker with its source test and the system affected."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign a priority under the programme's prioritisation rules and a named owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the agreed remediation and keep its state current as the work lands."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the verification that closed each finding instead of the owner's assertion."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the tracker for the period showing open and closed findings and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Remediation tracker export for the period: each test finding with its source test, affected system, priority, owner, remediation state and the verification that closed it"
           },
@@ -2633,6 +4053,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the tests actually performed with the critical systems in the scope register."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every critical system as tested, scheduled or not reached for the cycle."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause and the plan change for each system not reached."
+              }
+            },
+            {
+              "text": {
+                "en": "List tested systems whose findings remain open past the date agreed in the tracker."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the coverage review with its conclusions."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Programme coverage review: every critical system marked tested, scheduled or not reached for the cycle, with the cause and plan change per gap and the findings still open past their agreed date"
           },
@@ -2698,6 +4145,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Place at least one test within the year on every critical system, taking its type from the matrix."
+              }
+            },
+            {
+              "text": {
+                "en": "Schedule the remaining systems according to the test types the matrix assigns them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the planned date and the performing party for each entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the test window with each system owner and note it on the entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the obstacle and interim measure for any critical system that cannot be tested in the year."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated test schedule showing at least one test within the year for every critical ICT system, with the test type drawn from the matrix, the performing party, the agreed window, and any obstacle recorded"
           },
@@ -2712,6 +4186,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Run each vulnerability assessment or scan the schedule calls for."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the scope actually tested, the date and whether the scan was authenticated."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the tool used with its signature or plugin version on each report."
+              }
+            },
+            {
+              "text": {
+                "en": "List the findings in each report with their severity."
+              }
+            },
+            {
+              "text": {
+                "en": "Record on the report any scheduled scan that did not run or covered less than planned."
+              }
+            },
+            {
+              "text": {
+                "en": "File each scan report against the ICT system it was run on."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Vulnerability assessment and scan reports for the period, each naming the system, the scope actually tested, the date, the tool version, whether it was authenticated, and the findings by severity"
           },
@@ -2726,6 +4232,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain the tester's report for each penetration test and scenario-based test performed."
+              }
+            },
+            {
+              "text": {
+                "en": "Check on receipt that it states the scope, the dates tested and the method or scenario used."
+              }
+            },
+            {
+              "text": {
+                "en": "Check that it gives the findings with severity and names anything in scope left untested."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any of those elements a report lacks at the point it is received."
+              }
+            },
+            {
+              "text": {
+                "en": "Register the report's findings so they reach the remediation tracker."
+              }
+            },
+            {
+              "text": {
+                "en": "Lodge each tester's report against the in-scope systems it examined."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Penetration test reports and scenario test results for the period, each stating the scope, dates, method or scenario, findings by severity, and any in-scope area that could not be tested"
           },
@@ -2740,6 +4278,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List the critical ICT systems from the test-type matrix with the test types assigned to each."
+              }
+            },
+            {
+              "text": {
+                "en": "Match the filed reports from the last year to each critical system and its schedule entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which assigned test types were actually performed on each system."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each system tested, tested with reduced scope or not tested, with date and report reference."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause and remedy for every system not tested and attach the coverage check."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Annual coverage check listing each critical ICT system as tested, reduced-scope or untested, with the test date, report reference and test types performed for each, and the cause and remedy for every gap"
           },
@@ -2769,6 +4334,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Record whether the entity has been identified as in scope for threat-led penetration testing."
+              }
+            },
+            {
+              "text": {
+                "en": "State the basis for the conclusion so it can be retaken when the entity's profile changes."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who identified the entity as in scope and file any notification that conveyed it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which person reached the TLPT determination and on what date."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain a signature on the determination and attach the signed copy."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Signed TLPT in-scope determination naming the basis for the conclusion, the decision-maker and the date"
           },
@@ -2824,6 +4416,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain the TLPT report for each test as soon as it completes."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the start and completion dates on the report itself rather than only in a calendar."
+              }
+            },
+            {
+              "text": {
+                "en": "List the critical or important functions the test actually exercised, not the scoped list."
+              }
+            },
+            {
+              "text": {
+                "en": "File the report with its dates and exercised-function list against the test."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "TLPT report per completed test, carrying the completion date and the critical or important functions the test exercised"
           },
@@ -2838,6 +4452,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Request the authorities' attestation once a TLPT has completed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date the attestation request was made."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the receipt date when the attestation arrives and file it against its report."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the request open and the test unclosed while an attestation is outstanding."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Attestation by authorities for each completed TLPT, filed with its report and carrying the request and receipt dates"
           },
@@ -2852,6 +4488,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one remediation plan row for each finding in the TLPT report."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the affected function, the owner and the remediation agreed on each row."
+              }
+            },
+            {
+              "text": {
+                "en": "Update each row's status, closing it only on evidence that the fix landed."
+              }
+            },
+            {
+              "text": {
+                "en": "Carry every finding still open into the scope of the next test."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the remediation plan showing the status of every finding."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "TLPT remediation plan showing each finding, its owner, the remediation agreed and its closure status"
           },
@@ -2958,6 +4621,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Send the due-diligence evidence request to each TLPT tester engaged in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Log the documents received back and the date of each."
+              }
+            },
+            {
+              "text": {
+                "en": "Assess the tester against each criterion and record the result per criterion."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a partial answer against its own criterion rather than in the overall conclusion."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the conclusion and who reached it, then file the record against the engagement."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Tester due-diligence records for the period: per tester the assessment against each criterion, the documents received with their dates, any criterion met only in part, and the conclusion with who reached it"
           },
@@ -3008,6 +4698,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "File each engaged tester's certification or accreditation with its issuing body and period."
+              }
+            },
+            {
+              "text": {
+                "en": "File the professional indemnity evidence with the insurer, the cover and its period."
+              }
+            },
+            {
+              "text": {
+                "en": "Check that each document names the tester engaged rather than a parent or affiliate."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each document's period spans the dates of the test."
+              }
+            },
+            {
+              "text": {
+                "en": "Note against the file any document that lapses while the engagement runs, so it is chased."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Certification or accreditation documents and professional indemnity evidence on file per TLPT tester, each naming the tester engaged, its issuing body or insurer, and its period recorded against the test dates"
           },
@@ -3114,6 +4831,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Describe how ICT third-party risk is managed within the wider ICT risk framework."
+              }
+            },
+            {
+              "text": {
+                "en": "State the entity's position on using more than one vendor for the same ICT service."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the conditions for placing a critical or important function's ICT service with a provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Take the strategy through the entity's own approval route."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who adopted the strategy and the date, and attach the approval record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Adopted ICT third-party risk strategy and multi-vendor strategy, with the approval record naming the date and the approver"
           },
@@ -3128,6 +4872,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Select every arrangement flagged critical or important in the Register of Information."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the conditions that would trigger exit from each arrangement."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out the steps to move or repatriate each service."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the data return and deletion route and any transitional support the contract offers."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the internal owner of each exit plan and attach one plan per arrangement."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Exit plan per critical or important ICT service, naming the exit triggers, the transition steps, the data return route and the plan owner"
           },
@@ -3142,6 +4913,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the ICT service and the function it supports before an arrangement is entered or renewed."
+              }
+            },
+            {
+              "text": {
+                "en": "List the risks identified and the mitigations relied on for each arrangement."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision to proceed and the name of the person who took it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any out-of-scope judgement in the same place as the completed assessments."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the pre-contract assessments filed in the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Pre-contract ICT risk assessments for the period, one per new or renewed arrangement, each carrying the decision to proceed and its author"
           },
@@ -3156,6 +4954,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a register row whenever a new ICT arrangement is signed."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the existing row when an arrangement is amended."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the row on termination with the end date and the exit route taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Log each change to the register with its date and who made it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's change log together with the current register."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Register of Information change log for the period showing each addition, amendment and closure with its date and author"
           },
@@ -3170,6 +4995,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain the contract population from procurement and the ICT spend records from finance."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the register with both sources and list arrangements missing from any one of them."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide for each discrepancy which record is correct."
+              }
+            },
+            {
+              "text": {
+                "en": "Correct the record found to be wrong and note the resolution."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the number of rows reconciled alongside the discrepancies found."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Register of Information reconciliation record listing the discrepancies found against contract and spend records, and how each was resolved"
           },
@@ -3199,6 +5051,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take from the register every arrangement backing a critical or important function."
+              }
+            },
+            {
+              "text": {
+                "en": "Group those arrangements under the provider that delivers each."
+              }
+            },
+            {
+              "text": {
+                "en": "Count the critical or important functions each provider sits behind."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify separate contracts that resolve to the same underlying provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the resulting provider-to-function view."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Provider-to-function view showing, per ICT provider, the critical or important functions it supports and the arrangements behind them"
           },
@@ -3213,6 +5092,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record that the method examines arrangements already held with the same provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the provider's sub-outsourcing chain and its substitutability to the factors examined."
+              }
+            },
+            {
+              "text": {
+                "en": "List the evidence to be requested from the provider for the assessment."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who signs the concentration-risk assessment off."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain approval of the method and version-mark it before attaching."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved ICT concentration-risk assessment method naming the factors examined, the evidence requested from providers and the sign-off"
           },
@@ -3227,6 +5133,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify each critical-function ICT arrangement being entered in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Complete the concentration-risk assessment for it under the agreed method."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the concentration identified and the conclusion reached."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who took the decision to proceed on that basis."
+              }
+            },
+            {
+              "text": {
+                "en": "File the dated assessment before the contract is signed and attach the period's set."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Concentration risk assessment per critical-function ICT arrangement entered in the period, dated ahead of contract signature"
           },
@@ -3241,6 +5174,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Ask each provider of a critical or important function to declare its sub-contractors."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each declared sub-contractor and the part of the service it performs."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every refusal or non-answer as a finding rather than an empty field."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the sub-outsourcing analysis for the providers covered."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Sub-outsourcing risk analysis recording, per critical provider, the declared sub-contractors and the part of the service each one performs"
           },
@@ -3255,6 +5210,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Record for each critical-function provider whether an alternative exists for the same service."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe what would have to be migrated or rebuilt to substitute the provider."
+              }
+            },
+            {
+              "text": {
+                "en": "State what makes a provider hard to replace wherever that is the conclusion."
+              }
+            },
+            {
+              "text": {
+                "en": "Pass each hard-to-substitute provider into exit and contingency planning."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed substitutability analysis."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Substitutability analysis stating, per critical-function provider, whether an alternative exists and what substitution would require"
           },
@@ -3325,6 +5307,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the standard ICT template against each line of the clause checklist."
+              }
+            },
+            {
+              "text": {
+                "en": "Draft a numbered clause for every checklist line the template does not yet carry."
+              }
+            },
+            {
+              "text": {
+                "en": "Build the clause-to-checklist mapping showing which clause meets which line."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the mapping alongside the template so a reviewer can read them together."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the revised template with its clause mapping."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Standard ICT contractual template with the clause-to-checklist mapping showing which clause carries each mandatory provision"
           },
@@ -3339,6 +5348,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Run the clause checklist on every ICT contract as part of its signature or renewal."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each provision present, absent or amended."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each accepted departure from the standard template and who accepted it."
+              }
+            },
+            {
+              "text": {
+                "en": "File the completed checklist with the executed contract."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the checklists completed in the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Completed clause checklist filed with each ICT contract signed or renewed in the period, showing any accepted departures and their approver"
           },
@@ -3353,6 +5389,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Create one register row for each ICT contract held."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the access, inspection and audit rights each contract secures."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any notice period or condition attached to exercising those rights."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the service levels and the termination rights agreed in each contract."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the audit and access-rights register."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Audit and access-rights register listing, per ICT contract, the access and audit rights secured and the conditions on exercising them"
           },
@@ -3367,6 +5430,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List the ICT contracts in force that were signed before the clause checklist existed."
+              }
+            },
+            {
+              "text": {
+                "en": "Run the checklist across each and record the mandatory provisions it lacks."
+              }
+            },
+            {
+              "text": {
+                "en": "Choose the remediation route for each gap: amendment, renegotiation at renewal or replacement."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner of each remediation route."
+              }
+            },
+            {
+              "text": {
+                "en": "Give every contract assessed as complete its own row in the gap log."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Legacy ICT contract gap log naming, per contract, the mandatory provisions missing and the remediation route and owner"
           },
@@ -3468,6 +5558,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a provider's critical designation to the events that reopen its contingency and exit plans."
+              }
+            },
+            {
+              "text": {
+                "en": "List the exit plan for the provider's services among the items reconsidered on the trigger."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the contingency arrangements relied on if the provider becomes unavailable."
+              }
+            },
+            {
+              "text": {
+                "en": "Include what subjection to the Union Oversight Framework changes in managing the provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who does the work and where the revised plans are filed."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the amended procedure section showing the trigger."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The amended contingency and exit planning procedure showing designation as a trigger, what is reconsidered when it fires, who does the work and where the revised plans are filed"
           },
@@ -3482,6 +5604,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the date of each check, who performed it and the version of the list consulted."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome for every watchlist provider as designated or not designated."
+              }
+            },
+            {
+              "text": {
+                "en": "Give the reasoning for any provider matched through a group or sub-outsourced entity."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark providers that could not be matched with confidence as unresolved, with what would settle them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record checks finding no change in the same detail and attach the period's records."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Critical-provider identification records for the period: each check with its date, the person who performed it, the list version consulted, and the outcome per provider including any unresolved match"
           },
@@ -3583,6 +5732,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every trusted cyber-threat community the entity takes part in, of whatever kind."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision to join each, who took it and the date it was taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the entity's membership status in each community today."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the communities considered and declined, with the decision behind each."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the membership records."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Membership records naming each cyber-threat community joined, the decision and decision-maker behind it, and its current status"
           },
@@ -3597,6 +5773,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the parties to the arrangement for each community."
+              }
+            },
+            {
+              "text": {
+                "en": "List the categories of cyber threat information and intelligence that may be exchanged."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the permitted uses and the limits on onward disclosure."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the confidentiality terms that protect what is shared."
+              }
+            },
+            {
+              "text": {
+                "en": "Sign the arrangement before any intelligence moves and attach the signed copy."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Signed information-sharing arrangement per community, stating the parties, the information categories exchanged and the confidentiality terms"
           },
@@ -3611,6 +5814,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List what must be removed or masked, such as personal data, customer identifiers and pricing."
+              }
+            },
+            {
+              "text": {
+                "en": "State what may be shared as it stands without masking."
+              }
+            },
+            {
+              "text": {
+                "en": "Specify the confidentiality marking the arrangement requires on each disclosure."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who approves a disclosure that falls outside the rules."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign the data-protection position to Legal/DPO and its application to Security engineering."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the handling rules as the data protection safeguards document."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Data protection safeguards document setting the pre-disclosure handling rules for shared cyber threat information"
           },
@@ -3625,6 +5860,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a log row for each outbound disclosure with its date and recipient community."
+              }
+            },
+            {
+              "text": {
+                "en": "Summarise what was shared and name who released it."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm on the row that the pre-disclosure handling rules were applied."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the approver in the same row wherever an exception was approved."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the outbound sharing log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Outbound cyber-threat sharing log for the period, one row per disclosure with the handling check and the releaser recorded"
           },
@@ -3639,6 +5901,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Determine for each arrangement whether participation has to be notified to the authority."
+              }
+            },
+            {
+              "text": {
+                "en": "File each notification as submitted with its date and the arrangement it covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any acknowledgement received against its notification."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the judgement and its basis wherever notification was found not to be required."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Notification of participation as submitted to the competent authority with its date and any acknowledgement, or the recorded basis for not notifying"
           },
@@ -3653,6 +5937,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Check each logged disclosure went to a party to the arrangement."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each release was approved by whoever the handling rules name."
+              }
+            },
+            {
+              "text": {
+                "en": "Check whether anything shared falls within what the rules exclude."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each finding with the correction taken and any change made to the rules."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the review, recording a nil-finding result where nothing fell outside the rules."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Sharing-log review record listing the entries checked, any disclosure that fell outside the handling rules and the correction taken"
           },

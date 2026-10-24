@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "SOC 2 Trust Services Criteria control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "Production served SOC2- — 7 templates whose titles restate the criterion ('Specifies objectives'), each carrying the five generic placeholder tasks. These 29 TSC- templates are real controls and were never delivered anywhere. This file replaces that offering.",
-    "grounding": "Requirement titles and summaries come from src/data/libraries/soc2-2017.yaml so the two cannot drift. Task content is grounded in each template's own description — the library is thin for SOC 2 (a one-line COSO paraphrase, no checklist or artifacts).",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/soc2-2017.yaml so the two cannot drift. Task content is grounded in each template's own description — the library is thin for SOC 2 (a one-line COSO paraphrase, no checklist or artifacts). Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
     "packStrategy": "Reuses SOC2_BASELINE rather than creating SOC2_CORE. The retirement of the seven SOC2- criterion-restatement templates is a separate operator step, not a seeder action — seeders upsert, they do not delete, and deleting customer-visible catalogue rows should be a reviewed action with before/after counts rather than a side effect of a deploy.",
     "provenance": "sourceUrn carried over from the prisma/seed.ts block this file replaced. SOC 2 has no metadataJson in seed.ts and so none here, but it DID carry a sourceUrn, and SOC2_FAMILY_URN in src/app-layer/domain/framework-representation.ts is that exact value — it is how a SOC 2 row is tied to its library family, not decoration."
@@ -234,6 +234,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Open a case record for each conduct violation reported in the period, with its report date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each case was investigated, taking General Counsel's advice on the investigation."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the conclusion reached and the action taken on each case."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold the detail that identifies individuals apart from the summary case record."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the case records with People Ops and attach the summary case log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Conduct case log for the period: report date, investigation summary, conclusion and action taken, with identifying detail held separately"
           },
@@ -300,6 +327,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List each member of the oversight body and the role each one holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the basis on which each member is independent of the operations reported on."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify any member who also runs part of what the body oversees."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each such overlap is handled when that member's area is reported."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the membership record, with the terms of reference beside it where one exists."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Oversight body membership record showing each member's role and the basis of their independence from the operations being reported on"
           },
@@ -391,6 +445,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record who attended and what the body was told from the circulated pack."
+              }
+            },
+            {
+              "text": {
+                "en": "Minute each challenge members raised and the answer management gave."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every decision taken with a named owner and a due date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each item left open at the previous meeting now stands."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the draft as an absent reader would to confirm the decisions are visible."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the minutes as approved, dated to the meeting they record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved minutes recording attendance, the challenges raised, the decisions taken, and the owner and due date of each action"
           },
@@ -405,6 +491,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Copy each action from the minutes into the live action log with its owner and due date."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the status of every action in the log as it moves."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the evidence that closed each action against its log entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every open action before the next meeting and flag the ones that slipped."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-table each slipped action before the body with the reason it slipped."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the log showing the actions closed in the period and those still open."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Oversight action log showing each action's owner, due date, status and the evidence that closed it"
           },
@@ -476,6 +594,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Locate the step in the request workflow where a production access grant is approved."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a required People Ops confirmation that screening has completed for the requester."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a required confirmation that the person's security onboarding is done."
+              }
+            },
+            {
+              "text": {
+                "en": "Block approval of the production grant until both confirmations are present."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down what the approver must see on the request before they can approve."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the configured workflow or approval form with the gate visible."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The access request workflow or approval form showing the screening and onboarding confirmation required before a production grant"
           },
@@ -490,6 +640,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List each person who joined in the period and the role they joined into."
+              }
+            },
+            {
+              "text": {
+                "en": "Look up which checks the screening matrix required for each joiner's role."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each required check's outcome, its completion date and who ran it."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any pass with an exception alongside the person who accepted it."
+              }
+            },
+            {
+              "text": {
+                "en": "Leave out underlying reports holding more personal data than the control needs."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the screening record set covering the period's joiners."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Screening records for the period's joiners: person, checks run, completion date and outcome for each check"
           },
@@ -504,6 +686,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the date each joiner completed the security onboarding session."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold each joiner's signed confidentiality agreement against their personal record."
+              }
+            },
+            {
+              "text": {
+                "en": "List anyone who reached their start date without both items in place."
+              }
+            },
+            {
+              "text": {
+                "en": "Chase each listed person and record the date they closed the gap."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the joiner completion record covering the period's new hires."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Joiner record per new hire showing the security onboarding completion date and the signed confidentiality agreement"
           },
@@ -571,6 +780,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Add one responsibility row per policy in the policy set."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a row for every control listed in the control matrix."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a row for each role in the incident-command structure."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a row for each vendor review that has to be carried out."
+              }
+            },
+            {
+              "text": {
+                "en": "Complete the list before an owner is assigned to any row, then attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Responsibility list covering policy ownership, control operation, incident command and vendor review, one row per responsibility"
           },
@@ -585,6 +821,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name an individual owner on every row, not a team or a job title nobody holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Name a backup on every row so the owner's absence does not stop the control."
+              }
+            },
+            {
+              "text": {
+                "en": "Count the rows held by each person to spot any implausible concentration."
+              }
+            },
+            {
+              "text": {
+                "en": "Report an implausible concentration of rows to management instead of recording it."
+              }
+            },
+            {
+              "text": {
+                "en": "Date and version-mark the completed assignment matrix and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Responsibility assignment matrix showing a named owner and a named backup for every responsibility"
           },
@@ -599,6 +862,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Send each owner the rows of the matrix assigned to them."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask each owner to confirm in writing that they accept the rows and the evidence due."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any row an owner did not know they held when they reply."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date each owner confirmed their acceptance."
+              }
+            },
+            {
+              "text": {
+                "en": "Follow up every owner who has not replied to the request."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the acceptance records collected during the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Written acceptance per owner naming the responsibilities accepted and the date each was confirmed"
           },
@@ -613,6 +908,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Treat each People Ops notice of a leaver or mover as a trigger on the matrix."
+              }
+            },
+            {
+              "text": {
+                "en": "Find every row of the matrix held by the person leaving or moving."
+              }
+            },
+            {
+              "text": {
+                "en": "Name a replacement owner for each row and obtain their acceptance."
+              }
+            },
+            {
+              "text": {
+                "en": "Complete the handover before the outgoing person's access is removed."
+              }
+            },
+            {
+              "text": {
+                "en": "Log each reassignment with its date and attach the period's matrix change log."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Matrix change log listing each leaver or mover, the responsibilities reassigned, the new owner and the date of the change"
           },
@@ -715,6 +1037,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Set one common front-matter layout for every policy in the set."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the version number and the approval date on each policy."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the approver in each policy's front matter."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the date each policy next falls due for review."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the full set with the front matter visible on each document."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The policy set with version number, approver, approval date and next review date carried on each document"
           },
@@ -765,6 +1114,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Walk each policy through with the team that operates under it."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every clause where the document and the actual practice disagree."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide for each disagreement whether the practice or the policy changes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the resolution chosen and who owns making the change."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the drift log with its entries grouped by policy."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Drift log per policy: the clause, the practice that differs from it, the resolution chosen and its owner"
           },
@@ -779,6 +1155,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Put each policy to its approver with the drift log beside the document."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the approver, approval date and version approved for each policy."
+              }
+            },
+            {
+              "text": {
+                "en": "List any policy reaching the end of the year with no recorded approval."
+              }
+            },
+            {
+              "text": {
+                "en": "Report each policy left without a recorded approval as an exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the approval record covering every policy in the set."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approval record listing each policy, the version approved, the approver and the approval date"
           },
@@ -810,6 +1213,38 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the active employees from the HR system onto the training roster."
+              }
+            },
+            {
+              "text": {
+                "en": "Add contractors from wherever their records are kept alongside the employees."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each person's start date against their roster entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each person as due either the onboarding round or the annual round."
+              }
+            },
+            {
+              "text": {
+                "en": "Place anyone who joined mid-period in the onboarding round, not the annual one."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the roster at the point it was compiled and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated training roster listing every employee and contractor with their start date and the round due to them"
           },
@@ -865,6 +1300,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Assign the training from the roster rather than from a distribution list."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each new joiner the training as part of their joining."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign the training to everyone else on the roster in the annual round."
+              }
+            },
+            {
+              "text": {
+                "en": "Chase outstanding names and escalate to the manager where they stay outstanding."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a reason against each person who remains incomplete."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completion report with one row per person on the roster."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Training completion report: one row per person on the roster with the assignment date and either a completion date or a recorded reason"
           },
@@ -879,6 +1346,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Run the simulated phishing exercise against everyone on the training roster."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who clicked, who submitted credentials and who reported the message."
+              }
+            },
+            {
+              "text": {
+                "en": "Give follow-up coaching to each person who failed the simulation."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold results at a level that supports coaching rather than discipline."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the simulation result together with the record of coaching delivered."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Phishing simulation result showing click, submission and report rates, with the record of follow-up coaching delivered"
           },
@@ -893,6 +1387,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Match the training completion report to the roster line by line."
+              }
+            },
+            {
+              "text": {
+                "en": "List everyone on the roster who never received a training assignment."
+              }
+            },
+            {
+              "text": {
+                "en": "List everyone who was assigned the training but has not completed it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action taken for each name on either list."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reconciliation of the roster against the completion report."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation of the training roster against the completion report, naming everyone unassigned or incomplete and the action taken"
           },
@@ -964,6 +1485,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Add the internal route to the handbook, intranet security page and induction pack."
+              }
+            },
+            {
+              "text": {
+                "en": "State what the internal channel is for and that it can be used without a name."
+              }
+            },
+            {
+              "text": {
+                "en": "State who receives the reports sent through the internal route."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any location where the route is deliberately not advertised."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the published page or handbook section with the date it went live."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Published internal page or handbook section showing the anonymous route and who receives it, with its publication date"
           },
@@ -978,6 +1526,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Put a security address or form on the public site."
+              }
+            },
+            {
+              "text": {
+                "en": "Link the contact from the pages a customer or researcher would try first."
+              }
+            },
+            {
+              "text": {
+                "en": "State what the contact is for and that reports sent to it are triaged."
+              }
+            },
+            {
+              "text": {
+                "en": "Point the contact at the register's destination rather than a personal mailbox."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the address resolves to the monitored destination, not an unread alias."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the published page with its URL and publication date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Public security-contact page with its URL and publication date, plus confirmation the address routes to the monitored destination"
           },
@@ -992,6 +1572,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Keep a single reporting log covering both the internal and external channels."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what came in, the channel it arrived on and who it was routed to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the acknowledgement date for every report, including those that prove to be noise."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each logged report was resolved."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep identifying detail out of entries that arrived through the anonymous route."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reporting log covering the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reporting log for the period: report reference, channel, routed owner, acknowledgement date and outcome"
           },
@@ -1047,6 +1659,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Read each logged report in the period against the defined time in the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every report that reached its accountable owner outside the defined time."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify what delayed each miss, such as a departed owner or a stale routing rule."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the change made in response to each missed report."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the review listing the misses, the cause of each and the fix applied."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Review of the period's reports against the defined time: reports that missed it, the cause of each and the change made in response"
           },
@@ -1077,6 +1716,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Write down the entity's objectives in force for the period being assessed."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the customer commitments and the system requirements that follow from them."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep each objective in the words it is actually stated in."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the document in which each objective is stated."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the objectives statement at the start of the assessment and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated objectives statement listing each objective in force for the period and the document it is stated in"
           },
@@ -1091,6 +1757,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the production services the risk assessment covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the supporting infrastructure and third-party components the commitments depend on."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the team or person accountable for each listed system."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each deliberate exclusion and its reason in the same list."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the in-scope systems list with its owners and exclusions."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "In-scope systems list giving an owner per system, with the exclusions and the stated reason for each"
           },
@@ -1141,6 +1834,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Work through each system on the scope list in turn."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the threats and vulnerabilities that could stop the objectives being met."
+              }
+            },
+            {
+              "text": {
+                "en": "Rate each threat on the defined likelihood and impact scale and record the score."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the reasoning behind each score next to the number."
+              }
+            },
+            {
+              "text": {
+                "en": "State where a system produced no risk rather than leaving it silently absent."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed risk assessment worksheet."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Completed risk assessment worksheet: threat, affected system, likelihood, impact, score and the reasoning recorded per risk"
           },
@@ -1155,6 +1880,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Record accept, mitigate, transfer or avoid against every scored risk."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person accountable for carrying out each treatment decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the mitigation wherever mitigation is the decision taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person who accepted each risk recorded as accepted."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the register extract showing a decision and a named owner on every row."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Risk register extract with treatment decision, named owner and, where mitigation was chosen, the mitigation recorded on every rated risk"
           },
@@ -1169,6 +1921,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Check every in-scope system is represented in the register or explicitly cleared."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every risk in the register is scored on the defined scale."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every risk carries a treatment decision and a named owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each gap the check found and what was done about it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date the assessment was declared complete and attach the check."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Completeness check listing rows missing a rating, a treatment or an owner, their resolution, and the assessment completion date"
           },
@@ -1235,6 +2014,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the existing control that would stop or surface each listed fraud scenario."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each mapped control as preventive or detective."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each scenario no control answers as a gap."
+              }
+            },
+            {
+              "text": {
+                "en": "Leave a gap open rather than stretching an unrelated control over it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the scenario-to-control mapping with the unmapped scenarios listed."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Fraud scenario to control mapping marking each control preventive or detective, with the unmapped scenarios listed as gaps"
           },
@@ -1249,6 +2055,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Hold the fraud discussion inside the risk assessment rather than separately."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date of the discussion and who took part."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each scenario discussed and the conclusion reached on it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was carried forward into the risk register."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the dated minutes with the attendee list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated minutes of the fraud consideration with attendees, the scenarios discussed and the conclusion recorded against each"
           },
@@ -1263,6 +2096,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each gap the fraud-to-control mapping identified."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a risk register entry naming the scenario for each gap."
+              }
+            },
+            {
+              "text": {
+                "en": "Rate each new entry and record the treatment decided."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner who will chase each entry between assessments."
+              }
+            },
+            {
+              "text": {
+                "en": "Reference each entry back to its source scenario and attach the entries."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Risk register entries raised for the unmapped fraud scenarios, each citing its source scenario and naming an owner"
           },
@@ -1371,6 +2231,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a field to the change record asking whether the change meets the trigger criteria."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the significance field as required on every change record."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a link to the assessment for changes where the answer is yes."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm a change cannot move forward with the significance question unanswered."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the change template or workflow configuration showing the field and link."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Change record template or workflow configuration showing the significance field, its required state and the link to the assessment"
           },
@@ -1385,6 +2272,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Describe what each qualifying change introduces or alters."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the security and availability risks that follow from each change."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the mitigations planned against those risks."
+              }
+            },
+            {
+              "text": {
+                "en": "Cover what any new sub-service organisation will hold and what it will reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the change record and date each assessment before the change goes live."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed change assessments for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Completed change risk assessments for the period, each naming the risks and mitigations, citing its change record, and dated before the change went live"
           },
@@ -1399,6 +2318,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Add or update the register entries each assessed change creates."
+              }
+            },
+            {
+              "text": {
+                "en": "Rate each change-driven entry on the standing risk scale."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any residual risk accepted at change time in the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the change record reference on each register entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the register entries together with their change references."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Risk register entries created or updated from the period's change assessments, each citing its change record reference"
           },
@@ -1413,6 +2359,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the changes actually made in the period from the change record."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the trigger criteria to each change in the export."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each qualifying change has an assessment dated before it took effect."
+              }
+            },
+            {
+              "text": {
+                "en": "List the qualifying changes left unassessed and what was done about each."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reconciliation of changes against the criteria with its findings."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation of the period's changes against the criteria, listing qualifying changes with no prior assessment and their resolution"
           },
@@ -1443,6 +2416,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Create one schedule row for each control in the catalogue."
+              }
+            },
+            {
+              "text": {
+                "en": "Pick an automated check where evidence is machine-collectable, a manual test otherwise."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the frequency for each control and name who performs it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason each frequency was chosen."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the monitoring schedule covering every control in the catalogue."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Control monitoring schedule: control, monitoring method, frequency, assigned tester and the reason for the frequency chosen"
           },
@@ -1498,6 +2498,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each control the schedule leaves to a manual test."
+              }
+            },
+            {
+              "text": {
+                "en": "State the population the tester samples for each control."
+              }
+            },
+            {
+              "text": {
+                "en": "State the evidence the tester examines for each control."
+              }
+            },
+            {
+              "text": {
+                "en": "Define what a pass looks like against the control's own requirement."
+              }
+            },
+            {
+              "text": {
+                "en": "Trim each procedure until it can be followed within the time its frequency allows."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach one written procedure per manually tested control."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Manual test procedures naming, per control, the population to sample, the evidence to examine and the pass condition"
           },
@@ -1512,6 +2544,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Run each automated check or manual test that falls due in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record pass or fail with the date and the tester for each run."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the evidence actually examined beside each result."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a test that could not be run as its result instead of a blank row."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the monitoring log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Monitoring log for the period: control, test date, tester, result and the evidence examined attached to each row"
           },
@@ -1526,6 +2585,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Put the period's monitoring log next to the monitoring schedule."
+              }
+            },
+            {
+              "text": {
+                "en": "Find the scheduled rows that never ran during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason for each gap, such as a disabled check or a departed tester."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the date by which each gap will be covered."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the coverage reconciliation for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Coverage reconciliation listing scheduled tests not performed in the period, the reason for each and the date it will be covered"
           },
@@ -1556,6 +2642,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List control testing, audits, penetration tests and incidents as deficiency sources."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person who enters each source's findings into the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the point at which each submitter enters findings."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any source that still has no named submitter."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the deficiency source list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Deficiency source list naming each feeding activity, its named submitter and the point at which findings are entered"
           },
@@ -1606,6 +2719,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Enter each finding as its source produces it rather than in a pre-reporting sweep."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the activity that found each entry as its source."
+              }
+            },
+            {
+              "text": {
+                "en": "Rate each entry's severity on the defined scale."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the remediating owner and agree the due date with them."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the deficiency register export for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Deficiency register export for the period showing source, severity, owner and remediation due date on every entry"
           },
@@ -1620,6 +2760,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record what was actually done to fix each deficiency put forward for closure."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach evidence the fix is in place, such as the changed configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-run the control's own test where that is what settles the fix."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the closure date and who confirmed the fix was in place."
+              }
+            },
+            {
+              "text": {
+                "en": "Move the status to closed only once the evidence is attached."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep a still-live deficiency open and record the second attempt against it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Closure evidence attached to each deficiency closed in the period: what was done, the date, and who confirmed the fix was in place"
           },
@@ -1634,6 +2806,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List the open deficiencies grouped by severity."
+              }
+            },
+            {
+              "text": {
+                "en": "Show how long each item has been open and who holds it."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each item that is past its remediation due date."
+              }
+            },
+            {
+              "text": {
+                "en": "Carry every item forward until it closes, not only the period's arrivals."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the pack section as presented to management and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Governance pack section showing open deficiencies by severity, age, overdue status and owner, dated as presented"
           },
@@ -1648,6 +2847,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Gather the period's control tests, audit reports, penetration test findings and incidents."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every finding each source raised appears in the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each missing finding and whether it was entered late or judged out of scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who decided each difference between a source and the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reconciliation broken down by source."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation per source listing findings raised, findings present in the register, and the resolution of every difference"
           },
@@ -1678,6 +2904,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the production systems and applications that carry the in-scope service."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the external network ranges and interfaces in scope of the test."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each deliberate exclusion and the justification for it."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the scope statement the engagement will run against and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated scope statement naming the production systems, applications and network ranges in scope, with exclusions and their justification"
           },
@@ -1730,6 +2978,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List the severity bands the assessor uses in its reports."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the severity scale those bands are keyed to."
+              }
+            },
+            {
+              "text": {
+                "en": "State the remediation window that applies to each severity band."
+              }
+            },
+            {
+              "text": {
+                "en": "Settle the table before the assessor's report arrives."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the severity-to-SLA table as it stands for this engagement."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Severity-to-SLA table giving the remediation window for each severity band and the severity scale those bands are keyed to"
           },
@@ -1785,6 +3060,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Confirm each high-severity fix has been deployed."
+              }
+            },
+            {
+              "text": {
+                "en": "Arrange a retest by the original assessor or an independent internal reviewer."
+              }
+            },
+            {
+              "text": {
+                "en": "Decline a developer's own assertion in place of a retest."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain a written status of closed, partially closed or open for each finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the retest report or the assessor's written confirmation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Retest report or written assessor confirmation stating the post-fix status of each high-severity finding"
           },
@@ -1799,6 +3101,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Walk the deficiency register against the assessor's report at engagement close."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each finding is closed, risk-accepted by a named acceptor, or open with a date."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each closure date against the severity-to-SLA table."
+              }
+            },
+            {
+              "text": {
+                "en": "List every finding that breached its SLA."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the close-out summary with the SLA comparison."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Engagement close-out summary reconciling the report to the register, with closure dates compared against the SLA and breaches listed"
           },
@@ -1829,6 +3158,38 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify the controls that actually operate and are relied on for the report."
+              }
+            },
+            {
+              "text": {
+                "en": "Add one matrix row per control with its control reference."
+              }
+            },
+            {
+              "text": {
+                "en": "Write a one-line statement of what each control does."
+              }
+            },
+            {
+              "text": {
+                "en": "Write up any relied-on control that has never been documented."
+              }
+            },
+            {
+              "text": {
+                "en": "Leave out controls that exist but are not relied on for the report."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the matrix export dated at compilation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated control matrix export with one row per control relied on for the report"
           },
@@ -1876,6 +3237,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the person accountable for each control operating, never a team alias."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the frequency at which each control runs."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the artefact that proves each control ran."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each evidence artefact is stored."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the matrix with all three columns filled on every row."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Control matrix with owner, operating frequency, evidence artefact and storage location populated on every row"
           },
@@ -1890,6 +3278,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a matrix row when a new control goes live."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason whenever a superseded control is retired."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm in the same edit that a retired control's criterion is still covered."
+              }
+            },
+            {
+              "text": {
+                "en": "Date each addition and retirement in the matrix history."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the matrix change history for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated matrix change history for the period, showing each addition and retirement with its reason and the criterion coverage after the change"
           },
@@ -1904,6 +3319,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Check every in-scope criterion has at least one control mapped to it."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every control in the matrix carries a criterion."
+              }
+            },
+            {
+              "text": {
+                "en": "List the criteria with no control and the controls with no criterion."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the resolution of each entry on both lists."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the two-way coverage check with its exceptions."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Two-way coverage check listing criteria with no control and controls with no criterion, each with its resolution"
           },
@@ -2012,6 +3454,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify the duty pairs the team or tooling cannot separate."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the compensating alert, report or after-the-fact review for each such pair."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who reviews the output of each detective control."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any unseparated pair with no detective control as an accepted risk."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the compensating-control record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Compensating-control record naming the detective control and reviewer for every unseparated duty pair"
           },
@@ -2026,6 +3495,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Execute each compensating detective control for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the output and record the result, including when it returned nothing."
+              }
+            },
+            {
+              "text": {
+                "en": "Investigate anything the monitoring surfaced."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome of each investigation."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the dated monitoring output with the reviewer's notes."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated detective-monitoring output for the period with the reviewer's notes and the outcome of anything it surfaced"
           },
@@ -2040,6 +3536,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the live role and permission assignments from each system on the pair list."
+              }
+            },
+            {
+              "text": {
+                "en": "Find anyone who holds both sides of a documented duty pair."
+              }
+            },
+            {
+              "text": {
+                "en": "Report each violation by person and system."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each was removed, reassigned or accepted with its compensating control."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the conflict test with its remediation column."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Conflict test results per system, naming every person holding both sides of a pair and the remediation for each"
           },
@@ -2070,6 +3593,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every in-scope system to which access can be requested."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the individual whose approval each system requires before access is granted."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each system with no obvious owner as a finding rather than leaving it blank."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the system-to-owner list that access requests are routed by."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "System-to-owner list naming the approving resource owner for every in-scope system"
           },
@@ -2120,6 +3665,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Connect revocation to the termination and role-change records HR maintains."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the trigger to cut or reduce access on the effective date HR records."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the feed carries both event types together with their effective dates."
+              }
+            },
+            {
+              "text": {
+                "en": "Check that the HR feed reaches every in-scope system."
+              }
+            },
+            {
+              "text": {
+                "en": "List each system where access is still revoked by hand."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the trigger configuration alongside the list of manual exceptions."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Revocation trigger configuration showing the HR termination and role-change records as its source, with the list of systems still revoked manually"
           },
@@ -2134,6 +3711,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record who requested each grant and the role and privilege level given."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which resource owner approved each request and the date of approval."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the approval before the account is created, not reconstructed afterwards."
+              }
+            },
+            {
+              "text": {
+                "en": "Store each approval with the access request it authorised."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the approval records for every grant made in the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Access request records for the period, each showing the requester, the role granted, the approving owner and the approval date"
           },
@@ -2148,6 +3752,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List every leaver and role change recorded in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the effective date of each event as the HR record gives it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record when access was removed or reduced in each in-scope system."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every gap longer than the revocation window the policy commits to."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's revocation log with each breach of the window marked."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Revocation log for the period, giving the HR termination or role-change date and the per-system revocation timestamp, with breaches of the committed window flagged"
           },
@@ -2162,6 +3793,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain each in-scope system's account listing and the active personnel roster."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the accounts that belong to nobody currently employed."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify staff holding access that their role profile does not grant."
+              }
+            },
+            {
+              "text": {
+                "en": "Investigate each unmatched account and record its disposition, not only a count."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the per-system reconciliation together with its findings."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Account-to-personnel reconciliation per system, listing every unmatched account and what was done about it"
           },
@@ -2192,6 +3850,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Enumerate the systems reached through remote, administrative or production access."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which of the three categories each listed system falls into."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every listed system that is reachable from outside the corporate network."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the categorised list as the population MFA coverage is claimed against."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Categorised system list marking each in-scope system as remote, administrative or production access"
           },
@@ -2242,6 +3922,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Turn on MFA for every system on the categorised system list."
+              }
+            },
+            {
+              "text": {
+                "en": "Check enforcement is unconditional, not a prompt users can dismiss or an opt-in."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each system that genuinely cannot enforce MFA as an exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the approver and the compensating control against every exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the MFA enforcement state recorded for each system."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Per-system MFA enforcement state, with any exception recorded alongside its approver and compensating control"
           },
@@ -2256,6 +3963,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Export or screenshot the live MFA and password settings of every identity provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Date each capture at the point in the period it was taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each capture against the documented authentication standard."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every difference found and the ticket raised to correct it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the dated configuration capture for each identity provider."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated configuration capture per identity provider for the period, with any drift from the documented standard noted"
           },
@@ -2270,6 +4004,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Work through each account listing to pick out shared and service accounts."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the justification for every shared or service account that stays."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the custodian holding each account's credential and the store it is kept in."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how the credential for each such account is rotated."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the shared and service account register."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Shared and service account register giving the justification, named custodian, credential store and rotation arrangement for each account"
           },
@@ -2301,6 +4062,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every in-scope system whose accounts need an access review."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each system to the individual who decides keep, downgrade or remove."
+              }
+            },
+            {
+              "text": {
+                "en": "Replace any team inbox or group entry on the list with a named person."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reviewer assignment list covering every in-scope system."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reviewer assignment list naming the accountable system owner for every in-scope system"
           },
@@ -2315,6 +4098,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the current account listing from each in-scope system."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the privilege or group each exported account holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Date each export at the moment it is taken from the system."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the export for each system as that system's review population."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated user and privilege listing exported per in-scope system, used as the review population"
           },
@@ -2370,6 +4175,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect every remove and downgrade decision from the returned review sheets."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a change record for each decision that cites the review ordering it."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply each removal or downgrade in the system concerned."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-check each changed account to confirm the change took effect."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the change records together with the post-change listing."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Change records for every removal and downgrade ordered by the review, with the post-change listing confirming they took effect"
           },
@@ -2384,6 +4216,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the returned reviews against the in-scope systems and their owners."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each system that did not complete its review in the quarter."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason each missing review was not completed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the recovery date by which each missing review will be done."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the quarterly completion summary covering every in-scope system."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Quarterly review completion summary listing every in-scope system, whether its review completed, and the recovery date for any that did not"
           },
@@ -2455,6 +4314,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the TLS protocol versions an in-scope endpoint is permitted to negotiate."
+              }
+            },
+            {
+              "text": {
+                "en": "List the cipher suites those endpoints are permitted to negotiate."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the protocol versions and cipher suites that must be refused."
+              }
+            },
+            {
+              "text": {
+                "en": "Extend the standard to endpoints terminating TLS at a load balancer or CDN."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the configuration standard as issued, with its version and issue date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Issued TLS configuration standard naming the permitted protocol versions and cipher suites and the versions refused, carrying its version and issue date"
           },
@@ -2469,6 +4355,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Create one register row per key stating what that key protects."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the managed key store holding each key on the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Read each key's use and export rights out of its IAM policy into its row."
+              }
+            },
+            {
+              "text": {
+                "en": "Copy each key's documented rotation interval from the runbook into the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the key register showing the current holders of use and export rights."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Key register, one row per key, giving its purpose, the key store holding it, the principals with use and export rights, and the documented rotation interval"
           },
@@ -2524,6 +4437,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the encryption state of each at-rest inventory entry from its console or API."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the key each store uses as the platform itself reports it."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each backup copy on its own rather than assuming its source's mechanism."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any store found unencrypted with the remediation ticket raised against it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the at-rest encryption evidence collected for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "At-rest encryption evidence pack for the period showing, per database, bucket and backup copy, the platform-reported encryption state and the key it uses"
           },
@@ -2538,6 +4478,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the key store's own logs covering the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every key was rotated on or before its documented interval."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every principal that used or exported a key is on the permitted list."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each permitted principal still needs the right it holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each discrepancy as rotated late, access removed or a reasoned exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reconciliation covering every key in the register."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Key rotation and access reconciliation giving, per key, the last rotation date against its documented schedule and any principal that used or exported it without being on the permitted list, each discrepancy carrying its disposition"
           },
@@ -2568,6 +4540,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the offices with on-premises equipment and the storage rooms holding in-scope data."
+              }
+            },
+            {
+              "text": {
+                "en": "List the data centres a hosting or colocation provider runs on the entity's behalf."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each piece of equipment where in-scope data is held or processed."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each entry as controlled by the entity or by a named sub-service organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the facilities and equipment list and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated list of facilities and equipment holding in-scope data, marking for each whether physical access is controlled by the entity or by a named sub-service organisation"
           },
@@ -2582,6 +4581,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Create one register row for every badge, key and door credential to in-scope areas."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the holder of each credential and the areas it opens."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date each access was granted and the business reason for it."
+              }
+            },
+            {
+              "text": {
+                "en": "Add contractors, cleaners and physical key holders that a badge export omits."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed physical access register."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Physical access register listing every badge, key and door credential with its holder, the areas it opens, the date access was granted and the reason for it"
           },
@@ -2596,6 +4622,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List each media type in use, including equipment returned to a leasing or hosting provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether destruction or secure wipe applies to each media type."
+              }
+            },
+            {
+              "text": {
+                "en": "State the record each sanitisation method produces when it is applied."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who performs each method, whether in-house staff or a disposal vendor."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the issued sanitisation procedure carrying its version and issue date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Issued media sanitisation procedure naming, per media type, whether destruction or secure wipe applies, who performs it and the record the method produces"
           },
@@ -2610,6 +4663,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List every device and piece of media that left service in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the asset identifier, disposal date and method applied for each one."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold the certificate or wipe log produced against each disposal entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain the sub-service organisation's own certificate where it did the destruction."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each retired asset from the asset register and flag any with no disposal record."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the disposal records covering every device retired in the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Media disposal records for the period, one per retired device, giving the asset identifier, the disposal date, the sanitisation method applied and the destruction certificate or wipe log"
           },
@@ -2665,6 +4750,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain the current attestation report for each facility run by another organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Read what each report says about physical access control and media handling."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the period each report covers and whether it is current at the review date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each exception or carve-out that bears on the entity's own data."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach each attestation with a note of what was read and what it left uncovered."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Sub-service organisation attestation covering physical security, filed with a dated note recording the period covered, its currency at review, and any exception affecting in-scope data"
           },
@@ -2695,6 +4807,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the production, corporate and development zones this control keeps apart."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the device or service enforcing each boundary between the zones."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which zone each in-scope system sits in."
+              }
+            },
+            {
+              "text": {
+                "en": "Place build agents and administrative jump hosts in a zone, flagging any straddling two."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the network zone map with the list of enforcement points."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Network zone map naming the production, corporate and development zones, the systems sitting in each, and the enforcement point on every boundary between them"
           },
@@ -2709,6 +4848,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record each flow allowed across a boundary on the map with its source and destination."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the port or service and the direction of every recorded flow."
+              }
+            },
+            {
+              "text": {
+                "en": "State the reason each recorded flow is required to cross its boundary."
+              }
+            },
+            {
+              "text": {
+                "en": "Document egress flows as well as inbound flows for every boundary."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the documented boundary flow list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Documented boundary flow list giving, per boundary, each permitted flow with its source, destination, port, direction and the reason it is required"
           },
@@ -2723,6 +4889,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Record which bastion, VPN or proxy forms the controlled path to production."
+              }
+            },
+            {
+              "text": {
+                "en": "List the accounts permitted to use the controlled administrative path."
+              }
+            },
+            {
+              "text": {
+                "en": "State that administrative interfaces are not reachable from the internet outside it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each exception with the compensating restriction applied to it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the administrative access standard carrying its issue date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Administrative access standard naming the controlled path, the accounts permitted to use it, and every exception with the compensating restriction applied to it"
           },
@@ -2737,6 +4930,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Scan every public address range and hostname the entity owns from outside the perimeter."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each port and service found answering on every public address."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the scan results against the administrative access standard."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket for any administrative interface reachable outside the controlled path."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's scan output with a disposition recorded against each finding."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "External exposure scan output for the period listing every reachable port and service per public address, with a disposition recorded against each administrative interface found"
           },
@@ -2808,6 +5028,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Record which scanning tool covers hosts, container images and dependency manifests."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the hosts absent from the scanning agent's inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the container images built outside the pipeline that escape the image scan."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the dependency manifests held in repositories the scanner cannot access."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the coverage list and attach it with each gap shown against its tool."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated scanner coverage list naming, per scan target class, the tool covering it and the assets that tool does not reach"
           },
@@ -2822,6 +5069,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Write down the scale used to rate each vulnerability finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the remediation window each severity allows before a fix is due."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether a rating comes from the scanner's score or an entity adjustment."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who may adjust a rating for exposure or a compensating control."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the published standard showing its version and issue date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Published vulnerability severity and SLA standard giving the remediation window for each severity and the basis on which a rating may be adjusted"
           },
@@ -2836,6 +5110,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Require each exception to name the finding and why its SLA cannot be met."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the compensating control and the approver on every exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Require an expiry date on every exception before it is accepted."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the register where accepted vulnerability exceptions are held."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the exception procedure together with the register it points at."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Vulnerability exception procedure with the exception register it names, showing the fields every accepted exception must carry including its expiry date"
           },
@@ -2850,6 +5151,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Run each scan on its documented cadence against hosts, images and dependencies."
+              }
+            },
+            {
+              "text": {
+                "en": "Retain the raw output of every scan instead of a summary of it."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each report shows the scan date, the targets reached and rated findings."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the targets that failed to scan within the retained evidence."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the scan reports for the period, one per scan target class."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Scan reports for the period, one per scan target class, showing the scan date, the assets reached, the assets that failed to scan and the findings with their severities"
           },
@@ -2905,6 +5233,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the rows past their SLA due date from the findings register."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the severity and the days overdue against each extracted finding."
+              }
+            },
+            {
+              "text": {
+                "en": "State why each one is unfixed and what will close it and by when."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate overdue findings holding an approved exception from those holding none."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the report as presented, recording the date given and its audience."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Overdue vulnerability report as presented, listing each finding past its SLA with the days overdue, the reason and the recovery plan, and naming the date it was given and its audience"
           },
@@ -2935,6 +5290,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every in-scope system that is expected to send security logs."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which authentication, privilege-change and configuration-change logs each sends."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the source name under which each system's logs arrive in the log store."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the expected log source list and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated log source list naming, per in-scope system, the security log types expected from it and the source name those logs arrive under"
           },
@@ -2949,6 +5326,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a catalogue row for each authentication anomaly, privilege change and drift condition."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the detection rule and the alert destination for each condition."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the role or rota that responds to each catalogued alert."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any condition that fires into a destination nobody watches."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the alert catalogue covering every condition currently enabled."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Alert catalogue listing each enabled condition with its detection rule, the destination the alert is sent to and the named responder or rota"
           },
@@ -2963,6 +5367,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the log store's retention to the period the entity has committed to."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the operational and administrative accounts whose activity the logs record."
+              }
+            },
+            {
+              "text": {
+                "en": "Withdraw delete and modify rights on the log store from those accounts."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the retention setting and the permission model that results."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the configuration output showing the retention and permission settings."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Log store configuration output showing the retention period set and the permission model, evidencing that the accounts recorded by the logs cannot alter or delete them"
           },
@@ -2977,6 +5408,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the expected-source list against what the log store actually received."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the last event received from each expected source."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket for each source that has gone silent since the last check."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause found for each silent source once it is known."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's delivery check with the ticket reference against each gap."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Log delivery check for the period giving the last event received per expected source, with a ticket reference and the cause recorded against every silent source"
           },
@@ -2991,6 +5449,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Trigger one of the catalogued alert conditions deliberately."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the time at which the test condition was triggered."
+              }
+            },
+            {
+              "text": {
+                "en": "Record when the alert arrived at its catalogued destination."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the responder who acknowledged the test alert."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the alert path test record naming the condition exercised."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Alert path test record for the period naming the condition triggered, the trigger and alert times, the destination reached and the responder who acknowledged it"
           },
@@ -3005,6 +5490,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Query the log store for the earliest event it still holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare that event's date against the committed retention period."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-read the log store's access list on the same review date."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm no account recorded by the logs has regained delete or modify rights."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the query output and the access list, each dated with the review date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Retention and log store access review showing the earliest retained event date against the committed retention period, with the current access list confirming no recorded account can alter the logs"
           },
@@ -3076,6 +5588,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Write the criteria that set each severity level apart from the one below it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who is notified when an incident is declared at each level."
+              }
+            },
+            {
+              "text": {
+                "en": "State how quickly an incident at each level escalates internally."
+              }
+            },
+            {
+              "text": {
+                "en": "Link each level to the obligations in the register it may engage."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the severity and escalation section of the plan as approved."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved severity and escalation matrix giving, per severity level, its criteria, the internal escalation it triggers and the notification obligations it may engage"
           },
@@ -3090,6 +5629,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List the plan's roles, such as incident commander, communications, technical lead and legal."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the current holder of each role and a deputy for when they are unreachable."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the out-of-hours contact details for every holder and deputy."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the roster against the current organisation and record that date."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the incident response role roster."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident response role roster naming the current holder and deputy of each role with out-of-hours contact details and the date the roster was last confirmed"
           },
@@ -3104,6 +5670,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one record per declared incident with its detection time and how it was detected."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the severity assigned and any later reassignment of it."
+              }
+            },
+            {
+              "text": {
+                "en": "Log each action taken during the incident with its time."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every notification made against the obligation that required it."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the record when the root cause is written, not when service is restored."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the incident records for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident records for the period, one per incident, giving the detection time, the severity assigned, the action timeline, the notifications made against their obligations and the root cause"
           },
@@ -3118,6 +5716,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pick a scenario that the responders have not seen before."
+              }
+            },
+            {
+              "text": {
+                "en": "Run the exercise and record the participants and the scenario used."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where the response stalled and the timings against the promised escalation."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the contacts corrected and the steps clarified in the plan."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise each gap found as an action carrying an owner and a date."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the exercise record with the plan changes that came out of it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident exercise record naming the scenario, the participants and the timings achieved, with the plan changes and actions arising, each carrying an owner and a date"
           },
@@ -3132,6 +5762,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the plan against the role roster and the notification obligations register."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the plan against the actions left open by the last exercise."
+              }
+            },
+            {
+              "text": {
+                "en": "Correct departed role holders, changed deadlines and steps shown not to work."
+              }
+            },
+            {
+              "text": {
+                "en": "Route the corrected plan through the approval path the plan itself carries."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the approved plan with its version, approval date and a note of changes."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved incident response plan carrying its version and approval date, filed with a change note recording what was corrected since the previous version"
           },
@@ -3203,6 +5860,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Match each backup register row to the job that serves it."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each job's interval so successful backups never exceed the recovery point objective."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each job's retention to the period recorded in the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any shortfall against its register row without changing the objective."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the job configuration showing schedule, retention and target per dataset."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Exported backup job configuration per register row, showing the schedule, the retention and the backup target"
           },
@@ -3432,6 +6116,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Name who may declare a production change to be an emergency."
+              }
+            },
+            {
+              "text": {
+                "en": "List what must be recorded at the moment an emergency change is made."
+              }
+            },
+            {
+              "text": {
+                "en": "Define the after-the-fact review and approval each emergency change needs."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who gives the retrospective approval and the record that shows it."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the emergency route visibly distinct from the standard change path."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the issued emergency procedure with its version and issue date."
+              }
+            }
+          ],
           "suggestedRole": "Engineering lead"
         },
         {
@@ -3443,6 +6159,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List every production release made during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Retain the pipeline run that produced each release."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the test results and security checks that ran against that exact commit."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any check a release skipped and the reason it was skipped."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the per-release evidence set covering the whole period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Per-release evidence set for the period: release identifier, commit, pipeline run, test results and security-check outcomes, with a note against any skipped check"
           },
@@ -3457,6 +6200,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the changes that bypassed standard review from the deployment record."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who declared each emergency and what was changed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record why the standard path could not be used for each change."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the retrospective approval for each change with its approver and date."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the emergency change log with each approval referenced from its entry."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Emergency change log for the period: change, declarer, justification, date, and the retrospective approval with its approver and date"
           },
@@ -3605,6 +6375,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Move the production estate's configuration into definitions held in version control."
+              }
+            },
+            {
+              "text": {
+                "en": "Route production changes through the pipeline that applies those definitions."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the same approving review on infrastructure changes as on code changes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each component still changed by hand with the compensating check covering it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the repository protection settings and one merged change traced end to end."
+              }
+            }
+          ],
           "suggestedRole": "IT Operations"
         },
         {
@@ -3657,6 +6454,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the cloud or platform activity log for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Select the production infrastructure changes to sample from that log."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each sampled change back to a reviewed, version-controlled definition."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a deficiency for each change with no reviewed definition behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed infrastructure change sample worksheet."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Completed infrastructure change sample worksheet: sample drawn from the platform activity log, the reviewed definition traced for each change, and the deficiencies raised"
           },
@@ -3797,6 +6621,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain the executed contract for each vendor onboarded in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each contract carries the security, confidentiality and breach-notification terms."
+              }
+            },
+            {
+              "text": {
+                "en": "Check a data-processing agreement is in place wherever personal data is involved."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the clause reference for each required term found in the contract."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the extract of executed terms per vendor with its signature date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Per-vendor extract of the executed contract citing the security, confidentiality and breach-notification clauses, the data-processing agreement where applicable, and the signature date"
           },
@@ -3946,6 +6797,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the RTO and RPO the plan documents for each in-scope service."
+              }
+            },
+            {
+              "text": {
+                "en": "Gather what contracts, service descriptions and public commitments state for each."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the documented and committed values service by service."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each difference and whether the objective or the commitment was changed."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reconciliation showing both values and the resolution for every service."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation table: service, documented RTO and RPO, committed RTO and RPO, the difference and how each difference was resolved"
           },
@@ -4044,6 +6922,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List each finding the exercise raised."
+              }
+            },
+            {
+              "text": {
+                "en": "Correct the plan, fix the capability, or record why neither is done for each finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Reissue the continuity and recovery plan with its version incremented."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter each finding the reissue does not close in the deficiency and risk registers."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign an owner and a target date to every register entry created."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reissued plan with the register entries created from the findings."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reissued plan with an incremented version, and the deficiency and risk register entries created from the exercise findings, each with an owner and a target date"
           },

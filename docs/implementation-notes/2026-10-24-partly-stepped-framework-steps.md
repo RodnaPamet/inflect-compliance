@@ -44,7 +44,23 @@ carry, and no step quotes a standard.
   whose description held several separate acts and to skip a genuine single act
   with a written reason. Every description in these seven fixtures turned out to
   carry several acts — they were authored with the same richness as their
-  stepped siblings — so the skip list is the record of that, not a quota.
+  stepped siblings — so all 434 tasks got steps (2,201 in all) and the skip list
+  is empty.
+- **One validator, then a cross-slice check.** The tasks were drafted in seven
+  parallel slices. Each slice passed the same validator before merging: 3–6
+  steps; 30–110 characters; an imperative opener; a full stop; no hint; no
+  restated description; no step copied from another task or from an existing
+  step. The merged set was then checked for verbatim duplicates across slices,
+  and none were found. A parse-level comparison confirms that the merge changed
+  nothing in the fixtures except the new steps and the grounding sentence.
+- **Title and description mismatches were reported, not fixed.** Stepping a task
+  means reading its title against its description, and a handful disagree. For
+  example, SDLC-PW8#2's title promises every designed test on every build, while
+  its description promises static and dynamic analysis. DORA-29#4 is titled
+  "Reassess…" but reads as a first assessment. The NIS2-NS template is titled for
+  network security, but its tasks cover acquisition and development. Steps
+  follow the description wherever the two disagree, because the description is
+  what the steps break down. The titles are left for a separate review.
 - **Reword a colloquial title rather than admit its verb.** "Wire" is as
   colloquial as the refused Seat and Fit, and #4065 had already reworded NIST's
   "Wire" titles to "Connect". The template row updates in place at the next
