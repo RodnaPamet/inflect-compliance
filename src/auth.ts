@@ -48,6 +48,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { graphHeaders } from '@/lib/http/graph-headers';
 import { SSO_HANDOFF_COOKIE, SSO_HANDOFF_PROVIDER_ID } from '@/lib/auth/sso-session';
 import type { SignInMethod } from '@/lib/auth/sso-enforcement';
+import { SessionRevokedError } from '@/lib/auth/session-revoked';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -166,7 +167,7 @@ declare module 'next-auth/jwt' {
         expiresAt?: number;
         /** Operational session row id (Epic C.3). */
         userSessionId?: string;
-        /** Soft-error flag — surfaces `RefreshTokenError` / `SessionRevoked` / `MfaDependencyFailure`. */
+        /** Soft-error flag — surfaces `RefreshTokenError` / `MfaDependencyFailure` / `EntraGroupGateDenied`. A revoked session is not flagged: the `jwt` callback throws `SessionRevokedError`. */
         error?: string;
     }
 }
@@ -589,6 +590,22 @@ export const authOptions: NextAuthOptions = {
     },
     session: { strategy: 'jwt' },
     secret: env.AUTH_SECRET,
+    // NextAuth's own errors, through the structured logger rather than
+    // `console.error` with the whole metadata object. A revoked session is not
+    // a fault: the `jwt` callback throws `SessionRevokedError` on purpose, and
+    // NextAuth reports every throw there as JWT_SESSION_ERROR.
+    logger: {
+        error(code, metadata) {
+            if (metadata instanceof SessionRevokedError) {
+                edgeLogger.info('session refused', { component: 'auth', reason: metadata.reason });
+                return;
+            }
+            edgeLogger.error(`next-auth ${code}`, {
+                component: 'auth',
+                error: metadata instanceof Error ? metadata.message : String(code),
+            });
+        },
+    },
     callbacks: {
         /**
          * signIn — runs on EVERY sign-in attempt. Two responsibilities:
@@ -880,7 +897,12 @@ export const authOptions: NextAuthOptions = {
             }
 
             // Epic C.3 — verify session row still exists + isn't revoked.
+            // A revoked (or expired) row THROWS, outside the try: NextAuth then
+            // treats the session as invalid and every server gate sees none
+            // (src/lib/auth/session-revoked.ts). Returning the token with an
+            // `error` flag, as this did, kept every claim and refused nothing.
             if (typeof token.userSessionId === 'string' && token.userSessionId) {
+                let revoked = false;
                 try {
                     const { verifyAndTouchSession } = await import(
                         '@/lib/security/session-tracker'
@@ -888,14 +910,13 @@ export const authOptions: NextAuthOptions = {
                     const result = await verifyAndTouchSession(
                         token.userSessionId,
                     );
-                    if (result.revoked) {
-                        return { ...token, error: 'SessionRevoked' };
-                    }
+                    revoked = result.revoked;
                 } catch {
                     // Helper already logs; fail-open on telemetry-side
                     // failures so a transient DB blip doesn't sign every
                     // user out.
                 }
+                if (revoked) throw new SessionRevokedError('session_revoked');
             }
 
             // OAuth access-token refresh intentionally NOT done here.
@@ -970,14 +991,21 @@ export const authOptions: NextAuthOptions = {
                 const now = Math.floor(Date.now() / 1000);
                 const lastChecked = token.sessionVersionCheckedAt ?? 0;
                 if (now - lastChecked >= SESSION_CHECK_INTERVAL) {
+                    let versionBumped = false;
                     try {
                         const currentUser = await prisma.user.findUnique({
                             where: { id: token.userId },
                             select: { sessionVersion: true },
                         });
-                        if (currentUser && currentUser.sessionVersion > token.sessionVersion) {
-                            return { ...token, error: 'SessionRevoked' };
-                        }
+                        versionBumped = Boolean(
+                            currentUser && currentUser.sessionVersion > token.sessionVersion,
+                        );
+                    } catch {
+                        // Fail open on telemetry-side failures.
+                    }
+                    // Outside the try, for the same reason as the row check above.
+                    if (versionBumped) throw new SessionRevokedError('session_version_bumped');
+                    try {
                         // Claims re-read from the database on the same cadence.
                         // This also SHRINKS the token when a membership is
                         // revoked: previously a removed membership stayed in the

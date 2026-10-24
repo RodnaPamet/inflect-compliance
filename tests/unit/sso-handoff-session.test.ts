@@ -187,6 +187,8 @@ import { GET as oidcCallback } from '@/app/api/auth/sso/oidc/callback/route';
 import { POST as samlCallback } from '@/app/api/auth/sso/saml/callback/route';
 import { exchangeCodeForTokens } from '@/lib/security/oidc-client';
 import middleware from '../../src/middleware';
+import { auth } from '@/auth';
+import { verifyAndTouchSession } from '@/lib/security/session-tracker';
 
 const SECRET = process.env.AUTH_SECRET as string;
 const ORIGIN = 'http://localhost:3000';
@@ -497,5 +499,49 @@ describe('a hand-off is good once, from its cookie, for a live membership', () =
         const handoff = await handoffFromCallback();
         db.tokens[0].expires = new Date(Date.now() - 1000);
         expect(await redeemThroughNextAuth(handoff)).toBeNull();
+    });
+});
+
+describe('a revoked session is refused, not merely flagged', () => {
+    // The `jwt` callback used to answer a revoked session row by returning the
+    // token with `error: 'SessionRevoked'`, every claim intact, and nothing
+    // read the flag. Now it throws (src/lib/auth/session-revoked.ts), which
+    // NextAuth treats as no session at all.
+    const revokedOnce = () =>
+        (verifyAndTouchSession as jest.Mock).mockResolvedValueOnce({ revoked: true, rowId: 'row-1' });
+
+    async function sessionEndpoint(sessionCookie: string): Promise<Response> {
+        const req = new NextRequest(`${ORIGIN}/api/auth/session`, {
+            headers: { cookie: `${SESSION_COOKIE}=${sessionCookie}` },
+        });
+        currentRequest = req;
+        return nextAuthGet(req, { params: Promise.resolve({ nextauth: ['session'] }) });
+    }
+
+    async function serverSessionFor(sessionCookie: string) {
+        currentRequest = new NextRequest(`${ORIGIN}/t/beta/dashboard`, {
+            headers: { cookie: `${SESSION_COOKIE}=${sessionCookie}` },
+        });
+        return auth();
+    }
+
+    it('a live session reads as itself, on the server and at the session endpoint', async () => {
+        const session = (await redeemThroughNextAuth(await handoffFromCallback()))!;
+        expect((await serverSessionFor(session))?.user.id).toBe('user-1');
+        expect((await (await sessionEndpoint(session)).json()).user?.id).toBe('user-1');
+    });
+
+    it('once its row is revoked, every server gate sees no session', async () => {
+        const session = (await redeemThroughNextAuth(await handoffFromCallback()))!;
+        revokedOnce();
+        await expect(serverSessionFor(session)).resolves.toBeNull();
+    });
+
+    it('once its row is revoked, the session endpoint answers with nothing and clears the cookie', async () => {
+        const session = (await redeemThroughNextAuth(await handoffFromCallback()))!;
+        revokedOnce();
+        const res = await sessionEndpoint(session);
+        expect(await res.json()).toEqual({});
+        expect(setCookie(res, SESSION_COOKIE)).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/i);
     });
 });

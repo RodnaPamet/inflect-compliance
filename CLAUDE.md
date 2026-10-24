@@ -472,8 +472,14 @@ to that array only with a written `reason`.
 **C.3 — Session hardening.** A `UserSession` row is minted on every
 sign-in (NextAuth `jwt` callback → `recordNewSession`) carrying
 `ipAddress`, `userAgent`, `expiresAt`, `lastActiveAt`. Every JWT
-pass calls `verifyAndTouchSession` — revoked or expired rows
-short-circuit as `SessionRevoked`. Per-tenant policy lives on
+pass calls `verifyAndTouchSession`. A revoked or expired row makes the
+callback THROW `SessionRevokedError` (`src/lib/auth/session-revoked.ts`), and
+NextAuth then treats the session as invalid: `getServerSession` / `auth()`
+return `null`, so every server gate refuses it. It used to return the token
+with `error: 'SessionRevoked'` and every claim intact, and nothing read the
+flag, so no revocation signed anybody out. Never go back to flagging. The
+throw must also sit outside the fail-open `try`, or a revocation is swallowed
+as a telemetry failure. Per-tenant policy lives on
 `TenantSecuritySettings.maxConcurrentSessions` (overflow → revoke
 oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
 `expiresAt` at insert time). The admin UI lives at
