@@ -10580,6 +10580,7 @@
     "step1": "1. Open your authenticator app (Google Authenticator, Authy, 1Password, etc.)",
     "step2": "2. Scan this QR code or manually enter the setup key",
     "cannotScan": "If you cannot scan, use the setup key below",
+    "qrCodeAlt": "QR code for adding this account to your authenticator app",
     "setupKey": "Setup Key",
     "copied": "Copied!",
     "copy": "Copy",
