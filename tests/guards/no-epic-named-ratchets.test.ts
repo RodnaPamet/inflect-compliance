@@ -549,7 +549,28 @@ describe('epic-named ratchets are not added back', () => {
         // ceiling: main raised 798 -> 799 for `docs-site-publication` while
         // this change was in flight, and two branches each raising "to 799"
         // is how a shared floor lands one short.
-        expect(guardFiles().length).toBeLessThan(800);
+        // `scanner-never-reads-credential-values.test.ts` (#3936's hardening
+        // gate). It asserts that no file in the scanner package names
+        // `ProviderClient` or any gateway RPC that returns credential MATERIAL
+        // — over the whole package rather than over the one source whose
+        // author was thinking about it, because the hazard is a later file
+        // added by someone who read the SDK's docs rather than the roadmap.
+        //
+        // Not folded into an existing guard: nothing in guards or guardrails
+        // ranges over `packages/agent-harness-scanner/src`, and the nearest
+        // candidates range over `src/`.
+        //
+        // The number is THIS BRANCH's live count plus one. `feat/4.6-…`
+        // (#4058) also raises this line, so whichever lands second will
+        // conflict here — and the resolution is to re-derive from the live
+        // count, not to take either side's integer.
+        //
+        // RE-DERIVED AT THE MERGE, not taken from either side. Both branches
+        // raised this line to 800 against their own live counts, and both were
+        // right in isolation: each added ONE file to a tree of 799. Together
+        // they add two, so 800 would have landed one short and the next guard
+        // file would have failed for no reason anybody could see in the diff.
+        expect(guardFiles().length).toBeLessThan(801);
     });
 
     /**

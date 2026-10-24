@@ -42,7 +42,7 @@ import { MAX_FILE_BYTES } from '../../../packages/agent-harness-scanner/src/sour
 import type { DetectedAgent } from '../../../packages/agent-harness-scanner/src/sources/code/recognize';
 import { langchainCodeSource, scanLangChainCode } from '../../../packages/agent-harness-scanner/src/sources/langchain';
 import type { McpListingWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from '../../../packages/agent-harness-scanner/src/http';
-import type { SourceRead } from '../../../packages/agent-harness-scanner/src/source';
+import type { SourceContext, SourceRead } from '../../../packages/agent-harness-scanner/src/source';
 
 const REAL_FS: CodeFs = { lstat: (p) => lstat(p), readdir: (p) => readdir(p), readFile: (p) => readFile(p) };
 const LATER = { deadline: Number.MAX_SAFE_INTEGER, now: Date.now };
@@ -63,7 +63,7 @@ async function agentsIn(...trees: Readonly<Record<string, string>>[]) {
 }
 
 /** A wire that fails the test if the code source ever touches it. */
-const NO_WIRE: { http: ReadOnlyHttp; tokens: TokenExchange; mcp: McpListingWire; register: RegisterReadWire } = {
+const NO_WIRE: Pick<SourceContext, 'http' | 'tokens' | 'mcp' | 'register' | 'openshell'> = {
     http: {
         getJson: async () => {
             throw new Error('the code source makes no request');
@@ -88,6 +88,26 @@ const NO_WIRE: { http: ReadOnlyHttp; tokens: TokenExchange; mcp: McpListingWire;
     register: {
         read: async () => {
             throw new Error('the code source reads no register');
+        },
+    },
+    // The code source reads local files and reaches no gateway. Each method
+    // throws rather than returning an empty answer, so a source that started
+    // calling one would fail this suite instead of quietly reading nothing.
+    openshell: {
+        listSandboxes: async () => {
+            throw new Error('the code source reads no OpenShell gateway');
+        },
+        getSandbox: async () => {
+            throw new Error('the code source reads no OpenShell gateway');
+        },
+        getSandboxPolicyStatus: async () => {
+            throw new Error('the code source reads no OpenShell gateway');
+        },
+        listSandboxProviders: async () => {
+            throw new Error('the code source reads no OpenShell gateway');
+        },
+        getProviderProfile: async () => {
+            throw new Error('the code source reads no OpenShell gateway');
         },
     },
 };
