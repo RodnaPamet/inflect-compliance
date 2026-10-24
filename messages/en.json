@@ -8893,7 +8893,7 @@
       },
       "governance": {
         "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
-        "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live credential is bound to no agent} other {# live credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
+        "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live credential is bound to no agent} other {# live credentials are bound to no agent}} — each is refused at the agent surface. A credential's agent can be set only when it is created: create a new one for a registered agent, then revoke the old one.",
         "unboundMore": "+{count} more…",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
       },
