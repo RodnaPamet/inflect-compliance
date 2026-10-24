@@ -94,7 +94,20 @@ echo ""
 echo "→ Seeding framework catalogs..."
 node dist/seed-framework-catalogs.mjs || echo "⚠ framework-catalog seed skipped (non-fatal)"
 
-# ── 1e. Seed authored control-template tasks (idempotent) ──
+# ── 1f. Sync framework libraries and mapping sets (idempotent) ──
+#
+# The YAML libraries in src/data/libraries/ and the crosswalks between them
+# reach a database only through syncAllLibraries, and until this line nothing
+# in a deployed environment called it — so inherited coverage, gap analysis and
+# traceability had no mapping rows to read. Runs AFTER the catalogue seed: a
+# crosswalk citing a catalogue-owned framework resolves against the row it just
+# wrote, and the sync leaves every row that has a pack to the catalogue.
+# Content-hash skipped when unchanged. Non-fatal.
+echo ""
+echo "→ Syncing framework libraries and mapping sets..."
+node dist/sync-framework-libraries.mjs || echo "⚠ framework-library sync incomplete (non-fatal)"
+
+# ── 1g. Seed authored control-template tasks (idempotent) ──
 #
 # The authored task content on global ControlTemplate rows lives in
 # prisma/fixtures/internal-controls.json. prisma/seed.ts is not run on prod
@@ -109,7 +122,7 @@ echo ""
 echo "→ Seeding control-template tasks..."
 node dist/seed-control-template-tasks.mjs || echo "⚠ control-template task seed skipped (non-fatal)"
 
-# ── 1f. Backfill installed tasks' checklists from their template steps ──
+# ── 1h. Backfill installed tasks' checklists from their template steps ──
 #
 # After both seeders above, and the order is load-bearing: this reads the
 # template steps they just wrote. Install copies a template task's steps onto

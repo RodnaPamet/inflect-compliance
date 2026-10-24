@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "ISO/IEC 27701:2019 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
-    "grounding": "Requirement titles and summaries come from src/data/libraries/iso27701-2019.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/iso27701-2019.yaml so the two cannot drift. Task content is grounded in each template's own description. Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -393,6 +393,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each purpose row from the dated purpose inventory in turn."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the lawful basis the organisation actually relies on for that purpose."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the short reasoning that led to that basis beside it."
+              }
+            },
+            {
+              "text": {
+                "en": "Choose the one basis relied on where two are arguable, rather than listing both."
+              }
+            },
+            {
+              "text": {
+                "en": "File the register with purpose, basis and reasoning completed on every row."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Lawful-basis record: one row per purpose giving the basis relied on and the reasoning recorded for it"
           },
@@ -407,6 +434,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a register row for each processing activity introduced in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Amend the row of any activity whose purpose changed, leaving the old value visible."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who reported each addition or change and the date it was reported."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark an ended purpose as ended with its date instead of deleting the row."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the dated register for the period together with its change log."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated purpose and lawful-basis register export for the period, with the change log showing each addition, amendment and ended purpose, who reported it and when"
           },
@@ -421,6 +475,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Walk the register row by row against the basis each row records."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each consent-based row for consent that is no longer being collected."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each contract-based row for a contract that has since ended."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each purpose with current use to catch one that has quietly widened."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every row unchanged, amended or ended and update the register in the same pass."
+              }
+            },
+            {
+              "text": {
+                "en": "Sign off the review record with the reviewer's name and the review date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Register review record showing the outcome against every row and the amendments made, with reviewer and date"
           },
@@ -561,6 +647,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Write one record for each consent given, changed or withdrawn."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the individual, the purposes covered and the timestamp on every record."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the version of the consent wording the individual actually read."
+              }
+            },
+            {
+              "text": {
+                "en": "Note on each change or withdrawal the processing that stopped as a result."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the consent records for the period as one row per event."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Consent record export for the period: one row per event with subject, purposes, wording version, timestamp and downstream action"
           },
@@ -575,6 +688,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw a sample of individuals spread across the consent collection points."
+              }
+            },
+            {
+              "text": {
+                "en": "Add withdrawn consents to the sample deliberately."
+              }
+            },
+            {
+              "text": {
+                "en": "Read what each sampled individual actually agreed to."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the marketing, profiling and data sharing applied to each with that agreement."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every mismatch with its cause and the correction made."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the sample test with the records examined and its results."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Consent sample test showing the records examined, the processing compared and every mismatch with its correction"
           },
@@ -713,6 +858,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract every mitigation each assessment commits to."
+              }
+            },
+            {
+              "text": {
+                "en": "Open a tracked item for each one in the organisation's existing work tracker."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each item a named owner and a due date."
+              }
+            },
+            {
+              "text": {
+                "en": "Link each item back to the assessment that committed to it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the closing evidence, or who dropped the mitigation and on what grounds."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the tracker showing every open and closed item by assessment."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Assessment action tracker: one item per committed mitigation with owner, due date, status and closing evidence"
           },
@@ -727,6 +904,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the period's releases, purchase orders and campaigns from each intake route."
+              }
+            },
+            {
+              "text": {
+                "en": "Match every item launched or changed to its screening record."
+              }
+            },
+            {
+              "text": {
+                "en": "List each item that reached production without meeting the screen."
+              }
+            },
+            {
+              "text": {
+                "en": "Screen each of those items retrospectively."
+              }
+            },
+            {
+              "text": {
+                "en": "Note what the assessment would have changed for each unscreened item."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the coverage comparison with the unscreened items named."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Screening coverage comparison listing everything initiated in the period against its screening record, with unscreened items named"
           },
@@ -794,6 +1003,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the activities the organisation controls from the role determination."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe what each controller activity does in its record."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the PII categories and the categories of individuals involved."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each internal and external recipient as an organisation, not a class."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where the data for each activity is stored."
+              }
+            },
+            {
+              "text": {
+                "en": "Assemble the rows into the controller section of the records of processing."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Records of processing, controller section: activity, PII and individual categories, named recipients and storage locations"
           },
@@ -808,6 +1049,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Select the customer-instructed activities marked in the role determination."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the customer that instructed each activity and what the instruction covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the PII categories each customer-instructed activity touches."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the parties the data reaches while under the organisation's control."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a shared platform activity once, listing every customer it covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the processor section with the instructing customer on every row."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Records of processing, processor section: activity, instructing customer, PII categories and parties the data reaches"
           },
@@ -822,6 +1095,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record each recipient added or dropped, such as a new sub-processor or analytics destination."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each data category gained through a new field or lost with a retired one."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each change to a customer instruction against the activity it governs."
+              }
+            },
+            {
+              "text": {
+                "en": "Log the date and the person who reported every change."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the superseded value readable beside its replacement."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's dated records export with the change log alongside."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated records-of-processing export for the period with a change log covering recipients, data categories and instructions"
           },
@@ -932,6 +1237,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Choose the address, form or in-product option through which requests are made."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish that route where individuals can find and use it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the team responsible for monitoring the channel."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the path that carries requests received by support or account managers into it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the published channel and the written monitoring arrangement."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The published request channel and the written monitoring arrangement naming the team responsible for it"
           },
@@ -982,6 +1314,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one log row per request with its date received and request type."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome of the identity verification on each row."
+              }
+            },
+            {
+              "text": {
+                "en": "List the systems searched in answering each request."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was provided, refused or erased, with the reason for any refusal."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the date the response was sent to the requester."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the data-subject request log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Data-subject request log for the period: date received, type, verification outcome, action taken and response date per request"
           },
@@ -996,6 +1360,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Take every request closed in the period from the request log."
+              }
+            },
+            {
+              "text": {
+                "en": "Calculate the receipt-to-response time for each closed request."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each time against the timescale the organisation is required to meet."
+              }
+            },
+            {
+              "text": {
+                "en": "List every overrun individually rather than reading the average."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what caused each overrun's delay and what changed as a result."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the timeliness analysis for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Timeliness analysis for the period showing receipt-to-response time per request, every overrun and its stated cause"
           },
@@ -1063,6 +1459,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Draft one identifiable passage for each purpose on the mapping."
+              }
+            },
+            {
+              "text": {
+                "en": "Write each passage in short sentences an ordinary reader can follow."
+              }
+            },
+            {
+              "text": {
+                "en": "Strip out cross-references to defined terms and clauses only a lawyer would parse."
+              }
+            },
+            {
+              "text": {
+                "en": "Lead each complex purpose with the plain statement and put the detail beneath it."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the passage covering each mapped purpose in the attached draft."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Privacy notice draft with the passage covering each mapped purpose marked"
           },
@@ -1113,6 +1536,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Assign a version to every change made to the privacy notice."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date on which each version took effect."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe what changed and the processing change that prompted it."
+              }
+            },
+            {
+              "text": {
+                "en": "Retain the full text of every superseded version in retrievable form."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the notice version history for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Privacy notice version history for the period giving version, effective date, the change made and its cause, with superseded text retained"
           },
@@ -1127,6 +1577,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the live notice beside the purpose register one row at a time."
+              }
+            },
+            {
+              "text": {
+                "en": "List purposes being carried out that the notice does not describe."
+              }
+            },
+            {
+              "text": {
+                "en": "List descriptions in the notice of processing that has since stopped."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag recipient and retention statements that no longer match the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the correction made for each gap in the comparison."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Notice-to-register comparison listing undescribed purposes, stale descriptions and mismatched statements, with corrections"
           },
@@ -1193,6 +1670,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Stop capturing each flagged field at the collection point that brings it in."
+              }
+            },
+            {
+              "text": {
+                "en": "Clear the values already stored for each removed field."
+              }
+            },
+            {
+              "text": {
+                "en": "Purge the copies of those fields sitting in logs, analytics events and exports."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each field removed and every system it was cleared from."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any flagged field retained, with the purpose that justified keeping it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the change record with the before-and-after field list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Change record listing every field removed, the systems cleared, and any flagged field retained with its justification"
           },
@@ -1210,7 +1719,34 @@
             "en": "Post-release comparison of each collection point's captured fields against the purpose register, listing fields added without a stated purpose"
           },
           "suggestedRole": "Engineering lead",
-          "sortOrder": 2
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify each release that touched a form, event payload or other collection surface."
+              }
+            },
+            {
+              "text": {
+                "en": "List the fields each affected collection point now captures."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare those fields against the purpose register."
+              }
+            },
+            {
+              "text": {
+                "en": "List every new field or attribute that no purpose accounts for."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the post-release comparison for each affected collection point."
+              }
+            }
+          ]
         }
       ]
     },
@@ -1240,7 +1776,34 @@
             "en": "Baseline measurement of PII held per category, giving volumes and the systems holding them, dated"
           },
           "suggestedRole": "Legal/DPO",
-          "sortOrder": 0
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the PII categories to be measured for the baseline."
+              }
+            },
+            {
+              "text": {
+                "en": "Count the records and fields held for each category."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the systems and copies holding each category."
+              }
+            },
+            {
+              "text": {
+                "en": "Finish the baseline before any reduction target is drafted."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the baseline measurement and file it with the volumes per category."
+              }
+            }
+          ]
         },
         {
           "title": {
@@ -1251,6 +1814,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "State each thing the organisation intends to reduce as a separate objective."
+              }
+            },
+            {
+              "text": {
+                "en": "Pick a measure for each, such as fields per collection point or dataset copies."
+              }
+            },
+            {
+              "text": {
+                "en": "Take the starting figure for each measure now and record it."
+              }
+            },
+            {
+              "text": {
+                "en": "Reject any objective that has no baseline figure behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the objectives with their measures and baseline figures."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Minimization objectives with the measure and the baseline figure recorded for each"
           },
@@ -1268,7 +1858,34 @@
             "en": "Period report of each minimization measure against baseline and target, with a recorded cause for every adverse movement"
           },
           "suggestedRole": "Legal/DPO",
-          "sortOrder": 2
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the period's figure for every measure set under the objectives."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each figure beside its target and its baseline."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify every measure that moved the wrong way."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause of each adverse movement, such as a new product or acquisition."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the period report with the figures and the recorded causes."
+              }
+            }
+          ]
         }
       ]
     },
@@ -1298,11 +1915,38 @@
             "en": "Per-purpose list of end-of-processing events with the system field or signal that records each, flagging purposes with no readable trigger"
           },
           "suggestedRole": "Legal/DPO",
-          "sortOrder": 0
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each purpose in turn and decide which event ends it."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe that event concretely, such as an account closing or a case finishing."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the system field or signal that records the event happening."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every purpose whose ending no field or signal records."
+              }
+            },
+            {
+              "text": {
+                "en": "File the per-purpose list of end events with the signal recorded for each."
+              }
+            }
+          ]
         },
         {
           "title": {
-            "en": "Wire the purpose-end signal into the de-identification job for every system holding that PII"
+            "en": "Connect the purpose-end signal to the de-identification job for every system holding that PII"
           },
           "description": {
             "en": "The event identified above has to reach every store holding the PII, not just the system of record. Connect it to each — the primary database, the warehouse, the search index, the export bucket — and record which are wired and which are not. A purpose that ends in one system while the data survives in three others satisfies nothing, and the gap is invisible from the system that did delete."
@@ -1312,7 +1956,34 @@
             "en": "Mapping of each purpose-end signal to the systems it triggers de-identification in, naming any holding system not yet connected"
           },
           "suggestedRole": "Engineering lead",
-          "sortOrder": 1
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List every store holding the PII governed by each purpose-end signal."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the warehouse, search index and export bucket beside the primary database."
+              }
+            },
+            {
+              "text": {
+                "en": "Connect the signal to the de-identification job in each of those stores."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which holding systems are connected and which are not yet."
+              }
+            },
+            {
+              "text": {
+                "en": "File the signal-to-system mapping with every unconnected store named."
+              }
+            }
+          ]
         },
         {
           "title": {
@@ -1419,7 +2090,34 @@
             "en": "Per-period deletion log by category, recording live-store removal and the state of backups, replicas, analytics copies and archives"
           },
           "suggestedRole": "IT Operations",
-          "sortOrder": 1
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the categories that reached their retention period this period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was removed from the live stores for each category."
+              }
+            },
+            {
+              "text": {
+                "en": "Check whether the removal reached backups, replicas, analytics copies and archives."
+              }
+            },
+            {
+              "text": {
+                "en": "State the lag for any copy that holds the data until its own cycle expires."
+              }
+            },
+            {
+              "text": {
+                "en": "File the period's deletion log broken down by category."
+              }
+            }
+          ]
         },
         {
           "title": {
@@ -1430,6 +2128,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Work out from the schedule which records each system should no longer hold."
+              }
+            },
+            {
+              "text": {
+                "en": "Query each system directly for those records instead of reading the job report."
+              }
+            },
+            {
+              "text": {
+                "en": "Extend the queries to backups, replicas, search indexes and data warehouses."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the copies held by third parties in the sample."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each surviving record with the system it was found in and its resolution."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the retention sample test with its findings."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Retention sample test showing the systems queried, the records found past retention and how each was resolved"
           },
@@ -1499,6 +2229,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Take every direct processor from the third-party processing list."
+              }
+            },
+            {
+              "text": {
+                "en": "Put a written agreement in place binding each to the organisation's privacy obligations."
+              }
+            },
+            {
+              "text": {
+                "en": "Index each executed agreement against its entry on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each processor operating without an agreement and the date the gap was raised."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the agreement index showing an agreement or a dated gap per processor."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Processor agreement index: executed agreement referenced against each processor, with unpapered processors named and dated"
           },
@@ -1549,6 +2306,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Name each sub-processor in the disclosure with the service it performs."
+              }
+            },
+            {
+              "text": {
+                "en": "State where each sub-processor processes the data."
+              }
+            },
+            {
+              "text": {
+                "en": "Release the list through the route the customer agreement provides."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where the list was made available and the date this version was issued."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the disclosed list together with its location and issue date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The disclosed sub-processor list, with the route it was made available on and its issue date recorded"
           },
@@ -1563,6 +2347,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify the customers affected by each planned sub-processor addition or swap."
+              }
+            },
+            {
+              "text": {
+                "en": "Send the notice to those customers before the change takes effect."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what changed, the date sent and the recipients of each notice."
+              }
+            },
+            {
+              "text": {
+                "en": "Log every objection received against the change it concerns."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each objection was resolved."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the notification record for each change in the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Sub-processor change notification record per change: what changed, date sent, recipients, and objections received with their resolution"
           },
@@ -1577,6 +2393,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Gather vendor spend, live production integrations and observed data flows."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each party receiving PII to an entry on the published list."
+              }
+            },
+            {
+              "text": {
+                "en": "Name every party receiving PII that the list does not disclose."
+              }
+            },
+            {
+              "text": {
+                "en": "Name every listed sub-processor that is no longer in use."
+              }
+            },
+            {
+              "text": {
+                "en": "Correct the published list for each discrepancy and record the change."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the list verification with the undisclosed and stale entries named."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Sub-processor list verification against live vendors and integrations, listing both undisclosed and stale entries with corrections"
           },
@@ -1645,6 +2493,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Work through every flow on the cross-border transfer map."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the mechanism relied on to make that transfer lawful."
+              }
+            },
+            {
+              "text": {
+                "en": "Reference the document that evidences it, such as the executed clauses or adequacy finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down the reasoning for any flow that relies on a derogation."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark a flow whose safeguard cannot be named as unsupported rather than blank."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the transfer register with the safeguard and evidence per flow."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Transfer register giving the safeguard relied on and the evidencing document for every cross-border flow, with unsupported flows named"
           },
@@ -1659,6 +2539,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the destination jurisdictions from the transfer map."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the organisations that may hold PII in each jurisdiction."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the result as one plain statement of where PII may go."
+              }
+            },
+            {
+              "text": {
+                "en": "Designate it as the source for customer answers, contract schedules and the notice."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the list at the point it was last set and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated list of the countries and receiving organisations to which PII may be transferred"
           },
@@ -1673,6 +2580,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record each new region, vendor or support location as a transfer destination."
+              }
+            },
+            {
+              "text": {
+                "en": "Settle the safeguard for each destination before any data flows to it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the customer agreement permitting the destination where customer data is involved."
+              }
+            },
+            {
+              "text": {
+                "en": "Log the date on which data first flowed to each new destination."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the transfer approval log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Transfer approval log for the period: each new destination, the safeguard settled, the customer agreement relied on and the first-flow date"
           },
@@ -1816,6 +2750,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Draft the notification to the authority ahead of any breach needing it."
+              }
+            },
+            {
+              "text": {
+                "en": "Draft the notification to affected individuals in words they can understand."
+              }
+            },
+            {
+              "text": {
+                "en": "Add fields for what happened and when, the PII involved and roughly how many people."
+              }
+            },
+            {
+              "text": {
+                "en": "Add fields for likely consequences, the action under way and where to get more."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark in both templates the fields the breach assessment supplies."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Authority and individual breach notification templates with the assessment-supplied fields marked"
           },
@@ -1830,6 +2791,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Open an assessment record for every incident touching personal data."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the data involved and how many individuals are affected."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the risk the incident poses to those individuals."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the notification decision for the authority and for individuals, with reasoning."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the record even where the decision was not to notify."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the breach assessment records for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Breach assessment record per PII incident: data involved, individuals affected, risk, notification decision and its reasoning"
           },

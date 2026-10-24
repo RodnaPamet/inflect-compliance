@@ -209,3 +209,80 @@ describe('the shipped catalogue can reach production', () => {
         expect(undelivered).toBe(0);
     });
 });
+
+/**
+ * ═══ THE FRAMEWORK LIBRARIES AND THEIR CROSSWALKS, THE SAME QUESTION ═══
+ *
+ * The YAML libraries and mapping sets in `src/data/libraries/` had no delivery
+ * path either, for as long as the crosswalks existed. `syncAllLibraries` is the
+ * only writer of library framework rows and of `RequirementMapping`, and
+ * nothing a deployment ran called it, so inherited coverage, gap analysis and
+ * traceability read an empty mapping table in production while every test
+ * passed against rows its own `beforeAll` had imported.
+ *
+ * Folded in here rather than given a file of its own because it is this file's
+ * invariant, that what the repo ships reaches production, over a second
+ * population. The path has four links, and each one alone looks finished:
+ *
+ *   1. `scripts/build-worker.mjs` bundles the script into `dist/`, because the
+ *      production image cannot run TypeScript;
+ *   2. the Dockerfile copies `src/data/libraries` into the runtime image, which
+ *      otherwise carries `prisma/` and `dist/` and no YAML at all;
+ *   3. the script reads the YAML from the working directory, which is where
+ *      the Dockerfile puts it, not from `__dirname`, which in a bundle is
+ *      `dist/`;
+ *   4. `scripts/entrypoint.sh` runs the bundle AFTER the catalogue seed: the
+ *      sync leaves every row that has a pack to the catalogue, so the packs
+ *      must exist first.
+ *
+ * What the sync then DOES is held by
+ * `tests/integration/framework-library-startup-sync.test.ts`; this holds only
+ * that it is reached.
+ */
+const read = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+const trimmedLines = (rel: string): string[] => read(rel).split('\n').map((l) => l.trim());
+
+const LIBRARY_SYNC_SCRIPT = 'scripts/sync-framework-libraries.ts';
+const LIBRARY_SYNC_BUNDLE = 'dist/sync-framework-libraries.mjs';
+const RUN_LIBRARY_SYNC = `node ${LIBRARY_SYNC_BUNDLE} || echo "⚠ framework-library sync incomplete (non-fatal)"`;
+const RUN_CATALOGUE_SEED =
+    'node dist/seed-framework-catalogs.mjs || echo "⚠ framework-catalog seed skipped (non-fatal)"';
+const COPY_LIBRARIES = 'COPY --from=builder /app/src/data/libraries ./src/data/libraries';
+
+describe('the framework libraries reach production', () => {
+    it('the script exists', () => {
+        expect(fs.existsSync(path.join(REPO_ROOT, LIBRARY_SYNC_SCRIPT))).toBe(true);
+    });
+
+    it('build-worker bundles it into dist/', () => {
+        // One `await build({...})` call per bundle; the one naming the script
+        // must also name the bundle the entrypoint runs.
+        const builds = read('scripts/build-worker.mjs').split('await build(');
+        const own = builds.filter((b) => b.includes(`entryPoints: ['${LIBRARY_SYNC_SCRIPT}']`));
+        expect(own).toHaveLength(1);
+        expect(own[0].slice(0, own[0].indexOf('});'))).toContain(`outfile: '${LIBRARY_SYNC_BUNDLE}'`);
+    });
+
+    it('the runtime image carries the YAML', () => {
+        const dockerfile = trimmedLines('Dockerfile');
+        const runtimeStage = dockerfile.map((l) => l.startsWith('FROM ')).lastIndexOf(true);
+        expect(runtimeStage).toBeGreaterThanOrEqual(0);
+        expect(dockerfile.indexOf(COPY_LIBRARIES)).toBeGreaterThan(runtimeStage);
+    });
+
+    it('the script reads the YAML from where the image puts it', () => {
+        // `./src/data/libraries` under WORKDIR /app, and a cwd-relative path in
+        // the script. A `__dirname` path would resolve against `dist/`.
+        const src = trimmedLines(LIBRARY_SYNC_SCRIPT);
+        expect(src).toContain(`const librariesDir = path.resolve(process.cwd(), 'src/data/libraries');`);
+        expect(src.filter((l) => l.includes('__dirname') && !l.startsWith('*') && !l.startsWith('//'))).toEqual([]);
+    });
+
+    it('the entrypoint runs the bundle, after the catalogue seed', () => {
+        const entrypoint = trimmedLines('scripts/entrypoint.sh');
+        const catalogue = entrypoint.indexOf(RUN_CATALOGUE_SEED);
+        const sync = entrypoint.indexOf(RUN_LIBRARY_SYNC);
+        expect(catalogue).toBeGreaterThanOrEqual(0);
+        expect(sync).toBeGreaterThan(catalogue);
+    });
+});

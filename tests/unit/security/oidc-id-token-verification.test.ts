@@ -13,6 +13,15 @@
  * served from a key-set endpoint that the fetch double answers. Nothing in
  * `jose` is mocked.
  */
+// The identity provider is a double answering on the global `fetch`. The client
+// reaches it through `safeFetch`, whose address checks are proved against this
+// same client in oidc-client-egress.test.ts; here it hands the request straight
+// to the double.
+jest.mock('@/app-layer/automation/webhook-safety', () => ({
+    ...jest.requireActual('@/app-layer/automation/webhook-safety'),
+    safeFetch: (url: string, init?: RequestInit) => global.fetch(url, init),
+}));
+
 const memberships = new Map<string, { status: string }>();
 const handoffRows: unknown[] = [];
 jest.mock('@/lib/prisma', () => {

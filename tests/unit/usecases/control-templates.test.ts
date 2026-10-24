@@ -255,10 +255,12 @@ describe('installControlsFromTemplate', () => {
 // ──────────────────────────────────────────────────────────────────────
 describe('framework reads', () => {
     it('listFrameworks asserts read permission and delegates to the repo', async () => {
-        mockListFw.mockResolvedValueOnce([{ id: 'fw-1' }] as any);
+        // The repository's `include` always carries `packs`; the offer filter reads it.
+        const row = { id: 'fw-1', key: 'FW', sourceUrn: null, packs: [] };
+        mockListFw.mockResolvedValueOnce([row] as any);
         const result = await listFrameworks(ctx);
         expect(policyCalls).toEqual(['read']);
-        expect(result).toEqual([{ id: 'fw-1' }]);
+        expect(result).toEqual([row]);
     });
 
     it('listFrameworkRequirements throws notFound when the framework key is unknown', async () => {
