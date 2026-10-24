@@ -47,3 +47,31 @@ You may obtain a copy of the Apache License, Version 2.0 at:
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
 WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+------------------------------------------------------------------------
+OpenShell Agent Skills — NVIDIA/OpenShell (Apache License 2.0)
+------------------------------------------------------------------------
+Four Agent Skills under `.claude/skills/` are REDISTRIBUTED COPIES of files
+from the NVIDIA/OpenShell project, used under the terms of the Apache
+License, Version 2.0:
+
+  .claude/skills/debug-inference/SKILL.md
+  .claude/skills/debug-openshell-cluster/SKILL.md
+  .claude/skills/debug-openshell-cluster/references/supervisor-middleware.md
+  .claude/skills/generate-sandbox-policy/SKILL.md
+  .claude/skills/generate-sandbox-policy/examples.md
+  .claude/skills/openshell-cli/SKILL.md
+
+Source: https://github.com/NVIDIA/OpenShell
+Commit: bdb956f2cd65a635f1294fccf1d138d263bf650f (tag v0.1.5, 2026-10-20)
+Licence text: .claude/skills/LICENSE-Apache-2.0.txt
+Manifest of SHA-256 hashes: .claude/skills/VENDORED.md
+
+Unlike the pipelock taxonomy above, this IS redistribution: the files are
+copied into this repository byte-for-byte and unmodified. Upstream ships no
+NOTICE file at that commit, so there is no upstream NOTICE content to carry.
+
+These are DEVELOPER TOOLING for engineers working on this repository. The
+product runtime never loads them; no product code, workflow, or Flue skill
+references them. Local guidance on where this repository's standards differ
+from what they teach is in .claude/skills/OPENSHELL-LOCAL-NOTES.md.

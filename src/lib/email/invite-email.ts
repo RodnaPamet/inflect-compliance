@@ -11,7 +11,7 @@
  * sink when no SMTP is configured) never fails invite creation — the
  * caller still returns the URL so the admin can copy it as a fallback.
  * The boolean result lets the caller tell the admin whether the email
- * actually went out.
+ * actually went out — and the console sink counts as NOT sent.
  *
  * Mirrors the send shape of `src/lib/auth/email-verification.ts`.
  */
@@ -46,7 +46,9 @@ function daysUntil(expiresAt: Date, now: Date): number {
 
 /**
  * Send the invite acceptance email. Returns `{ sent }` — `false` on any
- * mailer failure (already logged); never throws.
+ * mailer failure (already logged) AND when no transport is configured
+ * (the console sink logs the message and delivers it to nobody); never
+ * throws.
  */
 export async function sendInviteEmail(
     params: InviteEmailParams,
@@ -85,8 +87,11 @@ export async function sendInviteEmail(
     ].join('');
 
     try {
-        await sendEmail({ to, subject, text, html });
-        return { sent: true };
+        // `delivered` is false on the console sink (no SMTP configured):
+        // the message was only logged, so the invitee received nothing and
+        // the admin must not be told otherwise.
+        const { delivered } = await sendEmail({ to, subject, text, html });
+        return { sent: delivered };
     } catch (err) {
         logger.warn('invite.email_send_failed', {
             component: 'invite-email',

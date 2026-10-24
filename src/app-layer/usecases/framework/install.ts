@@ -9,6 +9,7 @@ import { getEffectivePlan } from '@/lib/billing/entitlements';
 import { recordFrameworkInstalled } from '@/lib/observability/business-metrics';
 import { controlDataFromTemplate, resolveRelatedPolicyIds } from '../control/template-projection';
 import { taskFromTemplateTask, installableTemplateTasks } from '../control/task-from-template';
+import { LIVE_TEMPLATE_TASKS } from '../../repositories/ControlTemplateRepository';
 
 // в”Ђв”Ђв”Ђ Pack Install (tenant-scoped, idempotent) в”Ђв”Ђв”Ђ
 
@@ -21,7 +22,7 @@ export async function previewPackInstall(ctx: RequestContext, packKey: string) {
             templateLinks: {
                 include: {
                     template: {
-                        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: { include: { requirement: true } } },
+                        include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: { include: { requirement: true } } },
                     },
                 },
             },
@@ -66,7 +67,7 @@ export async function installPack(ctx: RequestContext, packKey: string) {
             templateLinks: {
                 include: {
                     template: {
-                        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
+                        include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: true },
                     },
                 },
             },
@@ -221,7 +222,7 @@ export async function installSingleTemplate(ctx: RequestContext, templateCode: s
 
     const tmpl = await db.controlTemplate.findUnique({
         where: { code: templateCode },
-        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
+        include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: true },
     });
     if (!tmpl) throw notFound('Template not found');
 
@@ -364,7 +365,7 @@ export async function bulkInstallTemplates(
     const db = prisma;
     const templates = await db.controlTemplate.findMany({
         where: { code: { in: templateCodes } },
-        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
+        include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: true },
     });
     const foundCodes = new Set(templates.map((t) => t.code));
     const notFound_codes = templateCodes.filter((c) => !foundCodes.has(c));
