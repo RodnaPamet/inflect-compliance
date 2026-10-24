@@ -888,6 +888,11 @@ URL: that is login CSRF, and a verifier beside its code is no PKCE. The
 sign-in page starts SSO by WORKSPACE (`/api/auth/sso/discover`, `SsoSignIn`),
 never by email domain: `emailDomains` are unverified, so domain discovery would
 let any workspace claim anyone's domain. `/login?sso=<slug>` is the shareable link.
+"Enforce SSO" (`src/lib/auth/sso-enforcement.ts`): an enforcing workspace is
+reachable only by its own SSO or a break-glass OWNER/ADMIN signed in with their
+password — Google, Microsoft and other passwords are refused there, in the claims
+and at the DB-backed gates; a sign-in left with no workspace is refused with
+`sso_required:<slug>`. The session's `signInMethod` is what break-glass reads.
 
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
 

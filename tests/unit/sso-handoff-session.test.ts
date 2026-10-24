@@ -37,6 +37,8 @@ const db = {
     tokens: [] as { identifier: string; token: string; expires: Date }[],
     memberships: [] as Membership[],
     mfaPolicy: {} as Record<string, string>,
+    /** Workspaces whose provider enforces SSO (src/lib/auth/sso-enforcement.ts). */
+    enforced: [] as string[],
 };
 
 function matchesToken(row: { identifier: string; token: string; expires: Date }, where: any): boolean {
@@ -80,6 +82,11 @@ jest.mock('@/lib/prisma', () => {
                         ? { issuer: 'https://idp.example', clientId: 'client', clientSecret: 'secret' }
                         : { entityId: 'urn:idp', ssoUrl: 'https://idp.example/sso', certificate: 'MIIC' },
             })),
+            findMany: jest.fn(async ({ where }: any) =>
+                db.enforced
+                    .filter((t) => (where.tenantId.in as string[]).includes(t))
+                    .map((tenantId) => ({ tenantId })),
+            ),
         },
         tenantMembership: {
             findUnique: jest.fn(async ({ where }: any) => {
@@ -287,6 +294,7 @@ beforeEach(() => {
         { tenantId: 'tenant-b', slug: 'beta', role: 'READER', status: 'ACTIVE', createdAt: new Date('2026-01-01') },
     ];
     db.mfaPolicy = {};
+    db.enforced = [];
 });
 
 describe('the round trip is bound to the browser that started it', () => {
@@ -427,6 +435,15 @@ describe('redeeming the hand-off opens a NextAuth session scoped to the SSO work
         expect(await gateFor(session, '/t/beta/dashboard')).toBeNull();
         expect(await gateFor(session, '/t/alpha/dashboard')).not.toBeNull();
         expect(await gateFor(session, '/org/omega')).not.toBeNull();
+    });
+
+    it('a workspace that enforces SSO admits a session its own SSO opened', async () => {
+        db.enforced = ['tenant-b'];
+        const session = (await redeemThroughNextAuth(await handoffFromCallback()))!;
+        const claims: any = await decode({ token: session, secret: SECRET });
+        expect(claims.signInMethod).toBe('sso');
+        expect(claims.memberships).toEqual([{ slug: 'beta', role: 'READER', tenantId: 'tenant-b' }]);
+        expect(await gateFor(session, '/t/beta/dashboard')).toBeNull();
     });
 
     it("the SSO workspace's MFA policy applies, not the account's oldest workspace's", async () => {

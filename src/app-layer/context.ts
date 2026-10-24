@@ -14,6 +14,7 @@ import prisma from '@/lib/prisma';
 import { getOrgPermissions, getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 import { logger } from '@/lib/observability/logger';
 import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
+import { assertSsoEnforcementAdmits } from '@/lib/auth/sso-enforcement';
 
 /**
  * Generates or extracts a request ID.
@@ -76,6 +77,9 @@ export async function getTenantCtx(
     if (isOutsideSsoScope(session.ssoTenantId, ctx.tenant.id)) {
         throw forbidden(SSO_SCOPE_REFUSAL);
     }
+    // "Enforce SSO": a workspace that requires its own SSO refuses any other
+    // way in but a break-glass password sign-in.
+    await assertSsoEnforcementAdmits(session, ctx.tenant.id, ctx.membership.role);
 
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.
@@ -113,6 +117,7 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
     if (isOutsideSsoScope(session.ssoTenantId, ctx.tenant.id)) {
         throw forbidden(SSO_SCOPE_REFUSAL);
     }
+    await assertSsoEnforcementAdmits(session, ctx.tenant.id, ctx.membership.role);
 
     // Enrich the observability context with tenant and user info
     mergeRequestContext({ tenantId: ctx.tenant.id, userId: session.userId });

@@ -17,6 +17,7 @@ import prisma from '@/lib/prisma';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { forbidden, notFound } from '@/lib/errors/types';
 import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
+import { assertSsoEnforcementAdmits, type SignInMethod } from '@/lib/auth/sso-enforcement';
 import type { Role } from '@prisma/client';
 import type { Permissions } from '@/lib/tenant-context';
 import type { PermissionSet } from '@/lib/permissions';
@@ -117,6 +118,7 @@ export async function resolveTenantBySlug(slug: string): Promise<TenantRecord> {
  *   tenantSlug: params.tenantSlug,
  *   userId: session.user.id,
  *   ssoTenantId: session.user.ssoTenantId,
+ *   signInMethod: session.user.signInMethod,
  * });
  * // ctx.tenant.id, ctx.role, ctx.permissions, ctx.appPermissions
  * ```
@@ -130,6 +132,8 @@ export async function getTenantServerContext(params: {
      * come from SSO.
      */
     ssoTenantId: string | null | undefined;
+    /** How the session was opened (`session.user.signInMethod`); "Enforce SSO" reads it. */
+    signInMethod: SignInMethod | null | undefined;
 }): Promise<TenantServerContext> {
     // Delegate to the authoritative resolver which handles:
     // - Tenant lookup
@@ -143,6 +147,7 @@ export async function getTenantServerContext(params: {
     if (isOutsideSsoScope(params.ssoTenantId, ctx.tenant.id)) {
         throw forbidden(SSO_SCOPE_REFUSAL);
     }
+    await assertSsoEnforcementAdmits(params, ctx.tenant.id, ctx.membership.role);
 
     // One extra indexed read on a table already keyed by tenantId. It happens
     // here rather than in the consuming layout so there is a single place that
