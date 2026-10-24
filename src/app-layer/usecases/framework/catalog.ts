@@ -3,6 +3,7 @@ import { RequestContext } from '../../types';
 import { assertCanViewFrameworks } from '../../policies/framework.policies';
 import { notFound } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
+import { withoutReferenceTwins } from '../../domain/framework-representation';
 
 // в”Ђв”Ђв”Ђ Framework Catalog (global, no tenant filter needed) в”Ђв”Ђв”Ђ
 
@@ -16,11 +17,15 @@ export async function listFrameworks(ctx: RequestContext) {
     // surfaces that OFFER a framework filter on it. Reads about what a tenant
     // already HAS (soa, gap-analysis, agent-coverage, policy-template-mapping,
     // test-readiness) deliberately do not.
-    return db.framework.findMany({
+    //
+    // A library row beside its catalogue twin is left out of the offer for the
+    // same reason; see `withoutReferenceTwins`.
+    const rows = await db.framework.findMany({
         where: { retiredAt: null },
         include: { _count: { select: { requirements: true, packs: true } } },
         orderBy: { key: 'asc' },
     });
+    return withoutReferenceTwins(rows, (f) => f._count.packs);
 }
 
 /**

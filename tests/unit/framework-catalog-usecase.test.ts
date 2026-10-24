@@ -33,9 +33,11 @@ beforeEach(() => jest.clearAllMocks());
 
 describe('listFrameworks', () => {
     it('returns frameworks ordered by key with counts', async () => {
-        p.framework.findMany.mockResolvedValue([{ key: 'ISO27001' }]);
+        // The query's `include` always carries `_count.packs`; the offer filter reads it.
+        const row = { key: 'ISO27001', sourceUrn: null, _count: { requirements: 0, packs: 1 } };
+        p.framework.findMany.mockResolvedValue([row]);
         const r = await listFrameworks(ctx);
-        expect(r).toEqual([{ key: 'ISO27001' }]);
+        expect(r).toEqual([row]);
         expect(p.framework.findMany).toHaveBeenCalledWith(
             expect.objectContaining({ orderBy: { key: 'asc' } }),
         );

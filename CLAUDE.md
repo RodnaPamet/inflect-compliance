@@ -241,7 +241,9 @@ runbook in `docs/rate-limiting.md`.
 `withApiErrorHandling` gets `API_MUTATION_LIMIT` (60/min) on
 POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
-`{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route today because no route supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
+`{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route except `agents/questions`, the only one that supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
+
+`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
 
 **Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
 through `API_READ_LIMIT` (120/min) at the Edge middleware via
@@ -470,8 +472,14 @@ to that array only with a written `reason`.
 **C.3 — Session hardening.** A `UserSession` row is minted on every
 sign-in (NextAuth `jwt` callback → `recordNewSession`) carrying
 `ipAddress`, `userAgent`, `expiresAt`, `lastActiveAt`. Every JWT
-pass calls `verifyAndTouchSession` — revoked or expired rows
-short-circuit as `SessionRevoked`. Per-tenant policy lives on
+pass calls `verifyAndTouchSession`. A revoked or expired row makes the
+callback THROW `SessionRevokedError` (`src/lib/auth/session-revoked.ts`), and
+NextAuth then treats the session as invalid: `getServerSession` / `auth()`
+return `null`, so every server gate refuses it. It used to return the token
+with `error: 'SessionRevoked'` and every claim intact, and nothing read the
+flag, so no revocation signed anybody out. Never go back to flagging. The
+throw must also sit outside the fail-open `try`, or a revocation is swallowed
+as a telemetry failure. Per-tenant policy lives on
 `TenantSecuritySettings.maxConcurrentSessions` (overflow → revoke
 oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
 `expiresAt` at insert time). The admin UI lives at

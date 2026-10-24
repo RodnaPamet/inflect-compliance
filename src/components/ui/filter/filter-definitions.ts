@@ -26,9 +26,9 @@
  *   });
  */
 
-import { LucideIcon } from "lucide-react";
 import type {
   Filter,
+  FilterIcon,
   FilterOption,
   FilterResetBehavior,
   FilterValueCodec,
@@ -53,8 +53,20 @@ export interface FilterDefInput {
   group?: string;
   /** Clear/reset behavior. Default: `clearable`. */
   resetBehavior?: FilterResetBehavior;
-  /** Lucide icon component. */
-  icon: LucideIcon;
+  /**
+   * The filter's icon.
+   *
+   * `FilterIcon`, not `LucideIcon` (#3358). This field used to narrow to a
+   * Lucide component, which made the documented API unreachable from new code:
+   * `tests/guards/no-lucide.test.ts` fails any NEW `lucide-react` import site,
+   * so a new list page could satisfy neither the type nor the guard, and both
+   * ways out were laundering.
+   *
+   * `Filter.icon` was already `FilterIcon` and `filter-list.tsx` already drew
+   * all three forms (it branches on `isReactNode` at three sites), so this
+   * aligns the input with what was always rendered.
+   */
+  icon: FilterIcon;
   /** Filter options. Pass `null` for async-loaded options. */
   options: FilterOption[] | null;
   /** Filter type. Default: "default". */
@@ -167,7 +179,7 @@ export function createFilterDefs<
  */
 export function optionsFromEnum(
   enumObj: Record<string, string>,
-  icon?: LucideIcon,
+  icon?: FilterIcon,
 ): FilterOption[] {
   return Object.entries(enumObj).map(([value, label]) => ({
     value,
@@ -303,7 +315,7 @@ export function codecForExampleValue<V extends PersistableFilterValue>(
  */
 export function typedOptionsFromEnum<V extends string>(
   enumObj: Record<V, string>,
-  icon?: LucideIcon,
+  icon?: FilterIcon,
 ): TypedFilterOption<V>[] {
   return (Object.entries(enumObj) as [V, string][]).map(([value, label]) => ({
     value,

@@ -55,11 +55,24 @@ export interface RateLimitResult {
 /**
  * Check if a request is within rate limits.
  *
+ * `units` charges several attempts at once, ALL OR NOTHING: either every unit
+ * fits in the window and all are recorded, or none is and the request is
+ * refused with the budget untouched. One JSON-RPC batch is the caller — charging
+ * it one unit at a time would spend the remaining budget on the messages that
+ * fit and then refuse the rest, so a client retrying a refused batch would find
+ * less budget than it was refused with. With the default of 1 the behaviour is
+ * exactly the single-attempt check every other caller relies on.
+ *
  * @param key - Unique identifier (e.g., `mfa:${userId}`, `login:${ip}`)
  * @param config - Rate limit configuration
+ * @param units - Attempts this request costs (default 1)
  * @returns Whether the request is allowed and how many attempts remain
  */
-export function checkRateLimit(key: string, config: RateLimitConfig): RateLimitResult {
+export function checkRateLimit(
+    key: string,
+    config: RateLimitConfig,
+    units = 1,
+): RateLimitResult {
     startCleanup(config.windowMs);
 
     const now = Date.now();
@@ -84,18 +97,27 @@ export function checkRateLimit(key: string, config: RateLimitConfig): RateLimitR
         entry.timestamps = [];
     }
 
-    if (entry.timestamps.length >= config.maxAttempts) {
+    if (entry.timestamps.length + units > config.maxAttempts) {
         store.set(key, entry);
-        const oldestInWindow = entry.timestamps[0];
+        // The request fits once enough of the oldest attempts have left the
+        // window to make room for all `units`. For one unit that is the oldest
+        // attempt, as it always was. A charge larger than the whole budget can
+        // never fit; callers bound that before asking (the MCP route refuses
+        // such a batch with a 400), and the window is the honest answer here.
+        const freeingIndex = entry.timestamps.length + units - config.maxAttempts - 1;
+        const freeingAt = entry.timestamps[Math.max(0, freeingIndex)];
         return {
             allowed: false,
-            remaining: 0,
-            retryAfterMs: oldestInWindow + config.windowMs - now,
+            remaining: Math.max(0, config.maxAttempts - entry.timestamps.length),
+            retryAfterMs:
+                units > config.maxAttempts || freeingAt === undefined
+                    ? config.windowMs
+                    : freeingAt + config.windowMs - now,
         };
     }
 
-    // Record this attempt
-    entry.timestamps.push(now);
+    // Record this attempt — every unit of it.
+    for (let i = 0; i < units; i += 1) entry.timestamps.push(now);
     store.set(key, entry);
 
     return {
@@ -211,6 +233,56 @@ export const API_MUTATION_LIMIT: RateLimitConfig = {
  */
 export const API_READ_LIMIT: RateLimitConfig = {
     maxAttempts: 120,
+    windowMs: 60 * 1000,
+};
+
+/**
+ * `/api/mcp`, per API KEY: 60 JSON-RPC messages per minute per key.
+ *
+ * The MCP endpoint used to ride the default mutation tier, keyed
+ * `api-mutation:ip:<ip>:anon` — one bucket per caller IP, shared with every
+ * other default mutation route. That is the wrong unit for this surface. A
+ * hosted MCP client (Anthropic's Managed Agents, the Messages API's MCP
+ * connector) calls from its provider's egress addresses, so every customer
+ * agent hosted there would share one 60/min budget, and one busy agent would
+ * throttle every other customer's.
+ *
+ * So the budget belongs to the key. The bucket is the VERIFIED
+ * `apiKeyId`, charged after `authenticateMcpRequest` succeeds — never a digest
+ * of the presented token, which is the thing an unauthenticated caller varies
+ * (see `docs/rate-limiting.md` → *API-key callers*). An exchanged token
+ * resolves to its issuing key, so exchange cannot multiply the budget. The
+ * bucket carries no IP: a key calling from many addresses gets one budget, not
+ * one per address.
+ *
+ * Charged per JSON-RPC MESSAGE, not per HTTP request, because one POST can
+ * carry a batch; a per-request budget would let a single call carry any number
+ * of tool calls. 60 keeps the per-caller figure the mutation tier always gave
+ * this endpoint, and a batch larger than it is refused outright.
+ */
+export const MCP_PER_KEY_LIMIT: RateLimitConfig = {
+    maxAttempts: 60,
+    windowMs: 60 * 1000,
+};
+
+/**
+ * `/api/mcp`, per caller IP, BEFORE authentication: a ceiling, not a budget.
+ *
+ * Containment for the unauthenticated case, which the per-key budget above
+ * cannot cover: a request with a made-up key never reaches it, and each one
+ * still costs a key lookup before its 401. This is the same split the edge
+ * makes for `iflk_` callers on `/api/t/**` — fairness keyed on the key,
+ * containment keyed on the IP — with the fairness half moved to after
+ * verification.
+ *
+ * Sized at ten keys' worth (600/min) so legitimate callers sharing an
+ * address — every customer agent hosted at one provider — do not meet it in
+ * ordinary use, while one address still cannot drive more than ten key lookups
+ * a second. Its own scope (`mcp-ip`), so MCP traffic no longer shares a bucket
+ * with every other mutation route called from the same address.
+ */
+export const MCP_IP_CEILING_LIMIT: RateLimitConfig = {
+    maxAttempts: 600,
     windowMs: 60 * 1000,
 };
 

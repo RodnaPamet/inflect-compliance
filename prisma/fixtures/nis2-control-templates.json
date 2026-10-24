@@ -12,7 +12,8 @@
     "name": "NIS2 Directive",
     "version": "2022/2555",
     "kind": "EU_DIRECTIVE",
-    "description": "Directive (EU) 2022/2555 on measures for a high common level of cybersecurity across the Union."
+    "description": "Directive (EU) 2022/2555 on measures for a high common level of cybersecurity across the Union.",
+    "sourceUrn": "urn:inflect:library:nis2-2022"
   },
   "requirements": [
     {
@@ -1173,7 +1174,7 @@
     },
     {
       "code": "NIS2-NS",
-      "title": "Network and information system security",
+      "title": "Security in network and information systems acquisition, development and maintenance",
       "description": "Register every application the organisation develops and every third-party component it acquires, and document the secure development lifecycle each passes through.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",

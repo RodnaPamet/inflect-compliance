@@ -7,7 +7,8 @@ import {
     toggleTenantSso,
     setTenantSsoEnforced,
 } from '@/app-layer/usecases/sso';
-import { UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
+import { UpsertSsoConfigInput, maskSsoSecrets } from '@/app-layer/schemas/sso-config.schemas';
+import type { TenantIdentityProvider } from '@prisma/client';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
@@ -25,12 +26,7 @@ import { jsonResponse } from '@/lib/api-response';
 export const GET = withApiErrorHandling(
     requirePermission('admin.manage', async (_req: NextRequest, _routeArgs, ctx) => {
         const providers = await getTenantSsoConfig(ctx);
-        // Strip secrets from configJson before sending to client
-        const safe = providers.map((p) => ({
-            ...p,
-            configJson: maskSecrets(p.configJson as Record<string, unknown>),
-        }));
-        return jsonResponse(safe);
+        return jsonResponse(providers.map(withSecretsMasked));
     }),
 );
 
@@ -42,7 +38,8 @@ export const POST = withApiErrorHandling(
         const body = await req.json();
         const parsed = UpsertSsoConfigInput.parse(body);
         const provider = await upsertTenantSsoConfig(ctx, parsed);
-        return jsonResponse(provider, { status: body.id ? 200 : 201 });
+        // Masked here too: the saved row carries the secret in plain text.
+        return jsonResponse(withSecretsMasked(provider), { status: body.id ? 200 : 201 });
     }),
 );
 
@@ -71,7 +68,7 @@ export const PATCH = withApiErrorHandling(
             default:
                 return jsonResponse({ error: 'Invalid action' }, { status: 400 });
         }
-        return jsonResponse(result);
+        return jsonResponse(withSecretsMasked(result));
     }),
 );
 
@@ -89,13 +86,7 @@ export const DELETE = withApiErrorHandling(
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function maskSecrets(config: Record<string, unknown>): Record<string, unknown> {
-    const masked = { ...config };
-    const secretKeys = ['clientSecret', 'certificate', 'privateKey'];
-    for (const key of secretKeys) {
-        if (masked[key] && typeof masked[key] === 'string') {
-            masked[key] = '••••••••';
-        }
-    }
-    return masked;
+/** A provider as the browser may see it: no stored secret leaves this route. */
+function withSecretsMasked(p: TenantIdentityProvider) {
+    return { ...p, configJson: maskSsoSecrets(p.configJson as Record<string, unknown>) };
 }
