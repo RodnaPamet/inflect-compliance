@@ -17,6 +17,6 @@ Each page guide explains what the page is for, who can use it, what every part o
 
 The how-to guides walk through one task from start to finish.
 
-- **Set up your workspace:** [invite a colleague](../../docs/user/how-to/set-up/invite-a-colleague.md), [change a member's role](../../docs/user/how-to/set-up/change-a-members-role.md) and [create an API key](../../docs/user/how-to/set-up/create-an-api-key.md).
+- **Set up your workspace:** [invite a colleague](../../docs/user/how-to/set-up/invite-a-colleague.md), [change a member's role](../../docs/user/how-to/set-up/change-a-members-role.md), [create an API key](../../docs/user/how-to/set-up/create-an-api-key.md), [set up single sign-on](../../docs/user/how-to/set-up/set-up-single-sign-on.md) and [turn on multi-factor authentication](../../docs/user/how-to/set-up/turn-on-multi-factor-authentication.md).
 
 Use the search at the top of any page to find a page, a button or a message by name.
