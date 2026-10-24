@@ -76,8 +76,10 @@ export default function UserMfaPage() {
         try {
             const res = await fetch(apiUrl('/security/mfa/enroll/start'), { method: 'POST' });
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || t('startFailed'));
+                // `error` is the envelope's OBJECT, `{ code, message }`, so
+                // `new Error(data.error)` rendered "[object Object]".
+                const data = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(data, t('startFailed')));
             }
             const data = await res.json();
             setEnrollment(data);
@@ -130,6 +132,11 @@ export default function UserMfaPage() {
                 setSuccess(t('removedSuccess'));
                 await fetchStatus();
                 setTimeout(() => setSuccess(null), 3000);
+            } else {
+                // A refused removal (the workspace requires MFA, say) used to
+                // do nothing at all: no message, and the factor still on.
+                const data = await res.json().catch(() => null);
+                setError(apiErrorMessage(data, t('removeFailed')));
             }
         } catch {
             setError(t('removeFailed'));
