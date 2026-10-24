@@ -7,9 +7,12 @@
 #  refuses the build if a listed doc is one the owner kept off the site or
 #  carries a production coordinate. See docs/docs-site.md.
 #
-#  BUILD runs on every pull request that touches the docs or the site, so a
-#  broken page or a refused doc fails the PR that caused it. The same policy
-#  is also held on EVERY pull request, whatever it touches, by
+#  BUILD runs on every pull request that touches the docs, the site, the
+#  English message catalogue or src/app/, so a broken page, a refused doc, a
+#  label that no longer exists or a guide whose page was removed fails the PR
+#  that caused it. This is not a required check: a label rename shows red here
+#  without blocking the merge. The publication policy — what may be published
+#  at all — is also held on EVERY pull request, whatever it touches, by
 #  tests/guardrails/docs-site-publication.test.ts in the Ratchets job.
 #
 #  DEPLOY runs only on main, and only once GitHub Pages is enabled for the
@@ -27,6 +30,11 @@ on:
       - 'docs/**'
       - 'site/**'
       - 'CONTRIBUTING.md'
+      # The build reads these too: `{{ui:…}}` labels come from the message
+      # catalogue and a guide's `route:` must match a page under src/app/, so
+      # renaming a label or removing a page is a change to the docs.
+      - 'messages/en.json'
+      - 'src/app/**'
       - '.github/workflows/docs-site.yml'
   # Not a required check, but every pull_request workflow answers the merge
   # queue so that making it required later can never hang the queue
@@ -38,6 +46,11 @@ on:
       - 'docs/**'
       - 'site/**'
       - 'CONTRIBUTING.md'
+      # The build reads these too: `{{ui:…}}` labels come from the message
+      # catalogue and a guide's `route:` must match a page under src/app/, so
+      # renaming a label or removing a page is a change to the docs.
+      - 'messages/en.json'
+      - 'src/app/**'
       - '.github/workflows/docs-site.yml'
   workflow_dispatch:
 

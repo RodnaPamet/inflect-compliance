@@ -21,6 +21,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as stage from '../../site/scripts/stage-docs.js';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string): string | null => {
@@ -32,12 +33,21 @@ const read = (rel: string): string | null => {
 };
 
 const manifest = JSON.parse(read('site/published-docs.json') ?? '{}') as {
-    sections: { label: string; docs: string[] }[];
+    sections: { label: string; group?: string; docs: string[] }[];
 };
 const classification = (
     JSON.parse(read('docs/_status/doc-classification.json') ?? '{}') as { docs: Record<string, { class: string }> }
 ).docs;
-const listed: string[] = stage.manifestDocs(manifest);
+/** What a folder entry expands to, read from git rather than a directory walk. */
+const listFolder = (folder: string): string[] => repoRelativeFiles().filter((f) => f.startsWith(folder));
+const listed: string[] = stage.manifestDocs(manifest, listFolder);
+/**
+ * The folders whose docs are classified by PATH in
+ * tests/guardrails/docs-accuracy.test.ts — the same two the manifest may list
+ * as folders. A guide is `authoritative`, and has no map entry to look up.
+ */
+const pathClassOf = (doc: string): string | undefined =>
+    stage.PUBLIC_FOLDERS.some((f) => doc.startsWith(f)) ? 'authoritative' : undefined;
 
 /** Pages published from outside docs/. Adding one is a deliberate choice. */
 const ROOT_PAGES = new Set(['CONTRIBUTING.md']);
@@ -71,17 +81,26 @@ describe('docs site — the published set', () => {
     });
 
     it('every listed doc passes the publication policy', () => {
-        expect(stage.publicationRefusals(manifest, read)).toEqual([]);
+        expect(stage.publicationRefusals(manifest, read, listFolder)).toEqual([]);
     });
+
+    /*
+     * Deliberately NOT checked here: that every `{{ui:…}}` label resolves and
+     * every guide's `route:` matches a page. Both are prose describing the
+     * app, and this file runs in Ratchets on every pull request — checking
+     * them here would let a label rename in the app fail an unrelated code
+     * change until somebody edited a doc. The docs build checks both, and it
+     * is not a required check. See docs/docs-site.md.
+     */
 
     it('every listed doc under docs/ is classified and not deprecated', () => {
         const problems = listed
             .filter((d) => !ROOT_PAGES.has(d))
             .flatMap((d) => {
                 if (!d.startsWith('docs/')) return [`${d}: outside docs/ and not a declared root page`];
-                const c = classification[d];
-                if (!c) return [`${d}: not in docs/_status/doc-classification.json`];
-                if (c.class === 'deprecated') return [`${d}: deprecated — a redirect stub, not a page`];
+                const cls = pathClassOf(d) ?? classification[d]?.class;
+                if (!cls) return [`${d}: not in docs/_status/doc-classification.json`];
+                if (cls === 'deprecated') return [`${d}: deprecated — a redirect stub, not a page`];
                 return [];
             });
         expect(problems).toEqual([]);
@@ -91,8 +110,9 @@ describe('docs site — the published set', () => {
         expect(listed.filter((d) => d.startsWith('docs/implementation-notes/'))).toEqual([]);
     });
 
-    it('every section has a label and at least one doc', () => {
-        expect(manifest.sections.filter((s) => !s.label || s.docs.length === 0)).toEqual([]);
+    it('every section has a label, a group and at least one doc', () => {
+        const expanded = stage.expandSections(manifest, listFolder) as { label: string; group?: string; docs: string[] }[];
+        expect(expanded.filter((s) => !s.label || !s.group || s.docs.length === 0).map((s) => s.label)).toEqual([]);
     });
 });
 

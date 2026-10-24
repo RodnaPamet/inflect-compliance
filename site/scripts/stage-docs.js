@@ -23,6 +23,21 @@
  * confidential. A secret never belongs in `docs/` at all, and the repo's secret
  * scanner (`.secret-patterns`) is what holds that.
  *
+ * Guide pages and how-tos (`docs/guide/`, `docs/how-to/`) are written for the
+ * product's users, so the manifest may list those two folders instead of each
+ * file in them. No other folder can be listed that way: anywhere else a doc
+ * reaches the site only by name.
+ *
+ * Two things in a page are generated rather than typed, and a build that
+ * cannot generate them fails rather than printing something wrong:
+ *   - `{{ui:<key>}}` prints the app's own label from `messages/en.json`, so a
+ *     renamed button renames itself in the docs on the next build;
+ *   - a guide's `route:` frontmatter names the page it documents, and must
+ *     match a `page.tsx` under `src/app/`.
+ * Neither is checked by the Ratchets guardrail, which runs on every pull
+ * request: renaming a label in the app must never fail an unrelated code
+ * change. The docs build, which is not a required check, is what reports it.
+ *
  * Links are rewritten so the site has no dead ends:
  *   - to a published doc      → its page on the site;
  *   - to an unpublished doc   → the label as plain text, so the site does not
@@ -50,6 +65,27 @@ const SITE_DIR = path.resolve(__dirname, '..');
 const MANIFEST_PATH = path.join(SITE_DIR, 'published-docs.json');
 const CONTENT_DIR = path.join(SITE_DIR, 'src', 'content', 'docs');
 const LANDING_PAGE = 'site/pages/index.md';
+const MESSAGES_PATH = 'messages/en.json';
+const APP_DIR = 'src/app';
+
+/**
+ * Folders whose every doc is written for the public, so the manifest may list
+ * the folder rather than each file in it. Both are classified `authoritative`
+ * by path in tests/guardrails/docs-accuracy.test.ts. Adding a folder here
+ * publishes everything ever written in it, which is why the list is short.
+ */
+const PUBLIC_FOLDERS = Object.freeze(['docs/guide/', 'docs/how-to/']);
+
+/** A doc under this folder documents one page, and names it in `route:`. */
+const GUIDE_FOLDER = 'docs/guide/';
+
+/** The only frontmatter keys a doc may carry. Anything else is a typo. */
+const FRONTMATTER_KEYS = Object.freeze(['route']);
+
+/** `{{ui:risks.bulk.setStatus}}` — a label read from messages/en.json. */
+const UI_TOKEN_RE = /\{\{ui:([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\}\}/g;
+/** Anything that looks like it was meant to be a token. */
+const UI_TOKEN_SHAPE_RE = /\{\{\s*ui\s*:[^}]*\}\}/g;
 
 /**
  * Owner decision, 2026-10-23: kept off the public site. An entry ending in `/`
@@ -100,18 +136,67 @@ function slugFor(repoPath) {
     return repoPath.replace(/^docs\//, '').replace(/\.md$/i, '').toLowerCase();
 }
 
-/** Every doc in the manifest, in order. */
-function manifestDocs(manifest) {
-    return manifest.sections.flatMap((s) => s.docs);
+/** A manifest entry ending in `/` names a folder rather than a doc. */
+function isFolderEntry(entry) {
+    return entry.endsWith('/');
 }
 
-/** Starlight sidebar groups, in manifest order. */
-function sidebarFrom(manifest) {
-    return manifest.sections.map((s) => ({
-        label: s.label,
-        collapsed: true,
-        items: s.docs.map((d) => ({ slug: slugFor(d) })),
+/**
+ * Each section with its folder entries expanded. A folder entry adds every
+ * `.md` under it, in path order, that the manifest does not already list by
+ * name — so a section can list a few docs first to put them in the order the
+ * app shows them, and let the folder pick up the rest. `listFolder(folder)`
+ * returns the repo paths of the files under `folder`, at any depth.
+ */
+function expandSections(manifest, listFolder) {
+    const sections = Array.isArray(manifest.sections) ? manifest.sections : [];
+    const named = new Set(sections.flatMap((s) => (s.docs ?? []).filter((d) => !isFolderEntry(d))));
+    return sections.map((s) => ({
+        ...s,
+        docs: (s.docs ?? []).flatMap((entry) => {
+            if (!isFolderEntry(entry)) return [entry];
+            // A folder outside PUBLIC_FOLDERS expands to nothing; the policy
+            // refuses it, and nothing in it is ever staged on the way there.
+            if (!listFolder || !PUBLIC_FOLDERS.some((f) => entry.startsWith(f))) return [];
+            return listFolder(entry)
+                .filter((f) => f.startsWith(entry) && /\.md$/i.test(f) && !named.has(f))
+                .sort();
+        }),
     }));
+}
+
+/** Every doc in the manifest, in order, folder entries expanded. */
+function manifestDocs(manifest, listFolder) {
+    return expandSections(manifest, listFolder).flatMap((s) => s.docs);
+}
+
+/**
+ * Starlight sidebar groups, in manifest order. A section that names a
+ * `group` sits inside it — "User guide", "Developers" — and groups appear in
+ * the order their first section does. `label(text)` resolves `{{ui:…}}` in a
+ * section's label, so a sidebar heading follows the app's own name for it.
+ */
+function sidebarFrom(manifest, listFolder, label = (text) => text) {
+    const out = [];
+    const groups = new Map();
+    for (const s of expandSections(manifest, listFolder)) {
+        const item = {
+            label: label(s.label),
+            collapsed: true,
+            items: s.docs.map((d) => ({ slug: slugFor(d) })),
+        };
+        if (!s.group) {
+            out.push(item);
+            continue;
+        }
+        if (!groups.has(s.group)) {
+            const group = { label: label(s.group), collapsed: false, items: [] };
+            groups.set(s.group, group);
+            out.push(group);
+        }
+        groups.get(s.group).items.push(item);
+    }
+    return out;
 }
 
 function neverPublishReason(repoPath) {
@@ -134,15 +219,25 @@ function forbiddenContentIn(text) {
 
 /**
  * Refusals for a manifest, given each listed doc's text (`readDoc` returns
- * `null` when the file does not exist). Empty means publishable.
+ * `null` when the file does not exist) and, for folder entries, the files
+ * under a folder (`listFolder`). Empty means publishable.
  */
-function publicationRefusals(manifest, readDoc) {
+function publicationRefusals(manifest, readDoc, listFolder) {
     const refusals = [];
     const seen = new Set();
     if (!Array.isArray(manifest.sections) || manifest.sections.length === 0) {
         return ['the manifest lists no sections — an empty site is not a published site'];
     }
-    for (const doc of manifestDocs(manifest)) {
+    for (const entry of manifest.sections.flatMap((s) => s.docs ?? []).filter(isFolderEntry)) {
+        if (!PUBLIC_FOLDERS.some((f) => entry.startsWith(f))) {
+            refusals.push(
+                `${entry}: only ${PUBLIC_FOLDERS.join(' and ')}, or a folder inside them, may be listed as a folder — anywhere else a doc is published by name`,
+            );
+        } else if (!listFolder || !listFolder(entry).some((f) => f.startsWith(entry) && /\.md$/i.test(f))) {
+            refusals.push(`${entry}: lists no docs`);
+        }
+    }
+    for (const doc of manifestDocs(manifest, listFolder)) {
         if (seen.has(doc)) refusals.push(`${doc}: listed twice`);
         seen.add(doc);
         const never = neverPublishReason(doc);
@@ -164,6 +259,98 @@ function publicationRefusals(manifest, readDoc) {
         slugs.set(s, doc);
     }
     return refusals;
+}
+
+/**
+ * A doc's frontmatter, if it opens with one. Only `key: value` lines with a
+ * key from FRONTMATTER_KEYS are accepted, so a typo is an error and not a
+ * field nobody reads.
+ */
+function splitFrontmatter(markdown) {
+    const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(markdown);
+    if (!m) return { data: {}, body: markdown, problems: [] };
+    const data = {};
+    const problems = [];
+    for (const line of m[1].split(/\r?\n/)) {
+        if (line.trim() === '') continue;
+        const kv = /^([A-Za-z][\w-]*):\s*(.*?)\s*$/.exec(line);
+        if (!kv) {
+            problems.push(`frontmatter line is not "key: value": ${line.trim()}`);
+            continue;
+        }
+        const [, key, raw] = kv;
+        if (!FRONTMATTER_KEYS.includes(key)) {
+            problems.push(`unknown frontmatter key "${key}" (allowed: ${FRONTMATTER_KEYS.join(', ')})`);
+            continue;
+        }
+        data[key] = raw.replace(/^(["'])(.*)\1$/, '$2');
+    }
+    return { data, body: markdown.slice(m[0].length), problems };
+}
+
+/**
+ * The URL of every page in the app, from the repo paths of its `page.tsx`
+ * files: `src/app/t/[tenantSlug]/(app)/risks/page.tsx` → `/t/[tenantSlug]/risks`.
+ * Route groups — a `(folder)` — are not part of the URL and are dropped.
+ */
+function appRoutes(files) {
+    const routes = new Set();
+    for (const f of files) {
+        const m = new RegExp(`^${APP_DIR}((?:/[^/]+)*)/page\\.(?:tsx|ts|jsx|js|mdx)$`).exec(f);
+        if (!m) continue;
+        const segs = m[1].split('/').filter((x) => x && !/^\(.*\)$/.test(x));
+        routes.add(`/${segs.join('/')}`);
+    }
+    return routes;
+}
+
+/** How a route reads to a user: `/t/[tenantSlug]/risks` → `/t/<workspace>/risks`. */
+function displayRoute(route) {
+    return route.replace(/\[(\.\.\.)?([^\]]+)\]/g, (_, rest, name) => {
+        const words = { tenantSlug: 'workspace', orgSlug: 'organisation' };
+        return `<${words[name] ?? name}${rest ? '…' : ''}>`;
+    });
+}
+
+/**
+ * The label `key` names in the message catalogue, or why it cannot be used.
+ * A message with ICU arguments (`{count}`) is a sentence the app fills in,
+ * not a label, and printing it raw would show the braces.
+ */
+function uiLabel(messages, key) {
+    let v = messages;
+    for (const part of key.split('.')) {
+        v = v !== null && typeof v === 'object' && Object.prototype.hasOwnProperty.call(v, part) ? v[part] : undefined;
+    }
+    if (typeof v !== 'string') {
+        return { problem: `{{ui:${key}}} names ${v === undefined ? 'no message' : 'a group of messages, not one'} in ${MESSAGES_PATH}` };
+    }
+    if (/[{}]/.test(v)) return { problem: `{{ui:${key}}} is a message with arguments, not a label: ${v}` };
+    return { value: v };
+}
+
+/** Markdown-escape a label so it prints as written, in a table cell too. */
+function escapeLabel(text) {
+    return text.replace(/[\\`*_[\]|]/g, '\\$&').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Replace every `{{ui:…}}` in `text`, recording any that cannot resolve. */
+function resolveUiTokens(text, messages, problems, escape = escapeLabel) {
+    for (const shaped of text.match(UI_TOKEN_SHAPE_RE) ?? []) {
+        if (!new RegExp(`^${UI_TOKEN_RE.source}$`).test(shaped)) problems.push(`malformed label token ${shaped}`);
+    }
+    return text.replace(UI_TOKEN_RE, (whole, key) => {
+        if (!messages) {
+            problems.push(`${whole} cannot resolve: no message catalogue was loaded`);
+            return whole;
+        }
+        const r = uiLabel(messages, key);
+        if (r.problem) {
+            problems.push(r.problem);
+            return whole;
+        }
+        return escape(r.value);
+    });
 }
 
 /** The first `# ` heading becomes the page title; the body loses it. */
@@ -251,8 +438,11 @@ function maskCodeSpans(line) {
 const LINK_RE = /(!?)\[([^\]\n]*)\]\(([^)\s]+)((?:\s+"[^"\n]*")?)\)/g;
 const TAG_RE = /<(\/?)([A-Za-z][\w.-]*)(?=[\s>/])/g;
 
-/** Rewrite links and tag-shaped placeholders in prose, never inside code. */
-function rewriteProse(chunk, fromPath, ctx, missing) {
+/**
+ * Rewrite links, tag-shaped placeholders and label tokens in prose, never
+ * inside code — a doc that explains the token syntax shows it in a code span.
+ */
+function rewriteProse(chunk, fromPath, ctx, missing, problems) {
     const { masked, unmask } = maskCodeSpans(chunk);
     const rewritten = masked
         .replace(LINK_RE, (whole, bang, label, href, title) => {
@@ -265,7 +455,8 @@ function rewriteProse(chunk, fromPath, ctx, missing) {
         .replace(TAG_RE, (whole, slash, name) =>
             /^[A-Z]/.test(name) || !HTML_TAGS.has(name.toLowerCase()) ? `&lt;${slash}${name}` : whole,
         );
-    return unmask(rewritten);
+    // Last, so a label's own characters are never read as a link or a tag.
+    return unmask(resolveUiTokens(rewritten, ctx.messages, problems));
 }
 
 /**
@@ -276,11 +467,12 @@ function rewriteProse(chunk, fromPath, ctx, missing) {
  */
 function transformMarkdown(markdown, fromPath, ctx) {
     const missing = [];
+    const problems = [];
     const out = [];
     let prose = [];
     let fence = null;
     const flush = () => {
-        if (prose.length) out.push(rewriteProse(prose.join('\n'), fromPath, ctx, missing));
+        if (prose.length) out.push(rewriteProse(prose.join('\n'), fromPath, ctx, missing, problems));
         prose = [];
     };
     for (const line of markdown.split('\n')) {
@@ -304,19 +496,39 @@ function transformMarkdown(markdown, fromPath, ctx) {
         prose.push(line);
     }
     flush();
-    return { text: out.join('\n'), missing };
+    return { text: out.join('\n'), missing, problems };
 }
 
-/** The staged page: frontmatter, then the rewritten body. */
+/**
+ * The staged page: frontmatter, then the rewritten body. `problems` are
+ * reasons the page must not be built — a label that does not resolve, a route
+ * that matches no page — as opposed to `missing`, links to nothing, which the
+ * build only warns about.
+ */
 function stagePage(markdown, fromPath, ctx, extraFrontmatter = {}) {
-    const split = splitTitle(markdown);
+    const fm = splitFrontmatter(markdown);
+    const problems = [...fm.problems];
+    const split = splitTitle(fm.body);
     if (!split) throw new Error(`${fromPath}: no "# " title`);
-    const { text, missing } = transformMarkdown(split.body, fromPath, ctx);
-    const fm = { title: split.title, ...extraFrontmatter };
-    const yaml = Object.entries(fm)
+    const title = resolveUiTokens(split.title, ctx.messages, problems, (v) => v);
+    let body = split.body;
+    const route = fm.data.route;
+    if (fromPath.startsWith(GUIDE_FOLDER) && !route) {
+        problems.push('a page guide names the page it documents in "route:" frontmatter');
+    }
+    if (route) {
+        if (!ctx.routes || !ctx.routes.has(route)) {
+            problems.push(`route ${route} matches no page.tsx under ${APP_DIR}/`);
+        }
+        body = `**Page address:** \`${displayRoute(route)}\`\n\n${body}`;
+    }
+    const { text, missing, problems: bodyProblems } = transformMarkdown(body, fromPath, ctx);
+    problems.push(...bodyProblems);
+    const meta = { title, ...extraFrontmatter };
+    const yaml = Object.entries(meta)
         .map(([k, v]) => `${k}: ${typeof v === 'string' ? JSON.stringify(v) : v}`)
         .join('\n');
-    return { page: `---\n${yaml}\n---\n\n${text}`, missing };
+    return { page: `---\n${yaml}\n---\n\n${text}`, missing, problems };
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -338,41 +550,109 @@ function readRepoFile(repoPath) {
     }
 }
 
+/** Repo paths of every file under `folder`, at any depth; `[]` if it is absent. */
+function listRepoFolder(folder) {
+    const out = [];
+    const walk = (rel) => {
+        let entries;
+        try {
+            entries = fs.readdirSync(path.join(REPO_ROOT, rel), { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const e of entries) {
+            const child = `${rel.replace(/\/$/, '')}/${e.name}`;
+            if (e.isDirectory()) walk(child);
+            else if (e.isFile()) out.push(child);
+        }
+    };
+    walk(folder);
+    return out.sort();
+}
+
+/**
+ * What the stager reads from the repository: docs, folders, the label
+ * catalogue and the app's page routes. Astro's config reads the sidebar
+ * through the same object, so the two cannot disagree about a folder.
+ */
+function repoIo() {
+    const raw = readRepoFile(MESSAGES_PATH);
+    let messages = null;
+    try {
+        messages = raw === null ? null : JSON.parse(raw);
+    } catch {
+        messages = null;
+    }
+    return {
+        readDoc: readRepoFile,
+        listFolder: listRepoFolder,
+        messages,
+        routes: appRoutes(listRepoFolder(`${APP_DIR}/`)),
+    };
+}
+
+/** A sidebar label with its `{{ui:…}}` tokens resolved, as plain text. */
+function sidebarLabel(io) {
+    return (text) => resolveUiTokens(text, io.messages, [], (v) => v);
+}
+
 function main() {
+    const io = repoIo();
     const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
-    const refusals = publicationRefusals(manifest, readRepoFile);
+    const refusals = publicationRefusals(manifest, io.readDoc, io.listFolder);
     if (refusals.length) {
         process.stderr.write(`docs site: refusing to publish\n  ${refusals.join('\n  ')}\n`);
         process.exit(1);
     }
-    const docs = manifestDocs(manifest);
-    const ctx = { published: new Map(docs.map((d) => [d, slugFor(d)])), kindOf: kindOnDisk };
-
-    fs.rmSync(CONTENT_DIR, { recursive: true, force: true });
-    fs.mkdirSync(CONTENT_DIR, { recursive: true });
-    const warnings = [];
-    const write = (slug, page) => {
-        const dest = path.join(CONTENT_DIR, `${slug}.md`);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, page);
+    const docs = manifestDocs(manifest, io.listFolder);
+    const ctx = {
+        published: new Map(docs.map((d) => [d, slugFor(d)])),
+        kindOf: kindOnDisk,
+        messages: io.messages,
+        routes: io.routes,
     };
+
+    // Everything is staged in memory first, so a page that cannot be built
+    // leaves the previous staging untouched rather than half-replaced.
+    const pages = new Map();
+    const problems = [];
+    const warnings = [];
+    for (const label of manifest.sections.flatMap((s) => [s.group, s.label]).filter(Boolean)) {
+        const labelProblems = [];
+        resolveUiTokens(label, io.messages, labelProblems, (v) => v);
+        problems.push(...labelProblems.map((p) => `site/published-docs.json: ${p}`));
+    }
     for (const doc of docs) {
-        const { page, missing } = stagePage(readRepoFile(doc), doc, ctx, {
-            editUrl: `${GITHUB}/edit/main/${doc}`,
-        });
-        for (const m of missing) warnings.push(`${doc}: link to a missing target (${m})`);
-        write(slugFor(doc), page);
+        const staged = stagePage(io.readDoc(doc), doc, ctx, { editUrl: `${GITHUB}/edit/main/${doc}` });
+        problems.push(...staged.problems.map((p) => `${doc}: ${p}`));
+        // Checked again AFTER labels are resolved: the source passed, but a
+        // label printed into it is text the policy has not seen yet.
+        for (const hit of forbiddenContentIn(staged.page)) {
+            problems.push(`${doc}: the built page carries ${hit.why} (${hit.id})`);
+        }
+        for (const m of staged.missing) warnings.push(`${doc}: link to a missing target (${m})`);
+        pages.set(`${slugFor(doc)}.md`, staged.page);
     }
     // The landing page lives in site/ and links to docs by their repo paths,
     // so it goes through the same rewrite and fails the same way if it points
     // at a page that is not published.
-    const landing = readRepoFile(LANDING_PAGE);
-    const { text, missing } = transformMarkdown(landing, LANDING_PAGE, ctx);
-    if (missing.length || /\]\((?!https?:|\/inflect-compliance\/|#)/.test(text)) {
-        process.stderr.write(`docs site: ${LANDING_PAGE} links to something that is not a published page\n`);
+    const landing = transformMarkdown(io.readDoc(LANDING_PAGE), LANDING_PAGE, ctx);
+    problems.push(...landing.problems.map((p) => `${LANDING_PAGE}: ${p}`));
+    if (landing.missing.length || /\]\((?!https?:|\/inflect-compliance\/|#)/.test(landing.text)) {
+        problems.push(`${LANDING_PAGE}: links to something that is not a published page`);
+    }
+    if (problems.length) {
+        process.stderr.write(`docs site: refusing to build\n  ${problems.join('\n  ')}\n`);
         process.exit(1);
     }
-    fs.writeFileSync(path.join(CONTENT_DIR, 'index.md'), text);
+    pages.set('index.md', landing.text);
+
+    fs.rmSync(CONTENT_DIR, { recursive: true, force: true });
+    for (const [rel, page] of pages) {
+        const dest = path.join(CONTENT_DIR, rel);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, page);
+    }
 
     process.stdout.write(`docs site: staged ${docs.length} docs + landing page into ${path.relative(REPO_ROOT, CONTENT_DIR)}\n`);
     if (warnings.length) process.stdout.write(`docs site: ${warnings.length} warning(s)\n  ${warnings.join('\n  ')}\n`);
@@ -380,18 +660,28 @@ function main() {
 
 module.exports = {
     FORBIDDEN_CONTENT,
+    GUIDE_FOLDER,
     NEVER_PUBLISH,
+    PUBLIC_FOLDERS,
     SITE_BASE,
+    appRoutes,
+    displayRoute,
+    expandSections,
     forbiddenContentIn,
     manifestDocs,
     neverPublishReason,
     publicationRefusals,
+    repoIo,
     resolveLink,
+    resolveUiTokens,
     sidebarFrom,
+    sidebarLabel,
     slugFor,
+    splitFrontmatter,
     splitTitle,
     stagePage,
     transformMarkdown,
+    uiLabel,
 };
 
 if (require.main === module) main();
