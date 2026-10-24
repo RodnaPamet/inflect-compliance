@@ -234,17 +234,29 @@ directory rather than editing rows by hand.
 | `AISVS-1.0` | `ISO27001-2022` | `aisvs-to-iso27001.yaml` | 16 |
 | `AISVS-1.0` | `ISO42001-2023` | `aisvs-to-iso-42001.yaml` | 14 |
 | `AISVS-1.0` | `NIST-CSF-2.0` | `aisvs-to-nist-csf.yaml` | 13 |
+| `AIUC-1` | `EU-AI-ACT-2024` | `aiuc-1-to-eu-ai-act.yaml` | 39 |
+| `AIUC-1` | `IMDA-MGF-2026` | `aiuc-1-to-imda-mgf.yaml` | 49 |
+| `AIUC-1` | `ISO27001-2022` | `aiuc-1-to-iso27001.yaml` | 46 |
+| `AIUC-1` | `ISO42001-2023` | `aiuc-1-to-iso-42001.yaml` | 62 |
+| `AIUC-1` | `OWASP-ASI-TOP10` | `aiuc-1-to-owasp-agentic.yaml` | 46 |
+| `AIUC-1` | `SOC2-2017` | `aiuc-1-to-soc2.yaml` | 23 |
 | `CIS-CONTROLS-V8` | `ISO27001-2022` | `cis-v8-to-iso27001.yaml` | 65 |
 | `CIS-CONTROLS-V8` | `NIST-CSF-2.0` | `cis-v8-to-nist-csf.yaml` | 36 |
+| `COSO-ICF-2013` | `ISO27001-2022` | `coso-to-iso27001.yaml` | 9 |
+| `COSO-ICF-2013` | `SOC2-2017` | `coso-to-soc2.yaml` | 8 |
 | `DORA-2022` | `ISO27001-2022` | `dora-to-iso27001.yaml` | 20 |
 | `DORA-2022` | `NIS2-2022` | `dora-to-nis2.yaml` | 16 |
+| `EU-AI-ACT-2024` | `AIUC-1` | `eu-ai-act-to-aiuc-1.yaml` | 39 |
+| `IMDA-MGF-2026` | `AIUC-1` | `imda-mgf-to-aiuc-1.yaml` | 49 |
 | `IMDA-MGF-2026` | `ISO42001-2023` | `imda-mgf-to-iso-42001.yaml` | 47 |
 | `IMDA-MGF-2026` | `OWASP-ASI-TOP10` | `imda-mgf-to-owasp-agentic.yaml` | 27 |
+| `ISO27001-2022` | `AIUC-1` | `iso27001-to-aiuc-1.yaml` | 46 |
 | `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 14 |
 | `ISO27001-2022` | `NIST-CSF-2.0` | `iso27001-to-nist-csf.yaml` | 14 |
 | `ISO27001-2022` | `OWASP-ASI-TOP10` | `iso27001-to-owasp-agentic.yaml` | 39 |
 | `ISO27001-2022` | `SOC2-2017` | `iso27001-to-soc2.yaml` | 26 |
 | `ISO27701-2019` | `GDPR` | `iso27701-to-gdpr.yaml` | 43 |
+| `ISO42001-2023` | `AIUC-1` | `iso-42001-to-aiuc-1.yaml` | 62 |
 | `ISO42001-2023` | `EU-AI-ACT-2024` | `iso-42001-to-eu-ai-act.yaml` | 15 |
 | `ISO42001-2023` | `IMDA-MGF-2026` | `iso-42001-to-imda-mgf.yaml` | 47 |
 | `ISO42001-2023` | `OWASP-ASI-TOP10` | `iso-42001-to-owasp-agentic.yaml` | 38 |
@@ -255,23 +267,35 @@ directory rather than editing rows by hand.
 | `NIST-SSDF-800-218` | `ISO27001-2022` | `ssdf-to-iso27001.yaml` | 15 |
 | `NIST-SSDF-800-218` | `NIST-CSF-2.0` | `ssdf-to-nist-csf.yaml` | 15 |
 | `NIST-SSDF-800-218` | `SOC2-2017` | `ssdf-to-soc2.yaml` | 13 |
+| `OWASP-ASI-TOP10` | `AIUC-1` | `owasp-agentic-to-aiuc-1.yaml` | 46 |
 | `OWASP-ASI-TOP10` | `IMDA-MGF-2026` | `owasp-agentic-to-imda-mgf.yaml` | 27 |
 | `OWASP-ASI-TOP10` | `ISO27001-2022` | `owasp-agentic-to-iso27001.yaml` | 39 |
 | `OWASP-ASI-TOP10` | `ISO42001-2023` | `owasp-agentic-to-iso-42001.yaml` | 38 |
 | `OWASP-ASVS-4.0.3` | `ISO27001-2022` | `asvs-to-iso27001.yaml` | 128 |
 | `OWASP-ASVS-4.0.3` | `NIST-SSDF-800-218` | `asvs-to-ssdf.yaml` | 128 |
+| `SOC2-2017` | `AIUC-1` | `soc2-to-aiuc-1.yaml` | 23 |
 
-**Total: 976 mapping entries across 30 framework pairs.**
+**Total: 1523 mapping entries across 44 framework pairs.**
 
 ### Agentic pairs ship in BOTH directions
 
-The four pairs with an agentic framework on either side — OWASP Agentic AI
-Top 10 and the IMDA MGF, against ISO/IEC 42001, ISO/IEC 27001 and each other
-— are the only ones that ship a reverse file. The reverse is the EXACT
+The ten pairs with an agentic framework on either side are the only ones that
+ship a reverse file: OWASP Agentic AI Top 10 and the IMDA MGF against
+ISO/IEC 42001, ISO/IEC 27001 and each other, and AIUC-1 against both of them,
+both ISO standards, the EU AI Act and SOC 2. The reverse is the EXACT
 transpose of the forward file with each strength inverted (`SUBSET` ⇄
 `SUPERSET`; `EQUAL` / `INTERSECT` / `RELATED` are self-inverse), and
 `tests/unit/agentic-framework-mappings.test.ts` fails if one side is edited
 alone.
+
+Because the reverse of a `SUBSET` is a `SUPERSET` — which gap analysis reads
+as `COVERED` — the AIUC-1 sets reserve either for an edge where meeting the
+broader requirement as written necessarily meets the narrower one. None of
+their 265 edges clears that bar, so every one is `INTERSECT` or `RELATED`,
+and none, in either direction, is ever read as `COVERED`.
+The AIUC-1 ⇄ SOC 2 pair maps onto the common criteria only, because the SOC 2
+representation that installed SOC 2 controls link to carries no `A1` / `C1` /
+`PI1` / `P1`.
 
 Both directions are authored because both questions get asked of a new
 framework: "what agentic coverage does my ISMS already give me" and "what does
