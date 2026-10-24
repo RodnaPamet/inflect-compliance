@@ -862,6 +862,24 @@ All structured logging, tracing, and metrics flow through `src/lib/observability
 
 NextAuth v4.24.15 (stable, exact-pinned in `package.json`) is configured in `src/auth.ts`. Providers: Google OAuth, Microsoft Entra ID (via the v4 `azure-ad` provider — same OAuth endpoints, Microsoft renamed the product), enterprise SSO — SAML and OIDC (via `src/app/api/auth/sso/saml/` and `src/app/api/auth/sso/oidc/`), and Credentials. The JWT carries `tenantId`, `role`, `mfaPending`, `memberships[]`, and the Epic C.3 `userSessionId`. Token refresh logic lives in `src/lib/auth/refresh.ts`.
 
+**SSO sign-in goes through NextAuth, and its session reaches one workspace.**
+The SAML and OIDC callbacks do not mint a session. They verify the identity
+provider's answer and issue a single-use, 60-second hand-off
+(`src/lib/auth/sso-handoff.ts`), stored hashed in `VerificationToken` and
+delivered in an HttpOnly cookie scoped to `/api/auth/callback/sso-handoff`.
+`/login/sso-complete` then signs in with the `sso-handoff` Credentials
+provider, which redeems the cookie, so the session is NextAuth's own: same
+cookie, claims, workspace MFA policy and `UserSession` row as every other
+sign-in. Before 2026-10-24 the callbacks hand-signed an `authjs.session-token`
+that NextAuth v4 never reads, so no SSO sign-in ever produced a session. The
+session is SCOPED (`ssoTenantId`, `src/lib/auth/sso-session.ts`): a tenant's
+identity provider is configured by that tenant's admin and can assert any
+email, so its session carries only that tenant's membership and no org
+memberships, and `getTenantCtx` / `getLegacyCtx` / `getTenantServerContext` /
+`getOrgCtx` / `getOrgServerContext` refuse anything else. The hand-off links
+no account and redeems no invite. Do not widen the scope to "every tenant the
+account belongs to": that is the cross-tenant takeover the scope exists to stop.
+
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
 
 **GAP-04 — type augmentation pattern.** `src/auth.ts` declares two module augmentations: `next-auth` for `Session.user` (id/tenantId/role/mfaPending/memberships) and `next-auth/jwt` for the full JWT shape (every custom field the codebase stores). Middleware reads typed `token.role` / `token.memberships` directly via `getToken({ req, secret })`. There are zero `as any` casts in the auth-critical path; the structural guardrail at `tests/guardrails/auth-stack-pinning.test.ts` fails CI if any are reintroduced.

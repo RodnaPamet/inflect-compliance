@@ -20,7 +20,7 @@ import { ClientProviders } from '@/components/layout/ClientProviders';
  *      `/login` here too as a defence-in-depth gate (the tenant layout
  *      pattern does the same).
  *
- *   2. `getOrgServerContext({ orgSlug, userId })` — verifies the user
+ *   2. `getOrgServerContext({ orgSlug, userId, ssoTenantId })` — verifies the user
  *      has an `OrgMembership` for this org. Throws `NotFoundError`
  *      (org slug doesn't exist) or `ForbiddenError` (user isn't a
  *      member). Both collapse to `notFound()` here so non-members get
@@ -54,6 +54,7 @@ export default async function OrgLayout({
         orgCtx = await getOrgServerContext({
             orgSlug,
             userId: session.user.id,
+            ssoTenantId: session.user.ssoTenantId,
         });
     } catch {
         // NotFoundError | ForbiddenError both → standard 404 surface.

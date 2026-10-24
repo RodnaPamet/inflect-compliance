@@ -47,6 +47,7 @@ export default async function TenantLayout({
         serverCtx = await getTenantServerContext({
             tenantSlug,
             userId: session.user.id,
+            ssoTenantId: session.user.ssoTenantId,
         });
     } catch {
         notFound();

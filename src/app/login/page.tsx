@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
+import { loginErrorKey } from './login-error';
 
 function extractErrorMessage(value: unknown, fallback: string): string {
     if (typeof value === 'string') return value;
@@ -32,6 +33,9 @@ function LoginForm() {
         verifyStatusParam === 'expired'
             ? verifyStatusParam
             : null;
+    // A failed SSO callback, or NextAuth itself, sends the browser here with
+    // `?error=<code>`. Only the code is read, and only to pick a fixed message.
+    const errorCode = searchParams?.get('error');
     const t = useTranslations('login');
     const [mode, setMode] = useState<'login' | 'register'>('login');
     const [email, setEmail] = useState('');
@@ -177,6 +181,11 @@ function LoginForm() {
                     {error && (
                         <InlineNotice variant="error" className="mb-4" icon={null}>
                             {error}
+                        </InlineNotice>
+                    )}
+                    {!error && errorCode && (
+                        <InlineNotice id="login-error-notice" variant="error" className="mb-4" icon={null}>
+                            {t(loginErrorKey(errorCode))}
                         </InlineNotice>
                     )}
 
