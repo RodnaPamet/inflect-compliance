@@ -216,6 +216,71 @@ export function enforceRateLimit(
     return { key, result };
 }
 
+// ─── API-key-keyed enforcement ───────────────────────────────────────
+
+export interface ApiKeyRateLimitScope {
+    /** Logical namespace for the key, as for `RateLimitScope.scope`. */
+    scope: string;
+    /** The preset policy. */
+    config: RateLimitConfig;
+    /**
+     * The VERIFIED `TenantApiKey.id` — resolved by authentication, never read
+     * from the request. A value the caller controls (a token digest, a header)
+     * must not be passed here: varying it would mint a fresh bucket per request.
+     */
+    apiKeyId: string;
+    /** Attempts this request costs, all or nothing (default 1). */
+    units?: number;
+}
+
+/**
+ * Build the key for a per-API-key budget: `<scope>:key:<apiKeyId>`.
+ *
+ * No IP, on purpose. The IP-keyed tiers exist because before authentication
+ * the address is all there is; after it, the key is the accountable unit, and
+ * folding the address back in would hand a key one budget per address it calls
+ * from — and make every key that shares an address (a hosted provider's egress)
+ * collide on nothing it chose.
+ */
+export function buildApiKeyRateLimitKey(scope: string, apiKeyId: string): string {
+    return `${scope}:key:${apiKeyId}`;
+}
+
+/**
+ * Check and record a per-API-key budget AFTER authentication.
+ *
+ * The companion to `enforceRateLimit`, which runs before authentication and is
+ * keyed by IP. Same contract: `response` is a ready 429 when the budget is
+ * exhausted, absent otherwise. Does NOT consult `isRateLimitBypassed()` — the
+ * caller does, exactly as `withApiErrorHandling` does for the IP tier, so a
+ * test that turns enforcement on exercises both with one switch.
+ */
+export function enforceApiKeyRateLimit(
+    scope: ApiKeyRateLimitScope,
+): RateLimitEnforcement {
+    const key = buildApiKeyRateLimitKey(scope.scope, scope.apiKeyId);
+    const result = checkRateLimit(key, scope.config, scope.units ?? 1);
+
+    if (!result.allowed) {
+        // The key ID is an internal row id, not the credential — the same
+        // identifier the audit trail records for every call this key makes.
+        logger.warn('rate-limit.blocked', {
+            component: 'rate-limit-middleware',
+            scope: scope.scope,
+            apiKeyId: scope.apiKeyId,
+            units: scope.units ?? 1,
+            retryAfterMs: result.retryAfterMs,
+        });
+        return {
+            key,
+            result,
+            response: buildTooManyRequestsResponse(scope.scope, scope.config, result),
+        };
+    }
+
+    return { key, result };
+}
+
 // ─── Route-handler wrapper ───────────────────────────────────────────
 
 export interface WithRateLimitOptions {
@@ -335,5 +400,7 @@ export {
     // preset missing from it is described in the tests as a GAP rather than a
     // pattern to copy.
     AGENT_QUESTION_LIMIT,
+    MCP_PER_KEY_LIMIT,
+    MCP_IP_CEILING_LIMIT,
 } from './rate-limit';
 export type { RateLimitConfig, RateLimitResult } from './rate-limit';
