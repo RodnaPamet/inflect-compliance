@@ -303,7 +303,8 @@
       "ssoNoAccount": "There's no account for you in this workspace yet. Ask your workspace administrator to add you.",
       "ssoDomainNotAllowed": "Your email address isn't allowed by this workspace's single sign-on settings. Ask your workspace administrator.",
       "ssoUnavailable": "Single sign-on isn't available for this workspace right now. Ask your workspace administrator.",
-      "ssoStartFromSignIn": "For your security, single sign-on has to be started from this sign-in page."
+      "ssoStartFromSignIn": "For your security, single sign-on has to be started from this sign-in page.",
+      "ssoRequired": "Your workspace requires single sign-on. Continue with single sign-on below."
     },
     "ssoComplete": {
       "title": "Single sign-on",
@@ -4411,10 +4412,10 @@
       "acsUrl": "ACS URL (your callback)",
       "enableSso": "Enable SSO",
       "enforceSso": "Enforce SSO",
-      "enforceHint": "(disables local login)",
+      "enforceHint": "(other sign-in methods stop working)",
       "enforceAria": "About SSO enforcement",
-      "enforceTooltip": "Everyone must sign in via your IdP once this saves. Local-password admins keep break-glass access — confirm at least one admin has a working password before enabling.",
-      "enforcedNotice": "When enforced, users must authenticate via SSO. Only admins with a local password can bypass (break-glass access).",
+      "enforceTooltip": "Everyone must sign in through your identity provider once this saves; password, Google and Microsoft sign-in stop reaching this workspace. Owners and admins who have a password keep break-glass access when they sign in with it — confirm one of them has a working password before enabling.",
+      "enforcedNotice": "When enforced, people must sign in through this workspace's single sign-on. Only owners and admins with a password can bypass it, by signing in with that password (break-glass access).",
       "saving": "Saving...",
       "saveConfig": "Save Configuration",
       "testLogin": "Test Login",
@@ -4426,7 +4427,7 @@
       "howTitle": "How SSO works",
       "how1": "Users must already have an account and tenant membership to login via SSO",
       "how2": "SSO links are created automatically on first successful login",
-      "how3": "When enforced, only admins with a local password can bypass SSO (break-glass)",
+      "how3": "When enforced, only owners and admins with a password can bypass SSO, by signing in with it (break-glass)",
       "how4": "Email domains help auto-discover SSO on the login page",
       "deleteTitle": "Delete SSO configuration?",
       "deleteDesc": "Users will need to use local login until SSO is reconfigured. This cannot be undone.",
@@ -8895,7 +8896,7 @@
       },
       "governance": {
         "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
-        "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live credential is bound to no agent} other {# live credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
+        "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live credential is bound to no agent} other {# live credentials are bound to no agent}} — each is refused at the agent surface. A credential's agent can be set only when it is created: create a new one for a registered agent, then revoke the old one.",
         "unboundMore": "+{count} more…",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
       },

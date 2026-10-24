@@ -360,6 +360,22 @@ const IMPERATIVE_VERBS = new Set([
     'Translate',
     'Trigger',
     'Weigh',
+
+    // ── Partly-stepped frameworks (CIS v8 IG1) ───────────────────────
+    // These five titles predate their steps; giving the rest of CIS v8's
+    // tasks steps put them in this population for the first time. Each is
+    // the plain verb for its act: `Re-run` the installed-software extraction
+    // (CIS-02), `Delete` data past its retention period (CIS-03),
+    // `Re-export` each system's account list (CIS-05), `Query` the log
+    // destination for each source's latest event (CIS-08), and `Copy` the
+    // current backup to the isolated location (CIS-11). The one colloquial
+    // title in the same batch, ISO 27701's "Wire the purpose-end signal…",
+    // was reworded to `Connect` rather than admitted.
+    'Re-run',
+    'Delete',
+    'Re-export',
+    'Query',
+    'Copy',
 ]);
 
 /**

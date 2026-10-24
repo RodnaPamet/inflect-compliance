@@ -1015,11 +1015,14 @@ export function recordDispatchEnqueueFailed(attrs: { component: string }): void 
  */
 export function recordSyncLock(attrs: {
     component: string;
-    outcome: 'acquired' | 'busy' | 'reaped' | 'release_lost';
+    outcome: 'acquired' | 'busy' | 'reaped' | 'release_lost' | 'absent';
 }): void {
     if (!_syncLock) {
         _syncLock = getMeter().createCounter('integration.sync.lock', {
-            description: 'Per-connection sync-lock outcomes (acquired/busy/reaped/release_lost)',
+            description:
+                'Per-connection sync-lock outcomes (acquired/busy/reaped/release_lost/absent). ' +
+                '`absent` means the connection id matched no row — a deleted or wrong id, NOT ' +
+                'contention; it was counted as `busy` until #3316.',
             unit: '1',
         });
     }

@@ -58,6 +58,8 @@ jest.mock('@/lib/prisma', () => {
         tenantSecuritySettings: { findUnique: jest.fn(async () => null) },
         organization: { findUnique: jest.fn(async () => ({ id: 'org-o', slug: 'omega', name: 'Omega' })) },
         orgMembership: { findUnique: jest.fn(async () => ({ role: 'ORG_ADMIN' })) },
+        // No workspace here enforces SSO; that rule has its own tests.
+        tenantIdentityProvider: { findMany: jest.fn(async () => []) },
     };
     return { __esModule: true, default: prisma, prisma };
 });
@@ -114,16 +116,16 @@ describe('tenant API context', () => {
 describe('tenant page context (the tenant layout)', () => {
     it('refuses another tenant to a session opened by SSO', async () => {
         await expect(
-            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: 'tenant-b' }),
+            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: 'tenant-b', signInMethod: 'sso' }),
         ).rejects.toMatchObject({ status: 403 });
     });
 
     it('admits the SSO tenant, and any tenant to a session not opened by SSO', async () => {
         await expect(
-            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: 'tenant-b' }),
+            getTenantServerContext({ tenantSlug: 'beta', userId: 'user-1', ssoTenantId: 'tenant-b', signInMethod: 'sso' }),
         ).resolves.toMatchObject({ tenant: { id: 'tenant-b' } });
         await expect(
-            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: null }),
+            getTenantServerContext({ tenantSlug: 'alpha', userId: 'user-1', ssoTenantId: null, signInMethod: 'credentials' }),
         ).resolves.toMatchObject({ tenant: { id: 'tenant-a' } });
     });
 });

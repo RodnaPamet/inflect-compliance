@@ -2,11 +2,12 @@ import type { RequestContext } from '@/app-layer/types';
 import type { TenantIdentityProvider, UserIdentityLink } from '@prisma/client';
 import * as SsoConfigRepo from '@/app-layer/repositories/SsoConfigRepository';
 import * as IdentityLinkRepo from '@/app-layer/repositories/IdentityLinkRepository';
-import { UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
-import { forbidden, notFound } from '@/lib/errors/types';
+import { SSO_SECRET_KEYS, SSO_SECRET_MASK, UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
+import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { BREAK_GLASS_ROLES, isBreakGlassRole } from '@/lib/auth/sso-enforcement';
 
 /**
  * Enterprise SSO Usecases
@@ -59,9 +60,13 @@ export async function upsertTenantSsoConfig(
     });
 
     // If updating, verify the provider belongs to this tenant
-    if (input.id) {
-        const existing = await SsoConfigRepo.findById(ctx.tenantId, input.id);
-        if (!existing) throw notFound('Identity provider not found');
+    const existing = input.id ? await SsoConfigRepo.findById(ctx.tenantId, input.id) : null;
+    if (input.id && !existing) throw notFound('Identity provider not found');
+
+    // Saving the form turns enforcement on too, so it needs the same
+    // break-glass check as the enforce toggle — or this was the way round it.
+    if (input.isEnforced && !existing?.isEnforced) {
+        await assertBreakGlassAvailable(ctx.tenantId, input.id);
     }
 
     return SsoConfigRepo.upsert(ctx.tenantId, {
@@ -72,7 +77,7 @@ export async function upsertTenantSsoConfig(
         isEnforced: input.isEnforced,
         emailDomains: input.emailDomains,
         configJson: {
-            ...input.config,
+            ...withStoredSecretsKept(input.config, existing?.configJson),
             // Persist JIT settings alongside IdP config
             _jit: {
                 allowJitProvisioning: input.allowJitProvisioning,
@@ -123,7 +128,7 @@ export async function toggleTenantSso(
  * When enforced:
  *   - Users cannot log in with credentials
  *   - SSO is the only authentication method
- *   - Break-glass: ADMIN users who have passwordHash set can still use local login
+ *   - Break-glass: OWNER and ADMIN users who have passwordHash set can still use local login
  */
 export async function setTenantSsoEnforced(
     ctx: RequestContext,
@@ -139,24 +144,51 @@ export async function setTenantSsoEnforced(
     const existing = await SsoConfigRepo.findById(ctx.tenantId, providerId);
     if (!existing) throw notFound('Identity provider not found');
 
-    // Safety check: if enabling enforcement, ensure at least one admin has SSO linked
-    if (enforced) {
-        const adminMembers = await prisma.tenantMembership.findMany({
-            where: { tenantId: ctx.tenantId, role: 'ADMIN' },
-            include: { user: true },
-        });
-
-        // At least one admin must have a password (break-glass) or SSO link
-        const hasBreakGlassAdmin = adminMembers.some((m) => m.user.passwordHash);
-        if (!hasBreakGlassAdmin) {
-            logger.warn('sso enforcement blocked — no break-glass admin', { component: 'sso', providerId });
-            throw forbidden(
-                'Cannot enforce SSO: at least one admin must have a local password for break-glass access'
-            );
-        }
-    }
+    if (enforced) await assertBreakGlassAvailable(ctx.tenantId, providerId);
 
     return SsoConfigRepo.setEnforced(ctx.tenantId, providerId, enforced);
+}
+
+/**
+ * Refuse to turn enforcement on unless somebody could still get in with a
+ * password if the identity provider failed: an ACTIVE OWNER or ADMIN who
+ * has one. OWNER counts — an OWNER-run workspace with no ADMIN could
+ * otherwise never enforce SSO.
+ */
+async function assertBreakGlassAvailable(tenantId: string, providerId?: string): Promise<void> {
+    const adminMembers = await prisma.tenantMembership.findMany({
+        where: { tenantId, role: { in: [...BREAK_GLASS_ROLES] }, status: 'ACTIVE' },
+        include: { user: true },
+    });
+    if (!adminMembers.some((m) => m.user.passwordHash)) {
+        logger.warn('sso enforcement blocked — no break-glass admin', { component: 'sso', providerId });
+        throw forbidden(
+            'Cannot enforce SSO: at least one admin must have a local password for break-glass access'
+        );
+    }
+}
+
+/**
+ * A saved config with each secret the admin left alone (sent back as
+ * `SSO_SECRET_MASK`) replaced by the stored value. A new provider has no
+ * stored value, so the mask there is a missing secret, not a kept one —
+ * and so is a stored mask: that is a secret an earlier save of this form
+ * overwrote, and it must be entered again.
+ */
+function withStoredSecretsKept(
+    config: Record<string, unknown>,
+    stored: unknown,
+): Record<string, unknown> {
+    const previous = (stored && typeof stored === 'object' ? stored : {}) as Record<string, unknown>;
+    const kept = { ...config };
+    for (const key of SSO_SECRET_KEYS) {
+        if (kept[key] !== SSO_SECRET_MASK) continue;
+        if (typeof previous[key] !== 'string' || !previous[key] || previous[key] === SSO_SECRET_MASK) {
+            throw badRequest(`Enter the ${key === 'certificate' ? 'certificate' : 'client secret'} for this provider.`);
+        }
+        kept[key] = previous[key];
+    }
+    return kept;
 }
 
 // ─── SSO Login Resolution ────────────────────────────────────────────
@@ -439,7 +471,7 @@ function extractJitConfig(provider: { configJson: unknown } | null): {
  * Returns false if SSO is enforced AND the user is not a break-glass admin.
  *
  * Break-glass criteria:
- *   1. User has ADMIN role in tenant
+ *   1. User has the OWNER or ADMIN role in tenant
  *   2. User has a local passwordHash set
  *   Both conditions must be true.
  */
@@ -459,7 +491,7 @@ export async function isLocalLoginAllowed(
         where: { tenantId_userId: { tenantId, userId } },
     });
 
-    if (membership?.role !== 'ADMIN') return false;
+    if (!membership || !isBreakGlassRole(membership.role)) return false;
 
     // Admin — check if they have a local password (break-glass)
     const user = await prisma.user.findUnique({
@@ -522,7 +554,7 @@ export async function checkSsoEnforcementForEmail(
 
         if (enforcedProvider) {
             // SSO is enforced in this tenant — check break-glass
-            const isBreakGlass = membership.role === 'ADMIN' && !!user.passwordHash;
+            const isBreakGlass = isBreakGlassRole(membership.role) && !!user.passwordHash;
 
             if (!isBreakGlass) {
                 return {

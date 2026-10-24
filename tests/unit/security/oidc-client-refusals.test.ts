@@ -17,6 +17,15 @@
  * document from an earlier test silently satisfies a later one and the
  * refusal never runs.
  */
+// The identity provider is a double answering on the global `fetch`. The client
+// reaches it through `safeFetch`, whose address checks are proved against this
+// same client in oidc-client-egress.test.ts; here it hands the request straight
+// to the double.
+jest.mock('@/app-layer/automation/webhook-safety', () => ({
+    ...jest.requireActual('@/app-layer/automation/webhook-safety'),
+    safeFetch: (url: string, init?: RequestInit) => global.fetch(url, init),
+}));
+
 import {
     discoverOidc,
     exchangeCodeForTokens,
