@@ -308,6 +308,58 @@ const IMPERATIVE_VERBS = new Set([
     'Retrieve',
     'Show',
     'Split',
+
+    // ── Privacy-engineering vocabulary (NIST Privacy Framework 1.0) ──
+    // Same cause again: the 306 NIST titles had no steps until now. The verbs
+    // below were admitted after reading each title — `Generalise` or suppress
+    // identifying attributes, `Decode` what a review retrieval returns,
+    // `Sever` the links joining test to production, `Seal` a device and
+    // register its serials, `Replay` a case that crossed a boundary.
+    //
+    // Sixteen titles were REDRAFTED rather than admitted. Six used verbs this
+    // file already refuses: Fix (x4) became Define or Set, Fit became Design,
+    // and Stand up became Establish, the same redraft the COSO batch made.
+    // Ten used verbs refused here as colloquial in the way Fit and Seat
+    // were: Pin (x3), Wire, Mine, Pull, Drive, Push, Step up and Tie became
+    // Link, Record, Match, Connect, Search, Extract, Operate, Bring and Raise.
+    'Alter',
+    'Ask',
+    'Calibrate',
+    'Communicate',
+    'Count',
+    'Decode',
+    'Dispatch',
+    'Divide',
+    'Encrypt',
+    'Find',
+    'Follow',
+    'Gather',
+    'Generalise',
+    'Link',
+    'Locate',
+    'Package',
+    'Parse',
+    'Prove',
+    'Question',
+    'Rank',
+    'Re-derive',
+    'Re-scan',
+    'Reach',
+    'Rebuild',
+    'Reconstruct',
+    'Replay',
+    'Reshape',
+    'Revisit',
+    'Rework',
+    'Script',
+    'Seal',
+    'Sever',
+    'Solicit',
+    'Swap',
+    'Take',
+    'Translate',
+    'Trigger',
+    'Weigh',
 ]);
 
 /**
