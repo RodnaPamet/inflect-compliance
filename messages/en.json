@@ -5976,7 +5976,7 @@
       "bindingLabel": "Agent binding",
       "bindingAria": "About agent binding",
       "bindingTooltip": "The registered agent this credential acts as. When this workspace enforces agent registration, a credential with no binding is refused at the tool boundary — it can still be created, but it will not work.",
-      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. Someone with agent register access can bind it after creation.",
+      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. A credential's agent can be set only when it is created, never afterwards. For a credential that acts as an agent, ask someone who can also read the agent register to create it.",
       "agentPlaceholder": "No agent — unbound credential",
       "autonomyLabel": "Autonomy ceiling",
       "autonomyAria": "About the autonomy ceiling",
