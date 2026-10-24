@@ -9,6 +9,7 @@ import { useOptimisticUpdate } from '@/components/ui/hooks';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { MARK_NOTIFICATION_READ_REQUEST } from '@/lib/notifications/mark-read';
 
 type Notification = {
     id: string;
@@ -31,7 +32,7 @@ export default function NotificationsPage() {
     }, [apiUrl]);
 
     // Epic 60 — mark-read now overlays the read=true state immediately
-    // and rolls back if the PATCH fails. The previous implementation
+    // and rolls back if the request fails. The previous implementation
     // awaited the network round-trip before updating the UI, so every
     // click felt ~100-300ms laggy; the overlay is now local-instant.
     // On error, `rolledBackValue` is the prior list which we re-commit
@@ -53,9 +54,7 @@ export default function NotificationsPage() {
             await update(
                 (prev) => prev.map(n => n.id === id ? { ...n, read: true } : n),
                 async () => {
-                    const res = await fetch(apiUrl(`/notifications/${id}`), {
-                        method: 'PATCH',
-                    });
+                    const res = await fetch(apiUrl(`/notifications/${id}`), MARK_NOTIFICATION_READ_REQUEST);
                     if (!res.ok) throw new Error('Mark-read failed');
                     // Commit to canonical state on success — clears the
                     // optimistic overlay since the new reference matches.
