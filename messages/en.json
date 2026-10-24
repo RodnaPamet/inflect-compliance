@@ -4601,6 +4601,7 @@
       "roleLabel": "Role",
       "sendInvite": "Send Invite",
       "cancel": "Cancel",
+      "cancelRoleChange": "Cancel role change",
       "customRolePlaceholder": "No custom role (use base role)",
       "clickToChangeRole": "Click to change role",
       "ownerOnlyRoleChange": "Only an owner can change the {role} role",
