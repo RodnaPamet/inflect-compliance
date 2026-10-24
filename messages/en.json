@@ -295,7 +295,21 @@
     "aisvsBadge": "AISVS L2 compliant",
     "registrationFailed": "Registration failed",
     "loginFailed": "Login failed",
-    "invalidCredentials": "Invalid credentials"
+    "invalidCredentials": "Invalid credentials",
+    "errors": {
+      "signInFailed": "Sign-in didn't complete. Try again.",
+      "accountNotLinked": "This email address already signs in a different way. Sign in the way you did before.",
+      "ssoIncomplete": "Single sign-on didn't complete. Try again, or ask your workspace administrator for help.",
+      "ssoNoAccount": "There's no account for you in this workspace yet. Ask your workspace administrator to add you.",
+      "ssoDomainNotAllowed": "Your email address isn't allowed by this workspace's single sign-on settings. Ask your workspace administrator.",
+      "ssoUnavailable": "Single sign-on isn't available for this workspace right now. Ask your workspace administrator.",
+      "ssoStartFromSignIn": "For your security, single sign-on has to be started from this sign-in page."
+    },
+    "ssoComplete": {
+      "title": "Single sign-on",
+      "inProgress": "Finishing signing you in…",
+      "backToSignIn": "Back to sign in"
+    }
   },
   "nav": {
     "dashboard": "Board",

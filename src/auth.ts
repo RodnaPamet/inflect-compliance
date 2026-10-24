@@ -46,6 +46,7 @@ import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import { graphHeaders } from '@/lib/http/graph-headers';
+import { SSO_HANDOFF_COOKIE, SSO_HANDOFF_PROVIDER_ID } from '@/lib/auth/sso-session';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -106,7 +107,14 @@ declare module 'next-auth' {
             memberships?: MembershipEntry[];
             /** Org-layer memberships, for the org-route middleware gate. */
             orgMemberships?: OrgMembershipEntry[];
+            /** Set when single sign-on opened the session: the only tenant it may reach. */
+            ssoTenantId?: string | null;
         };
+    }
+
+    interface User {
+        /** Set by the `sso-handoff` provider: the tenant whose IdP vouched for the user. */
+        ssoTenantId?: string;
     }
 }
 
@@ -130,6 +138,12 @@ declare module 'next-auth/jwt' {
         orgMembershipsTruncated?: boolean;
         /** Provider name when the user signed in via OAuth. */
         provider?: string;
+        /**
+         * Set when single sign-on opened the session: the tenant whose
+         * identity provider vouched for the user, and the only tenant the
+         * session may reach. See `src/lib/auth/sso-session.ts`.
+         */
+        ssoTenantId?: string | null;
         /** EI-1/EI-3 — telemetry flag: the groups claim overflowed (>200 groups)
          *  and was resolved via a Microsoft Graph `/me/memberOf` fetch instead.
          *  The resolved group list itself is consumed in-callback by EI-3's role
@@ -200,10 +214,20 @@ export async function applyMembershipClaims(
         token.userId = dbUser.id;
         token.sessionVersion = dbUser.sessionVersion;
 
+        // A session opened by single sign-on is scoped to the tenant whose
+        // identity provider vouched for the user: its claims name that
+        // tenant's membership alone and no organization, so the edge gate
+        // refuses everything else. See `src/lib/auth/sso-session.ts`.
+        const ssoScope = token.ssoTenantId;
+        const tenantRows = dbUser.tenantMemberships.filter(
+            (m) => ssoScope == null || m.tenantId === ssoScope,
+        );
+        const orgRows = ssoScope == null ? dbUser.orgMemberships : [];
+
         // Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS so the
         // cookie stays bounded; `membershipsTruncated` flags the rare
         // over-cap case for the middleware gate.
-        token.memberships = dbUser.tenantMemberships
+        token.memberships = tenantRows
             .slice(0, MAX_JWT_MEMBERSHIPS)
             .map((m) => ({
                 slug: m.tenant.slug,
@@ -211,11 +235,11 @@ export async function applyMembershipClaims(
                 tenantId: m.tenantId,
             }));
         token.membershipsTruncated =
-            dbUser.tenantMemberships.length > MAX_JWT_MEMBERSHIPS;
+            tenantRows.length > MAX_JWT_MEMBERSHIPS;
 
         // Same pattern (and cap) for the org layer so the middleware can
         // gate `/org/:slug/*` with no DB hit.
-        token.orgMemberships = dbUser.orgMemberships
+        token.orgMemberships = orgRows
             .slice(0, MAX_JWT_MEMBERSHIPS)
             .map((m) => ({
                 slug: m.organization.slug,
@@ -223,7 +247,7 @@ export async function applyMembershipClaims(
                 organizationId: m.organizationId,
             }));
         token.orgMembershipsTruncated =
-            dbUser.orgMemberships.length > MAX_JWT_MEMBERSHIPS;
+            orgRows.length > MAX_JWT_MEMBERSHIPS;
 
         // Backward-compat: keep tenantId/tenantSlug/role as the "primary"
         // membership (oldest by createdAt).
@@ -383,6 +407,37 @@ const providers: NextAuthOptions['providers'] = [
             };
         },
     }),
+    // Single sign-on hand-off. The OIDC and SAML callbacks verify the
+    // identity provider's answer and leave a single-use hand-off in a cookie
+    // scoped to this provider's callback; the completion page
+    // (`/login/sso-complete`) asks NextAuth to sign in here, and this redeems
+    // it. From then on it is an ordinary NextAuth sign-in: the same cookie,
+    // claims, MFA policy and session row as every other provider. It takes no
+    // credentials from the request body — only the cookie, so a hand-off
+    // cannot be completed in another browser. See `src/lib/auth/sso-handoff.ts`.
+    Credentials({
+        id: SSO_HANDOFF_PROVIDER_ID,
+        name: 'Single sign-on',
+        credentials: {},
+        async authorize() {
+            const { redeemSsoHandoff } = await import('@/lib/auth/sso-handoff');
+            const handoff = await redeemSsoHandoff(await readSsoHandoffCookie());
+            if (!handoff) return null;
+            // Re-read at redemption: the membership may have been ended in the
+            // seconds since the callback checked it.
+            const membership = await prisma.tenantMembership.findUnique({
+                where: { tenantId_userId: { tenantId: handoff.tenantId, userId: handoff.userId } },
+                select: { status: true, user: { select: { id: true, email: true, name: true } } },
+            });
+            if (!membership || membership.status !== 'ACTIVE' || !membership.user.email) return null;
+            return {
+                id: membership.user.id,
+                email: membership.user.email,
+                name: membership.user.name,
+                ssoTenantId: handoff.tenantId,
+            };
+        },
+    }),
 ];
 
 // ─── Invite-redemption helpers ──────────────────────────────────────
@@ -469,6 +524,16 @@ async function ensureOrgMembershipFromInvite(
     }
 }
 
+async function readSsoHandoffCookie(): Promise<string | null> {
+    try {
+        const { cookies } = await import('next/headers');
+        const cookieStore = await cookies();
+        return cookieStore.get(SSO_HANDOFF_COOKIE)?.value ?? null;
+    } catch {
+        return null;
+    }
+}
+
 async function readInviteTokenFromCookies(): Promise<{
     tenantToken: string | null;
     orgToken: string | null;
@@ -517,6 +582,14 @@ export const authOptions: NextAuthOptions = {
          */
         async signIn({ user, account, profile }) {
             if (!account) return true;
+
+            // An SSO hand-off links no account and redeems no invite. The
+            // email it carries was asserted by one tenant's identity
+            // provider, which that tenant's admin configures — it proves
+            // nothing about the address anywhere else, so it must not join
+            // the person to another tenant or org. The session it opens is
+            // scoped to that tenant in the `jwt` callback.
+            if (account.provider === SSO_HANDOFF_PROVIDER_ID) return true;
 
             // R-3: defensive email-verified check for OAuth.
             if (
@@ -630,6 +703,14 @@ export const authOptions: NextAuthOptions = {
         async jwt({ token, user, account, profile, trigger }) {
             // Initial sign in.
             if (account && user) {
+                // Before the claims, which it scopes. Fail closed: a hand-off
+                // that somehow named no tenant opens no session.
+                if (account.provider === SSO_HANDOFF_PROVIDER_ID) {
+                    if (!user.ssoTenantId) {
+                        throw new Error('SSO hand-off named no tenant');
+                    }
+                    token.ssoTenantId = user.ssoTenantId;
+                }
                 await applyMembershipClaims(token, user.id);
 
                 if (account.provider !== 'credentials') {
@@ -887,6 +968,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.mfaPending = token.mfaPending ?? false;
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
+                session.user.ssoTenantId = token.ssoTenantId ?? null;
             }
             return session;
         },

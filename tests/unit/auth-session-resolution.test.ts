@@ -27,6 +27,7 @@ type SessionUserLike = {
     tenantId?: string | null;
     email?: string | null;
     role?: Role | null;
+    ssoTenantId?: string | null;
 };
 type SessionLike = { user?: SessionUserLike | null } | null;
 
@@ -97,7 +98,18 @@ describe('getSession', () => {
             tenantId: 'tnt_1',
             email: 'alice@example.com',
             role: 'ADMIN',
+            ssoTenantId: null,
         });
+    });
+
+    it('carries a single-sign-on scope through, and an absent one as null', async () => {
+        // The DB-backed tenant and org gates read this to refuse every other
+        // workspace to a session one workspace's identity provider opened.
+        // Dropping it here would make every SSO session unscoped server-side.
+        mockAuth.mockResolvedValue({
+            user: { id: 'usr_1', tenantId: 'tnt_1', email: 'a@b.com', role: 'READER', ssoTenantId: 'tnt_1' },
+        });
+        expect((await getSession())?.ssoTenantId).toBe('tnt_1');
     });
 
     it('defaults a missing role to READER — the LEAST privileged role', async () => {
@@ -127,6 +139,7 @@ describe('getSession', () => {
             tenantId: '',
             email: '',
             role: 'READER',
+            ssoTenantId: null,
         });
     });
 });
@@ -154,6 +167,7 @@ describe('getSessionOrThrow', () => {
             tenantId: 't1',
             email: 'a@b.com',
             role: 'EDITOR',
+            ssoTenantId: null,
         });
     });
 });

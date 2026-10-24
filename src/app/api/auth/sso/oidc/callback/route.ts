@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
 import { OidcConfigSchema } from '@/app-layer/schemas/sso-config.schemas';
 import {
@@ -11,8 +10,8 @@ import {
 } from '@/lib/security/oidc-client';
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
-import { env } from '@/env';
-import jwt from 'jsonwebtoken';
+import { issueSsoHandoff, ssoHandoffResponse } from '@/lib/auth/sso-handoff';
+import { clearSsoFlow, readBoundSsoFlow } from '@/lib/auth/sso-flow';
 import { sanitizeRedirectPath } from '@/lib/auth/guard';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
 
@@ -26,8 +25,8 @@ export const dynamic = 'force-dynamic';
  * 2. Exchanges authorization code for tokens
  * 3. Extracts and validates ID token claims
  * 4. Links external identity to local user (via usecase)
- * 5. Creates JWT session compatible with existing auth model
- * 6. Redirects to app
+ * 5. Hands off to NextAuth, which opens the session (`src/lib/auth/sso-handoff.ts`)
+ * 6. Redirects through the completion page to the app
  */
 export async function GET(req: NextRequest) {
     const requestId = generateSsoRequestId();
@@ -51,7 +50,11 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Decode and validate state ──
-    const state = decodeState(stateParam);
+    // `state` is the flow's id; the flow itself is in the cookie /start set
+    // (src/lib/auth/sso-flow.ts). A callback URL opened in any other browser
+    // — the login-CSRF shape — has no matching cookie and stops here.
+    const boundState = readBoundSsoFlow(req, 'oidc', stateParam);
+    const state = boundState ? decodeState(boundState) : null;
     if (!state) {
         return redirectToLogin(req, 'invalid_state', 'Invalid SSO state');
     }
@@ -184,7 +187,7 @@ export async function GET(req: NextRequest) {
 
     const linkedUserId = linkResult.userId;
 
-    // ── Load user and membership for session ──
+    // ── Membership must be live ──
     const membership = await prisma.tenantMembership.findUnique({
         where: {
             tenantId_userId: {
@@ -192,64 +195,17 @@ export async function GET(req: NextRequest) {
                 userId: linkedUserId,
             },
         },
+        select: { status: true },
     });
 
-    if (!membership) {
+    if (!membership || membership.status !== 'ACTIVE') {
         return redirectToLogin(req, 'no_membership');
     }
 
-    const user = await prisma.user.findUnique({
-        where: { id: linkedUserId },
-        select: { id: true, email: true, name: true },
-    });
-
-    if (!user) {
-        return redirectToLogin(req, 'user_not_found');
-    }
-
-    // ── Create JWT session (compatible with Auth.js JWT strategy) ──
-    const authSecret = env.AUTH_SECRET;
-    if (!authSecret) {
-        ssoLog('error', 'AUTH_SECRET not set', {
-            requestId, tenantSlug: tenant.slug, providerType: 'OIDC', stage: 'session_creation',
-        });
-        return redirectToLogin(req, 'config_error');
-    }
-
-    const sessionToken = jwt.sign(
-        {
-            userId: user.id,
-            email: user.email,
-            name: user.name,
-            tenantId: tenant.id,
-            role: membership.role,
-            provider: `sso-oidc-${provider.id}`,
-            sub: user.id,
-            iat: Math.floor(Date.now() / 1000),
-        },
-        authSecret,
-        { expiresIn: '7d' }
-    );
-
-    // ── Set session cookie (matching Auth.js cookie name) ──
-    const isProduction = env.NODE_ENV === 'production';
-    const cookieName = isProduction
-        ? '__Secure-authjs.session-token'
-        : 'authjs.session-token';
-
-    const cookieStore = await cookies();
-    cookieStore.set(cookieName, sessionToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 7 * 24 * 60 * 60, // 7 days
-    });
-
     // ── Redirect to app ──
-    // `returnTo` originates in the UNAUTHENTICATED /start query string and
-    // rides here inside an UNSIGNED state blob, so it is attacker-controlled
-    // end to end. `new URL(returnTo, baseUrl)` does not constrain it:
+    // `returnTo` originates in the UNAUTHENTICATED /start query string, so
+    // whoever wrote that link chose it: it is attacker-controlled even though
+    // the flow cookie that carries it here is signed. `new URL(returnTo, baseUrl)` does not constrain it:
     // `new URL('https://evil.com', base)` and `new URL('//evil.com', base)`
     // both resolve to the attacker's origin, which is a phishing link served
     // from our own domain.
@@ -265,7 +221,10 @@ export async function GET(req: NextRequest) {
     const returnTo = state.returnTo
         ? sanitizeRedirectPath(state.returnTo)
         : `/t/${tenant.slug}/dashboard`;
-    return NextResponse.redirect(new URL(returnTo, baseUrl));
+    const handoff = await issueSsoHandoff({ userId: linkedUserId, tenantId: tenant.id });
+    const res = ssoHandoffResponse(baseUrl, returnTo, handoff);
+    clearSsoFlow(res, 'oidc');
+    return res;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -283,5 +242,8 @@ function redirectToLogin(
     if (errorMessage) {
         loginUrl.searchParams.set('error_description', errorMessage);
     }
-    return NextResponse.redirect(loginUrl);
+    // A failed callback spends the flow too.
+    const res = NextResponse.redirect(loginUrl);
+    clearSsoFlow(res, 'oidc');
+    return res;
 }
