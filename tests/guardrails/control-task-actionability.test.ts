@@ -251,6 +251,115 @@ const IMPERATIVE_VERBS = new Set([
     'Declare',
     'Describe',
     'Give',
+
+    // ── Agentic-security vocabulary (OWASP Agentic AI Top 10) ─────────
+    // Same cause as the MGF batch: ASI's titles had no steps, so this ratchet
+    // never read them. Each is the act its control is about, read in context —
+    // `Withdraw` a tool or an identity from an agent (ASI02, ASI03), `Reduce`
+    // an execution environment's reach (ASI05), `Purge` poisoned memory
+    // (ASI06), `Halt` a running chain (ASI08), `Disclose` that the
+    // counterparty is an agent and `Brief` the staff it addresses (ASI09),
+    // `Decommission` an unapproved agent (ASI10).
+    'Brief',
+    'Decommission',
+    'Disclose',
+    'Halt',
+    'Purge',
+    'Reduce',
+    'Withdraw',
+
+    // ── ISO/IEC 27001:2022 Annex A vocabulary ────────────────────────
+    // The 493 Annex A titles were authored long before they had steps, so
+    // this ratchet read none of them until steps arrived. Each verb was read
+    // in its title: `Bring` a room, system or media holding up to what its
+    // record requires; `Carry out` and `Present` an independent review;
+    // `Fail over` to a redundant component; `Point` a system at the approved
+    // time source; `Project` demand against capacity; `Have` management
+    // approve the policy and `Make` a field mandatory, both causative rather
+    // than colloquial; `Show` a protection still stands. None is in the
+    // refused set (Fit, Fix, Seat, Stand), and that set stays refused.
+    'Attempt',
+    'Automate',
+    'Break',
+    'Bring',
+    'Carry',
+    'Change',
+    'Circulate',
+    'Clear',
+    'Create',
+    'Decide',
+    'Fail',
+    'Have',
+    'Insert',
+    'Make',
+    'Place',
+    'Point',
+    'Present',
+    'Project',
+    'Protect',
+    'Provision',
+    'Pursue',
+    'Re-assess',
+    'Re-examine',
+    'Read',
+    'Reconfirm',
+    'Replace',
+    'Reposition',
+    'Retrieve',
+    'Show',
+    'Split',
+
+    // ── Privacy-engineering vocabulary (NIST Privacy Framework 1.0) ──
+    // Same cause again: the 306 NIST titles had no steps until now. The verbs
+    // below were admitted after reading each title — `Generalise` or suppress
+    // identifying attributes, `Decode` what a review retrieval returns,
+    // `Sever` the links joining test to production, `Seal` a device and
+    // register its serials, `Replay` a case that crossed a boundary.
+    //
+    // Sixteen titles were REDRAFTED rather than admitted. Six used verbs this
+    // file already refuses: Fix (x4) became Define or Set, Fit became Design,
+    // and Stand up became Establish, the same redraft the COSO batch made.
+    // Ten used verbs refused here as colloquial in the way Fit and Seat
+    // were: Pin (x3), Wire, Mine, Pull, Drive, Push, Step up and Tie became
+    // Link, Record, Match, Connect, Search, Extract, Operate, Bring and Raise.
+    'Alter',
+    'Ask',
+    'Calibrate',
+    'Communicate',
+    'Count',
+    'Decode',
+    'Dispatch',
+    'Divide',
+    'Encrypt',
+    'Find',
+    'Follow',
+    'Gather',
+    'Generalise',
+    'Link',
+    'Locate',
+    'Package',
+    'Parse',
+    'Prove',
+    'Question',
+    'Rank',
+    'Re-derive',
+    'Re-scan',
+    'Reach',
+    'Rebuild',
+    'Reconstruct',
+    'Replay',
+    'Reshape',
+    'Revisit',
+    'Rework',
+    'Script',
+    'Seal',
+    'Sever',
+    'Solicit',
+    'Swap',
+    'Take',
+    'Translate',
+    'Trigger',
+    'Weigh',
 ]);
 
 /**
@@ -346,7 +455,10 @@ describe('authored control tasks are actionable', () => {
         const bad = held.flatMap((t) =>
             (t.tasks ?? [])
                 .filter((k) => Array.isArray(k.steps))
-                .filter((k) => !IMPERATIVE_VERBS.has(titleOf(k).split(/\s+/)[0] ?? ''))
+                // A title may open with its verb and then a comma — "Add, amend and
+                // retire entries…", "Write, in the words staff use, …" — so the
+                // first word is read without trailing punctuation.
+                .filter((k) => !IMPERATIVE_VERBS.has((titleOf(k).split(/\s+/)[0] ?? '').replace(/[,;:]$/, '')))
                 .map((k) => `${t.code}: ${titleOf(k)}`),
         );
         expect(bad).toEqual([]);
