@@ -549,7 +549,19 @@ describe('epic-named ratchets are not added back', () => {
         // ceiling: main raised 798 -> 799 for `docs-site-publication` while
         // this change was in flight, and two branches each raising "to 799"
         // is how a shared floor lands one short.
-        expect(guardFiles().length).toBeLessThan(800);
+                //
+        // RAISED 800 -> 801 on 2026-10-25, for ONE file:
+        // `sandbox-runtime-channels-match-the-runtime.test.ts` (#4001). It
+        // holds the admin page's reporting-channel list against the gateway's
+        // own committed vocabulary, in BOTH directions — the dangerous one
+        // being a real egress path that no channel claims, because an
+        // incomplete enumeration of where data can go reads exactly like a
+        // complete one.
+        //
+        // Not folded in: nothing in guards or guardrails ranges over
+        // `src/app-layer/usecases/sandbox-runtime-config.ts`, and the figure is
+        // this branch's live count plus one rather than a remembered ceiling.
+        expect(guardFiles().length).toBeLessThan(801);
     });
 
     /**
