@@ -727,11 +727,20 @@ describe('the in-band shard is bounded by the V8 ceiling (#3320)', () => {
         // reason this is a test and not a comment. #4033 measured the switch:
         // it clears the OOM and costs ~1.8x wall-clock.
         expect(shardStep().run).toContain('--runInBand');
-        // The paired claim has a subject. The needle is the ASSIGNMENT, not the
-        // word: the inertness note names `workerIdleMemoryLimit` too, so a
-        // bare-word match is satisfied by the prose explaining the setting even
-        // after the setting itself is deleted — measured, while writing this.
-        expect(read('jest.config.js')).toContain("workerIdleMemoryLimit: '512MB'");
+        // The paired claim has a subject — read through `readSrc`, which strips
+        // comments, NOT `read`.
+        //
+        // Two reasons, and the second is a ratchet. First: the inertness note
+        // above the setting names `workerIdleMemoryLimit` too, so an assertion
+        // against RAW source is satisfied by the prose explaining the setting
+        // even after the setting itself is deleted — measured while writing
+        // this, by deleting it and watching a raw-source assertion still pass.
+        // Second: `raw-source-assertion-ratchet` (Class A) allowlists exactly
+        // two files that may assert on raw source, and this is not one of them.
+        // Narrowing the needle was not enough; excluding the prose from the
+        // population by construction is the fix the repo already has a helper
+        // for.
+        expect(readSrc('jest.config.js')).toContain("workerIdleMemoryLimit: '512MB'");
     });
 
     it('and declares an explicit --max-old-space-size, the only heap bound in band', () => {
