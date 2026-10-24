@@ -38,6 +38,7 @@ copyright: >
   summaries — not the verbatim OWASP risk prose, which remains at the OWASP
   source linked from each requirement. Attribution to OWASP retained.
 version: 1
+text_hash: 4c9cc524571706637d521e38ae9c9245e47e2ad47f558d77610fbed2e95c1e04
 provider: OWASP
 packager: inflect
 kind: INDUSTRY_STANDARD
