@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { loginErrorKey } from './login-error';
+import { SsoSignIn } from './SsoSignIn';
 
 function extractErrorMessage(value: unknown, fallback: string): string {
     if (typeof value === 'string') return value;
@@ -252,6 +253,10 @@ function LoginForm() {
                                 <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
                             </svg>
                         </Button>
+                        <SsoSignIn
+                            returnTo={searchParams?.get('callbackUrl') ?? undefined}
+                            initialWorkspace={searchParams?.get('sso') ?? undefined}
+                        />
                     </div>
 
                     {credentialsEnabled && (

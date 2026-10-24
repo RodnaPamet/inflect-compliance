@@ -309,6 +309,18 @@
       "title": "Single sign-on",
       "inProgress": "Finishing signing you in…",
       "backToSignIn": "Back to sign in"
+    },
+    "sso": {
+      "continue": "Continue with single sign-on",
+      "workspaceLabel": "Workspace",
+      "workspaceHint": "The short name in your workspace's address, after /t/.",
+      "workspacePlaceholder": "your-workspace",
+      "submit": "Continue",
+      "looking": "Looking…",
+      "notAvailable": "This workspace doesn't use single sign-on. Sign in another way, or check the workspace name.",
+      "failed": "We couldn't check that workspace. Try again.",
+      "chooseProvider": "Choose how to sign in",
+      "continueWith": "Continue with {name}"
     }
   },
   "nav": {
