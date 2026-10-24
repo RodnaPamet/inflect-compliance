@@ -186,7 +186,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'packages/ui/src/components/ui/error-state.tsx',
     'src/components/ui/FileDropzone.tsx',
     'src/components/ui/file-icon-resolver.ts',
-    'src/components/ui/filter/filter-definitions.ts',
     'src/components/ui/filter/filter-examples.ts',
     'src/components/ui/filter/filter-list.tsx',
     'src/components/ui/filter/filter-range-panel.tsx',
