@@ -537,7 +537,24 @@ describe('epic-named ratchets are not added back', () => {
         // allowlist, and fails on a host path or a project id that
         // docs-accuracy has no reason to read. Different population, different
         // failure.
-        expect(guardFiles().length).toBeLessThan(799);
+        //
+        // RAISED 799 -> 800 on 2026-10-24, for ONE file:
+        // `scanner-never-reads-credential-values.test.ts` (#3936's hardening
+        // gate). It asserts that no file in the scanner package names
+        // `ProviderClient` or any gateway RPC that returns credential MATERIAL
+        // — over the whole package rather than over the one source whose
+        // author was thinking about it, because the hazard is a later file
+        // added by someone who read the SDK's docs rather than the roadmap.
+        //
+        // Not folded into an existing guard: nothing in guards or guardrails
+        // ranges over `packages/agent-harness-scanner/src`, and the nearest
+        // candidates range over `src/`.
+        //
+        // The number is THIS BRANCH's live count plus one. `feat/4.6-…`
+        // (#4058) also raises this line, so whichever lands second will
+        // conflict here — and the resolution is to re-derive from the live
+        // count, not to take either side's integer.
+        expect(guardFiles().length).toBeLessThan(800);
     });
 
     /**
