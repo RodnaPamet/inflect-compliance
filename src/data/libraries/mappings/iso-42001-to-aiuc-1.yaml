@@ -1,0 +1,286 @@
+# Cross-Framework Mapping Set: ISO/IEC 42001:2023 → AIUC-1 (Q4-2026)
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# Answers the question an ISO 42001 holder asks first: how much of AIUC-1 does
+# the AI management system already give me? Every one of AIUC-1's 50
+# requirements is reached from ISO 42001 or ISO 27001 (this file and
+# `iso27001-to-aiuc-1.yaml` together), most of them as INTERSECT or RELATED,
+# because ISO 42001 governs AI management in general and AIUC-1 states what an
+# agent must do. The gap between those two is the work an ISO 42001 holder
+# still has to do, and the strengths are chosen so the gap analysis shows it.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication, authored from the requirement texts this
+# repository carries. AIUC publishes crosswalks of its own; they are AIUC's
+# copyright, and none was transcribed or used as a source for this file.
+#
+# STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
+# SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
+# SUPERSET appear only where meeting the broader requirement as written
+# necessarily meets the narrower one. Shared ground is INTERSECT (partially
+# covered); "this is where the control would live" is RELATED (review
+# needed, never coverage). No EQUAL anywhere.
+#
+# SYMMETRY: this pair ships in BOTH directions. `aiuc-1-to-iso-42001.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:iso-42001-to-aiuc-1
+name: "ISO/IEC 42001:2023 → AIUC-1 (Q4-2026)"
+description: >
+  Cross-framework traceability between ISO/IEC 42001:2023 and AIUC-1 (Q4-2026).
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: ISO42001-2023
+target_framework_ref: AIUC-1
+
+mapping_entries:
+  - source_ref: "A.8.2"
+    target_ref: "A001"
+    strength: INTERSECT
+    rationale: "[curated] Information provided to users is where an input data policy is published; AIUC-1 adds stating training use and an automated deletion mechanism."
+  - source_ref: "A.7.2"
+    target_ref: "A001"
+    strength: RELATED
+    rationale: "[curated] Managing data for developing and enhancing AI systems decides whether customer input may be used for training, the first thing an input data policy tells customers."
+  - source_ref: "A.8.2"
+    target_ref: "A002"
+    strength: INTERSECT
+    rationale: "[curated] Information provided to users is where output ownership and use are explained; ISO 42001 asks for neither an opt-out nor deletion on request."
+  - source_ref: "A.10.4"
+    target_ref: "A002"
+    strength: RELATED
+    rationale: "[curated] Taking customers' obligations and expectations into account is the management-system root of the commitments an output data policy makes to them."
+  - source_ref: "7.3"
+    target_ref: "A004"
+    strength: INTERSECT
+    rationale: "[curated] Awareness of the AI policy is how staff learn what may not be put into or released from AI systems; screening outputs for proprietary content is outside it."
+  - source_ref: "A.9.2"
+    target_ref: "A004"
+    strength: RELATED
+    rationale: "[curated] Processes for the organisation's own responsible use of AI are where rules about submitting confidential material to a model would live."
+  - source_ref: "A.10.2"
+    target_ref: "A007"
+    strength: RELATED
+    rationale: "[curated] Allocating responsibility between the organisation and its model providers is where infringement indemnity is settled; screening outputs for protected material is outside ISO 42001."
+  - source_ref: "A.6.2.4"
+    target_ref: "A009"
+    strength: INTERSECT
+    rationale: "[curated] Verification and validation methodologies are where privacy testing is defined; AIUC-1 makes it independent, quarterly and specific to data-leakage failures."
+  - source_ref: "A.6.2.4"
+    target_ref: "B001"
+    strength: INTERSECT
+    rationale: "[curated] Verification and validation are where security testing is defined; AIUC-1 makes it independent, quarterly and driven by prompt injection and jailbreak techniques."
+  - source_ref: "A.6.2.6"
+    target_ref: "B002"
+    strength: RELATED
+    rationale: "[curated] Operational monitoring is where run-time detection of adversarial input would sit; ISO 42001 names neither prompt injection nor incident handling of it."
+  - source_ref: "7.4"
+    target_ref: "B003"
+    strength: INTERSECT
+    rationale: "[curated] Deciding what is communicated externally about AI systems, when and to whom, is the decision a release approval for technical details puts a gate on."
+  - source_ref: "A.8.5"
+    target_ref: "B003"
+    strength: RELATED
+    rationale: "[curated] Proactively sharing AI system information pulls the other way from withholding detail useful to an attacker; the two are reconciled in one disclosure decision."
+  - source_ref: "8.3"
+    target_ref: "B005"
+    strength: RELATED
+    rationale: "[curated] A moderation layer is one risk treatment ISO 42001 leaves to the organisation's choice; the standard names no input filtering."
+  - source_ref: "A.9.4"
+    target_ref: "B006"
+    strength: RELATED
+    rationale: "[curated] Keeping an AI system to its intended use is the aim AIUC-1 enforces technically for agents through privilege limits, action monitoring and sandboxing."
+  - source_ref: "A.4.5"
+    target_ref: "B008"
+    strength: RELATED
+    rationale: "[curated] Recording the computing infrastructure an AI system runs on identifies the environment B008 hardens; ISO 42001 sets no security requirement for it."
+  - source_ref: "6.1"
+    target_ref: "C001"
+    strength: INTERSECT
+    rationale: "[curated] Determining AI risks and the criteria for assessing them is what a risk taxonomy makes concrete, with severity levels and examples for every category."
+  - source_ref: "8.2"
+    target_ref: "C001"
+    strength: INTERSECT
+    rationale: "[curated] Performing the AI risk assessment at planned intervals overlaps maintaining, and reviewing every year, the taxonomy AIUC-1 scopes its testing against."
+  - source_ref: "A.6.2.4"
+    target_ref: "C002"
+    strength: INTERSECT
+    rationale: "[curated] Defined verification and validation is the basis of pre-deployment testing; AIUC-1 adds testing across the risk taxonomy and a recorded decision on every rated issue."
+  - source_ref: "A.6.2.5"
+    target_ref: "C002"
+    strength: INTERSECT
+    rationale: "[curated] A deployment plan with release criteria is the gate pre-deployment testing feeds; AIUC-1 adds testing across the risk taxonomy and recorded acceptance of open issues."
+  - source_ref: "A.5.4"
+    target_ref: "C003"
+    strength: RELATED
+    rationale: "[curated] Evaluating effects on individuals and groups is where harmful-output risks are identified; ISO 42001 does not require outputs to be filtered."
+  - source_ref: "A.9.4"
+    target_ref: "C004"
+    strength: INTERSECT
+    rationale: "[curated] Keeping a system to its intended purpose is the boundary AIUC-1 makes the agent enforce by declining subjects outside it."
+  - source_ref: "8.2"
+    target_ref: "C005"
+    strength: INTERSECT
+    rationale: "[curated] A system-specific AI risk assessment is where an agent's own high-risk outputs are identified; AIUC-1 also maps each one to detection and a response."
+  - source_ref: "8.3"
+    target_ref: "C005"
+    strength: INTERSECT
+    rationale: "[curated] Treating named high-risk outputs is what mapping each one to detection logic and a block, modify or hand-off response amounts to."
+  - source_ref: "A.9.2"
+    target_ref: "C007"
+    strength: RELATED
+    rationale: "[curated] Responsible-use processes are where a human-review step for risky outputs would be defined; ISO 42001 does not require one."
+  - source_ref: "A.6.2.6"
+    target_ref: "C008"
+    strength: INTERSECT
+    rationale: "[curated] Operation and performance monitoring, carried out per risk category, is production monitoring against the taxonomy."
+  - source_ref: "9.1"
+    target_ref: "C008"
+    strength: RELATED
+    rationale: "[curated] Monitoring and evaluating the management system is the layer above monitoring the system's output; it does not sample production output."
+  - source_ref: "A.8.3"
+    target_ref: "C009"
+    strength: INTERSECT
+    rationale: "[curated] A mechanism for reporting adverse impacts overlaps letting users report a problem; stopping, pausing or redirecting the agent mid-task is outside ISO 42001."
+  - source_ref: "A.3.3"
+    target_ref: "C009"
+    strength: RELATED
+    rationale: "[curated] An internal mechanism for reporting concerns is the staff-side counterpart of the user feedback channel C009 requires."
+  - source_ref: "A.6.2.4"
+    target_ref: "C010"
+    strength: INTERSECT
+    rationale: "[curated] Verification and validation are where safety evaluation is defined; AIUC-1 makes it independent, quarterly and scoped to harmful, biased and out-of-scope output."
+  - source_ref: "A.6.2.6"
+    target_ref: "D001"
+    strength: RELATED
+    rationale: "[curated] Performance monitoring can track how often outputs are wrong; checking claims against sources and showing citations are not required."
+  - source_ref: "A.9.4"
+    target_ref: "D003"
+    strength: RELATED
+    rationale: "[curated] Keeping an AI system to its intended use is the aim AIUC-1 enforces per tool call with allowlists, authorisation and approvals."
+  - source_ref: "A.6.2.4"
+    target_ref: "D004"
+    strength: INTERSECT
+    rationale: "[curated] Verification and validation are where reliability testing is defined; AIUC-1 makes it independent, quarterly and specific to fabricated content and faulty tool calls."
+  - source_ref: "A.8.4"
+    target_ref: "E001"
+    strength: INTERSECT
+    rationale: "[curated] A plan for communicating incidents covers who must be told about an AI breach and when; leading the response and containing the system are outside it."
+  - source_ref: "A.8.4"
+    target_ref: "E002"
+    strength: INTERSECT
+    rationale: "[curated] Planning incident communication covers telling customers about a harmful output; owning the response and putting the customer right are AIUC-1's additions."
+  - source_ref: "10.2"
+    target_ref: "E002"
+    strength: RELATED
+    rationale: "[curated] Corrective action on a nonconformity is the management-system path a harmful output follows after the immediate response."
+  - source_ref: "A.8.4"
+    target_ref: "E003"
+    strength: INTERSECT
+    rationale: "[curated] Planning incident communication covers informing customers hit by a costly wrong output; tracing, correcting and compensating are AIUC-1's additions."
+  - source_ref: "10.2"
+    target_ref: "E003"
+    strength: RELATED
+    rationale: "[curated] Corrective action is how the cause of a costly fabricated output is removed once the affected customers have been dealt with."
+  - source_ref: "5.3"
+    target_ref: "E004"
+    strength: INTERSECT
+    rationale: "[curated] Assigning AI roles, responsibilities and authorities overlaps naming an accountable lead for each kind of AI change; keeping every approval is AIUC-1's addition."
+  - source_ref: "A.3.2"
+    target_ref: "E004"
+    strength: INTERSECT
+    rationale: "[curated] Defined AI roles and accountability are the structure a named approver for each kind of change sits in."
+  - source_ref: "A.4.5"
+    target_ref: "E005"
+    strength: RELATED
+    rationale: "[curated] Recording where AI systems and their data are hosted is the inventory that documenting each store's encryption and access builds on."
+  - source_ref: "A.7.2"
+    target_ref: "E005"
+    strength: RELATED
+    rationale: "[curated] Data management processes for AI systems are where storage decisions for that data would be recorded."
+  - source_ref: "A.10.3"
+    target_ref: "E006"
+    strength: INTERSECT
+    rationale: "[curated] Making sure suppliers' AI offerings fit the organisation's approach overlaps assessing model providers before use; verifying an open-weight model's integrity and licence is AIUC-1's addition."
+  - source_ref: "A.10.2"
+    target_ref: "E006"
+    strength: RELATED
+    rationale: "[curated] Allocating responsibilities across the AI supply chain settles what a due-diligence review of each provider has to establish."
+  - source_ref: "9.3"
+    target_ref: "E008"
+    strength: INTERSECT
+    rationale: "[curated] Management review at planned intervals overlaps the quarterly review of key AI processes; weighing outside feedback such as researcher reports is AIUC-1's addition."
+  - source_ref: "10.1"
+    target_ref: "E008"
+    strength: RELATED
+    rationale: "[curated] Continual improvement is what a recorded quarterly process review feeds."
+  - source_ref: "A.9.2"
+    target_ref: "E010"
+    strength: RELATED
+    rationale: "[curated] Responsible-use processes govern how the organisation uses AI; an acceptable use policy states and enforces rules for the system's own users."
+  - source_ref: "A.4.5"
+    target_ref: "E011"
+    strength: RELATED
+    rationale: "[curated] Recording computing resources includes where processing happens; sub-processors' locations and cross-border transfer mechanisms are outside it."
+  - source_ref: "4.1"
+    target_ref: "E012"
+    strength: INTERSECT
+    rationale: "[curated] Understanding the organisation's context includes the legal and regulatory requirements on its AI; AIUC-1 makes that a register reviewed every six months."
+  - source_ref: "4.2"
+    target_ref: "E012"
+    strength: RELATED
+    rationale: "[curated] The requirements of interested parties include regulators'; a compliance register records which apply and how each is met."
+  - source_ref: "4.4"
+    target_ref: "E013"
+    strength: INTERSECT
+    rationale: "[curated] An AI management system and a quality management system for AI share objectives, risk, change and corrective action; neither standard's system contains the other."
+  - source_ref: "10.2"
+    target_ref: "E013"
+    strength: INTERSECT
+    rationale: "[curated] Nonconformity and corrective action is the issue-tracking component a quality management system for AI has to carry."
+  - source_ref: "6.2"
+    target_ref: "E013"
+    strength: RELATED
+    rationale: "[curated] AI objectives and the plans to meet them are where quality objectives and metrics would be set."
+  - source_ref: "A.6.2.8"
+    target_ref: "E015"
+    strength: INTERSECT
+    rationale: "[curated] Logging events across the life cycle overlaps logging the system's activity in operation; attributing each execution to its agent and protecting the logs are AIUC-1's additions."
+  - source_ref: "A.8.2"
+    target_ref: "E016"
+    strength: RELATED
+    rationale: "[curated] Information given to users could say that the system is an AI; ISO 42001 does not require that disclosure."
+  - source_ref: "A.6.2.7"
+    target_ref: "E017"
+    strength: INTERSECT
+    rationale: "[curated] Technical documentation for the audiences that need it overlaps keeping model cards, datasheets and AI bills of materials current."
+  - source_ref: "A.8.5"
+    target_ref: "E017"
+    strength: INTERSECT
+    rationale: "[curated] Deciding what AI system information to share with interested parties is the when-and-with-whom half of a transparency policy."
+  - source_ref: "A.10.2"
+    target_ref: "E017"
+    strength: INTERSECT
+    rationale: "[curated] Allocating responsibilities across the supply chain overlaps documenting how security duties divide between the platform and whoever deploys it."
+  - source_ref: "A.4.4"
+    target_ref: "E017"
+    strength: RELATED
+    rationale: "[curated] Tracking models and tooling dependencies is the raw material of an AI bill of materials."
+  - source_ref: "A.6.2.4"
+    target_ref: "E018"
+    strength: INTERSECT
+    rationale: "[curated] Verification and validation are where disclosure testing is defined; AIUC-1 makes it independent, quarterly and aimed at an agent that hides being an AI."
+  - source_ref: "A.5.5"
+    target_ref: "F001"
+    strength: RELATED
+    rationale: "[curated] Assessing broader societal impacts is where cyber-offence misuse would be weighed; ISO 42001 asks for no model capability assessment or misuse guardrail."
+  - source_ref: "A.5.5"
+    target_ref: "F002"
+    strength: RELATED
+    rationale: "[curated] Assessing societal impacts is where chemical, biological, radiological or nuclear misuse would be weighed; ISO 42001 names no such category."

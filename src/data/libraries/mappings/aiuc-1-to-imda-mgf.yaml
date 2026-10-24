@@ -1,0 +1,237 @@
+# Cross-Framework Mapping Set: AIUC-1 (Q4-2026) → IMDA Model AI Governance Framework (May 2026)
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# Connects AIUC-1 to the IMDA framework's governance expectations for agentic
+# AI. The two agree on much — a risk taxonomy fixed in advance, enforced
+# scope, recurring adversarial testing, disclosure — and differ in where they
+# put the weight: the MGF asks for per-agent accountable owners, delegation
+# bounds between agents and designs against automation bias, which AIUC-1
+# does not require. Those edges are RELATED, so the difference stays visible.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication, authored from the requirement texts this
+# repository carries. AIUC publishes crosswalks of its own; they are AIUC's
+# copyright, and none was transcribed or used as a source for this file.
+#
+# STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
+# SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
+# SUPERSET appear only where meeting the broader requirement as written
+# necessarily meets the narrower one. Shared ground is INTERSECT (partially
+# covered); "this is where the control would live" is RELATED (review
+# needed, never coverage). No EQUAL anywhere.
+#
+# SYMMETRY: this pair ships in BOTH directions. `imda-mgf-to-aiuc-1.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:aiuc-1-to-imda-mgf
+name: "AIUC-1 (Q4-2026) → IMDA Model AI Governance Framework (May 2026)"
+description: >
+  Cross-framework traceability between AIUC-1 (Q4-2026) and IMDA Model AI Governance Framework (May 2026).
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: AIUC-1
+target_framework_ref: IMDA-MGF-2026
+
+mapping_entries:
+  - source_ref: "C001"
+    target_ref: "MGF-1.1"
+    strength: INTERSECT
+    rationale: "[curated] Both keep an organisation-owned taxonomy of AI harm agreed before use; AIUC-1 grades each category by severity with examples, the MGF states the tolerance accepted for each."
+  - source_ref: "C005"
+    target_ref: "MGF-1.1"
+    strength: INTERSECT
+    rationale: "[curated] Naming the high-risk outputs particular to one agent extends the risk boundary to that deployment before it goes live."
+  - source_ref: "E004"
+    target_ref: "MGF-1.2"
+    strength: INTERSECT
+    rationale: "[curated] An accountable lead for each kind of AI change, with recorded approvals, is named ownership at the change level; the MGF also asks for a standing forum and reporting lines."
+  - source_ref: "E008"
+    target_ref: "MGF-1.2"
+    strength: RELATED
+    rationale: "[curated] A quarterly review of the processes behind the AI system is the kind of standing governance activity the MGF expects, though AIUC-1 requires no forum."
+  - source_ref: "B006"
+    target_ref: "MGF-1.3"
+    strength: INTERSECT
+    rationale: "[curated] Restricting an agent to its intended scope and granted privileges by technical controls is the runtime enforcement the MGF asks for."
+  - source_ref: "D003"
+    target_ref: "MGF-1.3"
+    strength: INTERSECT
+    rationale: "[curated] Tool allowlists, authorisation, rate limits and caps on value enforce an agent's authority in the runtime, call by call."
+  - source_ref: "A003"
+    target_ref: "MGF-1.3"
+    strength: INTERSECT
+    rationale: "[curated] Bounding the data an agent can read by task, user and role is the data half of a declared scope, enforced in retrieval logic rather than the prompt."
+  - source_ref: "C004"
+    target_ref: "MGF-1.3"
+    strength: RELATED
+    rationale: "[curated] Declining subjects outside the deployed purpose bounds what an agent discusses, not what it may act on."
+  - source_ref: "C001"
+    target_ref: "MGF-1.4"
+    strength: RELATED
+    rationale: "[curated] A taxonomy built from what the organisation's systems can do and where they run is where system-level risks would be named; AIUC-1 does not single out composed agents."
+  - source_ref: "E006"
+    target_ref: "MGF-1.5"
+    strength: INTERSECT
+    rationale: "[curated] Assessing upstream AI providers before use and on a cycle overlaps third-party due diligence; AIUC-1 centres on model providers, the MGF on agents, tool servers and marketplaces."
+  - source_ref: "E009"
+    target_ref: "MGF-1.5"
+    strength: RELATED
+    rationale: "[curated] Monitoring third-party access shows the authority a third party actually exercises once adopted."
+  - source_ref: "C007"
+    target_ref: "MGF-2.1"
+    strength: INTERSECT
+    rationale: "[curated] Defining which outputs need a person's review and routing them to one sets the involvement model for a class of output; the MGF asks for that choice for every class of decision."
+  - source_ref: "D003"
+    target_ref: "MGF-2.1"
+    strength: INTERSECT
+    rationale: "[curated] Holding sensitive or irreversible operations for a person's approval sets the involvement model for that class of action."
+  - source_ref: "E004"
+    target_ref: "MGF-2.2"
+    strength: RELATED
+    rationale: "[curated] AIUC-1 names accountable leads for changes, not an owner for each deployed agent, and says nothing about reassignment when that person leaves."
+  - source_ref: "C009"
+    target_ref: "MGF-2.3"
+    strength: INTERSECT
+    rationale: "[curated] Users can stop, pause or redirect an agent mid-task; the MGF also asks who holds that authority and that it is tested and faster than the agent."
+  - source_ref: "C005"
+    target_ref: "MGF-2.3"
+    strength: RELATED
+    rationale: "[curated] Handing a named high-risk output to a person is escalation for one class of output."
+  - source_ref: "E002"
+    target_ref: "MGF-2.3"
+    strength: RELATED
+    rationale: "[curated] A failure plan names who leads the response to a harmful output: escalation after the event rather than mid-task."
+  - source_ref: "C007"
+    target_ref: "MGF-2.4"
+    strength: RELATED
+    rationale: "[curated] AIUC-1 routes risky outputs to a reviewer but does not require the review to be designed against rubber-stamping."
+  - source_ref: "D001"
+    target_ref: "MGF-2.4"
+    strength: RELATED
+    rationale: "[curated] Showing sources and signalling uncertainty give a reviewer the evidence needed to dissent."
+  - source_ref: "A003"
+    target_ref: "MGF-3.1"
+    strength: RELATED
+    rationale: "[curated] Bounding what an agent may read controls one input to its context; provenance and quarantine of poisoned content are outside it."
+  - source_ref: "A005"
+    target_ref: "MGF-3.1"
+    strength: RELATED
+    rationale: "[curated] Tenant separation in storage and retrieval is part of controlling what may reach an agent's context."
+  - source_ref: "C006"
+    target_ref: "MGF-3.1"
+    strength: RELATED
+    rationale: "[curated] Marking content from untrusted sources records its provenance at the point it is shown."
+  - source_ref: "C002"
+    target_ref: "MGF-3.2"
+    strength: INTERSECT
+    rationale: "[curated] Pre-deployment testing across the risk taxonomy, with rated issues and a release decision, is the pre-release half of the MGF's testing."
+  - source_ref: "B001"
+    target_ref: "MGF-3.2"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly independent security testing driven by prompt injection and jailbreaking is the recurring adversarial testing the MGF names."
+  - source_ref: "C010"
+    target_ref: "MGF-3.2"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly independent safety testing against the taxonomy is recurring evaluation after release."
+  - source_ref: "D004"
+    target_ref: "MGF-3.2"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly reliability testing covers mistaken and unprompted tool calls, the tool misuse the MGF tests for."
+  - source_ref: "A009"
+    target_ref: "MGF-3.2"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly independent testing for data and privacy failures is recurring evaluation against declared boundaries."
+  - source_ref: "E018"
+    target_ref: "MGF-3.2"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly testing that an agent discloses it is an AI is recurring evaluation of one declared boundary."
+  - source_ref: "E015"
+    target_ref: "MGF-3.3"
+    strength: INTERSECT
+    rationale: "[curated] Logging processes, actions and outputs well enough to explain behaviour, with each execution attributed to its agent, is the traceability the MGF asks for."
+  - source_ref: "D003"
+    target_ref: "MGF-3.3"
+    strength: INTERSECT
+    rationale: "[curated] Logging every tool call with where it came from is the tool-call half of traceability."
+  - source_ref: "A003"
+    target_ref: "MGF-3.4"
+    strength: INTERSECT
+    rationale: "[curated] An identity of its own for each agent, where proportionate, with access bounded by task and role, is least privilege on the data side; credential rotation is outside it."
+  - source_ref: "A008"
+    target_ref: "MGF-3.4"
+    strength: INTERSECT
+    rationale: "[curated] Holding a credential a user gives the agent in a secret manager is the managed-store part; scoping and rotating it are not required."
+  - source_ref: "B006"
+    target_ref: "MGF-3.4"
+    strength: INTERSECT
+    rationale: "[curated] Restricting an agent's reach to the privileges it was granted, by technical control, is least privilege enforced at run time."
+  - source_ref: "E001"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] A written breach plan covering response, containment and repair is the response procedure for one class of agent incident."
+  - source_ref: "E002"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] A plan for a harmful output, tied back to the risk taxonomy, is incident response that feeds the risk boundaries."
+  - source_ref: "E003"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] A plan for a costly fabricated output covers tracing, correction and redress for one class of incident."
+  - source_ref: "B002"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] Adversarial input detected at run time raises an alert and is handled as an incident: detection feeding response."
+  - source_ref: "C008"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] Monitoring production output against each risk category detects misbehaviour in operation and feeds it back into the taxonomy."
+  - source_ref: "B008"
+    target_ref: "MGF-3.6"
+    strength: INTERSECT
+    rationale: "[curated] Authenticating callers of agent interfaces and protecting message integrity address agent-to-agent authentication; bounding how far authority may be delegated is outside AIUC-1."
+  - source_ref: "E016"
+    target_ref: "MGF-4.1"
+    strength: INTERSECT
+    rationale: "[curated] Both require telling people plainly that they are dealing with an AI; AIUC-1 extends it to every modality, the MGF adds on whose behalf the agent acts."
+  - source_ref: "E018"
+    target_ref: "MGF-4.1"
+    strength: RELATED
+    rationale: "[curated] Testing that an agent cannot be talked out of disclosing what it is checks that the disclosure holds."
+  - source_ref: "E017"
+    target_ref: "MGF-4.2"
+    strength: INTERSECT
+    rationale: "[curated] Transparency documentation such as model cards describes capabilities and limits; the MGF asks for them in user-facing terms."
+  - source_ref: "C004"
+    target_ref: "MGF-4.2"
+    strength: RELATED
+    rationale: "[curated] Telling users what the agent is for states its scope, not how it fails."
+  - source_ref: "D001"
+    target_ref: "MGF-4.2"
+    strength: RELATED
+    rationale: "[curated] Signalling uncertainty and showing citations tell a user which outputs to check."
+  - source_ref: "C009"
+    target_ref: "MGF-4.3"
+    strength: INTERSECT
+    rationale: "[curated] Letting users stop the agent and report a problem, with the feedback acted on, is user control and a route to correction; declining agentic handling is not required."
+  - source_ref: "A002"
+    target_ref: "MGF-4.3"
+    strength: RELATED
+    rationale: "[curated] Opting out of output use and having outputs deleted are consent over data use, not over agentic handling."
+  - source_ref: "E003"
+    target_ref: "MGF-4.3"
+    strength: RELATED
+    rationale: "[curated] Compensating customers after a costly fabricated output is redress the organisation initiates."
+  - source_ref: "E010"
+    target_ref: "MGF-4.4"
+    strength: INTERSECT
+    rationale: "[curated] An acceptable use policy tells users what they may and may not do with the system; the MGF also asks where independent verification is expected."
+  - source_ref: "D001"
+    target_ref: "MGF-4.4"
+    strength: RELATED
+    rationale: "[curated] Citations and uncertainty signals calibrate trust in an answer at the moment it is given."

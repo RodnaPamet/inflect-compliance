@@ -1,0 +1,228 @@
+# Cross-Framework Mapping Set: AIUC-1 (Q4-2026) → OWASP Agentic AI Top 10
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# Connects AIUC-1's requirements — which are controls — to the ten agentic
+# RISKS OWASP names, so an organisation that holds AIUC-1 controls sees which
+# risks they bear on. agent-coverage.ts reads every mapping that targets an
+# ASI risk, so these edges also count toward a registered agent's inherited
+# risk coverage. No requirement is claimed to retire a risk: every edge is
+# INTERSECT or RELATED, because each AIUC-1 requirement mitigates part of a
+# risk and none contains another's whole. ASI06 (memory and context
+# poisoning) is reached only by RELATED, which is the accurate statement
+# that AIUC-1 has no requirement on agent memory.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication, authored from the requirement texts this
+# repository carries. AIUC publishes crosswalks of its own; they are AIUC's
+# copyright, and none was transcribed or used as a source for this file.
+#
+# STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
+# SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
+# SUPERSET appear only where meeting the broader requirement as written
+# necessarily meets the narrower one. Shared ground is INTERSECT (partially
+# covered); "this is where the control would live" is RELATED (review
+# needed, never coverage). No EQUAL anywhere.
+#
+# SYMMETRY: this pair ships in BOTH directions. `owasp-agentic-to-aiuc-1.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:aiuc-1-to-owasp-agentic
+name: "AIUC-1 (Q4-2026) → OWASP Agentic AI Top 10"
+description: >
+  Cross-framework traceability between AIUC-1 (Q4-2026) and OWASP Agentic AI Top 10.
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: AIUC-1
+target_framework_ref: OWASP-ASI-TOP10
+
+mapping_entries:
+  - source_ref: "B002"
+    target_ref: "ASI01"
+    strength: INTERSECT
+    rationale: "[curated] Detecting prompt injection at run time addresses the commonest route to a hijacked objective; injection that passes undetected through retrieved content or tool output is not closed by it."
+  - source_ref: "B001"
+    target_ref: "ASI01"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly independent testing driven by prompt injection and jailbreaking exercises the hijack routes; it finds weaknesses rather than closing them."
+  - source_ref: "B005"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] A moderation layer can catch instructions injected into user input, but it judges content, and goal hijack arrives as often through retrieved documents and tool output."
+  - source_ref: "C004"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Declining subjects outside the deployed purpose limits what a hijacked agent will say, not what it will do."
+  - source_ref: "C006"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Marking content from untrusted sources is the display-side half of separating data from instruction; ASI01 needs the same separation at the model's input."
+  - source_ref: "B006"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Holding an agent to its granted privileges limits what a hijacked objective can achieve, without detecting the hijack."
+  - source_ref: "D003"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Allowlisting tools, validating parameters, capping rate and value and holding irreversible operations for approval address most tool misuse; chained calls that are each permitted can still misuse a tool."
+  - source_ref: "B006"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Restricting an agent's reach into backend services to its granted privileges bounds tool misuse at the service side; it does not judge whether a permitted call was the right one."
+  - source_ref: "B001"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Independent testing for actions and transactions the agent was never authorised to make is a direct test of tool exploitation."
+  - source_ref: "D004"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Reliability testing of mistaken and unprompted tool calls measures unintended tool use; it prevents none of it."
+  - source_ref: "E015"
+    target_ref: "ASI02"
+    strength: RELATED
+    rationale: "[curated] Logging each action and attributing it to the agent that ran it makes tool misuse reconstructable after the fact."
+  - source_ref: "A003"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Bounding what an agent reads by task, user and role, with an identity of its own where proportionate, addresses privilege accumulation on the data side."
+  - source_ref: "B006"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Technically enforcing the privileges an agent was granted, and monitoring its security-relevant actions, addresses privilege beyond the task on the action side."
+  - source_ref: "A008"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Holding a credential a user hands the agent in a secret manager, and keeping secrets out of logs and generated code, is part of delegated-credential handling; scoping and rotation are not required."
+  - source_ref: "E015"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Attributing each execution to the agent that ran it answers the half of ASI03 about actions that cannot be traced to an accountable principal."
+  - source_ref: "B007"
+    target_ref: "ASI03"
+    strength: RELATED
+    rationale: "[curated] Role-based access for people to the AI system's configuration and data governs who can reconfigure an agent rather than what the agent itself may do."
+  - source_ref: "B008"
+    target_ref: "ASI03"
+    strength: RELATED
+    rationale: "[curated] Authenticating every caller of the agent's interfaces closes impersonation at the boundary; it says nothing about the privileges an authenticated agent holds."
+  - source_ref: "E006"
+    target_ref: "ASI04"
+    strength: INTERSECT
+    rationale: "[curated] Assessing model providers before use and on a cycle, and verifying an open-weight model's source and integrity, covers the base-model part of the supply chain; tool registries, skill packs and MCP servers are outside it."
+  - source_ref: "B008"
+    target_ref: "ASI04"
+    strength: INTERSECT
+    rationale: "[curated] Verifying model artefacts before they are loaded closes one update channel through which a compromised base model arrives."
+  - source_ref: "C002"
+    target_ref: "ASI04"
+    strength: INTERSECT
+    rationale: "[curated] Scanning artefacts and dependencies and regression-testing a changed open-weight model before release intercepts compromise that arrives through an update."
+  - source_ref: "E004"
+    target_ref: "ASI04"
+    strength: RELATED
+    rationale: "[curated] Formal approval of AI changes, and signature checks on AI components where proportionate, put an accountable gate on the update channel without inspecting what a third-party component does."
+  - source_ref: "B010"
+    target_ref: "ASI04"
+    strength: RELATED
+    rationale: "[curated] Secure defaults for the dependencies generated code pulls in keep the agent from widening its own supply chain."
+  - source_ref: "B006"
+    target_ref: "ASI05"
+    strength: INTERSECT
+    rationale: "[curated] Containing an agent's execution in a sandbox is the control ASI05 names, though AIUC-1 requires it only where proportionate."
+  - source_ref: "C006"
+    target_ref: "ASI05"
+    strength: INTERSECT
+    rationale: "[curated] Sanitising output a system will run, so it cannot carry script or shell injection, addresses execution at the destination; code the agent is meant to run still needs containment."
+  - source_ref: "B001"
+    target_ref: "ASI05"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly security testing explicitly covers actions that install insecure code or execute destructively."
+  - source_ref: "B010"
+    target_ref: "ASI05"
+    strength: RELATED
+    rationale: "[curated] Secure patterns in generated code lower the harm of code that runs, without controlling where it runs."
+  - source_ref: "D003"
+    target_ref: "ASI05"
+    strength: RELATED
+    rationale: "[curated] Allowlisting the tools an agent may call, including any that execute code, narrows where execution can happen."
+  - source_ref: "A005"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Separating customers' data in retrieval and fine-tuning stops a poisoned entry in one customer's store from reaching another customer's sessions."
+  - source_ref: "B002"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Run-time detection can catch poisoning content as it is written; content stored and replayed in a later session is outside what it sees."
+  - source_ref: "C008"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Sampling production output against the risk taxonomy can surface the delayed misbehaviour a poisoned memory produces; AIUC-1 has no requirement on agent memory itself."
+  - source_ref: "B008"
+    target_ref: "ASI07"
+    strength: INTERSECT
+    rationale: "[curated] Authenticating callers of agent interfaces, encrypting their traffic and, where proportionate, protecting the integrity of agent messages address spoofing and tampering between agents; bounding delegation is outside it."
+  - source_ref: "E015"
+    target_ref: "ASI07"
+    strength: RELATED
+    rationale: "[curated] Logging agent processes and actions lets an exchange between agents be reconstructed after the fact."
+  - source_ref: "E009"
+    target_ref: "ASI07"
+    strength: RELATED
+    rationale: "[curated] Logging third-party API sessions covers external agents that connect in; traffic between the organisation's own agents is not third-party access."
+  - source_ref: "C009"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Letting users stop, pause or redirect an agent mid-task is the intervention a cascade needs, provided it can be exercised faster than the cascade runs."
+  - source_ref: "D003"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Call-rate limits and caps on value bound how far one faulty action can be amplified by automated repetition."
+  - source_ref: "E002"
+    target_ref: "ASI08"
+    strength: RELATED
+    rationale: "[curated] A plan for a harmful output names who contains it once a cascade has done damage: the response, not the prevention."
+  - source_ref: "D004"
+    target_ref: "ASI08"
+    strength: RELATED
+    rationale: "[curated] Reliability testing finds the mistaken and incomplete tool calls a cascade starts from."
+  - source_ref: "E016"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Telling people plainly, in every modality, that they are dealing with an AI addresses the persona half of trust exploitation; automation bias in approval workflows is outside it."
+  - source_ref: "E018"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly testing that an agent cannot be talked out of disclosing that it is an AI tests the disclosure ASI09 depends on."
+  - source_ref: "D001"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Showing the sources behind an answer and signalling uncertainty counter the false authority of fluent output."
+  - source_ref: "C007"
+    target_ref: "ASI09"
+    strength: RELATED
+    rationale: "[curated] Routing risky outputs to a reviewer adds the human step ASI09 warns can be rubber-stamped; AIUC-1 does not design that step against automation bias."
+  - source_ref: "C003"
+    target_ref: "ASI09"
+    strength: RELATED
+    rationale: "[curated] Blocking deceptive output removes one means by which an agent manipulates a person."
+  - source_ref: "B006"
+    target_ref: "ASI10"
+    strength: INTERSECT
+    rationale: "[curated] Technical limits on an agent's scope and monitoring of its security-relevant actions address the beyond-scope half of ASI10; an unregistered or orphaned agent is outside it."
+  - source_ref: "E004"
+    target_ref: "ASI10"
+    strength: RELATED
+    rationale: "[curated] Naming an accountable lead for changes gives each AI system an owner; AIUC-1 requires neither an agent inventory nor reassignment when that owner leaves."
+  - source_ref: "E015"
+    target_ref: "ASI10"
+    strength: RELATED
+    rationale: "[curated] Attributing each execution to the agent that ran it is how an unsanctioned agent becomes visible in the logs."
+  - source_ref: "C009"
+    target_ref: "ASI10"
+    strength: RELATED
+    rationale: "[curated] A stop control is the means of halting an agent found acting outside its sanctioned scope."

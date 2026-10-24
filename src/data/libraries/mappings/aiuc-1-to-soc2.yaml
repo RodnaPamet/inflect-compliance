@@ -1,0 +1,144 @@
+# Cross-Framework Mapping Set: AIUC-1 (Q4-2026) → SOC 2 (2017)
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# REVERSE DIRECTION. This file is the machine-checked transpose of
+# `soc2-to-aiuc-1.yaml` — author new entries THERE and let the test tell you
+# this half is stale. The rationales are written from that file's
+# direction on purpose: each states a claim about the RELATIONSHIP
+# between two requirements, which reads the same whichever end you
+# start from, and re-wording them here would be a second copy of the
+# same judgement that could drift from it silently.
+#
+# Answers how much of AIUC-1 a SOC 2 control set already gives. COMMON
+# CRITERIA ONLY: the SOC 2 representation every installed SOC 2 control links
+# to (`prisma/fixtures/soc2-control-templates.json`) carries CC1.1–CC9.1 and
+# no A1 / C1 / PI1 / P1, so an edge onto one of those would reach no tenant
+# that holds SOC 2 controls (invariant 5 of
+# tests/unit/agentic-framework-mappings.test.ts refuses exactly that). The
+# library also models one node per criteria series — CC6.1 stands for all of
+# CC6 — so the edges here are coarse by construction, and AIUC-1's privacy,
+# safety and reliability requirements have no SOC 2 route at all.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication, authored from the requirement texts this
+# repository carries. AIUC publishes crosswalks of its own; they are AIUC's
+# copyright, and none was transcribed or used as a source for this file.
+#
+# STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
+# SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
+# SUPERSET appear only where meeting the broader requirement as written
+# necessarily meets the narrower one. Shared ground is INTERSECT (partially
+# covered); "this is where the control would live" is RELATED (review
+# needed, never coverage). No EQUAL anywhere.
+#
+# SYMMETRY: this pair ships in BOTH directions. `soc2-to-aiuc-1.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:aiuc-1-to-soc2
+name: "AIUC-1 (Q4-2026) → SOC 2 (2017)"
+description: >
+  Cross-framework traceability between AIUC-1 (Q4-2026) and SOC 2 (2017).
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: AIUC-1
+target_framework_ref: SOC2-2017
+
+mapping_entries:
+  - source_ref: "A003"
+    target_ref: "CC6.1"
+    strength: INTERSECT
+    rationale: "[curated] Logical access security over protected assets, applied to what an agent may retrieve; scoping by task and session is AIUC-1's addition."
+  - source_ref: "A005"
+    target_ref: "CC6.1"
+    strength: INTERSECT
+    rationale: "[curated] Separating one customer's data from another's is logical access security between tenants."
+  - source_ref: "A008"
+    target_ref: "CC6.1"
+    strength: RELATED
+    rationale: "[curated] Credential handling is part of logical access security; catching secrets in prompts and generated code is agent-specific."
+  - source_ref: "B006"
+    target_ref: "CC6.1"
+    strength: INTERSECT
+    rationale: "[curated] Logical access controls over backend services bound what an agent can act on; monitoring its actions and sandboxing it are AIUC-1's additions."
+  - source_ref: "B007"
+    target_ref: "CC6.1"
+    strength: INTERSECT
+    rationale: "[curated] People's access to the AI system's configuration, models and data is logical access security; the quarterly review is AIUC-1's addition."
+  - source_ref: "B008"
+    target_ref: "CC6.1"
+    strength: INTERSECT
+    rationale: "[curated] Authenticating callers and encrypting their traffic are part of the access-security architecture around the AI system."
+  - source_ref: "D003"
+    target_ref: "CC6.1"
+    strength: RELATED
+    rationale: "[curated] Authorising a tool request is an access decision; allowlists, parameter validation and human approval are AIUC-1's additions."
+  - source_ref: "E005"
+    target_ref: "CC6.1"
+    strength: RELATED
+    rationale: "[curated] Encryption and access restrictions on data stores are access security over protected assets; documenting them store by store is AIUC-1's addition."
+  - source_ref: "B002"
+    target_ref: "CC7.1"
+    strength: INTERSECT
+    rationale: "[curated] System monitoring and detection, pointed at prompt-injection attempts and handled as incidents."
+  - source_ref: "B004"
+    target_ref: "CC7.1"
+    strength: INTERSECT
+    rationale: "[curated] Detecting anomalous use of exposed endpoints and finding their weaknesses is system monitoring; rate limits and quotas are AIUC-1's additions."
+  - source_ref: "C008"
+    target_ref: "CC7.1"
+    strength: RELATED
+    rationale: "[curated] System monitoring is the operational layer that sampling production output against the risk taxonomy would feed."
+  - source_ref: "E001"
+    target_ref: "CC7.1"
+    strength: RELATED
+    rationale: "[curated] SOC 2's system-operations criteria carry monitoring through to incident response, where a breach plan for the AI system belongs."
+  - source_ref: "E009"
+    target_ref: "CC7.1"
+    strength: INTERSECT
+    rationale: "[curated] Monitoring third-party access and alerting on anomalies is system monitoring for one class of user."
+  - source_ref: "E015"
+    target_ref: "CC7.1"
+    strength: INTERSECT
+    rationale: "[curated] Activity logging is the mechanism system monitoring rests on; attributing each execution to its agent is AIUC-1's addition."
+  - source_ref: "C002"
+    target_ref: "CC8.1"
+    strength: INTERSECT
+    rationale: "[curated] Testing and approving a change before it is implemented overlaps pre-deployment testing across the AI risk taxonomy."
+  - source_ref: "E004"
+    target_ref: "CC8.1"
+    strength: INTERSECT
+    rationale: "[curated] Authorising, testing and approving changes overlaps naming which AI changes need formal review and keeping the approval for each."
+  - source_ref: "E006"
+    target_ref: "CC9.1"
+    strength: INTERSECT
+    rationale: "[curated] Mitigating risk from vendors overlaps assessing model providers before use and on a cycle; verifying an open-weight model's integrity is AIUC-1's addition."
+  - source_ref: "E009"
+    target_ref: "CC9.1"
+    strength: RELATED
+    rationale: "[curated] Vendor risk includes the access a vendor holds to the AI system."
+  - source_ref: "C001"
+    target_ref: "CC3.1"
+    strength: INTERSECT
+    rationale: "[curated] Objectives clear enough to identify and assess risk are the precondition for a taxonomy of AI risk graded by severity."
+  - source_ref: "E008"
+    target_ref: "CC4.1"
+    strength: INTERSECT
+    rationale: "[curated] Evaluating, on a cycle, whether controls are present and functioning overlaps the quarterly review of key AI processes."
+  - source_ref: "C005"
+    target_ref: "CC5.1"
+    strength: RELATED
+    rationale: "[curated] Selecting control activities against identified risks is what mapping each agent-specific high-risk output to detection and a response does."
+  - source_ref: "E017"
+    target_ref: "CC2.1"
+    strength: RELATED
+    rationale: "[curated] Generating quality information about the system is the internal-control counterpart of transparency documentation shared outside the organisation."
+  - source_ref: "E010"
+    target_ref: "CC1.1"
+    strength: RELATED
+    rationale: "[curated] A commitment to integrity and ethical values is the basis an acceptable use policy extends to the system's users."

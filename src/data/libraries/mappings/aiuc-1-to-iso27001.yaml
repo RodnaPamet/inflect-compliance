@@ -1,0 +1,233 @@
+# Cross-Framework Mapping Set: AIUC-1 (Q4-2026) → ISO/IEC 27001:2022
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# REVERSE DIRECTION. This file is the machine-checked transpose of
+# `iso27001-to-aiuc-1.yaml` — author new entries THERE and let the test tell you
+# this half is stale. The rationales are written from that file's
+# direction on purpose: each states a claim about the RELATIONSHIP
+# between two requirements, which reads the same whichever end you
+# start from, and re-wording them here would be a second copy of the
+# same judgement that could drift from it silently.
+#
+# Answers how much of AIUC-1 an ISO 27001 ISMS already gives. The ISMS is
+# strongest on AIUC-1's Security domain and on the data-protection half of
+# Data & Privacy; it says nothing about harmful, out-of-scope or fabricated
+# output, which is why those requirements are reached from ISO 42001 instead.
+# Refs are the library's condensed Annex A subset; mapping-targets-exist holds
+# every one of them to a node that library carries.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication, authored from the requirement texts this
+# repository carries. AIUC publishes crosswalks of its own; they are AIUC's
+# copyright, and none was transcribed or used as a source for this file.
+#
+# STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
+# SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
+# SUPERSET appear only where meeting the broader requirement as written
+# necessarily meets the narrower one. Shared ground is INTERSECT (partially
+# covered); "this is where the control would live" is RELATED (review
+# needed, never coverage). No EQUAL anywhere.
+#
+# SYMMETRY: this pair ships in BOTH directions. `iso27001-to-aiuc-1.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:aiuc-1-to-iso27001
+name: "AIUC-1 (Q4-2026) → ISO/IEC 27001:2022"
+description: >
+  Cross-framework traceability between AIUC-1 (Q4-2026) and ISO/IEC 27001:2022.
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: AIUC-1
+target_framework_ref: ISO27001-2022
+
+mapping_entries:
+  - source_ref: "A001"
+    target_ref: "A.5.34"
+    strength: RELATED
+    rationale: "[curated] PII obligations include retention limits and data-subject requests, which an input data policy states and an automated deletion mechanism carries out."
+  - source_ref: "A003"
+    target_ref: "A.5.15"
+    strength: INTERSECT
+    rationale: "[curated] Access-control rules applied to an agent's retrieval bound what it can read; scoping by task and session, and an identity per agent, are AIUC-1's additions."
+  - source_ref: "A004"
+    target_ref: "A.5.12"
+    strength: INTERSECT
+    rationale: "[curated] Classifying information by sensitivity marks what may not be entered into or released by AI systems."
+  - source_ref: "A004"
+    target_ref: "A.6.3"
+    strength: INTERSECT
+    rationale: "[curated] Awareness training is how staff learn which material may not be entered into AI systems; screening outputs for it is outside ISO 27001."
+  - source_ref: "A004"
+    target_ref: "A.5.14"
+    strength: RELATED
+    rationale: "[curated] Rules for transferring information cover material submitted to a model provider, whose protection of it AIUC-1 asks the organisation to know."
+  - source_ref: "A005"
+    target_ref: "A.5.15"
+    strength: INTERSECT
+    rationale: "[curated] Separating one customer's data from another's in storage and retrieval is access control by tenant; consented pooling with de-identification is outside it."
+  - source_ref: "A005"
+    target_ref: "A.5.34"
+    strength: RELATED
+    rationale: "[curated] Protecting PII bounds what may be pooled across customers and how strongly it has to be de-identified."
+  - source_ref: "A006"
+    target_ref: "A.5.34"
+    strength: INTERSECT
+    rationale: "[curated] Protecting PII is the obligation; detecting and filtering personal data in an agent's inputs, outputs and logs is how an agent meets it."
+  - source_ref: "A007"
+    target_ref: "A.5.19"
+    strength: RELATED
+    rationale: "[curated] Managing supplier relationships is where a model provider's IP indemnity is established; screening outputs for protected material is outside ISO 27001."
+  - source_ref: "A008"
+    target_ref: "A.5.17"
+    strength: INTERSECT
+    rationale: "[curated] Managing authentication information covers holding a credential in a secret manager; catching secrets pasted in or written into generated code is agent-specific."
+  - source_ref: "A008"
+    target_ref: "A.8.15"
+    strength: RELATED
+    rationale: "[curated] Protecting logs includes keeping credentials and secrets out of them."
+  - source_ref: "B001"
+    target_ref: "A.8.8"
+    strength: INTERSECT
+    rationale: "[curated] Finding and remediating technical weaknesses overlaps independent security testing; unauthorised agent actions and injection-driven attacks are AIUC-1's scope."
+  - source_ref: "B002"
+    target_ref: "A.5.7"
+    strength: RELATED
+    rationale: "[curated] Threat intelligence is what the detection rules for adversarial input are revisited against each quarter."
+  - source_ref: "B002"
+    target_ref: "A.5.26"
+    strength: RELATED
+    rationale: "[curated] Responding to incidents under documented procedures is how a detected injection attempt is handled once it raises an alert."
+  - source_ref: "B003"
+    target_ref: "A.5.12"
+    strength: RELATED
+    rationale: "[curated] Classifying technical details of the AI system decides which of them may be released in public."
+  - source_ref: "B004"
+    target_ref: "A.8.8"
+    strength: INTERSECT
+    rationale: "[curated] An external penetration test of AI endpoints with tracked remediation is vulnerability management applied to them; rate limits and usage-anomaly detection are outside it."
+  - source_ref: "B006"
+    target_ref: "A.5.15"
+    strength: INTERSECT
+    rationale: "[curated] Access rules on the services and APIs an agent can call bound its actions; monitoring those actions and sandboxing execution are AIUC-1's additions."
+  - source_ref: "B006"
+    target_ref: "A.8.2"
+    strength: INTERSECT
+    rationale: "[curated] Restricting privileged access applies to the standing privileges an agent holds in backend systems."
+  - source_ref: "B007"
+    target_ref: "A.5.15"
+    strength: INTERSECT
+    rationale: "[curated] Role-based access to the AI system's configuration, prompts, models and data is access control; the quarterly review with recorded justification is AIUC-1's addition."
+  - source_ref: "B007"
+    target_ref: "A.8.2"
+    strength: INTERSECT
+    rationale: "[curated] The AI system's administrative functions are privileged access, to be restricted and managed."
+  - source_ref: "B008"
+    target_ref: "A.8.5"
+    strength: INTERSECT
+    rationale: "[curated] Authenticating every caller of the AI system's APIs and agent interfaces is secure authentication; verifying model artefacts and message integrity is outside it."
+  - source_ref: "B008"
+    target_ref: "A.8.24"
+    strength: INTERSECT
+    rationale: "[curated] Encrypting agent traffic in transit is a use of cryptography under the organisation's rules."
+  - source_ref: "B008"
+    target_ref: "A.5.14"
+    strength: RELATED
+    rationale: "[curated] Protecting information in transfer covers traffic between users, agents and model endpoints."
+  - source_ref: "B009"
+    target_ref: "A.5.12"
+    strength: RELATED
+    rationale: "[curated] Classifying information by sensitivity decides which figures need rounding or banding; reconstruction by repeated querying is not addressed by ISO 27001."
+  - source_ref: "B010"
+    target_ref: "A.8.25"
+    strength: RELATED
+    rationale: "[curated] Secure development rules govern the organisation's own software; AIUC-1 applies secure patterns to code the agent writes for others."
+  - source_ref: "C002"
+    target_ref: "A.8.25"
+    strength: INTERSECT
+    rationale: "[curated] Security testing within the development life cycle overlaps testing a change before release; testing across the AI risk taxonomy is AIUC-1's addition."
+  - source_ref: "C002"
+    target_ref: "A.8.8"
+    strength: RELATED
+    rationale: "[curated] Scanning artefacts and dependencies for vulnerabilities before release is vulnerability management at the release gate."
+  - source_ref: "C006"
+    target_ref: "A.8.25"
+    strength: RELATED
+    rationale: "[curated] Secure development covers output encoding in the organisation's own applications; sanitising agent output for wherever it is rendered or run is not named."
+  - source_ref: "D003"
+    target_ref: "A.5.15"
+    strength: RELATED
+    rationale: "[curated] Authorising each tool request is an access decision; allowlists, parameter validation, value caps and human approval are AIUC-1's additions."
+  - source_ref: "E001"
+    target_ref: "A.5.24"
+    strength: INTERSECT
+    rationale: "[curated] Incident management planning applied to a breach involving the AI system; AIUC-1 adds outside parties such as insurers and forensic support."
+  - source_ref: "E001"
+    target_ref: "A.5.26"
+    strength: INTERSECT
+    rationale: "[curated] Documented incident response covers containing and repairing an AI system after a breach."
+  - source_ref: "E002"
+    target_ref: "A.5.24"
+    strength: RELATED
+    rationale: "[curated] Incident management planning is where a plan for a harmful output would sit; ISO 27001 does not treat output harm as an incident class."
+  - source_ref: "E003"
+    target_ref: "A.5.24"
+    strength: RELATED
+    rationale: "[curated] Incident management planning is where a plan for a costly fabricated output would sit; compensating customers is outside ISO 27001."
+  - source_ref: "E004"
+    target_ref: "A.8.32"
+    strength: INTERSECT
+    rationale: "[curated] Change management with formal approval overlaps naming which AI changes need review and who approves each kind; signing AI components is outside it."
+  - source_ref: "E004"
+    target_ref: "A.5.2"
+    strength: RELATED
+    rationale: "[curated] Defined security roles and responsibilities are the structure an accountable lead for each kind of AI change belongs to."
+  - source_ref: "E005"
+    target_ref: "A.8.24"
+    strength: INTERSECT
+    rationale: "[curated] Documenting how each AI data store is encrypted follows from the organisation's cryptography rules."
+  - source_ref: "E005"
+    target_ref: "A.5.12"
+    strength: INTERSECT
+    rationale: "[curated] Justifying each store's protection against how sensitive its data is rests on a classification of that data."
+  - source_ref: "E005"
+    target_ref: "A.5.23"
+    strength: RELATED
+    rationale: "[curated] Managing the security of cloud services covers the hosting choices recorded for each AI data store."
+  - source_ref: "E006"
+    target_ref: "A.5.19"
+    strength: INTERSECT
+    rationale: "[curated] Managing supplier security risk overlaps assessing model providers before use and on a cycle; verifying an open-weight model's integrity and licence is AIUC-1's addition."
+  - source_ref: "E006"
+    target_ref: "A.5.20"
+    strength: RELATED
+    rationale: "[curated] Security requirements agreed with each supplier are the contractual result a model-provider review should produce."
+  - source_ref: "E009"
+    target_ref: "A.8.15"
+    strength: INTERSECT
+    rationale: "[curated] Logging third-party sessions and integrations well enough to reconstruct who reached what is activity logging for one class of user; anomaly alerting is outside it."
+  - source_ref: "E009"
+    target_ref: "A.5.19"
+    strength: RELATED
+    rationale: "[curated] Managing supplier relationships includes the access suppliers are given to the AI system."
+  - source_ref: "E011"
+    target_ref: "A.5.23"
+    strength: INTERSECT
+    rationale: "[curated] Managing cloud-service use includes knowing the regions where data is processed; AI sub-processors and transfer mechanisms are AIUC-1's additions."
+  - source_ref: "E011"
+    target_ref: "A.5.34"
+    strength: RELATED
+    rationale: "[curated] PII protection obligations include the lawful basis for cross-border transfers that a processing-location record names."
+  - source_ref: "E015"
+    target_ref: "A.8.15"
+    strength: INTERSECT
+    rationale: "[curated] Producing, protecting and analysing activity logs, applied to the AI system; attributing each execution to its agent is AIUC-1's addition."
+  - source_ref: "E017"
+    target_ref: "A.5.9"
+    strength: RELATED
+    rationale: "[curated] An inventory of information assets is the base an AI bill of materials extends to models and datasets."
