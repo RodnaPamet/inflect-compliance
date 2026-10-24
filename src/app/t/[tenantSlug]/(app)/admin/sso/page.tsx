@@ -163,20 +163,15 @@ export default function SsoAdminPage() {
             ? {
                 issuer: oidcIssuer,
                 clientId: oidcClientId,
-                // Don't send masked value back
-                ...(oidcClientSecret !== '••••••••' && { clientSecret: oidcClientSecret }),
-                ...(existingProvider && oidcClientSecret === '••••••••' && {
-                    clientSecret: (existingProvider.configJson as Record<string, string>).clientSecret,
-                }),
+                // Sent as shown: the mask, if untouched, tells the server to
+                // keep the stored secret (SSO_SECRET_MASK).
+                clientSecret: oidcClientSecret,
                 scopes: oidcScopes.split(/\s+/).filter(Boolean),
             }
             : {
                 entityId: samlEntityId,
                 ssoUrl: samlSsoUrl,
-                ...(samlCertificate !== '••••••••' && { certificate: samlCertificate }),
-                ...(existingProvider && samlCertificate === '••••••••' && {
-                    certificate: (existingProvider.configJson as Record<string, string>).certificate,
-                }),
+                certificate: samlCertificate,
                 ...(samlNameIdFormat && { nameIdFormat: samlNameIdFormat }),
             };
 

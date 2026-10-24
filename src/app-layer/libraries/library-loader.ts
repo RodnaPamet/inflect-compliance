@@ -18,6 +18,7 @@ import * as crypto from 'crypto';
 import * as yaml from 'js-yaml';
 import { StoredLibrarySchema, type StoredLibrary, type RequirementNode, type MappingEntry } from './schemas';
 import { logger } from '@/lib/observability/logger';
+import { canonicalJson } from '@/lib/canonical-json';
 import type {
     LoadedLibrary,
     LoadedFramework,
@@ -215,6 +216,11 @@ function normalizeMapping(raw: MappingEntry): LoadedMapping {
 /**
  * Compute a content hash for deduplication.
  * Uses SHA-256 over the library URN, version, and all requirement node URNs.
+ *
+ * It does NOT cover the text: a title, a description or the framework's
+ * metadata can change under the same version and the import skips it. That is
+ * what makes the version the delivery signal, and `computeLibraryTextHash`
+ * plus its guard are what make sure the version moves when the text does.
  */
 function computeContentHash(stored: StoredLibrary): string {
     const hashInput = [
@@ -224,6 +230,20 @@ function computeContentHash(stored: StoredLibrary): string {
     ].join('|');
 
     return crypto.createHash('sha256').update(hashInput).digest('hex');
+}
+
+/**
+ * The fingerprint a library file records in `text_hash`: SHA-256 over the
+ * canonical JSON of everything the file says except its `version` and the
+ * hash itself.
+ *
+ * Taken over the PARSED library, so comments and formatting do not move it, and
+ * neither does spelling out a value the schema would default. A version bump
+ * alone does not move it either: a bump with no text change needs no new hash.
+ */
+export function computeLibraryTextHash(stored: StoredLibrary): string {
+    const { version: _version, text_hash: _textHash, ...content } = stored;
+    return crypto.createHash('sha256').update(canonicalJson(content)).digest('hex');
 }
 
 /**

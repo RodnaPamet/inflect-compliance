@@ -100,9 +100,11 @@ describe('list reads', () => {
     });
 
     it('listFrameworks delegates under read gate', async () => {
-        (FrameworkRepository.listFrameworks as jest.Mock).mockResolvedValue([{ key: 'iso' }]);
+        // The repository's `include` always carries `packs`; the offer filter reads it.
+        const row = { key: 'iso', sourceUrn: null, packs: [] };
+        (FrameworkRepository.listFrameworks as jest.Mock).mockResolvedValue([row]);
         const rows = await listFrameworks(readerCtx);
-        expect(rows).toEqual([{ key: 'iso' }]);
+        expect(rows).toEqual([row]);
     });
 
     it('listFrameworkRequirements returns the rows on hit', async () => {

@@ -1,5 +1,30 @@
 import { z } from 'zod';
 
+// ─── Stored secrets ──────────────────────────────────────────────────
+
+/** The config fields that hold a secret: never sent back to the browser. */
+export const SSO_SECRET_KEYS = ['clientSecret', 'certificate', 'privateKey'] as const;
+
+/**
+ * What the admin page shows in place of a stored secret, and what it sends
+ * back when the admin left that field alone. On a save, this value means
+ * "keep what is stored" (`upsertTenantSsoConfig`).
+ *
+ * The page used to "keep" a secret by sending back the configJson the API
+ * had given it, which was already masked, so every save of an existing
+ * provider overwrote its client secret or certificate with these bullets.
+ */
+export const SSO_SECRET_MASK = '••••••••';
+
+/** A provider's config with every stored secret replaced by the mask. */
+export function maskSsoSecrets(config: Record<string, unknown>): Record<string, unknown> {
+    const masked = { ...config };
+    for (const key of SSO_SECRET_KEYS) {
+        if (typeof masked[key] === 'string' && masked[key]) masked[key] = SSO_SECRET_MASK;
+    }
+    return masked;
+}
+
 /**
  * Zod schemas for Enterprise SSO configuration validation.
  *

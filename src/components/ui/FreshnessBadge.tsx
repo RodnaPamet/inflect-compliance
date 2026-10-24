@@ -27,6 +27,7 @@
 
 import { Activity } from 'lucide-react';
 
+import { useTranslations } from 'next-intl';
 import {
     resolveFreshness,
     type FreshnessLevel,
@@ -116,6 +117,7 @@ export function FreshnessBadge({
     className = '',
     'data-testid': dataTestId,
 }: FreshnessBadgeProps) {
+    const t = useTranslations('common.ui');
     const result = resolveFreshness(lastRefreshedAt, {
         warnAfterDays,
         staleAfterDays,
@@ -136,7 +138,11 @@ export function FreshnessBadge({
     return (
         <span
             role="status"
-            aria-label={`Freshness: ${style.label}${ageDays !== null ? `, ${ageLabel(ageDays)}` : ''}`}
+            aria-label={
+                ageDays !== null
+                    ? t('freshnessLabelWithAge', { label: style.label, age: ageLabel(ageDays) })
+                    : t('freshnessLabel', { label: style.label })
+            }
             title={titleContent}
             data-freshness={level}
             data-testid={dataTestId}

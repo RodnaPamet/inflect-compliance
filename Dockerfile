@@ -191,6 +191,10 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/prisma ./prisma
+# The YAML framework libraries and mapping sets, read from disk by
+# dist/sync-framework-libraries.mjs at container start (the entrypoint's
+# step 1f). Without them the sync finds no libraries and imports nothing.
+COPY --from=builder /app/src/data/libraries ./src/data/libraries
 # Prisma 7 — connection URL config moved out of `datasource db {}`
 # in `prisma/schema/base.prisma` into `prisma.config.ts`. The CLI
 # (`prisma migrate deploy` from the entrypoint) reads URLs from

@@ -38,8 +38,8 @@ describe('jwt callback — revocation precedes the claims refresh', () => {
      * Everything from the start of the throttled block onwards.
      *
      * Scoping to this slice is load-bearing, and the first version of this
-     * guard did not do it: `src/auth.ts` contains an EARLIER
-     * `error: 'SessionRevoked'` return (the Epic C.3 session-tracker check),
+     * guard did not do it: `src/auth.ts` contains an EARLIER revocation (the
+     * Epic C.3 session-tracker check, now a `SessionRevokedError` throw),
      * so a whole-file `indexOf` found that one and compared it against the
      * refresh. Swapping the two lines this guard exists to order left it
      * green — it was measuring a revocation check it does not name, in a
@@ -54,12 +54,12 @@ describe('jwt callback — revocation precedes the claims refresh', () => {
         // passes vacuously, and "never ran" looks identical to "ran and found
         // nothing wrong".
         expect(throttleIdx).toBeGreaterThan(-1);
-        expect(block).toContain("error: 'SessionRevoked'");
+        expect(block).toContain("new SessionRevokedError('session_version_bumped')");
         expect(block).toMatch(/await\s+applyMembershipClaims\(token\)/);
     });
 
-    it('the revocation return sits before the refresh call, within that block', () => {
-        const revokeIdx = block.indexOf("error: 'SessionRevoked'");
+    it('the revocation throw sits before the refresh call, within that block', () => {
+        const revokeIdx = block.indexOf("new SessionRevokedError('session_version_bumped')");
         const refreshIdx = block.indexOf('applyMembershipClaims(token)');
         expect(revokeIdx).toBeGreaterThan(-1);
         expect(refreshIdx).toBeGreaterThan(-1);

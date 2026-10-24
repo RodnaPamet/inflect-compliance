@@ -245,6 +245,27 @@ describe('MappingSet Importer', () => {
 
             expect(computeMappingSetHash(stored1)).not.toBe(computeMappingSetHash(stored2));
         });
+
+        it('changes hash when only a rationale, the name or the description changes', () => {
+            // The hash once covered refs and strengths only, so a reworded
+            // rationale under the same version was skipped by every database
+            // already holding the set and never reached it.
+            const stored = parseMappingSetString(VALID_YAML);
+            const base = computeMappingSetHash(stored);
+            const [first, ...rest] = stored.mapping_entries;
+            const reworded = { ...stored, mapping_entries: [{ ...first, rationale: 'Reworded.' }, ...rest] };
+
+            expect(computeMappingSetHash(reworded)).not.toBe(base);
+            expect(computeMappingSetHash({ ...stored, name: 'Renamed' })).not.toBe(base);
+            expect(computeMappingSetHash({ ...stored, description: 'Redescribed' })).not.toBe(base);
+        });
+
+        it('does not depend on key order', () => {
+            const stored = parseMappingSetString(VALID_YAML);
+            const reordered = Object.fromEntries(Object.entries(stored).reverse()) as typeof stored;
+
+            expect(computeMappingSetHash(reordered)).toBe(computeMappingSetHash(stored));
+        });
     });
 
     // ─── Import: Happy Path ──────────────────────────────────────────

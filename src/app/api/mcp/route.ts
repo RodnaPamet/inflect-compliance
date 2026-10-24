@@ -21,15 +21,34 @@
  *
  * Transport: streamable HTTP, JSON responses only (no server-initiated SSE —
  * read tools need none). `withApiErrorHandling` gives the observability span,
- * request-id, rate limiting (mutation tier on POST), and AppError→HTTP mapping
- * every REST route gets.
+ * request-id and AppError→HTTP mapping every REST route gets.
+ *
+ * Rate limiting is TWO budgets, because the default mutation tier keyed on the
+ * caller's IP was the wrong unit here: a hosted MCP client calls from its
+ * provider's egress addresses, so every customer agent hosted there would have
+ * shared one bucket. Before authentication, `MCP_IP_CEILING_LIMIT` bounds what
+ * one address can make the key lookup do. After it, `MCP_PER_KEY_LIMIT` is
+ * the per-caller budget, keyed on the verified `apiKeyId` and charged per
+ * JSON-RPC message, so a batch cannot carry more than a minute's budget.
+ *
+ * Every read tool call's arguments pass the AI Guard's egress slice before the
+ * funnel runs (`assertMcpArgumentsAllowed`) — the slice `runGuardedTool` runs
+ * for agents Inflect hosts, which this door used to skip. Propose calls are
+ * scanned by the proposal queue itself.
  */
 import { NextRequest } from 'next/server';
 
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { isAppError } from '@/lib/errors/types';
+import { isAppError, unauthorized } from '@/lib/errors/types';
+import {
+    enforceApiKeyRateLimit,
+    isRateLimitBypassed,
+    MCP_PER_KEY_LIMIT,
+    MCP_IP_CEILING_LIMIT,
+} from '@/lib/security/rate-limit-middleware';
 import { authenticateMcpRequest } from '@/lib/mcp/auth';
+import { assertMcpArgumentsAllowed } from '@/lib/mcp/argument-guard';
 import {
     dispatchMcp,
     rpcError,
@@ -95,10 +114,17 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
         // tools require the resource scope; propose tools additionally require
         // the mcp:propose capability. A propose tool NEVER creates a record — it
         // queues a human-approved proposal.
-        callTool: (name, args) =>
-            isProposeTool(name)
-                ? runProposeTool(invocation, name, args)
-                : runReadTool(invocation, name, args),
+        //
+        // A read's arguments are guarded FIRST, because the funnel authorizes
+        // and executes in one call and a scan after it would report on a read
+        // that already ran. A propose call is not scanned here: the queue scans
+        // the proposed content itself and quarantines a non-clean item as a row
+        // a reviewer sees (see `assertMcpArgumentsAllowed`).
+        callTool: async (name, args) => {
+            if (isProposeTool(name)) return runProposeTool(invocation, name, args);
+            await assertMcpArgumentsAllowed(invocation.ctx, name, args);
+            return runReadTool(invocation, name, args);
+        },
         // Resources take the INVOCATION, not a bare ctx. Until this change they
         // were the one door into `/api/mcp` that skipped the shared gate: scope
         // enforcement only, no audit row on refusal, no audience, no ceiling.
@@ -108,6 +134,42 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
 
     // JSON-RPC allows a single request or a batch (array).
     const requests = Array.isArray(payload) ? payload : [payload];
+
+    // ── The per-key budget, charged per MESSAGE ─────────────────────────────
+    //
+    // After authentication, so the bucket is the VERIFIED key and not anything
+    // the caller can vary. Every `/api/mcp` caller presents an API key (an
+    // exchanged token resolves to its issuing key), so a missing id is a broken
+    // invariant, refused rather than pooled into a shared bucket.
+    //
+    // A batch larger than the whole budget could never fit, so it is refused
+    // as a malformed request rather than told to retry. An empty batch still
+    // costs one: it is a request, and JSON-RPC answers it with an error.
+    if (requests.length > MCP_PER_KEY_LIMIT.maxAttempts) {
+        return jsonResponse(
+            rpcError(
+                null,
+                RpcErrorCode.InvalidRequest,
+                `Batch of ${requests.length} messages exceeds the limit of ` +
+                    `${MCP_PER_KEY_LIMIT.maxAttempts} per minute per API key; send smaller batches.`,
+            ),
+            { status: 400 },
+        );
+    }
+    if (!isRateLimitBypassed()) {
+        const apiKeyId = invocation.ctx.apiKeyId;
+        if (!apiKeyId) {
+            throw unauthorized('MCP requires a Bearer TenantApiKey');
+        }
+        const { response: limited } = enforceApiKeyRateLimit({
+            scope: 'mcp-api-key',
+            config: MCP_PER_KEY_LIMIT,
+            apiKeyId,
+            units: Math.max(1, requests.length),
+        });
+        if (limited) return limited;
+    }
+
     const responses: JsonRpcResponse[] = [];
 
     for (const raw of requests) {
@@ -128,6 +190,11 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
 
     const body = Array.isArray(payload) ? responses : responses[0];
     return jsonResponse(body);
+}, {
+    // The pre-authentication ceiling, in its own scope: MCP traffic no longer
+    // shares the `api-mutation` bucket every other route called from the same
+    // address draws on. See `MCP_IP_CEILING_LIMIT` for the sizing.
+    rateLimit: { config: MCP_IP_CEILING_LIMIT, scope: 'mcp-ip' },
 });
 
 /**

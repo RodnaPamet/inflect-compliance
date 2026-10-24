@@ -56,6 +56,10 @@ jest.mock('@/lib/prisma', () => {
         $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
         verificationToken: {
             create: jest.fn(async ({ data }: any) => {
+                // `token` is unique in the schema; the database refuses a second row.
+                if (db.tokens.some((r) => r.token === data.token)) {
+                    throw Object.assign(new Error('Unique constraint failed on the fields: (`token`)'), { code: 'P2002' });
+                }
                 db.tokens.push({ ...data });
                 return data;
             }),
@@ -183,6 +187,8 @@ import { GET as oidcCallback } from '@/app/api/auth/sso/oidc/callback/route';
 import { POST as samlCallback } from '@/app/api/auth/sso/saml/callback/route';
 import { exchangeCodeForTokens } from '@/lib/security/oidc-client';
 import middleware from '../../src/middleware';
+import { auth } from '@/auth';
+import { verifyAndTouchSession } from '@/lib/security/session-tracker';
 
 const SECRET = process.env.AUTH_SECRET as string;
 const ORIGIN = 'http://localhost:3000';
@@ -364,6 +370,19 @@ describe('the round trip is bound to the browser that started it', () => {
         const res = await runCallback(protocol, flow.id, flow.cookie);
         expect(setCookie(res, 'inflect_sso_flow')).toMatch(/Max-Age=0/i);
     });
+
+    it('saml: the server refuses the same flow a second time, though the browser kept the cookie', async () => {
+        // Clearing the cookie asks the browser to forget it; a HAR export or a
+        // proxy log still holds it beside the SAMLResponse. The flow is spent on
+        // the server too (src/lib/auth/sso-flow-spend.ts).
+        const flow = await startFlow('saml');
+        const first = await runCallback('saml', flow.id, flow.cookie);
+        expect(new URL(first.headers.get('location')!).pathname).not.toBe('/login');
+
+        const replay = await runCallback('saml', flow.id, flow.cookie);
+        expect(replay.status).toBe(303);
+        expect(new URL(replay.headers.get('location')!).searchParams.get('error')).toBe('invalid_relay');
+    });
 });
 
 describe('the SSO callbacks hand off to NextAuth', () => {
@@ -396,9 +415,11 @@ describe('the SSO callbacks hand off to NextAuth', () => {
         // The hand-off, and the spent flow — never a session cookie of its own.
         const names = res.headers.getSetCookie().map((c: string) => c.split('=')[0]);
         expect(names.sort()).toEqual(['inflect_sso_flow', 'inflect_sso_handoff']);
-        expect(db.tokens).toHaveLength(1);
+        // One hand-off row (a SAML callback also records its spent flow).
+        const handoffs = db.tokens.filter((r) => r.identifier.startsWith('sso-handoff:'));
+        expect(handoffs).toHaveLength(1);
         // Stored hashed: the cookie's value is not in the table.
-        expect(db.tokens[0].token).not.toBe(cookieValue(handoff!));
+        expect(handoffs[0].token).not.toBe(cookieValue(handoff!));
     });
 
     it('a membership that is not ACTIVE gets no hand-off', async () => {
@@ -478,5 +499,49 @@ describe('a hand-off is good once, from its cookie, for a live membership', () =
         const handoff = await handoffFromCallback();
         db.tokens[0].expires = new Date(Date.now() - 1000);
         expect(await redeemThroughNextAuth(handoff)).toBeNull();
+    });
+});
+
+describe('a revoked session is refused, not merely flagged', () => {
+    // The `jwt` callback used to answer a revoked session row by returning the
+    // token with `error: 'SessionRevoked'`, every claim intact, and nothing
+    // read the flag. Now it throws (src/lib/auth/session-revoked.ts), which
+    // NextAuth treats as no session at all.
+    const revokedOnce = () =>
+        (verifyAndTouchSession as jest.Mock).mockResolvedValueOnce({ revoked: true, rowId: 'row-1' });
+
+    async function sessionEndpoint(sessionCookie: string): Promise<Response> {
+        const req = new NextRequest(`${ORIGIN}/api/auth/session`, {
+            headers: { cookie: `${SESSION_COOKIE}=${sessionCookie}` },
+        });
+        currentRequest = req;
+        return nextAuthGet(req, { params: Promise.resolve({ nextauth: ['session'] }) });
+    }
+
+    async function serverSessionFor(sessionCookie: string) {
+        currentRequest = new NextRequest(`${ORIGIN}/t/beta/dashboard`, {
+            headers: { cookie: `${SESSION_COOKIE}=${sessionCookie}` },
+        });
+        return auth();
+    }
+
+    it('a live session reads as itself, on the server and at the session endpoint', async () => {
+        const session = (await redeemThroughNextAuth(await handoffFromCallback()))!;
+        expect((await serverSessionFor(session))?.user.id).toBe('user-1');
+        expect((await (await sessionEndpoint(session)).json()).user?.id).toBe('user-1');
+    });
+
+    it('once its row is revoked, every server gate sees no session', async () => {
+        const session = (await redeemThroughNextAuth(await handoffFromCallback()))!;
+        revokedOnce();
+        await expect(serverSessionFor(session)).resolves.toBeNull();
+    });
+
+    it('once its row is revoked, the session endpoint answers with nothing and clears the cookie', async () => {
+        const session = (await redeemThroughNextAuth(await handoffFromCallback()))!;
+        revokedOnce();
+        const res = await sessionEndpoint(session);
+        expect(await res.json()).toEqual({});
+        expect(setCookie(res, SESSION_COOKIE)).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/i);
     });
 });

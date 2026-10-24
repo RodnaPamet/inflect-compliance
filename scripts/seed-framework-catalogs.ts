@@ -77,7 +77,9 @@ const CATALOG_FIXTURES = [
     // here exists twice under two keys, one per authoring path, and
     // usecases/framework/coverage.ts records that a tenant's links hang off
     // whichever row its database got. COSO has no such split and should not
-    // acquire one.
+    // acquire one. In a deployment this seeder is the row's only writer: the
+    // library sync after it leaves every row with a pack alone, because the
+    // two disagree on COSO's descriptions (see syncLibrariesAtStartup).
     'prisma/fixtures/coso-icf-2013-control-templates.json',
     // AIUC-1. The second framework to converge on ONE row, for COSO's reason:
     // it declares the same key as src/data/libraries/aiuc-1.yaml, and its

@@ -2,6 +2,7 @@ import { RequestContext } from '../../types';
 import { ControlTemplateRepository } from '../../repositories/ControlTemplateRepository';
 import { ControlRepository } from '../../repositories/ControlRepository';
 import { FrameworkRepository } from '../../repositories/FrameworkRepository';
+import { withoutReferenceTwins } from '../../domain/framework-representation';
 import {
     assertCanReadControls, assertCanCreateControl, assertCanMapFramework,
 } from '../../policies/control.policies';
@@ -181,9 +182,12 @@ export async function installControlsFromTemplate(ctx: RequestContext, templateI
 
 export async function listFrameworks(ctx: RequestContext) {
     assertCanReadControls(ctx);
-    return runInTenantContext(ctx, (db) =>
+    // The mapping picker offers one row per framework: a control mapped to a
+    // library twin would hang off the row tenants cannot see.
+    const rows = await runInTenantContext(ctx, (db) =>
         FrameworkRepository.listFrameworks(db)
     );
+    return withoutReferenceTwins(rows, (f) => f.packs.length);
 }
 
 export async function listFrameworkRequirements(ctx: RequestContext, frameworkKey: string) {
