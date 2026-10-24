@@ -229,6 +229,10 @@ export default function MembersAdminPage() {
     // Absolute invite link from the last "add member" — a share-anywhere
     // fallback so access never depends on the invite email arriving.
     const [inviteLink, setInviteLink] = useState<string | null>(null);
+    // Whether the server says that invite was actually emailed. False when
+    // no mailer is configured or the send failed — the link is then the
+    // only way the invitee hears about it.
+    const [inviteEmailed, setInviteEmailed] = useState(false);
 
     // Invite form
     const [showInvite, setShowInvite] = useState(false);
@@ -305,6 +309,7 @@ export default function MembersAdminPage() {
         setError(null);
         setSuccess(null);
         setInviteLink(null);
+        setInviteEmailed(false);
         setInviting(true);
 
         try {
@@ -323,7 +328,16 @@ export default function MembersAdminPage() {
             const data = await res.json();
             // The member is authorised the moment they sign in with this
             // email — access no longer depends on the invite email arriving.
-            setSuccess(t('members.memberAddedLoginHint', { email: inviteEmail, role: inviteRole }));
+            // Say "emailed" only when the server says it was: a deployment
+            // with no mailer sends nothing, and the admin must share the link.
+            const emailed = data?.emailSent === true;
+            setInviteEmailed(emailed);
+            const hintArgs = { email: inviteEmail, role: inviteRole };
+            setSuccess(
+                emailed
+                    ? t('members.memberAddedEmailed', hintArgs)
+                    : t('members.memberAddedNotEmailed', hintArgs),
+            );
             setInviteLink(
                 typeof data?.url === 'string' ? `${window.location.origin}${data.url}` : null,
             );
@@ -1092,7 +1106,9 @@ export default function MembersAdminPage() {
                         {inviteLink && (
                             <div className="flex items-center gap-tight text-xs">
                                 <span className="text-content-muted shrink-0">
-                                    {t('members.inviteLinkLabel')}
+                                    {inviteEmailed
+                                        ? t('members.inviteLinkLabel')
+                                        : t('members.inviteLinkLabelNotEmailed')}
                                 </span>
                                 <CopyText
                                     value={inviteLink}
