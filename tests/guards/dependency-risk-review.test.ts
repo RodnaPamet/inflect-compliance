@@ -154,6 +154,21 @@ const REVIEWED: Record<string, { major: number }> = {
     // leaves the page. Runtime, not dev: the page's client bundle needs it, and
     // so does the server render of the same page.
     qrcode: { major: 1 },
+    // Reviewed 2026-10-24 on adoption, when OIDC sign-in began verifying the
+    // ID token's signature (src/lib/security/oidc-client.ts, `verifyIdToken`).
+    // Qualifies on two of the three criteria at once: it PARSES UNTRUSTED INPUT
+    // (an ID token is attacker-reachable text until its signature checks out)
+    // and it performs NETWORK EGRESS (it fetches the IdP's JSON Web Key Set).
+    //
+    // Already in the tree at the same 6.2.12 (@modelcontextprotocol/client
+    // requires it), so declaring it turns a phantom resolution into a real one
+    // rather than adding a package to the image. next-auth keeps its own
+    // nested jose 4, untouched.
+    //
+    // The floor matters in one direction: the call site passes an explicit
+    // `algorithms` allowlist to `jwtVerify`, and an older major's defaults are
+    // not what this review read.
+    jose: { major: 6 },
 };
 
 /** Major of a caret/tilde/plain semver range (`^8.0.7` → 8). */
