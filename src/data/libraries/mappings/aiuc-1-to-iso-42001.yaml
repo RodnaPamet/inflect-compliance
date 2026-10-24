@@ -247,15 +247,15 @@ mapping_entries:
   - source_ref: "E013"
     target_ref: "4.4"
     strength: INTERSECT
-    rationale: "[curated] An AI management system and a quality management system for AI share objectives, risk, change and corrective action; neither standard's system contains the other."
+    rationale: "[curated] An AI management system and an AI quality management system share objectives, risk, change and corrective action; neither standard's system contains the other."
   - source_ref: "E013"
     target_ref: "10.2"
     strength: INTERSECT
-    rationale: "[curated] Nonconformity and corrective action is the issue-tracking component a quality management system for AI has to carry."
+    rationale: "[curated] Nonconformity and corrective action is the issue-tracking component an AI quality management system has to carry."
   - source_ref: "E013"
     target_ref: "6.2"
     strength: INTERSECT
-    rationale: "[curated] Measurable, monitored AI objectives are the quality objectives and metrics a quality management system for AI must set."
+    rationale: "[curated] Measurable, monitored AI objectives are the quality objectives and metrics an AI quality management system must set."
   - source_ref: "E015"
     target_ref: "A.6.2.8"
     strength: INTERSECT
