@@ -87,9 +87,14 @@ describe('personal MFA page — enrolment QR code', () => {
         });
         fireEvent.click(start);
 
-        const img = await screen.findByRole('img', {
-            name: 'QR code for adding this account to your authenticator app',
-        });
+        // Drawing the PNG is CPU-bound, so on a loaded in-band CI shard it can
+        // outlast findBy's default 1 s while the page still shows the pending
+        // placeholder. The assertion is about which image is drawn, not how fast.
+        const img = await screen.findByRole(
+            'img',
+            { name: 'QR code for adding this account to your authenticator app' },
+            { timeout: 10_000 },
+        );
         expect(fetchMock).toHaveBeenCalledWith(
             expect.stringMatching(/\/security\/mfa\/enroll\/start$/),
             expect.objectContaining({ method: 'POST' }),
