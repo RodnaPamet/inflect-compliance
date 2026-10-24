@@ -20,7 +20,6 @@
  *   - on a refusal, stays on the page, shows the server's reason, and
  *     neither refreshes the session nor navigates.
  */
-import * as React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const pushMock = jest.fn();
