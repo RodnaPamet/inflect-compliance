@@ -26,7 +26,7 @@ import path from 'node:path';
 
 import { PrismaClient } from '@prisma/client';
 
-import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { getTestDatabaseUrl, prismaTestClient, resetDatabase } from '../helpers/db';
 import { loadAndValidateCatalogFile } from '../../prisma/catalog-loader';
 import { applyCatalogFile } from '../../prisma/catalog-applier';
 import { REPO_ROOT } from '../helpers/repo-files';
@@ -42,15 +42,26 @@ function runCatalogCheck(): { code: number; out: string } {
         const out = execFileSync('npx', ['tsx', 'scripts/catalog-check.ts'], {
             cwd: REPO_ROOT,
             encoding: 'utf8',
-            // THIS HANDS THE CHILD THE BASE TEST DATABASE, and the assertions
-            // below only hold because CI runs these suites `--runInBand`,
-            // which gates OFF globalSetup's per-worker cloning — so the script
-            // and this test see the same database. Under a local PARALLEL run
-            // the test writes to a worker clone the script cannot see, and the
-            // differential assertion reads a delta of 0 and fails LOUDLY
-            // rather than passing wrongly. Naming the dependency because it is
-            // invisible from here (#2645).
-            env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL },
+            // THIS HANDS THE CHILD *THIS WORKER'S* DATABASE (#4038).
+            //
+            // It used to hand over the BASE test database, with a comment
+            // naming the consequence: under a parallel run the test writes to
+            // a worker clone the script cannot see, so the differential
+            // assertion reads a delta of 0 and "fails LOUDLY rather than
+            // passing wrongly". That is a good failure, and it duly fired —
+            // measured on #4033, which ran the shards with `--maxWorkers=2`:
+            //
+            //     expect(missingTemplateCount(out)).toBe(baseline + 3)
+            //     Expected: 664   Received: 661
+            //
+            // A delta of exactly 0, as predicted. `getTestDatabaseUrl()`
+            // removes the dependency instead of documenting it: it returns the
+            // per-worker clone when globalSetup's isolation is on, and the
+            // shared base URL when it is off. So CI, which runs `--runInBand`
+            // with isolation gated off, gets the SAME string it got before —
+            // the change is a no-op there by construction — while a parallel
+            // run finally has the script and the test reading one database.
+            env: { ...process.env, DATABASE_URL: getTestDatabaseUrl() },
             timeout: 120_000,
         });
         return { code: 0, out };
