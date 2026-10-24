@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { listTenantMembers } from '@/app-layer/usecases/tenant-admin';
-import { createInviteToken, listPendingInvites } from '@/app-layer/usecases/tenant-invites';
+import { listPendingInvites } from '@/app-layer/usecases/tenant-invites';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
+import { createInvitePostHandler } from '../_lib/create-invite-handler';
 
 const InviteMemberSchema = z.object({
     email: z.string().email('Valid email required'),
@@ -29,12 +30,15 @@ export const GET = withApiErrorHandling(
     }),
 );
 
+/**
+ * The members page's "Invite Member" form. Creates the invite AND emails
+ * the acceptance link — the same implementation as `POST /admin/invites`
+ * (`../_lib/create-invite-handler.ts`). The response carries `emailSent`,
+ * which is false when no mailer is configured or the send failed, so the
+ * page only says "emailed" when it was.
+ */
 export const POST = withApiErrorHandling(
-    requirePermission('admin.members', async (req: NextRequest, _routeArgs, ctx) => {
-        const body = await req.json();
-        const input = InviteMemberSchema.parse(body);
-        const result = await createInviteToken(ctx, input);
-        // Response always returns the invite (no more 'added'/'reactivated' branch).
-        return jsonResponse({ invite: result.invite, url: result.url }, { status: 201 });
-    }),
+    requirePermission('admin.members', async (req: NextRequest, _routeArgs, ctx) =>
+        createInvitePostHandler(req, ctx, (body) => InviteMemberSchema.parse(body)),
+    ),
 );
