@@ -4601,6 +4601,7 @@
       "roleLabel": "Роля",
       "sendInvite": "Изпрати покана",
       "cancel": "Отказ",
+      "cancelRoleChange": "Отказ от промяната на ролята",
       "customRolePlaceholder": "Без персонализирана роля (използвай базовата)",
       "clickToChangeRole": "Кликнете, за да промените ролята",
       "ownerOnlyRoleChange": "Само собственик може да промени ролята {role}",
