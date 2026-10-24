@@ -35,6 +35,12 @@ export interface JwtPayload {
     tenantId: string;
     email: string;
     role: Role;
+    /**
+     * Set when single sign-on opened the session: the only tenant it may
+     * reach. Every DB-backed tenant and org gate refuses any other — see
+     * `src/lib/auth/sso-session.ts`.
+     */
+    ssoTenantId?: string | null;
 }
 
 // Legacy JWT secret — used only for reading old cookies during migration
@@ -55,6 +61,7 @@ export async function getSession(): Promise<JwtPayload | null> {
             tenantId: session.user.tenantId ?? '',
             email: session.user.email ?? '',
             role: session.user.role ?? 'READER',
+            ssoTenantId: session.user.ssoTenantId ?? null,
         };
     }
 

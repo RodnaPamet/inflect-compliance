@@ -20,6 +20,7 @@ import { useCopyToClipboard } from '@/components/ui/hooks';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Heading } from '@/components/ui/typography';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { TotpQrCode } from './TotpQrCode';
 
 interface MfaStatus {
     isEnrolled: boolean;
@@ -275,13 +276,11 @@ export default function UserMfaPage() {
                         </p>
                     </div>
 
-                    {/* QR Code placeholder — render the otpauth URI */}
+                    {/* The otpauth URI as a QR code. White in both themes:
+                        scanners read dark modules on a light ground. */}
                     <div className="flex flex-col items-center gap-default py-4">
                         <div className="bg-white p-4 rounded-lg">
-                            {/* Simple QR fallback: render as a monospace URI block */}
-                            <div className="w-full sm:w-48 h-48 flex items-center justify-center">
-                                <QrCode className="w-full sm:w-32 h-32 text-content-emphasis" />
-                            </div>
+                            <TotpQrCode value={enrollment.otpauthUrl} alt={t('qrCodeAlt')} />
                         </div>
                         <p className="text-xs text-content-subtle">
                             {t('cannotScan')}

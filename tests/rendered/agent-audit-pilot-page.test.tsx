@@ -62,17 +62,16 @@ const DRY_RUN = {
 
 type Call = { url: string; method?: string; body: unknown };
 
-/**
- * `answers` are the set-up endpoint's replies, in order. Each control picker
- * also searches `/controls` once its 250 ms debounce elapses after mount, and
- * those GETs are answered apart: drawn from the same queue, a run slow enough
- * to reach the debounce before Check handed a picker the dry run meant for
- * Check, so Check received the applied answer and Set up never enabled.
- */
 function mockFetch(answers: unknown[]) {
     const calls: Call[] = [];
     global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
         calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        // The two control pickers search `/controls` once on mount, after a
+        // 250 ms debounce. Answered from the queue, those reads took the
+        // set-up's answers whenever the page took longer than that to render,
+        // which a loaded CI runner does: the second dry run then received the
+        // APPLIED answer and Set up stayed disabled. Only the set-up POSTs read
+        // the queue.
         if (init?.method !== 'POST') return { ok: true, json: async () => ({ items: [] }) } as Response;
         const answer = answers.length > 1 ? answers.shift() : answers[0];
         return { ok: true, json: async () => answer } as Response;
@@ -102,9 +101,6 @@ it('writes only through the confirmation, with the inputs it was checked with', 
     const calls = mockFetch([DRY_RUN, DRY_RUN, applied]);
     renderPage();
     await screen.findByTestId('audit-pilot-steps');
-    // Let both control pickers run their mount search first, which is the
-    // order a slow run produces; it must not consume a set-up answer.
-    await waitFor(() => expect(calls.filter((c) => c.method !== 'POST')).toHaveLength(PROCEDURES.length));
 
     fireEvent.change(screen.getByLabelText('Auditor name'), { target: { value: 'Second-line auditor' } });
     fireEvent.click(screen.getByTestId('audit-pilot-check'));

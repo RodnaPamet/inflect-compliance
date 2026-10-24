@@ -15,7 +15,8 @@
  */
 import prisma from '@/lib/prisma';
 import { resolveTenantContext } from '@/lib/tenant-context';
-import { notFound } from '@/lib/errors/types';
+import { forbidden, notFound } from '@/lib/errors/types';
+import { isOutsideSsoScope, SSO_SCOPE_REFUSAL } from '@/lib/auth/sso-session';
 import type { Role } from '@prisma/client';
 import type { Permissions } from '@/lib/tenant-context';
 import type { PermissionSet } from '@/lib/permissions';
@@ -105,7 +106,8 @@ export async function resolveTenantBySlug(slug: string): Promise<TenantRecord> {
  *
  * Throws:
  * - AppError NOT_FOUND if the tenant doesn't exist
- * - AppError FORBIDDEN if the user has no active membership
+ * - AppError FORBIDDEN if the user has no active membership, or the session
+ *   was opened by another tenant's single sign-on
  *
  * @example
  * ```ts
@@ -114,6 +116,7 @@ export async function resolveTenantBySlug(slug: string): Promise<TenantRecord> {
  * const ctx = await getTenantServerContext({
  *   tenantSlug: params.tenantSlug,
  *   userId: session.user.id,
+ *   ssoTenantId: session.user.ssoTenantId,
  * });
  * // ctx.tenant.id, ctx.role, ctx.permissions, ctx.appPermissions
  * ```
@@ -121,6 +124,12 @@ export async function resolveTenantBySlug(slug: string): Promise<TenantRecord> {
 export async function getTenantServerContext(params: {
     tenantSlug: string;
     userId: string;
+    /**
+     * The session's single-sign-on scope (`session.user.ssoTenantId`).
+     * Required so no caller can forget it: `null` for a session that did not
+     * come from SSO.
+     */
+    ssoTenantId: string | null | undefined;
 }): Promise<TenantServerContext> {
     // Delegate to the authoritative resolver which handles:
     // - Tenant lookup
@@ -131,6 +140,9 @@ export async function getTenantServerContext(params: {
         { tenantSlug: params.tenantSlug },
         params.userId,
     );
+    if (isOutsideSsoScope(params.ssoTenantId, ctx.tenant.id)) {
+        throw forbidden(SSO_SCOPE_REFUSAL);
+    }
 
     // One extra indexed read on a table already keyed by tenantId. It happens
     // here rather than in the consuming layout so there is a single place that

@@ -120,6 +120,24 @@ describeFn('usecase-layer last-OWNER guard', () => {
         return { userId: user.id, membershipId: membership.id, ctx };
     }
 
+    /**
+     * An ADMIN membership whose context also holds `admin.owner_management`.
+     *
+     * Ending an OWNER membership is owner-tier work: a plain ADMIN is refused
+     * before the last-OWNER count is read (tests/unit/owner-membership-removal-authority.test.ts).
+     * A real OWNER caller can never reach the guard either, because they are a
+     * second active OWNER. So the last-OWNER guard on deactivate and remove is
+     * defence in depth, and these cases reach it the only way left: a caller
+     * holding owner-tier authority who is not itself an OWNER.
+     */
+    function withOwnerTierAuthority(member: Awaited<ReturnType<typeof addMember>>) {
+        const perms = getPermissionsForRole('ADMIN');
+        return {
+            ...member.ctx,
+            appPermissions: { ...perms, admin: { ...perms.admin, owner_management: true } },
+        };
+    }
+
     // ── 1. Demoting the only OWNER ──────────────────────────────────────
 
     it('1. updateTenantMemberRole: demoting the only OWNER throws forbidden', async () => {
@@ -139,13 +157,14 @@ describeFn('usecase-layer last-OWNER guard', () => {
         const { tenantId, slug, ownerMembershipId } =
             await setupTenantWithOwner('deactivate-last');
 
-        // Call as a second ADMIN (self-deactivation guard would fire
-        // if we used ownerCtx). The assertion target is the last-OWNER
-        // count guard, which must reject before the mutation lands.
+        // Call as a second member (self-deactivation guard would fire
+        // if we used ownerCtx), with owner-tier authority so the owner-tier
+        // gate admits it. The assertion target is the last-OWNER count
+        // guard, which must reject before the mutation lands.
         const admin = await addMember(tenantId, slug, 'admin-for-deactivate', 'ADMIN');
 
         await expect(
-            deactivateTenantMember(admin.ctx, {
+            deactivateTenantMember(withOwnerTierAuthority(admin), {
                 membershipId: ownerMembershipId,
             }),
         ).rejects.toThrow(/last OWNER/);
@@ -157,11 +176,12 @@ describeFn('usecase-layer last-OWNER guard', () => {
         const { tenantId, slug, ownerMembershipId } =
             await setupTenantWithOwner('remove-last');
 
-        // Call as a second ADMIN (self-removal guard would fire on ownerCtx).
+        // Call as a second member (self-removal guard would fire on ownerCtx),
+        // with owner-tier authority so the owner-tier gate admits it.
         const admin = await addMember(tenantId, slug, 'admin-for-remove', 'ADMIN');
 
         await expect(
-            removeTenantMember(admin.ctx, {
+            removeTenantMember(withOwnerTierAuthority(admin), {
                 membershipId: ownerMembershipId,
             }),
         ).rejects.toThrow(/last OWNER/);

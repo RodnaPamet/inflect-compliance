@@ -682,3 +682,85 @@ describe('the notice comments only when the failing set changes (#3540)', () => 
         });
     });
 });
+
+/**
+ * THE IN-BAND SHARD'S HEAP BOUND IS THE V8 CEILING, NOT `workerIdleMemoryLimit`
+ * (#3320).
+ *
+ * `jest.config.js` sets `workerIdleMemoryLimit: '512MB'` beneath a confident
+ * paragraph: recycling a ballooned worker "keeps heaps bounded and the run
+ * reproducible". True of a WORKER run — `npm test` locally. False of CI, whose
+ * `test` job runs `jest --runInBand`: one process for all of a shard's files,
+ * no worker to recycle, so nothing in that paragraph fires on the only machine
+ * that decides whether a branch merges. Jest does not warn. The setting is
+ * simply never consulted, and nothing failed while that was true.
+ *
+ * These two assertions certify the FACTS that comment depends on, never the
+ * comment itself — gating CI on prose verifies mention, not accuracy, and this
+ * repo retired that pattern deliberately.
+ *
+ * They live HERE rather than in a file of their own because
+ * `no-epic-named-ratchets` caps the guard-file count (`< 799`, the artefact of
+ * the 2026-08-05 retirement from 777 to 624). A new file for two assertions
+ * spends that budget for nothing; this is the topically correct home, and it
+ * already parses `ci.yml`.
+ */
+describe('the in-band shard is bounded by the V8 ceiling (#3320)', () => {
+    const ci = () =>
+        yaml.load(read('.github/workflows/ci.yml')) as {
+            jobs: Record<string, { steps?: Array<Record<string, unknown>> }>;
+        };
+
+    /** The step that actually invokes the shard, found by its command. */
+    const shardStep = () => {
+        const steps = ci().jobs.test?.steps ?? [];
+        const step = steps.find((s) => typeof s.run === 'string' && (s.run as string).includes('--shard='));
+        expect(step).toBeDefined();
+        return step as { run: string; env?: Record<string, string> };
+    };
+
+    it('really runs jest IN BAND, which is what makes workerIdleMemoryLimit inert', () => {
+        // Asserted as a PREMISE, not a preference. If the shard moves to
+        // workers this fails ON PURPOSE: the inertness note in jest.config.js
+        // becomes wrong in the other direction — the limit goes live — and has
+        // to be revisited in the same diff. That forcing function is the whole
+        // reason this is a test and not a comment. #4033 measured the switch:
+        // it clears the OOM and costs ~1.8x wall-clock.
+        expect(shardStep().run).toContain('--runInBand');
+        // The paired claim has a subject — read through `readSrc`, which strips
+        // comments, NOT `read`.
+        //
+        // Two reasons, and the second is a ratchet. First: the inertness note
+        // above the setting names `workerIdleMemoryLimit` too, so an assertion
+        // against RAW source is satisfied by the prose explaining the setting
+        // even after the setting itself is deleted — measured while writing
+        // this, by deleting it and watching a raw-source assertion still pass.
+        // Second: `raw-source-assertion-ratchet` (Class A) allowlists exactly
+        // two files that may assert on raw source, and this is not one of them.
+        // Narrowing the needle was not enough; excluding the prose from the
+        // population by construction is the fix the repo already has a helper
+        // for.
+        expect(readSrc('jest.config.js')).toContain("workerIdleMemoryLimit: '512MB'");
+    });
+
+    it('and declares an explicit --max-old-space-size, the only heap bound in band', () => {
+        const nodeOptions = shardStep().env?.NODE_OPTIONS ?? '';
+        const cap = /--max-old-space-size=(\d+)/.exec(nodeOptions);
+        if (!cap) {
+            throw new Error(
+                'The sharded `test` step declares no explicit --max-old-space-size.\n\n' +
+                    'In band it is the ONLY thing bounding the heap: ' +
+                    '`workerIdleMemoryLimit` acts on worker recycling and there is ' +
+                    'no worker. Removing it does not fail loudly — it returns as an ' +
+                    'intermittent exit 134 on whichever file the --shard hash has ' +
+                    'just moved onto the heaviest partition, so the innocent test ' +
+                    'is the one suspected. See #3320 and the step\'s own measurement.',
+            );
+        }
+        // The VALUE is deliberately not pinned: a measured figure that has moved
+        // four times (6144 -> 8192 -> 10240 -> 12288, the last against a
+        // measured 10,337 MB peak on shard 2/6). Pinning it here would make
+        // every re-measurement edit two files to say one thing.
+        expect(Number(cap[1])).toBeGreaterThan(0);
+    });
+});

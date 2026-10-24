@@ -59,28 +59,28 @@ mapping_entries:
     rationale: "[curated] Access control decides which tools the agent's identity may invoke at all."
   - source_ref: "ASI02"
     target_ref: "A.8.15"
-    strength: SUPERSET
-    rationale: "[curated] Logging covers recording tool invocations, a proper part of detecting misuse."
+    strength: INTERSECT
+    rationale: "[curated] Logging records tool invocations, the evidence misuse is detected from; it governs every system's logs and prevents no misuse, so neither requirement contains the other."
   - source_ref: "ASI02"
     target_ref: "A.8.32"
     strength: RELATED
     rationale: "[curated] Change management governs the tools available to the agent over time."
   - source_ref: "ASI03"
     target_ref: "A.5.15"
-    strength: SUPERSET
-    rationale: "[curated] Access control is the classic answer to privilege abuse and covers a proper part of it; delegated and impersonated agent identity is outside its scope."
+    strength: INTERSECT
+    rationale: "[curated] Access control is the classic answer to privilege abuse, but it governs access to all information and says nothing of delegated or impersonated agent identity, so neither contains the other."
   - source_ref: "ASI03"
     target_ref: "A.5.17"
-    strength: SUPERSET
-    rationale: "[curated] Authentication-information handling covers the credential half of agent identity abuse."
+    strength: INTERSECT
+    rationale: "[curated] Managing authentication information addresses the credential half of agent identity abuse; it spans every user's credentials, so addressing ASI03 does not meet it."
   - source_ref: "ASI03"
     target_ref: "A.8.2"
-    strength: SUPERSET
-    rationale: "[curated] Privileged access rights cover privilege accumulation for human and service accounts."
+    strength: INTERSECT
+    rationale: "[curated] Restricting privileged access addresses privilege accumulation for human and service accounts; it covers every privileged account, so addressing ASI03 does not meet it."
   - source_ref: "ASI03"
     target_ref: "A.8.5"
-    strength: SUPERSET
-    rationale: "[curated] Secure authentication covers how an agent proves who it is, not what it may then do on a user's behalf."
+    strength: INTERSECT
+    rationale: "[curated] Secure authentication covers how an agent proves who it is, not what it may then do on a user's behalf; it applies to every system, so neither contains the other."
   - source_ref: "ASI03"
     target_ref: "A.5.3"
     strength: INTERSECT
@@ -91,12 +91,12 @@ mapping_entries:
     rationale: "[curated] Logging is what makes an agent action attributable to an accountable principal."
   - source_ref: "ASI04"
     target_ref: "A.5.19"
-    strength: SUPERSET
-    rationale: "[curated] Supplier-relationship security covers contracted suppliers, a narrower set than model hubs, plugin registries and MCP servers."
+    strength: INTERSECT
+    rationale: "[curated] Supplier-relationship security covers contracted suppliers, not model hubs, plugin registries or MCP servers, and it reaches suppliers of every kind: shared ground, not containment."
   - source_ref: "ASI04"
     target_ref: "A.5.20"
-    strength: SUPERSET
-    rationale: "[curated] Security in supplier agreements covers the contractual half of agentic supply-chain risk."
+    strength: INTERSECT
+    rationale: "[curated] Security requirements in supplier agreements are the contractual half of agentic supply-chain risk; they apply to every supplier, so neither contains the other."
   - source_ref: "ASI04"
     target_ref: "A.5.23"
     strength: INTERSECT
@@ -139,8 +139,8 @@ mapping_entries:
     rationale: "[curated] Logging is how a poisoning write would later be traced to its session."
   - source_ref: "ASI07"
     target_ref: "A.5.14"
-    strength: SUPERSET
-    rationale: "[curated] Information-transfer controls cover authenticated, protected transfer between parties, a proper part of securing agent-to-agent messages."
+    strength: INTERSECT
+    rationale: "[curated] Protecting information in transfer covers part of securing agent-to-agent messages; it governs every transfer and leaves delegation bounds and replay aside, so neither contains the other."
   - source_ref: "ASI07"
     target_ref: "A.8.24"
     strength: INTERSECT
@@ -179,8 +179,8 @@ mapping_entries:
     rationale: "[curated] Security policy is where acceptable reliance on agent output would be stated."
   - source_ref: "ASI10"
     target_ref: "A.5.9"
-    strength: SUPERSET
-    rationale: "[curated] An inventory of assets covers the unregistered-agent half of this risk; it says nothing about authority, schedule or decommissioning."
+    strength: INTERSECT
+    rationale: "[curated] An asset inventory covers the unregistered-agent half of this risk and nothing of authority, schedule or decommissioning; registering agents does not inventory every asset."
   - source_ref: "ASI10"
     target_ref: "A.5.2"
     strength: INTERSECT

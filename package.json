@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.303.1",
+  "version": "3.307.0",
   "private": true,
   "license": "BUSL-1.1",
   "workspaces": [
@@ -181,6 +181,7 @@
     "pino": "^10.4.0",
     "pptxgenjs": "^4.0.1",
     "prisma": "^7.10.1",
+    "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-day-picker": "^10.0.2",
     "react-dom": "^19.3.1",
@@ -225,6 +226,7 @@
     "@types/node": "^26.6.2",
     "@types/nodemailer": "^8.0.2",
     "@types/pdfkit": "^0.17.6",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/sanitize-html": "^2.16.2",

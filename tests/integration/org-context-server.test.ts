@@ -85,27 +85,27 @@ describeFn('getOrgServerContext — org context resolution (integration)', () =>
 
     it('rejects an empty / whitespace slug before any DB lookup', async () => {
         await expect(
-            getOrgServerContext({ orgSlug: '', userId: adminUserId }),
+            getOrgServerContext({ orgSlug: '', userId: adminUserId, ssoTenantId: null }),
         ).rejects.toThrow(GENERIC);
         await expect(
-            getOrgServerContext({ orgSlug: '   ', userId: adminUserId }),
+            getOrgServerContext({ orgSlug: '   ', userId: adminUserId, ssoTenantId: null }),
         ).rejects.toThrow(GENERIC);
     });
 
     it('rejects an unknown org slug with the generic message (org_not_found)', async () => {
         await expect(
-            getOrgServerContext({ orgSlug: `no-such-${SUITE_TAG}`, userId: adminUserId }),
+            getOrgServerContext({ orgSlug: `no-such-${SUITE_TAG}`, userId: adminUserId, ssoTenantId: null }),
         ).rejects.toThrow(GENERIC);
     });
 
     it('rejects a non-member of an existing org with the same generic message (not_a_member)', async () => {
         await expect(
-            getOrgServerContext({ orgSlug: ORG_SLUG, userId: strangerUserId }),
+            getOrgServerContext({ orgSlug: ORG_SLUG, userId: strangerUserId, ssoTenantId: null }),
         ).rejects.toThrow(GENERIC);
     });
 
     it('returns full context + ORG_ADMIN permissions for an admin member', async () => {
-        const ctx = await getOrgServerContext({ orgSlug: ORG_SLUG, userId: adminUserId });
+        const ctx = await getOrgServerContext({ orgSlug: ORG_SLUG, userId: adminUserId, ssoTenantId: null });
         expect(ctx.organization).toEqual({ id: orgId, slug: ORG_SLUG, name: `org ${SUITE_TAG}` });
         expect(ctx.role).toBe('ORG_ADMIN');
         expect(ctx.permissions.canViewPortfolio).toBe(true);
@@ -115,7 +115,7 @@ describeFn('getOrgServerContext — org context resolution (integration)', () =>
     });
 
     it('returns portfolio-only ORG_READER permissions for a reader member', async () => {
-        const ctx = await getOrgServerContext({ orgSlug: ORG_SLUG, userId: readerUserId });
+        const ctx = await getOrgServerContext({ orgSlug: ORG_SLUG, userId: readerUserId, ssoTenantId: null });
         expect(ctx.role).toBe('ORG_READER');
         expect(ctx.permissions.canViewPortfolio).toBe(true);
         expect(ctx.permissions.canDrillDown).toBe(false);
@@ -124,7 +124,7 @@ describeFn('getOrgServerContext — org context resolution (integration)', () =>
     });
 
     it('tolerates surrounding whitespace in a valid slug (trim branch)', async () => {
-        const ctx = await getOrgServerContext({ orgSlug: `  ${ORG_SLUG}  `, userId: adminUserId });
+        const ctx = await getOrgServerContext({ orgSlug: `  ${ORG_SLUG}  `, userId: adminUserId, ssoTenantId: null });
         expect(ctx.organization.slug).toBe(ORG_SLUG);
         expect(ctx.role).toBe('ORG_ADMIN');
     });

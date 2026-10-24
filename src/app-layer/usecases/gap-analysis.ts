@@ -427,12 +427,6 @@ export interface GapAnalysisInput {
     readonly limit?: number;
     /** Pagination: number of target requirements to skip before results */
     readonly offset?: number;
-    /**
-     * Include non-assessable requirements (section headers, grouping nodes).
-     * Default: false (only assessable leaf requirements are analyzed).
-     * Set to true when mapping data references non-assessable parent nodes.
-     */
-    readonly includeNonAssessable?: boolean;
 }
 
 /**
@@ -479,25 +473,31 @@ export async function performGapAnalysis(
             return null;
         }
 
-        // 2. Load requirements from both frameworks
-        // By default, only assessable (leaf) requirements are analyzed.
-        // Set includeNonAssessable=true when mapping data references parent nodes.
-        const assessableFilter = input.includeNonAssessable ? {} : { assessable: true };
-
+        // 2. Load requirements from both frameworks.
+        //
+        // No `assessable` filter, because there is no such column: the flag
+        // lives only in the library YAML, and `library-importer.ts` uses it to
+        // decide which nodes to persist, so every stored row is already an
+        // assessable one. The filter this replaced named the missing column,
+        // which made every call without an opt-out flag a Prisma validation
+        // error — the usecase could not succeed on its default path.
+        //
+        // `deprecatedAt: null` for the reason `computeCoverage` gives: a
+        // requirement a re-imported library dropped is no longer an obligation.
         const sourceReqs = await dbCtx.frameworkRequirement.findMany({
-            where: { frameworkId: sourceFw.id, ...assessableFilter },
+            where: { frameworkId: sourceFw.id, deprecatedAt: null },
             select: { id: true, code: true, title: true },
             orderBy: { code: 'asc' },
         });
 
         let targetReqs = await dbCtx.frameworkRequirement.findMany({
-            where: { frameworkId: targetFw.id, ...assessableFilter },
+            where: { frameworkId: targetFw.id, deprecatedAt: null },
             select: { id: true, code: true, title: true },
             orderBy: { code: 'asc' },
         });
 
         if (sourceReqs.length === 0 || targetReqs.length === 0) {
-            logger.warn('No assessable requirements found for gap analysis', {
+            logger.warn('No requirements found for gap analysis', {
                 component,
                 sourceFrameworkKey: input.sourceFrameworkKey,
                 targetFrameworkKey: input.targetFrameworkKey,

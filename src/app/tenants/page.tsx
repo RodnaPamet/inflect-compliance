@@ -36,6 +36,8 @@ export default async function TenantsPage() {
             userId: session.user.id,
             status: 'ACTIVE',
             tenant: { deletedAt: null },
+            // A single-sign-on session reaches only the tenant that opened it.
+            ...(session.user.ssoTenantId != null ? { tenantId: session.user.ssoTenantId } : {}),
         },
         orderBy: { createdAt: 'asc' },
         include: { tenant: { select: { slug: true } } },
