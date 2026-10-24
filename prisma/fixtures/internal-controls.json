@@ -8447,7 +8447,7 @@
             "en": "Cross-reference the search results against each system's recorded capability and report"
           },
           "description": {
-            "en": "Bring the three artifacts together — the annotated system list, the capability record and the search output — and produce the analysis report the control calls for. A hit in a system whose record says it cannot store the code is a documentation failure as well as a data failure, and the report says which of the two it is; a clean search on a system whose capability record shows an unconstrained store is a result the report qualifies rather than passes. Give every exception an owner, an agreed remediation and a date, and state per system whether the evidence supports the conclusion that no card verification code is retained after authorisation. Attach the report with the artifacts it draws on."
+            "en": "Bring the three artifacts together — the annotated system list, the capability record and the search output — and produce the analysis report the control calls for. A hit in a system whose record says it cannot store the code is a documentation failure as well as a data failure, and the report records it as both; a clean search on a system whose capability record shows an unconstrained store is a result the report qualifies rather than passes. Give every exception an owner, an agreed remediation and a date, and state per system whether the evidence supports the conclusion that no card verification code is retained after authorisation. Attach the report with the artifacts it draws on."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -26238,7 +26238,7 @@
         },
         {
           "title": {
-            "en": "Enrol each off-premises device in location tracking and remote wipe and record its enrolment state"
+            "en": "Record each off-premises device's location-tracking and remote-wipe enrolment state"
           },
           "description": {
             "en": "Against every device on the authorised list record whether location tracking and remote wipe are enrolled, the management platform holding the enrolment, the date the device last checked in, because an unenrolled or long-silent device is one that cannot be wiped on the day it is lost. For a BYOD device record whether the wipe reaches the whole device or only the corporate container, since that difference decides what actually happens on the day. Devices that cannot be enrolled are listed with the reason and the compensating control accepted. Attach the enrolment report from the management platform."
@@ -31729,7 +31729,7 @@
         },
         {
           "title": {
-            "en": "Define the activation criteria, thresholds and stand-down procedure in each plan"
+            "en": "Define each plan's activation thresholds, who may declare activation and the steps that follow"
           },
           "description": {
             "en": "Each plan states what has to be true before it is invoked and who invokes it: the thresholds — outage duration, sites or people affected, service impact — that trigger consideration, the person with authority to declare activation, and the steps that follow the declaration, including who is told and through which channel. Written this way, the communication log can later be read against the thresholds to show whether plans were activated when they should have been, rather than taken on trust. Where a plan leaves a threshold to judgement, say whose judgement it is, because an activation criterion nobody owns is the one found afterwards never to have been applied. Attach the plan versions showing the activation section complete."
