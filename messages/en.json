@@ -4692,7 +4692,7 @@
       "policy": {
         "DISABLED": {
           "label": "Disabled",
-          "description": "MFA is not available. Users cannot enroll in multi-factor authentication."
+          "description": "MFA is not checked at sign-in, even for users who have enrolled. Users can still set up an authenticator app, and existing enrollments are kept."
         },
         "OPTIONAL": {
           "label": "Optional",
