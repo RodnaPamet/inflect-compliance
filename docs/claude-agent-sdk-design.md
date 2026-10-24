@@ -401,8 +401,21 @@ should not. It can make governing it a few clicks:
    missing `settingSources: []` or a wildcard `allowedTools` are findings
    against H2/H3. They are never gates, because the ladder is report-only.
 
-Every call still lands on `/api/mcp`, so every control in the funnel applies
-unchanged. Route B adds no authority, no sub-processor and no engine.
+Every call still lands on `/api/mcp`, so the funnel's authorization applies
+unchanged: kill switch, grants, policy card, autonomy ceiling, audit,
+propose-not-commit. Route B adds no authority, no sub-processor and no engine.
+
+One control does **not** come with it. The AI Guard slices that sit around
+Flue's tool calls (`runGuardedTool`: egress on arguments, untrusted-input on
+results) are not on the direct MCP route. `src/app/api/mcp/route.ts` and
+`src/lib/mcp/` call neither `guardEgress` nor `guardUntrustedInput`. A proposal
+is still guarded, because `createAgentProposal` scans each item at the queue.
+A read is not. For a customer-hosted agent the injection risk in a read's
+*result* lands in the customer's own model, which Inflect does not run. The
+argument scan is a different matter: it is Inflect's own egress control, and
+it applies only to engines Inflect runs. Whether to add it to `/api/mcp` is a
+decision of its own (decision 6 below), and it is worth making before Route B
+invites more external agents in.
 
 ## Route C: Managed Agents
 
@@ -413,12 +426,14 @@ Zero Data Retention or HIPAA Business Associate Agreement (BAA) coverage".
 
 ## Decisions for the owner
 
-1. **Which engine runs the builder's agents first.** This document proposes
-   that the builder ship engine-neutral, and that step 0 compare this driver
-   with the Tool Runner driver on the same profile. The Agent SDK brings hooks,
-   a permission engine, subagent definitions and compaction. It costs a
-   subprocess and a lockdown whose every line exists to turn a default off. The
-   Tool Runner brings an in-process loop with nothing to turn off.
+1. **Which engine runs the builder's agents first.** Recommended: the Tool
+   Runner (`docs/claude-tool-runner-design.md`, decision 1). The Agent SDK
+   brings hooks, a permission engine, subagent definitions and compaction. It
+   costs a subprocess and a lockdown whose every line exists to turn a default
+   off. The Tool Runner brings an in-process loop with nothing to turn off. This
+   driver stays the candidate second engine, adopted only if a profile needs
+   something the Tool Runner engine cannot give it, such as hook-based deferral
+   of a call to a human.
 2. **The four #3351 questions, for instructions instead of compose text.**
    *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
    run, and rendered as text, never markup. *Through the AI Guard:* scanned at
@@ -434,6 +449,11 @@ Zero Data Retention or HIPAA Business Associate Agreement (BAA) coverage".
    that adds `Agent` back with a subset-only definition.
 5. **Branding.** The builder says "Agent", and names Claude as "Powered by
    Claude" where the model is shown. It never says "Claude Code".
+6. **The AI Guard on the direct MCP route.** Today `/api/mcp` authorizes but
+   does not guard a read's arguments or result. Proposed: add the egress slice on
+   arguments to the route, sharing `runGuardedTool`'s step 1. Leave the result
+   scan to the engine that consumes the result, because only Inflect's own
+   engines put a result into Inflect's model.
 
 ## Roadmap (future direction)
 
@@ -443,8 +463,8 @@ the roadmap artifact orders the three designs together.
 0. **Spike, no merge to the product path.** Run one fixed profile through
    `lockedOptions` against a faux tool set. Measure peak RSS, time to first token
    and image size. Prove by test that `system/init` reports exactly the resolved
-   tools plus `Skill`. Record the result in an implementation note, then take
-   decision 1.
+   tools plus `Skill`. Record the result in an implementation note. It confirms
+   or overturns decision 1; it does not block the Tool Runner engine.
 1. **Engine-neutral tool core.** Split `tools-adapter.ts`. Generalise the two
    `=== 'flue'` checks in `startWorkflowRun`. Add a driver conformance suite that
    every engine must pass: kill switch per turn, caps, one step per model and
@@ -460,7 +480,7 @@ the roadmap artifact orders the three designs together.
    that starts a read-only run and opens it in the runs tab.
 4. **Engine settings page.** `/admin/ai-features` gains the tenant's engine
    choice. Today it is `PUT /api/t/{slug}/admin/agent-driver` with no UI.
-5. **This driver**, if decision 1 chooses it, or as the second engine: two-deploy
+5. **This driver, as the second engine**, when a profile needs it: two-deploy
    enum, env switch, `claude-sdk/`, the options guard, conformance suite green.
 6. **Route B, connect wizard.** Key minting with the bound agent preselected, and
    the generated TypeScript/Python configuration.
