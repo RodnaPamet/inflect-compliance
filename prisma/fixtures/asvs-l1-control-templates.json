@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "OWASP Application Security Verification Standard 4.0.3 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
-    "grounding": "Requirement titles and summaries come from src/data/libraries/owasp-asvs-4.0.3.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/owasp-asvs-4.0.3.yaml so the two cannot drift. Task content is grounded in each template's own description. Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -1264,6 +1264,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the authentication events recorded during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Summarise the failed attempts that drew a delay by account and source address."
+              }
+            },
+            {
+              "text": {
+                "en": "List the accounts the limiter locked during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the notices sent after a password or factor change."
+              }
+            },
+            {
+              "text": {
+                "en": "Note each account locked repeatedly and what was done about it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the authentication event extract."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Authentication event extract for the period: throttled attempts and lockouts grouped by account and source address, with the change notices sent"
           },
@@ -1499,6 +1531,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Use the token names on the session token register as the search terms."
+              }
+            },
+            {
+              "text": {
+                "en": "Search the period's application, gateway, content-delivery and analytics logs."
+              }
+            },
+            {
+              "text": {
+                "en": "Look for those names in path segments, query strings and referrer headers."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each hit together with the route that produced it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the change made to keep each route's token out of the URL."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the scan output listing every token hit and its fix."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Log scan output for the period listing every URL found carrying a session token, with the originating route and the remediation for each hit"
           },
@@ -1685,6 +1749,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the state-changing routes recorded on the access-control matrix."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a server-checked per-session token, or the equivalent already relied on, to each."
+              }
+            },
+            {
+              "text": {
+                "en": "Reject any request whose token is missing or mismatched instead of logging it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the mechanism protecting each route on the route list."
+              }
+            },
+            {
+              "text": {
+                "en": "Send a forged cross-site submission and record the response returned."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "List of state-changing routes with the anti-CSRF mechanism against each, plus the response the application returned to a forged cross-site submission"
           },
@@ -1699,6 +1790,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pick out the administrative routes named on the matrix."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the maintenance consoles and batch tooling outside the main interface."
+              }
+            },
+            {
+              "text": {
+                "en": "Require a completed second factor on the session for each of those routes."
+              }
+            },
+            {
+              "text": {
+                "en": "Offer a password-only session the step-up instead of the page."
+              }
+            },
+            {
+              "text": {
+                "en": "Test an administrative route with a password-only session and record the refusal."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Configuration and test record showing an administrative route refusing a session that has not completed a second factor"
           },
@@ -2248,6 +2366,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the period's server-side error records keyed by correlation identifier."
+              }
+            },
+            {
+              "text": {
+                "en": "Show the error class, stack and request context retained against each record."
+              }
+            },
+            {
+              "text": {
+                "en": "Sample responses to confirm none of that detail reached the client."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every identifier returned to a user with no server-side record behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the server-side error log extract."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Server-side error log extract for the period keyed by correlation identifier, giving the retained stack and request context, with any identifier lacking a record noted"
           },
@@ -2392,6 +2537,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Find each inventoried endpoint that puts a sensitive value in its URL."
+              }
+            },
+            {
+              "text": {
+                "en": "Move each such value into the request body or a header."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the callers of each endpoint in the same change."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a handled response for links in the old form already in circulation."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the route list with each parameter's location before and after."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Route list giving each sensitive parameter's location before and after the change, with the handling applied to links already in circulation"
           },
@@ -2447,6 +2619,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the period's consent records from the consent register."
+              }
+            },
+            {
+              "text": {
+                "en": "Show the user, notice version shown, timestamp and collection point on each."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the collection points in the extract with those on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every collection point gathering personal data with no consent record."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the consent register extract with those gaps marked."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Consent register extract for the period: user, notice version, timestamp and collection point, with any collection point lacking a record noted"
           },
@@ -2592,6 +2791,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List every listener still accepting unencrypted connections."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the internal service-to-service hops and the health-check port."
+              }
+            },
+            {
+              "text": {
+                "en": "Close each listener or have it answer with a redirect and nothing else."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the outbound clients to refuse a downgrade instead of retrying in the clear."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture a plain request and record the redirect it received."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the listener list as it stood before and after the change."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Listener list before and after the change, with the redirect configuration and a captured plain request showing the response it received"
           },
@@ -2606,6 +2837,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Take every endpoint on the TLS endpoint list, internal ones included."
+              }
+            },
+            {
+              "text": {
+                "en": "Run a handshake scan against each deployed endpoint rather than its configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the protocol version and cipher suite each endpoint negotiated."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt a connection without TLS and record whether each endpoint answered."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the handshake scan report for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "TLS handshake scan report for the period covering every listed endpoint with its negotiated protocol version and cipher suite, and whether it answered an unencrypted connection"
           },
@@ -2751,6 +3009,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each DNS record on the inventory that points at an external target."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the target still exists and is still held by the organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each record resolving to a decommissioned or unheld target as dangling."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove or repoint each dangling record and log the change made."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the scan output with each record's resolution status."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "DNS scan output for the period listing each externally targeted record with its resolution status, and the records removed or repointed"
           },
@@ -2976,6 +3261,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the period's limit refusals grouped by rule and by account."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag each rule that never fired as a likely misconfiguration."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag each account refused constantly under the same rule."
+              }
+            },
+            {
+              "text": {
+                "en": "Record against each flagged account whether it is abuse or a limit below legitimate use."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the refusal extract with those notes recorded."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Refusal extract for the period grouped by rule and account, with a note against every rule that never fired and every account refused repeatedly"
           },
@@ -3088,6 +3400,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Set a size ceiling for each upload route matching what it is for."
+              }
+            },
+            {
+              "text": {
+                "en": "Enforce the ceiling at the web server or gateway in front of the route."
+              }
+            },
+            {
+              "text": {
+                "en": "Enforce the same ceiling again inside the route's handler."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm an oversized body is dropped before it is buffered or written to disk."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the response each route returns to a body above its ceiling."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Size limit configuration per upload route, with the response returned to an upload above the ceiling"
           },
@@ -3179,6 +3518,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Scan each uploaded file as soon as it is received."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold each file unavailable until its verdict comes back."
+              }
+            },
+            {
+              "text": {
+                "en": "Log one row per file with identifier, verdict, scanner, signature version and timestamp."
+              }
+            },
+            {
+              "text": {
+                "en": "Extract the verdict log for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every file made available with no verdict recorded against it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Scanner verdict log for the period: file identifier, verdict, scanner and signature version, timestamp, with any file released without a verdict noted"
           },
@@ -3334,6 +3700,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each endpoint's declared methods and content types from the API register."
+              }
+            },
+            {
+              "text": {
+                "en": "Answer any undeclared verb as not allowed instead of passing it to a default handler."
+              }
+            },
+            {
+              "text": {
+                "en": "Refuse a body whose declared content type is not on the endpoint's list."
+              }
+            },
+            {
+              "text": {
+                "en": "Stop choosing a parser from the body when the content-type header disagrees."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the responses to an undeclared method and a mismatched content type."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Per-endpoint method and content-type configuration, with the responses returned to an undeclared HTTP method and a mismatched content type"
           },
@@ -3348,6 +3741,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Pair each API endpoint with the equivalent browser flow."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the allowlists, length and range checks and output encoding each applies."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the endpoints already sharing a usecase as inheriting those rules."
+              }
+            },
+            {
+              "text": {
+                "en": "Move each endpoint applying weaker rules onto the shared path or raise a ticket naming the gap."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the parity table with the diff or ticket for every endpoint that differed."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Parity table: one row per endpoint stating whether it shares the interface's validation and encoding path or applies its own, with the diff or ticket recorded for every endpoint that differed"
           },
@@ -3362,6 +3782,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the sensitive parameter names recorded on the API endpoint register."
+              }
+            },
+            {
+              "text": {
+                "en": "Query the period's API, gateway and analytics logs for those parameter names."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the hits found in a request path segment or query string."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the endpoint and the calling client behind each hit."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the API log scan output with every hit listed."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "API log scan for the period listing every sensitive value found in a request URL, with the endpoint and the calling client behind each hit"
           },
@@ -3601,6 +4048,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the period's advisories affecting components on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Upgrade each affected component that can be upgraded."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the version before and after for each component that moved."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each component left on its version with the reason it was deferred."
+              }
+            },
+            {
+              "text": {
+                "en": "Refresh changed external asset hashes and pin one where the inventory had none."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the update record covering every advisory in the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Update record for the period: component, version before and after, the advisory addressed, the reason for anything deferred, and any integrity hash refreshed or newly pinned"
           },
