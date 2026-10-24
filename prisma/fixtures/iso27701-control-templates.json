@@ -1302,7 +1302,7 @@
         },
         {
           "title": {
-            "en": "Wire the purpose-end signal into the de-identification job for every system holding that PII"
+            "en": "Connect the purpose-end signal to the de-identification job for every system holding that PII"
           },
           "description": {
             "en": "The event identified above has to reach every store holding the PII, not just the system of record. Connect it to each — the primary database, the warehouse, the search index, the export bucket — and record which are wired and which are not. A purpose that ends in one system while the data survives in three others satisfies nothing, and the gap is invisible from the system that did delete."
