@@ -210,6 +210,7 @@ describe('catalogue requirements carry prose', () => {
         ['nist-privacy-framework-1.0.yaml', 'nist-privacy'],
         ['iso-42001.yaml', 'iso42001'],
         ['nist-ssdf-800-218.yaml', 'ssdf'],
+        ['aiuc-1.yaml', 'aiuc-1'],
         // nis2 is deliberately absent: its library is keyed thematically
         // (NIS2-RM) and its fixture by article (Art.21(2)(a)), so a code join
         // resolves nothing. prisma/fixtures/nis2-library-map.json is the join,
@@ -402,6 +403,11 @@ describe('catalogue requirements carry prose', () => {
      * catalogue.
      */
     const SUMMARY_COVERAGE_BY_FIXTURE: Record<string, string> = {
+        // AIUC-1 ships every requirement WITH a summary, for COSO's reason: its
+        // statements are "© AIUC, all rights reserved", so there was never a
+        // transcription path to fall down. The summaries are generated from
+        // the library's own descriptions, which are original prose.
+        'aiuc-1-control-templates.json': '0 of 50',
         'asvs-l1-control-templates.json': '0 of 128',
         'cis-v8-ig1-control-templates.json': '0 of 56',
         // COSO ships every requirement WITH a summary. It is the first

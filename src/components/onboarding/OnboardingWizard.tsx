@@ -79,7 +79,7 @@ function stepApplicable(key: string, data: StepData): boolean {
     }
     if (key === 'AI_GOVERNANCE_SELF_ASSESSMENT') {
         const fws: string[] = data?.FRAMEWORK_SELECTION?.selectedFrameworks ?? [];
-        const AI_FWS = new Set(['AISVS', 'ISO42001', 'EU_AI_ACT', 'EU-AI-ACT', 'OWASP-AISVS']);
+        const AI_FWS = new Set(['AISVS', 'ISO42001', 'EU_AI_ACT', 'EU-AI-ACT', 'OWASP-AISVS', 'AIUC-1']);
         const hasAi = Array.isArray(fws) && fws.some((f) => AI_FWS.has(String(f).toUpperCase().replace(/\s+/g, '')));
         return hasAi || data?.COMPANY_PROFILE?.usesAiSystems === true;
     }

@@ -125,6 +125,12 @@ describe('the section axis is structural, not a tier (#2619)', () => {
         );
         expect(counts).toEqual({
             'AISVS-1.0': 44,
+            // The six AIUC-1 domains, A. Data & Privacy … F. Society — the
+            // standard's own grouping. Requirements carry the domain as their
+            // section; the template category repeats it with an "AIUC-1 "
+            // prefix so the Controls category filter cannot merge it with
+            // another framework's bare "Security".
+            'AIUC-1': 6,
             'CIS-CONTROLS-V8': 18,
             // The five COSO components. They are the section axis for this
             // framework because COSO has no other structural grouping — the
@@ -180,6 +186,7 @@ describe('the section axis is structural, not a tier (#2619)', () => {
             'OWASP-ASVS', 'CIS-V8', 'SOC2', 'NIST-SSDF', 'ISO27701', 'DORA', 'NIS2',
             'ISO27001', 'OWASP-ASI', 'IMDA-MGF', 'NIST-PRIVACY', 'ISO9001',
             'ISO28000', 'ISO39001', 'ISO42001', 'OWASP-AISVS', 'EU-AI-ACT',
+            'AIUC-1',
         ];
         const offenders = keys
             .map((k) => ({ key: k, applied: appliedCatalogFor(k) }))

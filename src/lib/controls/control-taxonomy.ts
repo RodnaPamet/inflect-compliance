@@ -231,6 +231,7 @@ export const FRAMEWORK_KEY_LABELS: Record<string, string> = {
     'OWASP-ASI': 'OWASP ASI',
     'EU-AI-ACT': 'EU AI Act',
     'IMDA-MGF': 'IMDA MGF',
+    'AIUC-1': 'AIUC-1',
     INTERNAL_CONTROLS: 'Internal Control',
 };
 
