@@ -7,6 +7,7 @@ import { RequirePermission } from '@/components/require-permission';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { FrameworkExplorer } from '@/components/frameworks/FrameworkExplorer';
 import { FrameworkBuilder } from '@/components/ui/FrameworkBuilder';
+import { InheritedCoveragePanel } from '@/components/frameworks/InheritedCoveragePanel';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { useCelebration } from '@/components/ui/hooks';
 import { celebrationDedupe, MILESTONES, scopedMilestone } from '@/lib/celebrations';
@@ -375,6 +376,12 @@ export default function FrameworkDetailPage() {
                             </div>
                         </div>
                     )}
+
+                    {/* What the tenant's controls on OTHER frameworks reach
+                        here through a mapping. Fetched by the panel itself, so
+                        a framework nobody opens the Coverage tab of costs
+                        nothing; never added to the figures above. */}
+                    <InheritedCoveragePanel tenantSlug={tenantSlug} frameworkKey={frameworkKey} />
 
                 </div>
             )}

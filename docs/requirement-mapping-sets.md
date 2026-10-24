@@ -369,6 +369,26 @@ Gap analysis output is structured for direct UI/report consumption:
 - **Auditable**: Traceability findings include full edge chains with rationale
 - **Summarized**: Coverage percentages, strength distributions, actionable counts
 
+These usecases compare two framework CATALOGUES and take no tenant. No route
+calls them; what a tenant sees comes from the two readers below.
+
+## Where Tenants See the Mappings
+
+Two product surfaces read the persisted mappings against a tenant's own
+controls, and both go through one loader,
+`services/inherited-requirement-coverage.ts`, so they cannot disagree about which
+controls reach a requirement:
+
+| Surface | Usecase | Question it answers |
+|---------|---------|---------------------|
+| A framework's Coverage tab, "Coverage from your other frameworks" (`?action=inherited-coverage` on the framework route) | `usecases/framework/inherited-coverage.ts` | Which of this framework's requirements do my controls on other frameworks reach, and through which mapping? |
+| A registered agent's Coverage tab | `usecases/agent-coverage.ts` | Which OWASP agentic risks do this agent's tenant controls reach, directly or by mapping? |
+
+Both resolve the source and target as framework FAMILIES (both representations,
+both code spellings), count only routes the tenant holds a control on, and cap
+inherited status at `PARTIALLY_COVERED`: a curated mapping is never coverage,
+and nothing inherited is added to a framework's own coverage percentage.
+
 ## File Map
 
 ```
@@ -381,10 +401,13 @@ src/app-layer/repositories/
 src/app-layer/services/
 ├── mapping-set-importer.ts              # YAML parse → ref resolution → upsert
 ├── mapping-resolution.ts               # BFS traversal engine
-└── cross-framework-traceability.ts      # Business semantics layer
+├── cross-framework-traceability.ts      # Business semantics layer
+└── inherited-requirement-coverage.ts    # Tenant controls reaching a requirement by mapping
 
 src/app-layer/usecases/
-├── gap-analysis.ts                     # Product-facing gap analysis entrypoints
+├── gap-analysis.ts                     # Catalogue-level gap analysis entrypoints
+├── framework/inherited-coverage.ts     # A framework's coverage from the tenant's other frameworks
+├── agent-coverage.ts                   # Per-agent OWASP risk coverage (same loader)
 └── library-sync.ts                     # Lifecycle orchestration (fw + mappings)
 
 src/data/libraries/mappings/          # one file per ORDERED framework pair —

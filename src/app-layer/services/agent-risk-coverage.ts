@@ -58,43 +58,17 @@ import {
     strengthToConfidence,
     type GapStatus,
 } from './cross-framework-traceability';
-import {
-    MAPPING_STRENGTH_RANK,
-    type MappingStrengthValue,
-} from '../domain/requirement-mapping.types';
+import { MAPPING_STRENGTH_RANK } from '../domain/requirement-mapping.types';
 import type {
     AgentRiskApplicability,
     ApplicabilityBasis,
 } from './agent-risk-applicability';
 
-/** A tenant control that stands behind a risk, directly or by inheritance. */
-export interface CoveringControl {
-    readonly id: string;
-    /**
-     * The control's short code, which is genuinely OPTIONAL — `Control.code` is
-     * `String?` (controls.prisma:18) and a tenant-authored control need not have
-     * one. Carried as `null` rather than coerced to `''` so a reader cannot
-     * mistake "no code" for a control whose code is the empty string, and so an
-     * assessor-facing readout can fall back to the name instead of rendering a
-     * blank cell where an identifier is expected.
-     */
-    readonly code: string | null;
-    readonly name: string;
-    readonly status: string;
-}
-
-/**
- * One cross-framework route into an agentic risk: a requirement the tenant
- * holds controls for, plus the curated strength of the mapping onto the risk.
- */
-export interface InheritedCoverage {
-    readonly frameworkKey: string;
-    readonly frameworkName: string;
-    readonly requirementCode: string;
-    readonly requirementTitle: string;
-    readonly strength: MappingStrengthValue;
-    readonly controls: readonly CoveringControl[];
-}
+// The two shapes the shared inherited-coverage loader produces. They live with
+// the loader (`inherited-requirement-coverage.ts`), which a framework's Coverage
+// tab uses too, and are re-exported here so existing imports keep working.
+import type { CoveringControl, InheritedCoverage } from './inherited-requirement-coverage';
+export type { CoveringControl, InheritedCoverage } from './inherited-requirement-coverage';
 
 /** Everything known about one agentic risk before it is classified. */
 export interface AgentRiskCoverageInput {

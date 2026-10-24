@@ -36,6 +36,14 @@ export {
     exportReadinessReport,
 } from './coverage';
 
+// Coverage inherited from the tenant's other frameworks through mappings
+export { computeInheritedCoverage } from './inherited-coverage';
+export type {
+    InheritedCoverageReport,
+    InheritedRequirementEntry,
+    InheritedRequirementStatus,
+} from './inherited-coverage';
+
 // Fixture upsert & diff
 export {
     upsertRequirements,
