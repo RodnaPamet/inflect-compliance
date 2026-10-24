@@ -1,13 +1,19 @@
 /**
- * Cross-framework mapping content — OWASP Agentic AI Top 10 + IMDA MGF.
+ * Cross-framework mapping content — OWASP Agentic AI Top 10, IMDA MGF, AIUC-1.
  *
- * The commercial promise attached to these two frameworks is that a customer
+ * The commercial promise attached to these three frameworks is that a customer
  * who already holds ISO 42001 (or an ISO 27001 ISMS) sees PARTIAL agentic
  * coverage on day one instead of starting at zero. That promise is data, not
  * code: it is true exactly to the extent that the mapping YAML in
  * `src/data/libraries/mappings/` reaches every agentic requirement from a
  * framework the shipped control library is built on. So this suite holds the
  * DATA to account.
+ *
+ * AIUC-1 is the third, and the one that brings the most pairs: it is mapped
+ * to both agentic sources, to both ISO standards, to the EU AI Act and to
+ * SOC 2. Every one of those pairs has an agentic framework on one side, so
+ * every one of them is held to all five invariants below — including the
+ * EU AI Act and SOC 2, which no other agentic set touches.
  *
  * Five invariants, each chosen because its failure mode is silent:
  *
@@ -54,12 +60,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
-import { canonicalRequirementCode } from '@/app-layer/domain/framework-representation';
+import { canonicalRequirementCode, SOC2_FAMILY_URN } from '@/app-layer/domain/framework-representation';
 import {
     scanMappingSetDirectory,
     type StoredMappingSet,
 } from '@/app-layer/services/mapping-set-importer';
 import { MAPPING_STRENGTHS, type MappingStrengthValue } from '@/app-layer/domain/requirement-mapping.types';
+
+import { loadAndValidateCatalogFile } from '../../prisma/catalog-loader';
 
 const ROOT = path.resolve(__dirname, '../..');
 const LIB_DIR = path.join(ROOT, 'src/data/libraries');
@@ -81,9 +89,18 @@ const ASSESSABLE_CODES: Record<string, Set<string>> = {
     'ISO27001-2022': new Set(
         load('iso27001-2022.yaml').framework.nodes.filter((n) => n.assessable).map((n) => n.refId),
     ),
+    'AIUC-1': new Set(
+        load('aiuc-1.yaml').framework.nodes.filter((n) => n.assessable).map((n) => n.refId),
+    ),
+    'EU-AI-ACT-2024': new Set(
+        load('eu-ai-act.yaml').framework.nodes.filter((n) => n.assessable).map((n) => n.refId),
+    ),
+    'SOC2-2017': new Set(
+        load('soc2-2017.yaml').framework.nodes.filter((n) => n.assessable).map((n) => n.refId),
+    ),
 };
 
-const AGENTIC_FRAMEWORKS = ['OWASP-ASI-TOP10', 'IMDA-MGF-2026'] as const;
+const AGENTIC_FRAMEWORKS = ['OWASP-ASI-TOP10', 'IMDA-MGF-2026', 'AIUC-1'] as const;
 
 /**
  * The frameworks the shipped ControlTemplate library is actually built on. A
@@ -98,9 +115,11 @@ const CONTROL_LIBRARY_BACKED = ['ISO42001-2023', 'ISO27001-2022'] as const;
  * framework, each with a written reason.
  *
  * EMPTY, and that is the finding rather than an oversight: every one of the ten
- * OWASP risks and all nineteen MGF requirements has at least one honest route in
- * from ISO 42001 or ISO 27001, even where the honest strength is RELATED (which
- * the gap layer never counts as coverage). An entry here is a claim that a risk
+ * OWASP risks, all nineteen MGF requirements and all fifty AIUC-1 requirements
+ * has at least one honest route in from ISO 42001 or ISO 27001, even where the
+ * honest strength is RELATED (which the gap layer never counts as coverage) —
+ * AIUC-1's two misuse requirements, F001 and F002, reach ISO 42001 only as
+ * RELATED to its societal-impact assessment. An entry here is a claim that a risk
  * has NO defensible route in — write the reason, do not delete the assertion.
  */
 const UNMAPPED_WITH_REASON: Record<string, string> = {};
@@ -113,8 +132,16 @@ const UNMAPPED_WITH_REASON: Record<string, string> = {};
  * A framework in an agentic mapping set with no entry here fails the first
  * test below rather than being skipped — the point of invariant 5 is that a
  * new edge cannot be authored against the library alone.
+ *
+ * `catalog` marks a representation written by `applyCatalogFile` from a
+ * CatalogFile, read here through the production loader rather than as a bare
+ * row array. SOC 2's is the one that bites: it carries the common criteria
+ * only, so an edge onto `A1`, `C1`, `PI1` or `P1` resolves in the library and
+ * reaches no tenant holding SOC 2 controls. AIUC-1's is the same `Framework`
+ * row the library writes (one key, one row), so for it this check is the
+ * library↔catalogue parity seen from the mapping side.
  */
-const SEEDED_REPRESENTATIONS: Record<string, { fixture: string; familyUrn: string }> = {
+const SEEDED_REPRESENTATIONS: Record<string, { fixture: string; familyUrn: string; catalog?: true }> = {
     'OWASP-ASI-TOP10': {
         fixture: 'owasp_asi_requirements.json',
         familyUrn: 'urn:inflect:library:owasp-agentic-top10',
@@ -131,13 +158,27 @@ const SEEDED_REPRESENTATIONS: Record<string, { fixture: string; familyUrn: strin
         fixture: 'iso27001_2022_annexA.json',
         familyUrn: 'urn:inflect:library:iso27001-2022',
     },
+    'AIUC-1': {
+        fixture: 'aiuc-1-control-templates.json',
+        familyUrn: 'urn:inflect:library:aiuc-1',
+        catalog: true,
+    },
+    'EU-AI-ACT-2024': {
+        fixture: 'eu_ai_act_requirements.json',
+        familyUrn: 'urn:inflect:library:eu-ai-act',
+    },
+    'SOC2-2017': {
+        fixture: 'soc2-control-templates.json',
+        familyUrn: SOC2_FAMILY_URN,
+        catalog: true,
+    },
 };
 
 const seededCodes = (frameworkRef: string): Set<string> => {
     const rep = SEEDED_REPRESENTATIONS[frameworkRef];
-    const rows = JSON.parse(
-        fs.readFileSync(path.join(ROOT, 'prisma/fixtures', rep.fixture), 'utf8'),
-    ) as Array<{ key: string }>;
+    const file = path.join(ROOT, 'prisma/fixtures', rep.fixture);
+    if (rep.catalog) return new Set(loadAndValidateCatalogFile(file).requirements.map((r) => r.code));
+    const rows = JSON.parse(fs.readFileSync(file, 'utf8')) as Array<{ key: string }>;
     return new Set(rows.map((r) => r.key));
 };
 
@@ -173,14 +214,26 @@ describe('agentic cross-framework mappings — the sets exist and are complete',
     it('ships a mapping set for every agentic pair the product promises', () => {
         const pairs = agenticSets.map((s) => `${s.source_framework_ref}→${s.target_framework_ref}`).sort();
         expect(pairs).toEqual([
+            'AIUC-1→EU-AI-ACT-2024',
+            'AIUC-1→IMDA-MGF-2026',
+            'AIUC-1→ISO27001-2022',
+            'AIUC-1→ISO42001-2023',
+            'AIUC-1→OWASP-ASI-TOP10',
+            'AIUC-1→SOC2-2017',
+            'EU-AI-ACT-2024→AIUC-1',
+            'IMDA-MGF-2026→AIUC-1',
             'IMDA-MGF-2026→ISO42001-2023',
             'IMDA-MGF-2026→OWASP-ASI-TOP10',
+            'ISO27001-2022→AIUC-1',
             'ISO27001-2022→OWASP-ASI-TOP10',
+            'ISO42001-2023→AIUC-1',
             'ISO42001-2023→IMDA-MGF-2026',
             'ISO42001-2023→OWASP-ASI-TOP10',
+            'OWASP-ASI-TOP10→AIUC-1',
             'OWASP-ASI-TOP10→IMDA-MGF-2026',
             'OWASP-ASI-TOP10→ISO27001-2022',
             'OWASP-ASI-TOP10→ISO42001-2023',
+            'SOC2-2017→AIUC-1',
         ]);
     });
 
@@ -223,6 +276,19 @@ describe('agentic cross-framework mappings — the sets exist and are complete',
         // More than one strength: a file where every edge is RELATED would pass
         // the coverage check above while making no coverage claim at all.
         expect(new Set(set!.mapping_entries.map((e) => e.strength)).size).toBeGreaterThanOrEqual(3);
+    });
+
+    it('the AIUC-1 → OWASP ASI map bears on every one of the ten risks', () => {
+        // AIUC-1 is a standard for agents; a risk none of its fifty
+        // requirements touches would be a finding about the standard, and it
+        // would have to be written down here rather than be silently absent.
+        // ASI06 (memory and context poisoning) is reached by RELATED edges
+        // only — AIUC-1 has no requirement on agent memory — which this test
+        // accepts and the mapping file's header says out loud.
+        const set = setsByPair.get('AIUC-1→OWASP-ASI-TOP10');
+        expect(set).toBeDefined();
+        const targets = new Set(set!.mapping_entries.map((e) => e.target_ref));
+        expect([...targets].sort()).toEqual([...ASSESSABLE_CODES['OWASP-ASI-TOP10']].sort());
     });
 });
 
