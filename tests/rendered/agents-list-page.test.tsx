@@ -328,8 +328,12 @@ describe('the governance banner says the right sentence for each of the three st
             concurrency: { cap: null, inFlight: 0 }
         });
         // The sentence's TAIL, after the ICU plural the test mock does not
-        // expand. It is the half that carries the instruction.
-        expect(text).toContain('until you bind it to a registered agent');
+        // expand. It is the half that carries the instruction, and the
+        // instruction is the one the product can carry out: a credential's
+        // agent is set at creation, so it says create a new one, never "bind".
+        expect(text).toContain("A credential's agent can be set only when it is created");
+        expect(text).toContain('create a new one for a registered agent, then revoke the old one');
+        expect(text).not.toMatch(/until you bind/);
         expect(text).not.toContain(REGISTER.governance.enforcing);
         expect(text).not.toContain(REGISTER.governance.notEnforcing);
     });
@@ -405,7 +409,7 @@ describe('the unbound state NAMES the credentials, not just their number (#2565)
         expect(rows).toEqual(['Nightly sync ik_live_ab12…', 'Zapier ik_live_cd34…']);
         // The count sentence is still there — the names are an ADDITION to it,
         // not a replacement, so the banner still says how many as well as which.
-        expect(text).toContain('until you bind it to a registered agent');
+        expect(text).toContain('create a new one for a registered agent, then revoke the old one');
     });
 
     it('the names live INSIDE the governance banner, not loose beside it', () => {
