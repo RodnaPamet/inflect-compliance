@@ -63,8 +63,8 @@ mapping_entries:
     rationale: "[curated] Traceability of tool calls is how misuse is detected after the fact."
   - source_ref: "MGF-3.4"
     target_ref: "ASI03"
-    strength: SUBSET
-    rationale: "[curated] Least-privilege identity and credential handling is a control this risk fully contains, which also covers impersonation and attribution."
+    strength: INTERSECT
+    rationale: "[curated] Least-privilege identity and credential handling is the main control for this risk, but the risk as written prescribes no managed credential store or rotation, so addressing it does not necessarily meet MGF-3.4."
   - source_ref: "MGF-3.3"
     target_ref: "ASI03"
     strength: INTERSECT
@@ -75,8 +75,8 @@ mapping_entries:
     rationale: "[curated] A named accountable owner is the human a delegated agent identity ultimately answers for."
   - source_ref: "MGF-1.5"
     target_ref: "ASI04"
-    strength: SUBSET
-    rationale: "[curated] Third-party agent due diligence is one channel of a supply-chain surface that also spans base models, prompt packs, plugin registries and update channels."
+    strength: INTERSECT
+    rationale: "[curated] Third-party agent due diligence is one channel of a supply-chain surface that also spans base models, prompt packs, plugin registries and update channels; its data-handling review is outside the risk."
   - source_ref: "MGF-3.1"
     target_ref: "ASI04"
     strength: RELATED
@@ -100,7 +100,7 @@ mapping_entries:
   - source_ref: "MGF-3.6"
     target_ref: "ASI07"
     strength: SUBSET
-    rationale: "[curated] Controls on inter-agent communication and delegation are the control set for this risk; the risk also spans replay and unbounded delegation chains."
+    rationale: "[curated] The risk's four failures (unauthenticated, unauthorised, unbounded and unlogged exchanges) are exactly what MGF-3.6 requires closed, so addressing the risk meets the requirement; the risk also spans replay."
   - source_ref: "MGF-1.4"
     target_ref: "ASI07"
     strength: INTERSECT
@@ -119,8 +119,8 @@ mapping_entries:
     rationale: "[curated] Incident detection and response is how an in-progress cascade is halted."
   - source_ref: "MGF-2.4"
     target_ref: "ASI09"
-    strength: SUBSET
-    rationale: "[curated] Automation bias in human review is the named mechanism inside a broader trust-exploitation risk that also spans persona and apparent authority."
+    strength: INTERSECT
+    rationale: "[curated] Automation bias in human review is the named mechanism inside a broader trust-exploitation risk; the MGF prescribes design measures (no pre-ticked defaults, monitored approval rates) the risk does not, so neither contains the other."
   - source_ref: "MGF-4.1"
     target_ref: "ASI09"
     strength: INTERSECT

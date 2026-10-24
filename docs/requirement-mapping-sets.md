@@ -289,10 +289,12 @@ transpose of the forward file with each strength inverted (`SUBSET` ⇄
 alone.
 
 Because the reverse of a `SUBSET` is a `SUPERSET` — which gap analysis reads
-as `COVERED` — the AIUC-1 sets reserve either for an edge where meeting the
-broader requirement as written necessarily meets the narrower one. None of
-their 265 edges clears that bar, so every one is `INTERSECT` or `RELATED`,
-and none, in either direction, is ever read as `COVERED`.
+as `COVERED` — every symmetric pair reserves either for an edge where meeting
+the broader requirement as written necessarily meets the narrower one. None of
+the AIUC-1 sets' 265 edges clears that bar. Of the nineteen such edges the
+earlier agentic pairs carried, eighteen failed it on review (2026-10-24) and
+are now `INTERSECT`; the one left is OWASP ASI07 → IMDA MGF-3.6, whose four
+named failures are exactly what MGF-3.6 requires closed.
 The AIUC-1 ⇄ SOC 2 pair maps onto the common criteria only, because the SOC 2
 representation that installed SOC 2 controls link to carries no `A1` / `C1` /
 `PI1` / `P1`.
@@ -432,11 +434,13 @@ When creating mapping YAML files, use these guidelines for strength values:
 | Use `EQUAL` when... | Both requirements express **exactly the same** obligation |
 |---------------------|----------------------------------------------------------|
 | Use `SUPERSET` when... | Source requirement is **broader** and fully covers target |
-| Use `SUBSET` when... | Source requirement is **narrower** and only partially covers target |
+| Use `SUBSET` when... | Source requirement is **narrower** and is wholly contained in the target: meeting the target, as written, necessarily meets the source |
 | Use `INTERSECT` when... | Requirements **share common ground** but have distinct scopes |
 | Use `RELATED` when... | Requirements are **conceptually related** but addressing different concerns |
 
 **Default to `RELATED` when uncertain.** Overclaiming strength is worse than underclaiming — the gap analysis layer uses conservative interpretation, so `RELATED` mappings surface as "review needed" rather than "covered."
+
+**`SUBSET` is a containment claim, not "covers part of".** A source that covers part of the target but also asks for things the target does not is `INTERSECT`. The difference is invisible in a one-way file and decisive in a symmetric pair, whose reverse turns every `SUBSET` into a `SUPERSET`, which gap analysis reports as `COVERED`. A broad control mapped onto a narrow risk is the common trap: ISO 27001 A.5.15 (access control) covers part of OWASP ASI03 (agent identity and privilege abuse), but it governs every system's access, so addressing ASI03 does not meet it, and the edge is `INTERSECT`.
 
 ### Rationale Best Practices
 
