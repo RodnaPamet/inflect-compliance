@@ -329,7 +329,7 @@ objects:
           organisation chose deliberately. Where proportionate, users are told when
           an input is blocked, flagged input is logged with privacy in mind, and
           the filter's error rates are measured. Optional under AIUC-1, and
-          applies to agents that generate text.
+          applies to agents that generate text, speech or images.
         parent_urn: urn:inflect:req:aiuc-1:b
         depth: 2
         assessable: true
@@ -388,7 +388,7 @@ objects:
           in fidelity — token and result limits, rounding or banding of sensitive
           figures — so that repeated querying cannot reconstruct the data or the
           model behind it, and users are told when an answer has been truncated or
-          coarsened. Applies to agents that generate text.
+          coarsened. Applies to agents that generate text, speech or images.
         parent_urn: urn:inflect:req:aiuc-1:b
         depth: 2
         assessable: true
@@ -461,9 +461,9 @@ objects:
         description: >-
           Output that could hurt a user — distressing or hostile replies, dangerous
           guidance, offensive material, biased treatment, deception — is detected and
-          blocked or reshaped by filters and guardrails, and the organisation
-          measures how well those controls actually perform. Applies to agents
-          that generate text.
+          blocked or reshaped by filters and guardrails; where proportionate, the
+          organisation also measures how well those controls perform. Applies to
+          agents that generate text, speech or images.
         parent_urn: urn:inflect:req:aiuc-1:c
         depth: 2
         assessable: true
@@ -478,7 +478,7 @@ objects:
           political opinion or medical guidance from an agent built for something
           else — through blocking rules or defensive prompting; attempts to push it
           out of scope are logged and used to adjust its boundaries, and users are
-          told what it is for. Applies to agents that generate text.
+          told what it is for. Applies to agents that generate text or speech.
         parent_urn: urn:inflect:req:aiuc-1:c
         depth: 2
         assessable: true
@@ -506,7 +506,7 @@ objects:
           Output that a person or a system will render, run or follow is sanitised
           so it cannot carry script, shell or link injection into its destination,
           and content that came from an untrusted source is marked as such wherever
-          it is shown. Applies to agents that generate code.
+          it is shown. Applies to agents that generate code, text or speech.
         parent_urn: urn:inflect:req:aiuc-1:c
         depth: 2
         assessable: true
@@ -592,7 +592,7 @@ objects:
           shown the citations behind an answer, and — where proportionate — the
           agent signals its own uncertainty, so that a fabricated statement is
           caught, or at least visible, rather than presented as fact. Applies to
-          agents that generate text.
+          agents that generate text, speech or code.
         parent_urn: urn:inflect:req:aiuc-1:d
         depth: 2
         assessable: true
@@ -734,8 +734,8 @@ objects:
         ref_id: E008
         name: Review internal processes
         description: >-
-          The key processes behind the AI system are reviewed on a set cadence,
-          with each review, the decisions it took and their approval recorded, and
+          The key processes behind the AI system are reviewed every quarter, with
+          each review, the decisions it took and their approval recorded, and
           with feedback from outside the organisation — security advisories,
           customer reports, researchers — weighed as part of it.
         parent_urn: urn:inflect:req:aiuc-1:e
@@ -895,7 +895,7 @@ objects:
           guardrails that stop the agent being used to write malicious code or to
           plan and carry out exploitation; a model it has modified is reassessed
           rather than assumed to keep the provider's results. Applies to agents
-          that generate text.
+          that generate text, speech or code, or that take actions.
         parent_urn: urn:inflect:req:aiuc-1:f
         depth: 2
         assessable: true
@@ -910,7 +910,7 @@ objects:
           to chemical, biological, radiological or nuclear harm, from the
           providers' own assessments, and puts or documents guardrails against that
           use, monitoring for it where proportionate. Applies to agents that
-          generate text.
+          generate text, speech or images.
         parent_urn: urn:inflect:req:aiuc-1:f
         depth: 2
         assessable: true

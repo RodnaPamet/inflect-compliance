@@ -17,7 +17,7 @@ src/data/libraries/aiuc-1.yaml            the enumeration: 6 domains, 50 require
         │  requirements GENERATED from it
         ▼
 prisma/fixtures/aiuc-1-control-templates.json
-        framework AIUC-1 · 50 requirements · 50 templates · __TASKS__ tasks · pack AIUC_1_BASELINE
+        framework AIUC-1 · 50 requirements · 50 templates · 273 tasks · pack AIUC_1_BASELINE
         │  scripts/seed-framework-catalogs.ts (every container start)
         ▼
 Framework(key = AIUC-1)  ← library sync writes the same row, same requirement rows
@@ -26,7 +26,7 @@ Framework(key = AIUC-1)  ← library sync writes the same row, same requirement 
 What a tenant gets on installing `AIUC_1_BASELINE`: 50 `Control` rows, one per
 requirement, each carrying an objective, success criteria and an Evidence /
 Analysis / Output test procedure, at the cadence AIUC-1 re-evidences that
-requirement; __TASKS__ phased tasks, every one with steps, an evidence hint and
+requirement; 273 phased tasks, every one with steps, an evidence hint and
 an owner role; and a requirement link per control. Coverage, gap analysis,
 readiness and framework version drift come with the framework like any other.
 
@@ -52,7 +52,7 @@ so restoring one to make the numbering look continuous fails.
 | `scripts/seed-framework-catalogs.ts` | registers the fixture on the production path |
 | `src/lib/controls/control-taxonomy.ts` | `AIUC-1` badge label |
 | `src/app-layer/usecases/onboarding.ts`, `src/components/onboarding/OnboardingWizard.tsx` | AIUC-1 selects the AI-governance self-assessment step (server and client gates) |
-| `tests/guardrails/aiuc-1-framework-coverage.test.ts` | the enumeration, applicability claims, library↔fixture parity, cadence, content bar |
+| `tests/guardrails/agentic-framework-coverage.test.ts` | new AIUC-1 section: the enumeration, applicability claims, library↔fixture parity, cadence, content bar |
 | `tests/integration/aiuc-1-framework-import.test.ts` | both writers, both orders, against a real database: one row, same requirement ids |
 | `tests/guardrails/framework-starter-pack-completeness.test.ts` | starter pack registered |
 | `tests/guardrails/library-obligations-reach-the-catalogue.test.ts` | exact pair declared |
@@ -131,9 +131,10 @@ every non-annex framework records it: per-requirement applicability.
 
 ### Applicability lives in the description, and is checked
 
-AIUC-1 marks eight requirements optional and scopes fifteen to an agent
-capability (generating code, generating text, taking actions, being externally
-facing). The library importer persists a requirement's description and not its
+AIUC-1 marks eight requirements optional and scopes fifteen to agent
+capabilities (generating text, speech, images or code, taking actions, being
+externally facing); a requirement tagged with several applies to an agent that
+has any of them. The library importer persists a requirement's description and not its
 `annotation`, so the facts are stated in the description — and because a tenant
 acts on them when marking requirements not applicable, the guard pins both sets
 as data and checks the prose against them in both directions.
@@ -145,23 +146,60 @@ the bare domain names. The Controls category filter keys on the bare string, so
 a plain `Security` would merge with any other framework's. Requirement sections
 keep the standard's own labels (`A. Data & Privacy` …).
 
-### How __TASKS__ tasks were authored without becoming boilerplate
+### How 273 tasks were authored without becoming boilerplate
 
 One exemplar (`AIUC-A001`) was written first to set the bar, then the other 49
 were authored in eight batches grouped by **subject** rather than by domain
 letter, so that the most confusable pairs shared one author: data the agent may
 read / services it may reach / each tool call / people's access to it (A003,
 B006, D003, B007); the five quarterly independent evaluations, which share one
-shape and differ only by risk domain; the three failure plans. Every batch got a
+requirement shape and had to be made to differ by what each tests, who can
+grade it and what proves a failure; the three failure plans. Every batch got a
 boundary table naming the exact pairs, and a validator that encodes the repo's
 guard rules plus the bands COSO was held to, run before anything reached the
 repo.
 
 The bar, measured against the COSO bands the guard enforces:
 
-__BAR__
+| | the bar (COSO's measured bands) | AIUC-1, 50 controls |
+| --- | --- | --- |
+| `objective` | 130–200 | 150–194, median 169 |
+| `successCriteria` | 420–620, ≥ 4 testable lines | 433–620, median 590 |
+| `testingMethodology` | 1000–1800, Evidence / Analysis / Output | 1185–1534, median 1341 |
+| tasks per control | 3–6 (conformance) | 4–6: one at 4, 25 at 5, 24 at 6 |
+| tasks carrying steps | incumbent norm 32% | 273 / 273 (1,341 steps) |
+| `evidenceHint` | required on OPERATE | on every task, 273 / 273 |
+| phase spread | ≥ 3 phases | ≥ 3 on all 50; all four on 46 |
 
 AIUC-1 appears in no allowlist in any content guard.
+
+### The guard was folded in, not added
+
+The AIUC-1 assertions live in a new section of
+`tests/guardrails/agentic-framework-coverage.test.ts` rather than a file of
+their own. `no-epic-named-ratchets.test.ts` caps the number of guard files and
+admits a new one only when its population and failure differ from every existing
+guard's. That file is already the identifier-contract ratchet for the agentic
+frameworks — key set, structure, library↔fixture parity, no special-casing — and
+AIUC-1 is the third of them, so a separate file would have failed that test on
+its own terms. The section's `describe` scopes its constants, and the
+no-special-casing check now names all three frameworks.
+
+### What review caught in the library itself
+
+The batch authors reported three defects in the library's own descriptions,
+which were written before any control was, and all three were fixed in the
+library rather than worked around in the controls:
+
+- **E005 claimed retention.** Its description said storage security covers how
+  long data is kept; AIUC-1's E005 does not, and retention is A001's subject.
+- **Capability scopes were read from the first tag only.** AIUC-1 tags several
+  requirements with more than one capability (C003: text, voice and image
+  generation), and eight descriptions named only the first. The guard now
+  compares each scope clause whole, because a substring check would have passed
+  "agents that generate text" for C003.
+- **C003 made filter-performance measurement unconditional**, where AIUC-1
+  lists it as supplemental.
 
 ### Not added to `prisma/seed.ts`
 

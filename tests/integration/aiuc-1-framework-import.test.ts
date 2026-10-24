@@ -3,8 +3,9 @@
  *
  * ── WHAT THIS PROVES THAT THE GUARDRAIL CANNOT ──────────────────────────────
  *
- * `tests/guardrails/aiuc-1-framework-coverage.test.ts` proves the library and
- * the CatalogFile AGREE as files: same key, same requirements field for field.
+ * The AIUC-1 section of `tests/guardrails/agentic-framework-coverage.test.ts`
+ * proves the library and the CatalogFile AGREE as files: same key, same
+ * requirements field for field.
  * That is necessary for one Framework row and not sufficient. The two writers
  * take different paths to the same table — `importLibrary` creates on a fresh
  * key and diffs on an existing one, `applyCatalogFile` upserts on
