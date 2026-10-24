@@ -137,7 +137,19 @@
       "openPdfNamed": "Open PDF: {title}",
       "loadingIndicator": "Loading",
       "listRailLeft": "Orientation",
-      "listRailRight": "Context"
+      "listRailRight": "Context",
+      "currentTenant": "Current tenant: {name}. Click to switch.",
+      "currentOrganization": "Current organization: {name}. Click to switch.",
+      "switchContext": "Switch context",
+      "freshnessLabel": "Freshness: {label}",
+      "freshnessLabelWithAge": "Freshness: {label}, {age}",
+      "trendSparkline": "Trend sparkline — last {count} data points",
+      "expandPanel": "Expand {title} panel",
+      "resizePanel": "Resize {title} panel",
+      "collapsePanel": "Collapse {title} panel",
+      "countValue": "Count {value}",
+      "percentOfTotal": "{percent} of total",
+      "labelValueOfTotal": "{label}: {value} of {total}"
     },
     "calendar": {
       "prevYear": "Go to previous year",
