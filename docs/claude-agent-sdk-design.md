@@ -24,7 +24,7 @@ there are three ways to answer it.
 | --- | --- | --- | --- |
 | **A. Inflect-hosted** | Inflect's worker runs the SDK as a run driver beside `static` and `flue` | Fills in an **agent builder** in `/agents`: instructions, tools from the agent's existing grants, skills, model tier, trigger. Never sees the SDK. | **The builder is recommended. This SDK as its engine is not yet.** Step 4a measures it against the Tool Runner engine, if a profile ever needs it |
 | **B. Customer-hosted** | The customer runs their own Agent SDK code | Clicks **Connect an agent you run** on a registered agent; Inflect mints a bound key and generates the SDK configuration to paste in. The harness scanner learns to recognise Agent SDK code. | **Recommended.** This is where the SDK fits Inflect best: cheap, and mostly a UI over controls that exist |
-| **C. Anthropic-hosted** | Claude Managed Agents, in Inflect's or the customer's Anthropic organisation | Inflect provisions the agent through Anthropic's API from the same builder | **Deferred.** See `docs/claude-managed-agents-design.md` |
+| **C. Anthropic-hosted** | Claude Managed Agents, in Inflect's or the customer's Anthropic organisation | Inflect provisions the agent through Anthropic's API from the same builder | **Planned, after the Tool Runner engine.** Phase 5 runs it in the customer's own workspace. Phase 6 runs it in Inflect's, for tenants that opt in, once a 30-day sub-processor notice has run (owner decision, 2026-10-24). See `docs/claude-managed-agents-design.md` |
 
 Route A is the one that delivers "set up my own agent without a CLI", because
 the tenant never touches code at all. It works only if every control the
@@ -424,6 +424,12 @@ the first route: Anthropic stores the agent configuration and the session
 history, and the Managed Agents overview says it "is not currently eligible for
 Zero Data Retention or HIPAA Business Associate Agreement (BAA) coverage".
 
+It is still on the plan, in both places it can run. Phase 5 runs it in the
+customer's own Anthropic workspace. Phase 6 runs it in Inflect's organisation,
+for tenants with no Anthropic account of their own. The owner decided on
+2026-10-24 that Phase 6 does not wait for ZDR or EU storage. It waits only for
+the sub-processor change policy's 30-day notice, and for each tenant to opt in.
+
 ## Decisions for the owner
 
 1. **Which engine runs the builder's agents first.** Recommended: the Tool
@@ -495,7 +501,7 @@ done and the evidence table below bind all three.
 | 3 | Connect agents customers run | 3a, 3b, 3H | this document | 0H (3a also needs 0d) |
 | 4 | Agent SDK engine (conditional) | 4a, 4b, 4c, 4H | this document | 2H, and a profile that needs it |
 | 5 | Managed Agents in the customer's workspace | 5a, 5b, 5c, 5d, 5e, 5H | `docs/claude-managed-agents-design.md` | 2H, 3H |
-| 6 | Managed Agents hosted by Inflect | 6a, 6b, 6H | `docs/claude-managed-agents-design.md` | 5H, and Anthropic's data terms changing |
+| 6 | Managed Agents hosted by Inflect | 6a, 6b, 6c, 6H | `docs/claude-managed-agents-design.md` | 5b for the notice (6a), 5d for the build (6b), and the notice's 30-day window for activation (6c) |
 
 Phases 2 and 3 can run in parallel: 3 depends only on Phase 0.
 
@@ -631,7 +637,7 @@ Each phase's hardening step fills its row.
 | 3 — Connect agents customers run | no | — |
 | 4 — Agent SDK engine | no | — |
 | 5 — Managed Agents, customer workspace | no | — |
-| 6 — Managed Agents, Inflect-hosted | no, and blocked | Anthropic offers no ZDR and no EU storage for Managed Agents (2026-10-24) |
+| 6 — Managed Agents, Inflect-hosted | no | — |
 
 ---
 

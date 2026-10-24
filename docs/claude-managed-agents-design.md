@@ -42,7 +42,7 @@ puts at Anthropic:
 | --- | --- | --- | --- |
 | **MA-B. Connect an agent built in the Console** | The customer builds the agent in *their own* Anthropic Console. Inflect generates the MCP server entry and a bound key. Inflect governs it through `/api/mcp` | the customer's agent and transcripts, under the customer's own Anthropic contract | **Recommended**, after two fixes to `/api/mcp` (below). It shares the connect wizard with the Agent SDK's Route B |
 | **MA-C2. Inflect provisions into the customer's workspace** | The customer connects an Anthropic workspace to Inflect. The agent builder provisions and runs Managed Agents there, with Inflect's tools as custom tools | as above, plus the tool results Inflect sends at the customer's direction | **Later.** Viable as a per-tenant integration, like GitHub or SharePoint |
-| **MA-C1. Inflect hosts in its own Anthropic organisation** | The builder's agents run as Managed Agents in Inflect's organisation | every opted-in tenant's prompts and transcripts, stored by Inflect's sub-processor in the US, without ZDR | **Not recommended** until Anthropic offers ZDR or EU storage. It is a sub-processor change under the 30-day notice in any case |
+| **MA-C1. Inflect hosts in its own Anthropic organisation** | The builder's agents run as Managed Agents in Inflect's organisation | every opted-in tenant's prompts and transcripts, stored by Inflect's sub-processor in the US, without ZDR | **Planned** (owner decision, 2026-10-24), for tenants with no Anthropic account of their own. It does not wait for ZDR or EU storage. It is a sub-processor change, so it starts only 30 days after customers are notified, and only for a tenant that opts in knowing where its data goes |
 
 ## Current state (true today)
 
@@ -243,9 +243,32 @@ Tool Runner.
 
 ### MA-C1: Inflect's own organisation
 
-Mechanically the same as MA-C2, with Inflect's key and one workspace per
-residency class instead of per tenant (the 100-workspace default rules out
-per-tenant). It changes what Inflect asks of Anthropic as a sub-processor:
+For a tenant that wants a hosted agent and has no Anthropic account of its own.
+The owner decided on 2026-10-24 that Inflect offers this, and that it does not
+wait for Anthropic to offer ZDR or EU storage.
+
+Mechanically it is MA-C2 with Inflect's key. It uses one workspace per
+deployment, production and staging, shared by every tenant that opts in, never
+one per tenant (the 100-workspace default rules that out). Sharing a workspace
+adds four rules that MA-C2 does not need:
+
+- **Addressed by recorded id only.** Sessions and agents are read, answered,
+  interrupted, deleted and archived by the ids Inflect recorded, never found by
+  listing the workspace. Agent names and session metadata carry opaque ids, never
+  a tenant's name or slug or a profile's name. Archived agents cannot be
+  deleted, so they must say nothing about a tenant.
+- **One organisation's rate limits, shared.** Anthropic's limits are per
+  organisation. So there is a per-tenant concurrency cap, and a deployment-wide
+  cap below the organisation's limit. One tenant's burst must not stop another
+  tenant's runs.
+- **Inflect pays.** Session time ($0.08 per session-hour) and tokens are billed
+  to Inflect. Usage is recorded per tenant, and hosted runs sit behind a billing
+  entitlement.
+- **A tenant's own workspace wins.** A tenant that has connected its own
+  workspace (MA-C2) always runs there. A tenant whose AI residency is
+  `LOCAL_ONLY` is refused, because the only storage on offer is in the US.
+
+It changes what Inflect asks of Anthropic as a sub-processor:
 
 - transcripts holding tenant instructions and read-tool output, until Inflect
   deletes them (at settle, under the per-session design above);
@@ -258,12 +281,24 @@ per-tenant). It changes what Inflect asks of Anthropic as a sub-processor:
 The current Anthropic row covers prompts sent through the Messages API. This is
 materially new processing, so `docs/sub-processor-change-policy.md` applies in
 full: 30 days' notice and a right to object. Whether EU customers' data may sit
-at rest in the US without ZDR is a legal judgement, not an engineering one.
+at rest in the US without ZDR is a legal judgement, not an engineering one. The
+owner's decision to host does not make it. It is recorded under decision 6,
+before any notice goes out.
+
+**The order is fixed by that policy, not by the build.** The notice (Step 6a)
+can go out once the driver exists, because the policy wants a concrete codebase
+cross-reference before any customer-facing notice. The hosted path is then built
+during the 30-day window (6b), behind a source constant that is false. It is
+switched on (6c) only after the window closes with no sustained objection. This
+is the pattern `TYPESAFE_SUBPROCESSOR_ACTIVE` already follows: code may exist
+before the window closes, but tenant data may not reach the new processing.
 
 ## Decisions for the owner
 
-1. **MA-B now, MA-C2 later, MA-C1 not yet.** The staging above follows from
-   who holds the data.
+1. **MA-B now, then MA-C2 and MA-C1 once the engine is built.** The staging
+   follows from who holds the data. **Decided for MA-C1 on 2026-10-24:** it is
+   in scope, and it no longer waits for Anthropic to offer ZDR or EU storage.
+   What it still waits for is decision 6 and the 30-day notice.
 2. **Fix `/api/mcp` first.** A per-key rate limit and the argument guard. Both
    are worth doing for any external agent, and hosted callers make them urgent.
 3. **For MA-C2, accept a weaker Art 12 row.** The per-call prompt is not visible
@@ -276,6 +311,18 @@ at rest in the US without ZDR is a legal judgement, not an engineering one.
    customer's own processor, used at the customer's direction, listed as an
    opt-in per-tenant integration like GitHub and SharePoint. Confirm with
    whoever signs the sub-processor register.
+6. **Transfer basis for MA-C1.** For tenants that opt in, Anthropic stores
+   session data as Inflect's own sub-processor, in the US, without ZDR. Before
+   the 6a notice goes out, someone must record three things on its pull request,
+   per *Sub-processors: who confirms which half of step 2* in
+   `docs/change-management-policy.md`:
+   - the transfer mechanism for EU personal data (SCCs, or the basis Anthropic's
+     DPA gives);
+   - whether a transfer impact assessment is obtained;
+   - if one is not, who accepted proceeding without it.
+
+   The owner's decision to host is a product decision, and it does not answer
+   these.
 
 ## Roadmap (future direction)
 
@@ -299,12 +346,17 @@ Two items this document used to list as roadmap belong to other phases now:
 | 5d | Turn the Managed Agents engine on | 5c deployed, owner decisions 3 and 4 | Significant — sends tenant data to the customer's processor |
 | 5e | Profiles that need a workspace | 5d, owner decision 1 revisited | Significant — a sandbox for tenant agents |
 | 5H | Phase 5 hardening | 5a–5e | Standard |
-| 6a | Re-evaluate Anthropic's data terms, and give notice | 5H, a change in Anthropic's terms | Significant — sub-processor change |
-| 6b | Host Managed Agents in Inflect's organisation | 6a's notice window closed | Significant — sub-processor activation |
-| 6H | Phase 6 hardening | 6b | Standard |
+| 6a | The sub-processor change and the customer notice | 5b, owner decision 6 | Significant — sub-processor change |
+| 6b | The hosted path, behind a constant that is false | 5d, 6a | Significant — new deployment credential, schema migration |
+| 6c | Switch hosting on | 6b deployed, 6a's notice window closed | Significant — sub-processor activation |
+| 6H | Phase 6 hardening | 6c, 5H | Standard |
 
 **5c comes before 5d on purpose.** No tenant data reaches a provider until the
 path that deletes it there is merged and deployed.
+
+**6a runs beside Phase 5, not after it.** The notice needs only the driver to
+exist (5b). After that, the 30-day window runs while 5c, 5d and 6b are built.
+Phase 6 then waits on the calendar, not on Phase 5's hardening.
 
 ### Phase 5 — Managed Agents in the customer's workspace
 
@@ -640,84 +692,204 @@ Deliver per the Definition of done.
 
 ### Phase 6 — Managed Agents hosted by Inflect
 
-**Blocked** until Anthropic offers Zero Data Retention or EU storage for Managed
-Agents. Every prompt in this phase begins by checking that, and stops when it is
-not true.
+**Planned** (owner decision, 2026-10-24). Phase 6 does not wait for ZDR or EU
+storage. It waits for `docs/sub-processor-change-policy.md`: no tenant's data
+reaches Inflect's organisation until 30 days after customers are notified, and
+then only for a tenant that opts in. The notice (6a) goes out once the driver
+exists. The hosted path is built during the window (6b), behind a constant that
+is false. Activation (6c) is the diff that sets it true.
 
-#### Step 6a — Re-evaluate Anthropic's data terms, and give notice
+#### Step 6a — The sub-processor change and the customer notice
 
-**Goal.** Establish from primary sources whether hosting is now acceptable. If it is,
-start the sub-processor change with its 30-day notice.
+**Goal.** Propose, approve and announce the new processing, so the 30-day window
+runs while the hosted path is built.
 
 ```text
 You are implementing Step 6a of the roadmap in
 docs/claude-managed-agents-design.md. Read the global rules and definition of
 done in the Roadmap of docs/claude-agent-sdk-design.md, this document's sections
-"The answer, briefly" and "MA-C1", docs/sub-processors.md and
-docs/sub-processor-change-policy.md. Phase 5 is merged.
+"The answer, briefly" and "MA-C1", "Decisions for the owner" (decisions 1 and
+6), docs/sub-processors.md, docs/sub-processor-change-policy.md, the section
+"Sub-processors: who confirms which half of step 2" in
+docs/change-management-policy.md, and §7 of
+docs/data-processing-agreement-template.md. Step 5b is merged.
 
-1. Read Anthropic's live Managed Agents overview, data-retention and data-residency
-   pages. Quote what they say today about Zero Data Retention, workspace
-   geography and deletion of agents. If neither ZDR nor EU storage is offered,
-   stop. Record the check and its date in the Phase 6 evidence row, and change
-   nothing else.
-2. If the terms have changed, update the MA-C1 section with the new facts, and
-   prepare the sub-processor change: the docs/sub-processors.md row describing
-   the new processing (stored transcripts until deletion, archived agent objects,
-   Console visibility, a shared rate limit), and the customer notice text.
-3. Nothing in src/ changes in this step. Activation is 6b, after the window
-   closes.
+Before starting, confirm that decision 6 is recorded: the transfer mechanism,
+whether a transfer impact assessment is obtained, and, if not, who accepted
+proceeding without one. If it is not recorded, stop and report. A notice
+cannot describe a transfer basis that nobody has confirmed.
+
+Goal: the change to Anthropic's processing is in the sub-processor register,
+approved, and noticed. Nothing in src/ changes.
+
+1. Re-read Anthropic's live Managed Agents overview, data-retention and
+   data-residency pages. Quote what each says today about Zero Data Retention,
+   workspace geography, how long sessions are kept, and deleting agents.
+   - If a term is now better than "MA-C1" records (ZDR, EU storage, agents that
+     can be deleted), update the section, and describe the better term in the
+     notice.
+   - If a term is worse, stop and report.
+2. Edit Anthropic's row and detail subsection in docs/sub-processors.md for the
+   new processing. Cover:
+   - session event histories (the tenant's instructions, tool inputs, read-tool
+     results), kept until Inflect deletes the session when the run ends;
+   - archived agent objects holding Inflect's fixed preamble and tool schemas,
+     which cannot be deleted;
+   - who can see transcripts in the Console: Inflect's organisation members in
+     named roles;
+   - region: US;
+   - operator-optional, and per tenant: only a tenant that opts in;
+   - a codebase cross-reference to the 5b driver.
+3. Write the customer notice, one page in plain words. It says:
+   - what is stored, where, and for how long;
+   - who at Inflect can see it;
+   - that nothing is stored for a tenant that does not opt in;
+   - how to object.
+   Put the draft in the pull request for approval. It is posted to the public
+   sub-processor list and emailed to each customer's primary contact, as the
+   policy requires.
+4. Record on the pull request:
+   - compliance approval (step 2 of the policy);
+   - the transfer mechanism;
+   - the date the notice went out, and the date the window closes 30 days later.
+   Copy both dates into the MA-C1 section.
 
 Deliver per the Definition of done. This step is Significant.
 ```
 
 **Hardening**
 
-- [ ] Every fact about Anthropic's terms is quoted from a live page, with its URL and date.
-- [ ] If the terms have not changed, the only diff is the evidence row.
-- [ ] If they have, the sub-processor row and notice follow `docs/sub-processor-change-policy.md` step by step, and approval is recorded on the pull request.
+- [ ] Every fact about Anthropic's terms is quoted from a live page, with its URL and the date read.
+- [ ] The register row names the data, purpose, region, opt-in scope and codebase cross-reference that step 1 of the policy requires.
+- [ ] The approval, the transfer mechanism and the decision on a transfer impact assessment are recorded on the pull request, each naming a person.
+- [ ] The notice describes no processing that 5b's driver does not perform, and leaves out none that it does.
+- [ ] No file under `src/` changes.
 
-**Exit.** Either the block is reconfirmed with a dated source, or the 30-day notice has started.
+**Exit.** The 30-day window is running, against a description that matches the code.
 
-#### Step 6b — Host Managed Agents in Inflect's organisation
+#### Step 6b — The hosted path, behind a constant that is false
 
-**Goal.** After the notice window closes with no sustained objection, let a tenant
-without its own Anthropic workspace use the Managed Agents engine in Inflect's
-organisation.
+**Goal.** Build everything hosting needs, so that 6c is a one-line diff. Tenant data
+must not reach Inflect's organisation in this step.
 
 ```text
 You are implementing Step 6b of the roadmap in
 docs/claude-managed-agents-design.md. Read the global rules and definition of
-done in the Roadmap of docs/claude-agent-sdk-design.md, and all of "MA-C1".
-Before starting, confirm from the 6a pull request that the notice window has
-closed with no sustained objection, and that the owner has recorded the
-activation. If either is not true, stop.
+done in the Roadmap of docs/claude-agent-sdk-design.md, all of "MA-C1" and
+Phase 5 in this document, and how TYPESAFE_SUBPROCESSOR_ACTIVE gates a
+sub-processor in src/lib/legacy-access/adjudication-mode.ts and
+tests/guards/ai-residency-enforcement.test.ts. Steps 5d and 6a are merged. The
+notice window may still be open.
 
-Goal: the managed-agents engine can run in Inflect's own organisation, in one
-workspace per residency class, for tenants that opt in.
+Goal: the managed-agents engine can resolve Inflect's own workspace for a tenant
+that opted in, but cannot do so yet.
 
-1. Workspaces are per residency class, never per tenant (the default limit is 100
-   workspaces per organisation). The deployment's keys for each are environment
-   configuration, triaged per global rule 6.
-2. A tenant opts in with a setting that only admin.tenant_lifecycle can change,
-   and that names the processing in plain words.
-3. Everything from Phase 5 applies unchanged: per-session instructions, delete at
-   settle, the purge path, the drift check. Rate limits are shared across tenants
-   in one organisation, so add a per-tenant concurrency cap on this engine.
+1. HOSTED_MANAGED_AGENTS_ACTIVE: a plain source constant, false. Setting it
+   true is the sub-processor activation (6c), a reviewed diff. It is never an
+   environment variable or a tenant setting. While it is false, the engine
+   resolves no hosted workspace for any tenant, and the client factory returns
+   before it constructs a client with Inflect's key.
+2. Deployment configuration: Inflect's workspace id and key, one pair per
+   deployment, with production and staging never shared. Add them through
+   src/env.ts per global rule 6. A deployment without them never offers
+   hosting, which is the self-hosted case.
+3. Tenant opt-in:
+   - a column on TenantSecuritySettings;
+   - written only by a usecase behind a literal
+     requirePermission('admin.tenant_lifecycle'), by a person (refuse an API
+     key, an agent and a job), and audited;
+   - the settings text says, in plain words, that conversations run in Inflect's
+     Anthropic organisation and are stored in the US without Zero Data
+     Retention until each run ends, and that agent objects holding only
+     Inflect's own instructions and tool schemas are archived and never deleted;
+   - opting out runs 5c's clean-up for that tenant.
+4. Workspace resolution, in one function:
+   - the tenant's own connected workspace wins;
+   - otherwise Inflect's workspace, when all four hold: the constant is true,
+     the deployment is configured, the tenant opted in, and the tenant's AI
+     residency is not LOCAL_ONLY;
+   - otherwise refuse, with a reason that names which one failed.
+   The run ledger records which workspace a run used.
+5. Sharing a workspace:
+   - sessions and agents are addressed only by recorded id, never by listing;
+   - agent names and session metadata carry opaque ids only, never a tenant
+     name or slug or a profile name.
+6. Capacity: Anthropic's rate limits belong to Inflect's organisation. Add a
+   per-tenant concurrency cap on this engine, and a deployment-wide cap below
+   the organisation's limit. A run over a cap waits or refuses with a named
+   reason.
+7. Cost: Inflect pays for these sessions. Record each run's usage per tenant,
+   and gate hosted runs with an entitlement in src/lib/billing/entitlements.ts.
 
-Tests: the engine resolves the organisation's workspace for an opted-in tenant
-with no connection, and refuses for a tenant that has not opted in; the
-per-tenant cap holds under concurrent runs.
+Tests:
+- With the constant false, no input resolves the hosted workspace, and no
+  client with Inflect's key is built. Assert this on the factory, not on the
+  setting, and pin the order in a source-reading guard.
+- With the constant true in the test, the resolution matrix: own connection,
+  opt-in, residency, deployment configuration.
+- The opt-in writer refuses ADMIN, an API key, an agent and a job.
+- Both caps hold under concurrent runs.
+- Purge and opt-out archive and delete only the tenant's recorded ids. Another
+  tenant's session in the same faux workspace is left alone.
 
 Deliver per the Definition of done. This step is Significant.
 ```
 
 **Hardening**
 
-- [ ] The pull request links 6a and shows the notice window closed.
-- [ ] A tenant that has not opted in cannot reach the organisation's workspace (test).
-- [ ] The per-tenant concurrency cap holds (test), and a burst from one tenant cannot exhaust the organisation's limit for the others.
-- [ ] The Phase 6 evidence row is filled from the first production run.
+- [ ] With the constant false, the factory returns before it constructs a client, pinned by a guard that reads the source for the order.
+- [ ] The opt-in writer is OWNER-only, person-only and audited (tests).
+- [ ] The resolution matrix is complete, including the `LOCAL_ONLY` refusal and a deployment without Inflect's key.
+- [ ] Nothing tenant-authored appears in an `agents.create` or `agents.update` body, or in any agent name or metadata, asserted on the faux transport.
+- [ ] Clean-up in a shared workspace touches only that tenant's recorded ids (test with a second tenant's session present).
+- [ ] Both caps hold, and one tenant's burst leaves capacity for another (test).
+- [ ] The rollback plan and risk assessment are in the pull request.
+
+**Exit.** The hosted path is built and proven, and it cannot run.
+
+#### Step 6c — Switch hosting on
+
+**Goal.** After the notice window closes with no sustained objection, let tenants
+that opt in run on Inflect's own workspace.
+
+```text
+You are implementing Step 6c of the roadmap in
+docs/claude-managed-agents-design.md. Read the global rules and definition of
+done in the Roadmap of docs/claude-agent-sdk-design.md, all of "MA-C1", and the
+6a pull request.
+
+Before starting, confirm all of the following. If any is not true, stop and
+report:
+- the 6a notice was posted and emailed, and at least 30 days have passed since;
+- no objection is sustained;
+- 6b is deployed to production.
+
+Goal: HOSTED_MANAGED_AGENTS_ACTIVE is true, and Inflect's organisation matches
+what the notice said.
+
+1. Set the constant true in its own commit. The commit names the 6a pull
+   request and the date the window closed.
+2. Set up Inflect's organisation as the notice described:
+   - list its Console members and their roles (the people who can see
+     transcripts) in the pull request;
+   - confirm the workspace's residency;
+   - set a spend limit on each workspace as a backstop to the entitlement.
+3. Update docs/sub-processors.md to record that activation completed (step 4
+   of the policy), and update this document's Current state.
+4. Run one proving tenant in production. Fill the Phase 6 evidence row with:
+   - the run id and the session id;
+   - that the workspace held no session afterwards.
+   Also record a second tenant, not opted in, being refused, by run id.
+
+Deliver per the Definition of done. This step is Significant.
+```
+
+**Hardening**
+
+- [ ] The constant change is its own commit, and the pull request links 6a with both window dates.
+- [ ] The Console members and roles in the pull request match the notice.
+- [ ] The evidence row is filled from production, not from a test.
+- [ ] A tenant that has not opted in was refused in production, recorded by run id.
 
 **Exit.** Tenants that opt in can use hosted agents without an Anthropic account of their own, under the terms they were notified of.
 
@@ -728,19 +900,22 @@ other's runs, and that hosting holds to the terms customers were notified of.
 
 ```text
 You are implementing Step 6H of the roadmap in
-docs/claude-managed-agents-design.md: the hardening step for Phase 6. Steps 6a
-and 6b are merged and the engine has run in production. Read the global rules,
+docs/claude-managed-agents-design.md: the hardening step for Phase 6. Steps
+6a, 6b and 6c are merged, and hosting has run in production. Read the global rules,
 definition of done and "Operational evidence" in the Roadmap of
 docs/claude-agent-sdk-design.md, and all of Phases 5 and 6 here.
 
 Goal: evidence that a shared workspace keeps tenants apart, and that what is
 stored at Anthropic matches the notice.
 
-1. Adversarial read of 6a and 6b together, for what sharing a workspace adds:
+1. Adversarial read of 6b and 6c together, for what sharing a workspace adds:
    - Can one tenant's job read, answer or delete another tenant's session in the
      same workspace?
    - Are sessions selected only by recorded id, never by listing?
+   - Does any agent name, agent body or session metadata identify a tenant?
+     Archived agents cannot be deleted, so this one cannot be fixed later.
    - Can a tenant's burst exhaust the organisation's rate limit for the others?
+   - Can a tenant run hosted without the entitlement, or after opting out?
    - Who in Inflect's organisation can see transcripts in the Console, and is
      that what the notice said?
    Fix what you find, each with a test.
@@ -749,7 +924,7 @@ stored at Anthropic matches the notice.
    - each run's session id, from their own ledgers;
    - that neither job touched the other's session, from the provider's request
      log or Inflect's ledger, ids only;
-   - that both workspaces were empty of sessions afterwards.
+   - that the workspace held no session afterwards.
 3. Compare what is stored at Anthropic after a week of runs (archived agents,
    any surviving sessions) with the 6a notice. Record any difference, and treat
    a difference as a defect.
@@ -762,6 +937,7 @@ Deliver per the Definition of done.
 
 - [ ] Each adversarial question is answered in the implementation note, with a test for each defect found.
 - [ ] The two-tenant production check shows no cross-tenant session access, recorded by ids.
+- [ ] No agent object or session metadata in Inflect's workspace identifies a tenant, checked against the workspace itself.
 - [ ] What remains at Anthropic matches the 6a notice, or the difference is fixed in this pull request.
 - [ ] Console transcript visibility in Inflect's organisation matches what the notice said, with the role names recorded.
 
