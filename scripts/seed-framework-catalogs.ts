@@ -79,6 +79,11 @@ const CATALOG_FIXTURES = [
     // whichever row its database got. COSO has no such split and should not
     // acquire one.
     'prisma/fixtures/coso-icf-2013-control-templates.json',
+    // AIUC-1. The second framework to converge on ONE row, for COSO's reason:
+    // it declares the same key as src/data/libraries/aiuc-1.yaml, and its
+    // requirements are generated from that file, so the library import and this
+    // fixture write identical rows instead of fighting over two.
+    'prisma/fixtures/aiuc-1-control-templates.json',
     // Last on purpose. This one carries no standard of its own — it gives the
     // 151-control internal-controls library a framework and a pack so a tenant
     // can install it deliberately, instead of receiving it as a side effect of

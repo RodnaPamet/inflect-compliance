@@ -146,7 +146,7 @@ const BUDGETS_KB: Record<string, number> = {
         So the framework cost 2-3 KB a route and three budgets were already
         spent: main sat 0.3 to 2.1 KB under them. The headroom this file's
         header describes as "~5%" had become ~0.3% without anything recording
-        that, because the `measured max` comments below had gone stale — the
+        that, because the `measured max` comments then below had gone stale — the
         dashboard one read 574.4 KB against a main that measured 603.7. A
         comment that is supposed to carry the measurement is the only way a
         reader can see how much room is left, so they are corrected here too.
@@ -185,8 +185,10 @@ const BUDGETS_KB: Record<string, number> = {
 
         The `measured max` comments were stale AGAIN, in the direction that
         hides headroom: `controls` read 613.1 KB for a route that measured
-        651.0 in the table above it. All four are corrected here. If they rot a
-        third time the comment is not the right home for the number.
+        651.0 in the table above it. All four were corrected in that PR. If they
+        rot a third time the comment is not the right home for the number.
+        They did rot a third time, and it isn't: #4041 deleted them and derives
+        the headroom at run time instead.
     */
     'dashboard': 616,
     'risks': 653,
@@ -210,8 +212,10 @@ const BUDGETS_KB: Record<string, number> = {
     // The block above corrected four `measured max` comments and left this
     // fifth, which was the most rotted of the lot: it read 545.3 KB for a route
     // that measured 574.1 on main the same day — a 29 KB drift, so the stated
-    // headroom was 0.9 KB, about 0.16%, where the file header still describes
-    // ~5%. Nothing failed while that was true, which is precisely the failure
+    // headroom was 0.9 KB, about 0.16%, where the file header still described
+    // ~5% AT THE TIME (#4041 has since removed these comments and corrected
+    // that header to the measured figure, so read this block as history).
+    // Nothing failed while that was true, which is precisely the failure
     // mode the block above describes; it simply had not reached this bucket yet.
     //
     // The remaining production-group bumps (#4023, 37 packages — tiptap,
