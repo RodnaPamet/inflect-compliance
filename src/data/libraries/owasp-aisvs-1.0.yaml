@@ -28,6 +28,7 @@ copyright: >
   not the verbatim requirement prose; the full requirement text remains at the
   OWASP source linked from each requirement. Attribution to OWASP retained.
 version: 1
+text_hash: 5e81d801fb9f632a6a13a01a8e0fcc4fe92f617b41e4c132b014959d97c095c4
 publication_date: "2025-05-01"
 provider: OWASP
 packager: inflect

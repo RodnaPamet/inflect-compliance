@@ -50,6 +50,7 @@ ref_id: FRAMEWORK-KEY           # Used as Framework.key in Prisma
 name: Human Readable Name
 description: Optional description
 version: 1                      # Monotonically increasing integer
+text_hash: <sha256>             # computeLibraryTextHash; the guard prints the value
 kind: ISO_STANDARD              # ISO_STANDARD | NIST_FRAMEWORK | SOC_CRITERIA | ...
 provider: Standards Body Name
 packager: Inflect Compliance
@@ -168,6 +169,23 @@ Every library has a SHA-256 content hash computed from its URN, version, and all
 
 1. **Hash match** → skip entirely (zero DB writes)
 2. **Hash mismatch** → compute requirement diff → apply strategy → upsert
+
+The hash does not cover the text, so **a change to a library's text must bump
+its `version`**. A reworded title or description, or a changed copyright line,
+under the same version is skipped by every database that already holds the
+library. The version is the right signal rather than a text-covering hash: each
+version transition records one `FrameworkVersionDiff` and notifies tenants
+once, and two same-version edits would land on one diff row.
+
+Each library file records `text_hash`, `computeLibraryTextHash` of its content
+(everything but `version` and the hash itself), beneath `version`. The
+"a library's text change reaches a database that already holds it" block of
+`tests/guardrails/catalogue-reaches-production.test.ts` fails while the two
+disagree, and names the version and hash to write.
+
+A mapping set's hash (`computeMappingSetHash`) covers its whole parsed content,
+the rationales included, so a reworded rationale reaches every database without
+a version bump. A mapping set records no diff, so it needs none.
 
 ### Migration Strategies
 
