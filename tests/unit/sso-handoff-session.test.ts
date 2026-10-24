@@ -138,8 +138,7 @@ jest.mock('@/lib/security/oidc-client', () => ({
         jwks_uri: 'https://idp.example/jwks',
     })),
     exchangeCodeForTokens: jest.fn(async () => ({ id_token: 'id-token' })),
-    validateIdTokenNonce: jest.fn(() => true),
-    extractIdTokenClaims: jest.fn(() => ({ sub: 'ext-1', email: 'member@example.com' })),
+    verifyIdToken: jest.fn(async () => ({ sub: 'ext-1', email: 'member@example.com' })),
 }));
 jest.mock('@/lib/security/saml-client', () => ({
     ...jest.requireActual('@/lib/security/saml-client'),

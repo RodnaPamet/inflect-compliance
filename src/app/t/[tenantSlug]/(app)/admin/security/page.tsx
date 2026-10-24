@@ -20,6 +20,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage } from '@/lib/api-error';
 
 type MfaPolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED';
 
@@ -72,7 +73,7 @@ export default function AdminSecurityPage() {
             });
             if (!res.ok) {
                 const data = await res.json();
-                throw new Error(data.error || t('security.failedSave'));
+                throw new Error(apiErrorMessage(data, t('security.failedSave')));
             }
             const updated = await res.json();
             setSettings(updated);
@@ -114,7 +115,7 @@ export default function AdminSecurityPage() {
             if (res.ok) {
                 setSuccess(t('security.allRevoked', { count: data.usersAffected }));
             } else {
-                throw new Error(data.error || t('security.failedRevoke'));
+                throw new Error(apiErrorMessage(data, t('security.failedRevoke')));
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : t('security.bulkRevocationFailed'));
@@ -140,7 +141,7 @@ export default function AdminSecurityPage() {
                 setRevokeUserId('');
                 setTimeout(() => setSuccess(null), 3000);
             } else {
-                throw new Error(data.error || t('security.failedRevokeUser'));
+                throw new Error(apiErrorMessage(data, t('security.failedRevokeUser')));
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : t('security.userRevocationFailed'));

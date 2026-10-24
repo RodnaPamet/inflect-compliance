@@ -371,6 +371,7 @@
     "openOrgNavigationMenu": "Open organization navigation menu",
     "accountMenuFor": "Account menu for {name}",
     "account": "Account",
+    "multiFactorAuth": "Multi-factor authentication",
     "signOut": "Sign out",
     "closeNavigationDrawer": "Close navigation drawer",
     "agentsAsk": "Ask"
@@ -4692,7 +4693,7 @@
       "policy": {
         "DISABLED": {
           "label": "Disabled",
-          "description": "MFA is not available. Users cannot enroll in multi-factor authentication."
+          "description": "MFA is not checked at sign-in, even for users who have enrolled. Users can still set up an authenticator app, and existing enrollments are kept."
         },
         "OPTIONAL": {
           "label": "Optional",

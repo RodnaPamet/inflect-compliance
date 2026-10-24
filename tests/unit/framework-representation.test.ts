@@ -189,7 +189,7 @@ describe('the shipped data the ISO 27001 rule stands on', () => {
         );
         const reachable = seedCodes.filter((c) => canonicalLib.has(c));
         // The library carries a curated SUBSET of Annex A, not all 93 rows.
-        expect(reachable.length).toBe(29);
+        expect(reachable.length).toBe(34);
         expect(reachable.slice(0, 4)).toEqual(['5.1', '5.2', '5.3', '5.7']);
     });
 
