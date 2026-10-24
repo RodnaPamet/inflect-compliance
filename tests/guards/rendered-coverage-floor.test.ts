@@ -350,7 +350,15 @@ const ROOT = path.resolve(__dirname, '../..');
 // risks-list-bulk-surface.test.tsx (#4046) and the others merged since 381,
 // measured by this guard's own counter on this branch merged with main
 // (3.302.2). The merge queue found it again.
-const RENDERED_TEST_FLOOR = 390;
+//   393 (2026-10-24): + mfa-enrolment-qr-code.test.tsx and the others merged
+// since 390, measured by this guard's own counter on this branch merged with
+// main (3.305.1). Raised ahead of the queue this time: eight more rendered
+// tests were in flight, which would have put the count past floor + slack.
+//   400 (2026-10-24): + members-change-role-from-menu.test.tsx and the others
+// merged since 393, measured by this guard's own counter on this branch merged
+// with main (3.306.1). #4072, #4073 and #4078 each add one more and leave this
+// line alone, so the merge queue cannot conflict on it; they land in the slack.
+const RENDERED_TEST_FLOOR = 400;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

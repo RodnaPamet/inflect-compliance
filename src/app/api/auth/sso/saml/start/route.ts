@@ -7,6 +7,7 @@ import {
     encodeSamlRelayState,
 } from '@/lib/security/saml-client';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
+import { isCrossSiteStart, prepareSsoFlow } from '@/lib/auth/sso-flow';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
 import {
@@ -35,7 +36,23 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const { searchParams } = req.nextUrl;
     const tenantSlug = searchParams.get('tenant');
     const providerId = searchParams.get('provider');
-    const returnTo = searchParams.get('returnTo') || '/';
+    // Absent stays absent, so the callback's dashboard fallback applies; a
+    // '/' default here made every SSO sign-in land on the root instead.
+    const returnTo = searchParams.get('returnTo') || undefined;
+
+    // Only a sign-in this browser asked for: never one another site started
+    // (see `isCrossSiteStart` in src/lib/auth/sso-flow.ts).
+    if (isCrossSiteStart(req)) {
+        ssoLog('warn', 'Cross-site SSO start refused', {
+            requestId, stage: 'start', providerType: 'SAML',
+        });
+        const loginUrl = new URL('/login', publicBaseUrl(req));
+        loginUrl.searchParams.set('error', 'sso_start_refused');
+        // Reopen the sign-in page's SSO form on this workspace, so the
+        // person continues with one click from a page that is ours.
+        if (tenantSlug) loginUrl.searchParams.set('sso', tenantSlug);
+        return NextResponse.redirect(loginUrl, 303);
+    }
 
     // ── Validate params ──
     if (!tenantSlug || !providerId) {
@@ -98,21 +115,24 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
 
     const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer);
 
-    // ── Encode tenant context in RelayState ──
-    const relayState = encodeSamlRelayState({
+    // ── Keep the flow in this browser; RelayState is only its id ──
+    // (src/lib/auth/sso-flow.ts)
+    const flow = prepareSsoFlow('saml', encodeSamlRelayState({
         tenantSlug: tenant.slug,
         providerId: provider.id,
         returnTo,
-    });
+    }));
 
     // ── Generate AuthnRequest and redirect ──
     try {
-        const redirectUrl = await generateAuthnRequest(saml, relayState);
+        const redirectUrl = await generateAuthnRequest(saml, flow.id);
         ssoLog('info', 'SAML AuthnRequest generated, redirecting to IdP', {
             requestId, tenantSlug: tenant.slug, providerType: 'SAML',
             providerId: provider.id, stage: 'redirect',
         });
-        return NextResponse.redirect(redirectUrl);
+        const res = NextResponse.redirect(redirectUrl);
+        flow.bind(res);
+        return res;
     } catch (err) {
         ssoLog('error', 'AuthnRequest generation failed', {
             requestId, tenantSlug: tenant.slug, providerType: 'SAML',

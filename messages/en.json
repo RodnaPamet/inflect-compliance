@@ -295,7 +295,33 @@
     "aisvsBadge": "AISVS L2 compliant",
     "registrationFailed": "Registration failed",
     "loginFailed": "Login failed",
-    "invalidCredentials": "Invalid credentials"
+    "invalidCredentials": "Invalid credentials",
+    "errors": {
+      "signInFailed": "Sign-in didn't complete. Try again.",
+      "accountNotLinked": "This email address already signs in a different way. Sign in the way you did before.",
+      "ssoIncomplete": "Single sign-on didn't complete. Try again, or ask your workspace administrator for help.",
+      "ssoNoAccount": "There's no account for you in this workspace yet. Ask your workspace administrator to add you.",
+      "ssoDomainNotAllowed": "Your email address isn't allowed by this workspace's single sign-on settings. Ask your workspace administrator.",
+      "ssoUnavailable": "Single sign-on isn't available for this workspace right now. Ask your workspace administrator.",
+      "ssoStartFromSignIn": "For your security, single sign-on has to be started from this sign-in page."
+    },
+    "ssoComplete": {
+      "title": "Single sign-on",
+      "inProgress": "Finishing signing you in…",
+      "backToSignIn": "Back to sign in"
+    },
+    "sso": {
+      "continue": "Continue with single sign-on",
+      "workspaceLabel": "Workspace",
+      "workspaceHint": "The short name in your workspace's address, after /t/.",
+      "workspacePlaceholder": "your-workspace",
+      "submit": "Continue",
+      "looking": "Looking…",
+      "notAvailable": "This workspace doesn't use single sign-on. Sign in another way, or check the workspace name.",
+      "failed": "We couldn't check that workspace. Try again.",
+      "chooseProvider": "Choose how to sign in",
+      "continueWith": "Continue with {name}"
+    }
   },
   "nav": {
     "dashboard": "Board",
@@ -344,6 +370,7 @@
     "openOrgNavigationMenu": "Open organization navigation menu",
     "accountMenuFor": "Account menu for {name}",
     "account": "Account",
+    "multiFactorAuth": "Multi-factor authentication",
     "signOut": "Sign out",
     "closeNavigationDrawer": "Close navigation drawer",
     "agentsAsk": "Ask"
@@ -4615,8 +4642,10 @@
       "invitationSent": "Invitation sent to {email}",
       "reactivated": "Reactivated {email}",
       "addedAs": "Added {email} as {role}",
-      "memberAddedLoginHint": "{email} will get {role} access as soon as they sign in with this email. We also emailed them an invite link.",
+      "memberAddedEmailed": "{email} will get {role} access as soon as they sign in with this email. We also emailed them an invite link.",
+      "memberAddedNotEmailed": "{email} will get {role} access as soon as they sign in with this email. The invite was not emailed — copy the link below and send it to them.",
       "inviteLinkLabel": "Or share this link:",
+      "inviteLinkLabelNotEmailed": "Invite link:",
       "copyInviteLink": "Copy invite link",
       "roleChangeFailed": "Role change failed",
       "roleUpdated": "Role updated successfully",
@@ -4663,7 +4692,7 @@
       "policy": {
         "DISABLED": {
           "label": "Disabled",
-          "description": "MFA is not available. Users cannot enroll in multi-factor authentication."
+          "description": "MFA is not checked at sign-in, even for users who have enrolled. Users can still set up an authenticator app, and existing enrollments are kept."
         },
         "OPTIONAL": {
           "label": "Optional",
@@ -5976,7 +6005,7 @@
       "bindingLabel": "Agent binding",
       "bindingAria": "About agent binding",
       "bindingTooltip": "The registered agent this credential acts as. When this workspace enforces agent registration, a credential with no binding is refused at the tool boundary — it can still be created, but it will not work.",
-      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. Someone with agent register access can bind it after creation.",
+      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. A credential's agent can be set only when it is created, never afterwards. For a credential that acts as an agent, ask someone who can also read the agent register to create it.",
       "agentPlaceholder": "No agent — unbound credential",
       "autonomyLabel": "Autonomy ceiling",
       "autonomyAria": "About the autonomy ceiling",
@@ -7425,7 +7454,32 @@
       "coverageBySection": "Coverage by Section",
       "unmappedRequirements": "Unmapped Requirements ({count})",
       "reorderRestricted": "Reordering is restricted to OWNER / ADMIN roles.",
-      "packsEmpty": "No packs available for this framework."
+      "packsEmpty": "No packs available for this framework.",
+      "inherited": {
+        "heading": "Coverage from your other frameworks",
+        "description": "Controls you hold on other frameworks that reach this framework's requirements through a curated mapping. It is a starting point, not coverage, and it never counts toward the figures above: link a control here to cover a requirement.",
+        "countPartial": "Partially covered by inheritance",
+        "countReview": "Related only",
+        "countNone": "Not reached",
+        "reachedFrom": "Reached from",
+        "sourceCount": "{name} · {count, plural, one {# requirement} other {# requirements}}",
+        "statusPartial": "Partially covered",
+        "statusReview": "Review needed",
+        "strength": {
+          "equal": "Equivalent",
+          "superset": "Broader",
+          "subset": "Narrower",
+          "intersect": "Overlapping",
+          "related": "Related"
+        },
+        "emptyTitle": "No other framework reaches this one yet",
+        "emptyDescription": "When you hold controls on a framework that is mapped to this one, the requirements they bear on appear here.",
+        "allDirect": "Every requirement your other frameworks reach already has a control of its own.",
+        "truncated": "Built from part of the mapping data, so these counts are lower bounds.",
+        "errorTitle": "Couldn't load inherited coverage",
+        "errorLoad": "Try again in a moment.",
+        "retry": "Retry"
+      }
     },
     "diff": {
       "loading": "Loading diff…",
@@ -10580,6 +10634,7 @@
     "step1": "1. Open your authenticator app (Google Authenticator, Authy, 1Password, etc.)",
     "step2": "2. Scan this QR code or manually enter the setup key",
     "cannotScan": "If you cannot scan, use the setup key below",
+    "qrCodeAlt": "QR code for adding this account to your authenticator app",
     "setupKey": "Setup Key",
     "copied": "Copied!",
     "copy": "Copy",
@@ -11307,6 +11362,7 @@
     "expires": "Expires {date}",
     "signInToAccept": "Sign in to accept",
     "acceptInvitation": "Accept invitation",
+    "acceptFailed": "Could not accept the invitation. Please try again.",
     "wrongAccount": "You are signed in as <b>{email}</b>, but this invite was sent to a different email address. Sign in with the correct account to accept it."
   },
   "roles": {

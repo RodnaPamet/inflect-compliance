@@ -66,6 +66,13 @@ function mockFetch(answers: unknown[]) {
     const calls: Call[] = [];
     global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
         calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        // The two control pickers search `/controls` once on mount, after a
+        // 250 ms debounce. Answered from the queue, those reads took the
+        // set-up's answers whenever the page took longer than that to render,
+        // which a loaded CI runner does: the second dry run then received the
+        // APPLIED answer and Set up stayed disabled. Only the set-up POSTs read
+        // the queue.
+        if (init?.method !== 'POST') return { ok: true, json: async () => ({ items: [] }) } as Response;
         const answer = answers.length > 1 ? answers.shift() : answers[0];
         return { ok: true, json: async () => answer } as Response;
     }) as unknown as typeof fetch;

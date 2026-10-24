@@ -26,6 +26,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const SRC_DIR = path.resolve(__dirname, '../../src');
 
@@ -70,11 +71,13 @@ const CAPS: Record<string, number> = {
     // Roadmap-6 P1 (2026-05-22) — `as any` debt paydown. The cast sweep
     // across ~65 files drove every pattern down; each cap is lowered to
     // the exact post-cleanup floor so the gain cannot silently erode.
-    // The `as any` cap counts comment mentions too (this ratchet does
-    // not strip comments) — the code-level count is now 0, tracked by
-    // tests/guardrails/no-explicit-any-ratchet.test.ts. The 15
-    // remaining occurrences are all in docstrings / explanatory
-    // comments (multiple-mentions-per-line counted separately).
+    // SUPERSEDED 2026-10-24 (#3274). This block used to say the `as any`
+    // cap counted comment mentions deliberately, because 15 docstring
+    // mentions remained and the code-level count was tracked elsewhere.
+    // Every cap here is 0 now, so NO comment mention is tolerated and that
+    // rationale has expired: a cap of 0 plus a raw-text scan means one
+    // English sentence fails the build. Comments are blanked before
+    // matching, so these caps measure code and nothing else.
     // R10-PR3 follow-up (2026-05-24) — `<any>` raised from 61 → 63.
     // The raw-`<table>` → DataTable migration of the vendor
     // assessments + subprocessors sub-tables introduced two
@@ -476,7 +479,14 @@ function countAll(): Record<string, number> {
     for (const { label } of PATTERNS) totals[label] = 0;
 
     for (const file of walk(SRC_DIR)) {
-        const content = fs.readFileSync(file, 'utf-8');
+        // COMMENTS BLANKED BEFORE MATCHING (#3274). Every cap here is 0, and
+        // these patterns match ordinary English: `// returns: any value the
+        // caller asked for` satisfies `/:\s*any\b/`. Measured — that exact
+        // sentence in a src/ comment failed two tests, with a message telling
+        // the author to replace a cast that does not exist. `codeOf` blanks
+        // comments and KEEPS string literals, preserving offsets, so a fixture
+        // that legitimately contains the pattern inside a string still counts.
+        const content = codeOf(fs.readFileSync(file, 'utf-8'));
         for (const { label, regex } of PATTERNS) {
             regex.lastIndex = 0;
             const matches = content.match(regex);

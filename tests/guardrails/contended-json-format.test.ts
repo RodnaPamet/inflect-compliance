@@ -128,7 +128,14 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // `docs-site.yml:deploy` (main-only Pages deploy) and
         // `docs-site.yml:pull_request.paths` (its path-scoped PR build). A
         // textual insert before `ghcr-publish.yml`, +10/-0; no key moved.
-        keyOrderSha: 'b37593a5929c0d01989083b9831d9be624b2d30150627f13d89166271c7d8a92',
+        //
+        // Updated 2026-10-24 for `queue-failure-attribution.yml:attribute`
+        // (#3307), inserted in ALPHABETICAL position after
+        // `queue-candidate-sweep.yml:sweep` rather than appended: a mid-file
+        // insert touches only its own lines, where appending rewrites the
+        // previous entry's closing brace and two PRs then conflict on a line
+        // neither of them meant to edit. +5/-0.
+        keyOrderSha: 'd6f555ec86fd3a08982491d35d1eb80f0fa3a8331595327de9414c379c4257ea',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
@@ -214,7 +221,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         //
         // Moved 2026-10-23 for `docs/docs-site.md` (the public docs site), a
         // +3/-0 textual insert in sorted position.
-        keyOrderSha: '4af16a092e28e26113bd7b2a6f2b7c380c34aea0f73358a88f3af92d8d8f7df0',
+        // Moved 2026-10-24 for `docs/a2a-host-consumer-pilot-runbook.md`
+        // (#4054), the same shape: a +3/-0 textual insert in sorted position,
+        // before `docs/a2a-mapping.md` because 'h' < 'm'. No existing entry
+        // moved, which is the distinction this digest exists to draw — the
+        // round-trip cannot tell one added key from a `sort_keys` rewrite.
+        keyOrderSha: '217f3ca9983883c4f3388b93bba31fa40d5ad816d8392ec435dcdeb84b978cf3',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

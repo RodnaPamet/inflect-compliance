@@ -261,6 +261,7 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
     { handler: 'api/auth/register/route.ts#POST', klass: 'PRE_TENANT_AUTH' },
     { handler: 'api/auth/reset-password/route.ts#POST', klass: 'PRE_TENANT_AUTH',
       note: 'Consumes a single-use, hashed-at-rest reset token; the token is the credential.' },
+    { handler: 'api/auth/sso/discover/route.ts#GET', klass: 'PRE_TENANT_AUTH' },
     { handler: 'api/auth/sso/oidc/callback/route.ts#GET', klass: 'PRE_TENANT_AUTH' },
     { handler: 'api/auth/sso/oidc/start/route.ts#GET', klass: 'PRE_TENANT_AUTH' },
     { handler: 'api/auth/sso/saml/callback/route.ts#POST', klass: 'PRE_TENANT_AUTH' },

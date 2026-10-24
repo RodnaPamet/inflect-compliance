@@ -1,0 +1,211 @@
+# Cross-Framework Mapping Set: EU AI Act (2024/1689) → AIUC-1 (Q4-2026)
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# REVERSE DIRECTION. This file is the machine-checked transpose of
+# `aiuc-1-to-eu-ai-act.yaml` — author new entries THERE and let the test tell you
+# this half is stale. The rationales are written from that file's
+# direction on purpose: each states a claim about the RELATIONSHIP
+# between two requirements, which reads the same whichever end you
+# start from, and re-wording them here would be a second copy of the
+# same judgement that could drift from it silently.
+#
+# Connects AIUC-1 to EU AI Act obligations at article grain. A mapping says
+# NOTHING about whether the Act applies: Articles 9–17 bind providers of
+# HIGH-RISK systems, Article 26 their deployers, Article 50 certain systems
+# whatever their tier, and Articles 53 and 55 providers of general-purpose
+# models. The system's tier is a tenant and counsel decision. Structural
+# guidance, NOT legal advice.
+#
+# The closest pair, E013 → Art.17 (both a quality management system), is still
+# INTERSECT: AIUC-1's quality objectives and corrective-action tracking are not
+# among Article 17(1)'s elements (corrective action is Article 20's), and
+# Article 17(4) lets a financial institution meet Article 17 through its
+# existing internal governance. Neither contains the other.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication, authored from the requirement texts this
+# repository carries. AIUC publishes crosswalks of its own; they are AIUC's
+# copyright, and none was transcribed or used as a source for this file.
+#
+# STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
+# SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
+# SUPERSET are reserved for an edge where meeting the broader requirement as
+# written necessarily meets the narrower one. No AIUC-1 edge clears that bar.
+# Shared ground is INTERSECT (partially covered); "this is where the control
+# would live" is RELATED (review needed, never coverage). No EQUAL anywhere.
+#
+# SYMMETRY: this pair ships in BOTH directions. `aiuc-1-to-eu-ai-act.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:eu-ai-act-to-aiuc-1
+name: "EU AI Act (2024/1689) → AIUC-1 (Q4-2026)"
+description: >
+  Cross-framework traceability between EU AI Act (2024/1689) and AIUC-1 (Q4-2026).
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: EU-AI-ACT-2024
+target_framework_ref: AIUC-1
+
+mapping_entries:
+  - source_ref: "Art.5"
+    target_ref: "C003"
+    strength: RELATED
+    rationale: "[curated] Blocking deceptive and manipulative output is where an agent is kept from the manipulative techniques Article 5 prohibits; the Article bans practices rather than asking for filters."
+  - source_ref: "Art.9"
+    target_ref: "C001"
+    strength: INTERSECT
+    rationale: "[curated] A taxonomy of AI risk, graded by severity and reviewed every year, is the identification and analysis step of an Article 9 risk management system."
+  - source_ref: "Art.9"
+    target_ref: "C005"
+    strength: INTERSECT
+    rationale: "[curated] Naming the high-risk outputs particular to an agent and mapping each to a response is risk identification and treatment for one deployment."
+  - source_ref: "Art.9"
+    target_ref: "C002"
+    strength: INTERSECT
+    rationale: "[curated] Testing across the risk taxonomy before release overlaps the testing Article 9 requires to find suitable risk measures before a system reaches the market."
+  - source_ref: "Art.9"
+    target_ref: "C008"
+    strength: INTERSECT
+    rationale: "[curated] Monitoring production output against risk categories, and feeding failures back into the taxonomy, is the evaluation of risks from monitoring data a risk management system carries out."
+  - source_ref: "Art.10"
+    target_ref: "A001"
+    strength: RELATED
+    rationale: "[curated] Stating whether customer input is used to train models is where governance of training data begins; the Act's quality criteria for data sets are outside AIUC-1."
+  - source_ref: "Art.11"
+    target_ref: "E017"
+    strength: INTERSECT
+    rationale: "[curated] Model cards, datasheets and AI bills of materials overlap the technical documentation a provider draws up; the Act prescribes its contents in Annex IV."
+  - source_ref: "Art.12"
+    target_ref: "E015"
+    strength: INTERSECT
+    rationale: "[curated] Logging the system's processes, actions and outputs in operation overlaps the automatic event logging the Act requires for traceability."
+  - source_ref: "Art.13"
+    target_ref: "E017"
+    strength: INTERSECT
+    rationale: "[curated] Transparency documentation and a policy on sharing it overlap the information and instructions for use a provider gives deployers."
+  - source_ref: "Art.13"
+    target_ref: "E010"
+    strength: RELATED
+    rationale: "[curated] An acceptable use policy states permitted use to users; instructions for use state intended purpose and limitations to deployers."
+  - source_ref: "Art.13"
+    target_ref: "C004"
+    strength: RELATED
+    rationale: "[curated] Telling users what an agent is for states its intended purpose, which instructions for use also have to do."
+  - source_ref: "Art.13"
+    target_ref: "D001"
+    strength: RELATED
+    rationale: "[curated] Citations and uncertainty signals help a person interpret an output, the aim the Act's transparency to deployers serves."
+  - source_ref: "Art.14"
+    target_ref: "C007"
+    strength: INTERSECT
+    rationale: "[curated] Detecting risky outputs and routing them to a reviewer before they take effect is human oversight for one class of output."
+  - source_ref: "Art.14"
+    target_ref: "C009"
+    strength: INTERSECT
+    rationale: "[curated] Letting users stop, pause or redirect an agent overlaps the Act's ability to intervene in or interrupt a system; the Act also asks that overseers can interpret it correctly."
+  - source_ref: "Art.14"
+    target_ref: "D003"
+    strength: INTERSECT
+    rationale: "[curated] Holding sensitive or irreversible tool calls for a person's approval is human oversight at the point of action."
+  - source_ref: "Art.15"
+    target_ref: "D001"
+    strength: INTERSECT
+    rationale: "[curated] Catching or surfacing fabricated statements addresses accuracy; the Act also asks for declared accuracy levels and robustness."
+  - source_ref: "Art.15"
+    target_ref: "D004"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly independent testing for wrong, fabricated and falsely confident output and faulty tool calls evidences accuracy and robustness."
+  - source_ref: "Art.15"
+    target_ref: "B001"
+    strength: INTERSECT
+    rationale: "[curated] Quarterly security testing driven by prompt injection and jailbreaking evidences resilience against attempts to alter a system's use or outputs."
+  - source_ref: "Art.15"
+    target_ref: "B002"
+    strength: INTERSECT
+    rationale: "[curated] Detecting adversarial input in operation is one of the measures against manipulated inputs the Act's cybersecurity requirement expects."
+  - source_ref: "Art.15"
+    target_ref: "B004"
+    strength: INTERSECT
+    rationale: "[curated] Protecting endpoints against bulk extraction and model theft addresses confidentiality attacks on the model."
+  - source_ref: "Art.15"
+    target_ref: "B008"
+    strength: INTERSECT
+    rationale: "[curated] Authenticated, encrypted interfaces and verified model artefacts are cybersecurity measures for the deployment environment."
+  - source_ref: "Art.15"
+    target_ref: "B006"
+    strength: RELATED
+    rationale: "[curated] Bounding an agent to its granted privileges limits the harm of a compromise, which robustness against unauthorised alteration is meant to contain."
+  - source_ref: "Art.16"
+    target_ref: "E004"
+    strength: RELATED
+    rationale: "[curated] Formal approval of changes with a named accountable lead helps a provider keep a system conformant as it changes; conformity assessment is outside AIUC-1."
+  - source_ref: "Art.17"
+    target_ref: "E013"
+    strength: INTERSECT
+    rationale: "[curated] Both quality management systems carry risk, change management, data management and stakeholder communication; AIUC-1's quality objectives and corrective-action tracking are not among Article 17's elements."
+  - source_ref: "Art.17"
+    target_ref: "E012"
+    strength: INTERSECT
+    rationale: "[curated] A register of applicable AI law reviewed every six months overlaps the strategy for regulatory compliance a quality management system has to contain."
+  - source_ref: "Art.17"
+    target_ref: "E004"
+    strength: INTERSECT
+    rationale: "[curated] Naming who approves each kind of change and keeping the approvals overlaps the accountability framework and management of modifications a quality management system sets out."
+  - source_ref: "Art.17"
+    target_ref: "C002"
+    strength: INTERSECT
+    rationale: "[curated] Testing a change across the risk taxonomy before release is one of the examination, test and validation procedures a quality management system defines."
+  - source_ref: "Art.26"
+    target_ref: "C008"
+    strength: INTERSECT
+    rationale: "[curated] Monitoring output in production against the risk taxonomy overlaps a deployer's duty to monitor operation; informing the provider is outside AIUC-1."
+  - source_ref: "Art.26"
+    target_ref: "E015"
+    strength: INTERSECT
+    rationale: "[curated] Retaining access-controlled activity logs overlaps a deployer's duty to keep the logs a system generates."
+  - source_ref: "Art.26"
+    target_ref: "C007"
+    strength: RELATED
+    rationale: "[curated] Routing risky outputs to a reviewer is where a deployer's assignment of human oversight takes effect."
+  - source_ref: "Art.27"
+    target_ref: "C001"
+    strength: RELATED
+    rationale: "[curated] A risk taxonomy built from where the system is deployed is where effects on fundamental rights could be identified; AIUC-1 requires no rights assessment."
+  - source_ref: "Art.50"
+    target_ref: "E016"
+    strength: INTERSECT
+    rationale: "[curated] Telling people in every modality that they are dealing with an AI overlaps the Act's interaction disclosure; machine-readable marking of synthetic content is outside AIUC-1."
+  - source_ref: "Art.50"
+    target_ref: "E018"
+    strength: RELATED
+    rationale: "[curated] Testing that an agent cannot be talked out of disclosing what it is checks the disclosure Article 50 requires."
+  - source_ref: "Art.53"
+    target_ref: "E017"
+    strength: RELATED
+    rationale: "[curated] Model cards and AI bills of materials are the downstream use of the documentation general-purpose model providers have to supply."
+  - source_ref: "Art.53"
+    target_ref: "E006"
+    strength: RELATED
+    rationale: "[curated] Due diligence on a model provider reads the information general-purpose model providers owe those who build on their models."
+  - source_ref: "Art.53"
+    target_ref: "A007"
+    strength: RELATED
+    rationale: "[curated] Screening outputs for protected material and knowing providers' indemnities sit beside, but do not meet, the copyright policy general-purpose model providers keep."
+  - source_ref: "Art.55"
+    target_ref: "F001"
+    strength: RELATED
+    rationale: "[curated] Relying on providers' assessments of cyber-offence capability presupposes the systemic-risk evaluation Article 55 places on general-purpose model providers."
+  - source_ref: "Art.55"
+    target_ref: "F002"
+    strength: RELATED
+    rationale: "[curated] Relying on providers' assessments of chemical, biological, radiological and nuclear capability presupposes the systemic-risk evaluation Article 55 places on them."
+  - source_ref: "Art.14"
+    target_ref: "D001"
+    strength: RELATED
+    rationale: "[curated] Citations and uncertainty signals help an overseer interpret an output correctly and resist over-reliance, two of the capacities Article 14 lists."

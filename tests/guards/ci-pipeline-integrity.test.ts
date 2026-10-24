@@ -682,3 +682,167 @@ describe('the notice comments only when the failing set changes (#3540)', () => 
         });
     });
 });
+
+/**
+ * THE IN-BAND SHARD'S HEAP BOUND IS THE V8 CEILING, NOT `workerIdleMemoryLimit`
+ * (#3320).
+ *
+ * `jest.config.js` sets `workerIdleMemoryLimit: '512MB'` beneath a confident
+ * paragraph: recycling a ballooned worker "keeps heaps bounded and the run
+ * reproducible". True of a WORKER run — `npm test` locally. False of CI, whose
+ * `test` job runs `jest --runInBand`: one process for all of a shard's files,
+ * no worker to recycle, so nothing in that paragraph fires on the only machine
+ * that decides whether a branch merges. Jest does not warn. The setting is
+ * simply never consulted, and nothing failed while that was true.
+ *
+ * These two assertions certify the FACTS that comment depends on, never the
+ * comment itself — gating CI on prose verifies mention, not accuracy, and this
+ * repo retired that pattern deliberately.
+ *
+ * They live HERE rather than in a file of their own because
+ * `no-epic-named-ratchets` caps the guard-file count (`< 799`, the artefact of
+ * the 2026-08-05 retirement from 777 to 624). A new file for two assertions
+ * spends that budget for nothing; this is the topically correct home, and it
+ * already parses `ci.yml`.
+ */
+describe('the in-band shard is bounded by the V8 ceiling (#3320)', () => {
+    const ci = () =>
+        yaml.load(read('.github/workflows/ci.yml')) as {
+            jobs: Record<string, { steps?: Array<Record<string, unknown>> }>;
+        };
+
+    /** The step that actually invokes the shard, found by its command. */
+    const shardStep = () => {
+        const steps = ci().jobs.test?.steps ?? [];
+        const step = steps.find((s) => typeof s.run === 'string' && (s.run as string).includes('--shard='));
+        expect(step).toBeDefined();
+        return step as { run: string; env?: Record<string, string> };
+    };
+
+    it('really runs jest IN BAND, which is what makes workerIdleMemoryLimit inert', () => {
+        // Asserted as a PREMISE, not a preference. If the shard moves to
+        // workers this fails ON PURPOSE: the inertness note in jest.config.js
+        // becomes wrong in the other direction — the limit goes live — and has
+        // to be revisited in the same diff. That forcing function is the whole
+        // reason this is a test and not a comment. #4033 measured the switch:
+        // it clears the OOM and costs ~1.8x wall-clock.
+        expect(shardStep().run).toContain('--runInBand');
+        // The paired claim has a subject — read through `readSrc`, which strips
+        // comments, NOT `read`.
+        //
+        // Two reasons, and the second is a ratchet. First: the inertness note
+        // above the setting names `workerIdleMemoryLimit` too, so an assertion
+        // against RAW source is satisfied by the prose explaining the setting
+        // even after the setting itself is deleted — measured while writing
+        // this, by deleting it and watching a raw-source assertion still pass.
+        // Second: `raw-source-assertion-ratchet` (Class A) allowlists exactly
+        // two files that may assert on raw source, and this is not one of them.
+        // Narrowing the needle was not enough; excluding the prose from the
+        // population by construction is the fix the repo already has a helper
+        // for.
+        expect(readSrc('jest.config.js')).toContain("workerIdleMemoryLimit: '512MB'");
+    });
+
+    it('and declares an explicit --max-old-space-size, the only heap bound in band', () => {
+        const nodeOptions = shardStep().env?.NODE_OPTIONS ?? '';
+        const cap = /--max-old-space-size=(\d+)/.exec(nodeOptions);
+        if (!cap) {
+            throw new Error(
+                'The sharded `test` step declares no explicit --max-old-space-size.\n\n' +
+                    'In band it is the ONLY thing bounding the heap: ' +
+                    '`workerIdleMemoryLimit` acts on worker recycling and there is ' +
+                    'no worker. Removing it does not fail loudly — it returns as an ' +
+                    'intermittent exit 134 on whichever file the --shard hash has ' +
+                    'just moved onto the heaviest partition, so the innocent test ' +
+                    'is the one suspected. See #3320 and the step\'s own measurement.',
+            );
+        }
+        // The VALUE is deliberately not pinned: a measured figure that has moved
+        // four times (6144 -> 8192 -> 10240 -> 12288, the last against a
+        // measured 10,337 MB peak on shard 2/6). Pinning it here would make
+        // every re-measurement edit two files to say one thing.
+        expect(Number(cap[1])).toBeGreaterThan(0);
+    });
+});
+
+/**
+ * QUEUE FAILURE ATTRIBUTION CAN ONLY COMMENT (#3307).
+ *
+ * `queue-failure-attribution.yml` exists to tell a PR owner whether a
+ * merge-queue candidate's red belongs to their diff. Its whole safety argument
+ * is that it has no other power: it cannot cancel, eject, dequeue, re-run or
+ * merge, so the worst outcome of a misread is a misleading sentence — strictly
+ * better than today's misleading red check with no sentence.
+ *
+ * A docblock cannot hold that. These assertions do, because the argument is
+ * only true while the script calls nothing that mutates queue or run state,
+ * and the obvious way to "improve" this workflow later is to have it act on
+ * what it found.
+ */
+describe('queue failure attribution only comments (#3307)', () => {
+    const WF = '.github/workflows/queue-failure-attribution.yml';
+    const wf = () => read(WF);
+
+    it('triggers on workflow_run ONLY — never pull_request', () => {
+        // `on:` parses as the BOOLEAN true under YAML 1.1 and as the string
+        // 'on' under the 1.2 core schema, so read both — the same dual access
+        // merge-queue-trigger-coverage uses, and for the same reason: one of
+        // them is silently undefined and `Object.keys(undefined)` throws.
+        const doc = yaml.load(wf()) as Record<string, unknown>;
+        const on = (doc[true as unknown as string] ?? doc.on) as Record<string, unknown>;
+        expect(Object.keys(on)).toEqual(['workflow_run']);
+        // A `pull_request` trigger would put it inside
+        // merge-queue-trigger-coverage's invariant ("every pull_request
+        // workflow declares merge_group:"), and this one must not answer
+        // merge_group — it reacts to that event's run rather than joining it.
+        expect(Object.keys(on)).not.toContain('pull_request');
+    });
+
+    it('holds exactly the permissions it needs, and no write beyond comments', () => {
+        const doc = yaml.load(wf()) as { permissions?: Record<string, string> };
+        expect(doc.permissions).toEqual({
+            contents: 'read',
+            actions: 'read',
+            'pull-requests': 'write',
+        });
+    });
+
+    it('acts only on a merge_group candidate that did not succeed', () => {
+        const body = wf();
+        // Without both halves it would comment on green candidates, or on
+        // ordinary pull_request runs that have nothing to do with the queue.
+        expect(body).toContain("github.event.workflow_run.event == 'merge_group'");
+        expect(body).toContain("github.event.workflow_run.conclusion != 'success'");
+    });
+
+    it('calls NO api that mutates queue, run or merge state', () => {
+        const body = wf();
+        // The safety argument, pinned. Each of these is a way a later edit
+        // could give this workflow teeth it is explicitly not supposed to have.
+        for (const forbidden of [
+            'cancelWorkflowRun',
+            'reRunWorkflow',
+            'createWorkflowDispatch',
+            'dequeuePullRequest',
+            'removeFromMergeQueue',
+            'rest.pulls.merge',
+            'rest.pulls.update',
+            'deleteComment',
+        ]) {
+            expect(body).not.toContain(forbidden);
+        }
+        // And it does write a comment, so the test above is not passing
+        // merely because the script does nothing at all.
+        expect(body).toContain('issues.createComment');
+    });
+
+    it('reports an unreadable log as unreadable rather than as innocence', () => {
+        // The failure mode this guards is `absence-reads-as-success`: a failed
+        // job inside a still-running run serves no logs, and a log can expire.
+        // Saying "no failing file matched your diff" in that case would imply
+        // the diff is clear when nothing was compared.
+        const body = wf();
+        expect(body).toContain('logsReadable');
+        expect(body).toContain('not evidence either way');
+    });
+});
