@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
-import { loginErrorKey } from './login-error';
+import { loginErrorKey, ssoRequiredWorkspace } from './login-error';
 import { SsoSignIn } from './SsoSignIn';
 
 function extractErrorMessage(value: unknown, fallback: string): string {
@@ -110,6 +110,14 @@ function LoginForm() {
             });
 
             if (result?.error) {
+                // Every workspace this person belongs to enforces single
+                // sign-on: reload on that notice, with its SSO form open.
+                if (ssoRequiredWorkspace(result.error)) {
+                    const notice = new URL('/login', window.location.origin);
+                    notice.searchParams.set('error', result.error);
+                    window.location.href = notice.toString();
+                    return;
+                }
                 const raw = extractErrorMessage(result.error, t('loginFailed'));
                 throw new Error(raw === 'CredentialsSignin' ? t('invalidCredentials') : raw);
             }
@@ -255,7 +263,7 @@ function LoginForm() {
                         </Button>
                         <SsoSignIn
                             returnTo={searchParams?.get('callbackUrl') ?? undefined}
-                            initialWorkspace={searchParams?.get('sso') ?? undefined}
+                            initialWorkspace={searchParams?.get('sso') ?? ssoRequiredWorkspace(errorCode) ?? undefined}
                         />
                     </div>
 

@@ -18,7 +18,11 @@ const findUnique = jest.fn();
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { user: { findUnique: (...a: unknown[]) => findUnique(...a) } },
+    default: {
+        user: { findUnique: (...a: unknown[]) => findUnique(...a) },
+        // "Enforce SSO" reads which of the user's workspaces require it: none here.
+        tenantIdentityProvider: { findMany: async () => [] },
+    },
 }));
 
 import { authOptions } from '@/auth';

@@ -314,8 +314,10 @@ export function governedAgentIdOf(verdict: AgentGateVerdict): string | null {
 const DENIAL_MESSAGE: Record<AgentGateDenialReason, string> = {
     no_agent_binding:
         'This API key is not registered to an agent. This tenant requires every agent to be in the register before it may use the agent surface.',
+    // Not "rebind the key": a key's agent is written once, when the key is
+    // created (`createApiKey`), and no route or usecase changes it.
     agent_not_found:
-        'The agent registered to this API key no longer exists. Register the agent again or rebind the key.',
+        "The agent registered to this API key no longer exists. A key's agent cannot be changed: create a new API key for a registered agent and revoke this one.",
     agent_not_active:
         'The agent registered to this API key is not active. An agent must be ACTIVE in the register to use the agent surface.',
 };

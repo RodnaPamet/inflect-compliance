@@ -888,6 +888,11 @@ URL: that is login CSRF, and a verifier beside its code is no PKCE. The
 sign-in page starts SSO by WORKSPACE (`/api/auth/sso/discover`, `SsoSignIn`),
 never by email domain: `emailDomains` are unverified, so domain discovery would
 let any workspace claim anyone's domain. `/login?sso=<slug>` is the shareable link.
+"Enforce SSO" (`src/lib/auth/sso-enforcement.ts`): an enforcing workspace is
+reachable only by its own SSO or a break-glass OWNER/ADMIN signed in with their
+password — Google, Microsoft and other passwords are refused there, in the claims
+and at the DB-backed gates; a sign-in left with no workspace is refused with
+`sso_required:<slug>`. The session's `signInMethod` is what break-glass reads.
 
 **The OIDC ID token is VERIFIED, not decoded** (`verifyIdToken` in
 `src/lib/security/oidc-client.ts`, via `jose`): signature by a key at the

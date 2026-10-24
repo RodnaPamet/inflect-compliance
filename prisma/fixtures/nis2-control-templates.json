@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "NIS2 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "These 20 templates were created only by prisma/seed.ts, which is not run on production deploys, so a fresh database or a restore gets none of them and the task seeder that names this fixture reports \"20 template(s) absent\" while exiting 0. seed.ts also wrote GENERIC_TEMPLATE_TASKS over these controls, so a fresh dev database held 100 placeholder tasks while the 105 authored ones here reached nothing.",
-    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/nis2_requirements.json. Task content is unchanged from the bare-array fixture it replaces — a shape conversion, not a re-authoring.",
+    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/nis2_requirements.json. Task content is unchanged from the bare-array fixture it replaces — a shape conversion, not a re-authoring. Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
     "join": "Template requirement refs are the Art.21(2)(x) codes and match requirement keys exactly, 20/20. Note this is NOT the join prisma/fixtures/nis2-library-map.json describes: that maps template codes (NIS2-RA) to library node ids (NIS2-RM) for AUTHORING grounding, and is unrelated to delivery.",
     "packScope": "NIS2_BASELINE covers the 20 NIS2- templates only. Production also links 140 ICN- internal controls to NIS2 requirements as cross-framework traceability; applyCatalogFile only ADDS links, so those are untouched."
@@ -266,6 +266,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "State in the policy the methodology in force and the register the risks are held in."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the roles accountable for risk treatment and the review cycle the organisation has set."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the policy under a version number with its effective date."
+              }
+            },
+            {
+              "text": {
+                "en": "Distribute the issued policy to every team that runs a system on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the distribution record of recipient, date sent and any acknowledgement requested."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Issued policy with version number and effective date, plus the distribution record listing recipients, dates and acknowledgements"
           },
@@ -352,6 +379,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Check the register against the inventory so that every system is represented in it."
+              }
+            },
+            {
+              "text": {
+                "en": "Verify that each treatment recorded as complete produced the change it claimed."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm that every risk past its expected completion date carries a reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Write a dated note of the methodology, policy or register changes and what was left alone."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the review note together with every document reissued as a result."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated review note listing the systems checked, the treatments verified, and every change made to the methodology, policy or register"
           },
@@ -494,6 +548,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one entry per incident with its detection time, the raising source and its matrix severity."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who was escalated to on each incident and the time each escalation was made."
+              }
+            },
+            {
+              "text": {
+                "en": "Log every containment and recovery action against the incident with the time it was taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the original and revised severity, with the reason, wherever it changed during handling."
+              }
+            },
+            {
+              "text": {
+                "en": "Add an entry for each incident handled informally so the log population stays complete."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each incident was closed before exporting the log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident log for the period: one row per incident with detection time, source, severity, escalation, actions taken and closure"
           },
@@ -544,6 +630,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Hold a review for each incident closed in the period while its detail is still recoverable."
+              }
+            },
+            {
+              "text": {
+                "en": "Write out the sequence of events, what detected the incident and how long detection took."
+              }
+            },
+            {
+              "text": {
+                "en": "Set down what worked in the response and what did not."
+              }
+            },
+            {
+              "text": {
+                "en": "State the root cause where one was established, or record plainly that none was found."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign a named owner to each corrective action and gather the actions into one list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Post-incident review report per closed incident, with the timeline, the root cause where established, and the corrective actions with named owners"
           },
@@ -686,6 +799,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the crisis team roles covering who chairs, who decides and who speaks to each audience."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign a deputy to every role on the crisis team."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the channel used to convene the team when the usual one is unavailable."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out each audience with its owning role, its channel and the holding message it receives."
+              }
+            },
+            {
+              "text": {
+                "en": "Verify the crisis contact list and record the date the contacts were last verified."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Crisis management procedure with named roles and deputies, the convening channel, the audience-by-audience communication plan, and a dated contact list"
           },
@@ -741,6 +881,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "List every failure, improvisation and assumption the exercise produced as a separate finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide per finding whether the plan, the infrastructure or nothing changes, with the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the continuity, backup and crisis documents in one pass so their versions stay aligned."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-check the essential-service list against what the business considers essential today."
+              }
+            },
+            {
+              "text": {
+                "en": "Write a dated note mapping each finding to its decision, version produced and open-item owner."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated review note mapping each exercise finding to a decision, the document version it produced, and the owner of every item left open"
           },
@@ -842,6 +1009,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the clause set from the supplier assessment process instead of drafting a separate list."
+              }
+            },
+            {
+              "text": {
+                "en": "Amend the standard contract and renewal templates so both carry those security obligations."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the measures maintained, the right to its security evidence, and how it reports incidents."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the clause wording with Legal before either template is issued."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which template version carries which clauses, together with its effective date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Amended supplier contract and renewal templates, versioned and dated, with the security clause set each now carries"
           },
@@ -897,6 +1091,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Request the current audit report, certificate or equivalent from every critical supplier."
+              }
+            },
+            {
+              "text": {
+                "en": "File each report against its register row with the period it covers and its expiry."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the qualifications and exceptions in each report rather than relying on its cover page."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any exception touching the delivered service as a risk on that supplier's row."
+              }
+            },
+            {
+              "text": {
+                "en": "Note against the row each critical supplier that has no independent evidence to offer."
+              }
+            },
+            {
+              "text": {
+                "en": "Build an index linking every collected report to the register row it belongs to."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Third-party audit reports and certificates collected for the period, indexed to supplier register rows, with coverage period, expiry, and any exception recorded"
           },
@@ -911,6 +1137,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare each critical supplier's current assessment and audit evidence with the previous one."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any breach, subcontractor change, or change of service or ownership during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each rating as unchanged, improved or worsened, with the reason for the call."
+              }
+            },
+            {
+              "text": {
+                "en": "Name an owner and the action agreed with the supplier for every worsened rating."
+              }
+            },
+            {
+              "text": {
+                "en": "Compile the review summary so that it covers every critical register row."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Review summary naming each critical supplier, its previous and current rating, the reason for any change, and the owner of every action raised"
           },
@@ -1125,6 +1378,38 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "List the new products, libraries and new versions of either taken into service this period."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the Procurement record shows the supplier evidence considered and the approval recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm with security engineering that each component's known vulnerabilities were checked."
+              }
+            },
+            {
+              "text": {
+                "en": "Verify that every acquired version is pinned and recorded on the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise each gap as a finding with an owner and a decision, writing the reason for any acceptance."
+              }
+            },
+            {
+              "text": {
+                "en": "Compile the review record listing every acquisition checked and its outcome."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Acquisition review record listing every third-party product or library taken into service in the period, what was checked before it entered service, and each finding with its owner"
           },
@@ -1190,6 +1475,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Pick for each policy measure at least one metric that shifts when the measure fails."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the exact data source each metric is read from and the person who reads it."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the value that counts as an acceptable result for every metric defined."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark a metric unmeasurable where no source exists, naming what must be instrumented."
+              }
+            },
+            {
+              "text": {
+                "en": "Compile the metric definition sheet showing the measure each metric belongs to."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Metric definition sheet: measure assessed, metric, data source, reader, acceptable value, and the metrics recorded as unmeasurable"
           },
@@ -1204,6 +1516,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Connect each dashboard panel to the data source recorded on the metric definition sheet."
+              }
+            },
+            {
+              "text": {
+                "en": "Show every metric beside its acceptable value and the time its source was last read."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure stale panels to read as stale instead of presenting an old figure as current."
+              }
+            },
+            {
+              "text": {
+                "en": "Set up a fixed export so a point-in-time copy can be taken at each assessment."
+              }
+            },
+            {
+              "text": {
+                "en": "Take the first dated export and list the metrics the dashboard cannot yet source."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated export of the effectiveness metrics dashboard showing each metric, its current value, its acceptable value and its last refresh time"
           },
@@ -1259,6 +1598,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Open a tracker row for each finding from an audit, an external assessment or a metric breach."
+              }
+            },
+            {
+              "text": {
+                "en": "Record on the row the source, affected measure, owner, agreed remediation and due date."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the status of each row as the remediation work proceeds."
+              }
+            },
+            {
+              "text": {
+                "en": "Record on closure what was produced to show the finding is fixed."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the tracker extract covering the period as the evidence of findings being worked."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Remediation tracker extract for the period: finding, source assessment, affected measure, owner, agreed remediation, due date, status and closure evidence"
           },
@@ -1365,6 +1731,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Write a module or section for each baseline practice showing it as done in this organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a check to each module that the learner can demonstrate the behaviour taught."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each module as applying to all personnel or as specific to certain roles."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the format each module is delivered in."
+              }
+            },
+            {
+              "text": {
+                "en": "Map every module to the practice it covers so any coverage gap shows on the map."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Security awareness training materials plus the coverage map showing which module teaches each baseline hygiene practice"
           },
@@ -1379,6 +1772,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Add the awareness training module to the standard onboarding checklist."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the role responsible for assigning the module to each new starter."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where a new starter's training completion is captured."
+              }
+            },
+            {
+              "text": {
+                "en": "Extend the step to employees, contractors and every other joiner issued an account."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the amended checklist showing the training step and its completion field."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Amended onboarding checklist showing the security awareness training step, the role that assigns it, and where completion is recorded"
           },
@@ -1393,6 +1813,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Assign the scheduled training round and record who it went to and on what date."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture each completion with its date and the module version that was taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Chase every non-completion and record the outcome of the chase on that row."
+              }
+            },
+            {
+              "text": {
+                "en": "Report completion by department so a manager can see a team that is not attending."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the attendance record for the round with the outstanding rows still shown."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Training attendance record for the round: person, department, module and version, assignment date, completion date, and the outstanding non-completions with the chase outcome"
           },
@@ -1443,6 +1890,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the latest simulation results and the incidents recorded since the previous revision."
+              }
+            },
+            {
+              "text": {
+                "en": "Change the material where people fell for a scenario or a behaviour keeps causing incidents."
+              }
+            },
+            {
+              "text": {
+                "en": "Tie each change to the simulation result or incident that prompted it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record explicitly each area where the review concluded that no change was needed."
+              }
+            },
+            {
+              "text": {
+                "en": "Reissue the material under a new version and tell the assigning role which modules changed."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated training revision record: the simulation results and incidents examined, each change with the evidence that prompted it, the no-change conclusions, and the new content version"
           },
@@ -1513,6 +1987,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "State in the policy which data categories must be encrypted at rest and which in transit."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the exception authority, the longest an exception may last, and the document owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Set approved algorithms, minimum key lengths, modes and protocol versions per use in the standard."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the deprecated algorithms explicitly so the later scan has something concrete to find."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the source each value was selected from so it can be revised when that source moves."
+              }
+            },
+            {
+              "text": {
+                "en": "Approve both documents and record each one's version and approval date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved cryptography policy and encryption standards document, versioned and dated: mandatory data categories, exception authority, approved algorithms and minimum key lengths per use, and the explicitly deprecated algorithms"
           },
@@ -1527,6 +2033,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List every key type the encryption standard requires, one row per type."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each type's generation method and generator, storage location and access holders."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the rotation interval and method that security engineering sets for each type."
+              }
+            },
+            {
+              "text": {
+                "en": "Name where each key type's activity is logged so a rotation can be shown without console access."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the provider and the recovery arrangement for any key a service provider holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the versioned procedure to IT Operations, who carry it out."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Issued key management procedure: key type, generation method and owner, storage location and access holders, rotation interval and method, and where each key activity is logged"
           },
@@ -1582,6 +2120,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the scan scope to the endpoints, services and interfaces in the encryption scope register."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure the scan to look for the deprecated and below-minimum values the standard lists."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each hit with the system, the method observed, the value breached and the owning team."
+              }
+            },
+            {
+              "text": {
+                "en": "Pass every hit into the existing remediation route rather than leaving it in the tool."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the scan date and coverage in the period's report, even when nothing was found."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Cryptographic scan report for the period: scope covered and date, each system with the deprecated or weak method observed, the standard value it breaches, and the owning team it was passed to"
           },
@@ -1683,6 +2248,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull issued assets and accounts from the directory, device console and procurement record."
+              }
+            },
+            {
+              "text": {
+                "en": "Create one row per laptop, phone, removable medium, token and account a person holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the holder, the issue date and whether the asset carries organisational data."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep any asset no issuing source accounts for as its own row so the gap stays visible."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the register and record the date the export was taken."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Asset management register export: asset or account, holder, issue date, whether it carries organisational data, and the assets no issuing source accounts for"
           },
@@ -1697,6 +2289,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the security wording for each role from the HR security policy."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the systems the role may access and the data it handles to its job description."
+              }
+            },
+            {
+              "text": {
+                "en": "State what the holder must report, to whom, and which duties continue after leaving the role."
+              }
+            },
+            {
+              "text": {
+                "en": "Add to each role on the sensitive schedule that appointment depends on its named check."
+              }
+            },
+            {
+              "text": {
+                "en": "Have Legal/DPO review the security wording before the descriptions are issued."
+              }
+            },
+            {
+              "text": {
+                "en": "List the roles covered and those still outstanding alongside the amended descriptions."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Amended job descriptions carrying the security responsibilities section, with the list of roles covered and the roles still outstanding"
           },
@@ -1747,6 +2371,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Run the check the schedule names whenever someone is appointed to a security-sensitive role."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the role, the check performed, the performing party and the completion date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision and who took it, filing the result rather than the underlying material."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold only the personal data the decision needed, handled in the way Legal/DPO directs."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the substitute action and who accepted the residual risk for any incomplete check."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Background check register for the period: role appointed to, check performed, performing party, completion date, decision and decision-maker, and any check not completed with the acceptance recorded"
           },
@@ -1848,6 +2499,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the scope-register systems that must enforce multi-factor authentication."
+              }
+            },
+            {
+              "text": {
+                "en": "List the factor types that are accepted and the factor types that are not."
+              }
+            },
+            {
+              "text": {
+                "en": "State the requirements that apply to privileged accounts and to remote access."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how a factor is enrolled and how it is re-enrolled once lost."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who may grant a time-limited exception, how it is recorded and when it is reviewed."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain approval for the MFA policy and note its version and approval date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved MFA policy, versioned and dated: systems in scope, accepted and rejected factor types, the enrolment and recovery route, and the exception authority with its review interval"
           },
@@ -1903,6 +2586,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the approved channels for remote access and for confidential correspondence."
+              }
+            },
+            {
+              "text": {
+                "en": "Restrict remote administration so it is reachable only over the approved path."
+              }
+            },
+            {
+              "text": {
+                "en": "Open the secure transfer route to the people expected to use it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the alternative for recipients who cannot receive encrypted email."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the configuration of each approved channel and attach it to the channel list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "List of approved communication channels with a configuration export for each (remote-access service, encrypted email or secure transfer), and the documented route for recipients who cannot use them"
           },
@@ -1958,6 +2668,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Send each system owner the accounts and privileges held, including privileged and service ones."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the owner's confirm, reduce or revoke decision per account with its date."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply each revocation on the system itself rather than stopping at the sign-off."
+              }
+            },
+            {
+              "text": {
+                "en": "List the accounts no owner claims, flagging every unclaimed privileged account."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture evidence that each revocation was applied alongside the completed recertification."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Completed access recertification: system, account, privilege held, the owner's decision and its date, and evidence that each revocation was applied on the system"
           },
@@ -2023,6 +2760,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one row per authority the entity must report to, naming its jurisdiction."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the CSIRT or competent authority and the submission channel on each row."
+              }
+            },
+            {
+              "text": {
+                "en": "Name any account or credential the channel needs and the internal holder of it."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the out-of-hours route wherever the authority publishes one."
+              }
+            },
+            {
+              "text": {
+                "en": "Verify each row against the authority's own contact page and record the date verified."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Authority contact register: jurisdiction, CSIRT or competent authority, submission channel, credential holder and date last verified"
           },
@@ -2078,6 +2842,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify who sees incidents first across the service desk, on-call engineers and monitoring."
+              }
+            },
+            {
+              "text": {
+                "en": "Brief them from the organisation's criteria document on whom to tell and how quickly."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the session with attendees classifying example incidents and naming their contact."
+              }
+            },
+            {
+              "text": {
+                "en": "Record attendance with names, roles, the date and the criteria version taught."
+              }
+            },
+            {
+              "text": {
+                "en": "File the briefing material used alongside the attendance record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Briefing attendance record with names, roles, date and the version of the significance criteria taught, plus the material used"
           },
@@ -2092,6 +2883,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "File a copy of the early-warning content submitted for each incident classified significant."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the time the entity became aware and the time of submission against the incident."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the portal receipt, reference number or acknowledgement the authority returned."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each incident that met the criteria without an early warning, with the reason."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Early-warning submission log for the period: incident reference, time became aware, time submitted, the submitted content and the authority's receipt"
           },
@@ -2198,6 +3011,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Anchor the procedure's 72-hour window to the time the entity became aware."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign the role that drafts the notification from the field map."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the role that checks the assessment in the draft before it is sent."
+              }
+            },
+            {
+              "text": {
+                "en": "Specify who submits it through the channel held in the authority contact register."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out the fallback when any of those roles is unavailable."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the versioned procedure with a blank template carrying the map's field labels."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Versioned 72-hour notification procedure and its blank template, naming the drafting, checking and submitting roles and their fallbacks"
           },
@@ -2248,6 +3093,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Select every incident where an early warning was sent as the population to record."
+              }
+            },
+            {
+              "text": {
+                "en": "File the notification content that followed the early warning against the incident record."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the submission date and time and the channel the notification went through."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the authority's reference or acknowledgement to the same incident record."
+              }
+            },
+            {
+              "text": {
+                "en": "Note what changed wherever the notification updated or corrected the early warning."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Submitted 72-hour notification per incident, with submission date and time, channel used, and the authority's reference or acknowledgement"
           },
@@ -2313,6 +3185,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Source the rows from the notification log, one per incident with a notification submitted."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the incident reference and the date its notification went in."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the final-report due date at one month after the notification date."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person compiling each final report and record its current state."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a register row as soon as a notification is submitted, not later in the month."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Final-report register: incident reference, notification date, final-report due date, compiler and current state"
           },
@@ -2404,6 +3303,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "File the final report sent for every row on the final-report register."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the submission date against the due date, together with the channel used."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the acknowledgement or reference the authority returned for each report."
+              }
+            },
+            {
+              "text": {
+                "en": "Close a row only once the report, submission date, channel and reference are all present."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep each late row open with the reason and the revised date recorded."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Final reports submitted in the period with due date, submission date, channel and the authority's reference, filed against each register row"
           },
@@ -2505,6 +3431,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Table the risk-management measures in force as a decision item, not an information item."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out for the body the measures, the risks they address and what remains unaddressed."
+              }
+            },
+            {
+              "text": {
+                "en": "Minute the resolution with the version approved, the date and the members present."
+              }
+            },
+            {
+              "text": {
+                "en": "Give the resolution its own minute reference rather than a line in the general minutes."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Board cybersecurity resolution: the version of the measures approved, the date, the members present, and its own minute reference"
           },
@@ -2591,6 +3539,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the operating measures with the version approved in the body's resolution."
+              }
+            },
+            {
+              "text": {
+                "en": "List each measure added, dropped or changed in scope since that approval."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide per difference whether it needs approval or falls under a recorded delegation."
+              }
+            },
+            {
+              "text": {
+                "en": "Take each difference needing approval back to the body as a decision item."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome against the resolution and date the comparison with its version."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Comparison of the measures in force against the approved version, listing each difference and whether it was taken back to the body"
           },
@@ -2620,6 +3595,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the membership from the governance record that names the management body."
+              }
+            },
+            {
+              "text": {
+                "en": "Open one row per member with their role and the date they joined the body."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each member has completed training, when last, and on which syllabus version."
+              }
+            },
+            {
+              "text": {
+                "en": "Refresh the roster whenever the membership of the body changes."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the roster export showing the date it was compiled."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Management training roster: member, role, date joined the body, training completed, date last completed and syllabus version"
           },
@@ -2675,6 +3677,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Add the cybersecurity syllabus to the management body's induction checklist."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who arranges the session and the induction point by which it is expected."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the change with HR, who issue and file the induction checklist."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the amended checklist is the one in use, with no old copy left circulating."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the amended checklist's version and its effective date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Amended management induction checklist showing the cybersecurity training item, who arranges it and when it is expected, with its version and effective date"
           },
@@ -2725,6 +3754,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the training roster against the body's current membership."
+              }
+            },
+            {
+              "text": {
+                "en": "List members with no completed training or with a superseded syllabus version."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason behind each gap on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Put the gap list into the pack for the body's next oversight review."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date each outstanding member is booked to complete the training."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Training gap list for the period: members with no completed training or a superseded syllabus version, the reason, the booked date, and the review it was reported to"
           },
@@ -2754,6 +3810,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the jurisdictions on the entity's list as the population to check."
+              }
+            },
+            {
+              "text": {
+                "en": "Read each jurisdiction's national transposition for a certification requirement."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the sector any certification requirement found applies to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a no-requirement finding together with the source that supports it."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the determination up separately for each jurisdiction."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         },
         {
@@ -2765,6 +3848,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the jurisdiction and the provision consulted for each determination."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the date of the determination and who reached the conclusion."
+              }
+            },
+            {
+              "text": {
+                "en": "List the products or services the requirement would cover if it applies."
+              }
+            },
+            {
+              "text": {
+                "en": "File the determination record so it can be re-argued without fresh research."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         },
         {
@@ -2776,6 +3881,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one certificate record per product the determination brings into scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the scheme, assurance level and certificate identifier for each product."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the issuing body and the expiry date of every certificate held."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the recorded determination instead where no certification requirement applies."
+              }
+            }
+          ],
           "suggestedRole": "Procurement",
           "evidenceHint": {
             "en": "Certificate register for in-scope products (scheme, level, identifier, issuer, expiry), or the recorded determination that no requirement applies"
@@ -2790,6 +3917,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Re-read the provision consulted for each jurisdiction in the determination."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each provision has changed since it was last consulted."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-date the determination entry for every jurisdiction checked."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the re-checked determination with the date and source for each entry."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         }
       ]
@@ -2816,6 +3965,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name each standard relied on for the security measures, with its version."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the scope each named standard is applied to."
+              }
+            },
+            {
+              "text": {
+                "en": "Link the certificate or statement of applicability wherever one exists."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the standards used informally as a design reference to the list."
+              }
+            },
+            {
+              "text": {
+                "en": "File the completed list of standards with their versions and scopes."
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -2827,6 +4003,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each Article 21(2) measure in turn as one row of the mapping."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the standard clause the entity points to for each measure."
+              }
+            },
+            {
+              "text": {
+                "en": "Note where the evidence behind each mapped clause is held."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the measures with no standard behind them as an absence, not a deficiency."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed measure-to-clause mapping."
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         },
         {
@@ -2838,6 +4041,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Check each standard on the list for a newer published version."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify what changed in the clauses the mapping relies on."
+              }
+            },
+            {
+              "text": {
+                "en": "Show the version in force beside the version the entity adopted."
+              }
+            },
+            {
+              "text": {
+                "en": "Note whether each version difference affects any mapped measure."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a decision against each gap shown in the comparison."
+              }
+            }
+          ],
           "suggestedRole": "Security engineering"
         }
       ]
@@ -2864,6 +4094,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the services the entity actually provides, including hosting and reseller arrangements."
+              }
+            },
+            {
+              "text": {
+                "en": "Test each service against the two categories rather than against the self-description."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the conclusion with the services examined and who reached it."
+              }
+            },
+            {
+              "text": {
+                "en": "File a recorded no as the complete outcome where neither category applies."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         },
         {
@@ -2875,6 +4127,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Describe the data collected per domain in the registration database."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how the identity of each registrant is verified."
+              }
+            },
+            {
+              "text": {
+                "en": "State where the registration data is held."
+              }
+            },
+            {
+              "text": {
+                "en": "Note on the task that the determination closes it where the entity is out of scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the data description or, when out of scope, the determination."
+              }
+            }
+          ],
           "suggestedRole": "IT Operations"
         },
         {
@@ -2886,6 +4165,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw a sample of records from the registration database."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each sampled record for the required data and an identifiable registrant."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each incomplete or inaccurate entry with the correction made to it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the standing determination in place of a sample when the entity is out of scope."
+              }
+            }
+          ],
           "suggestedRole": "IT Operations",
           "evidenceHint": {
             "en": "Registration-data accuracy check for the period listing the records sampled and each correction made, or the recorded out-of-scope determination"
@@ -2900,6 +4201,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Note each new hosting, reseller or DNS offering since the last determination."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-run the scope test against the current service catalogue."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-date the determination with the outcome of the re-test."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the services examined in the reviewed determination before attaching it."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         }
       ]
@@ -2926,6 +4249,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the ISACs, CSIRT communities and trust groups actually open to the entity."
+              }
+            },
+            {
+              "text": {
+                "en": "Weigh what the entity could contribute to and consume from each arrangement."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the participation decision with its reasoning and the date."
+              }
+            },
+            {
+              "text": {
+                "en": "File a decision not to participate as a complete outcome rather than a gap."
+              }
+            }
+          ],
           "suggestedRole": "Management"
         },
         {
@@ -2937,6 +4282,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record what may be shared under the arrangement and with whom."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the confidentiality marking that applies to the shared information."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who may release information on the entity's behalf."
+              }
+            },
+            {
+              "text": {
+                "en": "File the notification made to the competent authority about the arrangement."
+              }
+            },
+            {
+              "text": {
+                "en": "Point to the recorded decision as the closing artefact where the entity has not joined."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         },
         {
@@ -2948,6 +4320,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Open one log row per exchange with its date and the counterparty or community."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the direction of each exchange and what was shared or received."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the confidentiality marking and who authorised the release."
+              }
+            },
+            {
+              "text": {
+                "en": "Substitute the standing decision as the artefact where the entity does not take part."
+              }
+            }
+          ],
           "suggestedRole": "Security engineering",
           "evidenceHint": {
             "en": "Information-sharing log for the period (date, counterparty, direction, content, marking, releaser), or the recorded decision not to participate"
@@ -2962,6 +4356,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List what the entity received that changed a control or an investigation."
+              }
+            },
+            {
+              "text": {
+                "en": "Summarise what the entity contributed through the arrangement."
+              }
+            },
+            {
+              "text": {
+                "en": "Check whether the confidentiality terms held during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision to continue, leave or join, with the reasoning behind it."
+              }
+            }
+          ],
           "suggestedRole": "Management"
         }
       ]
@@ -2988,6 +4404,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the Member States where the entity is established or provides services."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the competent authority and the CSIRT for each jurisdiction listed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the national law transposing NIS2 in each jurisdiction."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the source consulted for every entry on the list."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         },
         {
@@ -2999,6 +4437,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the portal, address or form each authority and CSIRT takes reports through."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the language each channel accepts for a report."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify any registration that must exist before a first report can be filed."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed channel record covering every jurisdiction entry."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         },
         {
@@ -3010,6 +4470,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Check every entry against the authority's currently published details."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm that each registration the authority requires is still active."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date checked and the outcome for each entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Correct any changed contact in the same pass and record the correction."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO",
           "evidenceHint": {
             "en": "Contact-point verification record: per jurisdiction, the authority and CSIRT checked, the source consulted, the date, and any correction made"
@@ -3024,6 +4506,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the list against current establishments, services and customers."
+              }
+            },
+            {
+              "text": {
+                "en": "Add any jurisdiction that has come into scope since the last review."
+              }
+            },
+            {
+              "text": {
+                "en": "Note where entering a new Member State may change essential or important status."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the additions and removals on the reviewed list before attaching it."
+              }
+            }
+          ],
           "suggestedRole": "Legal/DPO"
         }
       ]

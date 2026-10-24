@@ -14,7 +14,7 @@
  */
 import type { Role } from '@prisma/client';
 import * as React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
@@ -143,10 +143,12 @@ describe('members page — Change role from the row menu', () => {
         renderAs('ADMIN');
         await settled();
 
-        // The badge seeds the editor with m-analyst's custom role; cancel it.
+        // The badge seeds the editor with m-analyst's custom role; cancel it,
+        // finding Cancel by its name: an icon-only button with no name is a
+        // button a screen reader announces only as "button".
         fireEvent.click(byId('role-badge-m-analyst') as HTMLElement);
         await waitFor(() => expect(byId('custom-role-select-m-analyst')).toHaveAccessibleName('Risk analyst'));
-        fireEvent.click(byId('role-save-m-analyst')?.nextElementSibling as HTMLElement);
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel role change' }));
         await waitFor(() => expect(byId('custom-role-select-m-analyst')).toBeNull());
 
         const picker = await changeRoleFromMenu('m-reviewer');

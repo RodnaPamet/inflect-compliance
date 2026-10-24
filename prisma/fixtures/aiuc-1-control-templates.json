@@ -33,7 +33,7 @@
       "section": "A. Data & Privacy",
       "category": "A. Data & Privacy",
       "sortOrder": 0,
-      "summary": "Customers can read, before they send anything, what happens to the data they give the agent: whether it is used to train or tune models, how it is processed to answer a request, how long it is kept and what they can ask to have done with it. The retention periods the organisation states are carried out by an automated deletion mechanism rather than left to manual clean-up."
+      "summary": "Customers can read, before they send anything, what happens to the data they give the agent: whether it goes into training or fine-tuning, how it is processed to answer a request, how long it is kept and what they can ask to have done with it. The retention periods the organisation states are carried out by an automated deletion mechanism rather than left to manual clean-up."
     },
     {
       "code": "A002",
@@ -377,7 +377,7 @@
       "section": "E. Accountability",
       "category": "E. Accountability",
       "sortOrder": 43,
-      "summary": "A quality management system scaled to the size of the organisation governs its AI systems: quality objectives and metrics, an approach to risk, change management, and issue tracking through to corrective action, with procedures for data management and for communicating with stakeholders where proportionate. Optional under AIUC-1."
+      "summary": "A quality management system, sized to the organisation, governs its AI systems: quality objectives and metrics, an approach to risk, change management, and issue tracking through to corrective action, with procedures for data management and for communicating with stakeholders where proportionate. Optional under AIUC-1."
     },
     {
       "code": "E015",
@@ -2149,7 +2149,7 @@
     {
       "code": "AIUC-A008",
       "title": "Credentials and secrets caught in coding-agent prompts and kept out of generated code and logs",
-      "description": "For an agent that generates code, secrets — API keys, tokens, passwords, private keys, connection strings — are detected when users paste them in and kept out of the code the agent writes; credentials users hand the agent are held in a secret manager and fetched only when a tool call needs them; and detected secrets are sanitised from logs, conversation history and stored artefacts.",
+      "description": "For an agent that generates code, secrets — API keys, tokens, passwords, private keys, connection strings — are detected when users paste them in and kept out of the code the agent writes; credentials users hand the agent are held in a secret manager and fetched only when a tool call needs them; and detected secrets are masked before anything is persisted, whether a log, a transcript or a saved file.",
       "category": "AIUC-1 Data & Privacy",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Security Engineering Lead / AI Platform Lead",
@@ -2157,7 +2157,7 @@
         "A008"
       ],
       "objective": "To stop credentials and secrets leaking through what users paste into a coding agent, the code it writes, the credentials it holds for tools and the records it keeps.",
-      "successCriteria": "Prompts and pasted content are scanned for credentials before inference, and a hit is not persisted, is flagged to the deployer and, where used, warns the user.\nGenerated code refers to environment variables or a secret store, and files holding a detected credential are blocked or flagged before saving.\nUser-provided credentials for connected services sit encrypted in a secret manager, scoped per tool and session, and never enter the model's context.\nLogs, conversation history and stored artefacts are sanitised of credentials before persistence.\nEvery credential flag raised in the period has a recorded outcome.",
+      "successCriteria": "Prompts and pasted content are scanned for credentials before inference, and a hit is not persisted, is flagged to the deployer and, where used, warns the user.\nGenerated code refers to environment variables or a secret store, and files holding a detected credential are blocked or flagged before saving.\nUser-provided credentials for connected services sit encrypted in a secret manager, scoped per tool and session, and never enter the model's context.\nCredentials are masked before any log, transcript or saved file is written.\nEvery credential flag raised in the period has a recorded outcome.",
       "testingMethodology": "Evidence:\nObtain the input-side secrets detection rules, the entropy threshold and the handling configured for a hit.\nObtain the code agent's system prompt section on credentials and the post-generation scanner configuration.\nObtain the secret manager configuration for user-provided credentials, including encryption, access policies and the code that fetches a credential at tool-call time.\nObtain the sanitisation rules for logs, conversation history and artefact stores, and the credential flag register for the period.\n\nAnalysis:\nPaste canary credentials in each supported format into prompts and files, and confirm detection, the handling and the warning.\nSend code requests that need a credential and confirm the output references a variable or secret store; insert a literal and confirm the file write is blocked or flagged.\nInspect the access policies to confirm each credential is readable only by its tool and session, and inspect a sample of model context payloads for credential values.\nSearch a random sample of logs, transcripts and stored artefacts for the canaries and for known credential patterns.\nSample the flag register and confirm each flag was closed with an outcome.\n\nOutput:\nA per-format table of detection and handling results.\nA list of generated files, context payloads, logs or artefacts found carrying a credential.\nA list of credentials readable beyond their tool and session, and of flags left open.",
       "tasks": [
         {
@@ -2280,7 +2280,7 @@
         },
         {
           "title": {
-            "en": "Sanitise detected credentials from logs, conversation history and stored artefacts"
+            "en": "Remove detected credentials from logs, transcripts and saved files before they are written"
           },
           "description": {
             "en": "Where proportionate to what the deployment stores, extend the scrubbing that runs before persistence so credential patterns are masked before logs, conversation history and build artefacts are written, alongside any personal data redaction already in place, and mask secrets in history shown to users or support staff. Attach the sanitisation rules for each store and a masked sample from each."
@@ -10645,7 +10645,7 @@
     {
       "code": "AIUC-E013",
       "title": "AI quality management system sized to the organisation, from objectives to corrective action",
-      "description": "Optional under AIUC-1, and scaled to the size of the organisation. A documented quality management system governs its AI systems: quality objectives and metrics, a risk-management approach matched to each system's risk level, change-management and documentation procedures, and issue tracking that takes defects through root cause to corrective action, plus data-management and stakeholder-communication procedures where proportionate.",
+      "description": "Optional under AIUC-1, and sized to the organisation. A documented quality management system governs its AI systems: quality objectives and metrics, a risk-management approach matched to each system's risk level, change-management and documentation procedures, and issue tracking that takes defects through root cause to corrective action, plus data-management and stakeholder-communication procedures where proportionate.",
       "category": "AIUC-1 Accountability",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Quality Lead / Head of AI Engineering",

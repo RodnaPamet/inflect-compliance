@@ -47,6 +47,7 @@ import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import { graphHeaders } from '@/lib/http/graph-headers';
 import { SSO_HANDOFF_COOKIE, SSO_HANDOFF_PROVIDER_ID } from '@/lib/auth/sso-session';
+import type { SignInMethod } from '@/lib/auth/sso-enforcement';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -109,6 +110,8 @@ declare module 'next-auth' {
             orgMemberships?: OrgMembershipEntry[];
             /** Set when single sign-on opened the session: the only tenant it may reach. */
             ssoTenantId?: string | null;
+            /** How the session was opened; read by "Enforce SSO" (`src/lib/auth/sso-enforcement.ts`). */
+            signInMethod?: SignInMethod | null;
         };
     }
 
@@ -144,6 +147,13 @@ declare module 'next-auth/jwt' {
          * session may reach. See `src/lib/auth/sso-session.ts`.
          */
         ssoTenantId?: string | null;
+        /**
+         * How the session was opened. "Enforce SSO" admits a break-glass
+         * member only on a password sign-in (`src/lib/auth/sso-enforcement.ts`).
+         * Absent on a token minted before this field existed, which reads as
+         * no password sign-in.
+         */
+        signInMethod?: SignInMethod;
         /** EI-1/EI-3 — telemetry flag: the groups claim overflowed (>200 groups)
          *  and was resolved via a Microsoft Graph `/me/memberOf` fetch instead.
          *  The resolved group list itself is consumed in-callback by EI-3's role
@@ -219,10 +229,27 @@ export async function applyMembershipClaims(
         // tenant's membership alone and no organization, so the edge gate
         // refuses everything else. See `src/lib/auth/sso-session.ts`.
         const ssoScope = token.ssoTenantId;
-        const tenantRows = dbUser.tenantMemberships.filter(
+        const scopedRows = dbUser.tenantMemberships.filter(
             (m) => ssoScope == null || m.tenantId === ssoScope,
         );
         const orgRows = ssoScope == null ? dbUser.orgMemberships : [];
+
+        // A workspace that enforces SSO is reachable only by its own SSO, or
+        // by a break-glass member signed in with a password — so a session
+        // it does not admit carries no claim to it, and the edge refuses it.
+        const { enforcementAdmits, tenantsEnforcingSso } = await import('@/lib/auth/sso-enforcement');
+        const enforcing = await tenantsEnforcingSso(scopedRows.map((m) => m.tenantId));
+        const tenantRows = scopedRows.filter(
+            (m) =>
+                !enforcing.has(m.tenantId) ||
+                enforcementAdmits({
+                    tenantId: m.tenantId,
+                    ssoTenantId: ssoScope,
+                    signInMethod: token.signInMethod,
+                    role: m.role,
+                    hasPassword: !!dbUser.passwordHash,
+                }),
+        );
 
         // Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS so the
         // cookie stays bounded; `membershipsTruncated` flags the rare
@@ -591,6 +618,21 @@ export const authOptions: NextAuthOptions = {
             // scoped to that tenant in the `jwt` callback.
             if (account.provider === SSO_HANDOFF_PROVIDER_ID) return true;
 
+            // "Enforce SSO": a sign-in that enforcement would leave with no
+            // workspace is sent to that workspace's SSO instead of an empty
+            // "no workspace" page (src/lib/auth/sso-enforcement.ts). Asked
+            // after any invite this sign-in redeems, which can add one.
+            const ssoRequired = async (userId: string | undefined): Promise<string | true> => {
+                if (!userId) return true;
+                const { signInMethodOf, workspaceRequiringSso } = await import('@/lib/auth/sso-enforcement');
+                const slug = await workspaceRequiringSso(userId, signInMethodOf(account.provider));
+                // The workspace rides inside the code: for a password sign-in,
+                // next-auth's client drops the URL and keeps only `error`.
+                return slug
+                    ? `/login?${new URLSearchParams({ error: `sso_required:${slug}` }).toString()}`
+                    : true;
+            };
+
             // R-3: defensive email-verified check for OAuth.
             if (
                 account.provider !== 'credentials' &&
@@ -657,7 +699,7 @@ export const authOptions: NextAuthOptions = {
                         existingUser.id,
                         user.email,
                     );
-                    return true;
+                    return ssoRequired(existingUser.id);
                 }
             }
 
@@ -692,7 +734,7 @@ export const authOptions: NextAuthOptions = {
             // would wrongly count every sign-in. Needs a dedicated first-login
             // detector (e.g. a User.firstSignedInAt sentinel set in createUser +
             // read here) — a schema/behaviour change out of scope for this PR.
-            return true;
+            return ssoRequired(user.id);
         },
 
         /**
@@ -711,6 +753,9 @@ export const authOptions: NextAuthOptions = {
                     }
                     token.ssoTenantId = user.ssoTenantId;
                 }
+                // Before the claims too: "Enforce SSO" reads it.
+                const { signInMethodOf } = await import('@/lib/auth/sso-enforcement');
+                token.signInMethod = signInMethodOf(account.provider);
                 await applyMembershipClaims(token, user.id);
 
                 if (account.provider !== 'credentials') {
@@ -969,6 +1014,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
                 session.user.ssoTenantId = token.ssoTenantId ?? null;
+                session.user.signInMethod = token.signInMethod ?? null;
             }
             return session;
         },

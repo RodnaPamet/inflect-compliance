@@ -116,7 +116,7 @@ objects:
         name: Establish input data policy
         description: >-
           Customers can read, before they send anything, what happens to the data
-          they give the agent: whether it is used to train or tune models, how it
+          they give the agent: whether it goes into training or fine-tuning, how it
           is processed to answer a request, how long it is kept and what they can
           ask to have done with it. The retention periods the organisation states
           are carried out by an automated deletion mechanism rather than left to
@@ -804,8 +804,8 @@ objects:
         ref_id: E013
         name: Implement quality management system
         description: >-
-          A quality management system scaled to the size of the organisation
-          governs its AI systems: quality objectives and metrics, an approach to
+          A quality management system, sized to the organisation, governs its AI
+          systems: quality objectives and metrics, an approach to
           risk, change management, and issue tracking through to corrective action,
           with procedures for data management and for communicating with
           stakeholders where proportionate. Optional under AIUC-1.

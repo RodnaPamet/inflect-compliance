@@ -765,6 +765,8 @@ export default function MembersAdminPage() {
                                         size="xs"
                                         onClick={() => setEditingRoleId(null)}
                                         icon={<XCircle className="w-3.5 h-3.5" />}
+                                        id={`role-cancel-${m.id}`}
+                                        aria-label={t('members.cancelRoleChange')}
                                     />
                                 </div>
                                 {customRoleBlocksPromotion && !legacyCustomRole && (

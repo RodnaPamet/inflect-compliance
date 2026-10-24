@@ -48,6 +48,7 @@ export default async function TenantLayout({
             tenantSlug,
             userId: session.user.id,
             ssoTenantId: session.user.ssoTenantId,
+            signInMethod: session.user.signInMethod,
         });
     } catch {
         notFound();
