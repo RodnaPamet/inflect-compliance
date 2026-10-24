@@ -273,9 +273,16 @@ describe('agentic cross-framework mappings — the sets exist and are complete',
         const targets = new Set(set!.mapping_entries.map((e) => e.target_ref));
         expect([...targets].sort()).toEqual([...ASSESSABLE_CODES['OWASP-ASI-TOP10']].sort());
         expect(set!.mapping_entries.length).toBeGreaterThanOrEqual(30);
-        // More than one strength: a file where every edge is RELATED would pass
-        // the coverage check above while making no coverage claim at all.
-        expect(new Set(set!.mapping_entries.map((e) => e.strength)).size).toBeGreaterThanOrEqual(3);
+        // Real coverage-bearing edges: a file where every edge is RELATED would
+        // pass the coverage check above while making no coverage claim at all.
+        // This used to ask for three distinct strengths, which only a SUBSET
+        // could supply — and every SUBSET here failed the containment rule
+        // (see the symmetry block below), so the count is now of the edges
+        // that are partial coverage, which is the thing the claim rests on.
+        // At least a third of the routes in: below that the map is mostly
+        // "where the control would live", which the gap layer never counts.
+        const coverageBearing = set!.mapping_entries.filter((e) => e.strength !== 'RELATED');
+        expect(coverageBearing.length * 3).toBeGreaterThanOrEqual(set!.mapping_entries.length);
     });
 
     it('the AIUC-1 → OWASP ASI map bears on every one of the ten risks', () => {
@@ -359,19 +366,30 @@ describe('agentic cross-framework mappings — symmetry', () => {
 
     it('inverts SUBSET ⇄ SUPERSET rather than copying the strength across', () => {
         // A transpose that simply copied strengths would satisfy the check
-        // above for every self-inverse strength, so the directional pair has to
+        // above for every self-inverse strength, so a directional edge has to
         // be present and observed somewhere in the shipped data.
-        const forward = setsByPair.get('ISO42001-2023→OWASP-ASI-TOP10')!;
-        const reverse = setsByPair.get('OWASP-ASI-TOP10→ISO42001-2023')!;
+        //
+        // Directional edges are rare on purpose. The reverse of a SUBSET is a
+        // SUPERSET, which gap analysis reads as COVERED, so either is written
+        // only where meeting the broader requirement, as written, necessarily
+        // meets the narrower one. On 2026-10-24 eighteen of the nineteen such
+        // edges in these sets failed that bar and became INTERSECT; the one
+        // that holds is ASI07 → MGF-3.6, whose four named failures are exactly
+        // what MGF-3.6 requires closed. Hence a search across every set
+        // rather than one pinned pair.
+        const directional = agenticSets.flatMap((set) =>
+            set.mapping_entries
+                .filter((e) => e.strength === 'SUBSET' || e.strength === 'SUPERSET')
+                .map((entry) => ({ set, entry })),
+        );
+        expect(directional.length).toBeGreaterThan(0);
 
-        const subsets = forward.mapping_entries.filter((e) => e.strength === 'SUBSET');
-        expect(subsets.length).toBeGreaterThan(0);
-
-        for (const entry of subsets) {
+        for (const { set, entry } of directional) {
+            const reverse = setsByPair.get(`${set.target_framework_ref}→${set.source_framework_ref}`)!;
             const mirrored = reverse.mapping_entries.find(
                 (e) => e.source_ref === entry.target_ref && e.target_ref === entry.source_ref,
             );
-            expect(mirrored?.strength).toBe('SUPERSET');
+            expect(mirrored?.strength).toBe(entry.strength === 'SUBSET' ? 'SUPERSET' : 'SUBSET');
         }
     });
 });
