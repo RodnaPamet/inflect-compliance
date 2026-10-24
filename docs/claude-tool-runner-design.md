@@ -168,7 +168,7 @@ step with its own preserved-thinking checks.
 
 - `package.json` gains `@anthropic-ai/sdk` 1.x as a **direct** dependency. It
   sits beside pi-ai's pinned 0.129.0, and `docs/dependency-risk-review.md`
-  records both. Step 1 checks whether 1.x still ships a `require` condition. If
+  records both. Step 2a checks whether 1.x still ships a `require` condition. If
   it does, the dynamic-import boundary Flue needs (`flue/driver.ts`) is not
   needed here.
 - `AGENT_DRIVERS` gains `'tool-runner'`, with the env switch
@@ -177,7 +177,7 @@ step with its own preserved-thinking checks.
   deploys.
 - `src/lib/agentic/tool-runner/` holds `driver.ts`, `execute.ts`,
   `params.ts`, `client.ts` and `tools.ts`, over the engine-neutral tool core
-  from shared step 1.
+  from Step 0a.
 - `docs/sub-processors.md`: the Anthropic row's agent-run purpose names this
   engine and the "tenant-authored agent instructions" category, the same entry
   the Agent SDK design adds.
@@ -194,8 +194,8 @@ the API drops, unbilled, any block a model cannot read.
 ## Decisions for the owner
 
 1. **Make this the builder's first engine.** Recommended, in place of the Agent
-   SDK, for the reasons in the table at the top. The Agent SDK design's step 0
-   becomes a confirmation spike, not an open choice.
+   SDK, for the reasons in the table at the top. The Agent SDK design's Step 4a
+   becomes a confirmation spike, run only if a profile needs that engine.
 2. **Serial tool dispatch in v1.** `disable_parallel_tool_use` costs extra turns
    on fan-out-heavy work. A per-run mutex inside `run` keeps the ledger exact
    and allows parallel requests, at the price of a lock to get right. v1 takes
@@ -211,19 +211,315 @@ the API drops, unbilled, any block a model cannot read.
 
 ## Roadmap (future direction)
 
-Shared steps 1–4 are defined in `docs/claude-agent-sdk-design.md` (engine-neutral
-tool core and conformance suite, agent profile, builder UI, engine settings
-page). This engine's own steps:
+This document owns **Phase 2** of the plan for the three Claude agent designs.
+How to use the plan, the phase map, the **global rules**, the **definition of
+done** and the operational-evidence table are in the Roadmap of
+`docs/claude-agent-sdk-design.md`. They bind every step here, and the prompts
+point there rather than restating them. Phase 2 starts when Phase 1's hardening
+step (1H) is merged.
 
-1. **Dependency and client.** Add `@anthropic-ai/sdk` 1.x; `clientForRun` with
-   the workspace header; a guard that no other module constructs an Anthropic
-   client for agent runs.
-2. **The driver.** Two-deploy `TOOL_RUNNER` enum; env switch; `tool-runner/`
-   execute loop; `lockedParams` and its guard. The conformance suite must be
-   green on the faux client before `DRIVER_IMPLEMENTED` flips.
-3. **Skills on this engine.** The `activate_skill` tool over the existing mount
-   gate and hash pins.
-4. **Delegation.** The nested-runner tool, bounded by the existing fan-out policy,
-   after the owner reopens the depth-1 decision for this engine.
-5. **Assistant follow-up, separate issue.** Carry `thinking` blocks through
-   `tool-loop.ts` turns.
+| Step | Title | Depends on | Change class |
+| --- | --- | --- | --- |
+| 2a | Dependency and per-run client | 1H | Significant — new runtime dependency |
+| 2b | Tool Runner driver, reader-only | 2a | Significant — enum value, new engine |
+| 2c | Turn the Tool Runner engine on | 2b deployed | Significant — enables an engine, new data category at a sub-processor |
+| 2d | Skills on the Tool Runner engine | 2c | Standard |
+| 2H | Phase 2 hardening | 2a–2d | Standard |
+| 2x | Carry thinking blocks through the assistant's loop | — (independent) | Standard |
+
+### Phase 2 — Tool Runner engine
+
+The first engine that runs the agents customers build. It is in-process, uses one
+API client per run, and sends every tool call through the funnel.
+
+#### Step 2a — Dependency and per-run client
+
+**Goal.** Add the Anthropic SDK as a direct dependency, and make the only way to
+get a client for an agent run a function that chooses it from the run's
+residency.
+
+```text
+You are implementing Step 2a of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, then this document's "What the Tool Runner is"
+and "What changes in Inflect's code". Read docs/dependency-governance.md,
+docs/dependency-risk-review.md, src/lib/agentic/flue/model-selection.ts and
+src/lib/ai/anthropic-workspace.ts. Phase 1 is merged.
+
+Goal: @anthropic-ai/sdk 1.x in dependencies, and clientForRun as the single
+constructor of Anthropic clients for agent runs.
+
+1. Install @anthropic-ai/sdk at the current 1.x release with a normal npm
+   install, then:
+   - follow the dependency checklist in the pull-request template;
+   - record it in docs/dependency-risk-review.md, with its REVIEWED guard entry if
+     the review process requires one;
+   - note that pi-ai keeps its own pinned 0.129.0 copy.
+   Check whether the package resolves under the node jest project's require. If
+   it does not, put the engine behind a dynamic-import boundary the way
+   flue/driver.ts does, and say so.
+2. src/lib/agentic/tool-runner/client.ts exports clientForRun(selection), built
+   on the same residency terms flue/model-selection.ts reads:
+   - EXTERNAL → new Anthropic({ apiKey, defaultHeaders:
+     anthropicWorkspaceHeaders(...) }), built per call, never cached across
+     tenants;
+   - LOCAL_ONLY → refused with a named reason (TOOL_RUNNER_LOCAL_ONLY_UNSERVED),
+     unless an Anthropic-compatible local endpoint is configured, which is
+     not the case today;
+   - no key configured → refused with a named reason.
+3. Model ids per tier come from configuration with defaults: claude-sonnet-5-5
+   for the balanced tier and claude-opus-5-5 for the deep tier. Triage every new
+   env var per global rule 6.
+4. A structural guard: no file under src/ outside tool-runner/client.ts
+   constructs an Anthropic client from this package, and none calls a
+   process-wide provider setter. Prefer an ESLint no-restricted-syntax selector
+   (eslint-rules/README.md).
+
+Tests: each residency branch, including the refusals; two concurrent calls for
+two tenants get two clients with their own headers; the guard catches a planted
+construction.
+
+Deliver per the Definition of done. This step is Significant.
+```
+
+**Hardening**
+
+- [ ] The dependency checklist in the pull-request body is complete, and `npm audit` (moderate+) and the security gate stay green.
+- [ ] A `LOCAL_ONLY` tenant is refused with a named reason and no client is built: the test asserts the constructor was never called.
+- [ ] Two concurrent runs for two tenants never share a client instance (test).
+- [ ] The guard against a second construction site is proven by planting one.
+- [ ] Every new env var is triaged, and `sub-processor-coverage` stays green.
+
+**Exit.** An agent run can obtain an Anthropic client only through `clientForRun`, chosen by the run's residency.
+
+#### Step 2b — Tool Runner driver, reader-only
+
+**Goal.** Build the complete driver behind `DRIVER_IMPLEMENTED = false`, and ship
+the `TOOL_RUNNER` enum value with no writer.
+
+```text
+You are implementing Step 2b of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, then this document's sections "How it would sit
+in Inflect", "The locked parameters" and "Every Inflect control, mapped". Read
+src/lib/agentic/flue/driver.ts, flue/execute.ts, flue/model-decision.ts,
+src/lib/agentic/drivers/ and the Step 0b conformance suite. Step 2a is merged.
+
+Goal: a tool-runner driver that passes the conformance suite and that the gate
+cannot select yet.
+
+1. Add 'tool-runner' to AGENT_DRIVERS, classify it in isReasoningEngine, add the
+   env switch AGENT_DRIVER_TOOL_RUNNER (opt-in, read like AGENT_DRIVER_FLUE),
+   and set DRIVER_IMPLEMENTED to false for it. Add TOOL_RUNNER to
+   AgentDriverMode as a reader-only value: coerceStoredDriverMode understands
+   it, and no writer accepts it.
+2. src/lib/agentic/tool-runner/:
+   - driver.ts plans or refuses before execution;
+   - params.ts holds lockedParams, exactly as the design's table:
+     thread: false; tool_choice auto with disable_parallel_tool_use; adaptive
+     thinking with display 'summarized'; max_iterations from resolveRunCaps;
+     the fallbacks parameter on the first-party client; no server tools; no
+     mcp_servers;
+   - tools.ts makes one betaTool per resolved tool over the engine-neutral core.
+     Each run validates with the MCP tool's argsSchema, then calls
+     runGuardedTool, then charges the run budget and writes the TOOL_CALL step.
+   - execute.ts holds the loop. For each yielded message:
+     - the kill-switch check, then abort and haltRunAtKill;
+     - a MODEL_CALL step and an AiDecisionLog row, with the digest of
+       runner.params;
+     - guardEgress on the message's text, then haltRunAtGuard on block or flag;
+     - refusal, max_tokens and context-exceeded stop reasons settled with named
+       reasons.
+3. The system prompt is Inflect's fixed preamble plus the pinned profile
+   instructions, fenced and labelled as the operator's text, with a cache
+   breakpoint after it.
+4. A guard pins lockedParams value by value. Removing thread: false or
+   disable_parallel_tool_use, or adding a server tool, fails it.
+5. Run the conformance suite against a faux client, using the client's fetch
+   override, so no network is involved.
+
+Deliver per the Definition of done. This step is Significant.
+```
+
+**Hardening**
+
+- [ ] The conformance suite passes, and every scenario is mutation-proved against this driver.
+- [ ] Every outgoing request carries `thread: false`, asserted on the request body the faux transport receives, not on the options object.
+- [ ] Tool calls are dispatched one at a time: the ledger's `TOOL_CALL` sequence matches call order under a faux model that asks for three tools in one turn.
+- [ ] Each yielded message produces exactly one `MODEL_CALL` step and one decision row whose digest matches `runner.params` (test).
+- [ ] A refusal stop reason settles the run with a named reason and runs no tool from that turn.
+- [ ] With `DRIVER_IMPLEMENTED` false, no input selects this engine (`agent-driver-gate` grid extended), and a stored `TOOL_RUNNER` reads as that mode while no writer accepts it.
+- [ ] The rollback plan and risk assessment are in the pull request.
+
+**Exit.** The driver exists, is conformance-proven, and cannot run.
+
+#### Step 2c — Turn the Tool Runner engine on
+
+**Goal.** One deploy after 2b, let a tenant choose the engine and run a profile on it.
+
+```text
+You are implementing Step 2c of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, and this document's "Decisions for the owner".
+Step 2b is merged AND deployed to production. Before writing the enum value
+anywhere, confirm that the deployed image carries it, and record how you
+confirmed it.
+
+Goal: DRIVER_IMPLEMENTED['tool-runner'] is true, the engine settings page (0c)
+offers it, and the builder's Test run works on it.
+
+1. Flip the flag in its own commit, with nothing else in it.
+2. setAgentDriverSetting and the PUT schema accept TOOL_RUNNER. The settings page
+   offers it with one sentence on what it is and "Powered by Claude".
+3. The builder's Test run button (1b) is enabled when the tenant's engine runs
+   profiles.
+4. docs/sub-processors.md: the Anthropic row names this engine for agent runs and
+   adds the data category "tenant-authored agent instructions", in this diff.
+   Check "Decisions for the owner" for whether naming the category is enough. If
+   the owner asked for a notice window, stop: this step waits for it.
+
+Tests: an E2E spec on isolatedTenant that selects the engine, approves a profile
+as a second user, starts a Test run and sees it complete in the Runs tab (E2E
+mode uses the faux client); the gate grid's affirmative case.
+
+Deliver per the Definition of done. This step is Significant.
+```
+
+**Hardening**
+
+- [ ] The flag flip is its own commit and reverts on its own.
+- [ ] The pull request says how the deployed image was confirmed to carry `TOOL_RUNNER` before this merged.
+- [ ] `docs/sub-processors.md` changes in the same diff, and its owner-decision check is quoted in the pull request.
+- [ ] The E2E Test run completes, is read-only (no proposal rows), and shows `MODEL_CALL` and `TOOL_CALL` steps.
+
+**Exit.** A tenant can choose the Tool Runner engine and test-run an approved profile on it.
+
+#### Step 2d — Skills on the Tool Runner engine
+
+**Goal.** A profile's skills reach the model with progressive disclosure through an
+Inflect-owned tool, under the existing mount gate.
+
+```text
+You are implementing Step 2d of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, the "Skills" paragraph of CLAUDE.md's "Agentic
+AI for IAM roadmap" section, docs/agent-skill-standard.md, and
+src/lib/agentic/flue/skills/ (mount-gate.ts, resolve.ts, tenant-mount.ts).
+Step 2c is merged.
+
+Goal: an activate_skill tool on the Tool Runner engine that serves the run's
+pinned skills, and nothing else.
+
+1. Resolve and pin skills exactly as startWorkflowRun already does for a
+   reasoning engine, through the mount gate. Do not write a second resolver.
+2. Put the catalogue (name and description of each mounted skill) in the system
+   prompt, after the fixed preamble and before the instructions, within the
+   per-run catalogue budget.
+3. activate_skill(name) returns the pinned skill's instructions after
+   re-checking its hash. An unmounted or refused name is answered with an
+   is_error result naming the reason. It is reported as an engine-supplied tool,
+   like flue/runtime-tools.ts.
+4. Add the scenario "a refused skill never reaches the model" to the conformance
+   suite, and pass it here and on Flue.
+
+Deliver per the Definition of done.
+```
+
+**Hardening**
+
+- [ ] A skill whose decrypted text no longer matches its pinned hash is refused at activation (test).
+- [ ] An unmounted skill name returns `is_error` and never another tenant's skill (two-tenant test).
+- [ ] The catalogue stays within the per-run budget, and exceeding it refuses the run before the row exists.
+- [ ] `activate_skill` appears in the run's reported tool set as engine-supplied.
+
+**Exit.** Skills work on the Tool Runner engine through the same gate and pins as on Flue.
+
+#### Step 2H — Phase 2 hardening
+
+**Goal.** Prove the engine in production, under stop conditions, and against the
+data rules it was built on.
+
+```text
+You are implementing Step 2H of the roadmap in docs/claude-tool-runner-design.md:
+the hardening step for Phase 2. Steps 2a–2d are merged. Read the global rules,
+definition of done and "Operational evidence" in the Roadmap of
+docs/claude-agent-sdk-design.md, and all of Phase 2 here.
+
+Goal: evidence that the engine behaves in production as the conformance suite
+says it does.
+
+1. Adversarial read of 2a–2d together. At least:
+   - Can a run's client outlive the run?
+   - Can two tool calls run concurrently despite serial dispatch, for example
+     when a fallback model ignores disable_parallel_tool_use?
+   - Can a fallback model's message skip the guard?
+   - Can the system prompt carry another version's instructions?
+   - Is thread: false on every path, including retries?
+   Fix what you find, each with a test.
+2. In the proving tenant, on this engine:
+   - run an approved profile to completion;
+   - run it again with the kill switch engaged mid-run, using the drill agent;
+   - run it as a LOCAL_ONLY tenant and see the named refusal.
+   Record each run id, its MODEL_CALL and TOOL_CALL counts, its decision row
+   count, the tokens charged and the halt or refusal reason.
+3. Confirm that no conversation was stored at Anthropic. Record the request
+   bodies' thread value from the engine's debug log for one run (no prompt
+   text), and state what was checked.
+4. Update this document's Current state, the Phase 2 evidence row in the Agent
+   SDK document, and CLAUDE.md's "Claude agent engines" section with the engine's
+   invariants (thread: false, serial dispatch, clientForRun only).
+
+Deliver per the Definition of done.
+```
+
+**Hardening**
+
+- [ ] Each adversarial question is answered in the implementation note, with a test for each defect found.
+- [ ] The kill-switch drill halted a production run before its next model call, recorded by run id and reason.
+- [ ] The `LOCAL_ONLY` refusal was observed in production with its named reason.
+- [ ] `thread: false` was observed on a production request, with the method recorded.
+- [ ] The evidence row is filled from production, not from a test.
+
+**Exit.** The Tool Runner engine has run customer-built agents in production, stopped when told to, and stored nothing at Anthropic.
+
+#### Step 2x — Carry thinking blocks through the assistant's loop
+
+Independent of the phases. It can run at any time.
+
+**Goal.** Stop discarding the model's thinking blocks between turns of the
+assistant's own tool loop.
+
+```text
+You are implementing Step 2x of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, the section "What it does to the assistant" in
+this document, and src/app-layer/ai/assistant/tool-loop.ts and turn-provider.ts
+in full. Read the claude-api skill's guidance on passing thinking blocks back
+unchanged (shared/model-migration.md, preserved thinking) before changing
+anything.
+
+Goal: on the Anthropic provider, an assistant turn's thinking blocks are passed
+back to the next request unchanged and in order. The other providers are
+unaffected.
+
+1. The loop is provider-neutral, and that is an owner decision (#3808). Keep it:
+   carry the blocks as an opaque provider-owned part of the turn, which only the
+   Anthropic provider reads and writes.
+2. History stays append-only: never edit, reorder or drop an earlier block.
+3. No thinking text is logged or audited, and none reaches the assistant's
+   answer.
+
+Tests: a two-turn conversation on a faux Anthropic transport, where the second
+request carries the first response's thinking blocks byte for byte; the other
+providers' request bodies are unchanged.
+
+Deliver per the Definition of done.
+```
+
+**Hardening**
+
+- [ ] The second request's thinking blocks equal the first response's, byte for byte (test).
+- [ ] The openrouter, local and stub providers' request bodies are unchanged (snapshot of each).
+- [ ] No thinking text appears in a log line, an audit row or the answer (test with a sentinel string).
+
+**Exit.** The assistant keeps the model's reasoning between tool calls on the Anthropic provider.
