@@ -22,6 +22,7 @@ import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { listTemplates } from '@/app-layer/usecases/framework/coverage';
 import { previewPackInstall, installPack } from '@/app-layer/usecases/framework/install';
 import { listControlTemplates } from '@/app-layer/usecases/control/mappings';
+import { GENERIC_TEMPLATE_TASKS } from '../../prisma/generic-template-tasks';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -33,7 +34,8 @@ const FRAMEWORK_KEY = `FW-${TAG}`;
 const PACK_KEY = `PACK-${TAG}`;
 const TEMPLATE_CODE = `${TAG}-T1`;
 const LIVE_TITLE = 'Declare the authority limits of each agentic deployment';
-const RETIRED_TITLE = 'Document procedure or policy';
+// One of the generic five, as production holds it: deprecated beside the authored tasks.
+const RETIRED_TITLE = GENERIC_TEMPLATE_TASKS[1].title;
 
 let userId = '';
 let frameworkId = '';
