@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     getFramework, getFrameworkRequirements, listFrameworkPacks,
-    installPack, computeCoverage, previewPackInstall,
+    installPack, computeCoverage, computeInheritedCoverage, previewPackInstall,
     listTemplates, installSingleTemplate, bulkMapControls,
     bulkInstallTemplates, exportCoverageData,
     computeRequirementsDiff, exportReadinessReport,
@@ -62,6 +62,9 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     }
     if (action === 'coverage') {
         return jsonResponse(await computeCoverage(ctx, params.frameworkKey, version));
+    }
+    if (action === 'inherited-coverage') {
+        return jsonResponse(await computeInheritedCoverage(ctx, params.frameworkKey));
     }
     if (action === 'preview') {
         const packKey = url.searchParams.get('packKey');

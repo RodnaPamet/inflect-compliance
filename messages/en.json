@@ -7441,7 +7441,32 @@
       "coverageBySection": "Coverage by Section",
       "unmappedRequirements": "Unmapped Requirements ({count})",
       "reorderRestricted": "Reordering is restricted to OWNER / ADMIN roles.",
-      "packsEmpty": "No packs available for this framework."
+      "packsEmpty": "No packs available for this framework.",
+      "inherited": {
+        "heading": "Coverage from your other frameworks",
+        "description": "Controls you hold on other frameworks that reach this framework's requirements through a curated mapping. It is a starting point, not coverage, and it never counts toward the figures above: link a control here to cover a requirement.",
+        "countPartial": "Partially covered by inheritance",
+        "countReview": "Related only",
+        "countNone": "Not reached",
+        "reachedFrom": "Reached from",
+        "sourceCount": "{name} · {count, plural, one {# requirement} other {# requirements}}",
+        "statusPartial": "Partially covered",
+        "statusReview": "Review needed",
+        "strength": {
+          "equal": "Equivalent",
+          "superset": "Broader",
+          "subset": "Narrower",
+          "intersect": "Overlapping",
+          "related": "Related"
+        },
+        "emptyTitle": "No other framework reaches this one yet",
+        "emptyDescription": "When you hold controls on a framework that is mapped to this one, the requirements they bear on appear here.",
+        "allDirect": "Every requirement your other frameworks reach already has a control of its own.",
+        "truncated": "Built from part of the mapping data, so these counts are lower bounds.",
+        "errorTitle": "Couldn't load inherited coverage",
+        "errorLoad": "Try again in a moment.",
+        "retry": "Retry"
+      }
     },
     "diff": {
       "loading": "Loading diff…",
