@@ -3,12 +3,26 @@ type FilterOperator = 'IS' | 'IS_NOT' | 'IS_ONE_OF' | 'IS_NOT_ONE_OF';
 import { LucideIcon } from "lucide-react";
 import { ComponentType, ReactNode, SVGProps } from "react";
 
+/**
+ * What a filter may use as its icon.
+ *
+ * EXPORTED since #3358. It was declared here and used by `Filter` and
+ * `FilterOption` but never exported, so a page author had no name for the type
+ * their icon had to satisfy — and `FilterDefInput` narrowed it to `LucideIcon`,
+ * which combined with `tests/guards/no-lucide.test.ts` (no NEW lucide import
+ * sites) meant a new list page could not express a filter icon at all.
+ *
+ * The RENDERER always accepted all three: `filter-list.tsx` branches on
+ * `isReactNode(filter.icon)` at three sites and element-constructs otherwise.
+ * So widening the input is not a new capability, it is removing a narrowing
+ * that never matched what the component could draw.
+ */
 type FilterIcon =
   | LucideIcon
   | ReactNode
   | ComponentType<SVGProps<SVGSVGElement>>;
 
-export type { FilterOperator };
+export type { FilterIcon, FilterOperator };
 
 /**
  * Reset behavior of a filter when the user clears all filters or returns to
