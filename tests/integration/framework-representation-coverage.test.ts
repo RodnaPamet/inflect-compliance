@@ -462,10 +462,10 @@ describeFn('coverage across the two representations of one framework', () => {
         const result = await performGapAnalysis({
             sourceFrameworkKey: 'SOC2-2017',
             targetFrameworkKey: 'ISO27001',
-            // `FrameworkRequirement` has no `assessable` column, so the
-            // default filter is a Prisma validation error rather than a
-            // narrower query. Out of scope here; see the PR notes.
-            includeNonAssessable: true,
+            // The DEFAULT path, on purpose. It filtered on an `assessable`
+            // column `FrameworkRequirement` does not have, so every call
+            // without an opt-out was a Prisma validation error; this test
+            // used to pass that opt-out, and now proves the default runs.
             maxDepth: 1,
         });
 

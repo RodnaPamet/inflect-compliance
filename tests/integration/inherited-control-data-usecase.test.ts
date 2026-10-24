@@ -28,6 +28,7 @@ import {
     getPolicyInheritedMappings,
 } from '@/app-layer/usecases/inherited-control-data';
 import { getPolicyTraceability } from '@/app-layer/usecases/traceability';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -122,6 +123,11 @@ describeFn('inherited-control-data usecases (real DB)', () => {
         await prisma.asset.deleteMany({ where: { tenantId: TENANT } });
         await prisma.risk.deleteMany({ where: { tenantId: TENANT } });
         if (_userId) await prisma.user.deleteMany({ where: { id: _userId } });
+        // AuditLog_tenantId_fkey is ON DELETE RESTRICT and the trail is
+        // immutable, so any audit row written for this tenant blocks the delete
+        // below unless it is cleared first, through the helper that lifts the
+        // immutability trigger.
+        await deleteAuditRowsForTenants(prisma, [TENANT]);
         await prisma.tenant.deleteMany({ where: { id: TENANT } });
         await prisma.$disconnect();
     });

@@ -884,8 +884,12 @@ The round trip is BOUND to the browser that started it (`src/lib/auth/sso-flow.t
 cookie and sends the IdP only a random id as OIDC `state` / SAML `RelayState`,
 and the callback refuses without that cookie. `/start` also refuses a
 cross-site initiation (`Sec-Fetch-Site`). Never put flow contents back in the
-URL: that is login CSRF, and a verifier beside its code is no PKCE.
-The OIDC ID token is VERIFIED, not decoded (`verifyIdToken` in
+URL: that is login CSRF, and a verifier beside its code is no PKCE. The
+sign-in page starts SSO by WORKSPACE (`/api/auth/sso/discover`, `SsoSignIn`),
+never by email domain: `emailDomains` are unverified, so domain discovery would
+let any workspace claim anyone's domain. `/login?sso=<slug>` is the shareable link.
+
+**The OIDC ID token is VERIFIED, not decoded** (`verifyIdToken` in
 `src/lib/security/oidc-client.ts`, via `jose`): signature by a key at the
 IdP's `jwks_uri`, an asymmetric-only `algorithms` allowlist, `iss` exactly the
 discovery document's issuer, `aud`/`azp` naming the client, `exp`/`iat`, and

@@ -487,7 +487,7 @@ describe('Gap Analysis Usecase', () => {
             expect(result).toBeNull();
         });
 
-        it('returns null when no assessable requirements exist', async () => {
+        it('returns null when a framework has no requirements', async () => {
             mockRequirements.set('fw-iso', []);
 
             const result = await performGapAnalysis({

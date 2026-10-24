@@ -497,6 +497,26 @@ never runs.
 | **Blast radius** | The scanner's own process, in the client's estate. What leaves it is a signed report the ingest verifies against its own strict schema, which a mis-parse cannot widen. |
 | **Decision** | **Reviewed — adopted in the scanner image at the version the repository's tests run against.** The `REVIEWED` floor (major 5) is unchanged. Dependabot proposes the image's updates as a group (`.github/dependabot.yml`). |
 
+## Review — 2026-10-24 — the TOTP enrolment QR code
+
+### `qrcode` — `^1.5.4`
+
+Reviewed on adoption under ground **(b)**: its only input is the otpauth://
+URI the enrol-start route returns, and that URI carries the user's TOTP shared
+secret in its `secret=` parameter. The package handles a credential, so it is
+reviewed even though it parses nothing untrusted.
+
+| | |
+|---|---|
+| **Direct?** | Yes, new. It brings `pngjs` and `dijkstrajs`, and `yargs@15` with its own dependencies nested under `qrcode/node_modules/`. `camelcase@5`, `p-try@2` and `path-exists@4` were already in the tree as dev-only and are now also reachable from production. `@types/qrcode` (`^1.5.6`) is the matching `devDependencies` entry: types only, erased at compile time. |
+| **Runtime use** | `src/app/t/[tenantSlug]/(app)/security/mfa/TotpQrCode.tsx`: one `toDataURL(otpauthUrl, TOTP_QR_OPTIONS)` call, in an effect, in a client component on the personal MFA page. |
+| **Classification** | `dependencies` — **correct**. The page ships in the client bundle, and the server build imports the module too when it renders the page, so `npm prune --omit=dev` must not reach it. |
+| **Version** | `1.5.4` is `latest` (published 2024-08-05). MIT. `engines.node >=10.13.0`. |
+| **Exposure** | Encodes a string into an image and parses nothing. No network: the browser build (`lib/browser.js`, chosen through the package's `browser` field) draws on a `<canvas>`; the Node build (`lib/server.js`, which Jest and server rendering load) encodes the PNG with `pngjs`. The secret never leaves the page: it is drawn in the browser into a `data:` URI, which `img-src` in `src/lib/security/csp.ts` already allows, rather than sent to a QR-rendering service. `yargs` is required only by `bin/qrcode`, the package's command-line tool, which nothing here runs. |
+| **Maintenance** | Slow cadence, widely used, not deprecated, no advisories. |
+| **Audit** | `npm audit --omit=dev` reports the same findings before and after the addition — the tracked tiptap/tldraw exemption and nothing else. No new advisory. |
+| **Decision** | **Reviewed — adopted at `^1.5.4` in `dependencies`.** `REVIEWED` floor: major 1. |
+
 ## Review — 2026-10-24 — `jose` for OIDC sign-in
 
 ### `jose` — `^6.2.12`

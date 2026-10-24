@@ -48,6 +48,9 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         });
         const loginUrl = new URL('/login', publicBaseUrl(req));
         loginUrl.searchParams.set('error', 'sso_start_refused');
+        // Reopen the sign-in page's SSO form on this workspace, so the
+        // person continues with one click from a page that is ours.
+        if (tenantSlug) loginUrl.searchParams.set('sso', tenantSlug);
         return NextResponse.redirect(loginUrl, 303);
     }
 

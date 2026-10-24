@@ -58,24 +58,19 @@ import {
     summariseAgentRiskCoverage,
     type AgentRiskCoverageEntry,
     type AgentRiskCoverageSummary,
-    type CoveringControl,
-    type InheritedCoverage,
 } from '../services/agent-risk-coverage';
+import {
+    dedupeControls,
+    loadControlsByRequirement,
+    loadFrameworkCatalogue,
+    loadInheritedCoverage,
+} from '../services/inherited-requirement-coverage';
 import {
     agentRiskApplicability,
     APPLIES,
     type AgentExposureProfile,
 } from '../services/agent-risk-applicability';
 import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
-import {
-    MAPPING_STRENGTH_RANK,
-    type MappingStrengthValue,
-} from '../domain/requirement-mapping.types';
-import {
-    canonicalRequirementCode,
-    frameworkFamilyId,
-    requirementCodeSpellings,
-} from '../domain/framework-representation';
 import type { RequestContext } from '../types';
 
 /**
@@ -88,23 +83,6 @@ const ASI_LIBRARY_URN = 'urn:inflect:library:owasp-agentic-top10';
 
 /** Fallback for rows that predate the `sourceUrn` convention. */
 const ASI_FRAMEWORK_KEYS: readonly string[] = ['OWASP-ASI', 'OWASP-ASI-TOP10'];
-
-/**
- * The framework catalogue is a small GLOBAL table (tens of rows, no tenantId,
- * no RLS). It is loaded whole and grouped in memory so the family expansion
- * costs one query rather than one per mapping edge.
- */
-const FRAMEWORK_CATALOGUE_CAP = 500;
-
-/** Bound on mapping edges landing on the ten agentic requirements. */
-const MAPPING_EDGE_CAP = 2000;
-
-interface CatalogueEntry {
-    id: string;
-    key: string;
-    name: string;
-    sourceUrn: string | null;
-}
 
 export interface AgentRiskCoverageReport {
     readonly agent: {
@@ -242,10 +220,7 @@ async function buildCoverageReports(
         isLegacyPlaceholder: agent.isLegacyPlaceholder,
     }));
 
-    const catalogue: CatalogueEntry[] = await db.framework.findMany({
-        select: { id: true, key: true, name: true, sourceUrn: true },
-        take: FRAMEWORK_CATALOGUE_CAP,
-    });
+    const catalogue = await loadFrameworkCatalogue(db);
 
     const asiFrameworks = catalogue.filter(
         (f) => f.sourceUrn === ASI_LIBRARY_URN || ASI_FRAMEWORK_KEYS.includes(f.key),
@@ -287,13 +262,21 @@ async function buildCoverageReports(
     const [
         scopeByAiSystem,
         directControlsByRequirement,
-        inheritedByRiskCode,
+        inherited,
         toolGrantCounts,
         registrationEnforced,
     ] = await Promise.all([
         loadAgentScopes(db, ctx, views.map((a) => a.aiSystemId), riskRequirementIds),
         loadControlsByRequirement(db, ctx, riskRequirementIds),
-        loadInheritedCoverage(db, ctx, catalogue, risks),
+        // The shared loader (`services/inherited-requirement-coverage.ts`), so
+        // this panel and a framework's Coverage tab cannot disagree about which
+        // of the tenant's controls reach a requirement through a mapping.
+        loadInheritedCoverage(
+            db,
+            ctx,
+            catalogue,
+            risks.map((r) => ({ key: r.code, requirementIds: r.requirementIds })),
+        ),
         loadToolGrantCounts(db, ctx, views.map((a) => a.id)),
         // Tenant-wide, so it joins the same fan-out rather than the per-agent
         // map. It is a precondition of the ASI02 exemption, not a lifecycle
@@ -336,7 +319,7 @@ async function buildCoverageReports(
                 directControls: dedupeControls(
                     risk.requirementIds.flatMap((id) => directControlsByRequirement.get(id) ?? []),
                 ),
-                inheritedFrom: inheritedByRiskCode.get(risk.code) ?? [],
+                inheritedFrom: inherited.routes.get(risk.code) ?? [],
             });
         });
 
@@ -467,186 +450,4 @@ async function loadToolGrantCounts(
         _count: { _all: true },
     });
     return new Map(rows.map((r) => [r.agentId, r._count._all]));
-}
-
-/**
- * Tenant controls per requirement id. `control.deletedAt: null` for the reason
- * `usecases/framework/coverage.ts` gives on the same join: without it coverage
- * drifts UPWARD as controls are deleted.
- */
-async function loadControlsByRequirement(
-    db: PrismaTx,
-    ctx: RequestContext,
-    requirementIds: string[],
-): Promise<Map<string, CoveringControl[]>> {
-    if (requirementIds.length === 0) return new Map();
-
-    const links = await db.controlRequirementLink.findMany({
-        where: {
-            tenantId: ctx.tenantId,
-            requirementId: { in: requirementIds },
-            control: { deletedAt: null },
-        },
-        select: {
-            requirementId: true,
-            control: { select: { id: true, code: true, name: true, status: true } },
-        },
-    });
-
-    const out = new Map<string, CoveringControl[]>();
-    for (const link of links) {
-        const control: CoveringControl = {
-            id: link.control.id,
-            code: link.control.code,
-            name: link.control.name,
-            status: String(link.control.status),
-        };
-        const bucket = out.get(link.requirementId);
-        if (bucket) bucket.push(control);
-        else out.set(link.requirementId, [control]);
-    }
-    return out;
-}
-
-/**
- * Inherited coverage: tenant controls on OTHER frameworks' requirements that
- * cross-map onto an agentic risk.
- *
- * Four queries, none of them in a loop. The family expansion in the middle is
- * what makes this work on a seeded database — see the module header.
- */
-async function loadInheritedCoverage(
-    db: PrismaTx,
-    ctx: RequestContext,
-    catalogue: CatalogueEntry[],
-    risks: AgenticRisk[],
-): Promise<Map<string, InheritedCoverage[]>> {
-    const riskCodeByRequirementId = new Map<string, string>();
-    for (const risk of risks) {
-        for (const id of risk.requirementIds) riskCodeByRequirementId.set(id, risk.code);
-    }
-
-    const now = new Date();
-    const edges = await db.requirementMapping.findMany({
-        where: {
-            targetRequirementId: { in: [...riskCodeByRequirementId.keys()] },
-            // Audit Coherence S9 temporal window — a superseded mapping must
-            // not keep answering for a control set nobody re-examined.
-            OR: [{ validTo: null }, { validTo: { gt: now } }],
-        },
-        select: {
-            targetRequirementId: true,
-            strength: true,
-            sourceRequirement: {
-                select: { id: true, code: true, title: true, frameworkId: true },
-            },
-        },
-        take: MAPPING_EDGE_CAP,
-    });
-    if (edges.length === 0) return new Map();
-
-    // Expand each mapping's source framework to its whole family, so a control
-    // linked to the seeded representation satisfies a mapping authored against
-    // the library one.
-    const catalogueById = new Map(catalogue.map((f) => [f.id, f]));
-    const wantedFamilies = new Set<string>();
-    for (const edge of edges) {
-        const fw = catalogueById.get(edge.sourceRequirement.frameworkId);
-        if (fw) wantedFamilies.add(frameworkFamilyId(fw));
-    }
-    const familyFrameworkIds = catalogue
-        .filter((f) => wantedFamilies.has(frameworkFamilyId(f)))
-        .map((f) => f.id);
-
-    // Ask for every SPELLING of each source code, not just the one the mapping
-    // was authored with. ISO 27001 Annex A control 5.15 is `A.5.15` in the
-    // library the mapping cites and `5.15` in the seed a tenant's controls hang
-    // off; `code: { in: [...] }` on one spelling reaches neither the other
-    // representation's rows nor, therefore, that tenant's controls.
-    const sourceCodes = [
-        ...new Set(
-            edges.flatMap((e) => {
-                const fw = catalogueById.get(e.sourceRequirement.frameworkId);
-                if (!fw) return [e.sourceRequirement.code];
-                return requirementCodeSpellings(frameworkFamilyId(fw), e.sourceRequirement.code);
-            }),
-        ),
-    ];
-    const siblingRows = await db.frameworkRequirement.findMany({
-        where: {
-            frameworkId: { in: familyFrameworkIds },
-            code: { in: sourceCodes },
-            deprecatedAt: null,
-        },
-        select: { id: true, code: true, frameworkId: true },
-    });
-
-    // (family, canonical code) → every requirement row that means the same
-    // obligation, across both representations AND both spellings.
-    const siblingsByFamilyCode = new Map<string, string[]>();
-    for (const row of siblingRows) {
-        const fw = catalogueById.get(row.frameworkId);
-        if (!fw) continue;
-        const family = frameworkFamilyId(fw);
-        const key = `${family}::${canonicalRequirementCode(family, row.code)}`;
-        const bucket = siblingsByFamilyCode.get(key);
-        if (bucket) bucket.push(row.id);
-        else siblingsByFamilyCode.set(key, [row.id]);
-    }
-
-    const controlsBySourceRequirement = await loadControlsByRequirement(
-        db,
-        ctx,
-        siblingRows.map((r) => r.id),
-    );
-
-    // Collapse edges by (risk code, source family, source code): the same
-    // obligation reached through two representations is ONE inherited route,
-    // and it keeps the strongest strength either edge claimed.
-    const byRiskCode = new Map<string, Map<string, InheritedCoverage>>();
-    for (const edge of edges) {
-        const riskCode = riskCodeByRequirementId.get(edge.targetRequirementId);
-        const fw = catalogueById.get(edge.sourceRequirement.frameworkId);
-        if (!riskCode || !fw) continue;
-
-        const family = frameworkFamilyId(fw);
-        const routeKey = `${family}::${canonicalRequirementCode(family, edge.sourceRequirement.code)}`;
-        const controls = dedupeControls(
-            (siblingsByFamilyCode.get(routeKey) ?? []).flatMap(
-                (id) => controlsBySourceRequirement.get(id) ?? [],
-            ),
-        );
-
-        const routes = byRiskCode.get(riskCode) ?? new Map<string, InheritedCoverage>();
-        const existing = routes.get(routeKey);
-        const strength = edge.strength as MappingStrengthValue;
-        if (!existing || MAPPING_STRENGTH_RANK[strength] > MAPPING_STRENGTH_RANK[existing.strength]) {
-            routes.set(routeKey, {
-                frameworkKey: fw.key,
-                frameworkName: fw.name,
-                requirementCode: edge.sourceRequirement.code,
-                requirementTitle: edge.sourceRequirement.title,
-                strength,
-                controls,
-            });
-        }
-        byRiskCode.set(riskCode, routes);
-    }
-
-    const out = new Map<string, InheritedCoverage[]>();
-    for (const [riskCode, routes] of byRiskCode) out.set(riskCode, [...routes.values()]);
-    return out;
-}
-
-/** One control can implement several requirement rows for the same risk. */
-function dedupeControls(controls: readonly CoveringControl[]): CoveringControl[] {
-    const byId = new Map<string, CoveringControl>();
-    for (const control of controls) if (!byId.has(control.id)) byId.set(control.id, control);
-    // Sort by code, falling back to the name for controls that have none —
-    // `Control.code` is optional, and an uncoded control would otherwise sort
-    // as an empty string and clump at the top of an assessor-facing list ahead
-    // of everything with a real identifier.
-    return [...byId.values()].sort((a, b) =>
-        (a.code ?? a.name).localeCompare(b.code ?? b.name),
-    );
 }
