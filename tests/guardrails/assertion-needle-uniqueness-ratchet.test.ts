@@ -1145,7 +1145,26 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
  * Measured on this branch, not estimated: the detector reported `current: 1405`
  * against the 1404 ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1405;
+/*
+    1405 -> 1406 for `openshell-source.test.ts` (#3937).
+
+    The one assertion the detector cannot read is a needle it cannot resolve to
+    a literal. That test holds the OpenShell reader to reporting no policy
+    content, and it does so with marker strings centralised in one `MARKERS`
+    object — so the fixture that SERVES a marker and the assertion that denies
+    it in the report cannot drift apart. Reading them as `MARKERS.credValue` and
+    as a loop variable is what makes them non-literal.
+
+    Inlining the literals would satisfy this detector and make the test worse:
+    each marker would then appear twice, once in the fixture and once in the
+    assertion, with nothing holding the two copies equal. That is the defect
+    `a-needle-loses-the-thread-at-a-rename` describes, traded for a count.
+
+    One assertion that WAS removable went in the same diff rather than here: a
+    `not.toContain(host)` on a digest, sitting below a
+    `toMatch(/^sha256:[0-9a-f]{64}$/)` that already made it impossible to fail.
+*/
+const UNANALYSABLE_READ_BASELINE = 1406;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
