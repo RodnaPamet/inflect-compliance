@@ -884,7 +884,10 @@ The round trip is BOUND to the browser that started it (`src/lib/auth/sso-flow.t
 cookie and sends the IdP only a random id as OIDC `state` / SAML `RelayState`,
 and the callback refuses without that cookie. `/start` also refuses a
 cross-site initiation (`Sec-Fetch-Site`). Never put flow contents back in the
-URL: that is login CSRF, and a verifier beside its code is no PKCE.
+URL: that is login CSRF, and a verifier beside its code is no PKCE. The
+sign-in page starts SSO by WORKSPACE (`/api/auth/sso/discover`, `SsoSignIn`),
+never by email domain: `emailDomains` are unverified, so domain discovery would
+let any workspace claim anyone's domain. `/login?sso=<slug>` is the shareable link.
 
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
 

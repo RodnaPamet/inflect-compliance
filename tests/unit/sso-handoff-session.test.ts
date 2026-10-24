@@ -324,6 +324,8 @@ describe('the round trip is bound to the browser that started it', () => {
         expect(res.status).toBe(303);
         expect(location.pathname).toBe('/login');
         expect(location.searchParams.get('error')).toBe('sso_start_refused');
+        // ...on its SSO form for that workspace, one click from a page that is ours.
+        expect(location.searchParams.get('sso')).toBe('beta');
         expect(cookie).toBeNull();
     });
 
