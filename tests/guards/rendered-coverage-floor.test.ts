@@ -346,7 +346,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // 372, measured by this guard's own counter on this branch merged with main
 // (3.272.x). Each PR stayed inside the slack alone; together they did not, and
 // the merge queue found it.
-const RENDERED_TEST_FLOOR = 381;
+//   390 (#4048): + notifications-mark-read.test.tsx, on top of
+// risks-list-bulk-surface.test.tsx (#4046) and the others merged since 381,
+// measured by this guard's own counter on this branch merged with main
+// (3.302.2). The merge queue found it again.
+const RENDERED_TEST_FLOOR = 390;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
