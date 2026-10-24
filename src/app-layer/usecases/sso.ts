@@ -8,6 +8,13 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import { BREAK_GLASS_ROLES, isBreakGlassRole } from '@/lib/auth/sso-enforcement';
+import {
+    SSO_TRUST_OWNER_TIER_MESSAGE,
+    SSO_TRUST_OWNER_TIER_REFUSAL,
+    changedSsoTrustFields,
+    type SsoTrustState,
+} from '@/lib/auth/sso-trust-fields';
+import { logEvent } from '@/app-layer/events/audit';
 
 /**
  * Enterprise SSO Usecases
@@ -47,6 +54,14 @@ export async function getTenantSsoConfigById(
 /**
  * Create or update a tenant identity provider.
  * Requires ADMIN role. Validates input via Zod schema.
+ *
+ * Creating a provider, or changing whom it trusts (`changedSsoTrustFields`),
+ * is Owner-tier: it needs `admin.owner_management`. A sign-in through the
+ * provider becomes a session for whichever member the identity provider
+ * names, so an ADMIN who could point it at an identity provider they run
+ * could sign in as an OWNER. A trust change also removes every identity link
+ * to the provider. An ADMIN keeps every other field, and enable, enforce and
+ * delete.
  */
 export async function upsertTenantSsoConfig(
     ctx: RequestContext,
@@ -63,28 +78,87 @@ export async function upsertTenantSsoConfig(
     const existing = input.id ? await SsoConfigRepo.findById(ctx.tenantId, input.id) : null;
     if (input.id && !existing) throw notFound('Identity provider not found');
 
+    const ownerTier = ctx.appPermissions.admin.owner_management;
+    if (!existing && !ownerTier) {
+        throw forbidden(SSO_TRUST_OWNER_TIER_MESSAGE, { reason: SSO_TRUST_OWNER_TIER_REFUSAL, fields: ['provider'] });
+    }
+
+    const config = withStoredSecretsKept(input.config, existing?.configJson);
+    // A save that leaves out the JIT settings keeps the stored ones. The
+    // admin page never sends them, so a default here turned JIT off on every
+    // save, and would now read as a trust change.
+    const storedJit = extractJitConfig(existing);
+    const jit = {
+        allowJitProvisioning: input.allowJitProvisioning ?? storedJit.allowJitProvisioning,
+        jitDefaultRole: input.jitDefaultRole ?? storedJit.jitDefaultRole,
+    };
+    const trustChanged = existing
+        ? changedSsoTrustFields(trustStateOf(existing), {
+              type: input.type,
+              // Absent means unchanged: the update leaves the column alone.
+              emailDomains: input.emailDomains ?? existing.emailDomains,
+              config,
+              ...jit,
+          })
+        : [];
+    if (trustChanged.length > 0 && !ownerTier) {
+        throw forbidden(SSO_TRUST_OWNER_TIER_MESSAGE, { reason: SSO_TRUST_OWNER_TIER_REFUSAL, fields: trustChanged });
+    }
+
     // Saving the form turns enforcement on too, so it needs the same
     // break-glass check as the enforce toggle — or this was the way round it.
     if (input.isEnforced && !existing?.isEnforced) {
         await assertBreakGlassAvailable(ctx.tenantId, input.id);
     }
 
-    return SsoConfigRepo.upsert(ctx.tenantId, {
-        id: input.id,
+    const fields = {
         name: input.name,
         type: input.type,
         isEnabled: input.isEnabled,
         isEnforced: input.isEnforced,
         emailDomains: input.emailDomains,
-        configJson: {
-            ...withStoredSecretsKept(input.config, existing?.configJson),
-            // Persist JIT settings alongside IdP config
-            _jit: {
-                allowJitProvisioning: input.allowJitProvisioning,
-                jitDefaultRole: input.jitDefaultRole,
+        // JIT settings are persisted alongside the IdP config.
+        configJson: { ...config, _jit: jit },
+    };
+    const { provider, linksRemoved } =
+        existing && trustChanged.length > 0
+            ? await SsoConfigRepo.updateAndRemoveLinks(ctx.tenantId, existing.id, fields)
+            : { provider: await SsoConfigRepo.upsert(ctx.tenantId, { id: input.id, ...fields }), linksRemoved: 0 };
+
+    await logEvent(prisma, ctx, {
+        action: existing ? 'UPDATE' : 'CREATE',
+        entityType: 'TenantIdentityProvider',
+        entityId: provider.id,
+        details: existing
+            ? `Updated ${input.type} SSO provider${trustChanged.length ? `; changed whom it trusts and removed ${linksRemoved} identity link(s)` : ''}`
+            : `Configured ${input.type} SSO provider`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'TenantIdentityProvider',
+            operation: existing ? 'updated' : 'created',
+            changedFields: trustChanged,
+            after: {
+                type: input.type,
+                isEnabled: provider.isEnabled,
+                isEnforced: provider.isEnforced,
+                identityLinksRemoved: linksRemoved,
             },
+            summary: existing ? 'SSO provider updated' : 'SSO provider configured',
         },
     });
+
+    return provider;
+}
+
+/** A stored provider's trust fields (`src/lib/auth/sso-trust-fields.ts`). */
+function trustStateOf(provider: TenantIdentityProvider): SsoTrustState {
+    const config = (provider.configJson && typeof provider.configJson === 'object' ? provider.configJson : {}) as Record<string, unknown>;
+    return {
+        type: provider.type,
+        emailDomains: provider.emailDomains ?? [],
+        config,
+        ...extractJitConfig(provider),
+    };
 }
 
 /**
@@ -102,6 +176,20 @@ export async function deleteTenantSsoConfig(
 
     // Cascade: remove identity links, then the provider
     await SsoConfigRepo.remove(ctx.tenantId, providerId);
+
+    await logEvent(prisma, ctx, {
+        action: 'DELETE',
+        entityType: 'TenantIdentityProvider',
+        entityId: providerId,
+        details: `Deleted ${existing.type} SSO provider and its identity links`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'TenantIdentityProvider',
+            operation: 'deleted',
+            before: { type: existing.type, isEnabled: existing.isEnabled, isEnforced: existing.isEnforced },
+            summary: 'SSO provider deleted',
+        },
+    });
 }
 
 /**
@@ -118,7 +206,9 @@ export async function toggleTenantSso(
     const existing = await SsoConfigRepo.findById(ctx.tenantId, providerId);
     if (!existing) throw notFound('Identity provider not found');
 
-    return SsoConfigRepo.setEnabled(ctx.tenantId, providerId, enabled);
+    const provider = await SsoConfigRepo.setEnabled(ctx.tenantId, providerId, enabled);
+    await logSwitch(ctx, provider, 'isEnabled', existing.isEnabled, enabled);
+    return provider;
 }
 
 /**
@@ -146,7 +236,34 @@ export async function setTenantSsoEnforced(
 
     if (enforced) await assertBreakGlassAvailable(ctx.tenantId, providerId);
 
-    return SsoConfigRepo.setEnforced(ctx.tenantId, providerId, enforced);
+    const provider = await SsoConfigRepo.setEnforced(ctx.tenantId, providerId, enforced);
+    await logSwitch(ctx, provider, 'isEnforced', existing.isEnforced, enforced);
+    return provider;
+}
+
+/** The audit entry for the enable and enforce switches. */
+async function logSwitch(
+    ctx: RequestContext,
+    provider: TenantIdentityProvider,
+    field: 'isEnabled' | 'isEnforced',
+    before: boolean,
+    after: boolean,
+): Promise<void> {
+    await logEvent(prisma, ctx, {
+        action: 'UPDATE',
+        entityType: 'TenantIdentityProvider',
+        entityId: provider.id,
+        details: `${field === 'isEnabled' ? (after ? 'Enabled' : 'Disabled') : after ? 'Enforced' : 'Stopped enforcing'} ${provider.type} SSO provider`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'TenantIdentityProvider',
+            operation: 'updated',
+            changedFields: before === after ? [] : [field],
+            before: { [field]: before },
+            after: { [field]: after },
+            summary: 'SSO provider switch changed',
+        },
+    });
 }
 
 /**
