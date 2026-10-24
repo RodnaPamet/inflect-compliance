@@ -16,11 +16,11 @@
 # models. The system's tier is a tenant and counsel decision. Structural
 # guidance, NOT legal advice.
 #
-# One edge carries containment: E013 → Art.17 is SUBSET, because every element
-# AIUC-1 asks of its quality management system is among those Article 17
-# enumerates — so its transpose tells an Article 17 QMS holder that E013 is
-# met. Everywhere else the Act and AIUC-1 overlap without either containing
-# the other.
+# The closest pair, E013 → Art.17 (both a quality management system), is still
+# INTERSECT: AIUC-1's quality objectives and corrective-action tracking are not
+# among Article 17(1)'s elements (corrective action is Article 20's), and
+# Article 17(4) lets a financial institution meet Article 17 through its
+# existing internal governance. Neither contains the other.
 #
 # Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
 # part of either publication, authored from the requirement texts this
@@ -29,10 +29,10 @@
 #
 # STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
 # SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
-# SUPERSET appear only where meeting the broader requirement as written
-# necessarily meets the narrower one. Shared ground is INTERSECT (partially
-# covered); "this is where the control would live" is RELATED (review
-# needed, never coverage). No EQUAL anywhere.
+# SUPERSET are reserved for an edge where meeting the broader requirement as
+# written necessarily meets the narrower one. No AIUC-1 edge clears that bar.
+# Shared ground is INTERSECT (partially covered); "this is where the control
+# would live" is RELATED (review needed, never coverage). No EQUAL anywhere.
 #
 # SYMMETRY: this pair ships in BOTH directions. `aiuc-1-to-eu-ai-act.yaml` is the exact
 # transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
@@ -71,8 +71,8 @@ mapping_entries:
     rationale: "[curated] Testing across the risk taxonomy before release overlaps the testing Article 9 requires to find suitable risk measures before a system reaches the market."
   - source_ref: "Art.9"
     target_ref: "C008"
-    strength: RELATED
-    rationale: "[curated] Monitoring production output against risk categories feeds the iterative review a risk management system carries through the life cycle."
+    strength: INTERSECT
+    rationale: "[curated] Monitoring production output against risk categories, and feeding failures back into the taxonomy, is the evaluation of risks from monitoring data a risk management system carries out."
   - source_ref: "Art.10"
     target_ref: "A001"
     strength: RELATED
@@ -108,7 +108,7 @@ mapping_entries:
   - source_ref: "Art.14"
     target_ref: "C009"
     strength: INTERSECT
-    rationale: "[curated] Letting users stop, pause or redirect an agent overlaps the Act's ability to intervene in or interrupt a system; measures that help the overseer understand it are outside AIUC-1."
+    rationale: "[curated] Letting users stop, pause or redirect an agent overlaps the Act's ability to intervene in or interrupt a system; the Act also asks that overseers can interpret it correctly."
   - source_ref: "Art.14"
     target_ref: "D003"
     strength: INTERSECT
@@ -147,8 +147,8 @@ mapping_entries:
     rationale: "[curated] Formal approval of changes with a named accountable lead helps a provider keep a system conformant as it changes; conformity assessment is outside AIUC-1."
   - source_ref: "Art.17"
     target_ref: "E013"
-    strength: SUPERSET
-    rationale: "[curated] Every element AIUC-1 asks of its quality management system — objectives, risk, change management, issue tracking to correction, data management, stakeholder communication — is among those Article 17 enumerates."
+    strength: INTERSECT
+    rationale: "[curated] Both quality management systems carry risk, change management, data management and stakeholder communication; AIUC-1's quality objectives and corrective-action tracking are not among Article 17's elements."
   - source_ref: "Art.17"
     target_ref: "E012"
     strength: INTERSECT
@@ -159,11 +159,11 @@ mapping_entries:
     rationale: "[curated] Naming who approves each kind of change and keeping the approvals overlaps the accountability framework and management of modifications a quality management system sets out."
   - source_ref: "Art.17"
     target_ref: "C002"
-    strength: RELATED
-    rationale: "[curated] Testing changes before release is one of the examination and validation procedures a quality management system defines."
+    strength: INTERSECT
+    rationale: "[curated] Testing a change across the risk taxonomy before release is one of the examination, test and validation procedures a quality management system defines."
   - source_ref: "Art.26"
     target_ref: "C008"
-    strength: RELATED
+    strength: INTERSECT
     rationale: "[curated] Monitoring output in production against the risk taxonomy overlaps a deployer's duty to monitor operation; informing the provider is outside AIUC-1."
   - source_ref: "Art.26"
     target_ref: "E015"
@@ -205,3 +205,7 @@ mapping_entries:
     target_ref: "F002"
     strength: RELATED
     rationale: "[curated] Relying on providers' assessments of chemical, biological, radiological and nuclear capability presupposes the systemic-risk evaluation Article 55 places on them."
+  - source_ref: "Art.14"
+    target_ref: "D001"
+    strength: RELATED
+    rationale: "[curated] Citations and uncertainty signals help an overseer interpret an output correctly and resist over-reliance, two of the capacities Article 14 lists."

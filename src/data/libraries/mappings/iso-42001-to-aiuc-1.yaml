@@ -16,10 +16,10 @@
 #
 # STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
 # SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
-# SUPERSET appear only where meeting the broader requirement as written
-# necessarily meets the narrower one. Shared ground is INTERSECT (partially
-# covered); "this is where the control would live" is RELATED (review
-# needed, never coverage). No EQUAL anywhere.
+# SUPERSET are reserved for an edge where meeting the broader requirement as
+# written necessarily meets the narrower one. No AIUC-1 edge clears that bar.
+# Shared ground is INTERSECT (partially covered); "this is where the control
+# would live" is RELATED (review needed, never coverage). No EQUAL anywhere.
 #
 # SYMMETRY: this pair ships in BOTH directions. `aiuc-1-to-iso-42001.yaml` is the exact
 # transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
@@ -42,24 +42,24 @@ target_framework_ref: AIUC-1
 mapping_entries:
   - source_ref: "A.8.2"
     target_ref: "A001"
-    strength: INTERSECT
-    rationale: "[curated] Information provided to users is where an input data policy is published; AIUC-1 adds stating training use and an automated deletion mechanism."
+    strength: RELATED
+    rationale: "[curated] Information provided to users is where an input data policy would be published; ISO 42001 asks for neither a statement of training use nor automated deletion."
   - source_ref: "A.7.2"
     target_ref: "A001"
     strength: RELATED
     rationale: "[curated] Managing data for developing and enhancing AI systems decides whether customer input may be used for training, the first thing an input data policy tells customers."
   - source_ref: "A.8.2"
     target_ref: "A002"
-    strength: INTERSECT
-    rationale: "[curated] Information provided to users is where output ownership and use are explained; ISO 42001 asks for neither an opt-out nor deletion on request."
+    strength: RELATED
+    rationale: "[curated] Information provided to users is where output ownership and use would be explained; ISO 42001 asks for neither an opt-out nor deletion on request."
   - source_ref: "A.10.4"
     target_ref: "A002"
     strength: RELATED
     rationale: "[curated] Taking customers' obligations and expectations into account is the management-system root of the commitments an output data policy makes to them."
   - source_ref: "7.3"
     target_ref: "A004"
-    strength: INTERSECT
-    rationale: "[curated] Awareness of the AI policy is how staff learn what may not be put into or released from AI systems; screening outputs for proprietary content is outside it."
+    strength: RELATED
+    rationale: "[curated] Awareness of the AI policy carries rules on confidential inputs to staff only where the policy contains them; ISO 42001 does not require that it does."
   - source_ref: "A.9.2"
     target_ref: "A004"
     strength: RELATED
@@ -71,19 +71,19 @@ mapping_entries:
   - source_ref: "A.6.2.4"
     target_ref: "A009"
     strength: INTERSECT
-    rationale: "[curated] Verification and validation methodologies are where privacy testing is defined; AIUC-1 makes it independent, quarterly and specific to data-leakage failures."
+    rationale: "[curated] Defined verification and validation is a testing obligation; AIUC-1 makes the testing independent, quarterly and specific to data-leakage failures."
   - source_ref: "A.6.2.4"
     target_ref: "B001"
     strength: INTERSECT
-    rationale: "[curated] Verification and validation are where security testing is defined; AIUC-1 makes it independent, quarterly and driven by prompt injection and jailbreak techniques."
+    rationale: "[curated] Defined verification and validation is a testing obligation; AIUC-1 makes the testing independent, quarterly and driven by prompt injection and jailbreak techniques."
   - source_ref: "A.6.2.6"
     target_ref: "B002"
     strength: RELATED
     rationale: "[curated] Operational monitoring is where run-time detection of adversarial input would sit; ISO 42001 names neither prompt injection nor incident handling of it."
   - source_ref: "7.4"
     target_ref: "B003"
-    strength: INTERSECT
-    rationale: "[curated] Deciding what is communicated externally about AI systems, when and to whom, is the decision a release approval for technical details puts a gate on."
+    strength: RELATED
+    rationale: "[curated] Deciding what is communicated about the management system, when and to whom, is where a release approval for technical details would sit; clause 7.4 itself has no approval gate."
   - source_ref: "A.8.5"
     target_ref: "B003"
     strength: RELATED
@@ -122,8 +122,8 @@ mapping_entries:
     rationale: "[curated] Evaluating effects on individuals and groups is where harmful-output risks are identified; ISO 42001 does not require outputs to be filtered."
   - source_ref: "A.9.4"
     target_ref: "C004"
-    strength: INTERSECT
-    rationale: "[curated] Keeping a system to its intended purpose is the boundary AIUC-1 makes the agent enforce by declining subjects outside it."
+    strength: RELATED
+    rationale: "[curated] Using a system only for its intended purpose is the aim AIUC-1 enforces inside the agent, which must decline subjects outside that purpose."
   - source_ref: "8.2"
     target_ref: "C005"
     strength: INTERSECT
@@ -139,7 +139,7 @@ mapping_entries:
   - source_ref: "A.6.2.6"
     target_ref: "C008"
     strength: INTERSECT
-    rationale: "[curated] Operation and performance monitoring, carried out per risk category, is production monitoring against the taxonomy."
+    rationale: "[curated] Operation and performance monitoring is where production output is watched; AIUC-1 tracks it per risk category and feeds failures back into the taxonomy."
   - source_ref: "9.1"
     target_ref: "C008"
     strength: RELATED
@@ -155,7 +155,7 @@ mapping_entries:
   - source_ref: "A.6.2.4"
     target_ref: "C010"
     strength: INTERSECT
-    rationale: "[curated] Verification and validation are where safety evaluation is defined; AIUC-1 makes it independent, quarterly and scoped to harmful, biased and out-of-scope output."
+    rationale: "[curated] Defined verification and validation is a testing obligation; AIUC-1 makes the testing independent, quarterly and scoped to harmful, biased and out-of-scope output."
   - source_ref: "A.6.2.6"
     target_ref: "D001"
     strength: RELATED
@@ -167,7 +167,7 @@ mapping_entries:
   - source_ref: "A.6.2.4"
     target_ref: "D004"
     strength: INTERSECT
-    rationale: "[curated] Verification and validation are where reliability testing is defined; AIUC-1 makes it independent, quarterly and specific to fabricated content and faulty tool calls."
+    rationale: "[curated] Defined verification and validation is a testing obligation; AIUC-1 makes the testing independent, quarterly and specific to fabricated content and faulty tool calls."
   - source_ref: "A.8.4"
     target_ref: "E001"
     strength: INTERSECT
@@ -246,8 +246,8 @@ mapping_entries:
     rationale: "[curated] Nonconformity and corrective action is the issue-tracking component a quality management system for AI has to carry."
   - source_ref: "6.2"
     target_ref: "E013"
-    strength: RELATED
-    rationale: "[curated] AI objectives and the plans to meet them are where quality objectives and metrics would be set."
+    strength: INTERSECT
+    rationale: "[curated] Measurable, monitored AI objectives are the quality objectives and metrics a quality management system for AI must set."
   - source_ref: "A.6.2.8"
     target_ref: "E015"
     strength: INTERSECT
@@ -255,7 +255,7 @@ mapping_entries:
   - source_ref: "A.8.2"
     target_ref: "E016"
     strength: RELATED
-    rationale: "[curated] Information given to users could say that the system is an AI; ISO 42001 does not require that disclosure."
+    rationale: "[curated] Information for users is where an AI-interaction disclosure would be given; ISO 42001 leaves its content to the organisation, AIUC-1 requires it in every modality."
   - source_ref: "A.6.2.7"
     target_ref: "E017"
     strength: INTERSECT
@@ -275,7 +275,7 @@ mapping_entries:
   - source_ref: "A.6.2.4"
     target_ref: "E018"
     strength: INTERSECT
-    rationale: "[curated] Verification and validation are where disclosure testing is defined; AIUC-1 makes it independent, quarterly and aimed at an agent that hides being an AI."
+    rationale: "[curated] Defined verification and validation is a testing obligation; AIUC-1 makes the testing independent, quarterly and aimed at an agent that hides being an AI."
   - source_ref: "A.5.5"
     target_ref: "F001"
     strength: RELATED
@@ -284,3 +284,7 @@ mapping_entries:
     target_ref: "F002"
     strength: RELATED
     rationale: "[curated] Assessing societal impacts is where chemical, biological, radiological or nuclear misuse would be weighed; ISO 42001 names no such category."
+  - source_ref: "8.1"
+    target_ref: "E004"
+    strength: INTERSECT
+    rationale: "[curated] Controlling planned changes to AI processes and reviewing unintended ones overlaps naming which AI changes need formal approval and who gives it."

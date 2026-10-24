@@ -26,10 +26,10 @@
 #
 # STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
 # SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
-# SUPERSET appear only where meeting the broader requirement as written
-# necessarily meets the narrower one. Shared ground is INTERSECT (partially
-# covered); "this is where the control would live" is RELATED (review
-# needed, never coverage). No EQUAL anywhere.
+# SUPERSET are reserved for an edge where meeting the broader requirement as
+# written necessarily meets the narrower one. No AIUC-1 edge clears that bar.
+# Shared ground is INTERSECT (partially covered); "this is where the control
+# would live" is RELATED (review needed, never coverage). No EQUAL anywhere.
 #
 # SYMMETRY: this pair ships in BOTH directions. `aiuc-1-to-owasp-agentic.yaml` is the exact
 # transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
@@ -56,8 +56,8 @@ mapping_entries:
     rationale: "[curated] Detecting prompt injection at run time addresses the commonest route to a hijacked objective; injection that passes undetected through retrieved content or tool output is not closed by it."
   - source_ref: "ASI01"
     target_ref: "B001"
-    strength: INTERSECT
-    rationale: "[curated] Quarterly independent testing driven by prompt injection and jailbreaking exercises the hijack routes; it finds weaknesses rather than closing them."
+    strength: RELATED
+    rationale: "[curated] Quarterly independent testing driven by prompt injection and jailbreaking exercises the hijack routes; AIUC-1 does not require its findings to be fixed."
   - source_ref: "ASI01"
     target_ref: "B005"
     strength: RELATED
@@ -84,12 +84,12 @@ mapping_entries:
     rationale: "[curated] Restricting an agent's reach into backend services to its granted privileges bounds tool misuse at the service side; it does not judge whether a permitted call was the right one."
   - source_ref: "ASI02"
     target_ref: "B001"
-    strength: INTERSECT
-    rationale: "[curated] Independent testing for actions and transactions the agent was never authorised to make is a direct test of tool exploitation."
+    strength: RELATED
+    rationale: "[curated] Independent testing for actions the agent was never authorised to make exercises tool exploitation; AIUC-1 does not require its findings to be fixed."
   - source_ref: "ASI02"
     target_ref: "D004"
     strength: INTERSECT
-    rationale: "[curated] Reliability testing of mistaken and unprompted tool calls measures unintended tool use; it prevents none of it."
+    rationale: "[curated] Quarterly reliability testing of mistaken and unprompted tool calls, with each finding fixed and retested, reduces unintended tool use over successive rounds."
   - source_ref: "ASI02"
     target_ref: "E015"
     strength: RELATED
@@ -109,7 +109,7 @@ mapping_entries:
   - source_ref: "ASI03"
     target_ref: "E015"
     strength: INTERSECT
-    rationale: "[curated] Attributing each execution to the agent that ran it answers the half of ASI03 about actions that cannot be traced to an accountable principal."
+    rationale: "[curated] Attributing each execution to the agent that ran it is the first link in tracing an action to an accountable principal; the link from agent to person is not required."
   - source_ref: "ASI03"
     target_ref: "B007"
     strength: RELATED
@@ -148,8 +148,8 @@ mapping_entries:
     rationale: "[curated] Sanitising output a system will run, so it cannot carry script or shell injection, addresses execution at the destination; code the agent is meant to run still needs containment."
   - source_ref: "ASI05"
     target_ref: "B001"
-    strength: INTERSECT
-    rationale: "[curated] Quarterly security testing explicitly covers actions that install insecure code or execute destructively."
+    strength: RELATED
+    rationale: "[curated] Quarterly security testing covers actions that install insecure code or execute destructively; AIUC-1 does not require its findings to be fixed."
   - source_ref: "ASI05"
     target_ref: "B010"
     strength: RELATED
@@ -176,8 +176,8 @@ mapping_entries:
     rationale: "[curated] Authenticating callers of agent interfaces, encrypting their traffic and, where proportionate, protecting the integrity of agent messages address spoofing and tampering between agents; bounding delegation is outside it."
   - source_ref: "ASI07"
     target_ref: "E015"
-    strength: RELATED
-    rationale: "[curated] Logging agent processes and actions lets an exchange between agents be reconstructed after the fact."
+    strength: INTERSECT
+    rationale: "[curated] Logging agent processes, actions and outputs closes the unlogged failure ASI07 names for exchanges between agents; authenticating and bounding them are outside it."
   - source_ref: "ASI07"
     target_ref: "E009"
     strength: RELATED
@@ -204,8 +204,8 @@ mapping_entries:
     rationale: "[curated] Telling people plainly, in every modality, that they are dealing with an AI addresses the persona half of trust exploitation; automation bias in approval workflows is outside it."
   - source_ref: "ASI09"
     target_ref: "E018"
-    strength: INTERSECT
-    rationale: "[curated] Quarterly testing that an agent cannot be talked out of disclosing that it is an AI tests the disclosure ASI09 depends on."
+    strength: RELATED
+    rationale: "[curated] Quarterly testing that an agent cannot be talked out of disclosing it is an AI checks the disclosure that blunts the persona half of trust exploitation."
   - source_ref: "ASI09"
     target_ref: "D001"
     strength: INTERSECT

@@ -23,10 +23,10 @@
 #
 # STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
 # SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
-# SUPERSET appear only where meeting the broader requirement as written
-# necessarily meets the narrower one. Shared ground is INTERSECT (partially
-# covered); "this is where the control would live" is RELATED (review
-# needed, never coverage). No EQUAL anywhere.
+# SUPERSET are reserved for an edge where meeting the broader requirement as
+# written necessarily meets the narrower one. No AIUC-1 edge clears that bar.
+# Shared ground is INTERSECT (partially covered); "this is where the control
+# would live" is RELATED (review needed, never coverage). No EQUAL anywhere.
 #
 # SYMMETRY: this pair ships in BOTH directions. `aiuc-1-to-imda-mgf.yaml` is the exact
 # transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
@@ -50,11 +50,11 @@ mapping_entries:
   - source_ref: "MGF-1.1"
     target_ref: "C001"
     strength: INTERSECT
-    rationale: "[curated] Both keep an organisation-owned taxonomy of AI harm agreed before use; AIUC-1 grades each category by severity with examples, the MGF states the tolerance accepted for each."
+    rationale: "[curated] Both keep an organisation-owned taxonomy of AI harm; AIUC-1 grades each category by severity with examples and reviews it yearly, the MGF fixes a tolerance for each before deployment."
   - source_ref: "MGF-1.1"
     target_ref: "C005"
     strength: INTERSECT
-    rationale: "[curated] Naming the high-risk outputs particular to one agent extends the risk boundary to that deployment before it goes live."
+    rationale: "[curated] Naming the high-risk outputs particular to one agent extends the risk taxonomy to that deployment."
   - source_ref: "MGF-1.2"
     target_ref: "E004"
     strength: INTERSECT
@@ -237,8 +237,8 @@ mapping_entries:
     rationale: "[curated] Compensating customers after a costly fabricated output is redress the organisation initiates."
   - source_ref: "MGF-4.4"
     target_ref: "E010"
-    strength: INTERSECT
-    rationale: "[curated] An acceptable use policy tells users what they may and may not do with the system; the MGF also asks where independent verification is expected."
+    strength: RELATED
+    rationale: "[curated] An acceptable use policy sets permitted use; the MGF's guidance is about calibrated trust and where independent checking is expected."
   - source_ref: "MGF-4.4"
     target_ref: "D001"
     strength: RELATED

@@ -6,7 +6,11 @@
 # Data & Privacy; it says nothing about harmful, out-of-scope or fabricated
 # output, which is why those requirements are reached from ISO 42001 instead.
 # Refs are the library's condensed Annex A subset; mapping-targets-exist holds
-# every one of them to a node that library carries.
+# every one of them to a node that library carries. That subset omits A.5.18
+# (access rights), A.5.31 (legal requirements), A.5.32 (intellectual property),
+# A.8.12 (data leakage prevention) and A.8.16 (monitoring) — the strongest
+# routes to B007, E012, A007, A004 / A006 and B002 / B004 / E009 — so a gap
+# analysis from ISO 27001 understates those until the library carries them.
 #
 # Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
 # part of either publication, authored from the requirement texts this
@@ -15,10 +19,10 @@
 #
 # STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
 # SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
-# SUPERSET appear only where meeting the broader requirement as written
-# necessarily meets the narrower one. Shared ground is INTERSECT (partially
-# covered); "this is where the control would live" is RELATED (review
-# needed, never coverage). No EQUAL anywhere.
+# SUPERSET are reserved for an edge where meeting the broader requirement as
+# written necessarily meets the narrower one. No AIUC-1 edge clears that bar.
+# Shared ground is INTERSECT (partially covered); "this is where the control
+# would live" is RELATED (review needed, never coverage). No EQUAL anywhere.
 #
 # SYMMETRY: this pair ships in BOTH directions. `aiuc-1-to-iso27001.yaml` is the exact
 # transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
@@ -54,7 +58,7 @@ mapping_entries:
   - source_ref: "A.6.3"
     target_ref: "A004"
     strength: INTERSECT
-    rationale: "[curated] Awareness training is how staff learn which material may not be entered into AI systems; screening outputs for it is outside ISO 27001."
+    rationale: "[curated] Awareness training is how staff learn which material may not be entered into AI systems; screening outputs for it is outside this control."
   - source_ref: "A.5.14"
     target_ref: "A004"
     strength: RELATED
@@ -93,8 +97,8 @@ mapping_entries:
     rationale: "[curated] Threat intelligence is what the detection rules for adversarial input are revisited against each quarter."
   - source_ref: "A.5.26"
     target_ref: "B002"
-    strength: RELATED
-    rationale: "[curated] Responding to incidents under documented procedures is how a detected injection attempt is handled once it raises an alert."
+    strength: INTERSECT
+    rationale: "[curated] A detected injection attempt is handled as an incident with a record, which is incident response under documented procedures."
   - source_ref: "A.5.12"
     target_ref: "B003"
     strength: RELATED
@@ -114,7 +118,7 @@ mapping_entries:
   - source_ref: "A.5.15"
     target_ref: "B007"
     strength: INTERSECT
-    rationale: "[curated] Role-based access to the AI system's configuration, prompts, models and data is access control; the quarterly review with recorded justification is AIUC-1's addition."
+    rationale: "[curated] Role-based access to the AI system's configuration, prompts, models and data is access control; reviewing it every quarter, with recorded justification, is AIUC-1's addition."
   - source_ref: "A.8.2"
     target_ref: "B007"
     strength: INTERSECT
@@ -145,7 +149,7 @@ mapping_entries:
     rationale: "[curated] Security testing within the development life cycle overlaps testing a change before release; testing across the AI risk taxonomy is AIUC-1's addition."
   - source_ref: "A.8.8"
     target_ref: "C002"
-    strength: RELATED
+    strength: INTERSECT
     rationale: "[curated] Scanning artefacts and dependencies for vulnerabilities before release is vulnerability management at the release gate."
   - source_ref: "A.8.25"
     target_ref: "C006"

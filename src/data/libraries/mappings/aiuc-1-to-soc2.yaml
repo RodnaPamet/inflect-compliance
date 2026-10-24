@@ -14,10 +14,15 @@
 # to (`prisma/fixtures/soc2-control-templates.json`) carries CC1.1–CC9.1 and
 # no A1 / C1 / PI1 / P1, so an edge onto one of those would reach no tenant
 # that holds SOC 2 controls (invariant 5 of
-# tests/unit/agentic-framework-mappings.test.ts refuses exactly that). The
-# library also models one node per criteria series — CC6.1 stands for all of
-# CC6 — so the edges here are coarse by construction, and AIUC-1's privacy,
-# safety and reliability requirements have no SOC 2 route at all.
+# tests/unit/agentic-framework-mappings.test.ts refuses exactly that).
+#
+# Each node stands for its whole criteria SERIES, which is how the SOC 2
+# catalogue uses it: CC6.1 carries the periodic access review and encryption
+# controls, CC7.1 the incident-response one. The edges are read against the
+# series, and are coarse by construction. What has no SOC 2 route at all:
+# AIUC-1's requirements on what the agent outputs (C003–C007, D001), its
+# privacy-specific handling (A001, A002, A006, E011), its quarterly
+# independent testing, and AI disclosure.
 #
 # Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
 # part of either publication, authored from the requirement texts this
@@ -26,10 +31,10 @@
 #
 # STRENGTHS ARE CHOSEN AGAINST THEIR TRANSPOSE. The reverse of a SUBSET is a
 # SUPERSET, which the gap-analysis layer reads as COVERED, so SUBSET and
-# SUPERSET appear only where meeting the broader requirement as written
-# necessarily meets the narrower one. Shared ground is INTERSECT (partially
-# covered); "this is where the control would live" is RELATED (review
-# needed, never coverage). No EQUAL anywhere.
+# SUPERSET are reserved for an edge where meeting the broader requirement as
+# written necessarily meets the narrower one. No AIUC-1 edge clears that bar.
+# Shared ground is INTERSECT (partially covered); "this is where the control
+# would live" is RELATED (review needed, never coverage). No EQUAL anywhere.
 #
 # SYMMETRY: this pair ships in BOTH directions. `soc2-to-aiuc-1.yaml` is the exact
 # transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
@@ -69,7 +74,7 @@ mapping_entries:
   - source_ref: "B007"
     target_ref: "CC6.1"
     strength: INTERSECT
-    rationale: "[curated] People's access to the AI system's configuration, models and data is logical access security; the quarterly review is AIUC-1's addition."
+    rationale: "[curated] People's access to the AI system's configuration, models and data is logical access security; reviewing it every quarter is AIUC-1's addition."
   - source_ref: "B008"
     target_ref: "CC6.1"
     strength: INTERSECT
@@ -80,8 +85,8 @@ mapping_entries:
     rationale: "[curated] Authorising a tool request is an access decision; allowlists, parameter validation and human approval are AIUC-1's additions."
   - source_ref: "E005"
     target_ref: "CC6.1"
-    strength: RELATED
-    rationale: "[curated] Encryption and access restrictions on data stores are access security over protected assets; documenting them store by store is AIUC-1's addition."
+    strength: INTERSECT
+    rationale: "[curated] Encrypting data and restricting access to its stores is access security over protected assets; documenting both store by store is AIUC-1's addition."
   - source_ref: "B002"
     target_ref: "CC7.1"
     strength: INTERSECT
@@ -96,8 +101,8 @@ mapping_entries:
     rationale: "[curated] System monitoring is the operational layer that sampling production output against the risk taxonomy would feed."
   - source_ref: "E001"
     target_ref: "CC7.1"
-    strength: RELATED
-    rationale: "[curated] SOC 2's system-operations criteria carry monitoring through to incident response, where a breach plan for the AI system belongs."
+    strength: INTERSECT
+    rationale: "[curated] SOC 2's system-operations criteria carry monitoring through to incident response, which a breach plan for the AI system makes specific."
   - source_ref: "E009"
     target_ref: "CC7.1"
     strength: INTERSECT
@@ -125,7 +130,7 @@ mapping_entries:
   - source_ref: "C001"
     target_ref: "CC3.1"
     strength: INTERSECT
-    rationale: "[curated] Objectives clear enough to identify and assess risk are the precondition for a taxonomy of AI risk graded by severity."
+    rationale: "[curated] Identifying and assessing the risks to the entity's objectives overlaps keeping a taxonomy of AI risk graded by severity."
   - source_ref: "E008"
     target_ref: "CC4.1"
     strength: INTERSECT
