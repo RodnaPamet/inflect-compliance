@@ -308,3 +308,31 @@ measurement.
 **What it cannot see.** Alpha inside a value (`rgb(… / 0.2)`, or a token whose
 value is itself translucent). Those are value decisions, and a contrast test
 has to read the value to judge them.
+
+### `regex-within-ts-target`
+
+Every `.ts` / `.tsx` file `tsc` checks, at the target it checks them against.
+Both come from `tsconfig.json` itself: `eslint.config.mjs` reads the target and
+the `exclude` list through `ts.readConfigFile`, so the lint scope cannot drift
+from the compiler's. Flags a regex literal using syntax `tsc` refuses at that
+target:
+
+| Syntax | `tsc` error | Needs |
+| --- | --- | --- |
+| `s` flag | TS1501 | ES2018 |
+| `d` flag | TS1501 | ES2022 |
+| `v` flag | TS1501 | ES2024 |
+| `(?<name>…)` | TS1503 | ES2018 |
+
+**Why.** The target is ES2017, and Jest's transform does not typecheck, so a
+test using `/s` or a named group is green locally and fails the `Typecheck`
+job after the push (#3922). It happened at least twice. The workaround was
+written down only in the two guards where somebody had already been bitten.
+
+**What it does not flag, on purpose.** Lookbehind (`(?<=…)`, `(?<!…)`) and
+`\p{…}` are ES2018 too, but `tsc` 5.9 accepts them at ES2017 (measured), so
+flagging them would refuse code that typechecks. A `.js` file is out of scope
+because `tsc` reports nothing for one under `allowJs`.
+
+**What it cannot see.** A pattern built at run time (`new RegExp(src, 's')`).
+`tsc` does not check those either, so jest and the compiler agree about them.

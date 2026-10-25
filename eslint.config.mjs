@@ -21,6 +21,24 @@ import localPlugin from './eslint-rules/index.js';
 // at tests/guards/no-raw-prompt-logging.test.ts imports the same list, so the
 // lint scope and the swept population cannot drift apart.
 import { AGENTIC_PATH_GLOBS } from './eslint-rules/agentic-path.js';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+
+// The compiler's target and exclusions, read the way tsc reads them (the file
+// carries comments), so `local/regex-within-ts-target` polices the files tsc
+// checks, at the target tsc checks them against, with no copied value.
+const TSCONFIG = (() => {
+    const file = fileURLToPath(new URL('./tsconfig.json', import.meta.url));
+    const { config, error } = ts.readConfigFile(file, ts.sys.readFile);
+    if (error) throw new Error(`eslint.config.mjs: cannot read tsconfig.json: ${error.messageText}`);
+    const target = String(config.compilerOptions?.target ?? '').toUpperCase();
+    const year = target === 'ESNEXT' ? 9999 : target === 'ES6' ? 2015 : Number(/^ES(\d{4})$/.exec(target)?.[1]);
+    if (!Number.isInteger(year)) throw new Error(`eslint.config.mjs: unrecognised tsconfig target "${target}"`);
+    // A file has an extension after a name (`prisma/seed.ts`); a leading dot
+    // alone is a directory (`.claude`).
+    const ignores = (config.exclude ?? []).map((e) => (/[^/]\.\w+$/.test(e) ? e : `${e}/**`));
+    return { targetYear: year, ignores };
+})();
 
 // The platform-wide `no-restricted-syntax` bans. A const, because a later
 // block that sets `no-restricted-syntax` for its own files REPLACES this list
@@ -569,6 +587,18 @@ const config = [
             // unwritable, which is the same trap the sibling rule above fell
             // into with the legacy-backfill fixture.
             'local/require-mcp-tool-authorization': 'off',
+        },
+    },
+    {
+        // #3922 — jest's transform does not typecheck, so regex syntax newer
+        // than the tsconfig target runs green locally and fails the Typecheck
+        // job after the push. Scoped to the files tsc checks: `.ts` / `.tsx`
+        // (tsc reports nothing for an allowJs `.js`), minus tsconfig's own
+        // `exclude`. See eslint-rules/rules/regex-within-ts-target.js.
+        files: ['**/*.ts', '**/*.tsx'],
+        ignores: TSCONFIG.ignores,
+        rules: {
+            'local/regex-within-ts-target': ['error', { target: TSCONFIG.targetYear }],
         },
     },
 ];
