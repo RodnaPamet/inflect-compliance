@@ -9,7 +9,11 @@ supply chain: written to a standard, reviewed, evaluated and pinned.
 The corpus lives in `src/lib/agentic/flue/skills/`, one directory per skill. The
 loader is `src/lib/agentic/flue/skills/index.ts`, the resolver that mounts skills
 on a run is `resolve.ts` beside it, and the evaluation format is
-`evaluation-record.ts`. A tenant may also author its own skills inside the
+`evaluation-record.ts`. The loader reads the corpus from disk, relative to the
+working directory, so the production image must carry the directory: the
+`Dockerfile` copies it into the runtime stage, and
+`tests/guardrails/catalogue-reaches-production.test.ts` fails when a directory read
+that way is not copied (#4301). A tenant may also author its own skills inside the
 product, under the same rules; see [Tenant-authored skills](#tenant-authored-skills).
 
 ## The nine rules

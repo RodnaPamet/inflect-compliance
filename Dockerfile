@@ -195,6 +195,13 @@ COPY --from=builder /app/prisma ./prisma
 # dist/sync-framework-libraries.mjs at container start (the entrypoint's
 # step 1f). Without them the sync finds no libraries and imports nothing.
 COPY --from=builder /app/src/data/libraries ./src/data/libraries
+# The agent skills, read from disk by `loadSkillCorpus` in
+# src/lib/agentic/flue/skills/index.ts at `process.cwd()` on every Flue run
+# start, in the web tier and the worker alike. Without them every start fails
+# with ENOENT and answers 500 (#4301). Each skill's SKILL.md, evaluation set
+# and evaluation-record.json travel together; the mount gate reads all three.
+# tests/guardrails/catalogue-reaches-production.test.ts holds every such read.
+COPY --from=builder /app/src/lib/agentic/flue/skills ./src/lib/agentic/flue/skills
 # Prisma 7 — connection URL config moved out of `datasource db {}`
 # in `prisma/schema/base.prisma` into `prisma.config.ts`. The CLI
 # (`prisma migrate deploy` from the entrypoint) reads URLs from
