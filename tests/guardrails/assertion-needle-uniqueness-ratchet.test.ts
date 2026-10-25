@@ -596,7 +596,13 @@ const HIGH_MULTIPLICITY = 5;
 // `tests/unit/epic55-framework-picker-migration.test.ts` no longer had the
 // seed's copy of the label beside the page's FW_META one. That test's seed
 // pins are gone with the seeds; it now names the in-use read once.
-const AMBIGUOUS_NEEDLE_BASELINE = 1161;
+// 1161 -> 1160 on 2026-10-25 (#4279). `tests/unit/policies-list-shell-adoption.test.ts`
+// pinned the Policies Version cell with
+// `/p\.currentVersion\?\.versionNumber\s*\?\?\s*p\.lifecycleVersion/`, which
+// matched both the sort accessor and the column accessor. That fallback was
+// the bug (every never-published policy read "v1"); its replacement needle,
+// `accessorFn: (p) => displayedVersionNumber(p)`, names the column alone.
+const AMBIGUOUS_NEEDLE_BASELINE = 1160;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
