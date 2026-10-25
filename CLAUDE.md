@@ -1583,10 +1583,12 @@ implementation of reminders, closing and the evidence PDF.
   resolution method — read off the frozen subjects rather than re-queried, because
   re-reading at close reintroduces the drift the freeze removed. The hash lets an
   auditor re-derive from the stored rows through `verifySnapshotPayloadHash`.
-- **SOC 2 suggests `CC6.1`, not the brief's `CC6.2`/`CC6.3`**, because this
-  catalogue has one sub-code per criterion and neither exists. A test asserts that
-  ABSENCE so the substitution is revisited if the catalogue changes. Filed
-  separately; see `legacy-evidence-controls.ts`.
+- **SOC 2 suggests the brief's own `CC6.2` and `CC6.3`**, since #3369 completed
+  CC6 to CC6.1-CC6.8. It suggested `CC6.1` as a substitute while the catalogue
+  carried one sub-code per criterion and neither of the brief's codes existed;
+  the test that asserted that ABSENCE is what forced the revisit, and now
+  asserts presence. Six of the eight sub-codes were re-attributions of controls
+  already written under `CC6.1`. See `legacy-evidence-controls.ts`.
 - **A remediation task for a legacy campaign says to act IN THE APPLICATION**, and
   says we never write to it. The connected wording — "in the identity provider" —
   would invite somebody to wait for an automation that cannot exist.
@@ -1947,8 +1949,9 @@ wrote nothing. Rules that are easy to undo:
   keys, not arrays, and turns a `Date` into `{}`); the hash is the hex SHA-256 of
   exactly the stored bytes, so it equals the `FileRecord.sha256`.
   `getAgentReviewPacks` recomputes it on every read and reports `matches`. Filed
-  against A.5.18, CC6.1 (the brief's CC6.3 is in neither SOC 2 representation —
-  a test asserts the absence) and ASI03.
+  against A.5.18, CC6.3 (present in both SOC 2 representations since #3369
+  completed CC6; a test asserts that presence, having asserted its absence
+  before) and ASI03.
 - **The sample uses the existing keyed sampler** (`selectSample`,
   `sampleSizeFor`), seeded per tenant through `deriveSubkey` and epoch-bound to
   the campaign, at close. The second human may read the pack and is neither the

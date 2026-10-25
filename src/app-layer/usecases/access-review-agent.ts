@@ -961,13 +961,16 @@ export async function decideAgentNarrowing(
  * database holds (`resolveTargetControls` in `agentic-evidence-emission.ts`
  * gives the reason at length).
  *
- * The brief names ISO/IEC 27001 A.5.18, SOC 2 CC6.3 and OWASP ASI03. CC6.3 is
- * in NEITHER representation of SOC 2 here — the library authors one criterion
- * per series (CC6.1 stands in for CC6.1–CC6.8) and the seed carries the same
- * ten — so the SOC 2 obligation is CC6.1, the logical-access criterion, as the
- * legacy campaign's evidence substitutes it (`legacy-evidence-controls.ts`). A
- * test reads both catalogues and asserts the absence, so the substitution is
- * revisited the day CC6.3 is authored.
+ * The brief names ISO/IEC 27001 A.5.18, SOC 2 CC6.3 and OWASP ASI03, and all
+ * three are present, so all three are what this files against.
+ *
+ * CC6.3 was in NEITHER representation of SOC 2 until #3369: the library
+ * authored one criterion per series (CC6.1 standing in for CC6.1-CC6.8) and
+ * the seed carried the same ten, so the obligation was CC6.1 as a substitute,
+ * matching `legacy-evidence-controls.ts`. A test read both catalogues and
+ * asserted the absence precisely so the substitution would be revisited the
+ * day CC6.3 was authored. It was authored; this is that revisit, and the test
+ * now asserts presence.
  */
 export const AGENT_RECERT_EVIDENCE_OBLIGATIONS: ReadonlyArray<{
     readonly familyUrn: string;
@@ -984,8 +987,8 @@ export const AGENT_RECERT_EVIDENCE_OBLIGATIONS: ReadonlyArray<{
     {
         familyUrn: SOC2_FAMILY_URN,
         legacyKeys: ['SOC2', 'soc2'],
-        requirementCode: 'CC6.1',
-        note: 'The brief names CC6.3, which neither SOC 2 representation here carries; CC6.1, the logical-access criterion, is what a recertification evidences.',
+        requirementCode: 'CC6.3',
+        note: 'Role-based access, least privilege and periodic review. Named by the brief and present since #3369 completed CC6; it is what a recertification campaign evidences.',
     },
     {
         familyUrn: ASI_LIBRARY_URN,

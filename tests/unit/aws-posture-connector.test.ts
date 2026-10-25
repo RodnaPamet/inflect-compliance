@@ -91,8 +91,29 @@ describe('aws-posture — control map', () => {
     });
 
     it('every mapped SOC 2 code is a real IC SOC 2 requirement code', () => {
-        // IC's SOC2 codes (seed.ts soc2Reqs).
-        const IC_SOC2 = new Set(['CC1.1', 'CC1.2', 'CC2.1', 'CC3.1', 'CC4.1', 'CC5.1', 'CC6.1', 'CC7.1', 'CC8.1', 'CC9.1']);
+        // DERIVED from the catalogue production seeds, not transcribed from it.
+        // This held a hardcoded ten-code set captioned "seed.ts soc2Reqs" — a
+        // copy of catalogue data beside its own source, and the caption had
+        // already rotted (that row moved to prisma/seed-catalog.ts). #3369 then
+        // completed CC6 to CC6.1-CC6.8 and the copy went stale in the dangerous
+        // direction: it still PASSED, because this is a subset check, but it
+        // would have failed the first time somebody mapped an AWS network check
+        // to CC6.6 — reporting a real criterion as not a real criterion.
+        // Measured: with CC6.6 mapped, the transcribed set failed this
+        // assertion and the derived set did not. The sibling guard in
+        // tests/guards already derives it this way.
+        const IC_SOC2 = new Set(
+            (
+                JSON.parse(
+                    fs.readFileSync(
+                        path.join(process.cwd(), 'prisma/fixtures/soc2-control-templates.json'),
+                        'utf8',
+                    ),
+                ) as { requirements: Array<{ code: string }> }
+            ).requirements.map((r) => r.code),
+        );
+        // Denominator, so a reshaped fixture cannot make the loop vacuous.
+        expect(IC_SOC2.size).toBeGreaterThanOrEqual(10);
         for (const code of allMappedRequirementCodes().soc2) {
             expect(IC_SOC2.has(code)).toBe(true);
         }
