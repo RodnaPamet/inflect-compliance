@@ -170,7 +170,7 @@ live in `src/lib/agentic/engine-tools/`, which imports no engine. ESLint refuses
 
 ### The driver conformance suite
 
-Since Step 0b (#PRNUM), one table of scenarios holds every run driver to the
+Since Step 0b (#4220), one table of scenarios holds every run driver to the
 same controls (`tests/helpers/driver-conformance.ts`). An engine supplies an
 adapter: it scripts the model's turns, starts a run and reads back what
 happened. The scenarios assert only on that observation, never on an internal
@@ -715,7 +715,7 @@ Each phase's hardening step fills its row.
 
 Make the engine seam ready for more than Flue. #4111 closed the two gaps on
 `/api/mcp` first (Step 0d). #4176 then delivered the engine-neutral tool core
-(Step 0a), and #PRNUM the driver conformance suite (Step 0b).
+(Step 0a), and #4220 the driver conformance suite (Step 0b).
 
 #### Step 0a — Engine-neutral tool core
 
@@ -736,7 +736,7 @@ no prompt, and 0H checks it together with the rest of the phase.
 
 #### Step 0b — Driver conformance suite
 
-Delivered by #PRNUM (#4138). The work done:
+Delivered by #4220 (#4138). The work done:
 
 - `tests/helpers/driver-conformance.ts` holds two engine-agnostic tables. The
   run table has ten scenarios. The admission table has one scenario, checked
