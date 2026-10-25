@@ -5,7 +5,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Card, cardVariants } from '@/components/ui/card';
@@ -41,12 +41,33 @@ type Tab = 'OIDC' | 'SAML';
 // Hoisted to module scope to satisfy react-hooks/static-components.
 // Was previously declared inside `SsoAdminPage` and closed over
 // `existingProvider`; now takes it as a prop.
-function ProviderStatusBadge({ existingProvider }: { existingProvider: SsoProvider | null | undefined }) {
+function ProviderStatusBadge({
+    existingProvider,
+    loadFailed,
+}: {
+    existingProvider: SsoProvider | null | undefined;
+    loadFailed: boolean;
+}) {
     const t = useTranslations('admin');
+    // UNKNOWN BEFORE NOT-CONFIGURED. A failed read leaves `existingProvider`
+    // undefined, which is indistinguishable from a workspace that has no
+    // provider — so the badge reported "Not Configured" about a workspace it had
+    // learned nothing about. Setting the error beside it was not enough: the
+    // badge is the thing an administrator reads first, and it was still making a
+    // claim. Asked before the absence check because absence is what a failure
+    // looks like from here.
+    if (loadFailed) {
+        return <StatusBadge variant="neutral">{t('sso.statusUnknown')}</StatusBadge>;
+    }
     if (!existingProvider) {
         return <StatusBadge variant="neutral">{t('sso.notConfigured')}</StatusBadge>;
     }
-    if (existingProvider.isEnforced) {
+    // ENABLED IS ASKED FIRST. `isEnforced` was checked above `isEnabled`, so a
+    // provider that is enforced-but-disabled read "Enforced" — and enforcement
+    // applies only to an enabled provider (`lib/auth/sso-enforcement.ts`), so
+    // the badge claimed local login was closed when it was open. The two flags
+    // are stored independently, which is what makes that state reachable.
+    if (existingProvider.isEnforced && existingProvider.isEnabled) {
         return <StatusBadge variant="warning">{t('sso.enforced')}</StatusBadge>;
     }
     if (existingProvider.isEnabled) {
@@ -69,6 +90,14 @@ export default function SsoAdminPage() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+    /**
+     * The last load did not tell us what exists (#4116).
+     *
+     * Held separately from `error` because it gates the SAVE: an error can be
+     * left over from a failed delete, but only an unknown provider list makes a
+     * create-vs-update decision unsafe.
+     */
+    const [loadFailed, setLoadFailed] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     // ── Form state ──
@@ -90,21 +119,59 @@ export default function SsoAdminPage() {
     const [samlCertificate, setSamlCertificate] = useState('');
     const [samlNameIdFormat, setSamlNameIdFormat] = useState('');
 
+    /**
+     * The translator, reachable from a stable callback.
+     *
+     * `fetchProviders` is a `useCallback` whose identity feeds
+     * `useEffect(…, [fetchProviders])`, so adding `t` to its dependency array
+     * would give it a new identity on every render that `t` is not referentially
+     * stable for — and the effect calls `fetchProviders`, which calls
+     * `setState`, which renders again. That is an infinite refetch, and it is
+     * the same defect as #4194 one layer along: an unstable identity feeding an
+     * effect that re-subscribes.
+     *
+     * A ref holds the CURRENT translator behind an identity that never changes,
+     * so the callback can use it and still depend only on `apiUrl`.
+     */
+    const tRef = useRef(t);
+    useEffect(() => {
+        tRef.current = t;
+    }, [t]);
+
     const fetchProviders = useCallback(async () => {
         try {
             const res = await fetch(apiUrl('/sso'));
-            if (res.ok) {
-                const data = await res.json();
-                setProviders(data);
+            if (!res.ok) {
+                // A FAILED LOAD IS NOT "NOT CONFIGURED". This swallowed every
+                // non-ok response and every throw — the comment said "silently
+                // fail" — so a 403 or a 500 left `providers` empty and the page
+                // rendered the not-configured badge over a blank form. The
+                // dangerous part is the next click: `handleSave` sends
+                // `id: existingProvider?.id`, which is `undefined` when the load
+                // failed, so the server CREATES a second configuration for a
+                // workspace that already had one.
+                const body = await res.json().catch(() => ({}));
+                setError(apiErrorMessage(body, tRef.current('sso.loadFailed')));
+                setLoadFailed(true);
+                return;
             }
-        } catch {
-            // Silently fail on fetch errors
+            const data = await res.json();
+            setProviders(data);
+            setLoadFailed(false);
+        } catch (err) {
+            setError(apiErrorMessage(err, tRef.current('sso.loadFailed')));
+            setLoadFailed(true);
         } finally {
             setLoading(false);
         }
     }, [apiUrl]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // The `react-hooks/set-state-in-effect` suppression that stood here is
+    // gone, and its absence is load-bearing rather than tidying: every
+    // `setState` in `fetchProviders` now sits behind an `await`, so the rule no
+    // longer has anything to report and ESLint flagged the directive as unused.
+    // A suppression kept past its cause is a finding the lint ceiling still
+    // counts and nobody re-reads.
     useEffect(() => { fetchProviders(); }, [fetchProviders]);
 
     // ── Load existing provider into form ──
@@ -156,6 +223,15 @@ export default function SsoAdminPage() {
     async function handleSave() {
         setError(null);
         setSuccess(null);
+        // REFUSED WHILE THE LIST IS UNKNOWN. The body carries
+        // `id: existingProvider?.id` to choose create vs update, so saving after
+        // a failed load silently creates a SECOND configuration. Refusing is the
+        // fail-closed direction: a reload costs a click, a duplicate identity
+        // provider is a workspace with two answers to who it trusts for sign-in.
+        if (loadFailed) {
+            setError(t('sso.loadFailedSaveBlocked'));
+            return;
+        }
         setSaving(true);
 
         const emailDomains = formEmailDomains
@@ -224,13 +300,19 @@ export default function SsoAdminPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: existingProvider.id }),
             });
-            if (res.ok) {
-                resetForm();
-                await fetchProviders();
-                setSuccess(t('sso.deletedOk'));
+            if (!res.ok) {
+                // Only a THROWN error was reported, and a refused delete is a
+                // non-ok response rather than a throw — so a 403 left the
+                // configuration in place and said nothing at all.
+                const body = await res.json().catch(() => ({}));
+                setError(apiErrorMessage(body, t('sso.deleteFailed')));
+                return;
             }
+            resetForm();
+            await fetchProviders();
+            setSuccess(t('sso.deletedOk'));
         } catch (err) {
-            setError((err as Error).message);
+            setError(apiErrorMessage(err, t('sso.deleteFailed')));
         }
     }
 
@@ -303,7 +385,7 @@ export default function SsoAdminPage() {
                     selectAction={(v) => setTab(v as 'OIDC' | 'SAML')}
                 />
                 <div className="ml-auto">
-                    <ProviderStatusBadge existingProvider={existingProvider} />
+                    <ProviderStatusBadge existingProvider={existingProvider} loadFailed={loadFailed} />
                 </div>
             </div>
 
@@ -400,6 +482,9 @@ export default function SsoAdminPage() {
                                 />
                                 <button
                                     type="button"
+                                    // An icon-only control with no text child
+                                    // reaches a screen reader as "button".
+                                    aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
                                     onClick={() => setShowSecret(!showSecret)}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-content-muted hover:text-content-emphasis"
                                 >
@@ -525,7 +610,13 @@ export default function SsoAdminPage() {
                     <Button
                         variant="primary"
                         onClick={handleSave}
-                        disabled={saving || (!existingProvider && !canChangeTrust)}
+                        // `loadFailed` gates it too: the body chooses create vs
+                        // update from `existingProvider`, which a failed load
+                        // leaves undefined, so a save would add a SECOND
+                        // configuration. Disabled here and refused in the
+                        // handler — the handler check is what holds if a future
+                        // caller reaches `handleSave` another way.
+                        disabled={saving || loadFailed || (!existingProvider && !canChangeTrust)}
                         loading={saving}
                         id="sso-save-btn"
                     >

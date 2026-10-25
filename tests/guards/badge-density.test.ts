@@ -80,6 +80,17 @@ function countStatusBadges(content: string): number {
  * requires a comment explaining the new badge column / context.
  */
 const STATUS_BADGE_BUDGET: Record<string, number> = {
+    // SSO & Identity — FIVE branches of ONE badge, never two on screen.
+    // `ProviderStatusBadge` is a single call site in the layout and returns
+    // exactly one of: unknown / not-configured / enforced / enabled / disabled.
+    // The count is occurrences in the file, so a branch reads like a badge; at
+    // runtime there is one. +1 over the default for the `unknown` branch added
+    // by #4116, which is the point of that fix — a failed read left the badge
+    // saying "Not Configured" about a workspace it had learned nothing about,
+    // and the remedy is a state it can report rather than one fewer branch.
+    // NOT a new competing column, which is the case this budget exists to
+    // resist, so the justification differs from the entries below.
+    "src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx": 5,
     // Heavy display surfaces — many badges across distinct
     // contexts (each its own row / cell, not stacked in one cell).
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 12,

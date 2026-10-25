@@ -4468,7 +4468,13 @@
       "how4": "People find SSO on the sign-in page by workspace name; email domains only limit which addresses can use it",
       "deleteTitle": "Delete SSO configuration?",
       "deleteDesc": "Users will need to use local login until SSO is reconfigured. This cannot be undone.",
-      "deleteConfirm": "Delete configuration"
+      "deleteConfirm": "Delete configuration",
+      "loadFailed": "Could not load the SSO configuration",
+      "loadFailedSaveBlocked": "Reload before saving. The configuration could not be read, and saving now would create a second one.",
+      "deleteFailed": "Delete failed",
+      "showSecret": "Show client secret",
+      "hideSecret": "Hide client secret",
+      "statusUnknown": "Unknown"
     },
     "scim": {
       "crumbSelf": "SCIM Provisioning",
