@@ -144,7 +144,12 @@ Trivy blocks on `CRITICAL,HIGH` (container scan). The structural
 ratchet at `tests/guardrails/security-gate-strictness.test.ts` fails
 CI if either gate is silently re-lowered (`moderate` → `high` /
 `critical`, or `CRITICAL,HIGH` → `CRITICAL`) or `next` is downgraded
-back to 14.x.
+back to 14.x. SAST is the third gate (#4047): neither CodeQL context
+can be required, so a step of the required `Security` job fails a
+merge-queue candidate unless the PR's own `CodeQL` check (GitHub's
+new-alert comparison) succeeded. It fails closed, waiting up to 10
+minutes for a missing or unfinished check (`scripts/sast-alert-gate.mjs`),
+and the same ratchet pins it.
 
 Async-request-API: this migration is COMPLETE. Every dynamic route
 handler types `params` as `Promise<…>` and awaits it itself (354 of
