@@ -127,7 +127,7 @@ At present the view always reads **{{ui:assets.deleted.emptyTitle}}**, even when
 - A new asset gets the next code in the workspace's sequence: AST-1, AST-2 and so on.
 - Every creation, including each imported asset, and every status change, owner change, deletion, restore and purge is recorded in the workspace's audit log, naming who made it.
 - A deleted asset leaves the inventory at once and is removed for good after 90 days. Its name can be used again straight away.
-- When an asset's {{ui:assets.form.retentionUntil}} date has passed, the nightly clean-up deletes it, the same as a deletion by hand. The hint in the form says the asset is retired, but it is deleted.
+- When an asset's {{ui:assets.form.retentionUntil}} date has passed, the nightly clean-up deletes it, the same as a deletion by hand.
 - Retired assets stay in the inventory and count under {{ui:assets.kpi.retired}}.
 - Assigning an owner from this page sends them no notification. Changing the owner on the asset's own page does.
 
