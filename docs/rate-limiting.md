@@ -158,7 +158,7 @@ So the endpoint carries two budgets, the same fairness/containment split as
 
 | Budget | Preset | Key | Charged |
 | --- | --- | --- | --- |
-| per key (fairness) | `MCP_PER_KEY_LIMIT`, 60/min | `mcp-api-key:key:<apiKeyId>` | after authentication, **per JSON-RPC message** |
+| per key (fairness) | `MCP_PER_KEY_LIMIT`, 60/min | `mcp-api-key:key:<apiKeyId>` | after the credential is verified and before the invocation is built, **per JSON-RPC message** |
 | per IP (containment) | `MCP_IP_CEILING_LIMIT`, 600/min | `mcp-ip:ip:<ip>:anon` | before authentication, per HTTP request |
 
 Three details are deliberate:
@@ -174,6 +174,15 @@ Three details are deliberate:
 - **The ceiling is sized at ten keys' worth**, so callers sharing a hosted
   provider's address do not meet it in ordinary use, while one address still
   cannot drive more than ten key lookups a second.
+- **The key is charged before any expensive work** (#4205). Authentication is
+  two steps. `verifyMcpCredential` checks the key and its MCP scope, which is
+  cheap. `completeMcpAuthentication` then builds the invocation, which sends a
+  live `tools/list` to every external connection the agent has grants on. The
+  charge sits between the two, so a key over its budget is refused before any
+  outbound call. A malformed request costs one unit and builds nothing: invalid
+  JSON, an empty batch (answered with one Invalid Request error), or a batch
+  larger than 60. A refused batch's 429 reports the units actually left in
+  `X-RateLimit-Remaining`.
 
 ## Bucketing
 
