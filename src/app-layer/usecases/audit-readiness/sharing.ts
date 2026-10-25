@@ -313,7 +313,7 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
         }
         const existing = await tdb.finding.findFirst({
             where: { tenantId: ctx.tenantId, sourceKind: AUDITOR_SHARE_COMMENT_SOURCE, sourceRef: commentId, deletedAt: null },
-            select: { id: true },
+            select: { id: true, auditId: true },
         });
         // The RESOLVED check runs AFTER the finding lookup, and only fires when
         // there is no finding to point at.
@@ -349,7 +349,13 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
             const item = await tdb.auditPackItem.findFirst({ where: { id: comment.auditPackItemId, tenantId: ctx.tenantId }, select: { entityType: true, entityId: true } });
             if (item?.entityType === 'CONTROL') controlId = item.entityId;
         }
-        return { comment, existingFindingId: existing?.id ?? null, auditId: audit?.id ?? null, controlId };
+        return {
+            comment,
+            existingFindingId: existing?.id ?? null,
+            existingFindingAuditId: existing?.auditId ?? null,
+            auditId: audit?.id ?? null,
+            controlId,
+        };
     });
 
     /**
@@ -389,7 +395,7 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
     // Already materialised — ensure the comment is resolved, return the link.
     if (loaded.existingFindingId) {
         await markResolved(loaded.existingFindingId);
-        return { findingId: loaded.existingFindingId, alreadyExisted: true };
+        return { findingId: loaded.existingFindingId, alreadyExisted: true, attachedToAudit: loaded.existingFindingAuditId !== null };
     }
 
     const body = loaded.comment.body ?? '';
@@ -451,7 +457,10 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
     // The status transition already happened in the claim above; this records
     // the event now that there is a findingId to name in it.
     await recordMaterialised(finding.id);
-    return { findingId: finding.id, alreadyExisted: false };
+    // `attachedToAudit` — whether the finding reached the cycle at all. It
+    // links to the cycle only through a fieldwork audit, so a cycle with none
+    // gets a finding that readiness never sees (#4129); the page says which.
+    return { findingId: finding.id, alreadyExisted: false, attachedToAudit: loaded.auditId !== null };
 }
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Auditor Accounts РІвЂќР‚РІвЂќР‚РІвЂќР‚

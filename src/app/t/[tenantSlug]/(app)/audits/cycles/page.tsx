@@ -10,7 +10,6 @@ import { ClipboardCheck } from 'lucide-react';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { RequirePermission } from '@/components/require-permission';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -32,6 +31,8 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { AUDIT_CYCLE_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';
+import { useAuditReadinessAccess } from '../_lib/use-audit-access';
+import { apiErrorMessage } from '@/lib/api-error';
 import { ReadinessScoreRing, ReadinessLegend } from './ReadinessScoreRing';
 
 // Epic 58 — audit periods are reporting windows. The curated preset
@@ -62,14 +63,12 @@ const fwMeta = (frameworkKey: string) =>
 // (include the version / full regulation name) because the Combobox
 // search index benefits from the extra tokens ("ISO", "27001", "NIS2",
 // "EU 2022/2555" all become fuzzy-matchable).
-// PR-O — fallback options until the installed-framework catalog loads. A
-// cycle can be created for ANY installed framework now (non-ISO/NIS2 keys
-// score via computeGenericReadiness), so the picker is data-driven; these
-// two just seed the control before the /frameworks fetch resolves.
-const DEFAULT_FW_OPTIONS: ComboboxOption<{ version: string }>[] = [
-    { value: 'ISO27001', label: 'ISO/IEC 27001:2022', meta: { version: '2022' } },
-    { value: 'NIS2', label: 'NIS2 Directive (EU 2022/2555)', meta: { version: 'EU_2022_2555' } },
-];
+//
+// #4129 — the picker offers ONLY the frameworks in use in this workspace
+// (`/frameworks?inUse=true`), the set the server accepts. It used to seed
+// ISO 27001 and NIS2 before the fetch resolved, and then list the whole global
+// catalogue, so it offered frameworks the workspace had never mapped a control
+// to, and kept offering the two seeds when the fetch failed.
 
 // The readiness overview endpoint returns the cycle list joined with a
 // per-cycle readiness score (`scoresByCycleId`). One call gives the
@@ -94,7 +93,7 @@ interface ReadinessOverview {
     cycles: CycleRow[];
     scoresByCycleId: Record<string, ScoreEntry>;
 }
-/** `/frameworks` rows — the installed-framework catalog behind the picker. */
+/** `/frameworks?inUse=true` rows — the frameworks in use, behind the picker. */
 interface FrameworkRow {
     key: string;
     name: string;
@@ -117,8 +116,11 @@ export default function AuditCyclesPage() {
     const tenantSlug = params.tenantSlug as string;
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
 
+    const access = useAuditReadinessAccess();
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ frameworkKey: 'ISO27001', frameworkVersion: '2022', name: '' });
+    // `frameworkKey` is the member's own choice; until they make one the form
+    // uses the first framework in use (`selectedFw` below).
+    const [form, setForm] = useState({ frameworkKey: '', name: '' });
     // Epic 58 — the period is stored as a nullable DateRangeValue so
     // half-open ranges ("from X, open-ended") are representable. The
     // backend accepts both `periodStartAt` / `periodEndAt` as
@@ -171,21 +173,25 @@ export default function AuditCyclesPage() {
         void overviewQuery.mutate();
     }, [overviewQuery]);
 
-    // PR-O — installed frameworks drive the picker (custom-framework cycles),
-    // not just ISO27001/NIS2. Fail-soft: on error the query yields no data and
-    // the picker keeps the two defaults, exactly as the old `.catch` did.
-    const frameworksQuery = useTenantSWR<FrameworkRow[]>(CACHE_KEYS.frameworks.list());
+    // Read only while the form is open: "in use" is decided per framework on
+    // the server, and nobody but the form needs it.
+    const frameworksQuery = useTenantSWR<FrameworkRow[]>(
+        showForm ? CACHE_KEYS.frameworks.inUse() : null,
+    );
     const frameworkRows = frameworksQuery.data;
-    const fwOptions = useMemo<ComboboxOption<{ version: string }>[]>(() => {
-        if (!Array.isArray(frameworkRows) || frameworkRows.length === 0) {
-            return DEFAULT_FW_OPTIONS;
-        }
-        return frameworkRows.map((f) => ({
-            value: f.key,
-            label: f.version ? `${f.name} (${f.version})` : f.name,
-            meta: { version: f.version ?? '' },
-        }));
-    }, [frameworkRows]);
+    const fwOptions = useMemo<ComboboxOption<{ version: string }>[]>(
+        () =>
+            (Array.isArray(frameworkRows) ? frameworkRows : []).map((f) => ({
+                value: f.key,
+                label: f.version ? `${f.name} (${f.version})` : f.name,
+                meta: { version: f.version ?? '' },
+            })),
+        [frameworkRows],
+    );
+    const selectedFw = fwOptions.find((o) => o.value === form.frameworkKey) ?? fwOptions[0] ?? null;
+    const frameworksLoading = showForm && frameworksQuery.isLoading;
+    const frameworksFailed = Boolean(frameworksQuery.error) && frameworkRows === undefined;
+    const noFrameworkInUse = Array.isArray(frameworkRows) && frameworkRows.length === 0;
 
     // ─── Write ───
     const createMutation = useTenantMutation<ReadinessOverview, CreateCycleInput, { id: string }>({
@@ -201,7 +207,12 @@ export default function AuditCyclesPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(input),
             });
-            if (!res.ok) throw new Error(tx('cycles.createError'));
+            if (!res.ok) {
+                // The server's reason, not a guess at it: a framework that is
+                // not in use, a role that may not create cycles (#4129).
+                const body = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('cycles.createError')));
+            }
             return res.json();
         },
         // The bare cycle list backs the audits hub's cycle picker and the
@@ -221,11 +232,12 @@ export default function AuditCyclesPage() {
         e.preventDefault();
         // Guard double-submit + empty required fields (the modal form is
         // rendered with `noValidate`, so native `required` won't block it).
-        if (creating || !form.frameworkKey || !form.name.trim()) return;
+        if (creating || !selectedFw || !form.name.trim()) return;
         // The version rides the selected framework option (no hardcoded ternary).
         const input: CreateCycleInput = {
-            ...form,
-            frameworkVersion: form.frameworkVersion,
+            frameworkKey: selectedFw.value,
+            frameworkVersion: selectedFw.meta?.version ?? '',
+            name: form.name,
         };
         // Submit the audit period only when the user picked one.
         // Either side may be open-ended; the backend already accepts
@@ -238,11 +250,11 @@ export default function AuditCyclesPage() {
             // transition (no double-submit).
             setNavigating(true);
             router.push(`/t/${tenantSlug}/audits/cycles/${cycle.id}`);
-        } catch {
+        } catch (e) {
             // Previously a silent no-op — a failed create left the form
             // untouched with no signal. Surface the failure; the mutation
             // has already re-enabled the form.
-            toast.error(tx('cycles.createError'));
+            toast.error(e instanceof Error && e.message ? e.message : tx('cycles.createError'));
         }
     };
 
@@ -298,11 +310,13 @@ export default function AuditCyclesPage() {
                     </div>
                     <p className="text-content-muted text-sm">{tx('cycles.cycleCount', { count: cycles.length })}</p>
                 </div>
-                <RequirePermission resource="audits" action="manage">
+                {/* #4129 — the roles the server lets create a cycle (Owner,
+                    Admin, Editor), not `audits.manage`, which Editors lack. */}
+                {access.manageCycles && (
                     <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setShowForm(true)} id="create-cycle-btn">
                         {tx('cycles.cycle')}
                     </Button>
-                </RequirePermission>
+                )}
             </div>
 
             <Modal
@@ -329,21 +343,14 @@ export default function AuditCyclesPage() {
                                         id="fw-select"
                                         name="frameworkKey"
                                         options={fwOptions}
-                                        selected={
-                                            fwOptions.find(
-                                                (o) => o.value === form.frameworkKey,
-                                            ) ?? null
-                                        }
+                                        selected={selectedFw}
+                                        disabled={frameworksLoading || fwOptions.length === 0}
                                         setSelected={(option) => {
                                             if (!option) return;
-                                            setForm((f) => ({
-                                                ...f,
-                                                frameworkKey: option.value,
-                                                // Carry the framework's version from the picker.
-                                                frameworkVersion: option.meta?.version ?? '',
-                                            }));
+                                            // The version rides the option (`selectedFw.meta`).
+                                            setForm((f) => ({ ...f, frameworkKey: option.value }));
                                         }}
-                                        placeholder={tx('cycles.selectFramework')}
+                                        placeholder={frameworksLoading ? tx('cycles.frameworksLoading') : tx('cycles.selectFramework')}
                                         searchPlaceholder={tx('cycles.searchFrameworks')}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'w-full' }}
@@ -362,6 +369,25 @@ export default function AuditCyclesPage() {
                                     />
                                 </FormField>
                             </FieldGroup>
+                            {/* #4129 — say why the picker is empty, rather than
+                                offering frameworks the server would refuse. */}
+                            {noFrameworkInUse && (
+                                <p className="text-sm text-content-muted" role="status" id="cycle-no-framework-in-use">
+                                    {tx('cycles.noFrameworkInUseHint')}{' '}
+                                    <Link
+                                        href={`/t/${tenantSlug}/frameworks`}
+                                        className="underline underline-offset-2"
+                                        id="cycle-frameworks-link"
+                                    >
+                                        {tx('cycles.openFrameworks')}
+                                    </Link>
+                                </p>
+                            )}
+                            {frameworksFailed && (
+                                <p className="text-sm text-content-error" role="alert" id="cycle-frameworks-error">
+                                    {tx('cycles.frameworksLoadError')}
+                                </p>
+                            )}
                             {/*
                               Epic 58 — Audit period. Optional. The shared
                               DateRangePicker handles presets (Quarter to date,
@@ -404,7 +430,7 @@ export default function AuditCyclesPage() {
                             variant="primary"
                             size="sm"
                             loading={creating}
-                            disabled={creating || !form.frameworkKey || !form.name.trim()}
+                            disabled={creating || !selectedFw || !form.name.trim()}
                             id="submit-cycle-btn"
                         >
                             {creating ? tx('cycles.creating') : tx('cycles.createCycle')}
@@ -415,14 +441,18 @@ export default function AuditCyclesPage() {
 
             {cycles.length === 0 ? (
                 <div className={cardVariants({ density: 'none' })}>
+                    {/* #4129 — the add action only for a role that may create a
+                        cycle; it used to be offered to every role, and a Reader
+                        filled in the form to be refused. */}
                     <EmptyState
                         icon={ClipboardCheck}
                         title={tx('cycles.emptyTitle')}
-                        description={tx('cycles.emptyDesc')}
-                        primaryAction={{
-                            label: tx('cycles.addCycle'),
-                            onClick: () => setShowForm(true),
-                        }}
+                        description={access.manageCycles ? tx('cycles.emptyDesc') : tx('cycles.emptyDescReadOnly')}
+                        primaryAction={
+                            access.manageCycles
+                                ? { label: tx('cycles.addCycle'), onClick: () => setShowForm(true) }
+                                : undefined
+                        }
                     />
                 </div>
             ) : (
