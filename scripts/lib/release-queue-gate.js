@@ -24,12 +24,28 @@
  * waiting, and counting them would hold the very release that should go out.
  * Each squash commit names its PR as the last `(#N)` of its subject.
  *
+ * A RELEASE THAT WOULD RAISE A FLOOR NEVER WAITS
+ * ──────────────────────────────────────────────
+ * The release is also the only thing that raises the coverage floors
+ * (`scripts/raise-coverage-floors.mjs`, the prepare step), and the guard
+ * `tests/guards/rendered-coverage-floor.test.ts` fails every build once more
+ * tests have merged since the last release than its slack allows: 8 rendered
+ * tests, 4 E2E specs, 3 registered primitives. Rendered tests reached main at
+ * 20 to 23 a day on 2026-10-24 and 25, so a release held through a busy
+ * afternoon would turn every queue candidate and main itself red, eject the
+ * whole queue, and leave nothing to merge and so nothing to release until the
+ * daily run. So whenever a release would raise any floor, it goes out now,
+ * whatever the queue holds. That keeps the floors exactly as fresh as they
+ * were before the gate; only a merge that added no test, spec or primitive
+ * can wait. Over 2026-10-18..25 that was 181 of 236 merges.
+ *
  * FAILING OPEN
  * ────────────
  * A queue that cannot be read is NOT an empty queue, but the answer to it is
  * still to release: that is what every push did before this gate existed, so
  * a broken read costs churn, never a missing release. The entry script warns
- * on the run when it happens.
+ * on the run when it happens. Floors that cannot be counted release too, for
+ * the same reason and because a stale floor is the costlier mistake.
  *
  * A capped read is a fact held rather than guessed: an entry past the page
  * still counts as waiting, through `total`.
@@ -53,16 +69,35 @@ function prNumberOfCommit(message) {
  *   eventName: string,
  *   queue: { prNumbers: number[], total: number } | null,
  *   pushedCommitMessages: string[],
- * }} input   `queue` is null when it could not be read.
+ *   floorsBehind: string[] | null,
+ * }} input   `queue` is null when it could not be read; `floorsBehind` names
+ *   each coverage floor a release would raise, and is null when the floors
+ *   could not be counted.
  * @returns {{ release: boolean, waitingOn: number[], unlisted: number, reason: string }}
  */
-function decideRelease({ eventName, queue, pushedCommitMessages }) {
+function decideRelease({ eventName, queue, pushedCommitMessages, floorsBehind }) {
     if (eventName !== 'push') {
         return {
             release: true,
             waitingOn: [],
             unlisted: 0,
             reason: `a ${eventName} run releases whatever the merge queue holds`,
+        };
+    }
+    if (!Array.isArray(floorsBehind)) {
+        return {
+            release: true,
+            waitingOn: [],
+            unlisted: 0,
+            reason: 'the coverage floors could not be counted, so this run releases rather than risk leaving them behind',
+        };
+    }
+    if (floorsBehind.length > 0) {
+        return {
+            release: true,
+            waitingOn: [],
+            unlisted: 0,
+            reason: `main has more ${floorsBehind.join(', ')} coverage than its floors record, and only a release raises them, so this one does not wait for the merge queue`,
         };
     }
     if (queue === null) {

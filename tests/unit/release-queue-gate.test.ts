@@ -4,11 +4,13 @@
  * A release commit pushed while the queue is building invalidates every
  * candidate in flight. The gate holds a push's release while any other entry
  * is waiting, and must never hold one it cannot justify: a scheduled or manual
- * run, an unreadable queue, or a gate that breaks all release.
+ * run, a release that would raise a coverage floor, an unreadable queue or
+ * floor, or a gate that breaks all release.
  *
- * The entry script runs here as a real Node process against a local stand-in
- * for the GraphQL endpoint, the way the workflow runs it, and the workflow is
- * read for the wiring that makes its answer count.
+ * The entry script runs here as a real Node process, from the root of a small
+ * tree whose coverage counts and floors each case sets, against a local
+ * stand-in for the GraphQL endpoint, the way the workflow runs it. The
+ * workflow is read for the wiring that makes its answer count.
  */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -43,8 +45,8 @@ describe('prNumberOfCommit', () => {
 });
 
 describe('decideRelease', () => {
-    const push = (prNumbers: number[], total = prNumbers.length, pushed: string[] = []) =>
-        decideRelease({ eventName: 'push', queue: { prNumbers, total }, pushedCommitMessages: pushed });
+    const push = (prNumbers: number[], total = prNumbers.length, pushed: string[] = [], floorsBehind: string[] | null = []) =>
+        decideRelease({ eventName: 'push', queue: { prNumbers, total }, pushedCommitMessages: pushed, floorsBehind });
 
     it('releases a push when the queue is empty', () => {
         expect(push([])).toMatchObject({ release: true, waitingOn: [] });
@@ -70,13 +72,23 @@ describe('decideRelease', () => {
 
     it('releases a push whose queue could not be read', () => {
         expect(
-            decideRelease({ eventName: 'push', queue: null, pushedCommitMessages: [] }),
+            decideRelease({ eventName: 'push', queue: null, pushedCommitMessages: [], floorsBehind: [] }),
         ).toMatchObject({ release: true });
+    });
+
+    it('never holds a release that would raise a coverage floor, however busy the queue', () => {
+        const d = push([4214, 4217], 2, [], ['rendered', 'e2e']);
+        expect(d).toMatchObject({ release: true, waitingOn: [] });
+        expect(d.reason).toContain('rendered, e2e');
+    });
+
+    it('releases when the floors could not be counted', () => {
+        expect(push([4214], 1, [], null)).toMatchObject({ release: true });
     });
 
     it.each(['schedule', 'workflow_dispatch'])('releases a %s run whatever the queue holds', (eventName) => {
         expect(
-            decideRelease({ eventName, queue: { prNumbers: [4214], total: 1 }, pushedCommitMessages: [] }),
+            decideRelease({ eventName, queue: { prNumbers: [4214], total: 1 }, pushedCommitMessages: [], floorsBehind: [] }),
         ).toMatchObject({ release: true });
     });
 });
@@ -113,6 +125,21 @@ describe('the entry script', () => {
         }));
     };
 
+    // The populations `scripts/lib/coverage-floors.js` counts, and the floors
+    // they are held to. Each case starts level, so only the queue decides.
+    function tree(counts = { rendered: 2, e2e: 1, registry: 1 }, floors: unknown = { rendered: 2, e2e: 1, registry: 1 }) {
+        for (const d of ['tests/rendered', 'tests/e2e', 'tests/guards']) fs.mkdirSync(path.join(dir, d), { recursive: true });
+        for (let i = 0; i < counts.rendered; i++) fs.writeFileSync(path.join(dir, `tests/rendered/t${i}.test.tsx`), '');
+        for (let i = 0; i < counts.e2e; i++) fs.writeFileSync(path.join(dir, `tests/e2e/s${i}.spec.ts`), '');
+        fs.writeFileSync(
+            path.join(dir, 'tests/guards/behavioural-coverage-registry.test.ts'),
+            Array.from({ length: counts.registry }, (_, i) => `{ primitive: 'p${i}' },`).join('\n'),
+        );
+        if (floors !== null) {
+            fs.writeFileSync(path.join(dir, 'tests/guards/coverage-floors.json'), JSON.stringify(floors));
+        }
+    }
+
     function run(eventName: string, commits: string[] = []) {
         const out = path.join(dir, 'output');
         const event = path.join(dir, 'event.json');
@@ -133,7 +160,7 @@ describe('the entry script', () => {
             GH_TOKEN: 'test-token',
         };
         return new Promise<{ code: number | null; stdout: string; output: string }>((resolve) => {
-            const child = spawn(process.execPath, [SCRIPT], { cwd: ROOT, env });
+            const child = spawn(process.execPath, [SCRIPT], { cwd: dir, env });
             let stdout = '';
             child.stdout.on('data', (c) => { stdout += c; });
             child.on('close', (code) => resolve({ code, stdout, output: fs.readFileSync(out, 'utf8') }));
@@ -141,6 +168,7 @@ describe('the entry script', () => {
     }
 
     it('holds a push while the queue is building another entry', async () => {
+        tree();
         respond = queueOf([4207, 4214]);
         const r = await run('push', ['fix(a): one (#4207)']);
         expect(r.code).toBe(0);
@@ -149,12 +177,31 @@ describe('the entry script', () => {
     });
 
     it('releases the push that empties the queue', async () => {
+        tree();
         respond = queueOf([4207]);
         const r = await run('push', ['fix(a): one (#4207)']);
         expect(r.output).toBe('release=true\n');
     });
 
+    it('releases a push that would raise a floor, with the queue still busy', async () => {
+        tree({ rendered: 3, e2e: 1, registry: 1 });
+        respond = queueOf([4214]);
+        const r = await run('push');
+        expect(r.output).toBe('release=true\n');
+        expect(r.stdout).toContain('rendered');
+    });
+
+    it('releases, and warns, when the floors cannot be counted', async () => {
+        tree(undefined, null);
+        respond = queueOf([4214]);
+        const r = await run('push');
+        expect(r.code).toBe(0);
+        expect(r.output).toBe('release=true\n');
+        expect(r.stdout).toContain('::warning title=Coverage floors uncountable::');
+    });
+
     it('releases, and warns, when the queue read fails', async () => {
+        tree();
         respond = (res) => { res.statusCode = 502; res.end('bad gateway'); };
         const r = await run('push');
         expect(r.code).toBe(0);
@@ -163,6 +210,7 @@ describe('the entry script', () => {
     });
 
     it('reads an entry it cannot name as unreadable, never as absent', async () => {
+        tree();
         respond = queueOf([null]);
         const r = await run('push');
         expect(r.output).toBe('release=true\n');
@@ -170,6 +218,7 @@ describe('the entry script', () => {
     });
 
     it('releases a scheduled run without reading the queue', async () => {
+        tree();
         respond = queueOf([4214]);
         const r = await run('schedule');
         expect(r.output).toBe('release=true\n');
