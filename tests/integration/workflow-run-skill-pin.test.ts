@@ -142,6 +142,15 @@ describeFn('a run pins the skills it was taught (real DB)', () => {
         expect(await prisma.workflowRun.count({ where: { tenantId: TENANT, workflowKey: WF_NONE } })).toBe(before);
     });
 
+    it('records the engine the run executes on, by its stored name', async () => {
+        // `WorkflowRun.driver` is written by `recordedModeOf` (#4285), a total mapping
+        // over `AGENT_DRIVERS` (Step 0H). It was a two-way ternary, which
+        // would have recorded a third engine's runs as STATIC.
+        const { runId } = await startWorkflowRun(ctx(), WF_NONE, {});
+        const row = await prisma.workflowRun.findUniqueOrThrow({ where: { id: runId }, select: { driver: true } });
+        expect(row.driver).toBe('FLUE');
+    });
+
     it('hands a reasoning-engine run to the worker rather than running it in the request', async () => {
         jest.mocked(enqueue).mockClear();
         const { runId, status } = await startWorkflowRun(ctx(), WF_NONE, {});

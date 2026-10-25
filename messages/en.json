@@ -6674,7 +6674,10 @@
       "description": "This setting chooses which engine runs this workspace's agents. The built-in engine runs each workflow's steps exactly as written. A reasoning engine lets a model choose which of the agent's tools to call. On either engine, every call goes through the agent's grants, policy card, autonomy ceiling and kill switch.",
       "loadFailed": "Couldn't load the agent engine setting.",
       "saveFailed": "Couldn't change the engine for this workspace.",
-      "runsOnFlue": "In this workspace, workflows that ask for the Flue engine run on it.",
+      "refreshFailed": "Couldn't refresh the agent engine setting. What is shown may be out of date. Reload the page to try again.",
+      "wiringLoadFailed": "Couldn't load the checklist for a Flue run, so only the terms that decide the engine are shown.",
+      "runsOnFlue": "In this workspace, workflows that ask for the Flue engine run on it when an active registered agent starts them.",
+      "runsOnFlueNotReady": "This workspace has chosen the Flue engine, but no Flue run can start yet. The checklist below shows what is missing.",
       "reason": {
         "ENV_DISABLED": "Runs use the built-in engine because the Flue engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
         "TENANT_NOT_OPTED_IN": "Runs use the built-in engine because this workspace has not chosen the Flue engine.",
@@ -6684,7 +6687,8 @@
         "UNKNOWN": "Runs use the built-in engine, but the reason could not be shown. Reload the page to try again."
       },
       "deploymentOffHeading": "Agent engines are not turned on for this deployment",
-      "deploymentOffBody": "The choice below is disabled. No run would change until the deployment's Flue switch is on, and only the deployment's operator can turn it on.",
+      "deploymentOffBody": "Choosing the Flue engine is disabled until the deployment's Flue switch is on, and only the deployment's operator can turn it on. You can always return this workspace to the built-in engine.",
+      "deploymentOffStoredFlue": "This workspace has chosen the Flue engine, so its runs move to Flue as soon as the switch is turned on.",
       "chosen": "This workspace's engine: {engine}.",
       "ownerOnly": "Only a workspace owner can change the engine.",
       "choiceAria": "Engine for this workspace",
