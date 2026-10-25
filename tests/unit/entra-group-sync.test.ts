@@ -282,6 +282,64 @@ describe('syncEntraMembershipRole — AI_ADMIN', () => {
     });
 });
 
+describe('syncEntraMembershipRole — a sign-in counts only from the configured directory', () => {
+    // The deployment's Microsoft app can admit any directory; the mappings are
+    // this workspace's own, so only its configured directory (aadTenantId,
+    // against the ID token's tid) gets them.
+    const reader = { id: 'm1', role: 'READER' as const };
+    const toAdmin = [{ aadGroupId: 'g-1', role: 'ADMIN', priority: 0 }];
+    const OTHER = '99999999-9999-4999-8999-999999999999';
+
+    it('syncs a sign-in from the configured directory, whatever the GUID case', async () => {
+        const { db, update } = mockDb({ mappings: toAdmin, membership: reader, config: validConfig });
+        const r = await syncEntraMembershipRole({ ...base, signInDirectoryId: GUID.toUpperCase() }, { db });
+        expect(r).toMatchObject({ effectiveRole: 'ADMIN', changed: true });
+        expect(update).toHaveBeenCalled();
+    });
+
+    it('applies no mapping to a sign-in from another directory, and the gate refuses it', async () => {
+        const { db, update } = mockDb({ mappings: toAdmin, membership: reader, config: validConfig });
+        const r = await syncEntraMembershipRole({ ...base, signInDirectoryId: OTHER }, { db });
+        expect(r).toEqual({ effectiveRole: null, changed: false, gateDenied: true });
+        expect(update).not.toHaveBeenCalled();
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'foreign_directory' });
+    });
+
+    it('with the gate off, a sign-in from another directory just keeps its role', async () => {
+        const { db, update } = mockDb({
+            mappings: toAdmin,
+            membership: reader,
+            config: { ...validConfig, enforceGroupGate: false },
+        });
+        const r = await syncEntraMembershipRole({ ...base, signInDirectoryId: OTHER }, { db });
+        expect(r).toEqual({ effectiveRole: null, changed: false, gateDenied: false });
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it('treats a token with no directory, or a workspace with none configured, as foreign', async () => {
+        const noTid = mockDb({ mappings: toAdmin, membership: reader, config: validConfig });
+        await syncEntraMembershipRole({ ...base, signInDirectoryId: null }, { db: noTid.db });
+        expect(noTid.update).not.toHaveBeenCalled();
+
+        const noConfig = mockDb({ mappings: toAdmin, membership: reader });
+        const r = await syncEntraMembershipRole({ ...base, signInDirectoryId: GUID }, { db: noConfig.db });
+        expect(r).toEqual({ effectiveRole: null, changed: false, gateDenied: false });
+        expect(noConfig.update).not.toHaveBeenCalled();
+    });
+
+    it('still never locks out an OWNER, from any directory', async () => {
+        const { db } = mockDb({ mappings: toAdmin, membership: { id: 'm1', role: 'OWNER' }, config: validConfig });
+        const r = await syncEntraMembershipRole({ ...base, signInDirectoryId: OTHER }, { db });
+        expect(r).toEqual({ effectiveRole: 'OWNER', changed: false, gateDenied: false });
+    });
+
+    it('leaves the SCIM Groups path, which has no sign-in, as it was', async () => {
+        const { db, update } = mockDb({ mappings: [{ aadGroupId: 'g-1', role: 'EDITOR', priority: 0 }], membership: reader, config: validConfig });
+        await syncEntraMembershipRole({ ...base, assignableRoles: SCIM_GROUP_ASSIGNABLE_ROLES }, { db });
+        expect(update).toHaveBeenCalled();
+    });
+});
+
 describe('applyEntraSyncToToken', () => {
     it('on role sync, updates role + the matching memberships entry', () => {
         const token: any = {
