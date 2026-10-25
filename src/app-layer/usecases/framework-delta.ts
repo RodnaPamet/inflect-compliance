@@ -28,6 +28,7 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { createFinding } from '@/app-layer/usecases/finding';
 import { parseHistoryFromMetadata } from '@/app-layer/libraries/version-history';
 import type { RequestContext } from '@/app-layer/types';
+import { tenantPageLink } from '@/app-layer/notifications/tenant-link';
 
 const FRAMEWORK_UPDATE_SOURCE = 'FRAMEWORK_UPDATE';
 
@@ -138,6 +139,14 @@ export async function propagateFrameworkDelta(diffId: string): Promise<Propagate
         distinct: ['tenantId'],
     });
     const tenantIds = links.map((l) => l.tenantId).filter(Boolean);
+    // Each tenant's slug for the notification link, read once (global read, like
+    // the tenant list above) rather than per tenant inside the loop. A tenant
+    // page lives under `/t/<slug>/…`; the bare `/framework-updates` this used to
+    // store 404'd from the bell (#4128).
+    const slugRows = tenantIds.length
+        ? await prisma.tenant.findMany({ where: { id: { in: tenantIds } }, select: { id: true, slug: true }, take: tenantIds.length })
+        : [];
+    const slugByTenant = new Map(slugRows.map((t) => [t.id, t.slug]));
 
     let affected = 0;
     // Intentional per-tenant fan-out: each iteration runs in its own RLS-scoped
@@ -193,10 +202,11 @@ export async function propagateFrameworkDelta(diffId: string): Promise<Propagate
             const message =
                 `${addedCodes.length} new requirement(s) affect you` +
                 (flaggedIds.length ? `, ${flaggedIds.length} control(s) need re-review.` : '.');
+            const linkUrl = tenantPageLink(slugByTenant.get(tenantId), '/framework-updates');
             await db.notification.createMany({
                 data: members.map((m) => ({
                     tenantId, userId: m.userId, type: 'GENERAL' as const, title, message,
-                    linkUrl: `/framework-updates`,
+                    linkUrl,
                     dedupeKey: `${tenantId}:FRAMEWORK_UPDATE:${diffId}:${m.userId}:${day}`,
                 })),
                 skipDuplicates: true,

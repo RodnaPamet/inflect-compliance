@@ -1175,6 +1175,9 @@ export default function PolicyDetailPage() {
             {tab === 'acknowledgements' && (
                 <PolicyAcknowledgementsPanel
                     policyId={policyId}
+                    // OWNER / ADMIN / AUDITOR read the roster (`canAudit`, as the
+                    // server's `assertCanAudit`); requesting stays `canAdmin`.
+                    canViewRoster={tenant.permissions.canAudit}
                     canAdmin={canAdmin}
                     isPublished={policy.status === 'PUBLISHED'}
                     refreshToken={ackRefreshToken}
