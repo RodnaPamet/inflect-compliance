@@ -191,9 +191,27 @@ const BUDGETS_KB: Record<string, number> = {
         rot a third time the comment is not the right home for the number.
         They did rot a third time, and it isn't: #4041 deleted them and derives
         the headroom at run time instead.
+
+        ─── RAISED 2026-10-25 BY ONE KB EACH, FOR THE RETAINED FILTER OPTIONS (#4305) ───
+
+        Measured on CI's webpack build, main (a docs-only PR the same hour)
+        against this branch:
+
+              route                              main     branch   delta
+              controls/dashboard/page            615.8    616.1    +0.3
+              risks/[riskId]/page                652.9    653.2    +0.3
+
+        What grew: `useRetainedFilterOptions`, about 0.3 KB gzipped, which
+        keeps a list filter's options from collapsing to the value just picked.
+        Five list pages import it, by its own module path rather than the
+        filter barrel, and webpack still places it in a chunk the tenant layout
+        loads: every tenant route grew by 0.3-0.4 KB in the same build. Neither
+        of these two routes uses it. Main had 0.2 KB and 0.1 KB left in these
+        buckets, so no change to shared client code could pass. The raise is
+        the measured delta rounded up, not measured + 4.
     */
-    'dashboard': 616,
-    'risks': 653,
+    'dashboard': 617,
+    'risks': 654,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
