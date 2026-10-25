@@ -37,13 +37,21 @@ describe('Policy detail — Epic 45.3 review wiring', () => {
         );
     });
 
-    it('mounts <ApprovalBanner> only when the policy is IN_REVIEW + a PENDING approval exists', () => {
-        // Two-condition gate: status check + presence of an active
-        // PENDING row. The banner stays informational for non-actors
-        // (canDecide=false), and the actions are gated by canAdmin.
+    it('mounts <ApprovalBanner> only when a PENDING approval can still be decided', () => {
+        // Gate: an active PENDING row that can still be decided. The
+        // banner stays informational for non-actors (canDecide=false),
+        // and the actions are gated by canAdmin.
+        //
+        // #4127 — "can still be decided" is no longer "the policy is
+        // IN_REVIEW": a revision of a PUBLISHED policy is reviewed while the
+        // policy stays PUBLISHED. `pendingApproval` is null unless the shared
+        // `isApprovalDecidable` rule (the one the server applies) admits it.
+        // The banner's behaviour is in
+        // tests/rendered/policy-detail-version-targeting.test.tsx.
         expect(source).toMatch(
-            /policy\.status === ['"]IN_REVIEW['"][\s\S]{0,200}<ApprovalBanner/,
+            /\{pendingApproval && \([\s\S]{0,40}<ApprovalBanner/,
         );
+        expect(source).toMatch(/!isApprovalDecidable\(publication, \{ status: pending\.status/);
         expect(source).toMatch(/canDecide=\{canAdmin\}/);
     });
 
