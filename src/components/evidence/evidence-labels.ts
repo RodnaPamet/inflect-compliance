@@ -14,6 +14,13 @@
  * the `typeLabels.*` / `statusLabels.*` message groups (en + bg 1:1).
  * A missing key falls back to the raw enum so an un-mapped future enum
  * member degrades to its identifier rather than a dotted key path.
+ *
+ * Lives in `src/components/evidence/` rather than the library route
+ * because the shared `EvidenceSubTable` (control / task / risk / asset
+ * evidence tabs) reads the same labels, and a shared component may not
+ * import from a route directory (`tests/guards/route-import-boundaries`).
+ * The sub-table printed the raw `DRAFT` / `FILE` enums until it read them
+ * from here (#4126).
  */
 
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';

@@ -33,6 +33,15 @@ export async function listEvidenceLinks(ctx: RequestContext, controlId: string) 
  * directly attached to the control. Both used to ride on the eager
  * `getById` payload; the tab now fetches them together on demand —
  * one round-trip, one SWR key.
+ *
+ * Each evidence row carries `addedBy` — the person who attached it to
+ * THIS control, read off its `EvidenceControlLink.createdBy`. `Evidence`
+ * has no creator column, and for a record uploaded or linked from the
+ * control's own tab the join row is written by the same request, so it
+ * names the creator. The join is read as a nested include (one batched
+ * query for the whole page, not one per row) scoped to this control, so
+ * a record linked to several controls reports who added it HERE (#4126:
+ * the column read a dash for every library record).
  */
 export async function getControlEvidenceTab(ctx: RequestContext, controlId: string) {
     assertCanReadControls(ctx);
@@ -41,7 +50,7 @@ export async function getControlEvidenceTab(ctx: RequestContext, controlId: stri
             where: { id: controlId, tenantId: ctx.tenantId },
         });
         if (!control) throw notFound('Control not found');
-        const [links, evidence] = await Promise.all([
+        const [links, evidenceRows] = await Promise.all([
             ControlRepository.listEvidenceLinks(db, ctx, controlId),
             // EP-3 — Evidence entities are attached to a control through the
             // many-to-many join now (not a singular controlId). Explicit
@@ -54,12 +63,31 @@ export async function getControlEvidenceTab(ctx: RequestContext, controlId: stri
                     evidenceControlLinks: { some: { controlId } },
                 },
                 orderBy: { createdAt: 'desc' },
+                include: {
+                    evidenceControlLinks: {
+                        where: { controlId, tenantId: ctx.tenantId },
+                        select: { createdBy: { select: { id: true, name: true } } },
+                        take: 1,
+                    },
+                },
             }),
         ]);
+        const evidence = evidenceRows.map(({ evidenceControlLinks, ...row }) => ({
+            ...row,
+            addedBy: evidenceControlLinks?.[0]?.createdBy ?? null,
+        }));
         return { links, evidence };
     });
 }
 
+/**
+ * Writes a plain `ControlEvidenceLink` row: it never reaches the evidence
+ * library and has no review status. The control's Evidence tab no longer
+ * adds a web link through here — it creates a library LINK record through
+ * `createEvidence` (`POST /evidence` with `controlIds`), exactly as the
+ * library's own link dialog does, so the link can be reviewed (#4126).
+ * This path stays for API callers and the controls list's edit panel.
+ */
 export async function linkEvidence(ctx: RequestContext, controlId: string, data: { kind: string; fileId?: string | null; url?: string | null; note?: string | null }) {
     assertCanLinkEvidence(ctx);
     return runInTenantContext(ctx, async (db) => {

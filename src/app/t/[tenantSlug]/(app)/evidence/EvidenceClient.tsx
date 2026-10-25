@@ -70,7 +70,7 @@ import {
     EVIDENCE_FILTER_KEYS,
     evidenceFreshnessLabels,
 } from './filter-defs';
-import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel } from './evidence-labels';
+import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel } from '@/components/evidence/evidence-labels';
 import {
     evidenceFreshnessBucket,
     reviewCurrencyAnchor,

@@ -2081,6 +2081,7 @@
         "statusUpdateFailed": "Status update failed",
         "uploadFailed": "Upload failed",
         "chooseFile": "Choose a file to upload, or enter an evidence URL.",
+        "linkTitleRequired": "Give the link a title.",
         "linkEvidenceFailed": "Failed to link evidence",
         "unlinkFailed": "Unlink failed",
         "applicabilityFailed": "Couldn't save applicability.",
@@ -10948,6 +10949,7 @@
       "placeholderTitle": "Title (defaults to filename)",
       "uploadFile": "Upload a file",
       "orLinkUrl": "…or link a URL",
+      "linkNeedsTitle": "A link is saved to the evidence library and needs a title.",
       "urlPlaceholder": "https://…",
       "noteOptional": "Note (optional)",
       "uploading": "Uploading...",
@@ -12729,6 +12731,13 @@
       "colType": "Type",
       "emptyDesc": "Link existing evidence or upload new files to satisfy this control.",
       "emptyTitle": "No evidence linked",
+      "linkKinds": {
+        "FILE": "File",
+        "LINK": "Plain link",
+        "INTEGRATION_RESULT": "Integration result",
+        "BIA": "BIA"
+      },
+      "noReviewStatus": "No review status",
       "remove": "× Remove"
     }
   },
