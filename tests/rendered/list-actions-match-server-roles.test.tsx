@@ -248,6 +248,7 @@ describe('bulk Delete is offered only to the roles the server lets delete', () =
             <EvidenceClient
                 initialEvidence={[EVIDENCE]}
                 initialControls={[]}
+                controlsComplete
                 canViewControls
                 initialMetrics={EVIDENCE_METRICS}
                 tenantSlug="acme"
