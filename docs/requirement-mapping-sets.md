@@ -121,6 +121,8 @@ mapping_entries:
 | Source requirement code not found | Error recorded, entry skipped, import continues |
 | Target requirement code not found | Error recorded, entry skipped, import continues |
 | Content hash matches existing set | Import skipped (unless `force: true`) |
+| An active mapping's pair is no longer named by any entry | Mapping retired (`validTo = now`), row kept; reads exclude it through `activeMappingWindow` |
+| A retired mapping's pair is named again | Mapping revived (`validTo` cleared), same row |
 
 ### Adding a New Mapping File
 
@@ -148,7 +150,9 @@ YAML File → Zod Parse → SHA-256 Hash → Dedup Check
                                           │
                               Upsert Mappings (bulk)
                                           │
-                              Report {created, updated, errors}
+                              Retire mappings the file no longer names
+                                          │
+                              Report {created, updated, retired, errors}
 ```
 
 ### Entrypoints
@@ -251,7 +255,7 @@ directory rather than editing rows by hand.
 | `IMDA-MGF-2026` | `ISO42001-2023` | `imda-mgf-to-iso-42001.yaml` | 47 |
 | `IMDA-MGF-2026` | `OWASP-ASI-TOP10` | `imda-mgf-to-owasp-agentic.yaml` | 27 |
 | `ISO27001-2022` | `AIUC-1` | `iso27001-to-aiuc-1.yaml` | 59 |
-| `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 9 |
+| `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 10 |
 | `ISO27001-2022` | `NIST-CSF-2.0` | `iso27001-to-nist-csf.yaml` | 14 |
 | `ISO27001-2022` | `OWASP-ASI-TOP10` | `iso27001-to-owasp-agentic.yaml` | 39 |
 | `ISO27001-2022` | `SOC2-2017` | `iso27001-to-soc2.yaml` | 26 |
