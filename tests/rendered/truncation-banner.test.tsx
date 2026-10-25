@@ -32,13 +32,16 @@ jest.mock('next-intl', () => {
         useTranslations: (ns: string) => (key: string, params?: Record<string, unknown>) => {
             const v = lookup(ns, key);
             if (typeof v !== 'string') return `MISSING:${ns}.${key}`;
-            return v.replace(/\{(\w+)\}/g, (m, name) =>
-                params && name in params ? String(params[name]) : m,
-            );
+            // `{name}` and the ICU `{name, number}` the catalogue uses for
+            // the cap, which next-intl formats for the locale.
+            return v.replace(/\{(\w+)(, number)?\}/g, (m, name, asNumber) => {
+                if (!params || !(name in params)) return m;
+                const value = params[name];
+                return asNumber && typeof value === 'number'
+                    ? new Intl.NumberFormat(mockLocale.current).format(value)
+                    : String(value);
+            });
         },
-        useFormatter: () => ({
-            number: (n: number) => new Intl.NumberFormat(mockLocale.current).format(n),
-        }),
         useLocale: () => mockLocale.current,
     };
 });
@@ -58,7 +61,7 @@ describe('TruncationBanner — localized copy', () => {
         render(<TruncationBanner truncated cap={5000} />);
         expect(bannerText()).toContain('Showing the first 5,000 results.');
         expect(bannerText()).toContain(en.common.truncationBanner.refine);
-        expect(bannerText()).not.toMatch(/\{cap\}|MISSING:/);
+        expect(bannerText()).not.toMatch(/\{cap[^}]*\}|MISSING:/);
     });
 
     it('renders the Bulgarian catalogue text, not English', () => {
@@ -67,14 +70,14 @@ describe('TruncationBanner — localized copy', () => {
         expect(bannerText()).toContain(bg.common.truncationBanner.refine);
         expect(bannerText()).toContain(
             bg.common.truncationBanner.showingFirst.replace(
-                '{cap}',
+                '{cap, number}',
                 new Intl.NumberFormat('bg').format(5000),
             ),
         );
         // The sentences the component used to hard-code.
         expect(bannerText()).not.toContain('Showing the first');
         expect(bannerText()).not.toContain('Refine your filters');
-        expect(bannerText()).not.toMatch(/\{cap\}|MISSING:/);
+        expect(bannerText()).not.toMatch(/\{cap[^}]*\}|MISSING:/);
     });
 
     it('renders nothing when not truncated', () => {

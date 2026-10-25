@@ -26,7 +26,7 @@
  */
 
 import { AlertTriangle } from 'lucide-react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { LIST_BACKFILL_CAP } from '@/lib/list-backfill-cap';
 
 interface Props {
@@ -41,9 +41,10 @@ export function TruncationBanner({ truncated, cap = LIST_BACKFILL_CAP }: Props) 
 }
 
 function TruncationBannerNotice({ cap }: { cap: number }) {
+    // The message formats the cap for the viewer's locale (`{cap, number}`:
+    // "5,000" / "5000"), so the banner needs no `useFormatter` — page tests
+    // that mock next-intl with `useTranslations` alone still render it.
     const t = useTranslations('common.truncationBanner');
-    // The cap is formatted for the viewer's locale ("5,000" / "5000").
-    const format = useFormatter();
     return (
         <div
             role="status"
@@ -54,7 +55,7 @@ function TruncationBannerNotice({ cap }: { cap: number }) {
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-content-warning" aria-hidden="true" />
             <div>
                 <span className="font-medium">
-                    {t('showingFirst', { cap: format.number(cap) })}
+                    {t('showingFirst', { cap })}
                 </span>{' '}
                 <span className="text-content-muted">{t('refine')}</span>
             </div>
