@@ -117,8 +117,8 @@ async function cleanup(): Promise<void> {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, tenants);
     }).catch(() => {});
-    await prisma.tenant.deleteMany({ where: { id: { in: tenants } } }).catch(() => {});
-    await prisma.user.deleteMany({ where: { id: { in: Object.values(USERS) } } }).catch(() => {});
+    await prisma.tenant.deleteMany({ where: { id: { in: tenants } } });
+    await prisma.user.deleteMany({ where: { id: { in: Object.values(USERS) } } });
 }
 
 describeFn('tenant-authored skills (real DB)', () => {

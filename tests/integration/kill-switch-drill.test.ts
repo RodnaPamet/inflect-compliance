@@ -141,7 +141,7 @@ describeFn('the kill-switch drill runs, records, and raises (real DB)', () => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
                 await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, t);
             }).catch(() => {});
-            await prisma.tenant.deleteMany({ where: { id: t } }).catch(() => {});
+            await prisma.tenant.deleteMany({ where: { id: t } });
         }
         await prisma.platformAgentKillSwitch.deleteMany({}).catch(() => {});
         await prisma.$disconnect();

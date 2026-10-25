@@ -284,8 +284,26 @@ describe('integration suites clear audit rows before deleting their parents', ()
  * incidentally, so any allowance is pure headroom for the next regression.
  * Remove a handler, lower the number in the same diff.
  */
-const SWALLOWED_FILES_BASELINE = 35;
-const SWALLOWED_SITES_BASELINE = 65;
+/**
+ * 35 -> 20 files and 65 -> 37 sites on 2026-10-25 (#3343): the fifteen suites
+ * that ALREADY cleared their audit rows and swallowed anyway had the handler
+ * removed, since it was suppressing nothing for them.
+ *
+ * Fourteen passed unchanged. The fifteenth,
+ * `workflow-run-steps-feed-is-bounded`, went RED with
+ * `Foreign key constraint violated on AuditLog_tenantId_fkey` — its handler had
+ * been discarding exactly that, so its tenants survived every teardown and
+ * whichever suite ran next in the shard inherited them. It now clears audit
+ * rows first.
+ *
+ * WORTH KNOWING ABOUT `CLEARS_AUDIT_ROWS` ABOVE: that suite matched it only
+ * because it drops to `session_replication_role` for `TenantMembership`, and it
+ * never cleared `AuditLog`. So `protected` is not proof the audit rows are
+ * handled — it is proof the file contains one of four spellings. The remaining
+ * 20 should be drained by running them, not by trusting that classification.
+ */
+const SWALLOWED_FILES_BASELINE = 20;
+const SWALLOWED_SITES_BASELINE = 37;
 
 /**
  * A `.catch(` attached to THIS delete's own statement.
