@@ -74,7 +74,7 @@ export interface ClientMetricSample {
     /** `navigate` / `reload` / `back-forward`, when the producer has one. */
     navigationType?: string;
     /** `Metric.navigationId` — see the field's docblock in `web-vitals.ts`. */
-    navigationId?: string | number;
+    navigationId?: number;
     /** Raw pathname — collapsed to a bounded route label server-side. */
     route: string;
 }

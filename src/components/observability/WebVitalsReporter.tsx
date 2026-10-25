@@ -40,6 +40,7 @@
 
 import { useCallback } from 'react';
 import { useReportWebVitals } from 'next/web-vitals';
+import type { Metric } from 'web-vitals';
 
 import { beaconClientMetric } from '@/lib/observability/client-telemetry';
 
@@ -47,16 +48,23 @@ export function WebVitalsReporter() {
     // Empty dependency list: nothing in the body closes over a value that can
     // change, so one identity for the component's lifetime is correct — and it
     // is what keeps `useReportWebVitals`'s effect from re-subscribing.
-    const report = useCallback((metric: { name: string; value: number }) => {
+    //
+    // NO CASTS. `rating`, `navigationType` and `navigationId` are all declared
+    // on `Metric`, which `useReportWebVitals` passes directly — proved against
+    // this repo's own tsconfig with a control: the three resolve with zero
+    // errors while a `notAField` sibling fails TS2339, so the probe was able to
+    // fail. Each carried an `as { … }` cast before, and a cast over a field that
+    // IS typed suppresses exactly the error worth having: if upstream renames or
+    // drops one in a later 6.x, typed access breaks at compile time, while the
+    // cast silently yields `undefined` and puts the string "undefined" into a
+    // log field, to be read as a data problem months later.
+    const report = useCallback((metric: Metric) => {
         beaconClientMetric({
             name: metric.name,
             value: metric.value,
-            rating: (metric as { rating?: string }).rating,
-            navigationType: (metric as { navigationType?: string }).navigationType,
-            // Present at runtime in web-vitals 6.2.3 (and in Next's bundled copy,
-            // which is the one that runs) but absent from this install's .d.ts, so
-            // it is read through a cast exactly as `rating` and `navigationType` are.
-            navigationId: (metric as { navigationId?: string | number }).navigationId,
+            rating: metric.rating,
+            navigationType: metric.navigationType,
+            navigationId: metric.navigationId,
             route: typeof window !== 'undefined' ? window.location.pathname : '/',
         });
     }, []);

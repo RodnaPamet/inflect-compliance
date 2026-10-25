@@ -146,7 +146,7 @@ export interface WebVitalSample {
      * LOG ONLY, never a metric label — it is unbounded, and the histogram's
      * three attributes are bounded deliberately.
      */
-    navigationId?: string | number;
+    navigationId?: number;
 }
 
 /**

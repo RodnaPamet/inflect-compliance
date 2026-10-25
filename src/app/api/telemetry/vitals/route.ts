@@ -57,7 +57,7 @@ export async function POST(request: Request): Promise<NextResponse> {
                 // library produces and drop anything else, rather than passing a
                 // caller-chosen value into a log field.
                 navigationId:
-                    typeof m.navigationId === 'string' || typeof m.navigationId === 'number'
+                    typeof m.navigationId === 'number' && Number.isFinite(m.navigationId)
                         ? m.navigationId
                         : undefined,
             });
