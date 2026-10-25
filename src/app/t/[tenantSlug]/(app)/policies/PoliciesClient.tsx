@@ -27,11 +27,9 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
 } from '@/components/ui/filter';
-// Imported from its module, not the barrel: every route that imports the barrel
-// would otherwise carry it (bundle-size-budget).
-import { useRetainedFilterOptions } from '@/components/ui/filter/use-retained-filter-options';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';

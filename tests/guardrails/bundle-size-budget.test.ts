@@ -203,10 +203,10 @@ const BUDGETS_KB: Record<string, number> = {
 
         What grew: `useRetainedFilterOptions`, about 0.3 KB gzipped, which
         keeps a list filter's options from collapsing to the value just picked.
-        Five list pages import it, by its own module path rather than the
-        filter barrel, and webpack still places it in a chunk the tenant layout
-        loads: every tenant route grew by 0.3-0.4 KB in the same build. Neither
-        of these two routes uses it. Main had 0.2 KB and 0.1 KB left in these
+        Five list pages use it, and webpack places it in a chunk the tenant
+        layout loads: every tenant route grew by 0.3-0.4 KB in the same build.
+        Neither of these two routes uses it. Importing it by its own module
+        path instead of the filter barrel was tried and measured the same. Main had 0.2 KB and 0.1 KB left in these
         buckets, so no change to shared client code could pass. The raise is
         the measured delta rounded up, not measured + 4.
     */
