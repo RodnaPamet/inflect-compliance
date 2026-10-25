@@ -138,6 +138,21 @@ containers, which for a sandbox is exactly right — so the driver and the
 packaging are incompatible by design, not by accident, and waiting for a
 release does not help.
 
+That the driver sets it is MEASURED, not inferred from the error. The gateway's
+own debug log carries the container-create payloads it sends to Docker:
+
+```
+"SecurityOpt":["no-new-privileges:true"]
+"Entrypoint":["/.openshell/runtime/openshell-sandbox"]
+"CapDrop":["ALL"]   "ReadonlyRootfs":true   "PidsLimit":2048
+```
+
+The entrypoint override is the staged path from the error message, so this is
+the same container. Note the other three hardening options in that payload:
+each was tested individually against this host and each WORKS. Only
+`no-new-privileges` fails, which is why the whole hardening set looked
+collectively suspect for hours while exactly one term in it was responsible.
+
 What took four hours to find was hidden by two things worth recording, because
 both will mislead the next reader the same way:
 
