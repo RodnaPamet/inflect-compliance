@@ -1436,7 +1436,24 @@ Reviewed at least annually.` },
     console.log(`✅ Internal Controls: ${ic.templates.created} created / ${ic.templates.updated} updated templates + ${ic.requirementLinks} policy-mediated requirement links`);
     console.log(`✅ Internal Controls authored tasks: ${ic.fixtureTaskCount} in fixture -> created ${ic.created}, updated ${ic.updated}, unchanged ${ic.unchanged}, deprecated ${ic.deprecated}`);
 
-
+    // ─── Internal Controls framework and pack ───
+    // The templates above are reachable only through a framework and a pack of
+    // their own: installing a standard no longer sweeps them in. The container
+    // start applies this catalogue last in scripts/seed-framework-catalogs.ts,
+    // and this file did not apply it, so a dev or E2E database had the 151
+    // templates and no way to install them. Applied AFTER seedInternalControls
+    // on purpose. The templates then exist and carry their authored tasks, so
+    // this adds only the domain requirements, their links and the pack. Applied
+    // first, it would create each template with the five generic placeholder
+    // tasks that seedInternalControls then deprecates: the same live rows,
+    // plus 755 dead ones.
+    const icCatalog = 'prisma/fixtures/internal-controls-catalog.json';
+    const icCatalogResult = await applyCatalogFile(prisma, loadCatalogFile(icCatalog), icCatalog);
+    console.log(
+        `✅ ${path.basename(icCatalog)}: ${icCatalogResult.requirements.upserted} requirements, ` +
+            `${icCatalogResult.templates.existing} templates linked` +
+            (icCatalogResult.pack ? `, pack ${icCatalogResult.pack.key} (${icCatalogResult.pack.templatesLinked})` : ''),
+    );
 
 
     // ─── Framework libraries and crosswalks ───
