@@ -97,25 +97,44 @@ With the gate skipped, `unresolvable` is still refused, by
 
 ## Production evidence
 
-**Not collected.** Every attempt on 2026-10-25 stopped at access:
+**Phase 0 is not in production yet, so it cannot be observed there.**
 
-- **This session:** the environment's `CLOUDSDK_AUTH_ACCESS_TOKEN` was rejected
-  as invalid credentials, both early in the day and at about 10:40 UTC.
-- **A fresh session** in the same environment, started at 14:04 UTC to pick up
-  a refreshed value, got the same rejection at its first read-only command. It
-  ran nothing on the VM.
+**Access.** This session's `gcloud` credentials were refused, and so were a
+fresh session's at 14:04 UTC. The owner then ran the read-only block from Cloud
+Shell at about 17:50 UTC. It read container names, log counts by scope and two
+SELECTs in a read-only transaction.
 
-So this note claims no production run and no log count. The design document's
-"Operational evidence" row for Phase 0 says the same. The two hardening items
-that need production stay open on the pull request until a read-only pass with
-working credentials fills them:
+**What it showed:**
 
-- **A Flue run after 0a:** its `WorkflowRun` id, and the `MODEL_CALL` and
-  `TOOL_CALL` counts against a run of the same workflow before 0a.
-- **`/api/mcp` limits since #4111:** the `rate-limit.blocked` counts by scope,
-  and whether `api-mutation` still appears for `/api/mcp`.
+- **The running image predates 0a.** `inflect-app-1` runs
+  `inflect-compliance:latest`, created 2026-10-25 04:56:33 UTC. That includes
+  0d (#4111, merged 22:15 the evening before). It includes none of 0a (#4176,
+  05:51), 0c, 0b, #4201, #4210 or #4212.
+  - **The cause, #4280:** the last image publish that completed ran at 04:28
+    UTC. The 54 publish runs after it were cancelled by the next push to main,
+    because `ghcr-publish.yml` used `cancel-in-progress: true`. #4280 is fixed
+    in its own pull request.
+- **No Flue run since 2026-09-27.** There are eight Flue runs in total. The
+  newest is `access-posture` run `cmujpuc84000001pgl3rdy9ud`, COMPLETED, with 1
+  `MODEL_CALL` step and 5 `TOOL_CALL` steps. That is the baseline. No run after
+  0a exists, and none can until 0a is deployed.
+- **Zero `rate-limit.blocked` lines since #4111 was merged, in any scope.** So
+  `api-mutation` never appears for `/api/mcp`, but the per-key limit has never
+  been reached either. That is not evidence that it works.
+- **The log window is unknown.** The "earliest log held" probe printed nothing,
+  so how far back the logs reach is not known.
 
-The queries are in the step's prompt. Nothing here is filled from a test.
+**One older run worth a look.** `posture-review` run
+`cmufjgbri000201nuxudwl961` (2026-09-24, COMPLETED) has four `TOOL_CALL` steps
+and no `MODEL_CALL` step. It predates the conformance suite, and today's
+`ledger-accounts-for-every-call` scenario would fail such a run.
+
+**Still to do.** The two hardening items that need production stay open until
+Phase 0 is deployed:
+- a Flue run after 0a, with its step counts against the baseline above;
+- an `/api/mcp` limit observed under `mcp-api-key` or `mcp-ip`.
+
+Nothing here is filled from a test.
 
 ## Files
 

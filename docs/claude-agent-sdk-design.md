@@ -709,7 +709,7 @@ Each phase's hardening step fills its row.
 
 | Phase | Has it run in production? | Evidence |
 | --- | --- | --- |
-| 0 — Foundations | not observed | No production read was possible. On 2026-10-25, every read-only attempt, from two sessions, was refused at its first `gcloud` call with invalid credentials. No run id or log count is claimed, and none is filled from a test. See `docs/implementation-notes/2026-10-25-phase-0-hardening.md`. |
+| 0 — Foundations | not yet deployed | Read on the VM on 2026-10-25. Production ran an image built at 04:56 UTC, before 0a, because every image publish after 04:28 was cancelled by the next push (#4280). The last Flue run was on 2026-09-27: `cmujpuc84000001pgl3rdy9ud`, 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. That is the baseline. There were zero `rate-limit.blocked` lines since #4111. To be re-read once Phase 0 is deployed. |
 | 1 — Agent builder | no | — |
 | 2 — Tool Runner engine | no | — |
 | 3 — Connect agents customers run | no | — |
