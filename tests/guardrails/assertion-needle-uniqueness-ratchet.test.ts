@@ -1145,7 +1145,35 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
  * Measured on this branch, not estimated: the detector reported `current: 1405`
  * against the 1404 ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1405;
+/*
+    1405 -> 1408 for the two OpenShell test files (#3937, #3936).
+
+    Both carry assertions whose NEEDLE this detector cannot resolve to a
+    literal, and in both cases that is the better test rather than a shortcut.
+
+    `openshell-source.test.ts` holds the reader to reporting no policy content,
+    using marker strings centralised in one `MARKERS` object — so the fixture
+    that SERVES a marker and the assertion that denies it in the report cannot
+    drift apart. Reading them as `MARKERS.credValue` and as a loop variable is
+    what makes them non-literal.
+
+    `scanner-never-reads-credential-values.test.ts` asserts that no file in the
+    scanner package names `ProviderClient` or any gateway RPC returning
+    credential material. The symbols are one declared list driven through
+    `it.each`, so the needle is a loop variable.
+
+    Inlining literals in either would satisfy this detector and make the tests
+    worse: each symbol would appear twice with nothing holding the copies equal,
+    which is the defect `a-needle-loses-the-thread-at-a-rename` describes,
+    traded for a count.
+
+    MEASURED, not incremented: main sits at 1405 and is green there, this tree
+    measures 1408, and the figure is the measurement rather than a guess at how
+    many each file adds. One assertion that WAS removable went in the same work
+    rather than here — a `not.toContain(host)` on a digest, below a
+    `toMatch(/^sha256:[0-9a-f]{64}$/)` that already made it impossible to fail.
+*/
+const UNANALYSABLE_READ_BASELINE = 1408;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

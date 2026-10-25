@@ -176,9 +176,9 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
 
     const reads = await Promise.all(
         sources.map(async (source) => {
-            const { http, tokens, mcp, register } = createSourceWire({ fetchImpl, deadline, now });
+            const { http, tokens, mcp, register, openshell } = createSourceWire({ fetchImpl, deadline, now });
             try {
-                return await source.read({ asOf, http, tokens, mcp, register, deadline, now });
+                return await source.read({ asOf, http, tokens, mcp, register, openshell, deadline, now });
             } catch (err) {
                 return sourceResult(source.kind, 0, [], err);
             }
