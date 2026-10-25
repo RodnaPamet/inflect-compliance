@@ -2,7 +2,7 @@
  * in for a Prisma client; the file-level disable is this repo's standard for
  * the shape. */
 /**
- * Only an OWNER deactivates or removes an OWNER membership.
+ * Only an OWNER deactivates or removes an OWNER or an AI_ADMIN membership.
  *
  * The members page lets an ADMIN deactivate and remove members, and both
  * usecases guarded only the LAST active OWNER. So whenever a tenant had two
@@ -11,6 +11,11 @@
  * role change already asks for an OWNER target; deactivate and remove now ask
  * it too, before any write. The last-OWNER guard is unchanged and still
  * applies to an OWNER doing it.
+ *
+ * AI_ADMIN joined the rule in #4118 (owner decision): an ADMIN can neither
+ * assign nor remove the role, and could still deactivate or remove the
+ * membership holding it. Both refusals carry the same named reason,
+ * `ENDING_OWNER_MANAGED_MEMBERSHIP_IS_OWNER_TIER`.
  */
 import { strictMock } from '../helpers/strict-mock';
 
@@ -26,6 +31,7 @@ jest.mock('@/lib/audit', () =>
 import { makeRequestContext } from '../helpers/make-context';
 import { runInTenantContext } from '@/lib/db-context';
 import { ForbiddenError } from '@/lib/errors/types';
+import { OWNER_MANAGED_MEMBERSHIP_END_REFUSAL } from '@/lib/roles';
 import { deactivateTenantMember, removeTenantMember } from '@/app-layer/usecases/tenant-admin';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<any>;
@@ -96,6 +102,42 @@ describe('removing an OWNER', () => {
         const db = membershipDb({ role: 'OWNER' }, 2);
         await removeTenantMember(owner(), { membershipId: 'm-1' });
         expect(db.tenantMembership.delete).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('ending an AI_ADMIN membership (#4118)', () => {
+    it('deactivating one is refused to an ADMIN with the named reason, and nothing is written', async () => {
+        const db = membershipDb({ role: 'AI_ADMIN' }, 2);
+        const err = await deactivateTenantMember(admin(), { membershipId: 'm-1' }).catch((e) => e);
+        expect(err).toBeInstanceOf(ForbiddenError);
+        expect(err.message).toBe('Only an OWNER can deactivate an AI_ADMIN membership.');
+        expect(err.details).toEqual({ reason: OWNER_MANAGED_MEMBERSHIP_END_REFUSAL });
+        expect(db.tenantMembership.update).not.toHaveBeenCalled();
+    });
+
+    it.each(['ACTIVE', 'DEACTIVATED'])('removing a %s one is refused to an ADMIN, and nothing is deleted', async (status) => {
+        const db = membershipDb({ role: 'AI_ADMIN', status }, 2);
+        const err = await removeTenantMember(admin(), { membershipId: 'm-1' }).catch((e) => e);
+        expect(err).toBeInstanceOf(ForbiddenError);
+        expect(err.message).toBe('Only an OWNER can remove an AI_ADMIN membership.');
+        expect(err.details).toEqual({ reason: OWNER_MANAGED_MEMBERSHIP_END_REFUSAL });
+        expect(db.tenantMembership.delete).not.toHaveBeenCalled();
+    });
+
+    it('an OWNER deactivates and removes one', async () => {
+        const db = membershipDb({ role: 'AI_ADMIN' }, 2);
+        await deactivateTenantMember(owner(), { membershipId: 'm-1' });
+        expect(db.tenantMembership.update).toHaveBeenCalledTimes(1);
+        await removeTenantMember(owner(), { membershipId: 'm-1' });
+        expect(db.tenantMembership.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('the OWNER refusals carry the same reason', async () => {
+        membershipDb({ role: 'OWNER' }, 2);
+        for (const run of [deactivateTenantMember, removeTenantMember]) {
+            const err = await run(admin(), { membershipId: 'm-1' }).catch((e) => e);
+            expect(err.details).toEqual({ reason: OWNER_MANAGED_MEMBERSHIP_END_REFUSAL });
+        }
     });
 });
 

@@ -13,6 +13,12 @@
  *
  * Both cases render the copyable invite link, so neither leaves the admin
  * without a way to reach the invitee.
+ *
+ * Both also say WHEN the invitee gets access (#4118): it used to read "as soon
+ * as they sign in with this email", true only of a Google or Microsoft sign-in
+ * (src/auth.ts redeems a pending invite by email only for those); any other
+ * sign-in needs the invite link. And it names the role by its label, not the
+ * enum value (`READER`).
  */
 import * as React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react';
@@ -94,7 +100,19 @@ const posted = () =>
         ([u, init]) => (init as RequestInit | undefined)?.method === 'POST' && String(u).endsWith('/admin/members'),
     );
 
+const ACCESS_SENTENCE =
+    'new.person@example.com gets Reader access the next time they sign in with Google or Microsoft using this email. ' +
+    'If they sign in any other way, they get it when they open the invite link and accept the invite.';
+
 describe('members page — the invite success notice', () => {
+    it.each([true, false])('says when the person gets access, with the role label (emailSent: %s)', async (emailSent) => {
+        renderWithInviteResponse(emailSent);
+        const text = (await sendInvite()).textContent ?? '';
+        expect(text).toContain(ACCESS_SENTENCE);
+        expect(text).not.toContain('READER');
+        expect(text).not.toContain('as soon as they sign in with this email');
+    });
+
     it('says the invite was emailed when the server reports emailSent: true', async () => {
         renderWithInviteResponse(true);
         const notice = await sendInvite();

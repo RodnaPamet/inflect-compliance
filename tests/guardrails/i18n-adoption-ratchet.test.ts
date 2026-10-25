@@ -315,10 +315,13 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     // would have left it half-translated — the state where the next contributor
     // copies whichever neighbour they land on.
     //
+    // 6 -> 0: #4118 localised the last six — the loading heading and the
+    // expiry list, which it also made offer "No expiry" as a choice — so the
+    // api-keys page needs no entry any more, and has none.
+    //
     // Keep the sequence: 23 was a file that already called `t()` and scored as
     // ADOPTED under the old file-level check. It is the clearest record in this
     // file of why the unit had to become the string.
-    'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx': 6, // partial, 1 jsx + 5 prop
     'src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx': 6, // partial, 6 prop
     'src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 8, // partial, 7 jsx + 1 prop

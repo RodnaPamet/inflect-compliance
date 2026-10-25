@@ -15,7 +15,7 @@ An API key lets another system, such as a CI pipeline, read or change your works
 2. Under {{ui:admin.section.organization}}, click **{{ui:admin.nav.apiKeys}}**.
 3. Click **{{ui:admin.apiKeys.headerButton}}** beside the page title. The {{ui:admin.apiKeys.createTitle}} form opens.
 4. In the {{ui:admin.apiKeys.nameLabel}} field, type a name that says what uses the key, up to 100 characters.
-5. In {{ui:admin.apiKeys.expiryLabel}}, choose **30 days**, **90 days**, **180 days** or **1 year**. The time counts from the moment you create the key. If you choose nothing, the key has {{ui:admin.apiKeys.noExpiry}}.
+5. In {{ui:admin.apiKeys.expiryLabel}}, choose {{ui:admin.apiKeys.expiry30Days}}, {{ui:admin.apiKeys.expiry90Days}}, {{ui:admin.apiKeys.expiry180Days}} or {{ui:admin.apiKeys.expiry1Year}}. The time counts from the moment you create the key. The form starts on {{ui:admin.apiKeys.noExpiry}}, the choice for a key that never expires.
 6. {{ui:admin.apiKeys.bindingLabel}} is for a key that a registered agent uses. For any other key, leave it at {{ui:admin.apiKeys.agentPlaceholder}}. The list offers the workspace's active agents. If you pick one, you can also set an {{ui:admin.apiKeys.autonomyLabel}}, which can only lower what the agent may do.
 7. Under {{ui:admin.apiKeys.scopesLabel}}, click each scope the key needs. Scopes are grouped by area, such as {{ui:admin.scopeGroup.controls}} and {{ui:admin.scopeGroup.evidence}}. Each area offers choices such as **Read** and **Write**, and a chosen scope shows a tick.
     - **{{ui:admin.apiKeys.fullAccess}}** gives the key read and write on every area. Prefer narrow scopes for automation.
