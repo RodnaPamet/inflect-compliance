@@ -70,6 +70,8 @@ jest.mock('@/app-layer/repositories/AssessmentRepository', () => ({
 
 jest.mock('@/lib/security/sanitize', () => ({
     sanitizePlainText: jest.fn((s: string | null | undefined) => `SANITISED(${s})`),
+    // URLs go through the real URL sanitiser, so its output is asserted as stored.
+    sanitizeUrlText: jest.requireActual('@/lib/security/sanitize').sanitizeUrlText,
 }));
 
 jest.mock('@/app-layer/services/vendor-scoring', () => ({
@@ -141,7 +143,8 @@ describe('createVendor — RBAC + sanitisation', () => {
         expect(repoArgs.legalName).toBe('SANITISED(Acme Inc.)');
         expect(repoArgs.country).toBe('SANITISED(US)');
         expect(repoArgs.domain).toBe('SANITISED(acme.com)');
-        expect(repoArgs.websiteUrl).toBe('SANITISED(https://acme.com)');
+        // A URL goes through the URL sanitiser, not the prose one.
+        expect(repoArgs.websiteUrl).toBe('https://acme.com');
         expect(repoArgs.description).toBe('SANITISED(<script>x</script>)');
         expect(repoArgs.tags).toEqual(['SANITISED(saas)', 'SANITISED(<img>)']);
         // Regression: a refactor that dropped the `tags?.map(...)`

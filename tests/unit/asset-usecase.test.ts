@@ -82,6 +82,9 @@ jest.mock('@/app-layer/events/audit', () => ({
 
 jest.mock('@/lib/security/sanitize', () => ({
     sanitizePlainText: jest.fn((s: string) => `SAN::${s}`),
+    // The real URL helper: trimming and encoding the URL is the behaviour the
+    // linkAssetEvidence cases below assert on.
+    sanitizeUrlText: jest.requireActual('@/lib/security/sanitize').sanitizeUrlText,
 }));
 
 jest.mock('@/lib/cache/list-cache', () => ({

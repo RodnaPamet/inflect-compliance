@@ -6,7 +6,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
-import { sanitizePlainText } from '@/lib/security/sanitize';
+import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { createAssignmentNotification } from '../notifications/assignment';
 import { logger } from '@/lib/observability';
@@ -842,7 +842,11 @@ export async function linkAssetEvidence(
     data: { url: string; note?: string | null },
 ) {
     assertCanWrite(ctx);
-    const url = data.url.trim();
+    // The URL becomes the row's `content` and, with no note, its title. It is
+    // percent-encoded rather than run through `sanitizePlainText`, which would
+    // decode `&region=` into `®ion=` (see `sanitizeUrlText`). A note that is
+    // blank once its markup is gone falls back to the URL, like no note.
+    const url = sanitizeUrlText(data.url);
     const note = data.note ? sanitizePlainText(data.note) : null;
     const result = await runInTenantContext(ctx, async (db) => {
         const asset = await db.asset.findFirst({
@@ -856,7 +860,7 @@ export async function linkAssetEvidence(
                 // Kept as the "uploaded from" provenance stamp.
                 assetId,
                 type: 'LINK',
-                title: note || url,
+                title: note?.trim() ? note : url,
                 content: url,
                 status: 'DRAFT',
                 ownerUserId: ctx.userId,
