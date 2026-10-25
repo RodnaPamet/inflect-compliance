@@ -12,7 +12,7 @@ import {
 import { logEvent } from '../events/audit';
 import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
-import { sanitizePlainText } from '@/lib/security/sanitize';
+import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { CreateVendorSchema } from '@/lib/schemas';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 
@@ -31,9 +31,12 @@ const FREE_TEXT_VENDOR_FIELDS = [
     'legalName',
     'country',
     'domain',
-    'websiteUrl',
     'description',
 ] as const;
+
+// URL columns take `sanitizeUrlText`: `sanitizePlainText` parses as HTML and
+// decodes a `;`-less entity, so `?lang=en&region=us` came back `®ion=us`.
+const URL_VENDOR_FIELDS = ['websiteUrl'] as const;
 
 // ─── Vendor CRUD ───
 
@@ -96,7 +99,8 @@ export async function createVendor(ctx: RequestContext, input: z.infer<typeof Cr
         legalName: input.legalName ? sanitizePlainText(input.legalName) : input.legalName,
         country: input.country ? sanitizePlainText(input.country) : input.country,
         domain: input.domain ? sanitizePlainText(input.domain) : input.domain,
-        websiteUrl: input.websiteUrl ? sanitizePlainText(input.websiteUrl) : input.websiteUrl,
+        // A URL, not prose: `sanitizePlainText` decodes `&region=` into `®ion=`.
+        websiteUrl: input.websiteUrl ? sanitizeUrlText(input.websiteUrl) : input.websiteUrl,
         description: input.description ? sanitizePlainText(input.description) : input.description,
         tags: input.tags?.map((t) => sanitizePlainText(t)),
     };
@@ -130,6 +134,11 @@ export async function updateVendor(ctx: RequestContext, vendorId: string, patch:
     for (const key of FREE_TEXT_VENDOR_FIELDS) {
         if (typeof sanitisedPatch[key] === 'string') {
             sanitisedPatch[key] = sanitizePlainText(sanitisedPatch[key] as string);
+        }
+    }
+    for (const key of URL_VENDOR_FIELDS) {
+        if (typeof sanitisedPatch[key] === 'string') {
+            sanitisedPatch[key] = sanitizeUrlText(sanitisedPatch[key] as string);
         }
     }
     if (Array.isArray(sanitisedPatch.tags)) {
@@ -198,7 +207,8 @@ export async function addVendorDocument(ctx: RequestContext, vendorId: string, d
     const sanitisedDoc = {
         ...docInput,
         title: sanitizeOptional(docInput.title) as string | null | undefined,
-        externalUrl: sanitizeOptional(docInput.externalUrl) as string | null | undefined,
+        // A URL, not prose: see `websiteUrl` in `createVendor`.
+        externalUrl: docInput.externalUrl == null ? docInput.externalUrl : sanitizeUrlText(docInput.externalUrl),
         notes: sanitizeOptional(docInput.notes) as string | null | undefined,
         folder: sanitizeOptional(docInput.folder) as string | null | undefined,
     };

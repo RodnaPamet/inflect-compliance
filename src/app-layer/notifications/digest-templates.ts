@@ -14,6 +14,7 @@
  */
 
 import type { DueItem, DueItemUrgency, MonitoredEntityType } from '../jobs/types';
+import { appLink } from './app-link';
 
 export interface EmailTemplateResult {
     subject: string;
@@ -101,7 +102,7 @@ function renderItemHtml(item: DueItem, tenantSlug: string): string {
   </td>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(entityLabel)}</td>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee;">
-    <a href="/t/${escapeHtml(tenantSlug)}/${path}" style="color: #4f46e5; text-decoration: none; font-weight: 500;">${escapeHtml(item.name)}</a>
+    <a href="${escapeHtml(appLink(`/t/${tenantSlug}/${path}`))}" style="color: #4f46e5; text-decoration: none; font-weight: 500;">${escapeHtml(item.name)}</a>
   </td>
   <td style="padding: 8px 12px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;">${escapeHtml(item.reason)}</td>
 </tr>`.trim();
@@ -248,7 +249,7 @@ export function buildDeadlineDigestEmail(payload: DeadlineDigestPayload): EmailT
             '',
             ...items.map(renderItemText),
             '',
-            `View your dashboard: /t/${tenantSlug}/dashboard`,
+            `View your dashboard: ${appLink(`/t/${tenantSlug}/dashboard`)}`,
             '',
             '— Inflect Compliance',
         ].join('\n'),
@@ -259,7 +260,7 @@ export function buildDeadlineDigestEmail(payload: DeadlineDigestPayload): EmailT
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
   <p style="color: #444; line-height: 1.5;">${lede.html}</p>
   ${buildDigestTable(items, tenantSlug)}
-  <a href="/t/${escapeHtml(tenantSlug)}/dashboard" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Dashboard</a>
+  <a href="${escapeHtml(appLink(`/t/${tenantSlug}/dashboard`))}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Dashboard</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
 </div>`.trim(),
     };
@@ -303,7 +304,7 @@ export function buildEvidenceExpiryDigestEmail(payload: EvidenceExpiryDigestPayl
             '',
             'Please upload refreshed evidence or extend retention dates.',
             '',
-            `View evidence: /t/${tenantSlug}/evidence`,
+            `View evidence: ${appLink(`/t/${tenantSlug}/evidence`)}`,
             '',
             '— Inflect Compliance',
         ].join('\n'),
@@ -314,7 +315,7 @@ export function buildEvidenceExpiryDigestEmail(payload: EvidenceExpiryDigestPayl
   <p style="color: #444; line-height: 1.5;">${lede.html}</p>
   ${buildDigestTable(items, tenantSlug)}
   <p style="color: #444; line-height: 1.5;">Please upload refreshed evidence or extend retention dates.</p>
-  <a href="/t/${escapeHtml(tenantSlug)}/evidence" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Evidence</a>
+  <a href="${escapeHtml(appLink(`/t/${tenantSlug}/evidence`))}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Evidence</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
 </div>`.trim(),
     };
@@ -356,7 +357,7 @@ export function buildVendorRenewalDigestEmail(payload: VendorRenewalDigestPayloa
             '',
             ...items.map(renderItemText),
             '',
-            `View vendors: /t/${tenantSlug}/vendors`,
+            `View vendors: ${appLink(`/t/${tenantSlug}/vendors`)}`,
             '',
             '— Inflect Compliance',
         ].join('\n'),
@@ -366,7 +367,7 @@ export function buildVendorRenewalDigestEmail(payload: VendorRenewalDigestPayloa
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(recipientName)},</p>
   <p style="color: #444; line-height: 1.5;">${lede.html}</p>
   ${buildDigestTable(items, tenantSlug)}
-  <a href="/t/${escapeHtml(tenantSlug)}/vendors" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Vendors</a>
+  <a href="${escapeHtml(appLink(`/t/${tenantSlug}/vendors`))}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; margin-top: 8px;">View Vendors</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
 </div>`.trim(),
     };

@@ -150,7 +150,11 @@ function buildTooManyRequestsResponse(
     const headers = new Headers({
         'Retry-After': String(retryAfterSeconds),
         'X-RateLimit-Limit': String(config.maxAttempts),
-        'X-RateLimit-Remaining': '0',
+        // What is actually left. For a one-unit charge that is 0 whenever this
+        // fires; for a refused BATCH (the MCP per-key budget charges per
+        // message) units can remain, and a client told 0 would wait when a
+        // smaller batch would fit (#4205).
+        'X-RateLimit-Remaining': String(Math.max(0, result.remaining)),
         'X-RateLimit-Reset': String(resetAt),
     });
 

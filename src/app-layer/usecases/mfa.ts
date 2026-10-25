@@ -12,6 +12,7 @@ import type { RequestContext } from '../types';
 import type { UpdateMfaPolicyInputType } from '../schemas/mfa.schemas';
 import type { MfaPolicy } from '@prisma/client';
 import { forbidden, badRequest } from '@/lib/errors/types';
+import { logEvent } from '../events/audit';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -125,6 +126,10 @@ export async function updateTenantMfaPolicy(
         }
     }
 
+    // The values in force BEFORE the write, so each change is audited with
+    // both (#4117). An absent row reads as the defaults the GET reports.
+    const prior = await getTenantSecuritySettings(ctx);
+
     const settings = await prisma.tenantSecuritySettings.upsert({
         where: { tenantId: ctx.tenantId },
         create: {
@@ -137,6 +142,47 @@ export async function updateTenantMfaPolicy(
             sessionMaxAgeMinutes: input.sessionMaxAgeMinutes ?? null,
         },
     });
+
+    // One event per field that changed, each naming the old and new value. A
+    // save that changes nothing writes none. Not wrapped in a try, as in the
+    // other security-settings writer: a failed audit write fails the request
+    // rather than reporting an unrecorded change to sign-in rules as a clean
+    // success.
+    if (prior.mfaPolicy !== settings.mfaPolicy) {
+        await logEvent(prisma, ctx, {
+            action: 'MFA_POLICY_CHANGED',
+            entityType: 'TenantSecuritySettings',
+            entityId: ctx.tenantId,
+            details: `MFA policy changed from ${prior.mfaPolicy} to ${settings.mfaPolicy}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'TenantSecuritySettings',
+                operation: 'updated',
+                changedFields: ['mfaPolicy'],
+                before: { mfaPolicy: prior.mfaPolicy },
+                after: { mfaPolicy: settings.mfaPolicy },
+            },
+        });
+    }
+    if (prior.sessionMaxAgeMinutes !== settings.sessionMaxAgeMinutes) {
+        const describe = (v: number | null) => (v === null ? 'the default' : `${v} minutes`);
+        await logEvent(prisma, ctx, {
+            action: 'SESSION_MAX_AGE_CHANGED',
+            entityType: 'TenantSecuritySettings',
+            entityId: ctx.tenantId,
+            details:
+                `Maximum session age changed from ${describe(prior.sessionMaxAgeMinutes)} ` +
+                `to ${describe(settings.sessionMaxAgeMinutes)}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'TenantSecuritySettings',
+                operation: 'updated',
+                changedFields: ['sessionMaxAgeMinutes'],
+                before: { sessionMaxAgeMinutes: prior.sessionMaxAgeMinutes },
+                after: { sessionMaxAgeMinutes: settings.sessionMaxAgeMinutes },
+            },
+        });
+    }
 
     return {
         mfaPolicy: settings.mfaPolicy,

@@ -17,13 +17,14 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormField } from '@/components/ui/form-field';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
-import { useCelebration, useToast } from '@/components/ui/hooks';
+import { useCelebration, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
 import { Package, MessageSquare } from 'lucide-react';
+import { Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SharePointExportButton } from './SharePointExportButton';
 import { Heading } from '@/components/ui/typography';
@@ -34,6 +35,8 @@ import { cn } from '@inflect/ui/lib/cn';
 import { RelianceSnapshotBlock } from '@/components/audits/RelianceSnapshotBlock';
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../../_lib/status-variants';
 import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
+import { apiErrorMessage } from '@/lib/api-error';
+import { isNotFoundError, useAuditReadinessAccess } from '../../_lib/use-audit-access';
 
 const ENTITY_ICON: Record<string, AppIconName> = {
     CONTROL: 'controls', POLICY: 'policies', EVIDENCE: 'evidence', FILE: 'overview', ISSUE: 'warning',
@@ -52,6 +55,34 @@ interface PackItem {
     entityType: string;
     entityId: string;
     snapshotJson: string | null;
+    /**
+     * The live name of an item whose snapshot names nothing yet — every
+     * row-backed item of a draft (#4129). Resolved by `getAuditPack`.
+     */
+    displayName?: string | null;
+}
+
+/** Parsed `snapshotJson` — heterogeneous per entity type, all optional. */
+interface PackItemSnapshot {
+    type?: string;
+    framework?: string;
+    frameworkName?: string;
+    code?: string;
+    title?: string;
+    name?: string;
+    description?: string;
+    status?: string;
+    taskCompletion?: { done: number; total: number };
+    evidenceCount?: number;
+}
+
+function parseSnapshot(item: PackItem): PackItemSnapshot {
+    try {
+        const parsed: unknown = JSON.parse(item.snapshotJson || '{}');
+        return parsed && typeof parsed === 'object' ? (parsed as PackItemSnapshot) : {};
+    } catch {
+        return {};
+    }
 }
 interface PackDetail {
     name: string;
@@ -92,6 +123,10 @@ export default function PackDetailPage() {
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
     const tx = useTranslations('audits');
     const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
+    // #4129 — every control below is gated on what the SERVER allows this role
+    // (`lib/audit-readiness/access.ts`), not on `audits.manage` / `audits.share`.
+    const access = useAuditReadinessAccess();
 
     // #10 — localize a raw enum value through the audits catalog, falling back
     // to a humanized form for any value not (yet) in the catalog (mirrors the
@@ -137,7 +172,16 @@ export default function PackDetailPage() {
     // #5 — a network blip must surface as a retryable error, NOT the "pack not
     // found" empty state (which reads as a genuine 404). SWR's `error` keeps
     // that distinction: `error` is the blip, `data === null` is the 404.
-    const packQuery = useTenantSWR<PackDetail | null>(CACHE_KEYS.audits.pack(packId));
+    //
+    // #4129 — a missing pack is a 404, which `apiGet` throws: it arrives as
+    // `error`, never as `data === null`, so the not-found state was
+    // unreachable. The 404 is latched as `missing`, so a later blip does not
+    // turn it into the retry screen.
+    const [missing, setMissing] = useState(false);
+    const packQuery = useTenantSWR<PackDetail | null>(CACHE_KEYS.audits.pack(packId), {
+        onError: (e) => { if (isNotFoundError(e)) setMissing(true); },
+        onSuccess: () => setMissing(false),
+    });
     const pack = packQuery.data ?? null;
     const loading = packQuery.isLoading;
     // The third state, added after #1861: a failed BACKGROUND revalidation must
@@ -151,7 +195,7 @@ export default function PackDetailPage() {
     // above) — `!data` would treat it as "nothing loaded" and let a later blip
     // turn a legitimate not-found into a retry screen. `undefined` means no
     // response has ever landed, which is the case the error branch is for.
-    const loadError = Boolean(packQuery.error) && packQuery.data === undefined;
+    const loadError = Boolean(packQuery.error) && packQuery.data === undefined && !missing;
 
     // Both sub-feeds are supplementary: a failure leaves the pack usable, so
     // neither gates the page.
@@ -161,8 +205,14 @@ export default function PackDetailPage() {
     const comments = commentsQuery.data?.comments ?? [];
     const openCount = commentsQuery.data?.openCount ?? 0;
 
-    const sharesQuery = useTenantSWR<PackShare[]>(CACHE_KEYS.audits.packShares(packId));
+    // #4129 — only Owners and Admins may list a pack's share links, and the
+    // page used to read the refusal as an empty list ("No share links yet.")
+    // even when links existed. Anyone else is not asked, and is told why.
+    const sharesQuery = useTenantSWR<PackShare[]>(
+        access.sharePacks ? CACHE_KEYS.audits.packShares(packId) : null,
+    );
     const shares = sharesQuery.data ?? [];
+    const sharesFailed = Boolean(sharesQuery.error) && sharesQuery.data === undefined;
 
     const loadPack = useCallback(() => { void packQuery.mutate(); }, [packQuery]);
     const loadComments = useCallback(() => { void commentsQuery.mutate(); }, [commentsQuery]);
@@ -188,8 +238,10 @@ export default function PackDetailPage() {
                 body: JSON.stringify(body ?? {}),
             });
             if (!res.ok) {
+                // The API puts the reason under `error.message`; reading
+                // `err.message` always fell back to the generic sentence.
                 const err = await res.json().catch(() => null);
-                throw new Error(err?.message || fallbackMessage);
+                throw new Error(apiErrorMessage(err, fallbackMessage));
             }
             return res.json().catch(() => null);
         },
@@ -233,7 +285,8 @@ export default function PackDetailPage() {
     const [materializingId, setMaterializingId] = useState<string | null>(null);
     const materializeMutation = useTenantMutation<
         { comments?: ShareComment[]; openCount?: number },
-        string
+        string,
+        { findingId: string; alreadyExisted: boolean; attachedToAudit?: boolean } | null
     >({
         key: CACHE_KEYS.audits.packShareComments(packId),
         // No optimistic prediction: the server mints a Finding and a Task, so
@@ -251,8 +304,14 @@ export default function PackDetailPage() {
     const materializeComment = async (id: string) => {
         setMaterializingId(id);
         try {
-            await materializeMutation.trigger(id);
-            toast.success(tx('packs.auditorActivity.findingCreated'));
+            const result = await materializeMutation.trigger(id);
+            // A finding reaches the cycle only through one of its fieldwork
+            // audits; say which happened rather than claiming a link (#4129).
+            toast.success(
+                result?.attachedToAudit === false
+                    ? tx('packs.auditorActivity.findingCreatedNoAudit')
+                    : tx('packs.auditorActivity.findingCreated'),
+            );
         } catch (e) {
             toast.error(e instanceof Error ? e.message : tx('packs.auditorActivity.materializeError'));
         } finally { setMaterializingId(null); }
@@ -377,15 +436,20 @@ export default function PackDetailPage() {
 
     const addItemMutation = useTenantMutation<
         PackDetail | null,
-        { entityType: AddableType; entityId: string; label: string }
+        { entityType: AddableType; entityId: string }
     >({
         key: CACHE_KEYS.audits.pack(packId),
         // No optimistic prediction: a pack item carries a server-assigned id and
         // sortOrder, and inventing them would make the row jump on revalidation.
-        mutationFn: ({ entityType, entityId, label }) =>
+        //
+        // No `snapshotJson` either (#4129). This sent `{ title }`, and because
+        // the freeze kept any snapshot already there, a hand-added item froze
+        // with its title and nothing else. The freeze builds it now; until
+        // then the row is named by the server's `displayName`.
+        mutationFn: ({ entityType, entityId }) =>
             postJson(
                 `/audits/packs/${packId}?action=items`,
-                { items: [{ entityType, entityId, snapshotJson: JSON.stringify({ title: label }) }] },
+                { items: [{ entityType, entityId }] },
                 tx('packs.addPicker.addError'),
             ),
     });
@@ -393,15 +457,62 @@ export default function PackDetailPage() {
 
     const submitAddItem = async () => {
         if (!addSelected) return;
-        const label = addOptions.find((o) => o.id === addSelected)?.label ?? addSelected;
         try {
-            await addItemMutation.trigger({ entityType: addType, entityId: addSelected, label });
+            await addItemMutation.trigger({ entityType: addType, entityId: addSelected });
             setAddModalOpen(false);
             setAddSelected('');
             toast.success(tx('packs.addPicker.added'));
         } catch (e) {
             toast.error(e instanceof Error ? e.message : tx('packs.addPicker.addError'));
         }
+    };
+
+    /**
+     * #4129 — take one item out of a draft pack. A routine, reversible
+     * removal, so it takes the Epic 67 undo toast: the row leaves the list at
+     * once, and the POST is sent only when the five-second window closes —
+     * Undo puts back exactly what was on screen and sends nothing.
+     */
+    const removeItem = (itemId: string) => {
+        const snapshot = packQuery.data;
+        if (!snapshot) return;
+        void packQuery.mutate(
+            {
+                ...snapshot,
+                items: snapshot.items.filter((i) => i.id !== itemId),
+                _count: { items: Math.max(0, (snapshot._count?.items ?? snapshot.items.length) - 1) },
+            },
+            { revalidate: false },
+        );
+        triggerUndoToast({
+            message: tx('packs.removeItem.removed'),
+            undoMessage: tx('packs.removeItem.undo'),
+            action: async () => {
+                await postJson(
+                    `/audits/packs/${packId}?action=remove-item`,
+                    { itemId },
+                    tx('packs.removeItem.error'),
+                );
+                await packQuery.mutate();
+            },
+            undoAction: () => { void packQuery.mutate(snapshot, { revalidate: false }); },
+            onError: (e) => {
+                void packQuery.mutate(snapshot, { revalidate: false });
+                toast.error(e instanceof Error && e.message ? e.message : tx('packs.removeItem.error'));
+            },
+        });
+    };
+
+    /**
+     * The name an item is listed by: its snapshot's (the frozen record) first,
+     * then the server's live name for a draft item, then the stored id. The
+     * Statement of Applicability a freeze attaches is named in words.
+     */
+    const itemName = (item: PackItem, snap: PackItemSnapshot): string => {
+        if (snap.type === 'SOA_REPORT') {
+            return tx('packs.soaItemName', { framework: snap.frameworkName || snap.framework || '' });
+        }
+        return snap.code || snap.title || snap.name || item.displayName || item.entityId;
     };
 
     // Epic 62 — celebrate when the pack reaches its "complete" state
@@ -435,6 +546,13 @@ export default function PackDetailPage() {
     if (loading) {
         return (
             <EntityDetailLayout loading title="" breadcrumbs={breadcrumbs}>
+                <></>
+            </EntityDetailLayout>
+        );
+    }
+    if (missing) {
+        return (
+            <EntityDetailLayout empty={{ message: tx('packs.notFound') }} title="" breadcrumbs={breadcrumbs}>
                 <></>
             </EntityDetailLayout>
         );
@@ -522,39 +640,35 @@ export default function PackDetailPage() {
             }
             actions={
                 <>
-                    {isDraft && (
-                        <RequirePermission resource="audits" action="manage">
-                            <IconAction variant="secondary" onClick={openAddModal} id="add-pack-items-btn" icon={<AppIcon name="package" size={16} />} label={tx('packs.addItems')} />
-                        </RequirePermission>
+                    {isDraft && access.managePacks && (
+                        <IconAction variant="secondary" onClick={openAddModal} id="add-pack-items-btn" icon={<AppIcon name="package" size={16} />} label={tx('packs.addItems')} />
                     )}
-                    {isDraft && (
-                        <RequirePermission resource="audits" action="freeze">
+                    {isDraft && access.freezePacks && (
+                        <>
                             {/* #2 — freeze is one-way (there is no server un-freeze), so
                                 gate the irreversible write behind a ConfirmDialog instead
                                 of firing on a single click. The trigger stays icon-only
                                 (locked by icon-only-action-discipline); the confirm surface
                                 below carries the visible label + irreversibility warning. */}
                             <IconAction variant="primary" onClick={() => setFreezeConfirmOpen(true)} loading={freezing} id="freeze-pack-btn" icon={<AppIcon name="lock" size={16} />} label={tx('packs.freezePack')} />
-                        </RequirePermission>
+                        </>
                     )}
-                    {isFrozen && (
-                        <RequirePermission resource="audits" action="share">
-                            <UpgradeGate feature="AUDIT_PACK_SHARING">
-                                <IconAction variant="primary" onClick={() => { setShareExpiry(defaultShareExpiry()); setShareModalOpen(true); }} loading={sharing} id="share-pack-btn" icon={<AppIcon name="share" size={16} />} label={tx('packs.generateShareLink')} />
-                            </UpgradeGate>
-                        </RequirePermission>
+                    {/* Owner and Admin only: an Auditor holds `audits.share`
+                        but the server refuses every share action to that role. */}
+                    {isFrozen && access.sharePacks && (
+                        <UpgradeGate feature="AUDIT_PACK_SHARING">
+                            <IconAction variant="primary" onClick={() => { setShareExpiry(defaultShareExpiry()); setShareModalOpen(true); }} loading={sharing} id="share-pack-btn" icon={<AppIcon name="share" size={16} />} label={tx('packs.generateShareLink')} />
+                        </UpgradeGate>
                     )}
-                    {isFrozen && (
-                        <RequirePermission resource="audits" action="manage">
-                            <IconAction
-                                variant="secondary"
-                                onClick={clone}
-                                loading={cloning}
-                                id="clone-pack-btn"
-                                icon={<AppIcon name="refresh" size={16} />}
-                                label={tx('packs.cloneForRetest')}
-                            />
-                        </RequirePermission>
+                    {isFrozen && access.managePacks && (
+                        <IconAction
+                            variant="secondary"
+                            onClick={clone}
+                            loading={cloning}
+                            id="clone-pack-btn"
+                            icon={<AppIcon name="refresh" size={16} />}
+                            label={tx('packs.cloneForRetest')}
+                        />
                     )}
                     {isFrozen && (
                         <RequirePermission resource="audits" action="manage">
@@ -602,7 +716,16 @@ export default function PackDetailPage() {
                         <AppIcon name="warning" size={14} className="shrink-0 mt-px" />
                         <span>{tx('packs.sharesOnceNote')}</span>
                     </p>
-                    {shares.length === 0 ? (
+                    {!access.sharePacks ? (
+                        <p className="text-sm text-content-subtle" id="pack-shares-restricted">{tx('packs.sharesRestricted')}</p>
+                    ) : sharesFailed ? (
+                        <p className="text-sm text-content-error" role="alert" id="pack-shares-error">
+                            {tx('packs.sharesLoadError')}{' '}
+                            <Button variant="ghost" size="sm" onClick={loadShares} id="pack-shares-retry-btn">
+                                {tx('packs.retry')}
+                            </Button>
+                        </p>
+                    ) : shares.length === 0 ? (
                         <p className="text-sm text-content-subtle">{tx('packs.sharesEmpty')}</p>
                     ) : (
                         <ul className="divide-y divide-border-default/50">
@@ -623,11 +746,9 @@ export default function PackDetailPage() {
                                             </p>
                                         </div>
                                         {active && (
-                                            <RequirePermission resource="audits" action="share">
-                                                <Button variant="secondary" size="sm" onClick={() => setRevokeShareTarget(s.id)} id={`revoke-share-${s.id}`}>
-                                                    {tx('packs.revokeShare')}
-                                                </Button>
-                                            </RequirePermission>
+                                            <Button variant="secondary" size="sm" onClick={() => setRevokeShareTarget(s.id)} id={`revoke-share-${s.id}`}>
+                                                {tx('packs.revokeShare')}
+                                            </Button>
                                         )}
                                     </li>
                                 );
@@ -643,14 +764,12 @@ export default function PackDetailPage() {
                     <EmptyState
                         icon={Package}
                         title={tx('packs.itemsEmptyTitle')}
-                        description={tx('packs.itemsEmptyDesc')}
+                        description={isDraft && access.managePacks ? tx('packs.itemsEmptyDesc') : tx('packs.itemsEmptyDescReadOnly')}
                     >
-                        {isDraft && (
-                            <RequirePermission resource="audits" action="manage">
-                                <Button variant="secondary" size="sm" onClick={openAddModal} id="add-pack-items-empty-btn">
-                                    {tx('packs.addItems')}
-                                </Button>
-                            </RequirePermission>
+                        {isDraft && access.managePacks && (
+                            <Button variant="secondary" size="sm" onClick={openAddModal} id="add-pack-items-empty-btn">
+                                {tx('packs.addItems')}
+                            </Button>
                         )}
                     </EmptyState>
                 </div>
@@ -664,9 +783,8 @@ export default function PackDetailPage() {
                         </Heading>
                         <div className={cn(cardVariants({ density: 'none' }), 'divide-y divide-border-default/50')}>
                             {items.slice(0, 50).map((item) => {
-                                let snap: { code?: string; title?: string; name?: string; description?: string; status?: string; taskCompletion?: { done: number; total: number }; evidenceCount?: number } = {};
-                                try { snap = JSON.parse(item.snapshotJson || '{}'); } catch { /* */ }
-                                const name = snap.code || snap.title || snap.name || item.entityId;
+                                const snap = parseSnapshot(item);
+                                const name = itemName(item, snap);
                                 const status = snap.status || '';
                                 return (
                                     <div key={item.id} className="p-3 flex items-center justify-between text-sm">
@@ -687,6 +805,19 @@ export default function PackDetailPage() {
                                                 <span className="text-xs text-content-subtle">
                                                     {tx('packs.evidence', { count: snap.evidenceCount })}
                                                 </span>
+                                            )}
+                                            {isDraft && access.managePacks && (
+                                                <Tooltip content={tx('packs.removeItem.aria', { item: name })}>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="xs"
+                                                        className="h-6 w-6 min-w-0 border-0 px-0 text-content-subtle hover:text-content-error"
+                                                        icon={<Xmark className="h-3.5 w-3.5" />}
+                                                        aria-label={tx('packs.removeItem.aria', { item: name })}
+                                                        onClick={() => removeItem(item.id)}
+                                                        id={`remove-pack-item-${item.id}`}
+                                                    />
+                                                </Tooltip>
                                             )}
                                         </div>
                                     </div>
@@ -720,13 +851,7 @@ export default function PackDetailPage() {
                             const item = c.auditPackItemId
                                 ? (pack.items || []).find((i) => i.id === c.auditPackItemId)
                                 : undefined;
-                            let itemName: string | undefined;
-                            if (item) {
-                                try {
-                                    const snap = JSON.parse(item.snapshotJson || '{}');
-                                    itemName = snap.code || snap.title || snap.name || item.entityId;
-                                } catch { itemName = item.entityId; }
-                            }
+                            const commentItemName = item ? itemName(item, parseSnapshot(item)) : undefined;
                             const actionable = c.kind !== 'COMMENT';
                             return (
                                 <li key={c.id} className="py-3">
@@ -743,12 +868,13 @@ export default function PackDetailPage() {
                                                 )}
                                                 <span className="text-xs text-content-subtle">{c.authorLabel}</span>
                                                 <span className="text-xs text-content-subtle">· {formatDateTime(c.createdAt)}</span>
-                                                {itemName && <span className="text-xs text-content-subtle truncate">· {tx('packs.auditorActivity.onItem', { item: itemName })}</span>}
+                                                {commentItemName && <span className="text-xs text-content-subtle truncate">· {tx('packs.auditorActivity.onItem', { item: commentItemName })}</span>}
                                             </div>
                                             <p className="text-sm whitespace-pre-wrap break-words">{c.body}</p>
                                         </div>
-                                        {actionable && c.status === 'OPEN' && (
-                                            <RequirePermission resource="audits" action="share">
+                                        {/* Owner and Admin only — the server's rule for
+                                            acting on an auditor's message (#4129). */}
+                                        {actionable && c.status === 'OPEN' && access.sharePacks && (
                                                 <div className="flex gap-tight shrink-0">
                                                     {/* FINDING / EVIDENCE_REQUEST get a remediation lifecycle,
                                                         not just a status flip. */}
@@ -779,7 +905,6 @@ export default function PackDetailPage() {
                                                         {resolvingId === c.id ? tx('packs.auditorActivity.resolving') : tx('packs.auditorActivity.resolve')}
                                                     </Button>
                                                 </div>
-                                            </RequirePermission>
                                         )}
                                     </div>
                                 </li>

@@ -13,7 +13,9 @@
  *     check in `src/auth.ts` and is forced through re-authentication.
  *
  *   Both verbs are gated by `admin.members` — managing a colleague's
- *     active sessions is functionally a member-management action.
+ *     active sessions is functionally a member-management action. DELETE
+ *     of an OWNER's or AI_ADMIN's session additionally needs
+ *     `admin.owner_management` (`assertMayRevokeSessionsOfUser`).
  *
  * Tenant safety
  * -------------
@@ -43,6 +45,7 @@ import {
     findOwnTenantSession,
 } from '@/lib/security/session-tracker';
 import { logEvent } from '@/app-layer/events/audit';
+import { assertMayRevokeSessionsOfUser } from '@/app-layer/usecases/session-security';
 import { prisma } from '@/lib/prisma';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { jsonResponse } from '@/lib/api-response';
@@ -101,6 +104,9 @@ export const DELETE = withApiErrorHandling(
         if (!row || row.revokedAt) {
             throw notFound('Session not found or already revoked');
         }
+        // An OWNER's or AI_ADMIN's session is an OWNER's to revoke, as their
+        // membership is to deactivate (owner decision, 2026-10-25).
+        await assertMayRevokeSessionsOfUser(ctx, row.userId);
 
         const result = await revokeSessionById({
             sessionId,

@@ -40,7 +40,7 @@ import { logEvent } from '@/app-layer/events/audit';
 import { CAMPAIGN_MODIFY_ROLES, TENANT_ROLES, BUILT_IN_SCOPE_REFUSAL } from '@/lib/roles';
 import { MEMBER_DECISION_REFUSAL } from '@/lib/access-review/member-decision-rules';
 import { SubmitDecisionSchema } from '@/app-layer/schemas/access-review.schemas';
-import { closeAccessReview, submitDecision } from '@/app-layer/usecases/access-review';
+import { closeAccessReview, revokeDecision, submitDecision } from '@/app-layer/usecases/access-review';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<any>;
 const owner = () => makeRequestContext('OWNER', { tenantId: 'tenant-1', userId: 'owner-1' });
@@ -283,6 +283,167 @@ describe('closeAccessReview — a stored decision that is now refused refuses th
     it('an unnamed refusal (a pending decision) writes no refusal row', async () => {
         campaignDb([{ ...stored('d-1', 'CONFIRM', { role: 'READER' }), decision: null }]);
         await expect(closeAccessReview(admin(), 'ar-1')).rejects.toThrow(/pending/);
+        expect(auditActions()).toEqual([]);
+    });
+});
+
+// ─── #4130 — nobody decides their own access ─────────────────────────
+
+/**
+ * A pending (or decided) row whose SUBJECT is `subjectUserId`, on a campaign
+ * reviewed by `reviewerUserId`, as `getDecision` returns it.
+ */
+function ownRowDb(opts: { subjectUserId: string; reviewerUserId: string; decision?: 'CONFIRM' | null }) {
+    const db = {
+        accessReviewDecision: {
+            findFirst: jest.fn().mockResolvedValue({
+                id: 'd-self',
+                decision: opts.decision ?? null,
+                executedAt: null,
+                subjectUserId: opts.subjectUserId,
+                accessReview: {
+                    id: 'ar-1',
+                    tenantId: 'tenant-1',
+                    status: 'IN_REVIEW',
+                    reviewerUserId: opts.reviewerUserId,
+                    deletedAt: null,
+                },
+            }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        accessReview: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    mockRunInTx.mockImplementation(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(db));
+    return db;
+}
+
+const reader = () => makeRequestContext('READER', { tenantId: 'tenant-1', userId: 'reader-1' });
+
+describe('submitDecision — nobody records the verdict on their own access (#4130)', () => {
+    it.each([
+        ['the assigned reviewer (a READER)', reader, 'reader-1'],
+        ['an ADMIN acting as backup', admin, 'someone-else'],
+        ['an OWNER acting as backup', owner, 'someone-else'],
+    ] as const)('%s is refused on their own row — 403, named, audited, nothing written', async (_label, who, reviewerUserId) => {
+        const ctx = who();
+        const db = ownRowDb({ subjectUserId: ctx.userId, reviewerUserId });
+        const err = await submitDecision(ctx, 'd-self', { decision: 'CONFIRM', notes: 'all good' }).catch((e) => e);
+        expect(err).toMatchObject({ status: 403, details: { reason: MEMBER_DECISION_REFUSAL.DECIDER_IS_SUBJECT } });
+        expect(err.message).toContain(MEMBER_DECISION_REFUSAL.DECIDER_IS_SUBJECT);
+        expect(db.accessReviewDecision.updateMany).not.toHaveBeenCalled();
+        expect(db.accessReview.updateMany).not.toHaveBeenCalled();
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_DECISION_REFUSED']);
+        expect(refusalAudit('ACCESS_REVIEW_DECISION_REFUSED')).toMatchObject({
+            entityType: 'AccessReviewDecision',
+            entityId: 'd-self',
+            detailsJson: expect.objectContaining({
+                category: 'access',
+                after: { reason: MEMBER_DECISION_REFUSAL.DECIDER_IS_SUBJECT },
+            }),
+        });
+    });
+
+    it('the same caller decides somebody else’s row on the same campaign', async () => {
+        const db = ownRowDb({ subjectUserId: 'u-other', reviewerUserId: 'reader-1' });
+        await expect(submitDecision(reader(), 'd-self', { decision: 'CONFIRM' })).resolves.toMatchObject({
+            decision: 'CONFIRM',
+        });
+        expect(db.accessReviewDecision.updateMany).toHaveBeenCalledTimes(1);
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_DECISION_SUBMITTED']);
+    });
+
+    it('a caller who may not decide the campaign at all is told THAT, not the own-row rule', async () => {
+        ownRowDb({ subjectUserId: 'reader-1', reviewerUserId: 'somebody-else' });
+        const err = await submitDecision(reader(), 'd-self', { decision: 'CONFIRM' }).catch((e) => e);
+        expect(err).toMatchObject({ status: 403 });
+        expect(err.message).toMatch(/Only the assigned reviewer/);
+        expect(auditActions()).toEqual([]);
+    });
+});
+
+describe('revokeDecision — nobody discards the verdict on their own access (#4130)', () => {
+    it('an ADMIN discarding a verdict another reviewer recorded on the ADMIN is refused — named, audited, nothing reset', async () => {
+        const db = ownRowDb({ subjectUserId: 'admin-1', reviewerUserId: 'reader-1', decision: 'CONFIRM' });
+        const err = await revokeDecision(admin(), 'd-self', { reason: 'wrong verdict' }).catch((e) => e);
+        expect(err).toMatchObject({ status: 403, details: { reason: MEMBER_DECISION_REFUSAL.DECIDER_IS_SUBJECT } });
+        expect(db.accessReviewDecision.updateMany).not.toHaveBeenCalled();
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_DECISION_REVOKE_REFUSED']);
+    });
+
+    it('the reviewer discards a verdict on somebody else’s row', async () => {
+        const db = ownRowDb({ subjectUserId: 'u-other', reviewerUserId: 'reader-1', decision: 'CONFIRM' });
+        await expect(revokeDecision(reader(), 'd-self', { reason: 'wrong verdict' })).resolves.toMatchObject({
+            decisionId: 'd-self',
+        });
+        expect(db.accessReviewDecision.updateMany).toHaveBeenCalledTimes(1);
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_DECISION_REVOKED']);
+    });
+});
+
+describe('closeAccessReview — a verdict its own subject recorded is never executed (#4130)', () => {
+    const selfDecided = (id: string, decision: 'CONFIRM' | 'REVOKE') => ({
+        ...stored(id, decision, { role: 'ADMIN' }),
+        decidedByUserId: `u-${id}`,
+    });
+
+    it('refuses the WHOLE close by name, even for an OWNER closer, before any row executes', async () => {
+        const db = campaignDb([stored('d-0', 'CONFIRM', { role: 'READER' }), selfDecided('d-self', 'CONFIRM')]);
+        const err = await closeAccessReview(owner(), 'ar-1').catch((e) => e);
+        expect(err).toMatchObject({
+            status: 409,
+            details: { reason: MEMBER_DECISION_REFUSAL.DECIDER_IS_SUBJECT, decisionIds: ['d-self'] },
+        });
+        expect(db.tenantMembership.findMany).not.toHaveBeenCalled();
+        expect(db.tenantMembership.update).not.toHaveBeenCalled();
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_CLOSE_REFUSED']);
+    });
+
+    it('closes once somebody else decided that row', async () => {
+        campaignDb([{ ...stored('d-self', 'CONFIRM', { role: 'ADMIN' }), decidedByUserId: 'reviewer-1' }]);
+        await expect(closeAccessReview(admin(), 'ar-1')).rejects.toBe(REACHED_OWNER_COUNT);
+        expect(auditActions()).toEqual([]);
+    });
+});
+
+describe('closeAccessReview — changing or revoking an AI admin is OWNER-tier, as on the members page (#4130, #4118)', () => {
+    const aiAdminModify = () => stored('d-ai', 'MODIFY', { role: 'AI_ADMIN' }, { modifiedToRole: 'READER' });
+
+    it('an ADMIN closer cannot MODIFY a live AI admin — 403, named, audited, nothing executed', async () => {
+        const db = campaignDb([aiAdminModify(), stored('d-ed', 'REVOKE', { role: 'EDITOR' })]);
+        const err = await closeAccessReview(admin(), 'ar-1').catch((e) => e);
+        expect(err).toMatchObject({
+            status: 403,
+            details: { reason: MEMBER_DECISION_REFUSAL.AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER, decisionIds: ['d-ai'] },
+        });
+        expect(db.tenantMembership.findMany).not.toHaveBeenCalled();
+        expect(db.tenantMembership.update).not.toHaveBeenCalled();
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_CLOSE_REFUSED']);
+    });
+
+    it('an ADMIN closer cannot REVOKE a live AI admin either — the members page refuses an ADMIN that deactivation', async () => {
+        const db = campaignDb([stored('d-ai', 'REVOKE', { role: 'AI_ADMIN' }), stored('d-ed', 'REVOKE', { role: 'EDITOR' })]);
+        const err = await closeAccessReview(admin(), 'ar-1').catch((e) => e);
+        expect(err).toMatchObject({
+            status: 403,
+            details: { reason: MEMBER_DECISION_REFUSAL.AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER, decisionIds: ['d-ai'] },
+        });
+        expect(db.tenantMembership.findMany).not.toHaveBeenCalled();
+        expect(db.tenantMembership.update).not.toHaveBeenCalled();
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_CLOSE_REFUSED']);
+    });
+
+    it('an OWNER closer may MODIFY or REVOKE one', async () => {
+        campaignDb([aiAdminModify()]);
+        await expect(closeAccessReview(owner(), 'ar-1')).rejects.toBe(REACHED_OWNER_COUNT);
+
+        campaignDb([stored('d-ai', 'REVOKE', { role: 'AI_ADMIN' })]);
+        await expect(closeAccessReview(owner(), 'ar-1')).rejects.toBe(REACHED_OWNER_COUNT);
+        expect(auditActions()).toEqual([]);
+    });
+
+    it('a CONFIRM of an AI admin is not refused to an ADMIN closer', async () => {
+        campaignDb([stored('d-ai', 'CONFIRM', { role: 'AI_ADMIN' })]);
+        await expect(closeAccessReview(admin(), 'ar-1')).rejects.toBe(REACHED_OWNER_COUNT);
         expect(auditActions()).toEqual([]);
     });
 });

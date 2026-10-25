@@ -115,6 +115,8 @@ const NAMING_FILES: Readonly<Record<string, string>> = {
     'src/lib/auth/guard.ts': 'checkAdminAccess: admits it to the agent admin paths only',
     'src/lib/agentic/ownership-transfer.ts': 'TRANSFER_RECIPIENT_MEMBERSHIP_ROLES: it can receive an agent',
     'src/lib/scim/roles.ts': 'SCIM_GROUP_ASSIGNABLE_ROLES: a Groups push may write it; the Users ceiling may not',
+    'src/app-layer/usecases/scim-users.ts':
+        'noticeAiAdminDeprovision: a SCIM deprovision of one tells the Owners; reads the role, writes none',
     'src/app-layer/schemas/entra-group-mapping.schemas.ts': 'ENTRA_MAPPABLE_ROLES: a group may map to it',
     'src/app-layer/policies/audit-readiness.policies.ts': 'assertCanViewPack: views packs like a READER',
     'src/app-layer/policies/issue.policies.ts': 'assertCanComment: refuses it like a READER',
@@ -128,7 +130,8 @@ const NAMING_FILES: Readonly<Record<string, string>> = {
 /** Files that WRITE AI_ADMIN to a membership — the two the owner decided on, and no third. */
 const WRITERS: Readonly<Record<string, string>> = {
     'src/app-layer/usecases/tenant-admin.ts':
-        'updateTenantMemberRole — the members-page role change, an OWNER moving an existing member in or out',
+        'updateTenantMemberRole — the members-page role change, an OWNER moving an existing member in or out ' +
+        '(and updateTenantMemberRoleAndCustomRole, the same change saved with a custom role, all or nothing — #4118)',
     'src/lib/auth/entra-group-sync.ts':
         'syncEntraMembershipRole — an Entra group mapping, at sign-in and on a SCIM Groups push',
 };

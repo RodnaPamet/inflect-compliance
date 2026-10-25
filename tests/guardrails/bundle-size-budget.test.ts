@@ -203,7 +203,20 @@ const BUDGETS_KB: Record<string, number> = {
     // and /account/* by about 44 KB each), 64 got larger by at most 3.6 KB,
     // where webpack regrouped the shared chunks those modules land in. This
     // route was one of the 64, 647.4 → 651.0 KB.
-    'controls': 662,
+    //
+    // Raised 662 → 668 by #4200 (owner decision), and this one is NOT more
+    // code. The route that tripped it, `controls/[controlId]/tests/[planId]`,
+    // ships the SAME 445 modules on main and on that branch (module content
+    // 481,753 vs 481,779 bytes — the 26 are one new cache key). Two local
+    // `next build --webpack` runs of main (2d0260c) and the branch: 660.9 →
+    // 665.4 KB. The difference is webpack re-partitioning those modules into
+    // different chunks (58 → 59 for this route) because the branch changed
+    // which modules the frameworks and onboarding pages share, and this gate
+    // sums gzip PER CHUNK, so the same code compresses slightly worse when it
+    // is split differently. 168 of 180 routes moved 2–5 KB in the same build.
+    // main had 1.1 KB left in this bucket, so a repartition of that size was
+    // going to trip it from any PR. 668 is measured + ~3, the convention.
+    'controls': 668,
     // Catch-all for any other tenant page.
     'tenant-default': 682,
     // Auth / public / org pages.

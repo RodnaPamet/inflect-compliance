@@ -13,6 +13,7 @@ import {
 } from '../policies/policy.policies';
 import { logEvent } from '../events/audit';
 import { enqueueEmail } from '../notifications/enqueue';
+import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { hasOutstandingAcknowledgement } from '@/lib/policy/coverage-predicate';
@@ -1272,18 +1273,32 @@ export async function publishPolicy(
         });
 
         const result = await PolicyRepository.getById(db, ctx, policyId);
-        return { result, carriedAckUserIds, policyTitle: policy.title };
+        return {
+            result,
+            carriedAckUserIds,
+            policyTitle: policy.title,
+            lifecycleVersion: policy.lifecycleVersion + 1,
+        };
     });
 
     // Re-notify carried-forward assignees that the revised policy needs a
     // FRESH acknowledgement — OUTSIDE the publish transaction (best-effort;
-    // a notification failure must never fail or roll back the publish). The
-    // dedupeKey is scoped to the NEW version so it fires once per revision.
+    // a notification failure must never fail or roll back the publish).
+    //
+    // The dedupeKey is scoped to THIS PUBLISH, not to the version alone. A
+    // version can be published more than once — v2, roll back to v1, publish
+    // v2 again — and a key of `<versionId>:<userId>` collided with v2's first
+    // publish on the unique index, so the second publish told nobody. The
+    // publish's identity is the lifecycle version it produced, as a rollback's
+    // is: a re-publish notifies again, a retry of the same publish still
+    // dedupes.
     if (published.carriedAckUserIds.length > 0) {
         try {
             await runInTenantContext(ctx, async (db) => {
                 const title = `Re-acknowledgement required: "${published.policyTitle}"`;
                 const message = `The policy "${published.policyTitle}" has been revised. Please read and acknowledge the new version.`;
+                // `/t/<slug>`-prefixed: a bare `/policies/<id>` 404'd from the bell (#4128).
+                const linkUrl = tenantPageLink(await resolveTenantSlugForLinks(db, ctx), `/policies/${policyId}`);
                 for (const userId of published.carriedAckUserIds) {
                     await db.notification
                         .create({
@@ -1293,8 +1308,8 @@ export async function publishPolicy(
                                 type: 'GENERAL',
                                 title,
                                 message,
-                                linkUrl: `/policies/${policyId}`,
-                                dedupeKey: `POLICY_ACK_REQUIRED:${versionId}:${userId}`,
+                                linkUrl,
+                                dedupeKey: `POLICY_ACK_REQUIRED:${versionId}:publish-${published.lifecycleVersion}:${userId}`,
                             },
                         })
                         .catch(() => { /* dedupe/notification failure must not fail publish */ });
@@ -1456,13 +1471,26 @@ export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
 
     // Re-notify carried-forward assignees that the LIVE content changed and
     // needs a fresh acknowledgement — outside the transaction, best-effort,
-    // exactly as publishPolicy does. The dedupeKey is scoped to the restored
-    // version so it fires once per rollback rather than once per policy.
+    // exactly as publishPolicy does.
+    //
+    // The dedupeKey is scoped to THIS ROLLBACK, not to the restored version
+    // (#4128). The restored version was live before, so its own request and its
+    // publish already used `POLICY_ACK_REQUIRED:<versionId>:<userId>`; reusing
+    // that key collided on the unique index, the create fell into the silent
+    // `.catch`, and only people new to the campaign were told. A rollback is a
+    // new request. The rollback's identity is the lifecycle version it produced
+    // (every publish and rollback bumps it): a second rollback notifies again,
+    // a retry of the same one still dedupes.
     if (result.carriedAckUserIds.length > 0) {
         try {
             await runInTenantContext(ctx, async (db) => {
                 const title = `Re-acknowledgement required: "${result.policyTitle}"`;
                 const message = `The policy "${result.policyTitle}" was rolled back to an earlier version. Please read and acknowledge the version now in force.`;
+                // The re-read cannot miss inside the rollback's own transaction;
+                // if it ever did, fall back to a key no other rollback shares
+                // rather than one that silently dedupes everybody again.
+                const rollbackId = `rollback-${result.rolledBack?.lifecycleVersion ?? `t${Date.now()}`}`;
+                const linkUrl = tenantPageLink(await resolveTenantSlugForLinks(db, ctx), `/policies/${policyId}`);
                 for (const userId of result.carriedAckUserIds) {
                     await db.notification
                         .create({
@@ -1472,8 +1500,8 @@ export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
                                 type: 'GENERAL',
                                 title,
                                 message,
-                                linkUrl: `/policies/${policyId}`,
-                                dedupeKey: `POLICY_ACK_REQUIRED:${result.restoredVersionId}:${userId}`,
+                                linkUrl,
+                                dedupeKey: `POLICY_ACK_REQUIRED:${result.restoredVersionId}:${rollbackId}:${userId}`,
                             },
                         })
                         .catch(() => { /* notification failure must not fail the rollback */ });

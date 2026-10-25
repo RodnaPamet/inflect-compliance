@@ -194,7 +194,9 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
         // that a needle matching two different endpoints asserts nothing about
         // either, and the discard path could be deleted entirely with the
         // original assertion still green.
-        expect(detailClient).toContain('/decisions/${decision.row.id}');
+        // The member verdict is posted by the shared decision dialog, which
+        // also posts connected verdicts (#4130), so its target is `target.row`.
+        expect(detailClient).toContain('/decisions/${target.row.id}');
         expect(detailClient).toContain('/decisions/${row.id}/revoke');
         expect(detailClient).toContain("/close");
     });

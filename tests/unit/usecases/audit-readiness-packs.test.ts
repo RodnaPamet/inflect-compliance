@@ -22,10 +22,12 @@
  *   freezeAuditPack:    policy + not-found + already-frozen +
  *                       empty-pack reject + snapshot-per-entityType
  *                       (CONTROL/POLICY/EVIDENCE/ISSUE/default) +
+ *                       caller-supplied snapshots rebuilt (#4129) +
  *                       transaction-timeout option propagation +
- *                       SoA best-effort attachment
+ *                       SoA best-effort attachment as FRAMEWORK_COVERAGE
+ *   removeAuditPackItem: policy + not-found + non-DRAFT reject (#4129)
  *   previewDefaultPack: policy + cycle-not-found + ISO27001 + NIS2 +
- *                       unsupported-framework
+ *                       any other framework (#4129)
  *   exportAuditPack:    policy + DRAFT-reject + json vs csv
  *
  * Each test isolates ONE branch so a regression points at exactly
@@ -55,9 +57,15 @@ jest.mock('@/app-layer/usecases/soa', () => ({
     getSoA: (...args: any[]) => mockGetSoA(...args),
 }));
 
+// #4129 — an SoA that cannot be attached is logged, no longer swallowed.
+const mockWarn = jest.fn();
+jest.mock('@/lib/observability/logger', () => ({
+    logger: { warn: (...args: any[]) => mockWarn(...args), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
 const mockTdb: any = {
-    auditPack: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
-    auditPackItem: { createMany: jest.fn(), update: jest.fn(), create: jest.fn() },
+    auditPack: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+    auditPackItem: { createMany: jest.fn(), update: jest.fn(), create: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
     auditCycle: { findFirst: jest.fn() },
     framework: { findFirst: jest.fn() },
     controlRequirementLink: { findMany: jest.fn() },
@@ -84,6 +92,7 @@ import {
     getAuditPack,
     updateAuditPack,
     addAuditPackItems,
+    removeAuditPackItem,
     freezeAuditPack,
     previewDefaultPack,
     exportAuditPack,
@@ -100,11 +109,14 @@ beforeEach(() => {
     auditCalls.length = 0;
     txOpts.length = 0;
     mockGetSoA.mockReset();
+    mockWarn.mockReset();
     [
         mockTdb.auditPack.findFirst, mockTdb.auditPack.findMany,
         mockTdb.auditPack.create, mockTdb.auditPack.update,
+        mockTdb.auditPack.updateMany,
         mockTdb.auditPackItem.createMany, mockTdb.auditPackItem.update,
-        mockTdb.auditPackItem.create,
+        mockTdb.auditPackItem.create, mockTdb.auditPackItem.upsert,
+        mockTdb.auditPackItem.findFirst, mockTdb.auditPackItem.delete,
         mockTdb.auditCycle.findFirst,
         mockTdb.framework.findFirst,
         mockTdb.controlRequirementLink.findMany,
@@ -191,6 +203,40 @@ describe('getAuditPack', () => {
         const args = mockTdb.auditPack.findFirst.mock.calls[0][0];
         expect(args.include.items).toBeDefined();
         expect(args.include.cycle).toBe(true);
+    });
+
+    it('names each draft item by its live row when its snapshot names nothing (#4129)', async () => {
+        // A draft's row-backed items are stored with `{}` until the freeze,
+        // so the page listed them by raw id. The read resolves their names.
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({
+            id: 'p-1', name: 'X', status: 'DRAFT', cycle: {}, _count: {},
+            items: [
+                { id: 'i-c', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' },
+                { id: 'i-p', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' },
+                { id: 'i-e', entityType: 'EVIDENCE', entityId: 'ev-1', snapshotJson: '{}' },
+                { id: 'i-t', entityType: 'ISSUE', entityId: 't-1', snapshotJson: '{}' },
+                { id: 'i-named', entityType: 'CONTROL', entityId: 'c-2', snapshotJson: '{"code":"A.5.2","snapshotAt":"2026-01-01"}' },
+                { id: 'i-gone', entityType: 'CONTROL', entityId: 'c-gone', snapshotJson: '{}' },
+            ],
+        });
+        mockTdb.control.findMany.mockResolvedValueOnce([{ id: 'c-1', code: 'A.5.1', name: 'Policies' }]);
+        mockTdb.policy.findMany.mockResolvedValueOnce([{ id: 'pol-1', title: 'Access policy' }]);
+        mockTdb.evidence.findMany.mockResolvedValueOnce([{ id: 'ev-1', title: 'MFA screenshot' }]);
+        mockTdb.task.findMany.mockResolvedValueOnce([{ id: 't-1', title: 'Rotate keys' }]);
+
+        const result = await getAuditPack(ctx, 'p-1');
+        const byId = Object.fromEntries(result.items.map((i: any) => [i.id, i.displayName]));
+        expect(byId).toEqual({
+            'i-c': 'A.5.1', 'i-p': 'Access policy', 'i-e': 'MFA screenshot', 'i-t': 'Rotate keys',
+            // Its snapshot already names it: no lookup, no displayName.
+            'i-named': null,
+            // A source row that is gone answers nothing; the page falls back.
+            'i-gone': null,
+        });
+        // One batched read per type, scoped to the tenant, never c-2.
+        const ctrlWhere = mockTdb.control.findMany.mock.calls[0][0].where;
+        expect(ctrlWhere.tenantId).toBe('tenant-1');
+        expect(ctrlWhere.id.in.sort()).toEqual(['c-1', 'c-gone']);
     });
 });
 
@@ -312,6 +358,80 @@ describe('addAuditPackItems', () => {
         expect(payload[0].sortOrder).toBe(0);
         expect(payload[0].snapshotJson).toBe('{}');
     });
+
+    it('ignores a caller-supplied snapshot for a row-backed item, keeps one for a computed artefact (#4129)', async () => {
+        // The pack page sent `{ title }` with every hand-added item, and the
+        // freeze kept it, so the item froze with its title and nothing else.
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        mockTdb.auditPackItem.createMany.mockResolvedValueOnce({ count: 2 });
+        mockTdb.control.findMany.mockResolvedValueOnce([{ id: 'c-1' }]);
+
+        await addAuditPackItems(ctx, 'p-1', [
+            { entityType: 'CONTROL', entityId: 'c-1', snapshotJson: JSON.stringify({ title: 'Forged', status: 'IMPLEMENTED' }) },
+            { entityType: 'READINESS_REPORT', entityId: 'cyc-1', snapshotJson: '{"score":80}' },
+        ]);
+
+        const payload = mockTdb.auditPackItem.createMany.mock.calls[0][0].data;
+        expect(payload[0].snapshotJson).toBe('{}');
+        expect(payload[1].snapshotJson).toBe('{"score":80}');
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// removeAuditPackItem (#4129) — there was no way to take an item out
+// ──────────────────────────────────────────────────────────────────────
+describe('removeAuditPackItem', () => {
+    it('asserts MANAGE permission (the same writers as adding)', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        mockTdb.auditPackItem.findFirst.mockResolvedValueOnce({ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1' });
+        mockTdb.auditPack.updateMany.mockResolvedValueOnce({ count: 1 });
+        await removeAuditPackItem(ctx, 'p-1', 'i-1');
+        expect(policyCalls).toEqual(['manage']);
+    });
+
+    it('deletes the item from a DRAFT pack and audits the removal', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        mockTdb.auditPackItem.findFirst.mockResolvedValueOnce({ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1' });
+        mockTdb.auditPack.updateMany.mockResolvedValueOnce({ count: 1 });
+
+        const result = await removeAuditPackItem(ctx, 'p-1', 'i-1');
+
+        expect(result).toEqual({ removed: true, itemId: 'i-1' });
+        // The item lookup is scoped to the pack AND the tenant.
+        expect(mockTdb.auditPackItem.findFirst.mock.calls[0][0].where).toEqual({ id: 'i-1', auditPackId: 'p-1', tenantId: 'tenant-1' });
+        // The DRAFT state is re-asserted under the pack's row lock.
+        expect(mockTdb.auditPack.updateMany.mock.calls[0][0].where).toEqual({ id: 'p-1', tenantId: 'tenant-1', status: 'DRAFT' });
+        expect(mockTdb.auditPackItem.delete).toHaveBeenCalledWith({ where: { id: 'i-1' } });
+        expect(auditCalls[0]).toMatchObject({
+            action: 'AUDIT_PACK_ITEM_REMOVED',
+            entityId: 'p-1',
+            detailsJson: { category: 'relationship', operation: 'unlinked', targetEntity: 'CONTROL', targetId: 'c-1' },
+        });
+    });
+
+    it('REJECTS removal from a FROZEN pack', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
+        await expect(removeAuditPackItem(ctx, 'p-1', 'i-1')).rejects.toThrow(/cannot remove items from a frozen/i);
+        expect(mockTdb.auditPackItem.delete).not.toHaveBeenCalled();
+    });
+
+    it('REJECTS removal when the pack was frozen between the read and the write', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        mockTdb.auditPackItem.findFirst.mockResolvedValueOnce({ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1' });
+        mockTdb.auditPack.updateMany.mockResolvedValueOnce({ count: 0 });
+        await expect(removeAuditPackItem(ctx, 'p-1', 'i-1')).rejects.toThrow(/cannot remove items from a frozen/i);
+        expect(mockTdb.auditPackItem.delete).not.toHaveBeenCalled();
+        expect(auditCalls).toHaveLength(0);
+    });
+
+    it('throws notFound for a pack or an item outside it', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce(null);
+        await expect(removeAuditPackItem(ctx, 'p-foreign', 'i-1')).rejects.toThrow(/audit pack not found/i);
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        mockTdb.auditPackItem.findFirst.mockResolvedValueOnce(null);
+        await expect(removeAuditPackItem(ctx, 'p-1', 'i-other-pack')).rejects.toThrow(/pack item not found/i);
+        expect(mockTdb.auditPackItem.delete).not.toHaveBeenCalled();
+    });
 });
 
 // ──────────────────────────────────────────────────────────────────────
@@ -323,8 +443,10 @@ describe('freezeAuditPack', () => {
         await expect(freezeAuditPack(ctx, 'p-foreign')).rejects.toThrow(/audit pack not found/i);
     });
 
+    // Phase 1 now reads the pack (for its cycle's framework) before Phase 2
+    // does, so the fixtures below persist across both reads (#4129).
     it('REJECTS freeze on already-FROZEN pack', async () => {
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN', items: [] });
+        mockTdb.auditPack.findFirst.mockResolvedValue({ id: 'p-1', status: 'FROZEN', items: [] });
         await expect(freezeAuditPack(ctx, 'p-1')).rejects.toThrow(/already frozen/i);
     });
 
@@ -332,7 +454,7 @@ describe('freezeAuditPack', () => {
         // An empty pack at freeze-time is operator error — the
         // freeze locks the snapshot, and an empty snapshot has no
         // forensic value.
-        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT', items: [] });
+        mockTdb.auditPack.findFirst.mockResolvedValue({ id: 'p-1', status: 'DRAFT', items: [] });
         await expect(freezeAuditPack(ctx, 'p-1')).rejects.toThrow(/empty pack/i);
     });
 
@@ -361,14 +483,16 @@ describe('freezeAuditPack', () => {
         expect(txOpts[0]).toEqual({ timeout: 60000, maxWait: 10000 });
     });
 
-    it('SKIPS snapshot generation when the item already has a non-empty snapshotJson', async () => {
-        // The "don't overwrite a prior snapshot" branch — important
-        // because an item that was attached with a custom snapshot
-        // payload at addItems time keeps that payload through freeze.
+    it('SKIPS snapshot generation when the item already has a server-built snapshot', async () => {
+        // The "don't overwrite a prior snapshot" branch — the reliance pack
+        // writes its CONTROL items' snapshots itself, with `snapshotAt`, and
+        // they must survive the freeze. (#4129 narrowed this branch: it used
+        // to keep ANY non-empty snapshot, including the `{ title }` the pack
+        // page sent, so hand-added items froze with their title alone.)
         mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
             _count: { items: 1 },
-            items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{"pre":"baked"}' }],
+            items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{"pre":"baked","snapshotAt":"2026-01-01T00:00:00.000Z"}' }],
         });
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
         mockGetSoA.mockResolvedValueOnce({
@@ -381,6 +505,34 @@ describe('freezeAuditPack', () => {
         expect(mockTdb.control.findMany).not.toHaveBeenCalled();
         // ALSO: no update on the item (the existing snapshot is kept)
         expect(mockTdb.auditPackItem.update).not.toHaveBeenCalled();
+    });
+
+    it('REBUILDS a row-backed item whose snapshot the server did not build (#4129)', async () => {
+        // A draft made before #4129 holds the `{ title }` the page sent. The
+        // freeze must replace it with the source row, as the dialog promises.
+        mockTdb.auditPack.findFirst.mockResolvedValue({
+            id: 'p-1', status: 'DRAFT',
+            _count: { items: 2 },
+            items: [
+                { id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{"title":"A.5.1"}' },
+                // A computed artefact's snapshot IS its content and is kept.
+                { id: 'i-2', entityType: 'READINESS_REPORT', entityId: 'cyc-1', snapshotJson: '{"score":80}' },
+            ],
+        });
+        mockTdb.control.findMany.mockResolvedValueOnce([{
+            id: 'c-1', code: 'A.5.1', name: 'Policies', status: 'IMPLEMENTED',
+            tasks: [], evidenceControlLinks: [{ id: 'ecl-1' }], requirementLinks: [],
+        }]);
+        mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
+
+        await freezeAuditPack(ctx, 'p-1');
+
+        expect(mockTdb.auditPackItem.update).toHaveBeenCalledTimes(1);
+        const updateArgs = mockTdb.auditPackItem.update.mock.calls[0][0];
+        expect(updateArgs.where).toEqual({ id: 'i-1' });
+        const snap = JSON.parse(updateArgs.data.snapshotJson);
+        expect(snap).toMatchObject({ code: 'A.5.1', name: 'Policies', status: 'IMPLEMENTED', evidenceCount: 1 });
+        expect(typeof snap.snapshotAt).toBe('string');
     });
 
     it('builds CONTROL snapshots when item.entityType === CONTROL and snapshot was empty', async () => {
@@ -475,12 +627,14 @@ describe('freezeAuditPack', () => {
         expect(snap.entityId).toBe('x-1');
     });
 
-    it('SWALLOWS SoA attachment failure (best-effort)', async () => {
-        // The SoA snapshot is documented as best-effort. A getSoA
-        // failure cannot prevent the freeze that ran successfully.
+    it('LOGS an SoA attachment failure and still freezes (best-effort)', async () => {
+        // The SoA is best-effort — a getSoA failure cannot stop the freeze —
+        // but it was swallowed by a bare `catch {}`, and the insert it guarded
+        // failed on every freeze for years without anyone knowing (#4129).
         mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
             _count: { items: 1 },
+            cycle: { frameworkKey: 'ISO27001' },
             items: [{ id: 'i-1', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' }],
         });
         mockTdb.policy.findMany.mockResolvedValueOnce([{
@@ -493,22 +647,30 @@ describe('freezeAuditPack', () => {
 
         // Freeze still returns the frozen pack despite the SoA failure.
         expect(result.status).toBe('FROZEN');
-        // No EXPORT_ARTIFACT item got attached.
-        expect(mockTdb.auditPackItem.create).not.toHaveBeenCalled();
+        expect(mockTdb.auditPackItem.upsert).not.toHaveBeenCalled();
+        expect(mockWarn).toHaveBeenCalledWith(
+            expect.stringMatching(/statement of applicability not attached/i),
+            expect.objectContaining({ packId: 'p-1', frameworkKey: 'ISO27001', error: 'soa down' }),
+        );
     });
 
-    it('attaches the SoA EXPORT_ARTIFACT row on happy-path', async () => {
+    it('attaches the cycle framework\'s SoA as a FRAMEWORK_COVERAGE item (#4129)', async () => {
+        // It used to insert `EXPORT_ARTIFACT`, a value the enum does not have,
+        // so the database refused it every time. FRAMEWORK_COVERAGE is an
+        // existing value and says what an SoA is.
         mockTdb.auditPack.findFirst.mockResolvedValue({
             id: 'p-1', status: 'DRAFT',
             _count: { items: 1 },
+            cycle: { frameworkKey: 'ISO27001' },
             items: [{ id: 'i-1', entityType: 'POLICY', entityId: 'pol-1', snapshotJson: '{}' }],
         });
         mockTdb.policy.findMany.mockResolvedValueOnce([{
             id: 'pol-1', title: 'X', status: 'APPROVED', category: 'Security', versions: [],
         }]);
         mockTdb.auditPack.update.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
+        mockTdb.auditPack.updateMany.mockResolvedValueOnce({ count: 1 });
         mockGetSoA.mockResolvedValueOnce({
-            framework: 'iso27001', generatedAt: new Date(), summary: { applicable: 5 },
+            framework: 'ISO27001', frameworkName: 'ISO 27001:2022', generatedAt: new Date(), summary: { applicable: 5 },
             entries: [{
                 requirementCode: 'A.5.1', requirementTitle: 'X', section: '5',
                 applicable: true, justification: '',
@@ -520,12 +682,37 @@ describe('freezeAuditPack', () => {
 
         await freezeAuditPack(ctx, 'p-1');
 
-        const createArgs = mockTdb.auditPackItem.create.mock.calls[0][0];
-        expect(createArgs.data.entityType).toBe('EXPORT_ARTIFACT');
-        expect(createArgs.data.entityId).toBe('soa-iso27001');
-        const snap = JSON.parse(createArgs.data.snapshotJson);
+        // The CYCLE's framework, not whichever one the workspace installed first.
+        expect(mockGetSoA.mock.calls[0][1]).toMatchObject({ framework: 'ISO27001' });
+        const args = mockTdb.auditPackItem.upsert.mock.calls[0][0];
+        expect(args.where).toEqual({
+            auditPackId_entityType_entityId: { auditPackId: 'p-1', entityType: 'FRAMEWORK_COVERAGE', entityId: 'soa-ISO27001' },
+        });
+        expect(args.create.entityType).toBe('FRAMEWORK_COVERAGE');
+        const snap = JSON.parse(args.create.snapshotJson);
         expect(snap.type).toBe('SOA_REPORT');
         expect(snap.entries[0].code).toBe('A.5.1');
+        // Written only while the pack is still DRAFT, under its row lock.
+        expect(mockTdb.auditPack.updateMany.mock.calls[0][0].where).toMatchObject({ id: 'p-1', status: 'DRAFT' });
+        expect(mockWarn).not.toHaveBeenCalled();
+    });
+
+    it('attaches no SoA for a framework that has none, or when the caller opts out', async () => {
+        const draft = {
+            id: 'p-1', status: 'DRAFT',
+            _count: { items: 1 },
+            items: [{ id: 'i-1', entityType: 'EXPORT_ARTIFACT', entityId: 'x-1', snapshotJson: '{}' }],
+        };
+        mockTdb.auditPack.update.mockResolvedValue({ id: 'p-1', status: 'FROZEN' });
+
+        mockTdb.auditPack.findFirst.mockResolvedValue({ ...draft, cycle: { frameworkKey: 'NIS2' } });
+        await freezeAuditPack(ctx, 'p-1');
+        // The reliance pack's freeze: every item there is its planner's.
+        mockTdb.auditPack.findFirst.mockResolvedValue({ ...draft, cycle: { frameworkKey: 'ISO27001' } });
+        await freezeAuditPack(ctx, 'p-1', { attachStatementOfApplicability: false });
+
+        expect(mockGetSoA).not.toHaveBeenCalled();
+        expect(mockTdb.auditPackItem.upsert).not.toHaveBeenCalled();
     });
 });
 
@@ -538,9 +725,33 @@ describe('previewDefaultPack', () => {
         await expect(previewDefaultPack(ctx, 'c-foreign')).rejects.toThrow(/audit cycle not found/i);
     });
 
-    it('rejects an unsupported frameworkKey with badRequest', async () => {
-        mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'SOC1' });
-        await expect(previewDefaultPack(ctx, 'c-1')).rejects.toThrow(/no default pack template for framework: soc1/i);
+    it('builds a default pack for any other framework, with every published policy (#4129)', async () => {
+        // It used to refuse anything but ISO27001 and NIS2, and nothing else
+        // in the page builds a pack, so such a cycle could never get one.
+        mockTdb.auditCycle.findFirst.mockResolvedValueOnce({ id: 'c-1', frameworkKey: 'SOC2' });
+        mockTdb.framework.findFirst.mockResolvedValueOnce({ id: 'fw-soc2' });
+        mockTdb.controlRequirementLink.findMany.mockResolvedValueOnce([{ controlId: 'ctrl-1' }]);
+        mockTdb.control.findMany.mockResolvedValueOnce([
+            { id: 'ctrl-1', evidenceControlLinks: [{ evidenceId: 'e-1' }] },
+        ]);
+        mockTdb.policy.findMany.mockResolvedValueOnce([
+            { id: 'pol-sec', title: 'InfoSec Policy', category: 'Security' },
+            { id: 'pol-hr', title: 'Vacation', category: 'HR' },
+        ]);
+        mockTdb.task.findMany.mockResolvedValueOnce([{ id: 't-1' }]);
+
+        const result = await previewDefaultPack(ctx, 'c-1');
+
+        expect(result.frameworkKey).toBe('SOC2');
+        // Controls mapped to THIS framework, as for ISO / NIS2.
+        expect(mockTdb.framework.findFirst.mock.calls[0][0].where).toEqual({ key: 'SOC2' });
+        expect(mockTdb.control.findMany.mock.calls[0][0].where.id).toEqual({ in: ['ctrl-1'] });
+        expect(result.selection.controls.ids).toEqual(['ctrl-1']);
+        expect(result.selection.evidence.ids).toEqual(['e-1']);
+        // No keyword list for SOC 2: every published policy, not the
+        // security-flavoured subset ISO would take.
+        expect(result.selection.policies.ids).toEqual(['pol-sec', 'pol-hr']);
+        expect(result.selection.issues.ids).toEqual(['t-1']);
     });
 
     it('ISO27001: uses framework-mapped OPERATING controls + evidence + relevant policies (curated)', async () => {

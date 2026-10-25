@@ -243,7 +243,7 @@ POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
 `{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route except `agents/questions`, the only one that supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
 
-`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
+`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. It is charged BEFORE the invocation is built (`verifyMcpCredential`, then the charge, then `completeMcpAuthentication`): building it sends a live `tools/list` to every external connection the agent is granted, and a malformed request is charged one unit and builds nothing (#4205). Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
 
 **Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
 through `API_READ_LIMIT` (120/min) at the Edge middleware via
@@ -484,10 +484,19 @@ as a telemetry failure. Per-tenant policy lives on
 oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
 `expiresAt` at insert time). The admin UI lives at
 `/admin/members` — Sessions column + modal + per-row revoke,
-backed by `GET/DELETE /api/t/:slug/admin/sessions`. The pre-Epic-C
-endpoints (`security/sessions/revoke-current` etc.) and the
-`User.sessionVersion` bump still work as the coarse-grained
-backstop.
+backed by `GET/DELETE /api/t/:slug/admin/sessions`. "Sign Out Other
+Sessions" (`security/sessions/revoke-current`) stamps the caller's
+OTHER `UserSession` rows and keeps the one named by the request JWT's
+`userSessionId` (#4117); it bumps `User.sessionVersion` only when that
+session cannot be identified. Revoke All (`revoke-all`, ACTIVE members
+only, the caller's current session kept) and per-user revocation bump
+`sessionVersion` AND stamp the rows — the version bump stays the
+coarse-grained backstop for a token whose row was never written. Signing
+ONE person out — per-user or one device — of an OWNER or AI_ADMIN needs
+`admin.owner_management`, as deactivating one does
+(`assertMayRevokeSessionsOf`, `REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER`;
+owner decision, 2026-10-25); Revoke All does not ask it, being the incident
+lever.
 
 **C.4 — Audit event streaming.** Every committed audit row is
 fired through `streamAuditEvent` into a per-tenant in-memory
@@ -856,10 +865,13 @@ new tenant-membership creation path).
   (`CAMPAIGN_MODIFY_ROLES`; `CAMPAIGN_NEVER_PROMOTES_TO_OWNER`) and never a
   custom role (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`) — refused at the schema and
   again at close — and a REVOKE or MODIFY of a LIVE OWNER needs a closer holding
-  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`); the last-OWNER
-  guard still applies to that closer. Each refusal is the WHOLE close, before any
-  row executes, so a decision stored before the rule is never applied and never
-  dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` / `_CLOSE_REFUSED`.
+  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`), as does a REVOKE
+  or MODIFY of a LIVE AI_ADMIN (`AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER`, matching
+  the members page, where only an OWNER moves one out of the role or deactivates
+  it); the last-OWNER guard still applies to that closer. Each refusal is the
+  WHOLE close, before any row executes, so a decision stored before the rule is
+  never applied and never dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` /
+  `_CLOSE_REFUSED`.
   Reasons live in `src/lib/access-review/member-decision-rules.ts`.
 
 ### Observability
@@ -2719,6 +2731,14 @@ the prefix with no default, so a new engine names its own audit rows. Flue's
 prefix is `'flue'`, which keeps every guard source byte-identical to what it was
 before the move.
 
+**Every model call is preceded by the kill switch and the caps** (#4196). A kill
+engaged mid-run used to refuse only the tool calls: the model was called again
+and the run settled COMPLETED. On Flue the interceptor in `flue/telemetry.ts`
+awaits the run binding's `beforeModelCall` once per model operation, keyed on
+the operation object, because the runtime intercepts every streamed chunk of
+one call with the same object. Do not move the check to the tool boundary or
+the agent render: the tool boundary is too late, and the render cannot await.
+
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
 backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
@@ -2728,6 +2748,38 @@ next engine is vouched, pinned and kept off the web tier without anybody
 remembering those lines. A comparison that genuinely means Flue (the
 `FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
 stays a comparison.
+
+**The engine choice has one control: the "Agent engines" section on Admin → AI
+features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
+`GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and
+the `PUT` stays `admin.tenant_lifecycle`. The page gates each section, not the
+whole page. The six-term `flue-wiring` checklist stays OWNER-only. The section
+requests it only for a viewer who can change the engine, so an admin's visit
+writes no `AUTHZ_DENIED` row. Do not put a second engine control anywhere
+else: the Flue card on Integrations was that, and it was removed. A new engine
+is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
+description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
+a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
+until it does.
+
+**A new engine passes the driver conformance suite before it is switched on**
+(Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
+hold ten run scenarios and one admission scenario. An engine supplies an
+adapter, which scripts the model's turns and reads back an observation. The
+scenarios assert only on that observation. The helper reads `adapter.engine`
+for two describe titles and nothing else, and
+`tests/unit/driver-conformance-variances.test.ts` counts the reads. Do not add
+an engine branch to the helper. A difference belongs in the adapter, or in a
+VARIANCE that names the stronger property and the owner decision accepting it
+(`checkVariances`, which runs as a case of its own). Flue declares none.
+
+Two scenarios are easy to weaken by accident:
+
+- **The kill scenario** holds every engine to the per-model-call check above.
+- **The ledger scenario** is `ledger-accounts-for-every-call`. A `MODEL_CALL`
+  step may cover a dispatch if it names how many calls it covers (owner
+  decision 2026-10-25, #4197). The count is asserted against the model inputs
+  and is never inferred from the number of steps.
 
 ## Testing Conventions
 

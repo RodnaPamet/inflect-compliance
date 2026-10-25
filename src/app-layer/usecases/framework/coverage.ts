@@ -9,6 +9,7 @@ import { rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-ro
 import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence';
 import { toCsv } from '@/lib/csv/format-csv';
 import { LIVE_TEMPLATE_TASKS } from '../../repositories/ControlTemplateRepository';
+import { listFrameworks } from './catalog';
 import {
     collapseLinksToOwnRequirements,
     resolveFamilyRequirementAliases,
@@ -155,6 +156,61 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
     };
 }
 
+
+// ─── Frameworks in use (#4129) ───
+
+/**
+ * Whether a framework is IN USE in this workspace: at least one of the
+ * workspace's live controls is mapped to one of its live requirements.
+ *
+ * This is the rule behind the Frameworks page's "Installed" label, which reads
+ * `computeCoverage(...).mapped > 0`, asked of the same rows — the framework's
+ * non-deprecated requirements, the links held against every representation of
+ * it (`resolveFamilyRequirementAliases`), and controls that are not deleted —
+ * with a `findFirst` instead of loading every link. `mapped > 0` holds exactly
+ * when such a link exists: every id in `lookupIds` maps to one of the
+ * framework's own requirements, so no link the query finds is dropped by the
+ * collapse `computeCoverage` applies afterwards.
+ *
+ * It asserts no permission of its own: `listFrameworksInUse` asserts
+ * `frameworks.view`, and `createAuditCycle` asserts the cycle writer's role,
+ * whose refusal a custom role without `frameworks.view` must not change.
+ */
+export async function isFrameworkInUse(ctx: RequestContext, frameworkKey: string): Promise<boolean> {
+    if (!frameworkKey) return false;
+    const fw = await prisma.framework.findFirst({ where: { key: frameworkKey } });
+    if (!fw) return false;
+    const requirements = await prisma.frameworkRequirement.findMany({
+        where: { frameworkId: fw.id, deprecatedAt: null },
+        select: { id: true, code: true },
+    });
+    if (requirements.length === 0) return false;
+    return runInTenantContext(ctx, async (tdb) => {
+        const { lookupIds } = await resolveFamilyRequirementAliases(tdb, fw, requirements);
+        const link = await tdb.controlRequirementLink.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                requirementId: { in: lookupIds },
+                control: { deletedAt: null },
+            },
+            select: { id: true },
+        });
+        return link !== null;
+    });
+}
+
+/**
+ * The frameworks the Frameworks page offers (`listFrameworks`: not retired, no
+ * reference twin) that are in use in this workspace — what an audit cycle can
+ * be created for. One `isFrameworkInUse` per framework, as the Frameworks page
+ * runs one `computeCoverage` per framework; the catalogue is tens of rows.
+ */
+export async function listFrameworksInUse(ctx: RequestContext) {
+    const frameworks = await listFrameworks(ctx);
+    const inUse = await Promise.all(frameworks.map((fw) => isFrameworkInUse(ctx, fw.key)));
+    return frameworks.filter((_, i) => inUse[i]);
+}
+
 // в”Ђв”Ђв”Ђ Template Library (global catalog with tenant install status) в”Ђв”Ђв”Ђ
 
 export async function listTemplates(
@@ -216,7 +272,16 @@ export async function listTemplates(
         defaultFrequency: t.defaultFrequency,
         isGlobal: t.isGlobal,
         installed: installedCodes.has(t.code),
-        tasks: t.tasks.map((tt) => ({ id: tt.id, title: tt.title, description: tt.description })),
+        // `evidenceHint` is the proof artefact the task produces, as authored
+        // in the catalogue. The template library's "Suggested evidence" lists
+        // these; it used to print the same three hardcoded type names for
+        // every template.
+        tasks: t.tasks.map((tt) => ({
+            id: tt.id,
+            title: tt.title,
+            description: tt.description,
+            evidenceHint: tt.evidenceHint,
+        })),
         requirements: t.requirementLinks.map((rl) => ({
             code: rl.requirement.code,
             title: rl.requirement.title,

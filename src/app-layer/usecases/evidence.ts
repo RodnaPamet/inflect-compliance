@@ -9,8 +9,9 @@ import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { EvidenceType, ReviewCadence } from '@prisma/client';
 import { z } from 'zod';
 import { CreateEvidenceSchema, UpdateEvidenceSchema } from '@/lib/schemas';
-import { isEvidenceContentEditable } from '@/lib/evidence-content';
-import { sanitizePlainText } from '@/lib/security/sanitize';
+import { evidenceContentRole, isEvidenceContentEditable } from '@/lib/evidence-content';
+import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
+import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 
 /**
  * Epic D.2 three-state preserving wrapper over `sanitizePlainText`.
@@ -22,6 +23,38 @@ function sanitizeOptional(v: string | null | undefined): string | null | undefin
     if (v === undefined) return undefined;
     if (v === null) return null;
     return sanitizePlainText(v);
+}
+
+/**
+ * Sanitise a caller-supplied evidence body by what `content` means for the
+ * row's type: a TEXT note is prose (rendered as plain text, never as HTML), a
+ * LINK target is a URL. Only ever called for the two caller-writable roles —
+ * a FILE row's `content` is a storage pathKey this module derives itself.
+ */
+function sanitizeEvidenceBody(type: string | null | undefined, body: string): string {
+    return evidenceContentRole(type) === 'url' ? sanitizeUrlText(body) : sanitizePlainText(body);
+}
+
+/**
+ * Folder is a trimmed label where blank means "no folder" (the UI groups on
+ * null). Sanitising BEFORE the trim matters: `<b> </b>` is blank once the
+ * markup is gone. Three-state like `sanitizeOptional`.
+ */
+function sanitizeFolder(v: string | null | undefined): string | null | undefined {
+    if (v === undefined) return undefined;
+    return sanitizePlainText(v).trim() || null;
+}
+
+/**
+ * Every evidence record carries a title, and a title that is nothing but
+ * markup is no title. The schema's `min(1)` cannot see that — `<b></b>`
+ * passes it — so the check runs on the SANITISED value, as `reviewEvidence`
+ * does for a rejection reason.
+ */
+function requireSanitisedTitle(raw: string): string {
+    const title = sanitizePlainText(raw);
+    if (!title.trim()) throw badRequest('Title is required');
+    return title;
 }
 
 /**
@@ -130,10 +163,15 @@ export async function createEvidence(
         );
     }
 
+    // Free text is sanitised here, before any write, so the stored row is safe
+    // for every renderer that reads it back (UI, PDF export, audit-pack share
+    // link, API consumers) — not only the ones that escape.
+    const title = requireSanitisedTitle(data.title);
+
     // TEXT (note body) / LINK (target URL) only — no file metadata, no key.
     const fileName = null;
     const fileSize = null;
-    const content = data.content || null;
+    const content = data.content ? sanitizeEvidenceBody(data.type, data.content) || null : null;
 
     // EP-3 — normalise the control association to a set. `controlIds` is
     // the many-to-many input; a legacy singular `controlId` is wrapped in.
@@ -153,15 +191,15 @@ export async function createEvidence(
 
         const evidence = await EvidenceRepository.create(db, ctx, {
             type: data.type as EvidenceType,
-            title: data.title,
+            title,
             content,
             fileName,
             fileSize,
-            category: data.category,
-            // B8 follow-up — trim + null-coerce so empty input
+            category: sanitizeOptional(data.category),
+            // B8 follow-up — sanitise, trim + null-coerce so empty input
             // maps to "no folder" (the UI group-by keys on null).
-            folder: data.folder?.trim() || null,
-            owner: data.owner,
+            folder: sanitizeFolder(data.folder) ?? null,
+            owner: sanitizeOptional(data.owner),
             ownerUserId: data.ownerUserId || null,
 
             reviewCycle: (data.reviewCycle || null) as ReviewCadence | null,
@@ -200,6 +238,12 @@ export async function createEvidence(
 export async function updateEvidence(ctx: RequestContext, id: string, data: z.infer<typeof UpdateEvidenceSchema>) {
     assertCanEditEvidence(ctx);
 
+    // Sanitised before any write; each keeps the three-state contract
+    // (undefined = untouched, null = cleared, string = sanitised).
+    const title = data.title === undefined ? undefined : requireSanitisedTitle(data.title);
+    const category = sanitizeOptional(data.category);
+    const owner = sanitizeOptional(data.owner);
+
     const updated = await runInTenantContext(ctx, async (db) => {
         // `content` is only user-authored for TEXT (note body) and LINK
         // (target URL). For FILE evidence it holds the object-storage
@@ -212,9 +256,19 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
             select: { type: true, status: true, content: true },
         });
         if (!existing) throw notFound('Evidence not found');
-        const content = isEvidenceContentEditable(existing.type)
+        const suppliedContent = isEvidenceContentEditable(existing.type)
             ? data.content
             : undefined;
+        // The edit form sends the body back on every save. A body returned
+        // exactly as stored is not an edit, so it is left alone rather than
+        // re-sanitised: a row written before sanitisation keeps its body until
+        // somebody actually changes it, and an unrelated edit (a new folder)
+        // can neither rewrite that body nor, through the check below, void the
+        // row's approval. A body that DID change is sanitised by role.
+        const content =
+            suppliedContent === undefined || suppliedContent === existing.content
+                ? undefined
+                : sanitizeEvidenceBody(existing.type, suppliedContent);
 
         // R5-P2 #4 — editing the body (TEXT note / LINK url) of an APPROVED
         // item voids the prior approval the same way replacing a file does:
@@ -228,18 +282,15 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
         await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
 
         const evidence = await EvidenceRepository.update(db, ctx, id, {
-            title: data.title,
+            title,
             content,
             ...(contentReReview ? { status: 'SUBMITTED' } : {}),
-            category: data.category,
+            category,
             // B8 follow-up — folder is editable post-create. The
             // three-state contract is preserved (undefined = no
             // change; null = clear; string = set).
-            folder:
-                data.folder === undefined
-                    ? undefined
-                    : (data.folder?.trim() || null),
-            owner: data.owner,
+            folder: sanitizeFolder(data.folder),
+            owner,
             ownerUserId: data.ownerUserId,
 
             reviewCycle: data.reviewCycle as ReviewCadence | undefined,
@@ -287,7 +338,9 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
                 entityName: 'Evidence',
                 operation: 'updated',
                 changedFields: Object.keys(data).filter(k => data[k as keyof typeof data] !== undefined),
-                after: { title: data.title, category: data.category },
+                // The stored values, not the caller's: an audit row streams to
+                // the tenant's SIEM and renders in the audit log.
+                after: { title, category },
                 summary: 'Evidence updated',
             },
         });
@@ -480,7 +533,8 @@ async function notifyEvidenceOwner(
             type: newStatus === 'APPROVED' ? 'EVIDENCE_APPROVED' : 'EVIDENCE_REJECTED',
             title: `Evidence ${newStatus.toLowerCase()}: ${evidence.title}`,
             message: comment || `Your evidence "${evidence.title}" has been ${newStatus.toLowerCase()}.`,
-            linkUrl: `/evidence`,
+            // `/t/<slug>`-prefixed — a bare `/evidence` 404'd from the bell (#4128).
+            linkUrl: tenantPageLink(await resolveTenantSlugForLinks(db, ctx), '/evidence'),
         },
     });
 }
@@ -836,7 +890,7 @@ export async function uploadEvidenceFile(
         assetId?: string | null;
         category?: string | null;
         /** B8 follow-up — folder applied to the newly-created
-         *  evidence row. Trimmed + null-coerced inside `create`. */
+         *  evidence row. Sanitised, trimmed + null-coerced before `create`. */
         folder?: string | null;
         owner?: string | null;         // Legacy free-text
         ownerUserId?: string | null;   // Real user FK (preferred)
@@ -859,6 +913,17 @@ export async function uploadEvidenceFile(
     const storage = getStorageProvider();
     const originalName = file.name || 'unnamed';
     const domain = metadata.domain || 'evidence';
+
+    // An upload's title is optional: the file name stands in for an absent
+    // one, and so for one that was nothing but markup. The file name is the
+    // caller's text too (and a ZIP entry's or SharePoint item's on the import
+    // paths, which arrive here), so it is sanitised on its way into the title.
+    const nonBlank = (s: string) => (s.trim() ? s : null);
+    const title =
+        nonBlank(sanitizePlainText(metadata.title))
+        ?? nonBlank(sanitizePlainText(originalName))
+        ?? 'unnamed';
+
     const pathKey = buildTenantObjectKey(ctx.tenantId, domain, originalName);
 
     // Write through the storage abstraction (local or S3)
@@ -995,7 +1060,9 @@ export async function uploadEvidenceFile(
         // Create Evidence linked to FileRecord
         const evidence = await EvidenceRepository.create(db, ctx, {
             type: 'FILE' as EvidenceType,
-            title: metadata.title || originalName,
+            title,
+            // The storage pathKey derived above — never caller text, so it is
+            // not sanitised (rewriting it would detach the row from its file).
             content: pathKey,
             fileName: originalName,
             fileSize: writeResult.sizeBytes,
@@ -1003,10 +1070,10 @@ export async function uploadEvidenceFile(
             taskId,
             riskId,
             assetId,
-            category: metadata.category || undefined,
-            // B8 follow-up — same null-coercion as the TEXT path.
-            folder: metadata.folder?.trim() || null,
-            owner: metadata.owner || undefined,
+            category: sanitizePlainText(metadata.category) || undefined,
+            // B8 follow-up — same sanitise + null-coercion as the TEXT path.
+            folder: sanitizeFolder(metadata.folder) ?? null,
+            owner: sanitizePlainText(metadata.owner) || undefined,
             ownerUserId: metadata.ownerUserId || null,
             reviewCycle: (metadata.reviewCycle || null) as ReviewCadence | null,
             nextReviewDate: metadata.nextReviewDate ? new Date(metadata.nextReviewDate) : null,

@@ -308,6 +308,23 @@ export const env = createEnv({
         AI_ASSISTANT_ENABLED: z.string().default('true'),
         AI_QUESTIONNAIRE_ENABLED: z.string().default('true'),
 
+        // ─── Sandbox runtime (#3995) ───────────────────────────────────────
+        // What THIS DEPLOY declared to a sandbox runtime, not what the runtime
+        // is using: a v0.1.5 gateway exposes no configuration read API, so
+        // these are the deploy's own record and nothing here is observed.
+        // All optional, and their absence is the honest default — no sandbox
+        // runtime is declared, which is what every environment says today.
+        SANDBOX_RUNTIME_CONFIG_DIGEST: z.string().optional(),
+        SANDBOX_RUNTIME_APPLIED_AT: z.string().optional(),
+        // Comma-separated channel keys declared ON. An unknown key is a hard
+        // error in the reader rather than an ignored token, because a silently
+        // dropped channel name makes an incomplete list of where data can go
+        // read exactly like a complete one.
+        SANDBOX_RUNTIME_CHANNELS: z.string().optional(),
+        // `z.enum(['0','1'])` and NOT `z.coerce.boolean()`, which maps the
+        // string "false" to TRUE. Matches RATE_LIMIT_ENABLED above.
+        SANDBOX_EXECUTION_ENABLED: z.enum(['0', '1']).optional(),
+
         // The operator's half of the agent DRIVER gate. OPT-IN, and
         // deliberately the opposite default to the AI_*_ENABLED flags above:
         // those govern features this repo implements and are read as "not
@@ -643,6 +660,10 @@ export const env = createEnv({
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
+        SANDBOX_RUNTIME_CONFIG_DIGEST: process.env.SANDBOX_RUNTIME_CONFIG_DIGEST,
+        SANDBOX_RUNTIME_APPLIED_AT: process.env.SANDBOX_RUNTIME_APPLIED_AT,
+        SANDBOX_RUNTIME_CHANNELS: process.env.SANDBOX_RUNTIME_CHANNELS,
+        SANDBOX_EXECUTION_ENABLED: process.env.SANDBOX_EXECUTION_ENABLED,
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,

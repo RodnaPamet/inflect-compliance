@@ -143,6 +143,16 @@ nothing is *not* refused — a full IdP sync re-pushes it every cycle.
 - Historical records preserved (audit trail, task ownership, evidence)
 - Re-provisioning the same user reactivates their membership — unless it is a
   protected membership (see above)
+- An **AI_ADMIN** membership is not protected from a status write: the
+  directory deactivates one as it does an EDITOR, so a leaver loses the agent
+  keys at once (owner decision, 2026-10-18). Because only an OWNER deactivates
+  one on `/admin/members`, each such deprovision — `DELETE`, `PATCH active=false`
+  or `PUT` with `active: false`, taking the membership from ACTIVE to
+  DEACTIVATED — puts a bell notification in front of every ACTIVE OWNER, naming
+  the person and the directory and linking to the members page (owner
+  decision, 2026-10-25; `notifyOwnersOfScimAiAdminDeprovision`). A retry of the
+  same deprovision notifies nobody twice. The notification is best-effort: the
+  deprovision is committed and answered whether or not it is sent
 
 ### Audit Events
 

@@ -14,7 +14,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { createPolicy, getPolicy, publishPolicy, createPolicyVersion, listPolicies } from '@/app-layer/usecases/policy';
+import { createPolicy, getPolicy, publishPolicy, createPolicyVersion, listPolicies, rollbackPolicy } from '@/app-layer/usecases/policy';
 import {
     attestPolicy,
     requirePolicyAcknowledgement,
@@ -167,9 +167,13 @@ describeFn('policy attestation loop (integration)', () => {
         expect(entry?.status).toBe('ACKNOWLEDGED_SUPERSEDED');
         expect(entry?.supersededAckAt).not.toBeNull();
 
-        // The carried assignee was re-notified (dedupeKey scoped to the new version).
+        // The carried assignee was re-notified (dedupeKey scoped to this publish of the new version).
         const notif = await globalPrisma.notification.findFirst({
-            where: { tenantId: TENANT_ID, userId: readerUserId, dedupeKey: `POLICY_ACK_REQUIRED:${v2.id}:${readerUserId}` },
+            where: {
+                tenantId: TENANT_ID,
+                userId: readerUserId,
+                dedupeKey: { startsWith: `POLICY_ACK_REQUIRED:${v2.id}:publish-` },
+            },
         });
         expect(notif).not.toBeNull();
     });
@@ -237,5 +241,52 @@ describeFn('policy attestation loop (integration)', () => {
 
         // A DRAFT policy is never outstanding (no published version to ack).
         expect(filtered.map((r) => r.id)).not.toContain(draftPolicyId);
+    });
+
+    it('a rollback re-notifies people already asked about the restored version, with a link inside the workspace (#4128)', async () => {
+        const p = await createPolicy(admin, { title: `Rollback ${SUITE_TAG}`, content: '# v1' });
+        const full = await getPolicy(admin, p.id);
+        const v1 = full.currentVersion?.id ?? full.versions[0].id;
+        await publishPolicy(admin, p.id, v1, { bypassApprovalReason: 'test' });
+        await requirePolicyAcknowledgement(admin, p.id, { audience: { type: 'users', userIds: [readerUserId] } });
+        const v2 = await createPolicyVersion(admin, p.id, { contentType: 'MARKDOWN', contentText: '# v2', changeSummary: 'revised' });
+        await publishPolicy(admin, p.id, v2.id, { bypassApprovalReason: 'test' });
+
+        // Counting by the link also asserts its shape: `/t/<slug>/policies/<id>`,
+        // not the bare `/policies/<id>` that 404'd from the bell.
+        const readerNotifs = () =>
+            globalPrisma.notification.count({
+                where: { tenantId: TENANT_ID, userId: readerUserId, linkUrl: `/t/${SUITE_TAG}/policies/${p.id}` },
+            });
+        // The request for v1, then the re-acknowledgement for v2.
+        expect(await readerNotifs()).toBe(2);
+
+        // Back to v1, which the reader was already notified about. The old
+        // dedupe key was v1's own, so this notification was silently dropped.
+        await rollbackPolicy(admin, p.id);
+        expect(await readerNotifs()).toBe(3);
+
+        // And forward to v2 again, which the reader was notified about when it
+        // was first published. That publish's key was v2's own as well, so the
+        // second publish told nobody.
+        await publishPolicy(admin, p.id, v2.id, { bypassApprovalReason: 'test' });
+        expect(await readerNotifs()).toBe(4);
+
+        // A request on the version now in force does not ask the reader a
+        // second time: the publish that carried them onto it already did.
+        await requirePolicyAcknowledgement(admin, p.id, { audience: { type: 'users', userIds: [readerUserId] } });
+        expect(await readerNotifs()).toBe(4);
+    });
+
+    it('an AUDITOR reads the roster and attestation log, but may not request acknowledgements (#4128)', async () => {
+        const auditor = makeRequestContext('AUDITOR', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: readerUserId });
+        const roster = await getPolicyAcknowledgementRoster(auditor, publishedPolicyId);
+        expect(roster.assignedCount).toBe(2);
+        expect(roster.attestations.map((a) => a.userId)).toContain(readerUserId);
+
+        await expect(
+            requirePolicyAcknowledgement(auditor, publishedPolicyId, { audience: { type: 'all' } }),
+        ).rejects.toThrow(/administrative/);
+        await expect(getPolicyAcknowledgementRoster(reader, publishedPolicyId)).rejects.toThrow(/audit actions/);
     });
 });

@@ -26,7 +26,7 @@ A member's role decides what they can see and do in this workspace. Change it wh
 3. Find the member in the table. In the {{ui:admin.members.colRole}} column, click their role. A role you can change shows a small arrow, and its hint reads {{ui:admin.members.clickToChangeRole}}.
 4. Choose the new role from the list that opens.
 5. If your workspace has custom roles, a second list appears below it. Choose a custom role to give the member its permissions instead of the built-in role's. To take one away, open the list and click the selected custom role again. The list then reads {{ui:admin.members.customRolePlaceholder}}. This list does not appear for an Owner or an AI admin.
-6. Click **{{ui:admin.members.save}}**. To close without saving, click the cross beside it.
+6. Click **{{ui:admin.members.save}}**. To close without saving, click the cross beside it. A role and a custom role changed together are saved together: if either is refused, neither changes.
 
 ## What happens next
 
@@ -42,7 +42,7 @@ Deactivating ends a member's access but keeps their record on the page.
 1. Click the three-dot menu at the end of the member's row.
 2. Click **{{ui:admin.members.deactivate}}**, then confirm.
 
-Their status changes to **DEACTIVATED**. They lose access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite.
+Their status changes to **DEACTIVATED**. They lose access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite, and with any custom role they had before. That custom role, not the invite's role, then decides what they can do. Check it after they return, and remove it if they should have the invite's role alone.
 
 ## Remove a member
 
@@ -55,7 +55,7 @@ You can remove both active and deactivated members. Their account is not deleted
 
 **Several members at once.** Tick their rows. Choose **{{ui:admin.members.deactivate}}** or **{{ui:admin.members.remove}}** from **{{ui:common.table.chooseAction}}**, click **{{ui:common.table.apply}}** beside it, then confirm. Members that cannot be changed are listed in an error message with the reason. The others go ahead.
 
-You cannot deactivate or remove yourself, or the last active Owner. You also cannot deactivate the workspace's only Admin.
+You cannot deactivate or remove yourself, or the last active Owner, and your own row does not offer either. You also cannot deactivate or remove the workspace's only Admin. Only an Owner can deactivate or remove an Owner or an AI admin: an Admin is not offered either on their rows.
 
 ## If something goes wrong
 
@@ -64,11 +64,12 @@ You cannot deactivate or remove yourself, or the last active Owner. You also can
 | **Cannot demote the last OWNER. Promote another OWNER first.**, **Cannot deactivate the last OWNER.** or **Cannot remove the last OWNER. Promote another OWNER first.** | This member is the workspace's only active Owner | Keep them as an active Owner. A workspace cannot be left without one |
 | **Cannot remove the last admin. Promote another member first.** or **Cannot deactivate the last admin.** | This member is the workspace's only Admin | Make another member an Admin first, then try again |
 | **Cannot demote yourself. Ask another admin to change your role.** | You tried to change your own role | Ask someone else who can change your role. As an Owner, you can still move yourself to Admin while another Owner remains |
-| **Cannot deactivate your own membership. Ask another admin.** or **Cannot remove your own membership. Ask another admin.** | You chose your own row | Ask someone else who manages members |
+| **Cannot deactivate your own membership. Ask another admin.** or **Cannot remove your own membership. Ask another admin.** | You ticked your own row among several members | Ask someone else who manages members |
+| **Only OWNERs can deactivate an OWNER membership.**, **Only OWNERs can remove an OWNER membership.**, **Only an OWNER can deactivate an AI_ADMIN membership.** or **Only an OWNER can remove an AI_ADMIN membership.** | You ticked an Owner or an AI admin among several members | Ask an Owner |
 | An Owner's or AI admin's role shows no arrow. Or a message says **Only OWNERs can modify an OWNER membership.** or **Only an OWNER can assign or remove the AI_ADMIN role.** | Only an Owner can change an Owner's or an AI admin's role | Ask an Owner |
 | A note under the role says it cannot carry a custom role, and **{{ui:admin.members.save}}** is greyed out | The member has a custom role, and AI admin cannot have one | Choose their current role again and click the selected custom role to clear it. Click **{{ui:admin.members.save}}**, then change the role |
 | On an Owner or AI admin, a note says the role cannot carry a custom role, with a **{{ui:admin.members.removeCustomRole}}** button | The member was given a custom role before that rule applied | Click **{{ui:admin.members.removeCustomRole}}** to restore the full built-in role |
 | A message that starts **Cannot grant permissions you do not hold** | The custom role includes permissions you do not have yourself | Ask someone who holds those permissions to assign it |
 | A member you raised to Admin or AI admin finds their admin pages empty or failing | Their current sign-in still carries their old role | Ask them to sign out and sign in again |
 | Their role changes back after they sign in with Microsoft | A group mapping on the {{ui:admin.nav.entra}} page set it again | Change the mapping, or the member's groups in Microsoft Entra ID |
-| {{ui:admin.members.roleChangeFailed}}, {{ui:admin.members.deactivationFailed}} or {{ui:admin.members.removalFailed}} | The change did not go through | Reload the page and try again |
+| {{ui:admin.members.roleChangeFailed}}, {{ui:admin.members.deactivationFailed}} or {{ui:admin.members.removalFailed}} | The change did not go through. Nothing was saved, and the row shows what the member holds | Reload the page and try again |

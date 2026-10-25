@@ -29,6 +29,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@inflect/ui/lib/cn';
 import Link from 'next/link';
 import { cardVariants } from '@/components/ui/card';
@@ -104,6 +105,7 @@ export function SankeyChart({
     width = DEFAULT_WIDTH,
     height = DEFAULT_HEIGHT,
 }: SankeyChartProps) {
+    const t = useTranslations('common.ui');
     const dataset = useMemo<SankeyDataset>(
         () => buildSankeyDataset(graph, { searchQuery }),
         [graph, searchQuery],
@@ -253,7 +255,7 @@ export function SankeyChart({
             >
                 <svg
                     role="img"
-                    aria-label="Cross-tier traceability flow (Sankey)"
+                    aria-label={t('sankeyFlow')}
                     viewBox={`0 0 ${layout.width} ${layout.height}`}
                     preserveAspectRatio="xMidYMid meet"
                     className={fitToView ? 'mx-auto block' : 'w-full'}

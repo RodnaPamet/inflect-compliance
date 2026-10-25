@@ -48,6 +48,42 @@ recertified. The flow is also incomplete for the directories it does cover:
 - **The routes carry no permission key.** Creating and closing are gated by
   `assertCanAdmin` inside the usecase, which writes no `AUTHZ_DENIED` row on denial.
 
+### A snapshot is a claim about a WHOLE application
+
+The contract has no way to say "this is one source of several", and that is a
+limit on what can be recertified rather than a gap in the schema.
+
+`ManifestSchema` carries `snapshot: { id, generatedAt, rowCount }` plus the
+columns, pages and layout. There is no source identifier, no partial flag and no
+"1 of N". So a shim that can see **one of twelve workstations** produces a
+manifest structurally indistinguishable from one that saw the whole estate: the
+fingerprint matches, no row is unkeyable, no key repeats, nothing is denylisted.
+That pull satisfies every check and is written `COMPLETE` with a payload hash,
+and a campaign over it then attests that every account in scope was reviewed —
+**true of its rows and false of the application.**
+
+**So a source that cannot produce one authoritative population is out of scope.**
+A thick client over a shared RDBMS is in scope, and is often *easier* to
+recertify than a modern app behind SSO, because thick-client-era schemas usually
+carry an explicit user table instead of delegating to an IdP — the UI tier is
+irrelevant, since the MCP server is a shim the customer writes and the contract
+is a manifest plus paged rows. What is out of scope is per-workstation storage
+with no single authority: an Access `.mdb` copied to each machine, DBF files, a
+local SQLite per install.
+
+**This is not the reachability problem, and a relay does not fix it.** A relay —
+listed under *Explicitly deferred* — fixes an application whose store cannot be
+reached. Here there is nothing to reach: there are twelve partial answers, and
+nothing observable distinguishes one workstation's table from the whole estate's.
+
+It is the shape of invariant 5 one level up. Invariant 5 says zero is never
+complete, because a review over no subjects evidences nothing while every natural
+way to write the check says otherwise. A review over a *sample* has the identical
+property — `decided === subjectCount` holds, the artefact is produced, and what it
+claims is wrong. The only difference is that an empty population is detectable
+from inside and a partial one is not, which is why this is a documented limit
+rather than a check.
+
 ### Reconciliation is exact email, by design
 
 `reconcileIdentityAccountLinks` (`src/app-layer/usecases/identity-account-link.ts`)
@@ -1278,6 +1314,23 @@ These fire by design. They belong in each phase's estimate, not its surprises.
 - A first-party outbound relay for servers that cannot be exposed at all.
 - Campaigns routed to each subject's manager with several reviewers; `AccessReview`
   holds a single `reviewerUserId` today.
+- **An operator-declared source count, for applications with per-workstation
+  stores.** See *A snapshot is a claim about a whole application* — the limit is
+  documented rather than enforced, because only the operator knows whether a
+  connection's store is the authoritative one. Two shapes if a real customer ever
+  arrives in this position, in order of cost:
+  - the connection asserts "this application has one authoritative store", refused
+    at save time if it cannot — the same shape as `assertMappingUsable` refusing a
+    mapping that cannot produce a reviewable snapshot, and it keeps the decision
+    with the person who knows while leaving a record of who said so;
+  - a contract field (`snapshot.sourceOf: { index, total }`) so a conforming shim
+    can declare partiality and the pull can refuse. Needs a contract version bump,
+    and it only helps when the shim's author is honest — the same trust model as
+    the rest of the contract, so not an objection, but not free either.
+
+  **`PARTIAL` is not the answer** and must not be overloaded for this. It means "we
+  tried to read the whole thing and could not"; making it also mean "this was never
+  the whole thing" would make the one status that gates every reader ambiguous.
 - Pre-existing gaps recorded but out of scope: connection secrets under the global
   key; the missing `config-field-classification` guard; two email normalisers that
   bypass `emailKey`.

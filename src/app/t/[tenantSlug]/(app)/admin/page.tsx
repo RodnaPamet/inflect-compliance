@@ -70,13 +70,13 @@ export default async function AdminPage({
                 // workspace-shaped settings, and one module does not make a
                 // category.
                 { href: '/admin/modules', id: 'modules-pill-btn', icon: <Grid3x3 className={iconCls} />, label: t('nav.modules') },
-                // AI switches. Beside modules rather than in the security
-                // section: this decides what the workspace HAS, like a module,
-                // and not who may reach it. The pill is visible to any reader
-                // of the admin index — the page behind it gates on
-                // `admin.tenant_lifecycle` and says so, which is the right
-                // shape here: the feature is discoverable, and the refusal
-                // names the one role that can change it.
+                // AI switches and agent engines. Beside modules rather than in
+                // the security section: this decides what the workspace HAS,
+                // like a module, and not who may reach it. The pill is visible
+                // to any reader of the admin index. The switches behind it gate
+                // on `admin.tenant_lifecycle` and say so, which names the one
+                // role that can change them, and the agent-engines section is
+                // readable by every admin, with its control for owners only.
                 { href: '/admin/ai-features', id: 'ai-features-pill-btn', icon: <Sparkles className={iconCls} />, label: t('nav.aiFeatures') },
             ],
         },

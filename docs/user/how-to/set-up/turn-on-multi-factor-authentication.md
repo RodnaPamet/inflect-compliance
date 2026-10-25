@@ -52,7 +52,7 @@ The QR code and the key are shown only during setup, and you cannot view them ag
 - At their next sign-in, members with MFA see {{ui:mfa.verifyTitle}} and enter a code.
 - Members without MFA see {{ui:mfa.enrollRequiredTitle}}. They click **{{ui:mfa.setUpMfa}}** and follow the steps above. They cannot open any other page until they finish and enter a code.
 - While the policy is {{ui:admin.security.policy.REQUIRED.label}}, nobody sees **{{ui:mfa.removeMfa}}**, so nobody can turn their own MFA off.
-- To make everyone sign in again, click **{{ui:admin.security.revokeAll}}** on the same page and confirm the warning. This signs out every member, you included.
+- To make everyone sign in again, click **{{ui:admin.security.revokeAll}}** on the same page and click **{{ui:admin.security.revokeAllConfirmLabel}}** in the dialog. This signs out every active member of the workspace, and signs them out of every other workspace they belong to as well. You stay signed in on the browser you used. To be asked for a code yourself, sign out and sign in again.
 
 ## If something goes wrong
 

@@ -258,9 +258,8 @@ const ADMIN_ONLY_ROUTES = [
     // for a page of files rather than for one. Audited AV_RESCAN_INITIATED.
     'admin/av-rescan/route.ts',
     'admin/agent-driver/route.ts',
-    // The read half of the Flue wiring card. Same OWNER-only key as the
-    // toggle above it: the response is a superset of that route's facts, so a
-    // narrower key here would be a way to read what tenant_lifecycle guards.
+    // The owner's Flue wiring checklist on AI features. OWNER-only, the key the
+    // agent-driver PUT takes; that route's GET is admin.view (#4139).
     'admin/flue-wiring/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/process-canvas-module/route.ts',

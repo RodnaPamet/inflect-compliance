@@ -8,7 +8,6 @@
  * tests/integration/audit-middleware.test.ts). */
 /**
  * Quality Guardrails & Hardening Tests for Framework System:
- * - Fixture schema validation
  * - Requirement key uniqueness
  * - Diff computation unit tests
  * - Readiness report structure
@@ -17,79 +16,6 @@
  */
 
 describe('Framework Hardening', () => {
-    describe('Fixture Schema Validation', () => {
-        const { z } = require('zod');
-
-        const RequirementFixtureSchema = z.object({
-            code: z.string().min(1),
-            title: z.string().min(1),
-            description: z.string().optional(),
-            section: z.string().optional(),
-            category: z.string().optional(),
-            theme: z.string().optional(),
-            themeNumber: z.number().int().optional(),
-            sortOrder: z.number().int().optional(),
-        });
-
-        const UpsertSchema = z.object({
-            requirements: z.array(RequirementFixtureSchema).min(1),
-            deprecateMissing: z.boolean().optional(),
-        }).strip();
-
-        it('accepts valid fixture', () => {
-            const result = UpsertSchema.parse({
-                requirements: [
-                    { code: 'A.5.1', title: 'Info sec policies' },
-                    { code: 'A.5.2', title: 'Review of policies', section: 'Organizational Controls' },
-                ],
-            });
-            expect(result.requirements.length).toBe(2);
-        });
-
-        it('rejects fixture with empty code', () => {
-            expect(() => UpsertSchema.parse({
-                requirements: [{ code: '', title: 'Test' }],
-            })).toThrow();
-        });
-
-        it('rejects fixture with empty title', () => {
-            expect(() => UpsertSchema.parse({
-                requirements: [{ code: 'A.1', title: '' }],
-            })).toThrow();
-        });
-
-        it('rejects empty requirements array', () => {
-            expect(() => UpsertSchema.parse({ requirements: [] })).toThrow();
-        });
-
-        it('strips unknown fields from fixtures', () => {
-            const result = UpsertSchema.parse({
-                requirements: [{ code: 'A.1', title: 'Test', extra: 'oops' }],
-                unknownField: true,
-            });
-            expect(result).not.toHaveProperty('unknownField');
-        });
-
-        it('accepts valid theme values', () => {
-            const result = RequirementFixtureSchema.parse({
-                code: 'A.5.1',
-                title: 'Test',
-                theme: 'ORGANIZATIONAL',
-                themeNumber: 5,
-            });
-            expect(result.theme).toBe('ORGANIZATIONAL');
-            expect(result.themeNumber).toBe(5);
-        });
-
-        it('preserves optional deprecateMissing flag', () => {
-            const result = UpsertSchema.parse({
-                requirements: [{ code: 'A.1', title: 'T' }],
-                deprecateMissing: true,
-            });
-            expect(result.deprecateMissing).toBe(true);
-        });
-    });
-
     describe('Requirement Key Uniqueness', () => {
         it('detects duplicate codes in a fixture batch', () => {
             const codes = ['A.5.1', 'A.5.2', 'A.5.1', 'A.6.1'];
@@ -261,17 +187,15 @@ describe('Framework Hardening', () => {
             expect(getActions.length).toBe(8);
         });
 
-        it('POST actions include upsert-requirements', () => {
-            const postActions = ['install-template', 'bulk-map', 'bulk-install', 'upsert-requirements'];
-            expect(postActions).toContain('upsert-requirements');
-            expect(postActions.length).toBe(4);
-        });
     });
 
     describe('Usecase Exports (Hardening)', () => {
         it('exports all new hardening usecases', () => {
             const fw = require('../../src/app-layer/usecases/framework');
-            expect(typeof fw.upsertRequirements).toBe('function');
+            // No requirement writer: the catalogue is global and is kept by
+            // the deploy-time scripts (#4125 follow-up). The route test
+            // `framework-route-no-catalogue-write` holds the HTTP half.
+            expect(fw).not.toHaveProperty('upsertRequirements');
             expect(typeof fw.computeRequirementsDiff).toBe('function');
             expect(typeof fw.generateReadinessReport).toBe('function');
             expect(typeof fw.exportReadinessReport).toBe('function');

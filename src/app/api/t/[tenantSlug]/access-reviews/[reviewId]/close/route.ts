@@ -4,7 +4,8 @@
  *   POST /api/t/:slug/access-reviews/:reviewId/close
  *
  * Executes REVOKE/MODIFY decisions against live `TenantMembership`,
- * emits per-row audit entries, and produces the signed PDF artifact.
+ * emits per-row audit entries, and produces the evidence PDF (it carries a
+ * SHA-256 hash of its contents; it is not cryptographically signed).
  * Body is empty — every input is the campaign id from the URL.
  *
  * Step 5a: gated by `access_reviews.close` (OWNER + ADMIN, mirroring the
