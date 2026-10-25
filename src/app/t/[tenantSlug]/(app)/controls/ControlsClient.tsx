@@ -2211,10 +2211,10 @@ function ControlsPageInner({
                 // renders in the header-row selection toolbar via
                 // `selectionControls`. For viewers without edit permission,
                 // selection is left off entirely (no checkboxes, no bar).
-                // `selectionEnabled` is what removes the checkboxes: the
-                // select column is on by default, so withholding the bar
-                // alone left Readers ticking rows that had no actions — and
-                // a single click selected instead of opening the control.
+                // `selectionEnabled` is what removes the checkboxes: the select
+                // column is on by default, so withholding the bar alone left
+                // read-only roles ticking rows into an empty bar, and a single
+                // click ticked a row instead of opening it (#4275).
                 selectionEnabled: canEditControls,
                 selectionControls: canEditControls
                     ? () => (

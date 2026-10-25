@@ -204,6 +204,7 @@ const mount = () =>
                     initialMetrics={METRICS}
                     tenantSlug="acme"
                     appPermissions={{ tasks: { create: true, edit: true } }}
+                    canAdmin
                 />
             </TooltipProvider>
         </SWRConfig>,
@@ -288,6 +289,7 @@ describe('Tasks list — awaiting-my-review discovery filter', () => {
                         initialFilters={{ awaitingReviewBy: CURRENT_USER }}
                         tenantSlug="acme"
                         appPermissions={{ tasks: { create: true, edit: true } }}
+                        canAdmin
                     />
                 </TooltipProvider>
             </SWRConfig>,

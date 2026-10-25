@@ -3037,6 +3037,8 @@
       "assignOwner": "Assign owner",
       "ownerBlank": "Owner (blank = unassign)",
       "archive": "Archive",
+      "archiveConfirmLabel": "Archive",
+      "archiveConfirmDesc": "Archived policies stay on the list, but cannot get a new version or an approval request until an Owner or Admin restores them.",
       "delete": "Delete",
       "failed": "Bulk action failed",
       "deletedToast": "{count, plural, one {# policy deleted} other {# policies deleted}}",

@@ -24,7 +24,7 @@ Click **{{ui:nav.evidence}}** under {{ui:nav.comply}} in the sidebar. The breadc
 | Assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-Readers, Auditors and AI admins see no **{{ui:evidence.addEvidence}}** button and no edit, archive or review buttons, and they cannot tick rows in the list. Two buttons are shown to roles the server then refuses. Editors are offered **{{ui:evidence.list.bulkDelete}}** in the selection bar, but it fails for them with **{{ui:evidence.list.bulkFailed}}**. Every role sees the download button on every file, but a Reader, Auditor or AI admin who downloads a file from evidence with no control gets no file.
+Readers, Auditors and AI admins see no **{{ui:evidence.addEvidence}}** button and no edit, archive or review buttons, and they cannot tick rows or cards. **{{ui:evidence.list.bulkDelete}}** is for Owners and Admins. Every role sees the download button on every file, but a Reader, Auditor or AI admin who downloads a file from evidence with no control gets no file.
 
 Whatever your role, nobody can approve or reject evidence they submitted for review; another Owner or Admin must do it. Only {{ui:evidence.statusLabels.SUBMITTED}} evidence can be approved or rejected, and a rejection needs a reason. Nobody can download archived evidence.
 
@@ -61,7 +61,7 @@ Use the library to collect proof for your audits and keep it current. Add a piec
 
 The {{ui:evidence.colHeaders.actions}} column holds **{{ui:evidence.list.editEvidence}}**, **{{ui:evidence.list.archiveEvidence}}** (or **{{ui:evidence.list.unarchiveEvidence}}** on archived evidence) and, on files, **{{ui:evidence.list.downloadFile}}**. It also holds the review step that applies: **{{ui:evidence.submitForReview}}** on {{ui:evidence.statusLabels.DRAFT}} and {{ui:evidence.statusLabels.REJECTED}} evidence, **{{ui:evidence.list.reReview}}** on {{ui:evidence.statusLabels.NEEDS_REVIEW}} evidence, and, for Owners and Admins, **{{ui:evidence.approveEvidence}}** and **{{ui:evidence.rejectEvidence}}** on {{ui:evidence.statusLabels.SUBMITTED}} evidence. Files are scanned for viruses when they are uploaded: a file still being scanned shows **{{ui:evidence.scan.pending}}** in place of the download button. A file the scanner flagged shows **{{ui:evidence.scan.infected}}** and can never be downloaded.
 
-**The gallery.** One card per record, with its freshness, retention and status badges. An image shows a thumbnail, and a PDF card reads **{{ui:common.ui.openPdf}}** and opens in a new tab. Each file that has passed the scan has a download button. Click a card to open its details. Every role can tick cards, but the selection bar offers only the actions your role can apply.
+**The gallery.** One card per record, with its freshness, retention and status badges. An image shows a thumbnail, and a PDF card reads **{{ui:common.ui.openPdf}}** and opens in a new tab. Each file that has passed the scan has a download button. Click a card to open its details. Roles that can edit evidence can also tick cards, and the selection bar offers only the actions your role can apply.
 
 **The details panel.** It opens at the side of the page and shows, from top to bottom:
 
@@ -149,7 +149,7 @@ Click **{{ui:evidence.list.downloadFile}}** on a row, the download button on a g
 | **{{ui:evidence.list.archivedNoticeTitle}}** above the list | You are looking at archived evidence, which should not go into active audit packs | Unarchive what you need |
 | A banner saying only the first 5,000 results are shown | The view holds more evidence than the page loads at once | Narrow it with a filter or the search |
 | **{{ui:evidence.list.reviewFailed}}** | The review did not go through: you submitted the evidence yourself, it was reviewed already, or your role cannot review | Ask another Owner or Admin. Reload the page to see the current status |
-| **{{ui:evidence.list.bulkFailed}}** | A bulk action was refused, for example a delete by an Editor | Ask an Owner or Admin |
+| **{{ui:evidence.list.bulkFailed}}** | A bulk action was refused, for example because more than 100 rows were selected | Select fewer rows and try again |
 | A red box in a form, with a reason | Nothing was saved. A file can be refused for its type or size, or because the malware scanner rejected it | Follow the reason given |
 | **{{ui:evidence.upload.spProbeErrorTitle}}** | Inflect could not check the SharePoint connection, so its import is hidden | Reopen the form later, or ask an Admin to check the integration |
 | **{{ui:evidence.edit.retentionFailed}}** | Your other changes were saved, but the retention date was not | Click **{{ui:evidence.edit.save}}** again |
