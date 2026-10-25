@@ -373,7 +373,7 @@ export default function AuditCyclesPage() {
                                 offering frameworks the server would refuse. */}
                             {noFrameworkInUse && (
                                 <p className="text-sm text-content-muted" role="status" id="cycle-no-framework-in-use">
-                                    {tx('cycles.noFrameworkInUse')}{' '}
+                                    {tx('cycles.noFrameworkInUseHint')}{' '}
                                     <Link
                                         href={`/t/${tenantSlug}/frameworks`}
                                         className="underline underline-offset-2"

@@ -3464,7 +3464,7 @@
       "creating": "Creating…",
       "emptyDescReadOnly": "Owners, Admins and Editors can create audit cycles.",
       "frameworksLoading": "Loading frameworks…",
-      "noFrameworkInUse": "No framework is in use in this workspace yet. A framework is in use once at least one control is mapped to its requirements.",
+      "noFrameworkInUseHint": "No framework is in use in this workspace yet. A framework is in use once at least one control is mapped to its requirements.",
       "openFrameworks": "Open Frameworks to install one.",
       "frameworksLoadError": "Could not load the frameworks in use. Close the form and open it again."
     },

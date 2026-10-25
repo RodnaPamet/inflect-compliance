@@ -45,7 +45,7 @@ The audit then appears under {{ui:audits.cycleDetail.fieldworkAudits}} on the cy
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | No {{ui:audits.cycles.cycle}} button on the {{ui:audits.cycles.title}} page | Your role cannot create cycles | Ask an Owner, Admin or Editor |
-| {{ui:audits.cycles.noFrameworkInUse}} in the form | No framework is in use in your workspace yet, so there is nothing to choose | Install a framework, or map a control to one of its requirements, then open the form again. See [Add a framework](../get-started/add-a-framework.md) |
+| {{ui:audits.cycles.noFrameworkInUseHint}} in the form | No framework is in use in your workspace yet, so there is nothing to choose | Install a framework, or map a control to one of its requirements, then open the form again. See [Add a framework](../get-started/add-a-framework.md) |
 | {{ui:audits.cycles.frameworksLoadError}} | The list of frameworks in use could not be loaded | Close the form and open it again |
 | **This framework is not in use in this workspace** | The framework stopped being in use after the form loaded, for example because its last mapped control was deleted | Map a control to the framework again, or choose another framework |
 | {{ui:audits.cycles.createError}} | The cycle was not created, and the server gave no reason | Try again. If it still fails, ask an Owner or Admin |
