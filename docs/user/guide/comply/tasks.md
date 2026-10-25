@@ -52,7 +52,7 @@ Use the page to move compliance work to closure: see what is open, overdue or du
 Some filters work differently from the others:
 
 - {{ui:tasks.filters.due}} offers {{ui:tasks.filterEnums.due.overdue}} or {{ui:tasks.filterEnums.due.next7d}}, one at a time. Unless you also pick a status, it leaves out finished tasks.
-- {{ui:tasks.filters.assignee}} and {{ui:tasks.filters.linkedControl}} offer only the people and controls that appear on the tasks listed at the moment, and {{ui:tasks.filters.awaitingReview}} offers only {{ui:tasks.list.awaitingMyReviewOption}}.
+- {{ui:tasks.filters.assignee}} and {{ui:tasks.filters.linkedControl}} offer the people and controls that have appeared on the tasks listed since you opened the page, so picking one leaves the others on offer, and {{ui:tasks.filters.awaitingReview}} offers only {{ui:tasks.list.awaitingMyReviewOption}}.
 - {{ui:tasks.filters.linkedControl}} matches the control set in a task's Control field. A control added to the task under Links does not count.
 
 **The table.** Each row is one task. The list opens with the highest priority first, then the newest. Click a column heading to sort by it. The first 50 rows show at once, and more load as you scroll.

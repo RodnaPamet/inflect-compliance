@@ -56,6 +56,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
     type FilterType,
 } from '@/components/ui/filter';
@@ -83,6 +84,7 @@ import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import {
     buildControlFilters,
+    CONTROL_ROW_DERIVED_FILTER_KEYS,
     buildControlStatusLabels,
     CONTROL_FILTER_KEYS,
 } from './filter-defs';
@@ -559,10 +561,13 @@ function ControlsPageInner({
     // Options are derived from `rawControls` (the full server-returned set),
     // NOT the client-filtered `controls` — otherwise selecting one derived
     // category would collapse the Category picker to just that value.
-    const liveFilterDefs: FilterType[] = useMemo(
+    const builtFilterDefs: FilterType[] = useMemo(
         () => buildControlFilters(rawControls, tAdapter, tGroupAdapter),
         [rawControls, tAdapter, tGroupAdapter],
     );
+    // `rawControls` is still narrowed by the SERVER-side filters, Owner among
+    // them, so options built from it alone collapse to the owner just picked.
+    const liveFilterDefs = useRetainedFilterOptions(builtFilterDefs, CONTROL_ROW_DERIVED_FILTER_KEYS);
 
     // R-filter-gear (#3, 2026-06-07): the "Edit filter cards" gear now
     // controls the QUANTIFIABLE KPI cards above the table (Total /

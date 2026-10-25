@@ -267,6 +267,9 @@ export function ownerOptionsFromRisks(
     return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** The facets whose options are built from loaded rows, so can shrink with them. */
+export const RISK_ROW_DERIVED_FILTER_KEYS = ['category', 'ownerUserId'] as const;
+
 /** Build the render-ready filter list (defs + derived category/owner options). */
 export function buildRiskFilters(
     risks: ReadonlyArray<RiskLike>,
