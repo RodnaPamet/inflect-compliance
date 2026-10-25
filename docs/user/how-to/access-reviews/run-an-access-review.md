@@ -75,7 +75,7 @@ These rules protect the workspace. If any of them applies, the whole close is re
 
 - A campaign never makes anyone an Owner, and never gives anyone a custom role. The reviewer can only choose Admin, Editor, Auditor or Reader.
 - If a decision would revoke or change the role of someone who is an Owner when the campaign closes, only an Owner can close it.
-- If a decision would change the role of someone who is an AI admin when the campaign closes, only an Owner can close it. A revoke of an AI admin is not limited this way.
+- If a decision would revoke or change the role of someone who is an AI admin when the campaign closes, only an Owner can close it.
 - The campaign cannot close if it would leave the workspace without an active Owner.
 - A decision recorded by the person it is about is never carried out. Inflect refuses such a decision when it is recorded; this rule catches any recorded before that.
 
@@ -113,7 +113,7 @@ Each decision carried out, and the close itself, is also written to the workspac
 | **No memberships matched the requested scope — the campaign would have zero subjects.** | Nobody in the workspace is in that scope | Choose **{{ui:accessReviews.scopeAllUsers}}** |
 | **{{ui:accessReviews.closeCampaign}}** is greyed out | At least one person has no decision yet | Ask the reviewer to finish, or record the remaining decisions yourself |
 | No **{{ui:accessReviews.closeCampaign}}** button | Your role cannot close campaigns, or the campaign is already closed | Ask an Owner or Admin |
-| A message that includes **only an OWNER can close this campaign** | A decision revokes or changes the role of an Owner, or changes the role of an AI admin, and you are not an Owner | Ask an Owner to close it. Or ask the reviewer to discard those decisions and record them again |
+| A message that includes **only an OWNER can close this campaign** | A decision revokes or changes the role of an Owner or an AI admin, and you are not an Owner | Ask an Owner to close it. Or ask the reviewer to discard those decisions and record them again |
 | A message that includes **Nobody records, changes or discards the decision on their own access** when you close | A decision was recorded by the person it is about, before Inflect refused that | Ask the reviewer, or another Owner or Admin, to discard it and record it again. Then close |
 | A message that includes **would leave the tenant with zero ACTIVE OWNERs** | The decisions would remove the last active Owner | Make another member an Owner first, or have the reviewer discard and re-record the decisions on Owners |
 | A message that includes **The membership holds a role that carries no custom role but still carries one** | A revoke targets an Owner or AI admin who still has a custom role from before that rule applied | Ask an Owner to click **{{ui:admin.members.removeCustomRole}}** for that member on the {{ui:admin.nav.members}} page, then close again |

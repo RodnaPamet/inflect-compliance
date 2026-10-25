@@ -405,7 +405,7 @@ describe('closeAccessReview — a verdict its own subject recorded is never exec
     });
 });
 
-describe('closeAccessReview — changing an AI admin’s role is OWNER-tier, as on the members page (#4130)', () => {
+describe('closeAccessReview — changing or revoking an AI admin is OWNER-tier, as on the members page (#4130, #4118)', () => {
     const aiAdminModify = () => stored('d-ai', 'MODIFY', { role: 'AI_ADMIN' }, { modifiedToRole: 'READER' });
 
     it('an ADMIN closer cannot MODIFY a live AI admin — 403, named, audited, nothing executed', async () => {
@@ -420,11 +420,29 @@ describe('closeAccessReview — changing an AI admin’s role is OWNER-tier, as 
         expect(auditActions()).toEqual(['ACCESS_REVIEW_CLOSE_REFUSED']);
     });
 
-    it('an OWNER closer may, and a REVOKE of an AI admin is not refused to an ADMIN', async () => {
+    it('an ADMIN closer cannot REVOKE a live AI admin either — the members page refuses an ADMIN that deactivation', async () => {
+        const db = campaignDb([stored('d-ai', 'REVOKE', { role: 'AI_ADMIN' }), stored('d-ed', 'REVOKE', { role: 'EDITOR' })]);
+        const err = await closeAccessReview(admin(), 'ar-1').catch((e) => e);
+        expect(err).toMatchObject({
+            status: 403,
+            details: { reason: MEMBER_DECISION_REFUSAL.AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER, decisionIds: ['d-ai'] },
+        });
+        expect(db.tenantMembership.findMany).not.toHaveBeenCalled();
+        expect(db.tenantMembership.update).not.toHaveBeenCalled();
+        expect(auditActions()).toEqual(['ACCESS_REVIEW_CLOSE_REFUSED']);
+    });
+
+    it('an OWNER closer may MODIFY or REVOKE one', async () => {
         campaignDb([aiAdminModify()]);
         await expect(closeAccessReview(owner(), 'ar-1')).rejects.toBe(REACHED_OWNER_COUNT);
 
         campaignDb([stored('d-ai', 'REVOKE', { role: 'AI_ADMIN' })]);
+        await expect(closeAccessReview(owner(), 'ar-1')).rejects.toBe(REACHED_OWNER_COUNT);
+        expect(auditActions()).toEqual([]);
+    });
+
+    it('a CONFIRM of an AI admin is not refused to an ADMIN closer', async () => {
+        campaignDb([stored('d-ai', 'CONFIRM', { role: 'AI_ADMIN' })]);
         await expect(closeAccessReview(admin(), 'ar-1')).rejects.toBe(REACHED_OWNER_COUNT);
         expect(auditActions()).toEqual([]);
     });

@@ -860,10 +860,13 @@ new tenant-membership creation path).
   (`CAMPAIGN_MODIFY_ROLES`; `CAMPAIGN_NEVER_PROMOTES_TO_OWNER`) and never a
   custom role (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`) — refused at the schema and
   again at close — and a REVOKE or MODIFY of a LIVE OWNER needs a closer holding
-  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`); the last-OWNER
-  guard still applies to that closer. Each refusal is the WHOLE close, before any
-  row executes, so a decision stored before the rule is never applied and never
-  dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` / `_CLOSE_REFUSED`.
+  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`), as does a REVOKE
+  or MODIFY of a LIVE AI_ADMIN (`AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER`, matching
+  the members page, where only an OWNER moves one out of the role or deactivates
+  it); the last-OWNER guard still applies to that closer. Each refusal is the
+  WHOLE close, before any row executes, so a decision stored before the rule is
+  never applied and never dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` /
+  `_CLOSE_REFUSED`.
   Reasons live in `src/lib/access-review/member-decision-rules.ts`.
 
 ### Observability
