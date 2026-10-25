@@ -38,6 +38,7 @@
  * separate switches, so pointing a collector at `server.otlp.endpoint` later
  * reopens egress without touching the setting that recorded the intent.
  */
+import { env } from '@/env';
 
 /** One reporting channel the runtime can send on. */
 export interface ReportingChannel {
@@ -116,4 +117,90 @@ export interface SandboxRuntimeDeclaration {
     readonly reachableVersion: string | null;
     /** Declared value per channel: true, false, or null when the deploy declares nothing. */
     readonly channels: Readonly<Record<ReportingChannelKey, boolean | null>>;
+}
+
+/**
+ * What this deploy DECLARED, read from its own validated environment.
+ *
+ * ═══ WHY `reachableVersion` IS ALWAYS null HERE ═══
+ *
+ * Because nothing in this product observes it. The field means "the version the
+ * runtime reported on its health endpoint", and populating it from an
+ * environment variable would dress a DECLARED value in an OBSERVED one's
+ * clothes — the single failure this whole module exists to prevent, and the one
+ * `declared-not-observed` was added to the display vocabulary for.
+ *
+ * A reader that returned a version from env would make every channel row render
+ * `declared-not-observed` instead of `unreachable`, which tells an operator that
+ * a gateway confirmed something no gateway was asked. When a real health probe
+ * lands it supplies this field; until then `null` is not a gap, it is the
+ * measurement.
+ *
+ * ═══ AN UNKNOWN CHANNEL KEY REFUSES EVERYTHING ═══
+ *
+ * Not "ignore the token and report the rest". A deploy naming a channel this
+ * build does not know is either a newer runtime or a typo, and both mean the
+ * list this page is about to present as exhaustive is not. Refusing is the same
+ * rule the harness report applies to an unknown criterion.
+ */
+export function readSandboxRuntimeDeclaration(): SandboxRuntimeDeclaration {
+    const digest = env.SANDBOX_RUNTIME_CONFIG_DIGEST;
+    const appliedAtRaw = env.SANDBOX_RUNTIME_APPLIED_AT;
+    const channelsRaw = env.SANDBOX_RUNTIME_CHANNELS;
+
+    // The DIGEST is what makes a deploy "configured". Not the channel list: a
+    // deploy that named channels but recorded no digest has not told us what
+    // configuration those channels belong to, so there is nothing to report
+    // them against.
+    const configured = typeof digest === 'string' && digest.length > 0;
+
+    const declaredOn = new Set<string>(
+        typeof channelsRaw === 'string'
+            ? channelsRaw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+            : [],
+    );
+    const known = new Set<string>(REPORTING_CHANNELS.map((c) => c.key));
+    const unknown = [...declaredOn].filter((k) => !known.has(k));
+    if (unknown.length > 0) {
+        throw new Error(
+            `SANDBOX_RUNTIME_CHANNELS names ${unknown.length} channel(s) this build does not know: ` +
+                `${unknown.sort().join(', ')}. Known: ${[...known].sort().join(', ')}.`,
+        );
+    }
+
+    // `null` where the deploy declares NOTHING about a channel, distinct from
+    // an explicit false. A reader must be able to tell "this deploy turned the
+    // channel off" from "this deploy never said" — proto3's zero-value problem,
+    // and the reason this map is `boolean | null` rather than `boolean`.
+    const channels = Object.fromEntries(
+        REPORTING_CHANNELS.map((c) => [c.key, configured ? declaredOn.has(c.key) : null]),
+    ) as Record<ReportingChannelKey, boolean | null>;
+
+    // An unparseable date is null, not today. A wrong timestamp on "when this
+    // configuration was applied" is worse than no timestamp.
+    let appliedAt: Date | null = null;
+    if (typeof appliedAtRaw === 'string' && appliedAtRaw.length > 0) {
+        const parsed = new Date(appliedAtRaw);
+        if (!Number.isNaN(parsed.getTime())) appliedAt = parsed;
+    }
+
+    return {
+        configured,
+        configDigest: configured ? digest : null,
+        appliedAt,
+        reachableVersion: null,
+        channels,
+    };
+}
+
+/**
+ * Whether the DEPLOY permits sandboxed execution at all — the platform half of
+ * the switch #3996 owns.
+ *
+ * Absent reads as false, and that is the safe direction here: a deploy that has
+ * said nothing about sandboxed execution does not have it, and reporting it as
+ * available would put an affordance over a capability that is not installed.
+ */
+export function readSandboxExecutionPlatformEnabled(): boolean {
+    return env.SANDBOX_EXECUTION_ENABLED === '1';
 }
