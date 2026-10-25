@@ -334,3 +334,21 @@ describe('Policies list — bulk actions say what they do and why they failed', 
         );
     });
 });
+
+describe('Policies list — the create dialog deep links', () => {
+    it('`?create=1&template=1` (where /policies/templates lands) opens the dialog on "From template"', async () => {
+        mockNav.searchParams = new URLSearchParams('create=1&template=1');
+        mount(accessFor('EDITOR'));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText(P.new.titleTemplate)).toBeInTheDocument();
+        expect(within(dialog).getByText(P.new.chooseTemplate)).toBeInTheDocument();
+    });
+
+    it('`?create=1` alone opens it on "New"', async () => {
+        mockNav.searchParams = new URLSearchParams('create=1');
+        mount(accessFor('EDITOR'));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText(P.new.titleBlank)).toBeInTheDocument();
+        expect(within(dialog).queryByText(P.new.chooseTemplate)).toBeNull();
+    });
+});

@@ -202,7 +202,12 @@ function PoliciesPageInner({
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [createTemplateMode, setCreateTemplateMode] = useState(false);
     const searchParams = useSearchParams();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/policies`);
+    // `template` was assigned and never read, so `/policies/templates` and
+    // `/policies/new?template=1` opened the dialog on "New".
+    useCreateQueryParam(() => {
+        setCreateTemplateMode(searchParams?.get('template') === '1');
+        setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/policies`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;
