@@ -10,6 +10,9 @@
  *      <userId>` — the key the restored version's own request (or publish)
  *      had already used. `Notification.dedupeKey` is unique, the insert fell
  *      into a silent `.catch`, and only people new to the campaign were told.
+ *   3. The publish re-notify had the same shape, one step later: publishing a
+ *      version a SECOND time (v2, roll back to v1, publish v2 again) reused
+ *      v2's first-publish key and told nobody.
  *
  * The fake below keeps the one property that made (2) silent: a notification
  * store that REFUSES a second row with the same `dedupeKey`, as the unique
@@ -66,6 +69,19 @@ function policyView() {
     return { ...p, currentVersion: cv, lifecycleHistoryJson: [...p.lifecycleHistoryJson] };
 }
 
+function insertAssignments(data: Array<{ policyVersionId: string; userId: string; assignedById?: string | null }>) {
+    const created: Array<{ userId: string }> = [];
+    for (const row of data) {
+        const byUser = state.assignments.get(row.policyVersionId) ?? new Map();
+        if (!byUser.has(row.userId)) {
+            byUser.set(row.userId, row.assignedById ?? null);
+            created.push({ userId: row.userId });
+        }
+        state.assignments.set(row.policyVersionId, byUser);
+    }
+    return created;
+}
+
 const db: any = {
     policy: {
         update: jest.fn(async ({ data }: any) => {
@@ -84,18 +100,9 @@ const db: any = {
                 .slice(0, take)
                 .map(([userId, assignedById]) => ({ userId, assignedById }));
         }),
-        createMany: jest.fn(async ({ data }: any) => {
-            let count = 0;
-            for (const row of data) {
-                const byUser = state.assignments.get(row.policyVersionId) ?? new Map();
-                if (!byUser.has(row.userId)) {
-                    byUser.set(row.userId, row.assignedById ?? null);
-                    count++;
-                }
-                state.assignments.set(row.policyVersionId, byUser);
-            }
-            return { count };
-        }),
+        createMany: jest.fn(async ({ data }: any) => ({ count: insertAssignments(data).length })),
+        // `skipDuplicates`: only the rows actually inserted come back.
+        createManyAndReturn: jest.fn(async ({ data }: any) => insertAssignments(data)),
     },
     tenantMembership: { findMany: jest.fn(async () => [{ userId: 'u1' }]) },
     tenant: { findUnique: jest.fn(async () => ({ slug: 'acme' })) },
@@ -213,6 +220,54 @@ describe('rolling back re-notifies the people asked before', () => {
         await rollbackPolicy(admin, 'p1');
 
         expect(forU1()).toHaveLength(3);
+    });
+});
+
+describe('publishing a version a second time re-notifies', () => {
+    it('notifies the people asked before when a rolled-back version is published again', async () => {
+        await requestThenRevise();
+        await rollbackPolicy(admin, 'p1'); // v2 → v1
+        expect(forU1()).toHaveLength(3);
+
+        await publishPolicy(admin, 'p1', 'v2', BYPASS); // v2 again
+
+        expect(state.policy.currentVersionId).toBe('v2');
+        // v2 was already published once and notified u1 then; this publish is
+        // a new request and tells them again.
+        expect(forU1()).toHaveLength(4);
+        expect(forU1()[3].title).toBe('Re-acknowledgement required: "Acceptable Use"');
+    });
+
+    it('replaying the SAME publish does not notify twice', async () => {
+        await publishPolicy(admin, 'p1', 'v1', BYPASS);
+        await requirePolicyAcknowledgement(admin, 'p1', { audience: { type: 'all' } });
+        const before = JSON.parse(JSON.stringify(state.policy));
+        const assignments = new Map([...state.assignments].map(([k, v]) => [k, new Map(v)]));
+
+        await publishPolicy(admin, 'p1', 'v2', BYPASS);
+        expect(forU1()).toHaveLength(2);
+
+        // Same policy, same starting state, so the same lifecycle step.
+        state.policy = before;
+        state.assignments = assignments;
+        await publishPolicy(admin, 'p1', 'v2', BYPASS);
+
+        expect(forU1()).toHaveLength(2);
+    });
+});
+
+describe('a request does not re-ask people the campaign already carries', () => {
+    it('a request after a re-publish notifies only the people it newly assigns', async () => {
+        await requestThenRevise();
+        expect(forU1()).toHaveLength(2);
+
+        // u1 is on v2 already (carried forward, and told by the publish); u2 is new.
+        db.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }, { userId: 'u2' }]);
+        await requirePolicyAcknowledgement(admin, 'p1', { audience: { type: 'all' } });
+
+        expect(forU1()).toHaveLength(2);
+        expect(state.notifications.filter((n) => n.userId === 'u2')).toHaveLength(1);
+        expect(state.assignments.get('v2')?.has('u2')).toBe(true);
     });
 });
 
