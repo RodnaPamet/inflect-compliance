@@ -1,49 +1,74 @@
-'use client';
-
 /**
- * WebVitalsReporter — beacons browser web-vitals to `/api/telemetry/vitals`.
+ * Core Web Vitals reporter.
  *
  * `useReportWebVitals` (next/web-vitals, no extra dependency) fires a callback
  * as each metric finalizes: the Core Web Vitals (LCP / INP / CLS / FCP / TTFB).
- * Each sample carries the current pathname so the server can attribute timing
- * per route.
  *
- * IT DOES NOT DELIVER AN IN-APP-NAVIGATION SIGNAL, which an earlier version of
- * this comment claimed it did by naming `Next.js-hydration`,
- * `Next.js-route-change-to-render` and `Next.js-render` as "the
- * in-app-navigation 'feels slow' signal". On Next 16.3.6 `useReportWebVitals`
- * subscribes to the six Core Web Vitals and nothing else, and those three
- * measures come from the Pages router bootstrap, which this App-Router-only app
- * never loads. The sink still allowlists the names; see the note on
- * `KNOWN_VITALS` in src/lib/observability/web-vitals.ts for the full
- * derivation and for why they are kept.
+ * THE CALLBACK MUST BE STABLE, AND THAT IS NOT A TIDINESS POINT.
+ * `useReportWebVitals` is `useEffect(…, [reportWebVitalsFn])` — the function
+ * IS the dependency. An inline arrow is a new identity on every render, so the
+ * effect re-runs and re-subscribes each time, and `web-vitals` REPLAYS an
+ * already-finalised metric to a late subscriber. For the per-document metrics
+ * that means one real measurement is emitted again and again.
  *
- * This mattered: #3099 needed a navigation-latency number to size the sidebar
- * prefetch trade, and this component reads as though it had been collecting one
- * all along.
+ * It was measured in production before this was fixed: five TTFB beacons
+ * carrying the identical value `1955.1` ms, three hours apart, on four
+ * different routes — five distinct log entries, one document's TTFB. Of the
+ * eleven TTFB samples in thirty days, five were that one replayed value, so a
+ * metric with n=11 really had six distinct measurements, and nine of the
+ * eleven read `poor`. Conclusions were being drawn from it (see #3547).
  *
- * Renders nothing. The send itself — `navigator.sendBeacon` so reports survive
- * the page unload that often coincides with navigation, a keepalive fetch
- * fallback, the `NEXT_PUBLIC_TEST_MODE` gate and the swallowing catch — moved
- * to `@/lib/observability/client-telemetry` when #3099 added a second producer
- * (`useGuardedPush`'s dropped-navigation counter). It was the app's entire
- * client-side telemetry path and it was reachable only by rendering this
- * component; two copies of it would have been two gates to forget.
+ * Why only TTFB showed it: Next passes `reportSoftNavs: true` to onCLS, onLCP,
+ * onINP and onFCP but NOT to onTTFB, so those four legitimately emit per soft
+ * navigation and a duplicate is invisible among hundreds. TTFB is once per
+ * document, so every extra one is a duplicate. The bug was never TTFB-specific.
+ *
+ * THE ROUTE IS READ AT EMISSION, which is right for a metric that finalises
+ * while you are on the page and wrong for a replayed one — a replay is labelled
+ * with wherever the user has since navigated. Stabilising the callback is what
+ * removes the replay, and therefore the misattribution; the `route` read is
+ * unchanged.
+ *
+ * On Next 16.4.2 `useReportWebVitals` subscribes to those six callbacks only.
+ * It never registers a listener for custom performance measures, so the three
+ * `Next.js-*` navigation metrics CANNOT arrive in this App-Router app — see the
+ * KNOWN_VITALS note in `lib/observability/web-vitals.ts`, which is load-bearing
+ * for anyone sizing a navigation change.
  */
 
+'use client';
+
+import { useCallback } from 'react';
 import { useReportWebVitals } from 'next/web-vitals';
+import type { Metric } from 'web-vitals';
 
 import { beaconClientMetric } from '@/lib/observability/client-telemetry';
 
 export function WebVitalsReporter() {
-    useReportWebVitals((metric) => {
+    // Empty dependency list: nothing in the body closes over a value that can
+    // change, so one identity for the component's lifetime is correct — and it
+    // is what keeps `useReportWebVitals`'s effect from re-subscribing.
+    //
+    // NO CASTS. `rating`, `navigationType` and `navigationId` are all declared
+    // on `Metric`, which `useReportWebVitals` passes directly — proved against
+    // this repo's own tsconfig with a control: the three resolve with zero
+    // errors while a `notAField` sibling fails TS2339, so the probe was able to
+    // fail. Each carried an `as { … }` cast before, and a cast over a field that
+    // IS typed suppresses exactly the error worth having: if upstream renames or
+    // drops one in a later 6.x, typed access breaks at compile time, while the
+    // cast silently yields `undefined` and puts the string "undefined" into a
+    // log field, to be read as a data problem months later.
+    const report = useCallback((metric: Metric) => {
         beaconClientMetric({
             name: metric.name,
             value: metric.value,
-            rating: (metric as { rating?: string }).rating,
-            navigationType: (metric as { navigationType?: string }).navigationType,
+            rating: metric.rating,
+            navigationType: metric.navigationType,
+            navigationId: metric.navigationId,
             route: typeof window !== 'undefined' ? window.location.pathname : '/',
         });
-    });
+    }, []);
+
+    useReportWebVitals(report);
     return null;
 }
