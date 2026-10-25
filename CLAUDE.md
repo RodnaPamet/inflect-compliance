@@ -2871,8 +2871,8 @@ Two scenarios are easy to weaken by accident:
   2026-08-25 — it was `push`/`schedule`/`dispatch`-only while a separate
   `Coverage (shard N/4)` matrix re-ran the whole suite to instrument it).
 
-  It now merges **six** artifacts, and which six is load-bearing.
-  Coverage is collected by the jobs that already run the suite: the four
+  It now merges **nine** artifacts, and which nine is load-bearing.
+  Coverage is collected by the jobs that already run the suite: the seven
   `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files), `Ratchets`
   (guards + guardrails + contracts, 661 files) and `Flue`
   (`coverage-shard-flue`). Those sets are
