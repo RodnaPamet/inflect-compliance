@@ -2369,8 +2369,7 @@ exports[`API contract — per-schema snapshots schema: EvidenceCreateRequest 1`]
       "enum": [
         "TEXT",
         "FILE",
-        "LINK",
-        "SCREENSHOT"
+        "LINK"
       ],
       "default": "TEXT"
     },
@@ -2434,7 +2433,7 @@ exports[`API contract — per-schema snapshots schema: EvidenceCreateRequest 1`]
   "required": [
     "title"
   ],
-  "description": "Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly. content is encrypted at rest for TEXT type."
+  "description": "Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly: content is the note for TEXT and the URL for LINK."
 }"
 `;
 
@@ -2846,7 +2845,10 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateRequest 1`]
       "minLength": 1
     },
     "content": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "controlIds": {
       "type": "array",

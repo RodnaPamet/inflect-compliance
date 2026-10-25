@@ -51,9 +51,9 @@ export function InheritedMappingsPanel({
     const t = useTranslations('panels');
     const entityWord = entityLabel === 'risk' ? t('inherited.entityRisk') : entityLabel === 'asset' ? t('inherited.entityAsset') : entityLabel;
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
         let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         (async () => {
             try {

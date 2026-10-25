@@ -77,10 +77,10 @@ export default function ConnectionOutcomePage() {
         } catch {
             setError(true);
         } finally {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setLoading(false);
         }
     }, [apiUrl, connectionId]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { void load(); }, [load]);
 
     const syncNow = async () => {
