@@ -17,6 +17,7 @@ jest.mock('@/env', () => ({ env: mockEnv }));
 import {
     readSandboxExecutionPlatformEnabled,
     readSandboxRuntimeDeclaration,
+    sandboxedExecutionAvailability,
     REPORTING_CHANNELS,
     type ReportingChannelKey,
 } from '@/app-layer/usecases/sandbox-runtime-config';
@@ -176,5 +177,81 @@ describe('5. the platform execution flag', () => {
         // so a deploy writing "false" would enable the thing it disabled.
         mockEnv.SANDBOX_EXECUTION_ENABLED = 'false';
         expect(readSandboxExecutionPlatformEnabled()).toBe(false);
+    });
+});
+
+
+describe('6. the availability gate — #3996, platform-only', () => {
+    const DIGEST_SET = () => {
+        mockEnv.SANDBOX_RUNTIME_CONFIG_DIGEST = DIGEST;
+    };
+
+    it('is not available when the platform has not enabled it', () => {
+        DIGEST_SET();
+        expect(sandboxedExecutionAvailability()).toEqual({
+            available: false,
+            reason: 'not-enabled',
+        });
+    });
+
+    it('is not available when enabled with NO runtime declared', () => {
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        expect(sandboxedExecutionAvailability()).toEqual({
+            available: false,
+            reason: 'no-runtime-declared',
+        });
+    });
+
+    it('is available only when both the flag and a declared runtime are present', () => {
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        DIGEST_SET();
+        expect(sandboxedExecutionAvailability()).toEqual({ available: true, reason: null });
+    });
+
+    it('does not collapse the two unavailable reasons into one answer', () => {
+        // The requirement #3996 states: a failure must say availability could
+        // not be confirmed rather than that the feature is off. Asserted as a
+        // DIFFERENCE, so it cannot be satisfied by relabelling one of them.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const enabledNoRuntime = sandboxedExecutionAvailability();
+        delete mockEnv.SANDBOX_EXECUTION_ENABLED;
+        const notEnabled = sandboxedExecutionAvailability();
+
+        expect(enabledNoRuntime.available).toBe(false);
+        expect(notEnabled.available).toBe(false);
+        expect(enabledNoRuntime.reason).not.toBe(notEnabled.reason);
+        expect(enabledNoRuntime.reason).toBe('no-runtime-declared');
+    });
+
+    it('fails CLOSED across every combination — never a hopeful true', () => {
+        // Derived rather than listed, so a future fourth input cannot slip
+        // past by not being enumerated here.
+        for (const flag of [undefined, '0', '1'] as const) {
+            for (const digest of [undefined, DIGEST] as const) {
+                for (const k of Object.keys(mockEnv)) delete mockEnv[k];
+                if (flag !== undefined) mockEnv.SANDBOX_EXECUTION_ENABLED = flag;
+                if (digest !== undefined) mockEnv.SANDBOX_RUNTIME_CONFIG_DIGEST = digest;
+
+                const got = sandboxedExecutionAvailability();
+                const shouldBeAvailable = flag === '1' && digest !== undefined;
+                expect(got.available).toBe(shouldBeAvailable);
+                // An available answer carries no reason; an unavailable one always does.
+                expect(got.reason === null).toBe(shouldBeAvailable);
+            }
+        }
+    });
+
+    it('is SYNCHRONOUS, so there is no await to forget', () => {
+        // #3996 asks that the prologue stay synchronous so a missing `await`
+        // cannot weaken the gate. Platform-only lets the WHOLE function be
+        // synchronous, and this asserts that rather than trusting the
+        // signature: a Promise here would be truthy and `.available` would be
+        // undefined, which reads as unavailable and would hide the mistake in
+        // the safe direction — the worst place for it to hide.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        DIGEST_SET();
+        const got: unknown = sandboxedExecutionAvailability();
+        expect(got).not.toBeInstanceOf(Promise);
+        expect(typeof (got as { then?: unknown }).then).toBe('undefined');
     });
 });
