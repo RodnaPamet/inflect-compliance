@@ -109,3 +109,47 @@ describe('EvidenceSubTable — rows', () => {
         expect(document.getElementById('unlink-link_1')).not.toBeNull();
     });
 });
+
+describe('EvidenceSubTable — an address is followable only when safe', () => {
+    const UNSAFE: EvidenceTabData = {
+        links: [
+            {
+                id: 'link_js',
+                kind: 'LINK',
+                url: 'javascript:alert(1)',
+                note: 'A plain link that runs script',
+                createdAt: '2026-09-01T00:00:00.000Z',
+                createdBy: { id: 'user_2', name: 'Bea Plain' },
+            },
+        ],
+        evidence: [
+            {
+                id: 'ev_js',
+                type: 'LINK',
+                title: 'Library record that runs script',
+                content: 'java\tscript:alert(1)',
+                status: 'DRAFT',
+                fileRecordId: null,
+                createdAt: '2026-10-02T00:00:00.000Z',
+                addedBy: { id: 'user_1', name: 'Ada Library' },
+            },
+        ],
+    };
+
+    it('shows a javascript: address as text, with no link to it', () => {
+        render(<EvidenceSubTable data={UNSAFE} loading={false} canWrite onUnlink={() => {}} tenantHref={tenantHref} />);
+        for (const [rowText, address] of [
+            ['A plain link that runs script', 'javascript:alert(1)'],
+            ['Library record that runs script', 'java\tscript:alert(1)'],
+        ] as const) {
+            const row = rowFor(rowText);
+            // Shown exactly as stored, so a reader sees what was saved.
+            expect(row.textContent).toContain(address);
+            // The only link left in the row is the library record's own page.
+            for (const a of Array.from(row.querySelectorAll('a'))) {
+                expect(a.getAttribute('href') ?? '').not.toMatch(/script:/i);
+                expect(a.textContent).not.toContain('alert(1)');
+            }
+        }
+    });
+});

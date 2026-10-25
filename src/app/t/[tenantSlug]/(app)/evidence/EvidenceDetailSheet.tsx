@@ -41,6 +41,7 @@ import { Pen2, Download, Xmark, ShieldAlert, CircleHalfDottedClock } from '@infl
 import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
+import { normaliseHref } from '@/lib/security/safe-url';
 import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { ownerLabel } from '@/lib/evidence-owner-label';
 import { formatBytes } from '@/lib/evidence-upload-limits';
@@ -567,9 +568,13 @@ export function EvidenceDetailSheet({
                                     <p className="text-xs font-medium uppercase tracking-widest text-content-subtle">
                                         {t('detail.descriptionLabel')}
                                     </p>
-                                    {contentRole === 'url' ? (
+                                    {/* A link opens only when its address is safe to
+                                        follow (`normaliseHref`: never `javascript:`,
+                                        `data:`, `vbscript:` or `file:`); otherwise
+                                        the address is still shown, as text. */}
+                                    {contentRole === 'url' && normaliseHref(evidence.content) ? (
                                         <a
-                                            href={evidence.content}
+                                            href={normaliseHref(evidence.content)!}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-sm text-content-link underline underline-offset-2 break-all"
@@ -577,6 +582,13 @@ export function EvidenceDetailSheet({
                                         >
                                             {evidence.content}
                                         </a>
+                                    ) : contentRole === 'url' ? (
+                                        <p
+                                            className="text-sm text-content-default break-all"
+                                            id="evidence-sheet-link-unsafe"
+                                        >
+                                            {evidence.content}
+                                        </p>
                                     ) : (
                                         <p
                                             className="text-sm text-content-default whitespace-pre-wrap"

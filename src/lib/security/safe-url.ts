@@ -19,9 +19,17 @@
 
 const DANGEROUS_PROTOCOLS = /^\s*(javascript|data|vbscript|file):/i;
 
+/**
+ * Control characters, tab, newline and DEL. A browser's URL parser drops tab
+ * and newline wherever they appear and ignores leading control characters,
+ * so `java\tscript:` runs as `javascript:`. The protocol test reads the URL
+ * as the browser will.
+ */
+const URL_IGNORED_CHARS = /[\u0000-\u001F\u007F]/g;
+
 export function isSafeHref(raw: string | null | undefined): boolean {
     if (!raw) return false;
-    if (DANGEROUS_PROTOCOLS.test(raw)) return false;
+    if (DANGEROUS_PROTOCOLS.test(raw.replace(URL_IGNORED_CHARS, ''))) return false;
     return true;
 }
 

@@ -152,6 +152,27 @@ describe('EP-2 — <EvidenceDetailSheet>', () => {
         swrState.data = undefined;
     });
 
+    describe('a LINK record opens only a safe address', () => {
+        const link = (content: string) =>
+            imageEvidence({ type: 'LINK', content, fileName: null, fileSize: null, fileRecordId: null, fileRecord: null });
+
+        it('links an https address', () => {
+            renderSheet(link('https://x.test/report?lang=en&region=us'));
+            const a = document.getElementById('evidence-sheet-link-target') as HTMLAnchorElement;
+            expect(a).not.toBeNull();
+            expect(a.getAttribute('href')).toBe('https://x.test/report?lang=en&region=us');
+        });
+
+        it.each(['javascript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,<b>x</b>'])(
+            'shows %j as text and never as a link',
+            (content) => {
+                renderSheet(link(content));
+                expect(document.getElementById('evidence-sheet-link-target')).toBeNull();
+                expect(document.getElementById('evidence-sheet-link-unsafe')?.textContent).toBe(content);
+            },
+        );
+    });
+
     it('renders an inline image preview for image evidence', () => {
         renderSheet(imageEvidence());
         expect(
