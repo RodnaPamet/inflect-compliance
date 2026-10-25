@@ -63,18 +63,3 @@ export function assertCanInstallFrameworkPack(ctx: RequestContext) {
         throw forbidden('You do not have permission to install frameworks.');
     }
 }
-
-/**
- * Rewriting a framework's REQUIREMENTS (`upsertRequirements`). Unlike every
- * write above, this changes the GLOBAL catalogue row every tenant reads, so it
- * keeps the coarse OWNER/ADMIN line AND requires the install key. A tenant's
- * custom role can narrow it, never widen it: an EDITOR-based role that holds
- * `frameworks.install` installs packs but does not edit the shared catalogue.
- */
-export function assertCanEditFrameworkCatalogue(ctx: RequestContext) {
-    assertCanInstallFrameworkPack(ctx);
-    // Epic 1 — OWNER is a superset of ADMIN per CLAUDE.md RBAC.
-    if (ctx.role !== 'OWNER' && ctx.role !== 'ADMIN') {
-        throw forbidden('Only OWNER or ADMIN can edit framework requirements');
-    }
-}

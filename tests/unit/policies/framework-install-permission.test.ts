@@ -7,15 +7,8 @@
  * aware) and the server disagreed both ways. These pin both directions, and —
  * the half that keeps the change from being an outage — that every built-in
  * role lands exactly where it did.
- *
- * `assertCanEditFrameworkCatalogue` guards the one framework write that is not
- * tenant-scoped (rewriting the shared requirement rows), and must never be
- * WIDENED by a tenant's custom role.
  */
-import {
-    assertCanInstallFrameworkPack,
-    assertCanEditFrameworkCatalogue,
-} from '@/app-layer/policies/framework.policies';
+import { assertCanInstallFrameworkPack } from '@/app-layer/policies/framework.policies';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
@@ -57,24 +50,5 @@ describe('assertCanInstallFrameworkPack', () => {
         const ctx = customRole('EDITOR', true);
         expect(ctx.role).toBe('EDITOR');
         expect(() => assertCanInstallFrameworkPack(ctx)).not.toThrow();
-    });
-});
-
-describe('assertCanEditFrameworkCatalogue — never wider than before', () => {
-    it('admits OWNER and ADMIN', () => {
-        expect(() => assertCanEditFrameworkCatalogue(makeRequestContext('OWNER'))).not.toThrow();
-        expect(() => assertCanEditFrameworkCatalogue(makeRequestContext('ADMIN'))).not.toThrow();
-    });
-
-    it('refuses an EDITOR-based custom role even when it holds install', () => {
-        // The install key now admits this member to installs; it must not
-        // also admit them to rewriting the catalogue every tenant reads.
-        expect(() => assertCanEditFrameworkCatalogue(customRole('EDITOR', true))).toThrow(
-            /OWNER or ADMIN/,
-        );
-    });
-
-    it('refuses an ADMIN-based custom role with install switched off', () => {
-        expect(() => assertCanEditFrameworkCatalogue(customRole('ADMIN', false))).toThrow();
     });
 });

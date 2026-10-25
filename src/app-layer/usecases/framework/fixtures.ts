@@ -1,104 +1,13 @@
 ﻿import { RequestContext } from '../../types';
-import { assertCanViewFrameworks, assertCanEditFrameworkCatalogue } from '../../policies/framework.policies';
+import { assertCanViewFrameworks } from '../../policies/framework.policies';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 
-// в”Ђв”Ђв”Ђ Fixture Upsert (Versioning & Updates) в”Ђв”Ђв”Ђ
-
-export interface RequirementFixture {
-    code: string;
-    title: string;
-    description?: string;
-    section?: string;
-    category?: string;
-    theme?: string;
-    themeNumber?: number;
-    sortOrder?: number;
-}
-
-export async function upsertRequirements(
-    ctx: RequestContext,
-    frameworkKey: string,
-    requirements: RequirementFixture[],
-    options: { deprecateMissing?: boolean } = {}
-) {
-    // Writes the GLOBAL requirement rows, so a custom role may narrow this
-    // gate but never widen it — see the policy.
-    assertCanEditFrameworkCatalogue(ctx);
-    const db = prisma;
-
-    const fw = await db.framework.findFirst({ where: { key: frameworkKey } });
-    if (!fw) throw notFound('Framework not found');
-
-    if (!requirements || requirements.length === 0) throw badRequest('At least one requirement required');
-
-    // Validate unique codes within the fixture
-    const codes = requirements.map((r) => r.code);
-    const uniqueCodes = new Set(codes);
-    if (uniqueCodes.size !== codes.length) {
-        const dupes = codes.filter((c, i) => codes.indexOf(c) !== i);
-        throw badRequest(`Duplicate requirement codes in fixture: ${[...new Set(dupes)].join(', ')}`);
-    }
-
-    let created = 0;
-    let updated = 0;
-    let deprecated = 0;
-
-    // Upsert each requirement
-    for (const req of requirements) {
-        const existing = await db.frameworkRequirement.findUnique({
-            where: { frameworkId_code: { frameworkId: fw.id, code: req.code } },
-        });
-
-        if (existing) {
-            await db.frameworkRequirement.update({
-                where: { id: existing.id },
-                data: {
-                    title: req.title,
-                    description: req.description,
-                    section: req.section,
-                    category: req.category,
-                    theme: req.theme,
-                    themeNumber: req.themeNumber,
-                    sortOrder: req.sortOrder ?? existing.sortOrder,
-                    deprecatedAt: null, // Un-deprecate if previously deprecated
-                },
-            });
-            updated++;
-        } else {
-            await db.frameworkRequirement.create({
-                data: {
-                    frameworkId: fw.id,
-                    code: req.code,
-                    title: req.title,
-                    description: req.description,
-                    section: req.section,
-                    category: req.category,
-                    theme: req.theme,
-                    themeNumber: req.themeNumber,
-                    sortOrder: req.sortOrder ?? 0,
-                },
-            });
-            created++;
-        }
-    }
-
-    // Soft-delete requirements not in the fixture
-    if (options.deprecateMissing) {
-        const result = await db.frameworkRequirement.updateMany({
-            where: {
-                frameworkId: fw.id,
-                code: { notIn: codes },
-                deprecatedAt: null,
-            },
-            data: { deprecatedAt: new Date() },
-        });
-        deprecated = result.count;
-    }
-
-    return { frameworkKey, created, updated, deprecated };
-}
+// There is no requirement writer here. Framework requirements are one global
+// catalogue every workspace reads, maintained by the deploy-time seeding and
+// import scripts; the in-workspace `upsertRequirements` that rewrote them was
+// removed (#4125 follow-up).
 
 // в”Ђв”Ђв”Ђ Diff Computation в”Ђв”Ђв”Ђ
 
