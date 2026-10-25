@@ -30,6 +30,8 @@ export {
 // Coverage, templates, & readiness
 export {
     computeCoverage,
+    isFrameworkInUse,
+    listFrameworksInUse,
     listTemplates,
     exportCoverageData,
     generateReadinessReport,

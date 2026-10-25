@@ -140,7 +140,7 @@ function Revalidate({ swrKey }: { swrKey: string }) {
 }
 
 /** Route table for the stubbed `fetch`, swappable mid-test. */
-let routes: Record<string, () => { ok: boolean; json: () => Promise<unknown> }> = {};
+let routes: Record<string, () => { ok: boolean; status?: number; json: () => Promise<unknown> }> = {};
 
 /**
  * When set, every request 503s regardless of the route table. A flag rather
@@ -413,10 +413,18 @@ describe('Pack detail — a failed revalidation does not discard the pack', () =
     });
 
     it('keeps a genuine 404 as not-found when a later revalidation fails', async () => {
-        // `null` is a successful answer meaning "no such pack". `!data` would
-        // have treated it as "nothing loaded" and let the blip below turn a
-        // legitimate not-found into a retry screen.
-        routes = { '/audits/packs/pack-1': () => ({ ok: true, json: async () => null }) };
+        // #4129 — a genuine 404 is what the API really sends: `notFound(...)`,
+        // which `apiGet` throws. This used to stub `{ ok: true, body: null }`,
+        // a shape the server never produces, so the test passed while the
+        // real 404 rendered as "Couldn't load this pack". The page latches the
+        // 404, so the blip below must not turn it into a retry screen.
+        routes = {
+            '/audits/packs/pack-1': () => ({
+                ok: false,
+                status: 404,
+                json: async () => ({ error: { code: 'NOT_FOUND', message: 'Audit pack not found' } }),
+            }),
+        };
 
         const { container } = mount(<PackDetailPage />, KEY);
         await waitFor(() => expect(container.textContent).toContain('Pack not found.'));
@@ -467,7 +475,14 @@ describe('Cycle detail — a failed revalidation does not discard the cycle', ()
     });
 
     it('keeps a genuine 404 as not-found when a later revalidation fails', async () => {
-        routes = { '/audits/cycles/cyc-1': () => ({ ok: true, json: async () => null }) };
+        // The real 404 shape (#4129), as for the pack above.
+        routes = {
+            '/audits/cycles/cyc-1': () => ({
+                ok: false,
+                status: 404,
+                json: async () => ({ error: { code: 'NOT_FOUND', message: 'Audit cycle not found' } }),
+            }),
+        };
 
         const { container } = mount(<CycleDetailPage />, KEY);
         await waitFor(() => expect(container.textContent).toContain('Audit cycle not found.'));

@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { CreateEvidenceSchema, UpdateEvidenceSchema } from '@/lib/schemas';
 import { isEvidenceContentEditable } from '@/lib/evidence-content';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 
 /**
  * Epic D.2 three-state preserving wrapper over `sanitizePlainText`.
@@ -480,7 +481,8 @@ async function notifyEvidenceOwner(
             type: newStatus === 'APPROVED' ? 'EVIDENCE_APPROVED' : 'EVIDENCE_REJECTED',
             title: `Evidence ${newStatus.toLowerCase()}: ${evidence.title}`,
             message: comment || `Your evidence "${evidence.title}" has been ${newStatus.toLowerCase()}.`,
-            linkUrl: `/evidence`,
+            // `/t/<slug>`-prefixed — a bare `/evidence` 404'd from the bell (#4128).
+            linkUrl: tenantPageLink(await resolveTenantSlugForLinks(db, ctx), '/evidence'),
         },
     });
 }

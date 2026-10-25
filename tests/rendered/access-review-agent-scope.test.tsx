@@ -292,6 +292,7 @@ describe('the register reads an AGENT campaign', () => {
             withClient(
                 <AccessReviewsClient
                     tenantSlug="acme"
+                    canCreate
                     initialReviews={[{
                         id: 'rev_agent', name: 'Q4 agents', scope: 'AGENT', status: 'OPEN',
                         periodStartAt: null, periodEndAt: null, dueAt: null, closedAt: null,
@@ -307,7 +308,7 @@ describe('the register reads an AGENT campaign', () => {
     });
 
     it('offers an AGENT campaign in the create modal', () => {
-        render(withClient(<AccessReviewsClient tenantSlug="acme" initialReviews={[]} />));
+        render(withClient(<AccessReviewsClient tenantSlug="acme" canCreate initialReviews={[]} />));
         fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
         const option = document.getElementById('access-review-scope-AGENT');
         expect(option).not.toBeNull();
@@ -315,7 +316,7 @@ describe('the register reads an AGENT campaign', () => {
     });
 
     it('asks an AGENT campaign for its preparing agent, and offers an optional second', async () => {
-        render(withClient(<AccessReviewsClient tenantSlug="acme" initialReviews={[]} />));
+        render(withClient(<AccessReviewsClient tenantSlug="acme" canCreate initialReviews={[]} />));
         fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
         expect(screen.queryByTestId('access-review-new-preparer')).not.toBeInTheDocument();
         fireEvent.click(document.getElementById('access-review-scope-AGENT')!);

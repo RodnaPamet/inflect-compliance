@@ -102,7 +102,7 @@ async function openDirectoryPicker(body: unknown | 'pending') {
     mockFetch(body);
     render(
         <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
-            <AccessReviewsClient tenantSlug="acme" initialReviews={[]} />
+            <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={[]} />
         </SWRConfig>,
     );
     fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));

@@ -115,6 +115,17 @@ describeFn('Framework delta-gap engine (real DB)', () => {
         expect(notes).toBeGreaterThanOrEqual(1);
     });
 
+    it('links the notification inside the tenant\'s workspace (#4128)', async () => {
+        // A bare `/framework-updates` 404'd from the bell; the slug here is the id.
+        const links = await prisma.notification.findMany({
+            where: { tenantId: TENANT_A, title: { contains: FW_KEY } },
+            select: { linkUrl: true },
+            take: 10,
+        });
+        expect(links.length).toBeGreaterThanOrEqual(1);
+        expect(new Set(links.map((n) => n.linkUrl))).toEqual(new Set([`/t/${TENANT_A}/framework-updates`]));
+    });
+
     it('materialises findings for the new gaps — explicit, source-tagged, idempotent', async () => {
         const delta = await prisma.tenantFrameworkDelta.findFirst({ where: { tenantId: TENANT_A, diffId } });
         const first = await materializeDeltaFindings(ctxA(), delta!.id);

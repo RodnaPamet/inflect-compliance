@@ -283,6 +283,8 @@ describe('reviewEvidence — reviewer flow (APPROVED/REJECTED requires admin)', 
         const notif = (mockDb.notification.create as jest.Mock).mock.calls[0][0].data;
         expect(notif.type).toBe('EVIDENCE_APPROVED');
         expect(notif.userId).toBe('owner-1');
+        // Inside the workspace — a bare `/evidence` 404'd from the bell (#4128).
+        expect(notif.linkUrl).toBe('/t/acme/evidence');
     });
 
     it('does NOT send a notification when ownerUserId is null (graceful degrade)', async () => {

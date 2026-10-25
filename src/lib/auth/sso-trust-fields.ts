@@ -65,3 +65,15 @@ export const SSO_TRUST_OWNER_TIER_REFUSAL = 'SSO_TRUST_IS_OWNER_TIER' as const;
 export const SSO_TRUST_OWNER_TIER_MESSAGE =
     'Only an Owner can set up single sign-on or change whom it trusts: the identity provider, ' +
     'its certificate or client ID, the email domains it covers, and whether it creates accounts.';
+
+/**
+ * The Entra (`ENTRA_ID`) provider's trust fields. Its directory ID decides
+ * whose Microsoft sign-ins the group mappings apply to
+ * (`src/lib/auth/entra-group-sync.ts`); the client ID names the app
+ * registration that issues their group claims.
+ */
+export const ENTRA_TRUST_CONFIG_KEYS = ['aadTenantId', 'clientId'] as const;
+
+export const ENTRA_TRUST_OWNER_TIER_MESSAGE =
+    'Only an Owner can set up Microsoft Entra ID or change its directory or client ID: ' +
+    'they decide whose Microsoft sign-ins the group mappings apply to.';

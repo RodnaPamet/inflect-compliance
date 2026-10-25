@@ -84,7 +84,8 @@ test.describe('Policy Center', () => {
         await authedPage.waitForURL('**/policies/**', { timeout: 30000 });
         await authedPage.waitForSelector('#policy-title', { timeout: 60000 });
         await expect(authedPage.locator('#policy-title')).toContainText(title);
-        await expect(authedPage.locator('#policy-status')).toContainText('DRAFT');
+        // The header shows the status label, not the raw enum (#4127).
+        await expect(authedPage.locator('#policy-status')).toContainText('Draft');
     });
 
     test('create version via editor and view history', async ({

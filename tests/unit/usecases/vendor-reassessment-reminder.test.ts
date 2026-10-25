@@ -48,8 +48,8 @@ describe('runVendorReassessmentReminder', () => {
 
     it('fires one notification per overdue vendor with an owner', async () => {
         findManyMock.mockResolvedValueOnce([
-            { id: 'v1', tenantId: 't1', name: 'AWS', ownerUserId: 'u1' },
-            { id: 'v2', tenantId: 't1', name: 'Stripe', ownerUserId: 'u2' },
+            { id: 'v1', tenantId: 't1', name: 'AWS', ownerUserId: 'u1', tenant: { slug: 'acme' } },
+            { id: 'v2', tenantId: 't1', name: 'Stripe', ownerUserId: 'u2', tenant: { slug: 'acme' } },
         ]);
         notificationCreateMock.mockResolvedValue({ id: 'n' });
         vendorUpdateMock.mockResolvedValue({});
@@ -60,6 +60,9 @@ describe('runVendorReassessmentReminder', () => {
         expect(first.userId).toBe('u1');
         expect(first.type).toBe('VENDOR_REVIEW_DUE');
         expect(first.title).toContain('AWS');
+        // Inside the workspace — a bare `/vendors/<id>` 404'd from the bell (#4128).
+        expect(first.linkUrl).toBe('/t/acme/vendors/v1');
+        expect(findManyMock.mock.calls[0][0].select.tenant).toEqual({ select: { slug: true } });
     });
 
     it('skips notification when vendor has no owner — still bumps nextReviewAt', async () => {

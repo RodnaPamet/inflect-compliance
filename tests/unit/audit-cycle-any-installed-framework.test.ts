@@ -4,7 +4,12 @@
  * pattern for these surfaces. */
 
 /**
- * An audit cycle can be created for ANY installed framework.
+ * An audit cycle can be created for ANY framework IN USE in the workspace.
+ *
+ * #4129 — "installed" used to mean "exists in the global catalogue", a lookup
+ * every shipped framework passes. It now means in use: a live control mapped to
+ * one of the framework's requirements (`isFrameworkInUse`, the Frameworks
+ * page's rule). This file mocks that predicate; its own tests cover the rule.
  *
  * THE DEFECT
  * ----------
@@ -52,20 +57,21 @@ jest.mock('@/lib/cache/list-cache', () => ({
     cachedListRead: jest.fn(),
 }));
 
+const inUseKeys: { keys: string[] } = { keys: [] };
+jest.mock('@/app-layer/usecases/framework/coverage', () => ({
+    isFrameworkInUse: jest.fn(async (_ctx: any, key: string) => inUseKeys.keys.includes(key)),
+}));
+
 import { createAuditCycle } from '@/app-layer/usecases/audit-readiness/cycles';
 import { makeRequestContext } from '../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
 
-/** A tenant with `installedKeys` installed, recording the cycle it creates. */
+/** A tenant with `installedKeys` in use, recording the cycle it creates. */
 function dbWithInstalled(installedKeys: string[]) {
     const created: any[] = [];
+    inUseKeys.keys = installedKeys;
     mockDbHolder.db = {
-        framework: {
-            findFirst: jest.fn(async ({ where }: any) =>
-                installedKeys.includes(where.key) ? { key: where.key } : null,
-            ),
-        },
         auditCycle: {
             create: jest.fn(async ({ data }: any) => {
                 const row = { id: `cycle-${created.length}`, ...data };
@@ -111,14 +117,14 @@ describe('createAuditCycle — any INSTALLED framework', () => {
         dbWithInstalled(['ISO27001']);
         return expect(
             createAuditCycle(ctx, { ...baseInput, frameworkKey: 'NOT_INSTALLED' }),
-        ).rejects.toThrow(/installed framework/i);
+        ).rejects.toThrow(/not in use in this workspace/i);
     });
 
     it('rejects an empty frameworkKey', async () => {
         dbWithInstalled(['ISO27001']);
         await expect(
             createAuditCycle(ctx, { ...baseInput, frameworkKey: '' }),
-        ).rejects.toThrow(/installed framework/i);
+        ).rejects.toThrow(/not in use in this workspace/i);
     });
 
     it('keeps accepting the two seeded frameworks', async () => {

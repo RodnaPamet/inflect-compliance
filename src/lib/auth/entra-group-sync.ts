@@ -10,6 +10,15 @@
  *   2. **enforce the group gate** — when `enforceGroupGate` is on and the user
  *      matches no mapped group, deny tenant access for the session.
  *
+ * A sign-in counts only from the Microsoft directory this workspace configured
+ * (`aadTenantId` on its Entra provider, matched against the ID token's `tid`).
+ * The deployment's Microsoft app can admit any directory, and the mappings are
+ * the workspace's own; a user from another directory gets no mapped role, and
+ * is refused by the gate when it is on. A workspace with mappings but no
+ * configured directory applies none at sign-in. SCIM's Groups push is not a
+ * sign-in and carries no directory: it is authenticated by the workspace's own
+ * SCIM token instead.
+ *
  * OWNER is immune to both: a misconfigured mapping must never demote or lock out
  * a tenant owner (ownership is manually managed, and the last-OWNER guard would
  * reject a demotion anyway). Group sync only ever *raises/sets* a role to a
@@ -57,6 +66,11 @@ export interface EntraSyncDb {
     };
 }
 
+/** Whether a sign-in's directory is the workspace's configured one. GUIDs compare case-insensitively. */
+function isConfiguredDirectory(signInDirectoryId: string | null, configured: string | undefined): boolean {
+    return Boolean(signInDirectoryId && configured && signInDirectoryId.toLowerCase() === configured.toLowerCase());
+}
+
 /**
  * Resolve + apply the user's Entra-group-driven role for one tenant. Pure of
  * NextAuth — takes ids + the resolved group list, returns the decision. Records
@@ -74,6 +88,14 @@ export async function syncEntraMembershipRole(
          * admin-configured ADMIN mapping is a deliberate feature.
          */
         assignableRoles?: readonly Role[];
+        /**
+         * The directory (`tid`) the signing-in Microsoft account belongs to.
+         * Supplied by the sign-in path, `null` when the token carries none;
+         * the mappings and the gate then apply only to the workspace's
+         * configured directory. Omitted by the SCIM path, which has no
+         * sign-in and is authenticated by the workspace's SCIM token.
+         */
+        signInDirectoryId?: string | null;
     },
     deps: { db?: EntraSyncDb } = {},
 ): Promise<EntraRoleSyncResult> {
@@ -98,6 +120,24 @@ export async function syncEntraMembershipRole(
     if (membership?.role === 'OWNER') {
         recordEntraRoleSync({ outcome: 'owner_immune' });
         return { effectiveRole: 'OWNER', changed: false, gateDenied: false };
+    }
+
+    const provider = await db.tenantIdentityProvider.findFirst({
+        where: { tenantId, type: 'ENTRA_ID' },
+        select: { configJson: true },
+    });
+    const config = parseEntraConfig(provider?.configJson);
+
+    // A sign-in from any directory but the configured one is not this
+    // workspace's to map.
+    if (input.signInDirectoryId !== undefined && !isConfiguredDirectory(input.signInDirectoryId, config?.aadTenantId)) {
+        recordEntraRoleSync({ outcome: 'foreign_directory' });
+        edgeLogger.warn('Entra sign-in from another directory: group mappings not applied', {
+            component: 'entra',
+            tenantId,
+            reason: config?.aadTenantId ? 'directory_mismatch' : 'no_configured_directory',
+        });
+        return config?.enforceGroupGate ? { effectiveRole: null, changed: false, gateDenied: true } : NO_OP;
     }
 
     // A ceiling-bound caller may not touch a membership whose CURRENT role it
@@ -125,11 +165,6 @@ export async function syncEntraMembershipRole(
     }
 
     // Gate: enforceGroupGate on + no mapped group matched → deny access.
-    const provider = await db.tenantIdentityProvider.findFirst({
-        where: { tenantId, type: 'ENTRA_ID' },
-        select: { configJson: true },
-    });
-    const config = parseEntraConfig(provider?.configJson);
     if (config?.enforceGroupGate && matchedGroupIds.length === 0) {
         recordEntraRoleSync({ outcome: 'gate_denied' });
         edgeLogger.warn('Entra group gate denied sign-in', {

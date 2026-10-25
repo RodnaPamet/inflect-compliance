@@ -221,13 +221,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // PHASE 1, point 01's third bullet — the per-tenant driver toggle. The
     // column shipped with a reader, a default and no writer; a gate whose
     // customer half cannot be moved through the product is a constant wearing
-    // a switch's name. The NOTE that used to sit here — "no page calls this
-    // route today, so it is API surface without a user-facing page" — is now
-    // STALE: `FlueEngineCard` on Admin → Integrations reads the wiring state
-    // and PUTs this route's mode. It stayed true for as long as it did
-    // because a toggle that is one of SIX terms tells an operator almost
-    // nothing on its own, so there was nothing coherent to put on a page
-    // until the other five could be shown beside it.
+    // a switch's name. Its page is the Agent engines section on AI features
+    // (#4139), which every admin reads and only an owner changes. It replaced
+    // `FlueEngineCard` on Admin → Integrations, so the column has one control.
     // #3330 — mints the grant endpoint's bearer token. Discovered by
     // IS_AGENTIC because the path carries "mcp", and genuinely agentic: the
     // credential it issues is the one our own dispatch presents to the grant
@@ -235,8 +231,8 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // nested under it, for the first-match-wins reason its own note gives.
     't/[tenantSlug]/admin/mcp-server-token/[connectionId]/route.ts',
     't/[tenantSlug]/admin/agent-driver/route.ts',
-    // The read half of that card: which of the six terms are satisfied and
-    // which one blocks. Read-only, same tenant-lifecycle key.
+    // The owner's checklist in that section: which of the six terms are
+    // satisfied and which one blocks. Read-only, on the PUT's tenant-lifecycle key.
     't/[tenantSlug]/admin/flue-wiring/route.ts',
     // #3484 — the SECOND capacity axis beside the monthly token budget. The
     // budget bounds spend over a month and cannot express simultaneity, so a

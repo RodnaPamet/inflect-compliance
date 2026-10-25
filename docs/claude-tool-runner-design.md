@@ -152,7 +152,7 @@ step with its own preserved-thinking checks.
 | Inflect control | Mechanism in this driver |
 | --- | --- |
 | The funnel decides | each tool's `run` validates with the MCP tool's own `argsSchema` (one catalogue; `betaTool` does not validate), then calls `runGuardedTool` |
-| Advertised set | `offerTools` output, the engine-neutral core shared with Flue |
+| Advertised set | `offerToolSet` output (`src/lib/agentic/engine-tools/`, the engine-neutral core shared with Flue since Step 0a), with a builder that hands each tool over as JSON schema |
 | Kill switch every turn | checked in the loop body on every yielded message, and again inside each `run` (step 0 of `authorizeToolCall` already does) |
 | Run caps | charged inside each `run`; `max_iterations` and the signal are backstops. A tool must honour `signal`, because the runner waits for it |
 | `MODEL_CALL` + Art 12 | one per yielded message: digest from `runner.params`, usage from `msg.usage` |
@@ -185,28 +185,37 @@ step with its own preserved-thinking checks.
 ### What it does to the assistant
 
 Nothing, by recommendation. The assistant's loop is provider-neutral, and the
-owner chose that in #3808. One observation from this research belongs to its
-own issue: `tool-loop.ts`'s message builder drops `thinking` blocks between
-turns. On Opus 5.5 those carry the model's reasoning and its progress notes
-between tool calls. Passing them back unchanged is what the API expects, and
-the API drops, unbilled, any block a model cannot read.
+owner chose that in #3808.
+
+This research turned up one defect, which Step 2x (#4183) fixed: the message
+builder in `tool-loop.ts` dropped `thinking` blocks between turns. On Opus 5.5
+those blocks carry the model's reasoning, and its progress notes between tool
+calls. The API expects them back unchanged, and drops, unbilled, any block a
+model cannot read.
+
+The Anthropic provider now hands the loop the reply's content as an opaque
+`providerPart`, which only that provider reads. `buildMessages` replays that
+content exactly as returned, so the next request carries every block, in order.
+A provider that sets no part gets the history it always got.
 
 ## Decisions for the owner
 
-1. **Make this the builder's first engine.** Recommended, in place of the Agent
-   SDK, for the reasons in the table at the top. The Agent SDK design's Step 4a
+1. **Make this the builder's first engine.** **Decided (owner, 2026-10-25):
+   yes**, in place of the Agent SDK, for the reasons in the table at the top. The Agent SDK design's Step 4a
    becomes a confirmation spike, run only if a profile needs that engine.
-2. **Serial tool dispatch in v1.** `disable_parallel_tool_use` costs extra turns
+2. **Serial tool dispatch in v1.** **Decided (owner, 2026-10-25): serial.**
+   `disable_parallel_tool_use` costs extra turns
    on fan-out-heavy work. A per-run mutex inside `run` keeps the ledger exact
    and allows parallel requests, at the price of a lock to get right. v1 takes
    the simpler shape.
-3. **A direct SDK dependency.** It adds one package the repo already carries
+3. **A direct SDK dependency.** **Decided (owner, 2026-10-25): take the
+   dependency** (`@anthropic-ai/sdk`, Step 2a). It adds one package the repo already carries
    transitively. The alternative, extending the raw-`fetch` provider pattern
    into a full agent loop, is #3808's choice for the assistant. It does not
    carry over: an engine for customer-built agents gains a lot from the SDK's
    handling of `pause_turn`, refusal fallbacks and thinking blocks.
-4. **`LOCAL_ONLY` tenants.** Proposed: refused on this engine with a named
-   reason, and served by Flue. An Anthropic-compatible local gateway would lift
+4. **`LOCAL_ONLY` tenants.** **Decided (owner, 2026-10-25): refused on this
+   engine with a named reason, and served by Flue.** An Anthropic-compatible local gateway would lift
    the refusal without a code change.
 
 ## Roadmap (future direction)
@@ -225,7 +234,7 @@ step (1H) is merged.
 | 2c | Turn the Tool Runner engine on | 2b deployed | Significant — enables an engine, new data category at a sub-processor |
 | 2d | Skills on the Tool Runner engine | 2c | Standard |
 | 2H | Phase 2 hardening | 2a–2d | Standard |
-| 2x | Carry thinking blocks through the assistant's loop | — (independent) | Standard |
+| 2x | Carry thinking blocks through the assistant's loop | — (independent) | Standard (delivered by #4183) |
 
 ### Phase 2 — Tool Runner engine
 
@@ -484,42 +493,10 @@ Deliver per the Definition of done.
 
 #### Step 2x — Carry thinking blocks through the assistant's loop
 
-Independent of the phases. It can run at any time.
-
-**Goal.** Stop discarding the model's thinking blocks between turns of the
-assistant's own tool loop.
-
-```text
-You are implementing Step 2x of the roadmap in docs/claude-tool-runner-design.md.
-Read the global rules and definition of done in the Roadmap of
-docs/claude-agent-sdk-design.md, the section "What it does to the assistant" in
-this document, and src/app-layer/ai/assistant/tool-loop.ts and turn-provider.ts
-in full. Read the claude-api skill's guidance on passing thinking blocks back
-unchanged (shared/model-migration.md, preserved thinking) before changing
-anything.
-
-Goal: on the Anthropic provider, an assistant turn's thinking blocks are passed
-back to the next request unchanged and in order. The other providers are
-unaffected.
-
-1. The loop is provider-neutral, and that is an owner decision (#3808). Keep it:
-   carry the blocks as an opaque provider-owned part of the turn, which only the
-   Anthropic provider reads and writes.
-2. History stays append-only: never edit, reorder or drop an earlier block.
-3. No thinking text is logged or audited, and none reaches the assistant's
-   answer.
-
-Tests: a two-turn conversation on a faux Anthropic transport, where the second
-request carries the first response's thinking blocks byte for byte; the other
-providers' request bodies are unchanged.
-
-Deliver per the Definition of done.
-```
-
-**Hardening**
-
-- [ ] The second request's thinking blocks equal the first response's, byte for byte (test).
-- [ ] The openrouter, local and stub providers' request bodies are unchanged (snapshot of each).
-- [ ] No thinking text appears in a log line, an audit row or the answer (test with a sentinel string).
-
-**Exit.** The assistant keeps the model's reasoning between tool calls on the Anthropic provider.
+Delivered by #4183 (#4153). The section "What it does to the assistant" above
+describes the result, and the design is in
+`docs/implementation-notes/2026-10-25-assistant-thinking-blocks-carried.md`.
+The prompt asked for snapshots of the openrouter, local and stub providers'
+request bodies. The assistant's loop has only the Anthropic provider, so the
+code wins. A provider that sets no part receives exactly the history it always
+did, and that is the control in their place.

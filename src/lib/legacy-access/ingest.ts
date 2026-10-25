@@ -30,9 +30,9 @@ import {
     computeColumnSetFingerprint,
     entitlementColumns,
     isDeniedColumn,
+    mapAccountTypeValue,
     mapStatusValue,
     projectedColumns,
-    type AccountType,
     type CanonicalAccount,
     type StoredMapping,
 } from './canonical';
@@ -232,19 +232,6 @@ function asBool(value: unknown): boolean | null {
     return null;
 }
 
-const ACCOUNT_TYPE_WORDS: Readonly<Record<string, AccountType>> = {
-    HUMAN: 'HUMAN', USER: 'HUMAN', PERSON: 'HUMAN', EMPLOYEE: 'HUMAN',
-    SERVICE: 'SERVICE', SVC: 'SERVICE', SERVICE_ACCOUNT: 'SERVICE', APP: 'SERVICE',
-    SHARED: 'SHARED', GENERIC: 'SHARED',
-    SYSTEM: 'SYSTEM', BUILTIN: 'SYSTEM',
-};
-
-function asAccountType(value: unknown): AccountType {
-    const text = asText(value);
-    if (text === null) return 'UNKNOWN';
-    return ACCOUNT_TYPE_WORDS[text.toUpperCase().replace(/[\s-]+/g, '_')] ?? 'UNKNOWN';
-}
-
 function readEntitlements(mapping: StoredMapping, index: Map<string, unknown>): string[] {
     const layout = mapping.entitlements;
     switch (layout.kind) {
@@ -382,7 +369,10 @@ export function mapRows(
             expiresAt: expires.value,
             entitlements,
             isPrivileged: asBool(readCell(index, mapping.fields.isPrivileged)),
-            accountType: asAccountType(readCell(index, mapping.fields.accountType)),
+            accountType: mapAccountTypeValue(
+                readCell(index, mapping.fields.accountType),
+                mapping.accountTypeValues,
+            ),
         });
         if (!parsed.success) {
             // The Zod issue PATHS are field names and are safe; the issue

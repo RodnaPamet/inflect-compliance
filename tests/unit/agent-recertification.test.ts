@@ -266,7 +266,7 @@ describe('the closing evidence recomputes from the stored rows', () => {
             ['n-2', 'REJECTED', null],
         ]);
         expect(doc.sample).toEqual({ epoch: 'ar-1@2026-10-20', decisionIds: ['dec-2'] });
-        expect(doc.obligations.map((o) => o.requirementCode).sort()).toEqual(['A.5.18', 'ASI03', 'CC6.1']);
+        expect(doc.obligations.map((o) => o.requirementCode).sort()).toEqual(['A.5.18', 'ASI03', 'CC6.3']);
     });
 });
 
@@ -305,27 +305,49 @@ describe('a person’s static preparation is for the preparer’s own pack only'
 describe('the evidence is filed against obligations the catalogues actually hold', () => {
     const read = (rel: string) => readFileSync(path.join(ROOT, rel), 'utf8');
 
-    it('names ISO/IEC 27001 A.5.18, SOC 2 CC6.1 and OWASP ASI03, by family', () => {
+    it('names ISO/IEC 27001 A.5.18, SOC 2 CC6.3 and OWASP ASI03, by family', () => {
         expect(AGENT_RECERT_EVIDENCE_OBLIGATIONS.map((o) => [o.familyUrn, o.requirementCode])).toEqual([
             [ISO27001_FAMILY_URN, 'A.5.18'],
-            [SOC2_FAMILY_URN, 'CC6.1'],
+            [SOC2_FAMILY_URN, 'CC6.3'],
             [ASI_LIBRARY_URN, 'ASI03'],
         ]);
     });
 
-    it('SOC 2 CC6.3, which the brief names, is in NEITHER representation — asserted, not assumed', () => {
-        // The premise of the CC6.1 substitution. If a catalogue change ADDS
-        // CC6.3, this fails and the obligation list should be revisited rather
-        // than left understating what the evidence covers.
+    it('SOC 2 CC6.3, which the brief names, is in BOTH representations — asserted, not assumed', () => {
+        // THIS TEST USED TO ASSERT THE OPPOSITE, AND THAT IS WHY IT EXISTED.
+        // It was written to pin the premise of the CC6.1 substitution: if a
+        // catalogue change ever ADDED CC6.3, it would fail and the obligation
+        // list would be revisited rather than left understating what the
+        // evidence covers. #3369 added it, the test failed, and the list was
+        // revisited — so it now pins the presence the substitution needed.
+        //
+        // Both representations are asserted because they are separate rows and
+        // a tenant's controls may hang off either; one alone would leave the
+        // other free to drift.
         const library = read('src/data/libraries/soc2-2017.yaml');
         // Comments masked: a seed line commented out is not a seeded code.
         const seed = codeOf(read('prisma/seed-catalog.ts'));
-        expect(library).not.toMatch(/ref_id:\s*CC6\.3\b/);
-        expect(seed).not.toMatch(/code:\s*'CC6\.3'/);
-        expect(library).toMatch(/ref_id:\s*CC6\.1\s*$/m);
-        expect(seed).toMatch(/\{ code: 'CC6\.1', title: 'Logical and physical access controls'/);
+        expect(library).toMatch(/ref_id:\s*CC6\.3\b/);
+        expect(seed).toMatch(/code:\s*'CC6\.3'/);
+        // CC6 is complete in both, so the whole series resolves rather than
+        // just the one code this obligation happens to name. Extracted and
+        // compared as LISTS rather than asserted with a built regex per code:
+        // a `new RegExp` is opaque to the Class D needle-uniqueness ratchet,
+        // which then counts the read as un-analysable, and a list comparison
+        // also fails on a code that should not be there rather than only on
+        // one that is missing.
+        const CC6_SERIES = ['CC6.1', 'CC6.2', 'CC6.3', 'CC6.4', 'CC6.5', 'CC6.6', 'CC6.7', 'CC6.8'];
+        const libCc6 = [...library.matchAll(/^\s*ref_id:\s*(CC6\.\d+)\s*$/gm)].map((m) => m[1]);
+        const seedCc6 = [...seed.matchAll(/code:\s*'(CC6\.\d+)'/g)].map((m) => m[1]);
+        expect(libCc6.sort()).toEqual(CC6_SERIES);
+        expect(seedCc6.sort()).toEqual(CC6_SERIES);
+        // The note used to be pinned on the string `CC6.3` because it existed to
+        // explain a divergence from the brief. There is no divergence now, so
+        // what is worth pinning is that the entry still relates itself to the
+        // brief rather than standing unexplained.
         const soc2 = AGENT_RECERT_EVIDENCE_OBLIGATIONS.find((o) => o.familyUrn === SOC2_FAMILY_URN);
-        expect(soc2?.note).toMatch(/CC6\.3/);
+        expect(soc2?.note).toMatch(/brief/i);
+        expect(soc2?.note.length).toBeGreaterThan(30);
     });
 
     it('A.5.18 is seeded (as 5.18), and ASI03 is in both ASI representations', () => {

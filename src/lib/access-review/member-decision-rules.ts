@@ -13,10 +13,20 @@
  *   2. Demoting or revoking an OWNER membership needs a closer holding
  *      `admin.owner_management`. The last-OWNER guard applies as well.
  *   3. A MODIFY sets a built-in role only, never a custom role.
+ *   4. Changing an AI admin's role needs a closer holding
+ *      `admin.owner_management`, as it does on the members page, where only an
+ *      OWNER moves a member out of that role (#4130). A REVOKE of one is not
+ *      refused here: the members page lets an ADMIN deactivate one too.
+ *   5. Nobody decides the row whose subject is themselves — not the assigned
+ *      reviewer, not an ADMIN, not an OWNER (#4130). A reviewer certifying
+ *      their own access is the segregation-of-duties failure an access review
+ *      exists to catch, so that row waits for somebody else: another OWNER or
+ *      ADMIN, or the reviewer when the subject is an admin acting as backup.
  *
- * Each is refused at submission where the decision alone shows it (1, 3), and
- * at close for every stored decision — an open campaign decided before the
- * rule is refused, never applied and never dropped.
+ * Each is refused at submission where the decision alone shows it (1, 3, 5 —
+ * recording, and discarding, a verdict on one's own row), and at close for
+ * every stored decision — an open campaign decided before the rule is
+ * refused, never applied and never dropped.
  *
  * No server imports, so a client component can hold it.
  */
@@ -26,6 +36,8 @@ export const MEMBER_DECISION_REFUSAL = {
     NEVER_PROMOTES_TO_OWNER: 'CAMPAIGN_NEVER_PROMOTES_TO_OWNER',
     MODIFY_SETS_NO_CUSTOM_ROLE: 'CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE',
     OWNER_SUBJECT_NEEDS_OWNER_CLOSER: 'OWNER_SUBJECT_NEEDS_OWNER_CLOSER',
+    AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER: 'AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER',
+    DECIDER_IS_SUBJECT: 'CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS',
 } as const;
 
 export type MemberDecisionRefusal = (typeof MEMBER_DECISION_REFUSAL)[keyof typeof MEMBER_DECISION_REFUSAL];
@@ -37,4 +49,8 @@ export const MEMBER_DECISION_REFUSAL_MESSAGE: Readonly<Record<MemberDecisionRefu
         'A campaign MODIFY sets a built-in role only, never a custom role: custom roles are assigned on the members page.',
     OWNER_SUBJECT_NEEDS_OWNER_CLOSER:
         'Demoting or revoking an OWNER membership through a campaign is an OWNER’s change: only an OWNER can close this campaign.',
+    AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER:
+        'Changing an AI admin’s role through a campaign is an OWNER’s change, as it is on the members page: only an OWNER can close this campaign.',
+    CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS:
+        'Nobody records, changes or discards the decision on their own access: somebody else — the campaign’s reviewer, or another OWNER or ADMIN — decides that row.',
 };

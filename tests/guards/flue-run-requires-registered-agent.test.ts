@@ -69,12 +69,14 @@ describe('starting a flue run', () => {
         expect(start).toMatch(/standing !== 'vouched'/);
     });
 
-    it('gates only the FLUE driver, leaving static runs unchanged', () => {
+    it('gates only a REASONING ENGINE, leaving static runs unchanged', () => {
         // A static run walks a hand-written step array and carries the key's
         // own scopes — the same posture any direct MCP call has. Gating it
         // here would change every existing run's contract for no new safety.
         const gate = start.slice(start.indexOf('evaluateAgentRegistration') - 400);
-        expect(gate).toMatch(/chosenDriver === 'flue'/);
+        // `isReasoningEngine`, not the literal 'flue' (Step 0a): the next
+        // engine must be gated too, without anybody remembering this line.
+        expect(gate).toMatch(/isReasoningEngine\(chosenDriver\)/);
     });
 
     it('refuses ABOVE the row creation, not after it', () => {

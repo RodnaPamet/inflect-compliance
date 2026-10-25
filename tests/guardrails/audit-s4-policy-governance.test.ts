@@ -48,9 +48,13 @@ describe('Audit S4 — Policy Governance & Versioning', () => {
             expect(src).toMatch(/category:\s*['"]access['"]/);
         });
 
-        it('getPolicyAcknowledgementRoster (auditor who-attested view) is admin-gated', () => {
+        // Was "is admin-gated" / `assertCanAdmin`, which refused the AUDITOR this
+        // view exists for. Owner decision (#4128): OWNER, ADMIN and AUDITOR read
+        // it. The behaviour — who is let in and who is refused — is tested in
+        // tests/unit/usecases/policy-attestation.test.ts.
+        it('getPolicyAcknowledgementRoster (auditor who-attested view) is audit-gated', () => {
             expect(src).toMatch(
-                /export async function getPolicyAcknowledgementRoster[\s\S]{0,400}assertCanAdmin/,
+                /export async function getPolicyAcknowledgementRoster[\s\S]{0,400}assertCanAudit/,
             );
         });
     });
