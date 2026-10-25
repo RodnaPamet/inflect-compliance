@@ -84,7 +84,7 @@ From then on:
 - An Owner or Admin who has a password can still sign in with it and reach the workspace. Keep that for when the identity provider is down.
 - Someone who belongs to other workspaces as well can still open those after a password sign-in, just not this one.
 
-To stop enforcing, untick **{{ui:admin.sso.enforceSso}}** and save. Unticking **{{ui:admin.sso.enableSso}}** turns single sign-on off altogether, enforcement included.
+To stop enforcing, untick **{{ui:admin.sso.enforceSso}}** and save. Unticking **{{ui:admin.sso.enableSso}}** turns single sign-on off altogether, enforcement included, and the badge then reads {{ui:admin.sso.disabled}}.
 
 ## What happens next
 
