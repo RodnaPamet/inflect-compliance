@@ -85,9 +85,26 @@ on:
         branches: [main]
     workflow_dispatch:
 
+# ── NEVER CANCEL A RUNNING PUBLISH (#4280) ──
+#
+# This was `cancel-in-progress: true`, and on 2026-10-25 it starved
+# production for 13 hours. A publish takes about 21 minutes (see the
+# header), merges to `main` that day landed minutes apart, and every
+# push cancelled the publish still running: 54 of 56 runs after the
+# 04:28 UTC success ended `cancelled`, `:latest` never moved, and
+# Watchtower had nothing new to roll. CI and Release were green
+# throughout, because neither is the deploy.
+#
+# With `false`, GitHub lets the running publish finish and holds at
+# most ONE pending run per group, replacing an older pending run with
+# the newest. So publishes stay serialised, every publish that starts
+# completes, and the newest commit is always published next. The only
+# runs dropped are pending ones a newer commit superseded before they
+# began, which costs nothing.
+# `tests/guardrails/image-publish-never-starves.test.ts` pins this.
 concurrency:
     group: ghcr-publish-${{ github.ref }}
-    cancel-in-progress: true
+    cancel-in-progress: false
 
 permissions:
     contents: read
