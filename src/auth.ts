@@ -852,10 +852,14 @@ export const authOptions: NextAuthOptions = {
                             const { syncEntraMembershipRole, applyEntraSyncToToken } =
                                 await import('@/lib/auth/entra-group-sync');
                             const activeTenantId = token.tenantId;
+                            const tid = (profile as { tid?: unknown } | undefined)?.tid;
                             const result = await syncEntraMembershipRole({
                                 userId: token.userId,
                                 tenantId: activeTenantId,
                                 aadGroups: groups,
+                                // Mappings apply only to the workspace's own
+                                // Microsoft directory (src/lib/auth/entra-group-sync.ts).
+                                signInDirectoryId: typeof tid === 'string' ? tid : null,
                             });
                             applyEntraSyncToToken(token, activeTenantId, result);
                         } catch (err) {
