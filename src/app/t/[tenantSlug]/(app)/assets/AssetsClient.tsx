@@ -412,9 +412,12 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             },
             // No `confirm` — bulk delete is a soft delete surfaced through the
             // Epic 67 undo-toast (handleBulkApply), not a blocking confirm.
-            { value: 'delete', label: tx('bulk.delete') },
+            // Admin tier only: the route requires `admin.manage` and the
+            // usecase `assertCanAdmin`, so an Editor offered it watched the
+            // rows vanish and come back when the undo window ran out (#4276).
+            ...(permissions.canAdmin ? [{ value: 'delete', label: tx('bulk.delete') }] : []),
         ],
-        [tenantSlug, tx],
+        [tenantSlug, tx, permissions.canAdmin],
     );
 
     // Item 32 — the asset row backing the open quick-look panel.

@@ -365,8 +365,10 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     const evidenceBulkActions: BulkActionDef[] = useMemo(
         () => [
             // R5-P2 #3 — each bulk action is offered only to the tier the server
-            // enforces: approve is reviewer-gated (ADMIN), assign/delete are
-            // write-tier. A READER/AUDITOR sees none (selection is also disabled).
+            // enforces: approve is reviewer-gated (ADMIN), assign is write-tier,
+            // and delete is ADMIN (`admin.manage` on the route, `assertCanAdmin`
+            // in the usecase; it was offered to Editors, who were refused,
+            // #4277). A READER/AUDITOR sees none (selection is also disabled).
             ...(permissions.canAdmin ? [{
                 value: 'approve',
                 label: tx('list.bulkApprove'),
@@ -395,7 +397,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                     />
                 ),
             }] : []),
-            ...(permissions.canWrite ? [{ value: 'delete', label: tx('list.bulkDelete'), confirm: true }] : []),
+            ...(permissions.canAdmin ? [{ value: 'delete', label: tx('list.bulkDelete'), confirm: true }] : []),
         ],
         [tenantSlug, tx, permissions.canAdmin, permissions.canWrite],
     );
@@ -1801,16 +1803,22 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         }}
                         // EP-2 Part 2 — click-to-open (same handler the
                         // table row uses) + bulk-selection parity + a
-                        // localized download label on every card.
+                        // localized download label on every card. Selection
+                        // follows the table's `selectionEnabled={canWrite}`:
+                        // read-only roles have no bulk action, so they got a
+                        // checkbox and an empty bar (#4277).
                         onRowClick={handleEvidenceCardClick}
-                        selectedIds={selected}
-                        onToggleSelect={(id, next) =>
-                            setSelected((prev) => {
-                                const n = new Set(prev);
-                                if (next) n.add(id);
-                                else n.delete(id);
-                                return n;
-                            })
+                        selectedIds={permissions.canWrite ? selected : undefined}
+                        onToggleSelect={
+                            permissions.canWrite
+                                ? (id, next) =>
+                                      setSelected((prev) => {
+                                          const n = new Set(prev);
+                                          if (next) n.add(id);
+                                          else n.delete(id);
+                                          return n;
+                                      })
+                                : undefined
                         }
                         downloadLabel={tx('list.downloadFile')}
                         data-testid="evidence-gallery"

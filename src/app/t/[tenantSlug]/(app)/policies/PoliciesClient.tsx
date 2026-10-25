@@ -457,11 +457,21 @@ function PoliciesPageInner({
         // Archive + Delete are admin-gated (mirror the OWNER/ADMIN guards on
         // archivePolicy / bulkDeletePolicy).
         if (permissions.canAdmin) {
-            // Archive blocks every edit path until restored, so it earns the
-            // confirm it did not have. Delete is a reversible SOFT delete and
+            // Archive earns a confirm. Delete is a reversible SOFT delete and
             // routes through the undo-toast instead — the confirm here was the
-            // inverse of the consequences.
-            defs.push({ value: 'archive', label: tx('bulk.archive'), confirm: true });
+            // inverse of the consequences. The confirm names the act: `true`
+            // takes the bar's defaults, which read "Delete N policies?" and
+            // "This removes the selected policies", in red, for an archive
+            // (#4279).
+            defs.push({
+                value: 'archive',
+                label: tx('bulk.archive'),
+                confirm: {
+                    tone: 'warning',
+                    confirmLabel: tx('bulk.archiveConfirmLabel'),
+                    description: tx('bulk.archiveConfirmDesc'),
+                },
+            });
             defs.push({ value: 'delete', label: tx('bulk.delete') });
         }
         return defs;
@@ -985,7 +995,10 @@ function PoliciesPageInner({
                 'data-testid': 'policies-table',
                 className: 'hover:bg-bg-muted',
                 // Selection + canonical BulkActionBar; gated on edit so a
-                // READER sees neither checkboxes nor the bar.
+                // READER sees neither checkboxes nor the bar. The select
+                // column is on by default, so `selectionEnabled` is what
+                // removes the checkboxes (#4279).
+                selectionEnabled: permissions.canWrite,
                 selectedRows: permissions.canWrite
                     ? Object.fromEntries(Array.from(selected).map((id) => [id, true]))
                     : undefined,
