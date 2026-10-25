@@ -3007,7 +3007,8 @@
       "emptyDesc": "Създайте документите, които уреждат как работи вашата организация — сигурност, поверителност, допустимо ползване, реакция при инциденти.",
       "kpiOutstandingAck": "Чакащи потвърждения",
       "ackOutstandingBadge": "Чакащо",
-      "ackProgress": "{acknowledged}/{assigned}"
+      "ackProgress": "{acknowledged}/{assigned}",
+      "loadError": "Политиките не можаха да бъдат заредени. Презаредете страницата, за да опитате отново."
     },
     "colHeaders": {
       "title": "Заглавие",

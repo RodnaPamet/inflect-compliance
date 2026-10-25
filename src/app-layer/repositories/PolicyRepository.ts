@@ -65,6 +65,11 @@ const policyListSelect = {
     createdAt: true,
     owner: { select: { id: true, name: true, email: true } },
     currentVersion: { select: { id: true, versionNumber: true } },
+    // The NEWEST version, for the Version column. `currentVersion` is the
+    // published pointer: it does not move when a draft is added, and is null
+    // for a policy created without content — so on its own the column read
+    // "v1" for every never-published policy, whatever its drafts.
+    versions: { select: { versionNumber: true }, orderBy: { versionNumber: 'desc' }, take: 1 },
     _count: { select: { versions: true, controlLinks: true, approvals: true } },
 } as const;
 

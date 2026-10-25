@@ -3007,7 +3007,8 @@
       "emptyDesc": "Author the documents that govern how your organisation operates — security, privacy, acceptable use, incident response.",
       "kpiOutstandingAck": "Outstanding acknowledgements",
       "ackOutstandingBadge": "Outstanding",
-      "ackProgress": "{acknowledged}/{assigned}"
+      "ackProgress": "{acknowledged}/{assigned}",
+      "loadError": "Couldn't load policies. Reload the page to try again."
     },
     "colHeaders": {
       "title": "Title",

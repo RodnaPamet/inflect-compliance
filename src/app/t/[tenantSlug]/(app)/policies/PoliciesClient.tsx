@@ -44,6 +44,7 @@ import {
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { apiErrorMessage } from '@/lib/api-error';
+import { ApiClientError } from '@/lib/api-client';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
@@ -69,6 +70,8 @@ interface PolicyRow {
     category: string | null;
     owner: { id: string; name: string | null; email: string | null } | null;
     currentVersion: { id: string; versionNumber: number } | null;
+    /** The newest version only (`take: 1`); empty when the policy has none. */
+    versions?: Array<{ versionNumber: number }>;
     lifecycleVersion: number;
     nextReviewAt: string | null;
     updatedAt: string;
@@ -138,6 +141,23 @@ type PolicyKpiCounts = {
     outstandingAck: number;
 };
 type PolicyListResponse = CappedList<PolicyRow> & { kpiCounts?: PolicyKpiCounts };
+
+/**
+ * The version number the Version column shows — the same version the detail
+ * page's Current tab shows (`live ?? newest`, see publication-state): the
+ * live one while PUBLISHED, otherwise the newest. Null when the policy has no
+ * version at all, which renders as a dash.
+ *
+ * It used to read `currentVersion ?? lifecycleVersion`. `currentVersion` is
+ * the published pointer (seeded as v1 only when a policy is created with
+ * content, and not moved by new drafts) and `lifecycleVersion` defaults to 1,
+ * so every never-published policy read "v1" and the dash was unreachable.
+ */
+function displayedVersionNumber(p: PolicyRow): number | null {
+    if (p.status === 'PUBLISHED' && p.currentVersion) return p.currentVersion.versionNumber;
+    // `?? currentVersion` covers a payload cached before `versions` was selected.
+    return p.versions?.[0]?.versionNumber ?? p.currentVersion?.versionNumber ?? null;
+}
 
 export function PoliciesClient(props: PoliciesClientProps) {
     const filterCtx = useFilterContext([], POLICY_FILTER_KEYS, {
@@ -307,8 +327,7 @@ function PoliciesPageInner({
                 p.status,
             category: (p) => p.category || '—',
             owner: (p) => ownerDisplayName(p.owner?.name, p.owner?.email) ?? '—',
-            version: (p) =>
-                p.currentVersion?.versionNumber ?? p.lifecycleVersion ?? null,
+            version: (p) => displayedVersionNumber(p),
             nextReviewAt: (p) => p.nextReviewAt || '',
             updatedAt: (p) => p.updatedAt,
         }),
@@ -331,6 +350,16 @@ function PoliciesPageInner({
         loadMore: loadMorePolicies,
     } = useThresholdLoadMore(sortedPolicies);
     const loading = policiesQuery.isLoading && !policiesQuery.data;
+    // A failed fetch used to be invisible: `useTenantSWR` keeps the previous
+    // key's rows (keepPreviousData), so a failed FILTERED reload left the old
+    // result on screen under the new filters — and with nothing earlier, the
+    // table said "No policies match". With `error` set the table shows the
+    // error instead of either. The server's reason when it gave one.
+    const listError = policiesQuery.error
+        ? policiesQuery.error instanceof ApiClientError && policiesQuery.error.code !== 'UNKNOWN'
+            ? policiesQuery.error.message
+            : tx('list.loadError')
+        : undefined;
 
     // ─── Bulk actions (canonical BulkActionBar — assign + archive) ───
     // Policy status is approval-gated, so the bar carries Assign owner
@@ -779,16 +808,10 @@ function PoliciesPageInner({
         {
             id: 'version',
             header: tx('colHeaders.version'),
-            // Prefer the bound `currentVersion.versionNumber` (the
-            // operator-visible counter). Falls back to `lifecycleVersion`,
-            // which now reflects real published lineage — publishPolicy
-            // increments it and records prior published snapshots in
-            // lifecycleHistoryJson (Prompt-3.1), so it is no longer frozen
-            // at 1. Finally a dash for policies without any version row yet.
-            accessorFn: (p) =>
-                p.currentVersion?.versionNumber ??
-                p.lifecycleVersion ??
-                null,
+            // The live version while PUBLISHED, otherwise the newest — what
+            // the detail page shows; a dash for a policy with no version row
+            // yet. See `displayedVersionNumber`.
+            accessorFn: (p) => displayedVersionNumber(p),
             cell: ({ getValue, row }) => {
                 const v = getValue();
                 if (v == null) {
@@ -991,6 +1014,7 @@ function PoliciesPageInner({
                 onReachEnd: hasMorePolicies ? loadMorePolicies : undefined,
                 columns: orderedPolicyColumns,
                 loading,
+                error: listError,
                 sortableColumns,
                 sortBy,
                 sortOrder,

@@ -352,3 +352,77 @@ describe('Policies list — the create dialog deep links', () => {
         expect(within(dialog).queryByText(P.new.chooseTemplate)).toBeNull();
     });
 });
+
+describe('Policies list — the Version column shows the version the policy is on', () => {
+    // Shapes the list query returns: `currentVersion` is the PUBLISHED pointer
+    // (seeded as v1 when a policy is created with content), `versions` the
+    // newest version only, and `lifecycleVersion` defaults to 1.
+    const base = { ...DRAFT_POLICY, lifecycleVersion: 1 };
+    const ROWS: PolicyRow[] = [
+        { ...base, id: 'no-versions', title: 'No versions yet', currentVersion: null, versions: [] },
+        { ...base, id: 'blank-drafts', title: 'Created blank, four drafts', currentVersion: null, versions: [{ versionNumber: 4 }] },
+        {
+            ...base,
+            id: 'seeded-drafts',
+            title: 'Created with content, three drafts',
+            currentVersion: { id: 'v1', versionNumber: 1 },
+            versions: [{ versionNumber: 3 }],
+        },
+        {
+            ...base,
+            id: 'live-with-revision',
+            title: 'Published v2, revising v3',
+            status: 'PUBLISHED',
+            currentVersion: { id: 'v2', versionNumber: 2 },
+            versions: [{ versionNumber: 3 }],
+        },
+    ];
+
+    async function versionCells() {
+        await screen.findByText('Published v2, revising v3');
+        return Object.fromEntries(
+            ROWS.map((r) => [r.id, document.querySelector(`[data-testid="policy-version-${r.id}"]`)?.textContent ?? '—']),
+        );
+    }
+
+    it('a dash with no version, the newest while unpublished, the live one once published', async () => {
+        respond = (url) =>
+            url.pathname === '/api/t/acme/policies'
+                ? { status: 200, body: { rows: ROWS, truncated: false, kpiCounts: KPI } }
+                : undefined;
+        mount(accessFor('READER'), ROWS);
+        expect(await versionCells()).toEqual({
+            'no-versions': '—',
+            'blank-drafts': 'v4',
+            'seeded-drafts': 'v3',
+            'live-with-revision': 'v2',
+        });
+    });
+});
+
+describe('Policies list — a failed load says so', () => {
+    const FAILED = { status: 500, body: { error: { code: 'INTERNAL_ERROR', message: 'The policy list is unavailable.' } } };
+
+    it('a failed filtered reload replaces the previous rows with the error', async () => {
+        respond = (url) =>
+            url.pathname === '/api/t/acme/policies' && url.searchParams.get('status') === 'DRAFT' ? FAILED : undefined;
+        mount(accessFor('READER'));
+        await screen.findByText(DRAFT_POLICY.title);
+
+        // The Draft card applies status=DRAFT — a new query that fails.
+        fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${P.list.kpiDraft}`) }));
+
+        expect(await screen.findByText('The policy list is unavailable.')).toBeInTheDocument();
+        // Not the previous result under the new filter.
+        expect(screen.queryByText(DRAFT_POLICY.title)).toBeNull();
+    });
+
+    it('with nothing loaded before, the error shows — not "No policies match your filters"', async () => {
+        window.history.replaceState({}, '', '/t/acme/policies?status=DRAFT');
+        respond = (url) => (url.pathname === '/api/t/acme/policies' ? { status: 503, body: {} } : undefined);
+        mount(accessFor('READER'), []);
+
+        expect(await screen.findByText(P.list.loadError)).toBeInTheDocument();
+        expect(screen.queryByText(P.list.emptyFilterTitle)).toBeNull();
+    });
+});
