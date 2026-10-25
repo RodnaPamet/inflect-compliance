@@ -233,7 +233,7 @@ describe('evidence', () => {
             { number: 'CHG02 a', approval: 'PENDING' },
         ]);
         expect(details.failed).toBe(2);
-        expect(stored.content).not.toMatch(/<img|onerror/);
+        expect(stored.content).not.toMatch(/<img|onerror/i);
     });
 
     it('stores a safe result in the same shape as before: summary, a blank line, the details JSON', () => {

@@ -93,7 +93,7 @@ describe('integrationEvidenceText — the JSON appended to the body', () => {
             flagged: true,
             note: null,
         });
-        expect(stored.content).not.toMatch(/<img|onerror|<script/);
+        expect(stored.content).not.toMatch(/<img|onerror|<script/i);
     });
 
     it('keeps a URL value pointing where it pointed: the query string survives, markup is encoded', () => {

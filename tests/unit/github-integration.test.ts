@@ -707,6 +707,6 @@ describe('GitHub provider — legacy GitHubProvider behavior', () => {
         expect(stored.content).toContain('**Repository:** acme/repo');
         expect(stored.content).toContain('**Branch:** release/1.2');
         expect(stored.content).toContain('required via ruleset (Build, Lint)');
-        expect(`${stored.title}\n${stored.content}`).not.toMatch(/<img|<script|<b>|onerror/);
+        expect(`${stored.title}\n${stored.content}`).not.toMatch(/<img|<script|<b>|onerror/i);
     });
 });
