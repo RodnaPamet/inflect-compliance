@@ -19,6 +19,7 @@ import {
     sanitizeRichTextHtml,
     sanitizePlainText,
     sanitizePolicyContent,
+    sanitizeUrlText,
 } from '@/lib/security/sanitize';
 
 // ─── Rich text — XSS-stripping ─────────────────────────────────────
@@ -236,6 +237,57 @@ describe('sanitizePlainText — strips everything', () => {
         expect(sanitizePlainText(null)).toBe('');
         expect(sanitizePlainText(undefined)).toBe('');
         expect(sanitizePlainText(42 as unknown as string)).toBe('');
+    });
+});
+
+// ─── URL profile ──────────────────────────────────────────────────
+
+describe('sanitizeUrlText — neutralises markup without moving the link', () => {
+    it('leaves query separators alone, including names an HTML parser reads as entities', () => {
+        // `&reg`, `&para`, `&times`, `&sect`, `&not`, `&copy`, `&lt` and
+        // `&amp` are legacy entities that need no semicolon. Parsing the URL
+        // as HTML (which `sanitizePlainText` does) turns `&region=` into
+        // `®ion=` — a different link. This helper must not.
+        for (const url of [
+            'https://x.test/a?b=1&c=2',
+            'https://x.test/a?lang=en&region=us&param=2&timestamp=3&section=4&notes=5&copy=6&lt=7&amp=8',
+            'https://x.test/a?x=1&amp;y=2',
+        ]) {
+            expect(sanitizeUrlText(url)).toBe(url);
+        }
+    });
+
+    it('percent-encodes a tag, so no renderer can find one in the stored value', () => {
+        const out = sanitizeUrlText('https://x.test/a<script>alert(1)</script>');
+        expect(out).toBe('https://x.test/a%3Cscript%3Ealert(1)%3C/script%3E');
+        expect(out).not.toMatch(/[<>]/);
+    });
+
+    it('percent-encodes what would end an attribute: a double quote, whitespace, a backtick, a control', () => {
+        const out = sanitizeUrlText('https://x.test/a" onmouseover="alert(1)`\u0000');
+        expect(out).toBe('https://x.test/a%22%20onmouseover=%22alert(1)%60%00');
+        expect(out).not.toMatch(/["\s`\u0000]/);
+    });
+
+    it('leaves the link pointing where it pointed', () => {
+        // The WHATWG serialiser percent-encodes these same characters in a
+        // path, so the parsed URL — what a browser would request — is equal.
+        const raw = 'https://x.test/a b<c>"d`e?q=1&region=2#f';
+        expect(new URL(sanitizeUrlText(raw)).href).toBe(new URL(raw).href);
+    });
+
+    it("keeps a single quote and an entity exactly as typed (neither is markup)", () => {
+        expect(sanitizeUrlText("https://x.test/o'brien?q=&lt;")).toBe("https://x.test/o'brien?q=&lt;");
+    });
+
+    it('trims surrounding whitespace rather than encoding it', () => {
+        expect(sanitizeUrlText('  https://x.test/a b  ')).toBe('https://x.test/a%20b');
+    });
+
+    it('returns empty string for null / undefined / non-string', () => {
+        expect(sanitizeUrlText(null)).toBe('');
+        expect(sanitizeUrlText(undefined)).toBe('');
+        expect(sanitizeUrlText(42 as unknown as string)).toBe('');
     });
 });
 

@@ -24,6 +24,11 @@
  *     · audit.createAudit / updateAudit (incl. checklist notes)
  *     · controlTest.createTestPlan / updateTestPlan / completeTestRun
  *
+ *   Evidence free text (not encrypted, so outside the guardrail's
+ *   population) — in `tests/unit/evidence-text-sanitised.test.ts`:
+ *     · evidence.createEvidence / updateEvidence / uploadEvidenceFile
+ *     · task.linkTaskEvidence / risk.linkRiskEvidence / asset.linkAssetEvidence
+ *
  * Adding a new sanitised write path: append a `describe(...)` block
  * below AND extend the static guardrail's `RICH_TEXT_USECASES` table.
  * The guardrail's `>= 8 entries` ratchet keeps this list from quietly
