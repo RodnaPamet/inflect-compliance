@@ -190,7 +190,9 @@ describe('the empty state', () => {
     it('says "No active evidence" (not "No evidence yet") when everything is archived or expired', async () => {
         const server = makeServer({
             rows: [],
-            metrics: metrics({ total: 3, active: 0, archived: 3, current: 0, byStatus: { DRAFT: 3, SUBMITTED: 0, APPROVED: 0, REJECTED: 0, NEEDS_REVIEW: 0 } }),
+            // The cards count active evidence only, so all of theirs read 0;
+            // `archivedView` is what says the library is not empty.
+            metrics: metrics({ total: 0, active: 0, archived: 3, archivedView: 3, current: 0, byStatus: { DRAFT: 0, SUBMITTED: 0, APPROVED: 0, REJECTED: 0, NEEDS_REVIEW: 0 } }),
         });
         installEvidenceFetch(server);
         mountEvidenceClient(server);

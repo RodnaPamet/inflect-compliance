@@ -539,6 +539,13 @@ export class EvidenceRepository {
      * `groupBy(status)` plus four `count`s — never a per-row loop. Bucket
      * definitions mirror `evidenceFreshnessBucket` so the server counts
      * agree with the per-row badge the table renders.
+     *
+     * #4277 — every status and freshness count is over the ACTIVE bucket
+     * (`evidenceRetentionTabWhere('active')`), the one the list shows by
+     * default. They counted archived and expired evidence too, so a card
+     * could count rows its own click could not show. `archivedView` counts
+     * the Archived bucket instead, so the page can tell "nothing active"
+     * from "nothing at all".
      */
     static async retentionMetrics(
         db: PrismaTx,
@@ -552,37 +559,35 @@ export class EvidenceRepository {
             // Soft-deleted rows are excluded everywhere (parity with the
             // client's per-row pass, which `continue`s on `deletedAt`).
             const base = { tenantId, deletedAt: null } as const;
-            // NEEDS_REVIEW wins the freshness bucket outright, so the
-            // expired/expiring counts exclude it to stay mutually exclusive.
-            const nonReview = {
-                ...base,
-                status: { not: 'NEEDS_REVIEW' as const },
-            };
+            // The list's default bucket — what a card's click shows.
+            const active = evidenceRetentionTabWhere('active', now)!;
+            const archivedBucket = evidenceRetentionTabWhere('archived', now)!;
+            // Combined with AND rather than spread: the bucket predicates
+            // carry their own `OR` groups and `expiredAt` keys, and a spread
+            // would let one silently overwrite another.
+            const within = (...where: Prisma.EvidenceWhereInput[]): Prisma.EvidenceWhereInput => ({
+                AND: [base, active, ...where],
+            });
 
-            const [byStatusRaw, archived, active, expired, expiringSoon] =
+            const [byStatusRaw, archived, archivedView, expired, expiringSoon] =
                 await Promise.all([
                     db.evidence.groupBy({
                         by: ['status'],
-                        where: base,
+                        where: within(),
                         _count: true,
                     }),
                     db.evidence.count({ where: { ...base, isArchived: true } }),
-                    db.evidence.count({
-                        where: { ...base, isArchived: false, expiredAt: null },
-                    }),
-                    // expired: expiredAt set, OR (no expiredAt) the review date
-                    // lapsed, OR (no review date) the retention date lapsed.
-                    db.evidence.count({
-                        where: { ...base, ...evidenceExpiredWhere(now) },
-                    }),
+                    db.evidence.count({ where: { AND: [base, archivedBucket] } }),
+                    // expired: (no expiredAt, being active) the review date
+                    // lapsed, OR (no review date) the retention date lapsed —
+                    // not yet swept.
+                    db.evidence.count({ where: within(evidenceExpiredWhere(now)) }),
                     // expiring: not expired, review date within 30d (else the
                     // retention date within 30d when no review date is set).
                     // Shares `evidenceExpiringSoonWhere` with the list filter
                     // so this count and the rows that filter returns cannot
                     // drift apart — they did, in three ways at once.
-                    db.evidence.count({
-                        where: { ...base, ...evidenceExpiringSoonWhere(now) },
-                    }),
+                    db.evidence.count({ where: within(evidenceExpiringSoonWhere(now)) }),
                 ]);
 
             const byStatus = {
@@ -601,7 +606,7 @@ export class EvidenceRepository {
                 }
             }
             const needsReview = byStatus.NEEDS_REVIEW;
-            // Every non-deleted row lands in exactly one freshness bucket, so
+            // Every active row lands in exactly one freshness bucket, so
             // `current` is the arithmetic remainder — no extra query.
             const current = Math.max(
                 0,
@@ -611,8 +616,9 @@ export class EvidenceRepository {
             return {
                 total,
                 byStatus,
-                active,
+                active: total,
                 archived,
+                archivedView,
                 expiringSoon,
                 expired,
                 needsReview,

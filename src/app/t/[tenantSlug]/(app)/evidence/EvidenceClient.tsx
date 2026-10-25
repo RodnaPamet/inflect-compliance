@@ -921,8 +921,10 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // refreshes / re-renders.
     // EP-4 — "all current" is judged from the SERVER retention aggregate
     // (whole tenant) rather than `isAllEvidenceCurrent` over the ≤100 loaded
-    // rows: at least one non-deleted row AND zero in the expired / expiring /
-    // needs-review buckets means every row is in the `current` bucket.
+    // rows: at least one active row AND zero in the expired / expiring /
+    // needs-review buckets means every active row is in the `current`
+    // bucket. The aggregate counts active evidence only (#4277), the same
+    // rows the default list shows.
     const allEvidenceCurrent =
         metrics.total > 0 &&
         metrics.expired === 0 &&
@@ -1521,8 +1523,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
 
     // One empty state for both views. The default list is the ACTIVE bucket,
     // so "no evidence yet" is true only when the tenant has no evidence at
-    // all: with every row archived or expired the active list is empty while
-    // the Total card still counts them, and the page said "No evidence yet".
+    // all: with every row archived or expired the active list is empty, and
+    // the page said "No evidence yet". `archivedView` counts those rows (the
+    // cards, like the list, count active evidence only).
     const listEmptyState = anyFilterActive ? (
         <EmptyState
             size="sm"
@@ -1540,7 +1543,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 onClick: () => filterCtx.clearAll(),
             }}
         />
-    ) : metrics.total > 0 ? (
+    ) : (metrics.archivedView ?? 0) > 0 ? (
         <EmptyState
             size="sm"
             variant="no-results"

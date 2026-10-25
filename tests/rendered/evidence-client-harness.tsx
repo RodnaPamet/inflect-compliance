@@ -81,6 +81,7 @@ export function metrics(overrides: Partial<Props['initialMetrics']> = {}): Props
         byStatus: { DRAFT: 1, SUBMITTED: 0, APPROVED: 0, REJECTED: 0, NEEDS_REVIEW: 0 },
         active: 1,
         archived: 0,
+        archivedView: 0,
         expiringSoon: 0,
         expired: 0,
         needsReview: 0,
