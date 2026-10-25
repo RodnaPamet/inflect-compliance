@@ -361,6 +361,11 @@ describe("a library's text change reaches a database that already holds it", () 
  * the crosswalks resolve against either row. So each such catalogue must be
  * applied in `seed.ts` before the sync. The population is derived, not listed:
  * the catalogue seeder's fixtures whose framework key a library also declares.
+ *
+ * More generally, `seed.ts` applies every fixture the catalogue seeder applies.
+ * The internal-controls catalogue was the one it missed, so a dev or E2E
+ * database had that library's templates and neither the framework nor the
+ * pack that installs them.
  */
 const SEED = 'prisma/seed.ts';
 
@@ -382,6 +387,15 @@ describe('a seeded dev or E2E database gets what the container start gives', () 
 
     it('the seed runs the container start\'s library sync', () => {
         expect(callExpressionOf(seed, 'syncLibrariesAtStartup')).toMatch(/^syncLibrariesAtStartup\(prisma,/);
+    });
+
+    it('the seed applies every catalogue the container start applies', () => {
+        // Each of these carries a framework and a pack that reach a deployed
+        // database only through the catalogue seeder. A fixture missing here
+        // exists in production and not in dev or E2E, as the internal-controls
+        // catalogue did: its 151 templates seeded, and no pack to install them.
+        const missing = [...catalogFixtures()].filter((file) => !seed.includes(`'prisma/fixtures/${file}'`));
+        expect(missing).toEqual([]);
     });
 
     it('the seed applies each of those catalogues before the sync', () => {
