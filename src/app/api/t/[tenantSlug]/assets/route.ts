@@ -31,7 +31,13 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
             criticality: query.criticality,
             q: query.q,
         });
-        return jsonResponse(assets);
+        // Same `{ rows, truncated }` envelope as the live list below. This
+        // returned the bare array, and the client reads `data.rows` — so the
+        // Deleted assets view always rendered "No deleted assets", and with
+        // it the only way to reach Restore and Purge. The deleted set is
+        // capped in the repository rather than cursored (it is a recovery
+        // surface), as the tasks route does.
+        return jsonResponse({ rows: assets, truncated: false });
     }
 
     const hasPagination = query.limit || query.cursor;
