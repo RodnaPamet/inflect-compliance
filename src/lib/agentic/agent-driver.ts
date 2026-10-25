@@ -222,6 +222,27 @@ export function isReasoningEngine(driver: AgentDriver): boolean {
     return REASONING_ENGINE[driver];
 }
 
+/**
+ * THE MODE A RUN RECORDS FOR THE DRIVER THAT WALKED IT (#4270): the value
+ * `WorkflowRun.driver` stores and the run metrics' `driver` label carries.
+ *
+ * Both were written `driver === 'flue' ? 'FLUE' : 'STATIC'`, exact while there
+ * are two engines. With a third, every run it walked would be recorded as
+ * STATIC, the one wrong answer the column exists to rule out. A
+ * `Record<AgentDriver, AgentDriverMode>`, so a driver added to `AGENT_DRIVERS`
+ * fails `tsc` until it names the mode it records, and can name only a mode the
+ * enum declares. `tests/unit/agent-driver-mode-rollout.test.ts` holds that
+ * mode to its rollout stage for every driver this build can run.
+ */
+const RECORDED_MODE: Readonly<Record<AgentDriver, AgentDriverMode>> = {
+    static: 'STATIC',
+    flue: 'FLUE',
+};
+
+export function recordedModeOf(driver: AgentDriver): AgentDriverMode {
+    return RECORDED_MODE[driver];
+}
+
 /** The independent terms the decision is composed from. */
 export interface AgentDriverTerms {
     /**

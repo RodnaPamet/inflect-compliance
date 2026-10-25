@@ -448,7 +448,7 @@ describe('listAssetsWithDeleted', () => {
         await listAssetsWithDeleted(adminCtx, { q: 'srv' });
         // The deleted-only scoping + withDeleted wrapper now live in the
         // repository; the usecase must delegate there and forward the filters.
-        expect(AssetRepository.listDeleted).toHaveBeenCalledWith(mockDb, adminCtx, { q: 'srv' });
+        expect(AssetRepository.listDeleted).toHaveBeenCalledWith(mockDb, adminCtx, { q: 'srv' }, {});
     });
 
     it('rejects AUDITOR', async () => {

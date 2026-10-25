@@ -85,9 +85,19 @@ on:
         branches: [main]
     workflow_dispatch:
 
+# A running publish is never cancelled (#4280). With `cancel-in-progress:
+# true`, each push to main cancelled the publish still building, and a
+# publish (~22 minutes) outlasts the gap between merges on a busy day. On
+# 2026-10-25 the last publish to finish was for the 04:28 UTC push; of the 30
+# runs after it, 29 were cancelled and the 30th was waiting for the next push
+# to cancel it. Production ran a 13-hour-old image while CI and the release
+# both read green. With `false`, GitHub lets the running publish finish and keeps only
+# the newest pending run, so every publish that starts completes and the
+# newest commit is always the next one built. Pinned by
+# `tests/guardrails/publish-scans-before-push.test.ts`.
 concurrency:
     group: ghcr-publish-${{ github.ref }}
-    cancel-in-progress: true
+    cancel-in-progress: false
 
 permissions:
     contents: read
