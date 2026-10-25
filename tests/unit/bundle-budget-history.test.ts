@@ -18,7 +18,10 @@
  * true only in the Build job. Anything asserted inside it is unasserted
  * everywhere else, so the helper is a module and this is its test.
  */
-import * as path from 'path';
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import {
     BUDGET_FILE,
@@ -27,40 +30,116 @@ import {
     parseBudgets,
 } from '../helpers/bundle-budget-history';
 
-describe('budgetHistory — reading past budgets out of git', () => {
-    it('recovers real versions, with real numbers in them', () => {
-        const history = budgetHistory();
+/**
+ * A SYNTHETIC REPOSITORY, BECAUSE CI HAS NO HISTORY.
+ *
+ * The first version of these tests read THIS repo's history and passed locally
+ * and failed in CI — `actions/checkout` clones one commit for every job but
+ * Build, and `tests/unit` runs in the Test shards. Giving six shards a full
+ * clone to satisfy a test is the wrong trade, and making the assertions
+ * tolerate an empty history would mean they assert nothing where they run.
+ *
+ * So the git reading is exercised against a repository this test builds: two
+ * commits that move a budget, in a temp directory. It is deterministic, it does
+ * not depend on this repo's own log, and it works in a shallow checkout.
+ */
+function synthRepo(versions: string[]): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'budget-history-'));
+    const run = (...args: string[]) =>
+        execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'ignore', 'ignore'] });
+    run('init', '-q');
+    run('config', 'user.email', 't@t.test');
+    run('config', 'user.name', 't');
+    run('config', 'commit.gpgsign', 'false');
+    versions.forEach((content, n) => {
+        fs.mkdirSync(path.join(dir, 'tests', 'guardrails'), { recursive: true });
+        fs.writeFileSync(path.join(dir, 'tests/guardrails/bundle-size-budget.test.ts'), content);
+        run('add', '-A');
+        run('commit', '-q', '-m', `v${n}`, `--date=2026-01-0${n + 1}T00:00:00`);
+    });
+    return dir;
+}
 
-        // A COUNT, not "did not throw". The first draft of this helper carried
+const budgetsSrc = (dashboard: number) =>
+    `const BUDGETS_KB: Record<string, number> = {\n    'dashboard': ${dashboard},\n    'static': 100,\n};\n`;
+
+describe('budgetHistory — reading past budgets out of git', () => {
+    let repo = '';
+    let file = '';
+    beforeAll(() => {
+        repo = synthRepo([budgetsSrc(600), budgetsSrc(610), budgetsSrc(616)]);
+        file = path.join(repo, 'tests/guardrails/bundle-size-budget.test.ts');
+    });
+    afterAll(() => {
+        if (repo) fs.rmSync(repo, { recursive: true, force: true });
+    });
+
+    it('recovers every version, with real numbers in them', () => {
+        const history = budgetHistory(12, file, repo);
+
+        // A COUNT, not "did not throw". The first draft of the helper carried
         // an extension rewrite left over from using `__filename`, which turned
         // the path into `…budget.test.test.ts`; git matched nothing and the
-        // function returned [] on a full clone while printing its
+        // function returned [] on a FULL clone while printing its
         // shallow-checkout notice. "Did not throw" was true the whole time.
-        expect(history.length).toBeGreaterThanOrEqual(2);
-
-        for (const version of history) {
-            expect(version.sha).toMatch(/^[0-9a-f]{7,}$/);
-            expect(version.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-            // Every recovered value is a positive integer KB, which is what
-            // proves the comment-stripping worked: this file's prose is full of
-            // figures like "read 574.4 KB" and a raw regex would catch them.
-            for (const kb of Object.values(version.budgets)) {
-                expect(Number.isInteger(kb)).toBe(true);
-                expect(kb).toBeGreaterThan(0);
-            }
+        expect(history).toHaveLength(3);
+        expect(history.map((h) => h.budgets.dashboard)).toEqual([600, 610, 616]);
+        for (const v of history) {
+            expect(v.sha).toMatch(/^[0-9a-f]{7,}$/);
+            expect(v.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         }
     });
 
     it('returns oldest first, so a trend reads left to right', () => {
-        const dates = budgetHistory().map((h) => h.date);
+        const dates = budgetHistory(12, file, repo).map((h) => h.date);
         expect([...dates].sort()).toEqual(dates);
     });
 
+    it('honours the limit, so the window is bounded', () => {
+        expect(budgetHistory(2, file, repo)).toHaveLength(2);
+    });
+
     it('reads nothing, rather than throwing, where there is no history', () => {
-        // The shallow-checkout case. `actions/checkout` defaults to one commit,
-        // so this is the normal state in every job but Build.
-        const history = budgetHistory(12, path.join(__dirname, 'no-such-file-ever.ts'));
-        expect(history).toEqual([]);
+        // The shallow-checkout case, which is the normal state in every job but
+        // Build — and the state that made the first version of this file red in
+        // CI and green here.
+        expect(budgetHistory(12, path.join(repo, 'no-such-file.ts'), repo)).toEqual([]);
+    });
+});
+
+describe('budgetTrendLines — the slide, where the gate reports it', () => {
+    let repo = '';
+    let file = '';
+    beforeAll(() => {
+        repo = synthRepo([budgetsSrc(600), budgetsSrc(610), budgetsSrc(616)]);
+        file = path.join(repo, 'tests/guardrails/bundle-size-budget.test.ts');
+    });
+    afterAll(() => {
+        if (repo) fs.rmSync(repo, { recursive: true, force: true });
+    });
+
+    it('shows a moved budget as a trajectory with a raise count', () => {
+        const lines = budgetTrendLines(['dashboard'], file, repo);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain('600 -> 610 -> 616');
+        expect(lines[0]).toMatch(/2 raises since \d{4}-\d{2}-\d{2}/);
+    });
+
+    it('says nothing about a bucket that never moved', () => {
+        // `static` is 100 in all three versions, so it costs no line — which
+        // keeps the block readable when one budget slides and four do not.
+        const lines = budgetTrendLines(['static'], file, repo);
+        expect(lines).toEqual(['  (no budget changed in the history read — nothing is sliding)']);
+    });
+
+    it('names the shallow checkout instead of printing a trend it does not have', () => {
+        const lines = budgetTrendLines(['dashboard'], path.join(repo, 'no-such-file.ts'), repo);
+        expect(lines.join('\n')).toContain('shallow checkout');
+        expect(lines.join('\n')).toContain('fetch-depth: 0');
+    });
+
+    it('aims at the real guardrail by default', () => {
+        expect(BUDGET_FILE).toContain(path.join('tests', 'guardrails', 'bundle-size-budget.test.ts'));
     });
 });
 
@@ -86,35 +165,5 @@ describe('parseBudgets — a comment must not be read as a budget', () => {
 
     it('reads nothing from a file with no such map', () => {
         expect(parseBudgets('const SOMETHING_ELSE = 1;')).toEqual({});
-    });
-});
-
-describe('budgetTrendLines — the slide, where the gate reports it', () => {
-    it('shows a moved budget as a trajectory with a raise count', () => {
-        const lines = budgetTrendLines(['dashboard']);
-        expect(lines).toHaveLength(1);
-        // `->` between values, and a count — the two things a single
-        // percentage could never say.
-        expect(lines[0]).toMatch(/dashboard\s+\d+( -> \d+)+/);
-        expect(lines[0]).toMatch(/\d+ raises? since \d{4}-\d{2}-\d{2}/);
-    });
-
-    it('says nothing about a bucket that never moved', () => {
-        // A bucket with no history in the window costs no line, so the block
-        // stays readable when one budget is sliding and four are not.
-        const lines = budgetTrendLines(['a-bucket-that-never-existed']);
-        expect(lines).toEqual(['  (no budget changed in the history read — nothing is sliding)']);
-    });
-
-    it('names the shallow checkout instead of printing a trend it does not have', () => {
-        const lines = budgetTrendLines(['dashboard'], path.join(__dirname, 'no-such-file-ever.ts'));
-        expect(lines.join('\n')).toContain('shallow checkout');
-        expect(lines.join('\n')).toContain('fetch-depth: 0');
-    });
-
-    it('aims at the real guardrail by default', () => {
-        // A default pointing anywhere else would make every assertion above
-        // true of the wrong file.
-        expect(BUDGET_FILE).toContain(path.join('tests', 'guardrails', 'bundle-size-budget.test.ts'));
     });
 });

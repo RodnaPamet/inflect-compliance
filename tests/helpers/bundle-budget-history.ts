@@ -69,7 +69,17 @@ export function parseBudgets(content: string): Record<string, number> {
  * day, so any depth number chosen today would quietly stop covering the window
  * it was picked for.
  */
-export function budgetHistory(limit = 12, file: string = BUDGET_FILE): Array<{ sha: string; date: string; budgets: Record<string, number> }> {
+export function budgetHistory(
+    limit = 12,
+    file: string = BUDGET_FILE,
+    /**
+     * The repository to read. Defaults to this one; a test points it at a
+     * synthetic repo so the git reading is exercised WITHOUT depending on this
+     * repo's own history — which is absent in CI, where `actions/checkout`
+     * clones one commit for every job but Build.
+     */
+    cwd: string = ROOT,
+): Array<{ sha: string; date: string; budgets: Record<string, number> }> {
     // NO EXTENSION REWRITING. An earlier draft carried a `.replace()` left over
     // from using `__filename` (which is `.js` after transpile); against the
     // source path it rewrote `…budget.test.ts` to `…budget.test.test.ts`, git
@@ -77,13 +87,13 @@ export function budgetHistory(limit = 12, file: string = BUDGET_FILE): Array<{ s
     // shallow-checkout notice — a helper that could never succeed, on a full
     // clone. The probe that caught it is why `recovers real versions` below
     // asserts a COUNT rather than just "did not throw".
-    const rel = path.relative(ROOT, file);
+    const rel = path.relative(cwd, file);
     let log: string;
     try {
         log = execFileSync(
             'git',
             ['log', `-n${limit}`, '--format=%H %ad', '--date=short', '--', rel],
-            { cwd: ROOT, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
+            { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
         );
     } catch {
         return [];
@@ -95,7 +105,7 @@ export function budgetHistory(limit = 12, file: string = BUDGET_FILE): Array<{ s
         let content: string;
         try {
             content = execFileSync('git', ['show', `${sha}:${rel}`], {
-                cwd: ROOT,
+                cwd,
                 encoding: 'utf-8',
                 stdio: ['ignore', 'pipe', 'ignore'],
             });
@@ -112,8 +122,12 @@ export function budgetHistory(limit = 12, file: string = BUDGET_FILE): Array<{ s
  * One line per bucket whose budget has MOVED, so a slide is visible where it
  * matters — beside the headroom, at the moment the gate reports it.
  */
-export function budgetTrendLines(buckets: Iterable<string>, file: string = BUDGET_FILE): string[] {
-    const history = budgetHistory(12, file);
+export function budgetTrendLines(
+    buckets: Iterable<string>,
+    file: string = BUDGET_FILE,
+    cwd: string = ROOT,
+): string[] {
+    const history = budgetHistory(12, file, cwd);
     if (history.length < 2) {
         return [
             '  (no budget history available — shallow checkout; the Build job sets fetch-depth: 0)',
