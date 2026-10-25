@@ -444,7 +444,9 @@ const _CreateEvidenceBase = z.object({
     // backward-compat (wrapped into `[controlId]` at the usecase boundary).
     controlId: z.string().optional().nullable(),
     controlIds: z.array(z.string().min(1)).max(100).optional(),
-    type: z.enum(['TEXT', 'FILE', 'LINK', 'SCREENSHOT']).optional().default('TEXT'),
+    // The database's `EvidenceType` is FILE | LINK | TEXT. SCREENSHOT was
+    // accepted here and then failed the insert with a 500.
+    type: z.enum(['TEXT', 'FILE', 'LINK']).optional().default('TEXT'),
     title: z.string().min(1, 'Title is required'),
     content: z.string().optional(),
     fileName: z.string().optional().nullable(),
@@ -461,7 +463,7 @@ const _CreateEvidenceBase = z.object({
 });
 
 export const CreateEvidenceSchema = _CreateEvidenceBase.strip().openapi('EvidenceCreateRequest', {
-    description: 'Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly. content is encrypted at rest for TEXT type.',
+    description: 'Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly: content is the note for TEXT and the URL for LINK.',
 });
 
 export const CreateEvidenceFormSchema = _CreateEvidenceBase.extend({
@@ -470,7 +472,8 @@ export const CreateEvidenceFormSchema = _CreateEvidenceBase.extend({
 
 export const UpdateEvidenceSchema = z.object({
     title: z.string().min(1).optional(),
-    content: z.string().optional(),
+    // `null` clears a TEXT note; a LINK cannot lose its URL (400).
+    content: z.string().optional().nullable(),
     // EP-3 — multi-select control association. When present, the edit
     // reconciles EvidenceControlLink rows to exactly this set (adds/removes
     // links rather than moving the record). Omitted ⇒ links untouched.

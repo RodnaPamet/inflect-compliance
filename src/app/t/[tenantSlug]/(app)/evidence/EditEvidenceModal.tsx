@@ -190,7 +190,10 @@ export function EditEvidenceModal({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, initial]);
 
-    const canSubmit = title.trim().length > 0 && !submitting;
+    // A link's body is its URL, which the server refuses to clear.
+    const isLink = initial?.type === 'LINK';
+    const linkNeedsUrl = isLink && !content.trim();
+    const canSubmit = title.trim().length > 0 && !linkNeedsUrl && !submitting;
 
     const submit = async () => {
         if (!initial) return;
@@ -390,7 +393,10 @@ export function EditEvidenceModal({
                             is the internal storage pathKey rather than
                             anything a user wrote. */}
                         {contentEditable && (
-                        <FormField label={t('edit.descriptionLabel')}>
+                        <FormField
+                            label={isLink ? t('edit.addressLabel') : t('edit.descriptionLabel')}
+                            error={linkNeedsUrl ? t('edit.linkNeedsUrl') : undefined}
+                        >
                             <Textarea
                                 id="edit-evidence-description"
                                 className="h-24"
