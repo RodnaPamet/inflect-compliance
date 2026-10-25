@@ -575,7 +575,6 @@ describe('the data-lifecycle mock factory covers the module it replaces', () => 
         const real = jest.requireActual('@/app-layer/jobs/data-lifecycle') as Record<
             string, unknown
         >;
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const mocked = require('@/app-layer/jobs/data-lifecycle') as Record<string, unknown>;
 
         const realFns = Object.keys(real).filter((k) => typeof real[k] === 'function');

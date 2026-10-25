@@ -403,7 +403,6 @@ describe('pull failure falls back through both lookups before creating one', () 
         const store = scriptedStore();
         store.findByLocalEntity.mockResolvedValue(makeMapping());
         const orch = new StubOrchestrator(store);
-        // eslint-disable-next-line no-throw-literal -- deliberately not an Error
         orch.applyThrows = 'remote closed the connection' as unknown as Error;
 
         const r = await pull(orch);

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test-mock pattern. */
 /**
  * SP-4 — Graph change-notification webhook receiver: the validation handshake,
  * clientState anti-spoof verification, and pull-job enqueue.

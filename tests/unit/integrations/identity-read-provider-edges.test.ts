@@ -29,7 +29,6 @@ const jsonErr = (status: number) => ({ ok: false, status, json: async () => ({})
 
 /** A throwaway RSA key so the DWD assertion can actually be signed. */
 function serviceAccount(): { client_email: string; private_key: string } {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const crypto = require('node:crypto') as typeof import('node:crypto');
     const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     return {

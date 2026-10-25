@@ -160,7 +160,6 @@ describe('the leaf stays a leaf', () => {
                 throw new Error('adjudication-mode must not import the transport');
             });
             expect(() => {
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
                 require('@/lib/legacy-access/adjudication-mode');
             }).not.toThrow();
         });
@@ -175,7 +174,6 @@ describe('the leaf stays a leaf', () => {
                 throw new Error('loaded');
             });
             expect(() => {
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
                 require('@/app-layer/ai/identity-match/jev-provider');
             }).toThrow(/loaded/);
         });

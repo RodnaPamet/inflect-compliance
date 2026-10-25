@@ -180,7 +180,6 @@ describe('the Flue skill corpus', () => {
 });
 
 describe('resolving a workflow definition\'s declared skills', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { resolveSkillsFor, resetSkillCache } = require('@/lib/agentic/flue/skills/resolve');
     beforeEach(() => resetSkillCache());
 

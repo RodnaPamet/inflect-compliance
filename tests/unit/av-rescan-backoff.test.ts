@@ -247,7 +247,6 @@ function seed(id: string, over: Partial<Row> & { bytes?: Buffer; storeBytes?: bo
 }
 
 function loadJob() {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('@/app-layer/jobs/av-rescan') as typeof import('@/app-layer/jobs/av-rescan');
 }
 
@@ -522,7 +521,6 @@ describe('#120 the attempt record and the verdict are separate writes', () => {
 // ════════════════════════════════════════════════════════════════════
 
 describe('#120 the backoff schedule', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const repo = () =>
         require('@/app-layer/repositories/FileRepository') as typeof import('@/app-layer/repositories/FileRepository');
 

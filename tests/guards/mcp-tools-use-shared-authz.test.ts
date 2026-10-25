@@ -44,9 +44,7 @@ import { PERMISSION_SCHEMA } from '@/lib/permissions';
 // import of a CJS parser yields the interop wrapper rather than the parser
 // object, and a flat config silently falls back to espree — which cannot read a
 // type annotation, so every TypeScript file would "lint clean".
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const tsParser = require('@typescript-eslint/parser');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const rule = require('../../eslint-rules/rules/require-mcp-tool-authorization');
 
 const RULE_ID = 'require-mcp-tool-authorization';

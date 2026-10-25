@@ -36,7 +36,6 @@ jest.mock('next/navigation', () => ({
 
 // ─── next-intl → resolve against en.json ────────────────────────────
 jest.mock('next-intl', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const en = require('../../messages/en.json');
     return {
         useTranslations: (ns?: string) => (key: string) => {

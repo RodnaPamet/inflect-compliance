@@ -85,7 +85,6 @@ describe('aws-posture — credential hygiene', () => {
 
 describe('aws-posture — mapping validity', () => {
     it('every mapped SOC 2 code resolves to a real IC SOC 2 requirement', () => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { allMappedRequirementCodes } = require('@/data/integrations/aws-posture-control-map');
         // IC's seeded SOC2 codes (prisma/seed.ts soc2Reqs).
         const seed = read('prisma/seed.ts');
@@ -108,7 +107,6 @@ describe('aws-posture — mapping validity', () => {
     });
 
     it('every mapped NIST CSF code resolves to a real subcategory in the NIST CSF library', () => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { allMappedRequirementCodes } = require('@/data/integrations/aws-posture-control-map');
         // NIST CSF 2.0 is an installable YAML library — resolve against its ref_ids.
         const yaml = readRaw('src/data/libraries/nist-csf-2.0.yaml');
@@ -157,7 +155,6 @@ describe('cloud-posture crosswalks — BOTH sides of every mapping', () => {
     } as const;
 
     const mapFor = (cloud: keyof typeof MAPS): Record<string, { soc2: string[]; nistCsf?: string[] }> => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const mod = require(MAPS[cloud]);
         const key = Object.keys(mod).find((k) => k.endsWith('_POSTURE_CONTROL_MAP'));
         expect(key).toBeDefined();
@@ -235,7 +232,6 @@ describe('cloud-posture crosswalks — BOTH sides of every mapping', () => {
             (c) => !(SNAPSHOTTED as readonly string[]).includes(c),
         );
         expect(unsnapshotted).toEqual([]);
-        // eslint-disable-next-line no-console
         console.log(
             `#3439 — control-id resolution covers ${SNAPSHOTTED.length}/${Object.keys(MAPS).length} clouds ` +
                 `(${SNAPSHOTTED.join(', ')})` +

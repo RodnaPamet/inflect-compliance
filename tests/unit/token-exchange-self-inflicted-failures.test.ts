@@ -23,7 +23,6 @@ import {
 
 /** A throwaway RSA key so the assertion can actually be signed. */
 function makeServiceAccountJson(): string {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const crypto = require('node:crypto') as typeof import('node:crypto');
     const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     return JSON.stringify({

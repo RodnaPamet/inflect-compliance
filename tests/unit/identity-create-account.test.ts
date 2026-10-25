@@ -324,7 +324,6 @@ describe('the snapshot provisioner cannot write — what makes DRY_RUN honest (#
     // to. If any of its four mutating verbs returned `applied`, a dry run and a
     // real run would be indistinguishable in the journal. These assertions are
     // the reason raising JOINER_MAX_MODE is not merely a constant change.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { createSnapshotProvisioner } = require('@/app-layer/integrations/identity-provisioner');
 
     it('refuses all four mutating verbs, and refuses rather than going indeterminate', async () => {

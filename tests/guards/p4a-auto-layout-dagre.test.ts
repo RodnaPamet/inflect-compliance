@@ -159,7 +159,6 @@ describe("Epic P4-PR-A — canvas auto-layout (dagre)", () => {
         });
 
         it("the command palette has a Layout group with both directions", () => {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const en = require('../../messages/en.json');
             expect(en.automation.canvas.groupLayout).toBe('Layout');
             expect(commands).toMatch(/heading:\s*t\(['"]groupLayout['"]\)/);

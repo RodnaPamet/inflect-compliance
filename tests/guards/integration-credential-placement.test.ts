@@ -224,7 +224,6 @@ describe('#3458 — Graph requests carry a real Accept-Language', () => {
         // vacuously, and this guard is only worth anything over a real set.
         expect(callers).toBeGreaterThanOrEqual(7);
         expect(missing).toEqual([]);
-        // eslint-disable-next-line no-console
         console.log(`#3458 — ${callers} Graph-calling files, all via graphHeaders`);
     });
 });
@@ -286,7 +285,6 @@ describe('provider mapping verification is declared and meaningful', () => {
             .map((p) => p.id);
         // REPORTED, not ratcheted. Driving this down needs a vendor tenant most
         // of these do not have, and a gate that cannot go green gets disabled.
-        // eslint-disable-next-line no-console
         console.log(
             `#3431 — ${unrecorded.length}/${providers.length} providers have no recorded `
                 + `live mapping run: ${unrecorded.join(', ') || 'none'}`,
@@ -322,7 +320,6 @@ describe('provider mapping verification is declared and meaningful', () => {
  * the same name.
  */
 describe('#3432 — the mapping census covers BOTH registries', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { integrationRegistry: bundleRegistry } = require('@/app-layer/integrations/registry');
     const bundles = (): Array<{ name: string; mappingVerifiedBy?: string | null }> =>
         bundleRegistry.listBundles();
@@ -364,7 +361,6 @@ describe('#3432 — the mapping census covers BOTH registries', () => {
                 .map((p) => p.id),
             ...orphans.filter((b) => b.mappingVerifiedBy === null).map((b) => b.name),
         ];
-        // eslint-disable-next-line no-console
         console.log(
             `#3432 — union census: ${unrecorded.length}/${unionSize} integrations have no `
                 + `recorded live mapping run (${ids.size} providers + ${orphans.length} bundle-only): `

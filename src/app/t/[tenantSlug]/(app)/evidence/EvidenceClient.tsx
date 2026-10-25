@@ -644,7 +644,6 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // Distinct sparkline colour per card (canonical allocator) — no two cards
     // on the row share a colour. Memo on [] so the random allocation is stable
     // for this page view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'draft', 'submitted', 'approved']),
         [],

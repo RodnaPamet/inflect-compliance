@@ -162,7 +162,6 @@ describe('every @tiptap/core resists the mergeAttributes prototype attack', () =
     });
 
     it.each(copies)('$version resolved from $from is not vulnerable', ({ entry }) => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { mergeAttributes } = require(entry) as {
             mergeAttributes: (...objects: unknown[]) => Record<string, unknown>;
         };

@@ -196,9 +196,9 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     const [todayMs] = React.useState(() => startOfUtcDay(new Date()).getTime());
 
     const monthCursorMs = monthCursor.getTime();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const range = React.useMemo(
         () => rangeForView(view, monthCursor, todayMs),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         [view, monthCursorMs, todayMs],
     );
 
