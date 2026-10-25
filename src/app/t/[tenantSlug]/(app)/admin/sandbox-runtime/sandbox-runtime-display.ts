@@ -43,7 +43,7 @@
  *      the best available answer.
  *   5. tenant-switch   — the one row this product owns and can flip.
  */
-import type { ReportingChannelKey, SandboxRuntimeDeclaration } from '@/app-layer/usecases/sandbox-runtime-config';
+import type { ReportingChannelKey, SandboxRuntimeDeclaration } from '@/lib/sandbox-runtime/declarations';
 
 export type RuntimeRowKind =
     /** No sandbox runtime is declared by this deploy. */

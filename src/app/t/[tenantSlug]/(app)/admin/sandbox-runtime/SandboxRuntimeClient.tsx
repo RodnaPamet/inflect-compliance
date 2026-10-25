@@ -37,7 +37,7 @@ import {
     ENFORCEMENT_SETTINGS,
     REPORTING_CHANNELS,
     type SandboxRuntimeDeclaration,
-} from '@/app-layer/usecases/sandbox-runtime-config';
+} from '@/lib/sandbox-runtime/declarations';
 
 import {
     displayForChannel,
