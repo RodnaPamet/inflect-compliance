@@ -97,7 +97,7 @@ import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
 import { captureAuditNarrativeAfterRun } from './audit-workpaper-narrative';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
-import type { AgentDriver } from '@/lib/agentic/agent-driver';
+import { isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
 import {
     estimateTokens,
     type WorkflowContext,
@@ -481,7 +481,7 @@ export async function startWorkflowRun(
     // a refusal after the row exists leaves a RUNNING run nothing will
     // advance, which the reaper later reports as a crashed executor — a
     // refusal wearing the costume of an outage.
-    if (chosenDriver === 'flue') {
+    if (isReasoningEngine(chosenDriver)) {
         const gate = await evaluateAgentRegistration(ctx);
         if (gate.standing !== 'vouched') {
             throw forbidden(
@@ -504,7 +504,7 @@ export async function startWorkflowRun(
     // A Flue run in this tenant also mounts the tenant's OWN approved skills
     // that name this workflow (#3680), through the same gate, and pins them
     // beside the repository's, marked `origin: 'tenant'`.
-    const mountedSkills = chosenDriver === 'flue' ? await pinSkillsOrRefuse(ctx, def) : [];
+    const mountedSkills = isReasoningEngine(chosenDriver) ? await pinSkillsOrRefuse(ctx, def) : [];
 
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
@@ -583,7 +583,7 @@ export async function startWorkflowRun(
     //
     // Moving BOTH would change the contract of every existing run — the route
     // returns a terminal status today — for no benefit the static engine needs.
-    if (chosenDriver === 'flue') {
+    if (isReasoningEngine(chosenDriver)) {
         await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id });
         // RUNNING is what `createSealedRun` wrote (the column's default), and
         // it is reported rather than a synthesised QUEUED. The reaper already
@@ -692,7 +692,7 @@ export async function resumeWorkflowRun(
     //
     // The fix is the worker's, not a new one: re-check the agent is still in
     // service, and restore the binding the run was started under.
-    if (resumeDriver === 'flue' && !(await runAgentStillInService(ctx.tenantId, run.agentId))) {
+    if (isReasoningEngine(resumeDriver) && !(await runAgentStillInService(ctx.tenantId, run.agentId))) {
         throw forbidden(
             'resume_agent_no_longer_in_service: the registered agent this run was started ' +
                 'by is no longer ACTIVE, so the run does not resume on its behalf. ' +
@@ -794,7 +794,7 @@ export async function resumeWorkflowRun(
     // walk over a hand-written step array with no model call in it is bounded,
     // deterministic and finished well inside a request, and moving it would
     // change the contract of every existing run for no benefit.
-    if (resumeDriver === 'flue') {
+    if (isReasoningEngine(resumeDriver)) {
         // THE RESUME POINT, MADE DURABLE FIRST. The worker resumes from
         // `row.stepCount`; this path had computed `resumedFrom + 1` and passed
         // it as an argument, which does not survive the hop. Writing it is what
