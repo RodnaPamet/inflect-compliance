@@ -207,6 +207,7 @@ function mountAs(role: Role) {
                     appPermissions={{
                         tasks: { create: perms.tasks.create, edit: perms.tasks.edit },
                     }}
+                    canAdmin={currentPermissions.canAdmin}
                 />
             </TooltipProvider>
         </SWRConfig>,
@@ -251,9 +252,13 @@ describe('Tasks list — the write surface each role actually gets', () => {
         view.unmount();
     });
 
-    it.each(['OWNER', 'ADMIN', 'EDITOR'] as const)(
-        '%s can create, quick-edit, and reach all four bulk actions',
-        async (role) => {
+    it.each([
+        ['OWNER', true],
+        ['ADMIN', true],
+        ['EDITOR', false],
+    ] as const)(
+        '%s can create and quick-edit; bulk Delete is offered only to the admin tier (admin: %s)',
+        async (role, admin) => {
             mountAs(role);
             await screen.findByText(HIGH_TASK.title);
 
@@ -262,8 +267,10 @@ describe('Tasks list — the write surface each role actually gets', () => {
 
             await selectEveryRow();
 
-            // The bulk bar appears with the selection and offers the four
-            // actions the tasks API supports — assign, status, due, delete.
+            // The bulk bar appears with the selection and offers what the
+            // tasks API lets this role do: assign, status and due for every
+            // editor, and delete only for the admin tier, which the server
+            // requires (#4278: an Editor was offered it and refused).
             const select = await waitFor(() => {
                 const el = document.getElementById('bulk-action-select');
                 expect(el).not.toBeNull();
@@ -277,13 +284,10 @@ describe('Tasks list — the write surface each role actually gets', () => {
                 .getAllByRole('option')
                 .map((o) => o.textContent?.trim());
             expect(labels).toEqual(
-                expect.arrayContaining([
-                    BULK.assign,
-                    BULK.changeStatus,
-                    BULK.setDueDate,
-                    BULK.delete,
-                ]),
+                expect.arrayContaining([BULK.assign, BULK.changeStatus, BULK.setDueDate]),
             );
+            if (admin) expect(labels).toContain(BULK.delete);
+            else expect(labels).not.toContain(BULK.delete);
         },
     );
 

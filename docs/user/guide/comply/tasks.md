@@ -24,11 +24,6 @@ Open **{{ui:nav.tasks}}** under **{{ui:nav.comply}}** in the sidebar. The breadc
 
 Every role can tick rows, but only roles that can edit tasks get actions in the selection bar. For the other roles the quick view is read-only. If your workspace uses custom roles, what you can do depends on the permissions your role was given.
 
-Editors are offered two actions that the server refuses them:
-
-- **{{ui:tasks.bulk.delete}}** in the selection bar. The rows disappear and the undo message appears, but when the five seconds run out the deletion is refused, the message reads **{{ui:tasks.bulk.failed}}** and the rows come back.
-- **{{ui:tasks.list.showDeleted}}** in the **{{ui:common.ui.viewsMenu}}** menu. The deleted tasks do not load: the table goes on listing active tasks, each with a **{{ui:tasks.list.restore}}** button that fails.
-
 Any active member can be named a task's reviewer. A Reader, Auditor or AI admin cannot change a task's status, though, so a task whose reviewer has one of those roles can only be canceled, or given another reviewer on the task's own page.
 
 ## What it is for
@@ -51,7 +46,7 @@ Use the page to move compliance work to closure: see what is open, overdue or du
 - **{{ui:tasks.list.addBtn}}** opens the new-task dialog. Only roles that can create tasks see it.
 - The **{{ui:common.ui.filter}}** button holds the search and the filters. Its search box, **{{ui:tasks.list.searchPlaceholder}}**, matches a task's title or its reference, such as TSK-12, as you type. The filters are {{ui:tasks.filters.status}}, {{ui:tasks.filters.type}}, {{ui:tasks.filters.severity}}, {{ui:tasks.filters.source}}, {{ui:tasks.filters.due}}, {{ui:tasks.filters.awaitingReview}}, {{ui:tasks.filters.assignee}} and {{ui:tasks.filters.linkedControl}}. Each active filter shows as a pill beside the button; remove a pill to drop that filter. Filters are kept in the page address, so a filtered view can be bookmarked or shared with a colleague who has access to the workspace.
 - **{{ui:tasks.list.assignedToMe}}** and **{{ui:tasks.list.awaitingMyReview}}** filter to your own work. See below.
-- **{{ui:common.ui.viewsMenu}}** holds **{{ui:tasks.list.showDeleted}}**, for roles that can edit tasks.
+- **{{ui:common.ui.viewsMenu}}** holds **{{ui:tasks.list.showDeleted}}**, for Owners and Admins.
 - Two settings buttons close the row. The first chooses which table columns are shown, the second which summary cards.
 
 Some filters work differently from the others:
@@ -120,9 +115,9 @@ Click the task's title, or the pencil at the end of its row, and change any fiel
 Tick the rows you want, up to 100 at a time; the box in the header ticks every row loaded so far. Choose an action from **{{ui:common.table.chooseAction}}** in the selection bar, then click **{{ui:common.table.apply}}**:
 
 - **{{ui:tasks.bulk.assign}}** gives them all one assignee. Leave the person empty to unassign them.
-- **{{ui:tasks.bulk.changeStatus}}** offers {{ui:tasks.statusLabels.OPEN}}, {{ui:tasks.statusLabels.TRIAGED}}, {{ui:tasks.statusLabels.IN_PROGRESS}}, {{ui:tasks.statusLabels.IN_REVIEW}} and {{ui:tasks.statusLabels.BLOCKED}}. {{ui:tasks.statusLabels.OPEN}} is always refused, since no task can return to it. Closing and canceling need a resolution note, so they are done one task at a time.
+- **{{ui:tasks.bulk.changeStatus}}** offers {{ui:tasks.statusLabels.TRIAGED}}, {{ui:tasks.statusLabels.IN_PROGRESS}}, {{ui:tasks.statusLabels.IN_REVIEW}} and {{ui:tasks.statusLabels.BLOCKED}}. Closing and canceling need a resolution note, so they are done one task at a time.
 - **{{ui:tasks.bulk.setDueDate}}** gives them all one due date. Leave the date empty to clear it.
-- **{{ui:tasks.bulk.delete}}** removes them from the list. For five seconds a message offers **{{ui:tasks.bulk.undo}}**; nothing is deleted until that time runs out.
+- **{{ui:tasks.bulk.delete}}**, for Owners and Admins, removes them from the list. For five seconds a message offers **{{ui:tasks.bulk.undo}}**; nothing is deleted until that time runs out.
 
 A status change goes through for every selected task or for none. Assigning is refused when the person is the reviewer of any selected task. Whenever a bulk action is refused, the message reads **{{ui:tasks.bulk.failed}}** without the reason, and the rows go back to how they were. If you assign or set a due date and some tasks were deleted in the meantime, a warning says how many were updated and how many skipped.
 

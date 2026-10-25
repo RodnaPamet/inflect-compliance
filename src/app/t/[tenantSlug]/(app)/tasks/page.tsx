@@ -68,6 +68,7 @@ export default async function TasksPage({
             appPermissions={{
                 tasks: ctx.appPermissions.tasks,
             }}
+            canAdmin={ctx.permissions.canAdmin}
         />
     );
 }

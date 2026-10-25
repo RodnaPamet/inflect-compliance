@@ -469,6 +469,9 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 : []),
             // No `confirm` — bulk delete is a soft delete surfaced through the
             // Epic 67 undo-toast (handleBulkApply), not a blocking confirm.
+            // Owners and Admins only: the route requires `admin.manage` and the
+            // usecase `assertCanAdmin`, so an Editor offered it watched the
+            // rows vanish and come back when the undo window ran out (#4276).
             ...(canManageLifecycle ? [{ value: 'delete', label: tx('bulk.delete') }] : []),
         ],
         [tenantSlug, tx, canEdit, canManageLifecycle],
