@@ -9367,7 +9367,7 @@
       "connectionLabel": "Tool server",
       "refresh": "Refresh catalogue",
       "loading": "Reading the server catalogue…",
-      "refusedNames": "{count, plural, one {# tool the server offers is not listed: its name is} other {# tools the server offers are not listed: their names are}} empty or longer than {max} characters, the most a tool name may be.",
+      "refusedNames": "{count, plural, one {# tool the server offers is not listed: its name is empty, is longer than {max} characters, or contains a control, line-break or invisible character.} other {# tools the server offers are not listed: their names are empty, are longer than {max} characters, or contain control, line-break or invisible characters.}}",
       "loadFailed": "Could not read the catalogue from this server.",
       "approve": "Approve",
       "reapprove": "Re-approve",

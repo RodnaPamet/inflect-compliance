@@ -189,6 +189,51 @@ describe('what comes back is bounded and distrusted', () => {
         });
     });
 
+    it('refuses a tool NAME carrying a control, line-break or invisible character, and counts it', async () => {
+        // A line break forges a line in any reader that prints the name as
+        // text; a bidi override or a zero-width character makes one name read
+        // as another on screen; a lone surrogate is stored as U+FFFD, so two
+        // names would become one. Other printable characters are accepted
+        // (owner decision, 2026-10-25), because a real server may use them.
+        const refused = {
+            'line feed': 'a\nb',
+            'carriage return': 'a\rb',
+            tab: 'a\tb',
+            NUL: 'a\u0000b',
+            DEL: 'a\u007fb',
+            'C1 next line': 'a\u0085b',
+            'line separator': 'a b',
+            'paragraph separator': 'a b',
+            'right-to-left override': 'a‮b',
+            'left-to-right isolate': 'a⁦b',
+            'left-to-right mark': 'a‎b',
+            'zero-width space': 'a​b',
+            'zero-width joiner': 'a‍b',
+            'byte order mark': '﻿ab',
+            'soft hyphen': 'a­b',
+            'variation selector': 'a️b',
+            'Hangul filler': 'aㅤb',
+            'tag character': 'a\u{E0041}b',
+            'lone high surrogate': 'a\ud800b',
+            'lone low surrogate': 'a\udc00b',
+        };
+        const accepted = ['ns/tool', 'ns:tool', 'two words', 'café', 'café', '工具', '\u{1F527}tool', 'v1.2-x_y'];
+        const at = (name: string) => ({ name, description: 'd', inputSchema: {} });
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                result: { tools: [...Object.values(refused).map(at), ...accepted.map(at)] },
+            })),
+        );
+
+        const read = await listTools(OPTS);
+        expect({ names: read.tools.map((t) => t.name), refusedNames: read.refusedNames }).toEqual({
+            names: accepted,
+            refusedNames: Object.keys(refused).length,
+        });
+    });
+
     it('turns a non-2xx into a client error rather than parsing the body', async () => {
         safeFetchMock.mockResolvedValue(bodyOf('{}', false, 503));
 
