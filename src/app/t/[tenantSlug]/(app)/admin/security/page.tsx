@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } 
 import { useTranslations } from 'next-intl';
 import { Card, cardVariants } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from '@/lib/tenant-context-provider';
 import { AgentEnforcementCard } from './AgentEnforcementCard';
 import { ApiKeyRotationCard } from './ApiKeyRotationCard';
 import { ShieldCheck, Save, AlertTriangle, LogOut, Users, UserX } from 'lucide-react';
@@ -47,6 +47,10 @@ export default function AdminSecurityPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { tenantSlug, userId: currentUserId } = useTenantContext();
+    // Only an Owner signs out an Owner or an AI admin (owner decision,
+    // 2026-10-25); the picker cannot see roles, so the server refuses and the
+    // field says so up front.
+    const canRevokeOwnerManaged = usePermissions().admin.owner_management;
     /**
      * What is STORED, or null until it loads. Null after a failed load too, and
      * that is the point (#4117): the page used to start from Disabled and an
@@ -424,7 +428,10 @@ export default function AdminSecurityPage() {
                 <div className="border-t border-border-default/50 pt-4">
                     <div className="flex gap-tight items-end">
                         <div className="flex-1 min-w-0">
-                            <FormField label={t('security.revokeSpecificLabel')}>
+                            <FormField
+                                label={t('security.revokeSpecificLabel')}
+                                description={canRevokeOwnerManaged ? undefined : t('security.revokeOwnerOnlyHint')}
+                            >
                                 <UserCombobox
                                     id="revoke-user-picker"
                                     tenantSlug={tenantSlug}

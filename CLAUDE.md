@@ -491,7 +491,12 @@ OTHER `UserSession` rows and keeps the one named by the request JWT's
 session cannot be identified. Revoke All (`revoke-all`, ACTIVE members
 only, the caller's current session kept) and per-user revocation bump
 `sessionVersion` AND stamp the rows — the version bump stays the
-coarse-grained backstop for a token whose row was never written.
+coarse-grained backstop for a token whose row was never written. Signing
+ONE person out — per-user or one device — of an OWNER or AI_ADMIN needs
+`admin.owner_management`, as deactivating one does
+(`assertMayRevokeSessionsOf`, `REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER`;
+owner decision, 2026-10-25); Revoke All does not ask it, being the incident
+lever.
 
 **C.4 — Audit event streaming.** Every committed audit row is
 fired through `streamAuditEvent` into a per-tenant in-memory
