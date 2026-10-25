@@ -68,7 +68,11 @@ CI stays green — is structurally blocked, not left to memory:
   deleting verification trips CI, and every release locks the surplus
   in: `scripts/raise-coverage-floors.mjs` runs as semantic-release's
   prepare step and raises each floor in `tests/guards/coverage-floors.json`
-  to its live count, so a pull request never edits a floor. Roadmap-4's <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
+  to its live count, so a pull request never edits a floor. Between
+  releases the same guard holds each change to its base commit: no count
+  may fall below what it was at the base, so a deletion cannot hide in
+  tests merged since the last release. A deliberate removal lowers the
+  floor by the same amount in the same change. Roadmap-4's <!-- docs-accuracy-allow: shipped-epic codename, not future tense -->
   registry froze a *named* set; this keeps the whole rendered/E2E
   *population* from eroding.
 - **The guardrails themselves** → `verification-integrity.test.ts`

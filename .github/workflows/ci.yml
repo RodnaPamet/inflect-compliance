@@ -802,7 +802,15 @@ jobs:
     env:
       SKIP_ENV_VALIDATION: '1'
     steps:
+      # Two commits, not one: tests/guards/rendered-coverage-floor.test.ts
+      # measures the change against its base, which is the FIRST PARENT of
+      # the commit checked out here — the base branch for a pull request's
+      # test-merge commit, the candidates ahead for a merge-queue squash,
+      # the previous main for a push. With the default depth of 1 that
+      # parent is absent and the guard fails, saying so.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
 
       - name: Setup Node + Prisma client
         uses: ./.github/actions/setup-node-prisma
