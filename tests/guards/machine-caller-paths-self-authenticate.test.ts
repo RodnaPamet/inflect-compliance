@@ -83,7 +83,15 @@ const CONTRACTS: ReadonlyArray<{
     {
         prefix: '/api/mcp',
         handler: 'api/mcp/route.ts',
-        gate: /authenticateMcpRequest\s*\(/,
+        // `authenticateMcpCredential`, not `authenticateMcpRequest`: #4205 split
+        // authentication in two so the per-key budget could be charged between
+        // the halves, and THIS is the half that gates — it verifies the key, the
+        // MCP scope and the registration gate. The other half
+        // (`buildInvocationForCredential`) assembles authority and opens
+        // sockets to a customer's servers, which is exactly why it had to move
+        // below the charge. Naming the composed function here would pass for a
+        // route that authenticated nothing of its own.
+        gate: /authenticateMcpCredential\s*\(/,
         why: 'Bearer TenantApiKey with an mcp:read capability scope',
     },
     {

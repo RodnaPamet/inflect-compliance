@@ -112,10 +112,33 @@ describe('MCP server — authentication inherits the TenantApiKey chain', () => 
         expect(auth).toMatch(/throw forbidden\(/);
     });
 
-    it('the route authenticates every request before dispatch', () => {
-        expect(route).toMatch(/authenticateMcpRequest\(req\)/);
-        // Auth must precede body dispatch.
-        expect(route.indexOf('authenticateMcpRequest')).toBeLessThan(route.indexOf('dispatchMcp'));
+    it('the route authenticates, charges, builds authority and only then dispatches', () => {
+        // ON CALL SITES, NOT BARE NAMES. Every one of these is also an IMPORT at
+        // the top of the file, so `indexOf('<name>')` finds the import — which
+        // made the ordering this test existed for a comparison of import
+        // positions, satisfied by the import block alone. The needles below
+        // carry the argument, so only the call matches.
+        const at = (needle: string): number => {
+            const i = route.indexOf(needle);
+            expect(i).toBeGreaterThan(-1);
+            return i;
+        };
+
+        const authenticates = at('authenticateMcpCredential(req)');
+        const charges = at('enforceApiKeyRateLimit({');
+        const buildsAuthority = at('buildInvocationForCredential(credential)');
+        const dispatches = at('dispatchMcp(request');
+
+        // Authentication first: the budget is keyed on a VERIFIED key id.
+        expect(authenticates).toBeLessThan(charges);
+        // Then the charge — BEFORE authority is assembled (#4205). Building it
+        // sends one live `tools/list` to every external connection the agent
+        // holds a grant on, which is traffic to a customer's own server, so a
+        // caller must not be able to direct it unpaid.
+        expect(charges).toBeLessThan(buildsAuthority);
+        // And nothing is dispatched until the authority every tool call is
+        // authorized against exists.
+        expect(buildsAuthority).toBeLessThan(dispatches);
     });
 
     it('mcp:read + mcp:propose are registered scopes; there is no write-direct scope', () => {

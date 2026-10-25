@@ -429,7 +429,9 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       mechanism: /ServiceProviderConfig/,
       note: 'RFC 7644 §4 discovery document — fetched before the IdP holds a token, returns static capability flags only.' },
     { handler: 'api/mcp/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL',
-      mechanism: /authenticateMcpRequest/,
+      // Renamed by #4205, which split authentication so the per-key budget
+      // could be charged between the halves. This is the half that gates.
+      mechanism: /authenticateMcpCredential/,
       note: 'Bearer TenantApiKey. The per-tool enforceApiKeyScope + usecase assertCanRead sit deeper than the hop budget, so only the key check is visible from here.' },
     // The inbound A2A endpoint (#3679). Another organisation's agent: no
     // session or role stands behind it. `handleInboundA2a` checks, in order and
