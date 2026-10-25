@@ -1004,13 +1004,14 @@ Adding a new model ⇒ classify it in the doc's inventory table (the
 **See `docs/change-management-policy.md`** — the written contract over the
 existing rapid-release pipeline (semantic-release auto-versions main on each push
 that leaves the merge queue empty, plus a daily run, so its commit does not
-invalidate queue candidates in flight; staging auto-deploys; production is gated
-by a GitHub Environment approval).
+invalidate queue candidates in flight; a merge reaches production with no further
+approval, through `ghcr-publish.yml` and Watchtower — there is no staging stage
+and no deployment approval yet built, #4056).
 It defines the three change classes (STANDARD / SIGNIFICANT / EMERGENCY), the
 approval matrix (who is the required second approver for migrations, infra, secret
 rotations, SSO/SCIM changes), the emergency-bypass + retrospective procedure, the
 rollback policy (app = redeploy prior image; migrations = forward-fix, never
-revert), and the audit trail (PR + CI + Environment approval + CHANGELOG). It is
+revert), and the audit trail (PR + merge-queue CI + published image + CHANGELOG). It is
 the policy twin of `docs/deployment.md` (operational) and cross-links
 `docs/incident-response.md` (on-call rotation). A SIGNIFICANT change — a schema
 migration, a security-middleware change, a dependency major bump — must carry a
@@ -2753,8 +2754,11 @@ without a classification fails `tsc`. The registration gate, the skill pin and
 the worker hand-off in `startWorkflowRun` and `resumeWorkflowRun` ask it, so the
 next engine is vouched, pinned and kept off the web tier without anybody
 remembering those lines. A comparison that genuinely means Flue (the
-`FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
-stays a comparison.
+Flue-specific gate in `agent-driver-policy.ts`) stays a comparison. Which engine
+a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — is
+`recordedModeOf(driver)`, a `Record<AgentDriver, AgentDriverMode>`, never a
+`'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
+every run it walks as STATIC (#4270).
 
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
@@ -2871,8 +2875,8 @@ Two scenarios are easy to weaken by accident:
   2026-08-25 — it was `push`/`schedule`/`dispatch`-only while a separate
   `Coverage (shard N/4)` matrix re-ran the whole suite to instrument it).
 
-  It now merges **six** artifacts, and which six is load-bearing.
-  Coverage is collected by the jobs that already run the suite: the four
+  It now merges **nine** artifacts, and which nine is load-bearing.
+  Coverage is collected by the jobs that already run the suite: the seven
   `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files), `Ratchets`
   (guards + guardrails + contracts, 661 files) and `Flue`
   (`coverage-shard-flue`). Those sets are

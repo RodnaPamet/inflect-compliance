@@ -74,7 +74,7 @@ describeFn('Workflow context integrity (real DB)', () => {
     afterAll(async () => {
         await prisma.workflowStep.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
         await prisma.workflowRun.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-        await prisma.user.deleteMany({ where: { id: USER } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: USER } });
         await prisma.$disconnect();
     });
 

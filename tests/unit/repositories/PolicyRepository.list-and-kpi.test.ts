@@ -44,7 +44,7 @@ describe('PolicyRepository.list — the Category filter', () => {
     it('two categories (the facet comma-joins them) match either, not the joined string', async () => {
         const db = fakeDb();
         await PolicyRepository.list(db, ctx, { category: 'HR,Compliance' });
-        expect(db.policy.findMany.mock.calls[0][0].where.category).toEqual({ in: ['HR', 'Compliance'] });
+        expect(db.policy.findMany.mock.calls[0][0].where.category).toEqual({ in: ['HR,Compliance', 'HR', 'Compliance'] });
     });
 
     it('one category stays an equality match', async () => {
@@ -56,7 +56,7 @@ describe('PolicyRepository.list — the Category filter', () => {
     it('the KPI counts honour two categories the same way', async () => {
         const db = fakeDb();
         await PolicyRepository.kpiCounts(db, ctx, { category: 'HR,Compliance' });
-        expect(db.policy.groupBy.mock.calls[0][0].where.category).toEqual({ in: ['HR', 'Compliance'] });
+        expect(db.policy.groupBy.mock.calls[0][0].where.category).toEqual({ in: ['HR,Compliance', 'HR', 'Compliance'] });
     });
 });
 

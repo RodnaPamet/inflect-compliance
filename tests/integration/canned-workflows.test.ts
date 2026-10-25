@@ -50,7 +50,7 @@ describeFn('Canned workflow — Audit prep (real DB, end-to-end)', () => {
         await prisma.agentProposal.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
         await prisma.finding.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
         await prisma.policy.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-        await prisma.user.deleteMany({ where: { id: USER } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: USER } });
         if (frameworkId) {
             await prisma.frameworkPack.deleteMany({ where: { frameworkId } }).catch(() => {});
             await prisma.frameworkRequirement.deleteMany({ where: { frameworkId } }).catch(() => {});

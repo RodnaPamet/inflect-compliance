@@ -141,6 +141,18 @@ const verdicts = new Map<string, Verdict>(
  * scanned only inside `afterAll` blocks and missed that file entirely, because
  * its delete sat in a helper the teardown called.
  */
+/**
+ * FIVE SUITES LEFT THIS LIST on 2026-10-25 (#3343): `framework-delta`,
+ * `onboarding-automation-runstepaction`, `risk-bulk-ops`,
+ * `risk-velocity-orchestrator` and `risks-list-asset-column` now clear their
+ * audit rows through `deleteAuditRowsForTenants` before deleting the tenant.
+ *
+ * They were delisted because this guard FAILED and named them — removing a
+ * `.catch(() => {})` from their tenant delete turned each one red with
+ * `AuditLog_tenantId_fkey`, which is what the handler had been discarding, so
+ * fixing it made them `protected` and the no-stale-entries test demanded they
+ * go. That is the loop this guard and #3343 are supposed to form.
+ */
 const GRANDFATHERED: ReadonlySet<string> = new Set([
     'agent-amend.test.ts',
     'agent-monthly-budget-enforcement.test.ts',
@@ -160,7 +172,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'external-write-policy.test.ts',
     'fair-recompute.test.ts',
     'finding-create-modal.test.ts',
-    'framework-delta.test.ts',
     'invite-redemption.test.ts',
     'invite-routes.test.ts',
     'kri-readings.test.ts',
@@ -169,7 +180,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'mcp-propose.test.ts',
     'monte-carlo-job.test.ts',
     'multi-tenant-jwt.test.ts',
-    'onboarding-automation-runstepaction.test.ts',
     'org-dashboard-widget.test.ts',
     'org-lifecycle.test.ts',
     'org-maturity-threat-branches.test.ts',
@@ -186,13 +196,10 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'require-registered-agent-enablement.test.ts',
     'risk-appetite-monitor.test.ts',
     'risk-asset-evidence-usecase.test.ts',
-    'risk-bulk-ops.test.ts',
     'risk-hierarchy-crud.test.ts',
     'risk-matrix-config.test.ts',
     'risk-snapshot-job.test.ts',
     'risk-update-round-trip.test.ts',
-    'risk-velocity-orchestrator.test.ts',
-    'risks-list-asset-column.test.ts',
     'risks-list-owner-attach.test.ts',
     'rls-middleware.test.ts',
     'scenario-simulation.test.ts',
@@ -301,9 +308,26 @@ describe('integration suites clear audit rows before deleting their parents', ()
  * never cleared `AuditLog`. So `protected` is not proof the audit rows are
  * handled — it is proof the file contains one of four spellings. The remaining
  * 20 should be drained by running them, not by trusting that classification.
+ *
+ * 20 -> 10 files and 37 -> 21 sites, same day: the handlers came off all twenty
+ * remaining suites and each was RUN. Ten were dead and are drained. TEN WERE
+ * NOT, and every one of them failed in its teardown with every test passing —
+ * five distinct constraints, counted by SUITE (jest prints each failure twice,
+ * so the raw log line count reads one higher for AuditLog):
+ *
+ *   5 suites  AuditLog_tenantId_fkey          the classic case
+ *   2 suites  TenantMembership_tenantId_fkey  memberships outliving the tenant
+ *   1 suite   TenantMembership_userId_fkey    the same, on the user side
+ *   1 suite   Risk_tenantId_fkey              business rows left behind
+ *   1 suite   Asset_tenantId_fkey             likewise
+ *
+ * So HALF the remaining population had a teardown that could not complete, and
+ * the handler was the only reason nobody knew. Those ten keep their handlers
+ * for now — each needs its own teardown completed, which is three different
+ * fixes, not one — and they are listed with their constraints on #3343.
  */
-const SWALLOWED_FILES_BASELINE = 20;
-const SWALLOWED_SITES_BASELINE = 37;
+const SWALLOWED_FILES_BASELINE = 10;
+const SWALLOWED_SITES_BASELINE = 14;
 
 /**
  * A `.catch(` attached to THIS delete's own statement.

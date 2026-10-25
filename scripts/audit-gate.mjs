@@ -63,24 +63,32 @@ const ALLOWLIST =
 const BLOCKING = new Set(['moderate', 'high', 'critical']);
 
 /**
- * Attempts to reach the registry before giving up.
+ * How long to keep trying the registry before giving up.
  *
  * The budget here is not a taste question — the `security` job is
  * `timeout-minutes: 12` and spends roughly a third of that installing before
- * this step runs. A failing `npm audit` does not fail fast: measured on CI
- * 2026-09-04, one took ~5 minutes to give up. Three unbounded attempts
+ * this step runs. A failing `npm audit` does not always fail fast: measured on
+ * CI 2026-09-04, one took ~5 minutes to give up. Three unbounded attempts
  * therefore blew the job budget and the run was CANCELLED mid-retry, which is
  * strictly worse than the failure it replaced — a cancelled job reports
  * "The operation was canceled" and says nothing about the registry at all.
  *
- * So each attempt is bounded, and the attempts are few: 2 x 180s + 5s of
- * backoff is ~6 minutes worst case, inside the ~8 minutes this step actually
- * has. A healthy audit of this tree takes about a minute, so the per-attempt
- * ceiling is 3x the normal duration and will not cut a working one short.
+ * But it often does fail fast. On 2026-10-25 a short registry outage failed
+ * both of the two attempts this gate then allowed in ~4s each, 9s apart, while
+ * queue builds either side of it read the registry fine. Two attempts were too
+ * close together to outlast a blip.
+ *
+ * So the attempts are bounded by TIME, not just by count. Each one is cut off
+ * at AUDIT_ATTEMPT_TIMEOUT_MS, and another starts only if it, and the backoff
+ * before it, would still end inside AUDIT_BUDGET_MS. The budget is two hung
+ * attempts and the first backoff, which is the worst case the gate has always
+ * had (2 x 180s + 5s, inside the ~8 minutes this step actually has). A fast
+ * failure now gets up to AUDIT_MAX_ATTEMPTS tries over about two minutes; a
+ * hang still gets two. A healthy audit of this tree takes about a minute, so the
+ * per-attempt ceiling is 3x the normal duration and will not cut a working one
+ * short.
  */
-const AUDIT_ATTEMPTS = 2;
-/** Backoff before each retry, in ms. One entry shorter than AUDIT_ATTEMPTS. */
-const AUDIT_BACKOFF_MS = [5000];
+const AUDIT_MAX_ATTEMPTS = 5;
 /**
  * Per-attempt wall clock. A hung npm must not eat the job's whole budget.
  *
@@ -90,6 +98,23 @@ const AUDIT_BACKOFF_MS = [5000];
  * let a finding through.
  */
 const AUDIT_ATTEMPT_TIMEOUT_MS = Number(process.env.AUDIT_ATTEMPT_TIMEOUT_MS) || 180_000;
+/**
+ * Backoff before each retry, in ms; the last entry repeats.
+ *
+ * Overridable (comma-separated) ONLY so the tests can retry in milliseconds.
+ * Like the timeout, it changes how long the gate waits between asks, never what
+ * it accepts.
+ */
+const AUDIT_BACKOFF_MS = parseBackoff(process.env.AUDIT_BACKOFF_MS) ?? [5_000, 15_000, 30_000, 60_000];
+/** Two hung attempts and the first backoff, plus 5s of slack for process start-up. */
+const AUDIT_BUDGET_MS = 2 * AUDIT_ATTEMPT_TIMEOUT_MS + AUDIT_BACKOFF_MS[0] + 5_000;
+
+/** A comma-separated list of positive integers, or null for anything else. */
+function parseBackoff(value) {
+    if (!value) return null;
+    const ms = value.split(',').map(Number);
+    return ms.length > 0 && ms.every((n) => Number.isInteger(n) && n > 0) ? ms : null;
+}
 
 /** Block the thread without pulling in a dependency — this script is sync throughout. */
 function sleepSync(ms) {
@@ -144,7 +169,10 @@ export function auditUnavailable(report) {
  * STALE check and blame the allowlist.
  */
 function runAudit() {
-    for (let attempt = 1; attempt <= AUDIT_ATTEMPTS; attempt++) {
+    const started = Date.now();
+    let attempt = 0;
+    for (;;) {
+        attempt += 1;
         const raw = auditOnce();
         let report = null;
         if (raw !== null) {
@@ -161,14 +189,16 @@ function runAudit() {
                 : report && typeof report === 'object' && report.error
                   ? JSON.stringify(report.error)
                   : 'npm returned no report';
-        console.error(
-            `  npm audit attempt ${attempt}/${AUDIT_ATTEMPTS} did not produce a report: ${detail}`,
-        );
-        if (attempt < AUDIT_ATTEMPTS) sleepSync(AUDIT_BACKOFF_MS[attempt - 1]);
+        console.error(`  npm audit attempt ${attempt} did not produce a report: ${detail}`);
+        const backoff = AUDIT_BACKOFF_MS[Math.min(attempt, AUDIT_BACKOFF_MS.length) - 1];
+        const nextWouldEnd = Date.now() - started + backoff + AUDIT_ATTEMPT_TIMEOUT_MS;
+        if (attempt >= AUDIT_MAX_ATTEMPTS || nextWouldEnd > AUDIT_BUDGET_MS) break;
+        sleepSync(backoff);
     }
+    const seconds = Math.round((Date.now() - started) / 1000);
     console.error(
         '\nnpm audit gate FAILED — the audit could not be run (production deps, moderate+):\n\n' +
-            `  The registry did not return a report after ${AUDIT_ATTEMPTS} attempts.\n` +
+            `  The registry did not return a report after ${attempt} attempts over ${seconds}s.\n` +
             '  This is NOT a clean result and NOT a finding about your dependencies.\n\n' +
             '  Do NOT edit security/audit-allowlist.json in response to this. An audit that\n' +
             '  could not run reports zero advisories, which makes every exemption look stale;\n' +

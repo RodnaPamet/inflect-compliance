@@ -345,11 +345,18 @@ export class PolicyRepository {
             Object.values(PolicyStatus),
             'policy status',
         );
-        // Comma-split like every other multi-select facet: the client joins
-        // two picks as `HR,Compliance`, and comparing that string for
-        // equality matched no policy at all.
-        const category = parseIdListFilter(filters?.category);
-        if (category !== undefined) where.category = category;
+        // The Category facet is multi-select, so the value arrives
+        // comma-joined, and an equality on the joined string matched nothing
+        // once two were picked (#4279). Category is free text, so a single
+        // category may itself hold a comma: match the raw value as well as
+        // its comma-split members.
+        const categories = parseIdListFilter(filters?.category);
+        if (categories) {
+            where.category =
+                typeof categories === 'string'
+                    ? categories
+                    : { in: [...new Set([filters!.category!.trim(), ...categories.in])] };
+        }
         if (filters?.language) where.language = filters.language;
         if (filters?.q) {
             where.OR = [

@@ -19,7 +19,7 @@
  * it exports.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, chmodSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -160,14 +160,49 @@ describe('audit gate: an unreachable registry is not a clean result', () => {
         // Two bounded attempts plus backoff — NOT two unbounded ones. The stub
         // sleeps for 10 minutes, so anything near that means nothing killed it.
         expect(elapsedMs).toBeLessThan(30_000);
+        // The budget fits two hung attempts and no third, at any timeout.
+        expect(out).toContain('attempt 2 did not produce a report');
+        expect(out).not.toContain('attempt 3 ');
     }, 60_000);
+
+    it('keeps asking a registry that fails fast, and passes when it answers', () => {
+        // 2026-10-25: a short registry outage failed both of the two attempts
+        // the gate then allowed, ~4s each and 9s apart, while builds either side
+        // of it read the registry fine. A fast failure must get more tries than
+        // a hang. The backoff is injected in milliseconds; at its real 5-60s it
+        // is the same code path.
+        const counter = path.join(mkdtempSync(path.join(tmpdir(), 'auditcount-')), 'n');
+        const report = reportWith(ALLOWLISTED.map((id) => ({ id, pkg: 'fixture-pkg', severity: 'high' })));
+        const { code, out } = runGate(
+            `#!/bin/sh\nn=$(cat ${counter} 2>/dev/null || echo 0); n=$((n+1)); echo $n > ${counter}\n` +
+                `if [ $n -lt 4 ]; then echo '{ "error": { "code": "E503" } }'; exit 1; fi\n` +
+                `cat <<'PAYLOAD'\n${report}\nPAYLOAD\nexit 1\n`,
+            { AUDIT_BACKOFF_MS: '50' },
+        );
+
+        expect(code).toBe(0);
+        expect(out).toContain('PASSED');
+        // Three failures, then the answer on the fourth ask.
+        expect(readFileSync(counter, 'utf8').trim()).toBe('4');
+    });
+
+    it('stops after five fast failures, and fails closed', () => {
+        const counter = path.join(mkdtempSync(path.join(tmpdir(), 'auditcount-')), 'n');
+        const { code, out } = runGate(
+            `#!/bin/sh\nn=$(cat ${counter} 2>/dev/null || echo 0); n=$((n+1)); echo $n > ${counter}\n` +
+                `echo '{ "error": { "code": "E503" } }'; exit 1\n`,
+            { AUDIT_BACKOFF_MS: '50' },
+        );
+
+        expect(code).toBe(1);
+        expect(out).toContain('after 5 attempts');
+        expect(readFileSync(counter, 'utf8').trim()).toBe('5');
+    });
 
     it('retries, and passes once the registry answers', () => {
         // Errors on the first call, then returns a real report carrying both
         // allowlisted advisories. The gate must recover rather than fail on the
-        // first miss. One failure, not two: the retry budget is deliberately
-        // small (see AUDIT_ATTEMPTS) because a failing `npm audit` is slow and
-        // the job it runs in is time-boxed.
+        // first miss, after the first backoff at its real length.
         const counter = path.join(mkdtempSync(path.join(tmpdir(), 'auditcount-')), 'n');
         const report = reportWith(ALLOWLISTED.map((id) => ({ id, pkg: 'fixture-pkg', severity: 'high' })));
         const { code, out } = runGate(
