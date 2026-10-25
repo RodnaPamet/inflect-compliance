@@ -92,7 +92,6 @@ export function useNewPolicyForm({
     const [error, setError] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
         if (!isTemplateMode) return;
         let cancelled = false;

@@ -125,7 +125,6 @@ export function EvidenceBulkImportModal({
 
     useEffect(() => {
         if (!open) return;
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setError('');
         setJobId(null);
         setStatus(null);
@@ -163,7 +162,6 @@ export function EvidenceBulkImportModal({
             }
             consecutiveFailures += 1;
             if (consecutiveFailures >= MAX_POLL_FAILURES) {
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setError(tx('bulkImport.pollFailed'));
                 return; // stop polling — the operator can retry
             }

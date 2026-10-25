@@ -147,8 +147,8 @@ export default function PolicyTraceabilityPanel({
         }
     }, [endpoint]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         void load();
     }, [load]);

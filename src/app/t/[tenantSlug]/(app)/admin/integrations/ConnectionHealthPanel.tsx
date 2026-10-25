@@ -61,12 +61,10 @@ export function ConnectionHealthPanel() {
             const res = await fetch(apiUrl('/admin/integrations/health'));
             if (res.ok) setData(await res.json());
         } finally {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setLoading(false);
         }
     }, [apiUrl]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchHealth(); }, [fetchHealth]);
 
     // Only render the panel when there is at least one enabled connection.

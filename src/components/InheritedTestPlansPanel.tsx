@@ -61,9 +61,9 @@ export function InheritedTestPlansPanel({
         INCONCLUSIVE: tr('controlTests.filterEnums.result.INCONCLUSIVE'),
     }), [tr]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
         let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         (async () => {
             try {

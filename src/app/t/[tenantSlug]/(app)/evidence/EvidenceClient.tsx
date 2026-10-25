@@ -436,7 +436,6 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         if (ev) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setDetailEvidenceId(ev);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setDetailSheetOpen(true);
         }
     }, [searchParams]);
