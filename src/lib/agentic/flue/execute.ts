@@ -6,7 +6,14 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import { recordExternalToolDecision } from './tool-decision';
-import { updateRun, failRun, haltRunAtCap, haltRunAtGuard, haltRunAtKill } from '@/lib/agentic/drivers/run-settlement';
+import {
+    updateRun,
+    failRun,
+    haltRunAtCap,
+    haltRunAtGuard,
+    haltRunAtKill,
+    type CapBesideKill,
+} from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
@@ -104,7 +111,8 @@ const RANK: Record<StepGuardObservation['verdict'], number> = {
  * is, to the runtime, a tool error the model may simply try around. The latch
  * refuses every SUBSEQUENT tool call outright, the next MODEL call is refused
  * by `beforeModelCall` (#4196), and the run is settled at the cap — so the
- * ceiling is enforced immediately and recorded honestly.
+ * ceiling is enforced immediately and recorded honestly. A run that was also
+ * killed is settled at the kill, with the cap carried beside it (#4230).
  */
 interface CapLatch {
     halt: RunCapHalt | null;
@@ -113,6 +121,28 @@ interface CapLatch {
 /** A kill switch found engaged before a model call, mid-dispatch (#4196). */
 interface KillLatch {
     verdict: KillVerdict | null;
+    /**
+     * Had a cap ALREADY latched when the kill was first found? (#4230)
+     *
+     * The order in which THIS PROCESS observed the two, which is the question
+     * #4209 settled on, and not when either happened: `RunCapHalt` carries no
+     * time, and a kill's `engagedAt` is the operator's clock.
+     */
+    afterCap: boolean;
+}
+
+/**
+ * The cap that also latched on a run being settled as killed, or `null`.
+ *
+ * Both facts stay on the record: the kill names the status, and the cap's
+ * metric and fields still reach the trail. The order is known because the cap
+ * latch is written once and the kill latch notes, when the kill is first
+ * found, whether the cap was already set. A cap that latched later, at a tool
+ * call still in flight, leaves `afterCap` false.
+ */
+function capBesideKill(latch: CapLatch, killed: KillLatch): CapBesideKill | null {
+    if (latch.halt === null) return null;
+    return { halt: latch.halt, observedFirst: killed.afterCap ? 'CAP' : 'KILL' };
 }
 
 // MOVED to a leaf module (#3869). This file imports `@flue/runtime`, an
@@ -461,7 +491,7 @@ export async function executeFlueRun(
         { readOnly: def.readOnly === true },
     );
     const latch: CapLatch = { halt: null };
-    const killed: KillLatch = { verdict: null };
+    const killed: KillLatch = { verdict: null, afterCap: false };
     let seq = fromSeq;
     let stepFailures = 0;
 
@@ -475,30 +505,40 @@ export async function executeFlueRun(
      * run settled COMPLETED.
      *
      * In order:
-     *   1. A cap that latched at a tool call. Settled at that cap.
-     *   2. The kill switch, uncached, for the reason the boot check gives. A
+     *   1. The kill switch, uncached, for the reason the boot check gives. A
      *      read that throws refuses the call, as `assertNotKilled` does.
+     *   2. A cap that latched at a tool call, or at a check below on an
+     *      earlier call.
      *   3. The wall clock, which was otherwise re-checked only at a tool call.
      *   4. The tokens this dispatch has already spent, which were otherwise
      *      charged only after the dispatch. `turns` holds each settled call's
      *      usage, so this charges the calls made so far and the final charge
      *      then adds only what is left.
      *
+     * THE KILL IS READ BEFORE THE LATCHED CAP (#4230). With the latch first,
+     * a run that had hit a cap never read the switch again. An operator's kill
+     * then left no trace: no refusal was counted, no `WORKFLOW_RUN_AGENT_KILLED`
+     * row was written, and the run settled as if only the budget had stopped
+     * it. Reading the switch costs one query on a run that is already stopping.
+     *
      * Each refusal is latched before the throw, so the settle names the kill
      * or the cap and not the error the runtime turns the throw into.
      */
     const beforeModelCall = async (): Promise<void> => {
-        if (latch.halt) throw new Error(latch.halt.message);
-
         const kill = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
         if (kill) {
             recordAgentKillRefusal({
                 scope: kill.scope,
                 drill: ctx.agentId === KILL_SWITCH_DRILL_AGENT_ID,
             });
+            // Noted at the FIRST finding only. A later finding can see a cap
+            // that latched after the kill, and would report the order backwards.
+            if (killed.verdict === null) killed.afterCap = latch.halt !== null;
             killed.verdict = kill;
             throw new Error(killRefusalMessage(kill.scope));
         }
+
+        if (latch.halt) throw new Error(latch.halt.message);
 
         const runtimeHalt = budget.charge('RUNTIME_MS', 0);
         if (runtimeHalt) {
@@ -734,9 +774,16 @@ export async function executeFlueRun(
         // A KILL FOUND BEFORE A MODEL CALL wins over the reply (#4196). The
         // runtime may turn the refusal into a tidy finish; reporting that as
         // completed would hide that the run was stopped. First, before the cap:
-        // a run that was killed and also hit a cap is a run that was killed.
+        // a run that was killed and also hit a cap is a run that was killed,
+        // and the cap is carried beside the kill rather than dropped (#4230).
         if (killed.verdict) {
-            const status = await haltRunAtKill(ctx, runId, killed.verdict, killRefusalMessage(killed.verdict.scope));
+            const status = await haltRunAtKill(
+                ctx,
+                runId,
+                killed.verdict,
+                killRefusalMessage(killed.verdict.scope),
+                capBesideKill(latch, killed),
+            );
             return { status, stepFailures };
         }
 
@@ -838,7 +885,13 @@ export async function executeFlueRun(
         // interceptor refused the call. Before the cap, for the reason the
         // success path gives.
         if (killed.verdict) {
-            const status = await haltRunAtKill(ctx, runId, killed.verdict, killRefusalMessage(killed.verdict.scope));
+            const status = await haltRunAtKill(
+                ctx,
+                runId,
+                killed.verdict,
+                killRefusalMessage(killed.verdict.scope),
+                capBesideKill(latch, killed),
+            );
             return { status, stepFailures };
         }
 
@@ -908,6 +961,12 @@ function wrapForLedger(
     return {
         ...tool,
         run: async (context) => {
+            // No kill read here, although this latch also stands in front of
+            // the funnel's `assertNotKilled`. The throw reaches the model as a
+            // tool error, so a model call follows it, and `beforeModelCall`
+            // reads the switch before it reads this latch (#4230). That read
+            // is what records the kill on the run, so reading it here as well
+            // would add a query and change nothing the run records.
             if (latch.halt) throw new Error(latch.halt.message);
 
             // CHARGED BEFORE THE CALL, so a refusal means the tool function
