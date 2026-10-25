@@ -379,3 +379,27 @@ describe('status and errors', () => {
         expect(screen.getByRole('button', { name: EN.detail.save })).toBeInTheDocument();
     });
 });
+
+describe('archiving says what it does (#4279)', () => {
+    it('the archive confirmation states only what archiving does', async () => {
+        // It used to say the policy is "withdrawn from the library and cannot
+        // be edited, reviewed or published" — it stays on the list, and its
+        // owner and details stay editable.
+        const v1 = version(1, 'one');
+        serve(policyFixture({ status: 'PUBLISHED', currentVersion: v1, versions: [v1] }));
+        await renderPage();
+        fireEvent.click(document.getElementById('archive-btn')!);
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog).toHaveTextContent(EN.detail.archiveConfirmBody);
+        expect(dialog).toHaveTextContent(/stays on the list as Archived/);
+        expect(dialog).not.toHaveTextContent(/withdrawn|cannot be edited/i);
+    });
+
+    it('an archived policy offers no Mark reviewed (the server refuses it)', async () => {
+        const v1 = version(1, 'one');
+        serve(policyFixture({ status: 'ARCHIVED', currentVersion: v1, versions: [v1], nextReviewAt: '2026-01-01T00:00:00.000Z' }));
+        await renderPage();
+        expect(screen.getByText(EN.detail.editReviewSchedule)).toBeInTheDocument();
+        expect(document.getElementById('mark-reviewed-btn')).toBeNull();
+    });
+});

@@ -451,6 +451,13 @@ export async function markPolicyReviewed(ctx: RequestContext, policyId: string) 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);
         if (!policy) throw notFound('Policy not found');
+        // An archived policy is out of use: it is not due for review (no
+        // reminders, no Overdue badge), and marking it reviewed would quietly
+        // move its review dates. Same refusal shape as requestPolicyApproval
+        // (owner decision, #4279); the detail page hides the button.
+        if (policy.status === 'ARCHIVED') {
+            throw conflict('This policy is archived. Restore it before marking it reviewed.');
+        }
 
         await applyPolicyReviewed(db, ctx, policy, { trigger: 'manual' });
 

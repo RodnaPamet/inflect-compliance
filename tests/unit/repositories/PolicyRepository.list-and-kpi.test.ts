@@ -7,6 +7,7 @@
  * methods still exist and still return rows.
  */
 import { PolicyRepository } from '@/app-layer/repositories/PolicyRepository';
+import { encodeCursor } from '@/lib/pagination';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -119,5 +120,73 @@ describe('PolicyRepository.kpiCounts — each number predicts its own click', ()
         const db = fakeDb();
         await PolicyRepository.kpiCounts(db, ctx, ACTIVE);
         expect(db.policy.count.mock.calls[0][0].where).toEqual({ tenantId: ctx.tenantId });
+    });
+});
+
+describe('archived policies are out of the acknowledgement and review-cycle sets (owner decision)', () => {
+    const PUBLISHED_ONLY = { status: 'PUBLISHED' };
+    const NOT_ARCHIVED = { status: { not: 'ARCHIVED' } };
+
+    it('Outstanding acknowledgements matches PUBLISHED policies only', async () => {
+        // Archiving keeps the pointer and the assignments, but nobody can
+        // acknowledge a policy that is not PUBLISHED — it could never leave
+        // the filter.
+        const db = fakeDb();
+        db.$queryRaw.mockResolvedValue([{ policyVersionId: 'v1' }]);
+        await PolicyRepository.list(db, ctx, { outstandingAck: true });
+        const where = db.policy.findMany.mock.calls[0][0].where;
+        expect(where.currentVersionId).toEqual({ in: ['v1'] });
+        expect(where.AND).toContainEqual(PUBLISHED_ONLY);
+    });
+
+    it('an explicit status filter still intersects with it, not overwritten', async () => {
+        const db = fakeDb();
+        await PolicyRepository.list(db, ctx, { outstandingAck: true, status: 'DRAFT' });
+        const where = db.policy.findMany.mock.calls[0][0].where;
+        expect(where.status).toBe('DRAFT');
+        expect(where.AND).toContainEqual(PUBLISHED_ONLY);
+    });
+
+    it.each(['overdue', 'upcoming'] as const)('the %s review bucket leaves archived policies out', async (bucket) => {
+        const db = fakeDb();
+        await PolicyRepository.list(db, ctx, { reviewBucket: bucket });
+        const where = db.policy.findMany.mock.calls[0][0].where;
+        expect(where.nextReviewAt).toBeDefined();
+        expect(where.AND).toContainEqual(NOT_ARCHIVED);
+    });
+
+    it('no review bucket, no archived exclusion — the plain list still shows archived policies', async () => {
+        const db = fakeDb();
+        await PolicyRepository.list(db, ctx, {});
+        expect(db.policy.findMany.mock.calls[0][0].where.AND).toBeUndefined();
+    });
+
+    it('both at once keep both terms', async () => {
+        const db = fakeDb();
+        await PolicyRepository.list(db, ctx, { reviewBucket: 'overdue', outstandingAck: true });
+        const and = db.policy.findMany.mock.calls[0][0].where.AND;
+        expect(and).toContainEqual(NOT_ARCHIVED);
+        expect(and).toContainEqual(PUBLISHED_ONLY);
+    });
+
+    it('the paginated list keeps the term beside its cursor', async () => {
+        const db = fakeDb();
+        const cursor = encodeCursor({ id: 'p9', createdAt: '2026-10-01T00:00:00.000Z' });
+        await PolicyRepository.listPaginated(db, ctx, { cursor, filters: { reviewBucket: 'overdue' } });
+        const and = db.policy.findMany.mock.calls[0][0].where.AND;
+        expect(and).toContainEqual(NOT_ARCHIVED);
+        expect(and.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('the Overdue review and Outstanding acknowledgements cards count the same sets', async () => {
+        const db = fakeDb();
+        db.$queryRaw.mockResolvedValue([{ policyVersionId: 'v1' }]);
+        await PolicyRepository.kpiCounts(db, ctx, {});
+        const overdue = db.policy.count.mock.calls[1][0].where;
+        const ack = db.policy.count.mock.calls[2][0].where;
+        expect(overdue.AND).toContainEqual(NOT_ARCHIVED);
+        expect(ack.AND).toContainEqual(PUBLISHED_ONLY);
+        // The status cards are not narrowed by either.
+        expect(db.policy.groupBy.mock.calls[0][0].where.AND).toBeUndefined();
     });
 });

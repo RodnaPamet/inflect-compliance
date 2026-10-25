@@ -143,6 +143,14 @@ export class PolicyRepository {
      * Resolve the `outstandingAck` filter into a concrete `currentVersionId`
      * restriction. An empty result must narrow to ZERO rows (the facet was
      * requested and matched nothing) — never silently drop the filter.
+     *
+     * PUBLISHED only (owner decision, #4279). Archiving keeps the pointer and
+     * the assignments, so an archived policy matched — yet nobody can
+     * acknowledge a policy that is not PUBLISHED (`policy-attestation.ts`),
+     * its row's rollup is a dash, and the facet describes itself as
+     * "Published policies with assignees who have not acknowledged". An AND
+     * term, so an explicit status filter still intersects rather than being
+     * overwritten.
      */
     private static async _applyOutstandingAck(
         db: PrismaTx,
@@ -152,7 +160,17 @@ export class PolicyRepository {
     ): Promise<Prisma.PolicyWhereInput> {
         if (!filters?.outstandingAck) return where;
         const ids = await PolicyRepository.outstandingAckVersionIds(db, ctx);
-        return { ...where, currentVersionId: { in: ids } };
+        return {
+            ...where,
+            currentVersionId: { in: ids },
+            AND: [...PolicyRepository._andTerms(where), { status: PolicyStatus.PUBLISHED }],
+        };
+    }
+
+    /** `where.AND` as an array, whatever shape it was given in. */
+    private static _andTerms(where: Prisma.PolicyWhereInput): Prisma.PolicyWhereInput[] {
+        if (!where.AND) return [];
+        return Array.isArray(where.AND) ? [...where.AND] : [where.AND];
     }
 
     static async list(
@@ -342,12 +360,24 @@ export class PolicyRepository {
         // Review-cycle bucket. `overdue` = nextReviewAt in the past; `upcoming`
         // = due within the next 30 days. Makes "policies overdue for review"
         // findable from the list (previously only surfaced via email reminders).
-        if (filters?.reviewBucket === 'overdue') {
-            where.nextReviewAt = { lt: new Date() };
-        } else if (filters?.reviewBucket === 'upcoming') {
-            const now = new Date();
-            const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-            where.nextReviewAt = { gte: now, lte: in30 };
+        //
+        // Neither bucket holds an ARCHIVED policy (owner decision, #4279): an
+        // archived policy is not due for review — its row carries no Overdue
+        // badge and the reminder job skips it — so counting it made the card
+        // and the filter disagree with both. An AND term, so an explicit
+        // status filter still intersects.
+        if (filters?.reviewBucket === 'overdue' || filters?.reviewBucket === 'upcoming') {
+            if (filters.reviewBucket === 'overdue') {
+                where.nextReviewAt = { lt: new Date() };
+            } else {
+                const now = new Date();
+                const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                where.nextReviewAt = { gte: now, lte: in30 };
+            }
+            where.AND = [
+                ...PolicyRepository._andTerms(where),
+                { status: { not: PolicyStatus.ARCHIVED } },
+            ];
         }
         return where;
     }
