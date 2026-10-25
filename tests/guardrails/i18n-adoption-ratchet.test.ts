@@ -350,22 +350,21 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/dev/swr-devtools.tsx': 9, // no-intl, 6 jsx + 3 prop
     'src/components/layout/MobileNavDrawer.tsx': 1, // partial, 1 prop
     'src/components/layout/org-workspace-switcher.tsx': 5, // intl wired #3209; 5 jsx remain
-    'src/components/layout/tenant-switcher.tsx': 5, // no-intl, 4 jsx + 1 prop
-    'src/components/onboarding/Nis2SelfAssessmentStep.tsx': 14, // no-intl, 9 jsx + 5 prop
+    'src/components/layout/tenant-switcher.tsx': 4, // intl wired #3209; 4 jsx remain
+    'src/components/onboarding/Nis2SelfAssessmentStep.tsx': 13, // intl wired #3209; 9 jsx + 4 prop remain
     'src/components/onboarding/OnboardingWizard.tsx': 3, // partial, 3 jsx
     'src/components/processes/RuleDetailSheet.tsx': 4, // partial, 3 jsx + 1 prop
     'src/components/risks/RiskScoreExplainer.tsx': 1, // partial, 1 prop
     'src/components/ui/ComplianceStatusIndicator.tsx': 4, // no-intl, 4 prop
     'src/components/ui/DonutChart.tsx': 1, // partial, 1 jsx
     'src/components/ui/FrameworkBuilder.tsx': 3, // no-intl, 3 jsx
-    'src/components/ui/FrameworkMinimap.tsx': 2, // no-intl, 1 jsx + 1 prop
+    'src/components/ui/FrameworkMinimap.tsx': 1, // intl wired #3209; 1 jsx remains
     'src/components/ui/FreshnessBadge.tsx': 4, // no-intl, 4 prop
     'src/components/ui/GraphExplorer.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/NextBestActionCard.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/OnboardingTour.tsx': 1, // no-intl, 1 prop
     'src/components/ui/RichTextEditor.tsx': 1, // partial, 1 jsx
-    'src/components/ui/SankeyChart.tsx': 3, // no-intl, 1 jsx + 2 prop
-    'src/components/ui/TreeExpandCollapseToggle.tsx': 1, // no-intl, 1 prop
+    'src/components/ui/SankeyChart.tsx': 2, // intl wired #3209; 1 jsx + 1 prop remain
     'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/TruncationBanner.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
