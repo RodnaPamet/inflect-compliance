@@ -55,7 +55,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 import { AgentRunsClient, type RunRow } from '@/app/t/[tenantSlug]/(app)/agents/runs/AgentRunsClient';
 
 const EN = jest.requireActual('../../messages/en.json') as {
-    agents: { runs: { driver: { STATIC: string; FLUE: string } } };
+    agents: { runs: { driver: { STATIC: string; FLUE: string; UNRECOGNISED: string } } };
 };
 const LABEL = EN.agents.runs.driver;
 
@@ -138,5 +138,15 @@ describe('the run list says which engine walked each run', () => {
         const row = document.getElementById('run-run-9');
         expect(row).not.toBeNull();
         expect(screen.getByText('nightly-review')).toBeInTheDocument();
+    });
+
+    it('an engine this build does not know is LABELLED as such, not shown as a key path (#4241)', () => {
+        // What the server sends for a run a later image started: the usecase
+        // reads the column as text and coerces an unknown engine to
+        // UNRECOGNISED rather than to a real one. The chip must say so in words.
+        renderRuns([{ ...RUN, id: 'run-10', driver: 'UNRECOGNISED' }]);
+        const row = document.getElementById('run-run-10') as HTMLElement;
+        expect(within(row).getByText(LABEL.UNRECOGNISED)).toBeInTheDocument();
+        expect(within(row).queryByText(LABEL.STATIC)).toBeNull();
     });
 });

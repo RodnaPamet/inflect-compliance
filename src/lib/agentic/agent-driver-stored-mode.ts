@@ -34,10 +34,35 @@
  * NOT in `agent-driver.ts`, where `coerceStoredDriverMode` lives: that module is
  * imported by `AgentEnginesSection.tsx`, a `'use client'` component. A database
  * reader there would be one refactor away from the browser bundle.
+ *
+ * ## The enum's second column: `WorkflowRun.driver` (#4241)
+ *
+ * The same enum records which engine walked each run, and the same rollback
+ * poisons it — worse, because a run row is usually read WHOLE. Prisma returns
+ * every scalar when a read names no `select`, so a single run stamped with a
+ * value this build does not know failed the run store, the run list, the run
+ * page, and every `update` that returns the row (which is every `update` that
+ * names no `select`, including the one that settles a run FAILED).
+ *
+ * A text read is the wrong instrument for a row read whole, so the column is
+ * kept out of the typed client's results instead: every whole-row read and
+ * every record-returning write of `workflowRun` carries `omit: { driver: true }`
+ * (`local/no-typed-run-driver-read` holds that), and the readers that need the
+ * engine ask {@link readRecordedRunDrivers} for it, as text, coerced by
+ * `coerceRecordedRunDriver` — to `UNRECOGNISED`, never to a real engine, for
+ * the reason that function's docblock gives.
  */
 
+import { Prisma } from '@prisma/client';
+
+import {
+    coerceRecordedRunDriver,
+    RUN_DRIVER_UNRECOGNISED,
+    type RecordedRunDriver,
+} from '@/lib/agentic/agent-driver';
+
 /**
- * The one statement this module issues. Narrow on purpose: an interactive
+ * The one client method this module calls. Narrow on purpose: an interactive
  * transaction client and the global client both satisfy it.
  */
 export interface StoredDriverModeClient {
@@ -66,4 +91,44 @@ export async function readStoredDriverMode(
          LIMIT 1`;
 
     return rows[0]?.agentDriver ?? null;
+}
+
+/**
+ * The recorded engine of each named run, READ AS TEXT and coerced (#4241).
+ *
+ * Returns a lookup rather than a map so a caller cannot forget the absent case:
+ * a run the read did not return — deleted between two statements, or never this
+ * tenant's — reads `UNRECOGNISED` too, because an engine this build never saw
+ * is not one it can name.
+ *
+ * ONE statement however many runs, so a list pays one round trip rather than
+ * one per row; and none at all for an empty list, which `Prisma.join` would
+ * refuse anyway. Tenant-filtered in the WHERE as well as by the RLS binding the
+ * caller's `db` carries, the same belt and braces every repository read wears.
+ */
+export async function readRecordedRunDrivers(
+    db: StoredDriverModeClient,
+    tenantId: string,
+    runIds: readonly string[],
+): Promise<(runId: string) => RecordedRunDriver> {
+    const ids = [...new Set(runIds)];
+    if (ids.length === 0) return () => RUN_DRIVER_UNRECOGNISED;
+
+    const rows = await db.$queryRaw<Array<{ id: string; driver: string | null }>>`
+        SELECT "id", "driver"::text AS "driver"
+          FROM "WorkflowRun"
+         WHERE "tenantId" = ${tenantId}
+           AND "id" IN (${Prisma.join(ids)})`;
+
+    const byId = new Map(rows.map((r) => [r.id, coerceRecordedRunDriver(r.driver)] as const));
+    return (runId) => byId.get(runId) ?? RUN_DRIVER_UNRECOGNISED;
+}
+
+/** {@link readRecordedRunDrivers} for one run. */
+export async function readRecordedRunDriver(
+    db: StoredDriverModeClient,
+    tenantId: string,
+    runId: string,
+): Promise<RecordedRunDriver> {
+    return (await readRecordedRunDrivers(db, tenantId, [runId]))(runId);
 }

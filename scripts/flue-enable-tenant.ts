@@ -41,6 +41,7 @@ import {
     getAgentRiskAssessmentState,
 } from '@/app-layer/usecases/agent-risk-assessment';
 import { setAgentDriverSetting } from '@/app-layer/usecases/agent-driver-setting';
+import { readRecordedRunDrivers } from '@/lib/agentic/agent-driver-stored-mode';
 import { getFlueWiringState } from '@/app-layer/usecases/flue-wiring';
 import { createApiKey, revokeApiKey } from '@/app-layer/usecases/api-keys';
 import { grantAgentTool, listAgentTools } from '@/app-layer/usecases/agent-tool-exposure';
@@ -365,11 +366,16 @@ async function resumePaused() {
     const ctx = await ownerContext();
     const paused = await prisma.workflowRun.findMany({
         where: { tenantId: TENANT_ID, status: 'PAUSED' },
-        select: { id: true, workflowKey: true, driver: true, stepCount: true },
+        // The engine is read as TEXT below (#4241): a typed read of a value
+        // this build's enum does not know fails the whole query, and this
+        // script is most likely to run during exactly the rollback that leaves
+        // one behind.
+        select: { id: true, workflowKey: true, stepCount: true },
     });
     if (paused.length === 0) { console.log('resume: no PAUSED runs'); return; }
+    const driverOf = await readRecordedRunDrivers(prisma, TENANT_ID, paused.map((r) => r.id));
     for (const r of paused) {
-        console.log(`  resuming ${r.id} (${r.workflowKey}, ${r.driver}, stepCount=${r.stepCount})`);
+        console.log(`  resuming ${r.id} (${r.workflowKey}, ${driverOf(r.id)}, stepCount=${r.stepCount})`);
         const out = await resumeWorkflowRun(ctx, r.id);
         console.log(`    -> ${JSON.stringify(out)}`);
     }

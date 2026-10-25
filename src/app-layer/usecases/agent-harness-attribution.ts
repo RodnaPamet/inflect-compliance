@@ -64,6 +64,8 @@ import { logger } from '@/lib/observability/logger';
 import { recordAgentReviewAttribution } from '@/lib/observability/integration-metrics';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ContextIntegrityError, openSealedContext } from '@/lib/agentic/context-integrity';
+import { readRecordedRunDriver } from '@/lib/agentic/agent-driver-stored-mode';
+import { RUN_DRIVER_UNRECOGNISED } from '@/lib/agentic/agent-driver';
 import { discoveredAgentReviewWorkflow } from '@/lib/agentic/workflows/discovered-agent-review';
 import {
     ATTRIBUTION_SKILL,
@@ -96,6 +98,14 @@ export type AttributionCaptureOutcome =
     | 'RUN_NOT_COMPLETED'
     /** The static engine: no model, no answer. */
     | 'NOT_A_MODEL_RUN'
+    /**
+     * The run records an engine this build does not know (#4241) — a later
+     * image started it and production rolled back. Not captured: this build
+     * cannot say the run had a model, or what shape its answer takes. Its own
+     * outcome rather than `NOT_A_MODEL_RUN`, which would say the static engine
+     * walked it.
+     */
+    | 'UNRECOGNISED_ENGINE'
     /** The run was not taught the attribution skill, so its answer is not one. */
     | 'SKILL_NOT_MOUNTED'
     /** The sealed context would not open, or names no agent. */
@@ -152,10 +162,12 @@ export async function captureReviewAttribution(ctx: RequestContext, runId: strin
 async function capture(db: PrismaTx, ctx: RequestContext, runId: string): Promise<AttributionCaptureResult> {
     const run = await db.workflowRun.findFirst({
         where: { id: runId, tenantId: ctx.tenantId, workflowKey: REVIEW_WORKFLOW_KEY },
+        // No `driver` here: it is read below AS TEXT (#4241), because a value
+        // this build's enum does not know fails a typed read of it outright —
+        // the capture would throw rather than refuse.
         select: {
             id: true,
             status: true,
-            driver: true,
             mountedSkills: true,
             completedAt: true,
             contextJson: true,
@@ -164,7 +176,9 @@ async function capture(db: PrismaTx, ctx: RequestContext, runId: string): Promis
     });
     if (!run) return done('NOT_A_REVIEW_RUN');
     if (run.status !== 'COMPLETED' || run.completedAt === null) return done('RUN_NOT_COMPLETED');
-    if (run.driver !== 'FLUE') return done('NOT_A_MODEL_RUN');
+    const driver = await readRecordedRunDriver(db, ctx.tenantId, run.id);
+    if (driver === RUN_DRIVER_UNRECOGNISED) return done('UNRECOGNISED_ENGINE');
+    if (driver !== 'FLUE') return done('NOT_A_MODEL_RUN');
     if (!mountedNames(run.mountedSkills).includes(ATTRIBUTION_SKILL)) return done('SKILL_NOT_MOUNTED');
 
     // WHICH AGENT THE RUN WAS ASKED ABOUT — from the sealed context, opened

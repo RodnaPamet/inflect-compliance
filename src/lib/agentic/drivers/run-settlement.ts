@@ -26,7 +26,18 @@ export async function updateRun(
     data: Record<string, unknown>,
 ): Promise<void> {
     await runInTenantContext(ctx, (db) =>
-        db.workflowRun.update({ where: { id: runId }, data: data as never }),
+        db.workflowRun.update({
+            where: { id: runId },
+            data: data as never,
+            // An `update` RETURNS the row, and Prisma maps every scalar it
+            // returns — so a run stamped with an engine this build does not
+            // know (#4241) made this write throw after the statement ran, rolled
+            // the transaction back, and left the run unsettleable: `failRun`
+            // could not fail it. `omit` rather than `select: { id: true }`
+            // because the audit extension's `after` snapshot is read off this
+            // result, and narrowing it would empty that snapshot.
+            omit: { driver: true },
+        }),
     );
 }
 
