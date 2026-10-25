@@ -12,7 +12,7 @@ Evidence shows that a control is in place, for example a signed policy, a screen
 ## Steps
 
 1. Click **{{ui:nav.controls}}** under {{ui:nav.govern}} in the sidebar.
-2. Click the control's row. The control's page opens.
+2. Double-click the control's row. The control's page opens. A single click only ticks the row.
 3. Click the **{{ui:controls.detailPage.tabEvidence}}** tab.
 4. Click **{{ui:panels.evidenceForm.addTrigger}}**, the button with a plus sign. A form opens.
 5. To upload a file:
