@@ -124,6 +124,23 @@ SELECTs in a read-only transaction.
 - **The log window is unknown.** The "earliest log held" probe printed nothing,
   so how far back the logs reach is not known.
 
+**After the deploy, read again.** The owner ran the block again from Cloud
+Shell after #4284 un-stuck the publish:
+
+- **Phase 0 is in production.** `inflect-app-1` was recreated at 2026-10-25
+  19:04:37 UTC, when Watchtower rolled the `ced48e0` publish (finished 18:59).
+  That image carries 0a, 0b, 0c, #4201, #4210 and #4212.
+  - **A correction to the first read:** the 04:56 time reported there is the
+    container's creation time, when Watchtower rolled the 04:28 publish. It is
+    not the image's build time. The conclusion is unchanged.
+- **`/api/mcp` is limited under its own scope (probe, about 19:25 UTC).** From
+  inside the app container, 610 unauthenticated `POST /api/mcp` were sent from
+  the documentation address 203.0.113.7.
+  - The answer was 600 × `401` and 10 × `429`.
+  - The log held exactly 10 `rate-limit.blocked` lines, all with scope
+    `mcp-ip`. No `api-mutation` line appeared. The IP ceiling is 600 a minute,
+    so the 601st request was the first refused.
+
 **One older run worth a look.** `posture-review` run
 `cmufjgbri000201nuxudwl961` (2026-09-24, COMPLETED) has four `TOOL_CALL` steps
 and no `MODEL_CALL` step. It predates the conformance suite, and today's
