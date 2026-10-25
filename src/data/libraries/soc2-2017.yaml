@@ -73,6 +73,7 @@ copyright: >
   Based on the publicly available AICPA Trust Services Criteria structure.
   Full criteria available from AICPA.
 version: 1
+text_hash: 957456f68e81d455a4cdd593f34899476be4e4fd5553acc6e5a5eb6a8eaf3614
 publication_date: "2022-01-01"
 provider: AICPA
 packager: inflect

@@ -50,6 +50,7 @@ ref_id: FRAMEWORK-KEY           # Used as Framework.key in Prisma
 name: Human Readable Name
 description: Optional description
 version: 1                      # Monotonically increasing integer
+text_hash: <sha256>             # computeLibraryTextHash; the guard prints the value
 kind: ISO_STANDARD              # ISO_STANDARD | NIST_FRAMEWORK | SOC_CRITERIA | ...
 provider: Standards Body Name
 packager: Inflect Compliance
@@ -136,12 +137,55 @@ await syncAllLibraries(db, { force: true });
 await syncAllLibraries(db, { strategy: 'preserve' });
 ```
 
+### Delivery to a deployed database
+
+Every container start runs `dist/sync-framework-libraries.mjs`
+(`scripts/sync-framework-libraries.ts`, `npm run db:sync-libraries` in a
+checkout) right after the catalogue seed. It calls `syncLibrariesAtStartup`,
+which imports every library and mapping set whose content hash has changed and
+skips the rest, so an unchanged start writes nothing.
+
+- **A row with a pack belongs to the catalogue.** `AIUC-1` and `COSO-ICF-2013`
+  are written by their catalogue fixture under the library's own key, so the
+  sync does not import those two libraries. Their mapping sets still import:
+  they resolve against the catalogue's row by key and code.
+- **The YAML ships in the image.** The Dockerfile copies `src/data/libraries`
+  into `/app`, and the script passes that directory explicitly. `LIBRARIES_DIR`
+  resolves from `__dirname`, which in a bundle is `dist/`.
+- **The offer lists show one row per framework.** `listFrameworks` (the
+  Frameworks page, its API and the MCP resource) and the control-mapping picker
+  leave out a library row whose family also has an installable catalogue row,
+  through `withoutReferenceTwins`. A library-only framework, such as GDPR or
+  NIST CSF 2.0, is listed.
+
+The "framework libraries reach production" block of
+`tests/guardrails/catalogue-reaches-production.test.ts` holds the wiring, and
+`tests/integration/framework-library-startup-sync.test.ts` holds what the sync
+writes.
+
 ### Deduplication
 
 Every library has a SHA-256 content hash computed from its URN, version, and all requirement node URNs. On import:
 
 1. **Hash match** → skip entirely (zero DB writes)
 2. **Hash mismatch** → compute requirement diff → apply strategy → upsert
+
+The hash does not cover the text, so **a change to a library's text must bump
+its `version`**. A reworded title or description, or a changed copyright line,
+under the same version is skipped by every database that already holds the
+library. The version is the right signal rather than a text-covering hash: each
+version transition records one `FrameworkVersionDiff` and notifies tenants
+once, and two same-version edits would land on one diff row.
+
+Each library file records `text_hash`, `computeLibraryTextHash` of its content
+(everything but `version` and the hash itself), beneath `version`. The
+"a library's text change reaches a database that already holds it" block of
+`tests/guardrails/catalogue-reaches-production.test.ts` fails while the two
+disagree, and names the version and hash to write.
+
+A mapping set's hash (`computeMappingSetHash`) covers its whole parsed content,
+the rationales included, so a reworded rationale reaches every database without
+a version bump. A mapping set records no diff, so it needs none.
 
 ### Migration Strategies
 

@@ -34,6 +34,7 @@ import {
     unlinkIdentity,
 } from '@/app-layer/usecases/sso';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { SSO_SECRET_MASK, UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -50,6 +51,7 @@ let readerUserId: string;
 let memberUserId: string; // member of TENANT, used for email-match link
 let noMemberUserId: string; // exists but no membership in TENANT
 let admin: ReturnType<typeof makeRequestContext>;
+let owner: ReturnType<typeof makeRequestContext>;
 let reader: ReturnType<typeof makeRequestContext>;
 let adminOther: ReturnType<typeof makeRequestContext>;
 
@@ -123,6 +125,8 @@ describeFn('sso usecase — branch coverage (integration)', () => {
         // noMemberUserId intentionally has NO membership in TENANT_ID.
 
         admin = makeRequestContext('ADMIN', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: adminPwUserId });
+        // Creating a provider and changing whom it trusts are Owner-tier.
+        owner = makeRequestContext('OWNER', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: adminPwUserId });
         reader = makeRequestContext('READER', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: readerUserId });
         adminOther = makeRequestContext('ADMIN', { tenantId: OTHER_TENANT_ID, tenantSlug: `${SUITE_TAG}-2`, userId: adminPwUserId });
     });
@@ -156,7 +160,7 @@ describeFn('sso usecase — branch coverage (integration)', () => {
 
     it('config CRUD: create, update, get, not-found, toggle, delete', async () => {
         // create (no id)
-        const created = await upsertTenantSsoConfig(admin, {
+        const created = await upsertTenantSsoConfig(owner, {
             name: 'Primary OIDC',
             type: 'OIDC',
             isEnabled: false,
@@ -177,8 +181,8 @@ describeFn('sso usecase — branch coverage (integration)', () => {
         // get not-found
         await expect(getTenantSsoConfigById(admin, 'no-such')).rejects.toThrow(/not found/i);
 
-        // update (with id) → existing found
-        const updated = await upsertTenantSsoConfig(admin, {
+        // update (with id) → existing found. It changes the issuer, so it is an Owner's.
+        const updated = await upsertTenantSsoConfig(owner, {
             id: created.id,
             name: 'Renamed OIDC',
             type: 'OIDC',
@@ -200,6 +204,35 @@ describeFn('sso usecase — branch coverage (integration)', () => {
         await expect(deleteTenantSsoConfig(admin, 'no-such')).rejects.toThrow(/not found/i);
         await deleteTenantSsoConfig(admin, created.id);
         await expect(getTenantSsoConfigById(admin, created.id)).rejects.toThrow(/not found/i);
+    });
+
+    it('a trust change removes the identity links, an Admin cannot make one, and anything else keeps them', async () => {
+        const save = (ctx: typeof admin, id: string | undefined, name: string, issuer: string, clientSecret: string) =>
+            upsertTenantSsoConfig(ctx, UpsertSsoConfigInput.parse({
+                id, name, type: 'OIDC', isEnabled: true,
+                config: { issuer, clientId: 'c', clientSecret },
+            }));
+        const created = await save(owner, undefined, 'Trust OIDC', 'https://trust-idp.test', 's');
+        const links = () => globalPrisma.userIdentityLink.count({ where: { providerId: created.id } });
+
+        expect(await linkExternalIdentity(TENANT_ID, created.id, 'sub-trust', `${SUITE_TAG}-member@inflect.test`))
+            .toMatchObject({ status: 'linked', isNewLink: true });
+        expect(await links()).toBe(1);
+
+        // Renaming, with the secret left masked, is an Admin's and keeps the link.
+        await save(admin, created.id, 'Trust OIDC renamed', 'https://trust-idp.test', SSO_SECRET_MASK);
+        expect(await links()).toBe(1);
+
+        // Re-pointing it is not an Admin's.
+        await expect(save(admin, created.id, 'Trust OIDC renamed', 'https://attacker.test', SSO_SECRET_MASK))
+            .rejects.toMatchObject({ status: 403 });
+        expect(await links()).toBe(1);
+
+        // An Owner's re-point drops the link: the old identity provider vouched for it.
+        await save(owner, created.id, 'Trust OIDC renamed', 'https://new-idp.test', SSO_SECRET_MASK);
+        expect(await links()).toBe(0);
+
+        await deleteTenantSsoConfig(owner, created.id);
     });
 
     it('setTenantSsoEnforced: not-found, break-glass guard, and success/disable', async () => {

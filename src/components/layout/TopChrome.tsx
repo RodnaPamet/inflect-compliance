@@ -41,7 +41,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Popover } from '@/components/ui/popover';
-import { ShieldCheck, ShieldKeyhole, UserArrowRight } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleUser, ShieldCheck, ShieldKeyhole, UserArrowRight } from '@inflect/ui/components/ui/icons/nucleo';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { useCurrentBreadcrumbs } from './breadcrumbs-store';
 // PR-2 — OrgIdentityPill retired in favour of OrgWorkspaceSwitcher
@@ -116,6 +116,7 @@ interface TopChromeProps {
 export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChromeProps) {
     const t = useTranslations('nav');
     const tSecurity = useTranslations('account.security');
+    const tProfile = useTranslations('account.profile');
     const breadcrumbs = useCurrentBreadcrumbs();
     const params = useParams();
     // R14-PR4 — tenant variant mounts <TenantSwitcher> (popover).
@@ -215,6 +216,22 @@ export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChr
                         // auth library.
                         items={({ close }) => (
                             <>
+                                {/* The only way to change your name or photo.
+                                    Tenant-less, like the security row, so it
+                                    shows in both chromes. */}
+                                <Link
+                                    href="/account/profile"
+                                    role="menuitem"
+                                    id="user-menu-profile"
+                                    onClick={close}
+                                    className={USER_MENU_ROW_CLASS}
+                                >
+                                    <CircleUser
+                                        className="h-4 w-4 flex-shrink-0"
+                                        aria-hidden="true"
+                                    />
+                                    <span>{tProfile('profileTitle')}</span>
+                                </Link>
                                 <Link
                                     href="/account/security"
                                     role="menuitem"

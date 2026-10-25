@@ -154,6 +154,14 @@ export const StoredLibrarySchema = z.object({
     copyright: z.string().optional(),
     /** Monotonically increasing version integer */
     version: z.number().int().min(1),
+    /**
+     * `computeLibraryTextHash` of this file's content as of `version`. The
+     * import's skip hash covers the urn, the version and the node urns, not
+     * the text, so an edit that keeps the version reaches no database that
+     * already holds the library. A guard fails while this disagrees with the
+     * content, so an edit has to bump `version` and record a new hash.
+     */
+    text_hash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     /** Date this library version was published (ISO 8601) */
     publication_date: z.string().optional(),
     /** Organization/body that created the standard */

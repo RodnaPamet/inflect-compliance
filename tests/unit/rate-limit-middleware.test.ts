@@ -35,6 +35,11 @@ import {
     MFA_ENROLL_VERIFY_LIMIT,
     AGENT_QUESTION_LIMIT,
     TENANT_INVITE_CREATE_LIMIT,
+    MCP_PER_KEY_LIMIT,
+    MCP_IP_CEILING_LIMIT,
+    buildApiKeyRateLimitKey,
+    checkRateLimit,
+    enforceApiKeyRateLimit,
     clearAllRateLimits,
 } from '@/lib/security/rate-limit-middleware';
 // NOT from the barrel, because the barrel does not re-export it — the only
@@ -367,6 +372,81 @@ describe('withRateLimit wrapper', () => {
     });
 });
 
+describe('checkRateLimit — charging several units at once', () => {
+    const CONFIG = { maxAttempts: 10, windowMs: 60_000 };
+
+    beforeEach(() => {
+        clearAllRateLimits();
+    });
+
+    it('records every unit of an allowed charge', () => {
+        const result = checkRateLimit('units:a', CONFIG, 4);
+        expect(result.allowed).toBe(true);
+        expect(result.remaining).toBe(6);
+    });
+
+    it('refuses a charge that does not fit, and spends none of the budget on it', () => {
+        checkRateLimit('units:b', CONFIG, 7);
+
+        const refused = checkRateLimit('units:b', CONFIG, 4);
+        expect(refused.allowed).toBe(false);
+        expect(refused.remaining).toBe(3);
+        expect(refused.retryAfterMs).toBeGreaterThan(0);
+
+        // Exactly what was left still fits — the refusal recorded nothing.
+        expect(checkRateLimit('units:b', CONFIG, 3).allowed).toBe(true);
+        expect(checkRateLimit('units:b', CONFIG, 1).allowed).toBe(false);
+    });
+
+    it('answers a charge larger than the whole budget with the full window', () => {
+        const result = checkRateLimit('units:c', CONFIG, CONFIG.maxAttempts + 1);
+        expect(result.allowed).toBe(false);
+        expect(result.retryAfterMs).toBe(CONFIG.windowMs);
+    });
+
+    it('is the single-attempt check it always was when no units are given', () => {
+        for (let i = 0; i < CONFIG.maxAttempts; i += 1) {
+            expect(checkRateLimit('units:d', CONFIG).allowed).toBe(true);
+        }
+        const blocked = checkRateLimit('units:d', CONFIG);
+        expect(blocked.allowed).toBe(false);
+        expect(blocked.remaining).toBe(0);
+        expect(blocked.retryAfterMs).toBeGreaterThan(0);
+        expect(blocked.retryAfterMs).toBeLessThanOrEqual(CONFIG.windowMs);
+    });
+});
+
+describe('enforceApiKeyRateLimit — the per-key budget', () => {
+    const CONFIG = { maxAttempts: 3, windowMs: 60_000 };
+
+    beforeEach(() => {
+        clearAllRateLimits();
+    });
+
+    it('keys on the scope and the API key id, and on no address', () => {
+        expect(buildApiKeyRateLimitKey('mcp-api-key', 'key_123')).toBe('mcp-api-key:key:key_123');
+    });
+
+    it('gives each key its own budget', () => {
+        for (let i = 0; i < CONFIG.maxAttempts; i += 1) {
+            expect(enforceApiKeyRateLimit({ scope: 's', config: CONFIG, apiKeyId: 'a' }).response).toBeUndefined();
+        }
+        expect(enforceApiKeyRateLimit({ scope: 's', config: CONFIG, apiKeyId: 'a' }).response?.status).toBe(429);
+        expect(enforceApiKeyRateLimit({ scope: 's', config: CONFIG, apiKeyId: 'b' }).response).toBeUndefined();
+    });
+
+    it('returns the canonical 429, and its body does not name the key', async () => {
+        enforceApiKeyRateLimit({ scope: 's', config: CONFIG, apiKeyId: 'secretless-id', units: 3 });
+        const { response } = enforceApiKeyRateLimit({ scope: 's', config: CONFIG, apiKeyId: 'secretless-id' });
+
+        expect(response?.status).toBe(429);
+        expect(response?.headers.get('Retry-After')).toMatch(/^\d+$/);
+        const body = await response!.json();
+        expect(body.error.code).toBe('RATE_LIMITED');
+        expect(JSON.stringify(body)).not.toContain('secretless-id');
+    });
+});
+
 describe('Preset policy sanity', () => {
     // Guardrails on the presets themselves — catches a typo that
     // accidentally makes a preset too permissive or disables a lockout.
@@ -429,6 +509,11 @@ describe('Preset policy sanity', () => {
         // the point rather than an omission: a person who asks too fast should
         // wait out the window, not be shut out for an hour.
         ['AGENT_QUESTION_LIMIT', AGENT_QUESTION_LIMIT, 20, 60 * 60 * 1000, undefined],
+        // `/api/mcp`. The per-key budget keeps the 60/min the endpoint always had
+        // from the mutation tier; the pre-authentication ceiling is ten keys'
+        // worth, so callers sharing a hosted provider's address do not meet it.
+        ['MCP_PER_KEY_LIMIT', MCP_PER_KEY_LIMIT, 60, 60 * 1000, undefined],
+        ['MCP_IP_CEILING_LIMIT', MCP_IP_CEILING_LIMIT, 600, 60 * 1000, undefined],
     ];
 
     it('the pinned table covers every preset the module exports', () => {

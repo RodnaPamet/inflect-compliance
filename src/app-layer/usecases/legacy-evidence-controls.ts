@@ -85,7 +85,11 @@ const REQUIREMENT_CAP = 100;
 /** Control links one tenant can hold to those requirements. */
 const LINK_CAP = 1_000;
 
-/** The library urn of NIS2; its seeded rows carry no `sourceUrn`, so they are matched by key. */
+/**
+ * The library urn of NIS2. The catalogue fixture has carried it since
+ * 2026-10-24, but a row seeded by `prisma/seed.ts` or applied earlier carries
+ * none, so the key match below stays.
+ */
 const NIS2_LIBRARY_URN = 'urn:inflect:library:nis2-2022';
 
 /**

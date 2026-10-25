@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Card, cardVariants } from '@/components/ui/card';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
 import { Shield, ExternalLink, Trash2, Save, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button-variants';
@@ -59,6 +59,10 @@ export default function SsoAdminPage() {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    // Setting up a provider, and changing whom it trusts, is Owner-tier
+    // (src/lib/auth/sso-trust-fields.ts). The server refuses it either way;
+    // this keeps an Admin from filling in fields they cannot save.
+    const canChangeTrust = usePermissions().admin.owner_management;
     const [providers, setProviders] = useState<SsoProvider[]>([]);
     const [tab, setTab] = useState<Tab>('OIDC');
     const [loading, setLoading] = useState(true);
@@ -163,20 +167,15 @@ export default function SsoAdminPage() {
             ? {
                 issuer: oidcIssuer,
                 clientId: oidcClientId,
-                // Don't send masked value back
-                ...(oidcClientSecret !== '••••••••' && { clientSecret: oidcClientSecret }),
-                ...(existingProvider && oidcClientSecret === '••••••••' && {
-                    clientSecret: (existingProvider.configJson as Record<string, string>).clientSecret,
-                }),
+                // Sent as shown: the mask, if untouched, tells the server to
+                // keep the stored secret (SSO_SECRET_MASK).
+                clientSecret: oidcClientSecret,
                 scopes: oidcScopes.split(/\s+/).filter(Boolean),
             }
             : {
                 entityId: samlEntityId,
                 ssoUrl: samlSsoUrl,
-                ...(samlCertificate !== '••••••••' && { certificate: samlCertificate }),
-                ...(existingProvider && samlCertificate === '••••••••' && {
-                    certificate: (existingProvider.configJson as Record<string, string>).certificate,
-                }),
+                certificate: samlCertificate,
                 ...(samlNameIdFormat && { nameIdFormat: samlNameIdFormat }),
             };
 
@@ -320,6 +319,17 @@ export default function SsoAdminPage() {
             <div className={cardVariants()}>
                 <Heading level={2} className="mb-4">{t('sso.configHeading', { tab })}</Heading>
 
+                {!canChangeTrust && (
+                    <InlineNotice variant="info" className="mb-4" id="sso-trust-owner-only">
+                        {existingProvider ? t('sso.trustOwnerOnly') : t('sso.setupOwnerOnly')}
+                    </InlineNotice>
+                )}
+                {canChangeTrust && existingProvider && (
+                    <p className="text-xs text-content-subtle mb-4" id="sso-trust-change-hint">
+                        {t('sso.trustChangeUnlinks')}
+                    </p>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
                     {/* Provider name */}
                     <div>
@@ -342,6 +352,7 @@ export default function SsoAdminPage() {
                         </label>
                         <input
                             id="sso-domains"
+                            disabled={!canChangeTrust}
                             value={formEmailDomains}
                             onChange={(e) => setFormEmailDomains(e.target.value)}
                             placeholder="acme.com, acme.io"
@@ -358,6 +369,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.issuerUrl')}</label>
                             <input
                                 id="sso-oidc-issuer"
+                                disabled={!canChangeTrust}
                                 value={oidcIssuer}
                                 onChange={(e) => setOidcIssuer(e.target.value)}
                                 placeholder="https://login.example.com"
@@ -368,6 +380,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.clientId')}</label>
                             <input
                                 id="sso-oidc-client-id"
+                                disabled={!canChangeTrust}
                                 value={oidcClientId}
                                 onChange={(e) => setOidcClientId(e.target.value)}
                                 placeholder="client-id-from-idp"
@@ -411,6 +424,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.entityId')}</label>
                             <input
                                 id="sso-saml-entity-id"
+                                disabled={!canChangeTrust}
                                 value={samlEntityId}
                                 onChange={(e) => setSamlEntityId(e.target.value)}
                                 placeholder="https://idp.example.com"
@@ -421,6 +435,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.ssoUrl')}</label>
                             <input
                                 id="sso-saml-sso-url"
+                                disabled={!canChangeTrust}
                                 value={samlSsoUrl}
                                 onChange={(e) => setSamlSsoUrl(e.target.value)}
                                 placeholder="https://idp.example.com/saml/sso"
@@ -431,6 +446,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.certificate')}</label>
                             <textarea
                                 id="sso-saml-certificate"
+                                disabled={!canChangeTrust}
                                 value={samlCertificate}
                                 onChange={(e) => setSamlCertificate(e.target.value)}
                                 placeholder="MIICzjCCAb..."
@@ -509,7 +525,7 @@ export default function SsoAdminPage() {
                     <Button
                         variant="primary"
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={saving || (!existingProvider && !canChangeTrust)}
                         loading={saving}
                         id="sso-save-btn"
                     >

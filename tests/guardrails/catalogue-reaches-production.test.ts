@@ -78,6 +78,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { REPO_ROOT } from '../helpers/repo-files';
 import { callExpressionOf, declarationOf } from '../helpers/source-blocks';
+import { computeLibraryTextHash, parseLibraryFile, scanLibraryDirectory } from '@/app-layer/libraries';
 
 const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
 const CATALOG_SEEDER = path.join(REPO_ROOT, 'scripts/seed-framework-catalogs.ts');
@@ -207,5 +208,139 @@ describe('the shipped catalogue can reach production', () => {
         );
         expect(Object.keys(TEMPLATES_UNDELIVERED)).toEqual([]);
         expect(undelivered).toBe(0);
+    });
+});
+
+/**
+ * ═══ THE FRAMEWORK LIBRARIES AND THEIR CROSSWALKS, THE SAME QUESTION ═══
+ *
+ * The YAML libraries and mapping sets in `src/data/libraries/` had no delivery
+ * path either, for as long as the crosswalks existed. `syncAllLibraries` is the
+ * only writer of library framework rows and of `RequirementMapping`, and
+ * nothing a deployment ran called it, so inherited coverage, gap analysis and
+ * traceability read an empty mapping table in production while every test
+ * passed against rows its own `beforeAll` had imported.
+ *
+ * Folded in here rather than given a file of its own because it is this file's
+ * invariant, that what the repo ships reaches production, over a second
+ * population. The path has four links, and each one alone looks finished:
+ *
+ *   1. `scripts/build-worker.mjs` bundles the script into `dist/`, because the
+ *      production image cannot run TypeScript;
+ *   2. the Dockerfile copies `src/data/libraries` into the runtime image, which
+ *      otherwise carries `prisma/` and `dist/` and no YAML at all;
+ *   3. the script reads the YAML from the working directory, which is where
+ *      the Dockerfile puts it, not from `__dirname`, which in a bundle is
+ *      `dist/`;
+ *   4. `scripts/entrypoint.sh` runs the bundle AFTER the catalogue seed: the
+ *      sync leaves every row that has a pack to the catalogue, so the packs
+ *      must exist first.
+ *
+ * What the sync then DOES is held by
+ * `tests/integration/framework-library-startup-sync.test.ts`; this holds only
+ * that it is reached.
+ */
+const read = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+const trimmedLines = (rel: string): string[] => read(rel).split('\n').map((l) => l.trim());
+
+const LIBRARY_SYNC_SCRIPT = 'scripts/sync-framework-libraries.ts';
+const LIBRARY_SYNC_BUNDLE = 'dist/sync-framework-libraries.mjs';
+const RUN_LIBRARY_SYNC = `node ${LIBRARY_SYNC_BUNDLE} || echo "⚠ framework-library sync incomplete (non-fatal)"`;
+const RUN_CATALOGUE_SEED =
+    'node dist/seed-framework-catalogs.mjs || echo "⚠ framework-catalog seed skipped (non-fatal)"';
+const COPY_LIBRARIES = 'COPY --from=builder /app/src/data/libraries ./src/data/libraries';
+
+describe('the framework libraries reach production', () => {
+    it('the script exists', () => {
+        expect(fs.existsSync(path.join(REPO_ROOT, LIBRARY_SYNC_SCRIPT))).toBe(true);
+    });
+
+    it('build-worker bundles it into dist/', () => {
+        // One `await build({...})` call per bundle; the one naming the script
+        // must also name the bundle the entrypoint runs.
+        const builds = read('scripts/build-worker.mjs').split('await build(');
+        const own = builds.filter((b) => b.includes(`entryPoints: ['${LIBRARY_SYNC_SCRIPT}']`));
+        expect(own).toHaveLength(1);
+        expect(own[0].slice(0, own[0].indexOf('});'))).toContain(`outfile: '${LIBRARY_SYNC_BUNDLE}'`);
+    });
+
+    it('the runtime image carries the YAML', () => {
+        const dockerfile = trimmedLines('Dockerfile');
+        const runtimeStage = dockerfile.map((l) => l.startsWith('FROM ')).lastIndexOf(true);
+        expect(runtimeStage).toBeGreaterThanOrEqual(0);
+        expect(dockerfile.indexOf(COPY_LIBRARIES)).toBeGreaterThan(runtimeStage);
+    });
+
+    it('the script reads the YAML from where the image puts it', () => {
+        // `./src/data/libraries` under WORKDIR /app, and a cwd-relative path in
+        // the script. A `__dirname` path would resolve against `dist/`.
+        const src = trimmedLines(LIBRARY_SYNC_SCRIPT);
+        expect(src).toContain(`const librariesDir = path.resolve(process.cwd(), 'src/data/libraries');`);
+        expect(src.filter((l) => l.includes('__dirname') && !l.startsWith('*') && !l.startsWith('//'))).toEqual([]);
+    });
+
+    it('the entrypoint runs the bundle, after the catalogue seed', () => {
+        const entrypoint = trimmedLines('scripts/entrypoint.sh');
+        const catalogue = entrypoint.indexOf(RUN_CATALOGUE_SEED);
+        const sync = entrypoint.indexOf(RUN_LIBRARY_SYNC);
+        expect(catalogue).toBeGreaterThanOrEqual(0);
+        expect(sync).toBeGreaterThan(catalogue);
+    });
+});
+
+/**
+ * ═══ A LIBRARY'S TEXT CHANGE REACHES A DATABASE THAT ALREADY HAS IT ═══
+ *
+ * The library import skips a library whose content hash matches the stored
+ * one, and that hash covers the urn, the version and the node urns. Not the
+ * text: a reworded title or description, or a corrected copyright line, under
+ * the same version is skipped by every database already holding the library.
+ * Nothing fails. The edit simply never arrives, which since the container-start
+ * sync is production.
+ *
+ * Folding the text into that hash would deliver it, but under the same version
+ * the importer would record a `vN -> vN` diff, and a second such edit would
+ * upsert onto that row (`@@unique([frameworkKey, fromVersion, toVersion])`)
+ * instead of getting its own, so the tenants notified of the first change
+ * would not hear of the second. The version is the right signal; this makes it
+ * move.
+ *
+ * Each library records `text_hash`, `computeLibraryTextHash` of its content as
+ * of its version. When the content changes, this fails and names both values
+ * to write. CI checks out one commit, so this cannot see the version the file
+ * had on the base, and an edit that rewrites `text_hash` without bumping
+ * `version` gets past it. That edit is a deliberate change to the line beside
+ * the version, in the diff a reviewer reads. A forgotten bump, the case that
+ * happens, is caught.
+ *
+ * Mapping sets need no equivalent: they record no diff, so their own hash
+ * covers their text (`computeMappingSetHash`).
+ */
+const LIBRARIES_DIR = path.join(REPO_ROOT, 'src/data/libraries');
+
+describe("a library's text change reaches a database that already holds it", () => {
+    const libraries = scanLibraryDirectory(LIBRARIES_DIR).map((e) => ({
+        file: path.basename(e.filePath),
+        stored: parseLibraryFile(e.filePath),
+    }));
+
+    it('the scan sees the shipped libraries (denominator, not findings)', () => {
+        expect(libraries.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it('every library records the fingerprint of its content as of its version', () => {
+        const stale = libraries.flatMap(({ file, stored }) => {
+            const actual = computeLibraryTextHash(stored);
+            if (stored.text_hash === actual) return [];
+            const v = stored.version;
+            return [
+                stored.text_hash === undefined
+                    ? `${file}: records no text_hash. Add "text_hash: ${actual}" under "version: ${v}".`
+                    : `${file}: its content changed since version ${v} was recorded. ` +
+                      `Bump to "version: ${v + 1}" and set "text_hash: ${actual}", ` +
+                      `or the change reaches no database that already holds the library.`,
+            ];
+        });
+        expect(stale).toEqual([]);
     });
 });

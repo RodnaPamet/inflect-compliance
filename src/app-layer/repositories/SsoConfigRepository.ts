@@ -78,6 +78,31 @@ export async function upsert(
     });
 }
 
+/**
+ * Update a provider and delete every identity link to it, in one
+ * transaction: a link records that the OLD identity provider vouched for a
+ * subject, which says nothing about the new one. Each member's next sign-in
+ * links them again, by email.
+ */
+export async function updateAndRemoveLinks(
+    tenantId: string,
+    id: string,
+    fields: {
+        name: string;
+        type: 'SAML' | 'OIDC';
+        isEnabled?: boolean;
+        isEnforced?: boolean;
+        emailDomains?: string[];
+        configJson: Prisma.InputJsonValue;
+    },
+): Promise<{ provider: TenantIdentityProvider; linksRemoved: number }> {
+    return prisma.$transaction(async (tx) => {
+        const { count } = await tx.userIdentityLink.deleteMany({ where: { tenantId, providerId: id } });
+        const provider = await tx.tenantIdentityProvider.update({ where: { id }, data: fields });
+        return { provider, linksRemoved: count };
+    });
+}
+
 export async function remove(tenantId: string, id: string): Promise<void> {
     // Ensure the provider belongs to this tenant before deleting
     await prisma.tenantIdentityProvider.deleteMany({
