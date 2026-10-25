@@ -134,8 +134,8 @@ export const AUDIT_APPEND_OBSERVED_LATENCY_FLOOR_MS = 400;
  * into a connection queue, which is the failure #2653 observed.
  *
  * WHY NOT MORE: 25 is also PgBouncer's `DEFAULT_POOL_SIZE` in
- * `deploy/docker-compose.prod.yml:42` and the chart default quoted in
- * `docs/sizing.md`. PgBouncer runs in transaction mode, so an in-flight
+ * `deploy/docker-compose.prod.yml`, the value `docs/sizing.md` quotes
+ * for it. PgBouncer runs in transaction mode, so an in-flight
  * transaction holds a SERVER connection there too — asking this pool
  * for more than 25 does not buy concurrency, it relocates the queue
  * into PgBouncer, where the wait is governed by `query_wait_timeout`
