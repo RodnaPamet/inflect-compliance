@@ -724,7 +724,7 @@ Each phase's hardening step fills its row.
 Make the engine seam ready for more than Flue. #4111 closed the two gaps on
 `/api/mcp` first (Step 0d). #4176 then delivered the engine-neutral tool core
 (Step 0a), #4220 the driver conformance suite (Step 0b), and #4181 the Agent
-engines section (Step 0c). #PRNUM hardened the phase (Step 0H). **Phase 0 is
+engines section (Step 0c). #4248 hardened the phase (Step 0H). **Phase 0 is
 built and mutation-proved.** It has not yet been observed in production. See the
 Operational evidence table.
 
@@ -809,7 +809,7 @@ are scanned, and content past depth 64 is refused.
 
 #### Step 0H — Phase 0 hardening
 
-Delivered by #PRNUM (#4141), except item 3 of the prompt below:
+Delivered by #4248 (#4141), except item 3 of the prompt below:
 
 - **The adversarial read** found the run-engine label (fixed by #4285, `recordedModeOf`) and six
   rendering faults in the Agent engines section, each with a test.
