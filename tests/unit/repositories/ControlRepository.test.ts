@@ -204,13 +204,16 @@ describe('list / _buildWhere', () => {
 // ─── listDeleted — the "Deleted controls" view ───
 
 describe('listDeleted', () => {
-    it('reads ONLY soft-deleted rows of this tenant', async () => {
+    it('reads ONLY soft-deleted rows, under the live list\'s tenant scope', async () => {
         // `withDeleted` alone opts out of the soft-delete read filter, which
         // returns live and deleted rows alike — the view listed the whole
         // register. The explicit `deletedAt: { not: null }` is the fix.
         await ControlRepository.listDeleted(db as any, ctx, undefined, { take: 5000 });
         const arg = (db.control.findMany.mock.calls[0] as any[])[0];
-        expect(arg.where).toEqual({ tenantId: 'tenant-1', deletedAt: { not: null } });
+        expect(arg.where).toEqual({
+            OR: [{ tenantId: 'tenant-1' }, { tenantId: null }],
+            deletedAt: { not: null },
+        });
         // The withDeleted marker the soft-delete extension honours.
         expect(arg.__includeDeleted).toBe(true);
         expect(arg.take).toBe(5000);
@@ -228,10 +231,8 @@ describe('listDeleted', () => {
         expect(where.status).toEqual({ in: ['IMPLEMENTED', 'NEEDS_REVIEW'] });
         expect(where.ownerUserId).toBe('owner-9');
         expect(where.deletedAt).toEqual({ not: null });
-        // The tenant-or-global OR is replaced by the tenant alone, not kept
-        // beside it.
-        expect(where.OR).toBeUndefined();
-        expect(where.tenantId).toBe('tenant-1');
+        // The tenant scope survives the filters, which sit under AND.
+        expect(where.OR).toEqual([{ tenantId: 'tenant-1' }, { tenantId: null }]);
         expect(where.AND).toHaveLength(2); // due-soon predicate + search
         expect(JSON.stringify(where.AND)).toContain('firewall');
     });

@@ -223,8 +223,8 @@ interface ControlsClientProps {
  * ControlRepository.kpiCounts — not derived from `rows`, which is both
  * filter-scoped and backfill-capped.
  *
- * OPTIONAL on purpose: the `includeDeleted` branch returns a bare array, and
- * the SSR fallback has rows but no counts. Requiring it would force a fake
+ * OPTIONAL on purpose: the `includeDeleted` branch returns rows without
+ * counts, and the SSR fallback has rows but no counts. Requiring it would force a fake
  * zero into both, and a card reading 0 is a worse lie than one reading the
  * page count.
  */
@@ -534,8 +534,9 @@ function ControlsPageInner({
         const qs = params.toString();
         return qs ? `${CACHE_KEYS.controls.list()}?${qs}` : CACHE_KEYS.controls.list();
     }, [filtersForQuery, showDeleted]);
-    // The live list GET returns `{ rows, truncated }`; the `includeDeleted`
-    // branch returns a bare array (listControlsWithDeleted). Type + read both.
+    // Both branches of the list GET return `{ rows, truncated }` (the
+    // `includeDeleted` one without kpiCounts). A bare array — what that branch
+    // returned before #4275 — is still read, for a response from an older server.
     const controlsQuery = useTenantSWR<ControlListResponse | ControlListItem[]>(controlsKey, {
         // The SSR initial payload never contains soft-deleted rows, so the
         // deleted view must always fetch fresh (no fallback).

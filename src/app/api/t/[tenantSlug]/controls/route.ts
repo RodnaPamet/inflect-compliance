@@ -66,10 +66,11 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
             method: req.method,
             path: req.nextUrl.pathname,
         });
-        // The view keeps the toolbar's filters and search active, so the
-        // read honours them (Assets does the same).
-        const controls = await listControlsWithDeleted(ctx, filters);
-        return jsonResponse(controls);
+        // The same filters as the live list, and the same `{ rows, truncated }`
+        // shape. This branch used to take no filters and return every control,
+        // deleted or not (#4275).
+        const controls = await listControlsWithDeleted(ctx, filters, { take: LIST_BACKFILL_CAP + 1 });
+        return jsonResponse(applyBackfillCap(controls));
     }
 
     // If pagination params present, use paginated response

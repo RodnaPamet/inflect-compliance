@@ -6,8 +6,8 @@ import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 import { notFound } from '@/lib/errors/types';
-import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import { withDeleted } from '@/lib/soft-delete';
+import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import {
     APPLICABILITY_STATES,
     applicabilityStateWhere,
@@ -155,36 +155,28 @@ export class ControlRepository {
     }
 
     /**
-     * The "Deleted controls" view: ONLY soft-deleted rows, honouring the same
-     * filters as the live list, in the same row shape plus the who/when
-     * lifecycle columns. The Assets twin is `AssetRepository.listDeleted`.
-     *
-     * `withDeleted` only opts OUT of the soft-delete read filter, so on its own
-     * it returns live and deleted rows alike — which is what this view showed
-     * until the explicit `deletedAt: { not: null }` below. Scoped to the
-     * tenant's own rows: a framework-global control (tenantId NULL) is not
-     * something a tenant deletes, restores or purges.
+     * The "Deleted controls" view: ONLY soft-deleted rows, under the same
+     * filters and with the same columns as `list`, plus who deleted it and
+     * when. `withDeleted` only opts out of the soft-delete read filter, so
+     * the explicit `deletedAt: { not: null }` is what narrows to the deleted
+     * set. Without it the view listed every control, ignored every filter,
+     * and could only say "No deleted controls" for an empty workspace (#4275).
      */
     static async listDeleted(
         db: PrismaTx,
         ctx: RequestContext,
-        filters: ControlListFilters | undefined,
-        options: { take: number },
+        filters?: ControlListFilters,
+        options: { take?: number } = {},
     ) {
         return traceRepository('control.listDeleted', ctx, async () => {
-            // `_buildWhere`'s top-level `OR` is ONLY the tenant-or-global scope
-            // (every filter that can carry an `OR` sits under `AND`), so it is
-            // replaced, not merged.
             const where = ControlRepository._buildWhere(ctx, filters);
-            delete where.OR;
-            where.tenantId = ctx.tenantId;
             where.deletedAt = { not: null };
             return withFrameworks(
                 await db.control.findMany(withDeleted({
                     where,
                     orderBy: { deletedAt: 'desc' as const },
                     select: { ...controlListSelect, deletedAt: true, deletedByUserId: true },
-                    take: options.take,
+                    take: options.take ?? 500,
                 })),
             );
         });
@@ -341,13 +333,11 @@ export class ControlRepository {
             const applicability = ControlRepository._parseApplicabilityFilter(filters.applicability);
             if (applicability) and.push(applicability);
         }
-        // Comma-joinable: the Owner facet is a multi-select, so picking two
-        // owners sends `?ownerUserId=a,b`. Assigning it raw compared the whole
-        // string against one user id and matched nothing.
-        if (filters?.ownerUserId) {
-            const owner = parseIdListFilter(filters.ownerUserId);
-            if (owner !== undefined) where.ownerUserId = owner;
-        }
+        // Comma-joined like `status`: the Owner facet is multi-select, and
+        // assigning the raw string compared "idA,idB" as ONE user id, so
+        // picking two owners matched nothing (#4275).
+        const owner = parseIdListFilter(filters?.ownerUserId);
+        if (owner) where.ownerUserId = owner;
         // Dashboard drill-downs. Pushed onto `and` because each predicate can
         // itself carry `OR`/`NOT`, and assigning at the top level would collide
         // with the tenant-scope `OR` above.

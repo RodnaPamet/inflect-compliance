@@ -139,9 +139,9 @@ describe('ControlRepository list `_count` projection', () => {
     test('list-shape constant is referenced by list(), listDeleted() and listPaginated()', () => {
         // The performance fix only sticks if every list path actually
         // reaches the trimmed shape. PR-3 introduced a shared constant —
-        // pin its name so a future refactor can't drop one reference.
-        // `listDeleted` (the Deleted controls view, #4275) reads the same
-        // shape plus its two who/when columns.
+        // pin its name so a future refactor can't drop one reference. The
+        // "Deleted controls" view is the third path (#4275): it shows the
+        // same columns, so it reads the same shape.
         const listFnIndex = repo.indexOf('static async list(');
         const detailIndex = repo.indexOf('static async getById(');
         const listSection = repo.slice(listFnIndex, detailIndex);

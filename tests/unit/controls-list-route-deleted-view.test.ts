@@ -1,19 +1,14 @@
 /**
  * `GET /api/t/:tenantSlug/controls?includeDeleted=true` — the Controls
- * page's "Deleted controls" view.
+ * page's "Deleted controls" view — is gated `admin.manage` (beside
+ * `controls.view`), like the view's Restore / Purge / bulk delete (#4275).
  *
- * Two route-level claims (#4275):
+ * It was `controls.view` alone, so a refusal came from the usecase's
+ * `assertCanAdmin` and wrote no AUTHZ_DENIED row. The branch now runs the
+ * middleware's own decision (`assertPermission`), which writes it.
  *
- *   1. The view keeps the toolbar's search and filters active, and the route
- *      used to answer it with `listControlsWithDeleted(ctx)` — no filters at
- *      all — so search, status, applicability, owner, health and the
- *      dashboard drill-downs were silently dropped there. The ROUTE now
- *      forwards them; the usecase and repository tests prove what is done
- *      with them.
- *   2. The branch is gated `admin.manage` (beside `controls.view`) by the
- *      middleware, like the view's Restore / Purge. It was `controls.view`
- *      alone, so a refusal came from the usecase's `assertCanAdmin` and
- *      wrote no AUTHZ_DENIED row.
+ * The response shape and the filter pass-through of the same branch are
+ * held by tests/unit/deleted-view-route-shape.test.ts.
  */
 import { strictMock } from '../helpers/strict-mock';
 
@@ -83,36 +78,6 @@ function get(qs: string) {
         params: Promise.resolve({ tenantSlug: 'acme' }),
     });
 }
-
-describe('GET /controls?includeDeleted=true', () => {
-    it('forwards the toolbar filters to the deleted-view read', async () => {
-        const res = await get(
-            '?includeDeleted=true&q=vpn&status=IMPLEMENTED,NEEDS_REVIEW&applicability=APPLICABLE' +
-                '&ownerUserId=u-1,u-2&health=AT_RISK&due=soon&evidence=missing&ids=c-1,c-2',
-        );
-        expect(res.status).toBe(200);
-        expect(listControlsWithDeletedMock).toHaveBeenCalledTimes(1);
-        expect(listControlsMock).not.toHaveBeenCalled();
-        const [calledCtx, filters] = listControlsWithDeletedMock.mock.calls[0];
-        expect(calledCtx).toBe(ctx);
-        expect(filters).toEqual({
-            q: 'vpn',
-            status: 'IMPLEMENTED,NEEDS_REVIEW',
-            applicability: 'APPLICABLE',
-            ownerUserId: 'u-1,u-2',
-            health: 'AT_RISK',
-            due: 'soon',
-            evidence: 'missing',
-            ids: 'c-1,c-2',
-        });
-    });
-
-    it('still returns the deleted view as a bare array', async () => {
-        listControlsWithDeletedMock.mockResolvedValueOnce([{ id: 'c-9' }]);
-        const res = await get('?includeDeleted=true');
-        expect(await res.json()).toEqual([{ id: 'c-9' }]);
-    });
-});
 
 describe('the Deleted view is gated admin.manage at the route', () => {
     it('refuses a caller without admin.manage with a 403 and an AUTHZ_DENIED row', async () => {
