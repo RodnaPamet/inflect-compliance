@@ -1004,10 +1004,8 @@ Adding a new model ⇒ classify it in the doc's inventory table (the
 **See `docs/change-management-policy.md`** — the written contract over the
 existing rapid-release pipeline (semantic-release auto-versions main on each push
 that leaves the merge queue empty, plus a daily run, so its commit does not
-invalidate queue candidates in flight — except a push that adds a test, spec or
-registered primitive, which releases at once because only a release raises the
-coverage floors; staging auto-deploys; production is gated by a GitHub
-Environment approval).
+invalidate queue candidates in flight; staging auto-deploys; production is gated
+by a GitHub Environment approval).
 It defines the three change classes (STANDARD / SIGNIFICANT / EMERGENCY), the
 approval matrix (who is the required second approver for migrations, infra, secret
 rotations, SSO/SCIM changes), the emergency-bypass + retrospective procedure, the
