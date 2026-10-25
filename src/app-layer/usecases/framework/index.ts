@@ -46,10 +46,5 @@ export type {
     InheritedRequirementStatus,
 } from './inherited-coverage';
 
-// Fixture upsert & diff
-export {
-    upsertRequirements,
-    computeRequirementsDiff,
-} from './fixtures';
-
-export type { RequirementFixture } from './fixtures';
+// Requirements diff (read-only)
+export { computeRequirementsDiff } from './fixtures';

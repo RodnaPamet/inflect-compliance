@@ -26,14 +26,23 @@ async function createControl(page: Page, slug: string): Promise<string> {
     return new URL(page.url()).pathname;
 }
 
-/** Link a URL evidence record to the open control's Evidence tab. */
-async function linkUrlEvidence(page: Page, note: string): Promise<void> {
-    await page.click('#tab-evidence');
-    await page.click('#link-evidence-btn');
-    await page.fill('#evidence-url-input', 'https://example.com/evidence-doc');
-    await page.fill('#evidence-note-input', note);
-    await page.click('#submit-evidence-btn');
-    await expect(page.locator('#evidence-table')).toBeVisible({ timeout: 10000 });
+/**
+ * Save a PLAIN link (a `ControlEvidenceLink` row) on a control through the
+ * API. The Evidence tab no longer writes these — a link added there is a
+ * library record (#4126) — but links saved before that still show and can
+ * still be removed, so the remove path is seeded the only way that remains.
+ */
+async function seedPlainLink(
+    page: Page,
+    slug: string,
+    controlDetailPath: string,
+    note: string,
+): Promise<void> {
+    const controlId = controlDetailPath.split('/').filter(Boolean).pop();
+    const res = await page.request.post(`/api/t/${slug}/controls/${controlId}/evidence`, {
+        data: { kind: 'LINK', url: 'https://example.com/plain-link', note },
+    });
+    expect(res.status()).toBe(201);
 }
 
 test.describe('Control → Evidence Linking', () => {
@@ -78,14 +87,22 @@ test.describe('Control → Evidence Linking', () => {
         await authedPage.click('#tab-evidence');
         await authedPage.click('#link-evidence-btn');
         await authedPage.fill('#evidence-url-input', 'https://example.com/evidence-doc');
-        await authedPage.fill('#evidence-note-input', `Test link ${uid}`);
+        // A link is a library record, so it is named by the Title field.
+        await authedPage.fill('#control-upload-title', `Test link ${uid}`);
         await authedPage.click('#submit-evidence-btn');
 
-        await expect(authedPage.locator('#evidence-table')).toBeVisible({ timeout: 10000 });
-        await expect(authedPage.locator('#evidence-table')).toContainText('LINK');
-        await expect(authedPage.locator('#evidence-table')).toContainText(
-            'https://example.com/evidence-doc',
-        );
+        const table = authedPage.locator('#evidence-table');
+        await expect(table).toBeVisible({ timeout: 10000 });
+        await expect(table).toContainText(`Test link ${uid}`);
+        await expect(table).toContainText('https://example.com/evidence-doc');
+        // A library record, so it has a review status (#4126).
+        await expect(table).toContainText('Draft');
+
+        // …and it is in the evidence library, where it can be reviewed.
+        await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/evidence`);
+        await expect(
+            authedPage.getByRole('main').getByText(`Test link ${uid}`).first(),
+        ).toBeVisible({ timeout: 15000 });
     });
 
     test('the + Evidence form offers both file upload and URL link', async ({
@@ -124,8 +141,21 @@ test.describe('Control → Evidence Linking', () => {
         await authedPage.goto(controlDetailPath);
         await authedPage.waitForSelector('#control-title', { timeout: 15000 });
 
-        // This test needs a row to unlink — create one first.
-        await linkUrlEvidence(authedPage, `Test link ${uid}`);
+        // This test needs a row to unlink — seed an older plain link.
+        await seedPlainLink(
+            authedPage,
+            isolatedTenant.tenantSlug,
+            controlDetailPath,
+            `Test link ${uid}`,
+        );
+        await authedPage.reload();
+        await authedPage.waitForSelector('#control-title', { timeout: 15000 });
+        await authedPage.click('#tab-evidence');
+        await expect(authedPage.locator('#evidence-table')).toBeVisible({ timeout: 10000 });
+        // Labelled as a plain link with no review status, note included.
+        await expect(authedPage.locator('#evidence-table')).toContainText('Plain link');
+        await expect(authedPage.locator('#evidence-table')).toContainText('No review status');
+        await expect(authedPage.locator('#evidence-table')).toContainText(`Test link ${uid}`);
 
         // Count rows before
         const rowsBefore = await authedPage

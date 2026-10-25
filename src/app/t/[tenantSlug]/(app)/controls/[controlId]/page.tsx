@@ -30,6 +30,7 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { extractMutationError } from '@/lib/mutations';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useToastWithUndo, useToast } from '@/components/ui/hooks';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
@@ -281,10 +282,11 @@ export default function ControlDetailPage() {
     // Evidence linking
     const [showEvidenceForm, setShowEvidenceForm] = useState(false);
     const [evidenceUrl, setEvidenceUrl] = useState('');
-    const [evidenceNote, setEvidenceNote] = useState('');
     const [savingEvidence, setSavingEvidence] = useState(false);
 
-    // File upload for this control (folded into the "+ Evidence" form)
+    // File upload for this control (folded into the "+ Evidence" form).
+    // The title names an uploaded file OR a linked address — a link is a
+    // library record and needs one.
     const [fileToUpload, setFileToUpload] = useState<File | null>(null);
     const [fileUploadTitle, setFileUploadTitle] = useState('');
     const [fileUploading, setFileUploading] = useState(false);
@@ -637,7 +639,6 @@ export default function ControlDetailPage() {
 
     const resetEvidenceForm = () => {
         setEvidenceUrl('');
-        setEvidenceNote('');
         setFileToUpload(null);
         setFileUploadTitle('');
         setFileUploadError('');
@@ -646,11 +647,19 @@ export default function ControlDetailPage() {
     };
 
     // Unified "+ Evidence" submit. The single form supports BOTH a file
-    // upload (browse + title) and a URL link. A chosen file takes
-    // precedence: it uploads via /evidence/uploads (FileRecord +
-    // Evidence(FILE) + ControlEvidenceLink); otherwise a non-empty URL
-    // links a LINK evidence record. Both land in this control's Evidence
-    // tab + the Evidence Library.
+    // upload (browse + title) and a URL link (address + title). A chosen
+    // file takes precedence: it uploads via /evidence/uploads (FileRecord +
+    // Evidence(FILE) + the EvidenceControlLink join). Otherwise the address
+    // becomes a library Evidence(LINK) record through POST /evidence with
+    // `controlIds` — the library's own create path, exactly as its link
+    // dialog uses it — so it is linked to this control, appears in the
+    // Evidence Library and can be reviewed (#4126). This used to say both
+    // landed in the library while the link wrote only a plain
+    // ControlEvidenceLink row the library never reads.
+    //
+    // Errors show the server's message: an API error body is the envelope
+    // `{ error: { code, message } }`, so `new Error(body.error || …)` read
+    // "[object Object]" (#4126).
     const addEvidence = async (e: React.FormEvent) => {
         e.preventDefault();
         setFileUploadError('');
@@ -664,8 +673,8 @@ export default function ControlDetailPage() {
                 formData.append('controlId', controlId);
                 const res = await fetch(apiUrl('/evidence/uploads'), { method: 'POST', body: formData });
                 if (!res.ok) {
-                    const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-                    throw new Error(err.error || err.message || tx('detailPage.errors.uploadFailed'));
+                    const body = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(body, tx('detailPage.errors.uploadFailed')));
                 }
                 resetEvidenceForm();
                 await Promise.all([evidenceSWR.mutate(), refetch()]);
@@ -677,17 +686,26 @@ export default function ControlDetailPage() {
             return;
         }
 
-        if (!evidenceUrl.trim()) {
+        const url = evidenceUrl.trim();
+        const title = fileUploadTitle.trim();
+        if (!url) {
             setFileUploadError(tx('detailPage.errors.chooseFile'));
+            return;
+        }
+        if (!title) {
+            setFileUploadError(tx('detailPage.errors.linkTitleRequired'));
             return;
         }
         setSavingEvidence(true);
         try {
-            const res = await fetch(apiUrl(`/controls/${controlId}/evidence`), {
+            const res = await fetch(apiUrl('/evidence'), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kind: 'LINK', url: evidenceUrl, note: evidenceNote || undefined }),
+                body: JSON.stringify({ type: 'LINK', title, content: url, controlIds: [controlId] }),
             });
-            if (!res.ok) throw new Error(tx('detailPage.errors.linkEvidenceFailed'));
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('detailPage.errors.linkEvidenceFailed')));
+            }
             resetEvidenceForm();
             await Promise.all([evidenceSWR.mutate(), refetch()]);
         } catch (err: unknown) {
@@ -1228,8 +1246,7 @@ export default function ControlDetailPage() {
                         onTitleChange={setFileUploadTitle}
                         url={evidenceUrl}
                         onUrlChange={setEvidenceUrl}
-                        note={evidenceNote}
-                        onNoteChange={setEvidenceNote}
+                        linkTitleRequired
                         onSubmit={addEvidence}
                         error={fileUploadError}
                         uploading={fileUploading}

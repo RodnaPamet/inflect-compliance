@@ -256,11 +256,14 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         await loginAsCiso(page);
         await safeGoto(page, `/org/${ORG_SLUG}/tenants/new`);
 
+        // Scoped to `main` like every other locator in this spec (see the
+        // note in test B): the streaming duplicate of the page made a bare
+        // `[data-testid="org-new-tenant-form"]` resolve to 2 elements.
+        const main = page.getByRole('main');
         await expect(
-            page.locator('[data-testid="org-new-tenant-form"]'),
+            main.locator('[data-testid="org-new-tenant-form"]'),
         ).toBeVisible({ timeout: 30_000 });
 
-        await page.fill('[data-testid="org-new-tenant-name"]', attemptName);
         // The slug field auto-fills via a debounced effect after
         // name input. Wait for it to settle (any non-empty value),
         // THEN replace with a collision-proof slug. Without the
@@ -269,8 +272,18 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         // derived slug — which collides with prior runs and the
         // create POST 409s. That race showed up as the test being
         // marked "flaky" in CI.
-        const slugInput = page.locator('[data-testid="org-new-tenant-slug"]');
-        await expect(slugInput).not.toHaveValue('', { timeout: 10_000 });
+        //
+        // The name is typed INSIDE the retry because the form can remount
+        // once while the page hydrates (its inputs' ids change from the
+        // server-rendered `_R_…` to a client `_r_…`). A name typed into the
+        // first copy is then gone, the auto-fill never runs, and a single
+        // fill waits out its whole timeout on an empty slug.
+        const nameInput = main.locator('[data-testid="org-new-tenant-name"]');
+        const slugInput = main.locator('[data-testid="org-new-tenant-slug"]');
+        await expect(async () => {
+            await nameInput.fill(attemptName);
+            await expect(slugInput).not.toHaveValue('', { timeout: 2_000 });
+        }).toPass({ timeout: 20_000 });
         await slugInput.fill(attemptSlug);
         // Re-assert after a short settle window — if a debounced
         // effect tries to overwrite the slug again, this fails
@@ -278,9 +291,9 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         await expect(slugInput).toHaveValue(attemptSlug, { timeout: 5_000 });
         // "Choose later" — keeps the post-create redirect to a stable
         // surface that doesn't depend on the framework catalog.
-        await page.click('[data-testid="org-new-tenant-framework-later"]');
+        await main.locator('[data-testid="org-new-tenant-framework-later"]').click();
 
-        await page.click('[data-testid="org-new-tenant-submit"]');
+        await main.locator('[data-testid="org-new-tenant-submit"]').click();
 
         // The form attempts to redirect to /t/{newSlug}/dashboard. The
         // user's in-flight JWT doesn't carry the new OWNER membership

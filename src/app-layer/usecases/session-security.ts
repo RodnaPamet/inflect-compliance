@@ -25,6 +25,11 @@ import { prisma } from '@/lib/prisma';
 import type { RequestContext } from '../types';
 import { forbidden, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
+import {
+    isOwnerManagedRole,
+    OWNER_MANAGED_SESSION_REVOKE_REFUSAL,
+    ownerManagedSessionRevokeMessage,
+} from '@/lib/roles';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -105,6 +110,44 @@ function revokeSessionsExcept(userId: string, keptSessionId: string, reason: str
     });
 }
 
+// ─── Who may sign out whom ──────────────────────────────────────────
+
+/**
+ * Refuse revoking the sessions of a member who holds an OWNER-managed role
+ * (OWNER, AI_ADMIN) unless the caller holds `admin.owner_management` — the
+ * members page's rule for deactivating one (#4118), applied to the targeted
+ * sign-out (owner decision, 2026-10-25). One's own sessions are always one's
+ * own to revoke. Read on the membership's role whatever its status, as the
+ * deactivation rule is.
+ *
+ * Used by `revokeUserSessions` and by `DELETE /admin/sessions` (one session
+ * of one person). `revokeAllTenantSessions` does not ask it.
+ */
+export function assertMayRevokeSessionsOf(
+    ctx: RequestContext,
+    target: { userId: string; role: string },
+): void {
+    if (target.userId === ctx.userId) return;
+    if (isOwnerManagedRole(target.role) && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden(ownerManagedSessionRevokeMessage(target.role), {
+            reason: OWNER_MANAGED_SESSION_REVOKE_REFUSAL,
+        });
+    }
+}
+
+/** `assertMayRevokeSessionsOf`, reading the target's role in this tenant. */
+export async function assertMayRevokeSessionsOfUser(ctx: RequestContext, targetUserId: string): Promise<void> {
+    if (targetUserId === ctx.userId) return;
+    const membership = await prisma.tenantMembership.findUnique({
+        where: { tenantId_userId: { tenantId: ctx.tenantId, userId: targetUserId } },
+        select: { role: true },
+    });
+    // No membership here: nothing owner-managed to protect. The caller's own
+    // tenant check (a 404) still applies.
+    if (!membership) return;
+    assertMayRevokeSessionsOf(ctx, { userId: targetUserId, role: membership.role });
+}
+
 // ─── Revoke User Sessions ───────────────────────────────────────────
 
 /**
@@ -112,6 +155,8 @@ function revokeSessionsExcept(userId: string, keptSessionId: string, reason: str
  * and stamping their live session rows.
  * - Self: always allowed
  * - Other user: ADMIN-only, and target must be in the same tenant
+ * - An OWNER or AI_ADMIN target: only a holder of `admin.owner_management`
+ *   (`assertMayRevokeSessionsOf`)
  */
 export async function revokeUserSessions(
     ctx: RequestContext,
@@ -138,6 +183,7 @@ export async function revokeUserSessions(
         if (!membership) {
             throw notFound('Target user is not a member of this tenant');
         }
+        assertMayRevokeSessionsOf(ctx, { userId: effectiveUserId, role: membership.role });
     }
 
     const [updated] = await prisma.$transaction([

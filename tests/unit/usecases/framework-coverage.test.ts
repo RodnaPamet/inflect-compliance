@@ -239,6 +239,28 @@ describe('listTemplates (coverage.ts variant)', () => {
         expect(result.find((t: any) => t.code === 'A.5.1')!.installed).toBe(true);
         expect(result.find((t: any) => t.code === 'A.5.2')!.installed).toBe(false);
     });
+
+    it("carries each task's authored evidenceHint (the template library's Suggested evidence)", async () => {
+        // #4125 — the library printed a hardcoded DOCUMENT / SCREENSHOT / LOG
+        // for every template; the real data was on the task and not returned.
+        mockPrisma.controlTemplate.findMany.mockResolvedValueOnce([
+            {
+                id: 't-1', code: 'A.5.1', title: 'X', packLinks: [], requirementLinks: [],
+                tasks: [
+                    { id: 'tt-1', title: 'Approve the policy', description: null, evidenceHint: 'The approved policy with its approver' },
+                    { id: 'tt-2', title: 'Plan the review', description: null, evidenceHint: null },
+                ],
+            },
+        ]);
+        tenantDb.control.findMany.mockResolvedValueOnce([]);
+
+        const [tmpl] = await listTemplates(ctx, {});
+
+        expect(tmpl.tasks.map((task: any) => task.evidenceHint)).toEqual([
+            'The approved policy with its approver',
+            null,
+        ]);
+    });
 });
 
 // ──────────────────────────────────────────────────────────────────────

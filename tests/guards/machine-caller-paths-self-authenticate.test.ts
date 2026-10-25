@@ -83,7 +83,7 @@ const CONTRACTS: ReadonlyArray<{
     {
         prefix: '/api/mcp',
         handler: 'api/mcp/route.ts',
-        gate: /authenticateMcpRequest\s*\(/,
+        gate: /verifyMcpCredential\s*\(/,
         why: 'Bearer TenantApiKey with an mcp:read capability scope',
     },
     {

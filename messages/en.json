@@ -2081,6 +2081,7 @@
         "statusUpdateFailed": "Status update failed",
         "uploadFailed": "Upload failed",
         "chooseFile": "Choose a file to upload, or enter an evidence URL.",
+        "linkTitleRequired": "Give the link a title.",
         "linkEvidenceFailed": "Failed to link evidence",
         "unlinkFailed": "Unlink failed",
         "applicabilityFailed": "Couldn't save applicability.",
@@ -4677,6 +4678,7 @@
       "sessionsTitle": "Sessions",
       "sessionsFor": "Sessions for {name}",
       "sessionsDesc": "Live sessions for this member. Revoke any device to sign it out on its next request.",
+      "sessionsOwnerOnly": "Only an Owner can sign out an Owner or an AI admin.",
       "sessionsHeaderEmpty": "No active sessions.",
       "activeSessionsCount": "{count, plural, one {# active session.} other {# active sessions.}}",
       "loadingSessionsAria": "Loading sessions",
@@ -4775,6 +4777,7 @@
       "revokeAllDesc": "Sign out every active member of this workspace, everywhere they are signed in. You stay signed in here. Use for incidents.",
       "revokeSpecificLabel": "Revoke one member's sessions",
       "pickMemberPlaceholder": "Choose a member",
+      "revokeOwnerOnlyHint": "Only an Owner can sign out an Owner or an AI admin.",
       "revoke": "Revoke",
       "failedLoadSettings": "Failed to load security settings",
       "saveBlockedUntilLoaded": "Saving is turned off until the saved settings load, so this page cannot overwrite them. Reload the page to try again.",
@@ -7576,7 +7579,8 @@
       "description": "Browse standards, install control packs, and track requirement coverage",
       "createFramework": "Create framework",
       "importFramework": "Import framework",
-      "installed": "Installed",
+      "installed": "In use",
+      "inUseHint": "At least one of this framework's requirements has a mapped control",
       "available": "Available",
       "requirements": "Requirements",
       "packs": "Packs",
@@ -7692,7 +7696,9 @@
       "mappingsCreated": "Mappings Created",
       "viewControls": "View Controls →",
       "backToFramework": "Back to Framework",
-      "packsEmpty": "No packs available for this framework."
+      "packsEmpty": "No packs available for this framework.",
+      "restrictedTitle": "You cannot install frameworks",
+      "restricted": "Only an Owner or Admin can install a framework pack, or a member whose custom role allows installing frameworks. Ask one of them to install it. You can still read this framework's requirements."
     },
     "templates": {
       "loading": "Loading template library...",
@@ -7714,7 +7720,8 @@
       "requirementsCount": "{count} requirements",
       "mappedRequirements": "Mapped Requirements",
       "defaultTasks": "Default Tasks",
-      "suggestedEvidence": "Suggested Evidence Types",
+      "suggestedEvidence": "Suggested Evidence",
+      "installFailed": "The install did not finish. Reload the page to see what was added.",
       "emptyFilter": "No templates match your filters."
     },
     "loadingAria": "Loading frameworks",
@@ -11129,6 +11136,7 @@
       "placeholderTitle": "Title (defaults to filename)",
       "uploadFile": "Upload a file",
       "orLinkUrl": "…or link a URL",
+      "linkNeedsTitle": "A link is saved to the evidence library and needs a title.",
       "urlPlaceholder": "https://…",
       "noteOptional": "Note (optional)",
       "uploading": "Uploading...",
@@ -12606,7 +12614,11 @@
         "selected": "Selected",
         "selectAtLeastOne": "Select at least one framework to continue.",
         "badgeMostPopular": "Most Popular",
-        "badgeEu": "EU"
+        "badgeEu": "EU",
+        "installFailedTitle": "Some frameworks were not installed",
+        "installFailedItem": "{framework}: {message}",
+        "installFailedFallback": "The install did not finish.",
+        "installFailedHint": "You can install a framework later from the Frameworks page."
       },
       "assets": {
         "intro": "Add your key information assets. These are the systems, databases, and services you need to protect.",
@@ -12916,6 +12928,13 @@
       "colType": "Type",
       "emptyDesc": "Link existing evidence or upload new files to satisfy this control.",
       "emptyTitle": "No evidence linked",
+      "linkKinds": {
+        "FILE": "File",
+        "LINK": "Plain link",
+        "INTEGRATION_RESULT": "Integration result",
+        "BIA": "BIA"
+      },
+      "noReviewStatus": "No review status",
       "remove": "× Remove"
     }
   },

@@ -55,6 +55,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { choiceOrNull, textOrNull } from './_lib/control-write-values';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // ─── Options ─────────────────────────────────────────────────────────
 
@@ -254,18 +255,15 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                     body: JSON.stringify(body),
                 });
                 if (!res.ok) {
-                    const data = await res.json().catch(() => ({}));
+                    const data = await res.json().catch(() => null);
                     // Carry the server-supplied message when present; an
                     // empty message lets the catch apply the localized
                     // default — the fallback string lives in ONE place
-                    // (the catch), so it is never dead code here.
-                    const serverMsg =
-                        typeof data.error === 'string'
-                            ? data.error
-                            : typeof data.message === 'string'
-                              ? data.message
-                              : '';
-                    throw new Error(serverMsg);
+                    // (the catch), so it is never dead code here. The body is
+                    // the envelope `{ error: { code, message } }`, which the
+                    // old `typeof data.error === 'string'` read never matched,
+                    // so the server's reason was always dropped (#4126).
+                    throw new Error(apiErrorMessage(data, ''));
                 }
                 const created: { id: string } = await res.json();
                 createdId = created.id;
