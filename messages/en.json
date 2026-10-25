@@ -2259,7 +2259,7 @@
       "controlHealthTitle": "Control health",
       "retry": "Retry",
       "controlHealthTileAria": "{count} controls — {verdict}",
-      "controlHealthMeasuredOnly": "Health reflects MEASURED test operating-effectiveness only. A declared effectiveness estimate informs valuation/ROI — not health — so a control with a declared score but no tests reads Unknown here.",
+      "controlHealthMeasuredOnly": "Health comes from test runs, the control's status, overdue dates and open exceptions — not from a declared effectiveness estimate, which informs valuation/ROI only. A control with no test runs reads Unknown unless it is Implemented; an Implemented control with no test runs reads Healthy unless it is overdue or has open exceptions.",
       "controlHealthTruncated": "Showing health for the first {scanned} controls (scan cap {cap}). Controls beyond the cap have no verdict badge."
     },
     "templates": {
@@ -2530,7 +2530,7 @@
     "link": "Link",
     "text": {
       "title": "Add evidence",
-      "description": "Record a link, narrative, or attestation against a control.",
+      "description": "Record a narrative or attestation against a control. A note is shown as plain text; to add a clickable link, use Link instead.",
       "titleLabel": "Title",
       "linkControlLabel": "Link to control",
       "noControlLink": "— No control link",
@@ -2542,7 +2542,7 @@
       "folderOptional": "(optional)",
       "folderPlaceholder": "e.g. SOC2/2026 or Quarterly access reviews",
       "contentLabel": "Content",
-      "contentPlaceholder": "Paste a link or narrative…",
+      "contentPlaceholder": "Write a narrative or attestation…",
       "cancel": "Cancel",
       "creating": "Creating…",
       "submit": "Add evidence",
@@ -2613,7 +2613,7 @@
     },
     "reject": {
       "title": "Reject evidence",
-      "description": "Explain why this evidence is being rejected. The reason is shared with the owner.",
+      "description": "Explain why this evidence is being rejected. If its owner is a member of this workspace, they are notified with the reason.",
       "reasonLabel": "Rejection reason",
       "reasonPlaceholder": "e.g. Screenshot is outdated — please re-capture with the current date visible.",
       "cancel": "Cancel",
@@ -2746,7 +2746,7 @@
       "titleMultiHint": "Per-file titles default to the filename when uploading multiple files.",
       "retainLabel": "Retain until",
       "retainTooltipAria": "About retention dates",
-      "retainTooltip": "After this date the evidence is archived out of the active set. It stays in the audit log — admins can still recover it.",
+      "retainTooltip": "After this date the evidence is archived and leaves the active list. If it is still archived 365 days later, it is deleted for good.",
       "retainPlaceholder": "Select date",
       "retainAria": "Retain until",
       "retainHint": "Optional — applies to every file in the batch.",
@@ -3228,7 +3228,7 @@
       "versionProposedToast": "Saved as a proposed version. The published version is still live.",
       "versionCreatedToast": "New version saved.",
       "archiveConfirmTitle": "Archive this policy?",
-      "archiveConfirmBody": "It will be withdrawn from the library and cannot be edited, reviewed or published while archived. You can restore it afterwards.",
+      "archiveConfirmBody": "It stays on the list, but cannot get a new version or an approval request while archived. You can restore it afterwards.",
       "archiveConfirmLabel": "Archive policy",
       "restoreFromArchive": "Restore",
       "restoring": "Restoring…",
