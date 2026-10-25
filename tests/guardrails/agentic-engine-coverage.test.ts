@@ -239,8 +239,16 @@ describe('Agentic engine — scope + model hardening', () => {
         // repo a green guard before.
         expect(writes.length).toBeGreaterThanOrEqual(4);
 
-        const setsSummary = writes.filter((w) => /\bsummary\s*:/.test(w.call));
-        expect(setsSummary.map((w) => `${w.f} (${w.verb})`)).toEqual([]);
+        // DEDUPED BY FILE for the message's sake. `allCallExpressionsOf`
+        // extractions overlap — four `workflowRun.update` extractions in
+        // `workflow-runs.ts` alone, and a single offending call falls inside
+        // three of them — so the raw list reported three sites for one defect.
+        // The verdict was right and the number was not, and a guard's count is
+        // read by whoever it fires on.
+        const setsSummary = [
+            ...new Set(writes.filter((w) => /\bsummary\s*:/.test(w.call)).map((w) => w.f)),
+        ].sort();
+        expect(setsSummary).toEqual([]);
     });
 
     it('WorkflowRun + WorkflowStep have RLS tenant-isolation in a migration', () => {
