@@ -157,16 +157,18 @@ describeFn('framework libraries reach the database at container start', () => {
         expect(rows.map((r) => r.key).sort()).toEqual(expected);
     });
 
-    it('imports every mapping set on disk', () => {
-        // Set-level: the importer logs a set it cannot import and moves on, so a
-        // dropped set shows only as a missing result. Entry-level errors are a
-        // different, pre-existing matter: 10 entries in iso27001-to-iso27701 and
-        // iso27701-to-gdpr cite clause-group nodes (`5` … `8`) their libraries
-        // do not make assessable, so no requirement row exists for them. That is
-        // mapping CONTENT, independent of delivery, and the script reports the
-        // count on every run.
+    it('imports every mapping set on disk, and every entry in it', () => {
+        // Two levels, because the importer drops at both and says so only in a
+        // log. A set it cannot import is skipped, which shows here only as a
+        // missing result; an entry whose node has no requirement row is skipped
+        // inside an imported set, which shows only in that set's `errors`.
         expect(first.mappingSets.results).toHaveLength(mappingSetFiles.length);
         expect(first.mappingSets.results.every((r) => !r.skippedDuplicate)).toBe(true);
+        const dropped = first.mappingSets.results.flatMap((r) =>
+            r.errors.map((e) => `${r.sourceFrameworkRef} → ${r.targetFrameworkRef}: ${e.message}`),
+        );
+        expect(dropped).toEqual([]);
+        expect(first.mappingSets.summary.totalEntries).toBeGreaterThan(0);
     });
 
     it('a crosswalk citing a catalogue-owned framework resolves against its row', async () => {

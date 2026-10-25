@@ -13,24 +13,32 @@
  * One reference in 976 was wrong. The cost of finding it was a full audit of
  * the subsystem; the cost of catching the next one is this file.
  *
- * ═══ WHAT THIS CHECKS, AND THE ONE IT DELIBERATELY DOES NOT ═══
+ * ═══ WHAT THIS CHECKS ═══
  *
- * It checks for a reference naming a node that is ABSENT FROM THE LIBRARY
- * ENTIRELY — a typo, or an outcome from the real standard that IC's condensed
- * subset does not carry. That is unambiguously a defect: no reading of the
- * data makes it work.
+ * Two kinds of dead reference, and both fail:
  *
- * It does NOT fail on a reference to a node that exists but is NON-ASSESSABLE
- * (a grouping node). Those also reach no database — `library-importer.ts`
- * persists only assessable nodes — so they are equally dead, but there are
- * THIRTEEN of them and the fix is per-entry judgement about which leaf was
- * meant, not a rename. Failing on them here would make this guard unlandable
- * and the absent-node class would go on unguarded in the meantime. They are
- * counted and pinned instead, so the number can only fall.
+ *   • a node ABSENT FROM THE LIBRARY ENTIRELY — a typo, or an outcome from the
+ *     real standard that IC's condensed subset does not carry;
+ *   • a node that exists but is NON-ASSESSABLE — a heading. `library-importer.ts`
+ *     writes a requirement row only for an assessable node, so an entry naming
+ *     a heading resolves to nothing and is dropped exactly like the first kind.
  *
- * The distinction matters when this goes red: an ABSENT node means someone
- * wrote a reference to something that was never there; a NON-ASSESSABLE one
- * means they aimed at a heading instead of a leaf.
+ * The second kind was a downward ratchet at 13 while the entries waited for a
+ * per-entry decision. Ten entries in `iso27001-to-iso27701.yaml` and
+ * `iso27701-to-gdpr.yaml` carried them. Five now resolve as written, because
+ * ISO 27701 clause 6, which has no sub-clause in the outline, became the leaf
+ * it is. Five were removed: three started from ISO 27001 management clauses,
+ * which neither representation of ISO 27001 carries as an obligation, and two
+ * named ISO 27701 clauses 7 and 8 as a whole. With the count at zero a ceiling
+ * only lets the next one in, so the ratchet is gone.
+ *
+ * The distinction still matters when this goes red: an ABSENT node means
+ * someone wrote a reference to something that was never there; a
+ * NON-ASSESSABLE one means they aimed at a heading instead of a leaf, and the
+ * fix is to name the leaf they meant. Making the node assessable is right only
+ * when nothing sits under it and its catalogue ships it as an obligation, as
+ * with ISO 27701 clause 6; a heading over leaves made assessable would count
+ * its obligations twice.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -84,15 +92,6 @@ function mappingSets(): Array<{ file: string; set: MappingSet }> {
         }));
 }
 
-/**
- * References that point at a node which EXISTS but is not assessable, so the
- * importer skips it. Pinned, not allow-listed by name: the number may only
- * fall, and the entries themselves need per-entry judgement about which leaf
- * was meant. Eight of these sit in `iso27001-to-iso27701.yaml`, which is the
- * only bridge from the security subgraph into the privacy one.
- */
-const NON_ASSESSABLE_REFS_CEILING = 13;
-
 describe('cross-framework mappings reference nodes that exist', () => {
     const libs = librariesByRefId();
     const sets = mappingSets();
@@ -121,7 +120,7 @@ describe('cross-framework mappings reference nodes that exist', () => {
         expect(absent).toEqual([]);
     });
 
-    it('references onto NON-ASSESSABLE nodes stay at or below their ceiling', () => {
+    it('no reference names a NON-ASSESSABLE node (a heading)', () => {
         const dead: string[] = [];
         for (const { file, set } of sets) {
             const src = set.source_framework_ref ? libs.get(set.source_framework_ref) : undefined;
@@ -135,9 +134,6 @@ describe('cross-framework mappings reference nodes that exist', () => {
                 }
             }
         }
-        // A DOWNWARD ratchet. These entries reach no database, so the count
-        // falling means real coverage was recovered; it rising means more
-        // mappings were written that do nothing.
-        expect(dead.length).toBeLessThanOrEqual(NON_ASSESSABLE_REFS_CEILING);
+        expect(dead).toEqual([]);
     });
 });

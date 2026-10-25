@@ -70,6 +70,7 @@ import { AppError, ConflictError, ValidationError } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { isReasoningEngine } from '@/lib/agentic/agent-driver';
 import { isSkillName, SkillLoadError, SkillTextRefusedError } from '@/lib/agentic/flue/skills';
 import { skillContentHash, type CaseKind } from '@/lib/agentic/flue/skills/evaluation-record';
 import type { MountRefusal } from '@/lib/agentic/flue/skills/mount-gate';
@@ -223,10 +224,10 @@ const cleanOptional = (s: string | null | undefined): string | null => {
     return c === '' ? null : c;
 };
 
-/** The workflows a tenant skill may name: registered, and asking for the Flue engine. */
+/** The workflows a tenant skill may name: registered, and asking for a reasoning engine (today, Flue). */
 export function attachableWorkflows(): { key: string; name: string }[] {
     return listWorkflowDefinitions()
-        .filter((d) => d.driver === 'flue')
+        .filter((d) => isReasoningEngine(d.driver ?? 'static'))
         .map((d) => ({ key: d.key, name: d.name }))
         .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
@@ -241,7 +242,7 @@ function prepareText(name: string, raw: TenantSkillTextInput): PreparedText {
     for (const key of workflowKeys) {
         const def = getWorkflowDefinition(key);
         if (!def) throw refuse('UNKNOWN_WORKFLOW', `No registered workflow is called "${key}".`, { workflowKey: key });
-        if (def.driver !== 'flue') {
+        if (!isReasoningEngine(def.driver ?? 'static')) {
             throw refuse(
                 'WORKFLOW_MOUNTS_NO_SKILLS',
                 `Workflow "${key}" runs on the static engine, which mounts no skill.`,

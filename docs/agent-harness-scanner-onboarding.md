@@ -45,6 +45,7 @@ scanner signed it, so each estate has a scanner of its own.
 | `cicd` (GitHub Actions) | A fine-grained token limited to the listed repositories, holding the repository permissions Contents: read and Secrets: read | `api.github.com` |
 | `gcp-sa` (Google Cloud IAM) | The JSON key of a service account holding `roles/iam.serviceAccountViewer` on the listed projects | `iam.googleapis.com`, and the token from `oauth2.googleapis.com` |
 | `code` (LangChain and LangGraph) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
+| `runtime` (OpenShell) | A renewable client credential scoped to **`sandbox:read`** — and, only if the estate opts in to reading providers, `provider:read` as well | The estate's own OpenShell gateway, the host it names in its configuration |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
 credential is supplied through an environment variable that the configuration
@@ -142,6 +143,43 @@ account in the projects with its user-managed keys, and not its own. Each
 account is keyed on its numeric id, so a principal's e-mail address never
 reaches Inflect; to recognise one on the matrix, look the id up in the project.
 
+**OpenShell.** Scope the credential to `sandbox:read` and nothing else. Every
+method the scanner calls requires exactly that scope, and every method it must
+never call — creating a sandbox, executing in one, deleting one, attaching a
+provider — requires `sandbox:write`. So a correctly scoped credential is refused
+by **your** gateway before the method runs, which is a guarantee you hold rather
+than one we assert. If you grant `sandbox:write`, you remove it.
+
+The scanner calls five methods on `openshell.v1.OpenShell` and no others:
+`ListSandboxes`, `GetSandbox`, `GetSandboxPolicyStatus`, and — only with the
+opt-in below — `ListSandboxProviders` and `GetProviderProfile`. That list is
+hashed into the scanner manifest reported with every scan, so it cannot widen
+without the hash you see changing.
+
+**Reading attached providers is off by default, and turning it on is a
+decision.** With it off, the scanner reports each sandbox and its policy
+verdicts and names no credentials. With it on, it names each attached provider
+by reference and can answer whether that provider's credential is scoped to
+named endpoints (`H2.credential_bound`).
+
+Two costs come with it. The token needs `provider:read` as well. And the
+provider listing returns a message whose `credentials` map is marked secret in
+OpenShell's own proto — the scanner never reads that member, and refuses to sign
+a report containing a secret-shaped string, but **we have not established
+whether your gateway populates it for a `sandbox:read` token**. If it redacts,
+opting in exposes credential names. If it does not, the token you issue is one
+that can read credential values. We would rather tell you the bound is unknown
+than imply it is low; if that matters to your decision, it is measurable on your
+gateway before you opt in.
+
+**No labels are read for ownership.** A sandbox carries operator-chosen labels
+and annotations, and the scanner reads neither to decide who owns an agent: a
+label in the estate is something an estate administrator could write to make a
+shadow agent look accounted for. So an OpenShell agent is reported with no
+owner, and ownership for these agents comes from the register rather than from
+the gateway. Label your sandboxes for your own operators by all means — the
+scanner will not act on them.
+
 ## 3. Labelling the estate's principals
 
 The scanner reports what the estate itself records, and nothing it would have to
@@ -163,6 +201,7 @@ it, so the credential lands on the same agent:
 | An Okta service app | `okta:app:<appId>` |
 | An Okta API token | `okta:api-token:<tokenId>` |
 | An Entra service principal | `entra:sp:<objectId>` |
+| An OpenShell sandbox | `openshell:sandbox:<sandboxId>` |
 | A LangSmith deployment | `langsmith:deployment:<deploymentId>` |
 | A LangSmith tracing project | `langsmith:project:<projectId>` |
 | A GitHub Actions workflow | `github:workflow:<owner>/<repo>/<file>` |

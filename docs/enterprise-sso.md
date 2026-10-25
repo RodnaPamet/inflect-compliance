@@ -130,6 +130,25 @@ Entra **security-group** membership. Configure it at **Admin → Entra ID**.
    role is updated to match (audited as `MEMBER_ROLE_CHANGED`,
    `source: entra_group_sync`).
 
+### Only your own directory's sign-ins count
+The mappings apply only to a Microsoft sign-in from the directory the workspace
+configured: the ID token's `tid` must equal the provider's **Directory (tenant)
+ID** (`aadTenantId`), compared case-insensitively. The deployment's Microsoft
+app can admit accounts from any directory, and a group object ID says nothing
+on its own about whose directory it came from, so a sign-in from another
+directory gets no mapped role (metric outcome `foreign_directory`). When the
+group gate is on, that sign-in is refused, as a non-matching one would be. A
+workspace that has mappings but no configured directory applies none at
+sign-in. SCIM's Groups push is not a sign-in and is unaffected: it is
+authenticated by the workspace's own SCIM token.
+
+Because the directory and client ID decide whose sign-ins the mappings apply
+to, **setting Entra up, and changing either of them, is Owner-only**
+(`admin.owner_management`; refusal reason `SSO_TRUST_IS_OWNER_TIER`, naming the
+fields), as the SSO page's trust fields are. An Admin keeps the other settings,
+the gate and the mappings below their own role. The audit row of every save
+names the trust fields it changed.
+
 Role sync only ever **sets** the role to a matched mapping — it never demotes a
 user who matches nothing (use the gate for that). It also never **creates** a
 membership: a user with no membership still needs an invite / SSO-JIT / SCIM
