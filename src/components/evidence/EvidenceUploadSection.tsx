@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Download, ArrowUpRight } from '@inflect/ui/components/ui/icons/nucleo';
 import { uploadWithProgress } from '@/lib/upload/upload-with-progress';
 import { EVIDENCE_ACCEPT, EVIDENCE_MAX_FILE_MB, EVIDENCE_UPLOAD_HINT } from '@/lib/evidence-upload-limits';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // Mirrors the evidence upload modal's accept list + hint copy so every
 // evidence surface advertises the same supported types + size cap.
@@ -273,8 +274,10 @@ export function EvidenceUploadSection({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || err.message || t('failedLink'));
+                // The error body is the envelope `{ error: { code, message } }`;
+                // `err.error || …` read "[object Object]" (#4126).
+                const err = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(err, t('failedLink')));
             }
             setUrl('');
             setNote('');

@@ -13,9 +13,16 @@
  * tab opts into direct-evidence removal via `onUnlinkEvidence`.
  *
  * The evidence tab interleaves two source arrays:
- *   • `links` — EvidenceLinkDTO rows (user-attached URLs / file refs)
- *   • `directEvidence` — Evidence entities attached straight to the
- *     control, deduped against the `links` set by `fileRecordId`.
+ *   • `links` — EvidenceLinkDTO rows: PLAIN links (`ControlEvidenceLink`)
+ *     that never reached the evidence library, so they carry no review
+ *     status. The control tab no longer writes them (#4126); older ones
+ *     still show, labelled as plain links.
+ *   • `directEvidence` — Evidence entities (library records) attached
+ *     straight to the parent.
+ *
+ * Every enum reaching the DOM goes through the library's own label helpers
+ * (`@/components/evidence/evidence-labels`), so a row reads "Draft" / "File"
+ * here exactly as it does in the library, in both locales.
  *
  * Pre-migration both were rendered into one raw `<table>` with two
  * `.map()` passes. The unified row shape below preserves the rendering
@@ -33,6 +40,11 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { textLinkVariants } from '@/components/ui/typography';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import type { EvidenceLinkDTO } from '@/lib/dto';
+import {
+    evidenceStatusLabel,
+    evidenceStatusVariant,
+    evidenceTypeLabel,
+} from '@/components/evidence/evidence-labels';
 
 // Evidence rows on the control/risk/asset evidence tabs — the `Evidence`
 // model fields the table renders (Dates serialize to ISO strings on the wire).
@@ -44,6 +56,12 @@ export interface EvidenceTabRow {
     status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'NEEDS_REVIEW';
     fileRecordId: string | null;
     createdAt: string;
+    /**
+     * Who attached this record to the parent. Only the control tab supplies
+     * it (from the `EvidenceControlLink` join's creator); absent elsewhere,
+     * where "Added by" stays a dash.
+     */
+    addedBy?: { id?: string; name: string | null } | null;
 }
 
 export interface EvidenceTabData {
@@ -53,18 +71,28 @@ export interface EvidenceTabData {
 
 interface EvidenceTableRow {
     rowKey: string;
-    kindBadge: { label: string; variant: StatusBadgeVariant };
-    titleCell: 'link-href' | 'evidence-title';
-    titleHref?: string;
-    titleNote?: string;
+    /**
+     * The raw enum and which vocabulary labels it: a plain link's
+     * `EvidenceLinkKind` or a library record's `EvidenceType`. Labels are
+     * resolved in the cell, not here, so `rows` depends on `data` alone.
+     */
+    kind: { source: 'link' | 'evidence'; value: string; variant: StatusBadgeVariant };
+    /** Library record title — links to the record in the library. */
     titleText?: string;
-    statusCell: 'createdBy' | 'badge';
+    /** External address: a plain link's `url`, a LINK record's `content`. */
+    href?: string;
+    /** A plain link's note. Shown with or without an address (#4126). */
+    note?: string;
     createdByName?: string;
-    statusBadge?: { label: string; variant: StatusBadgeVariant };
+    /** Library records only (`EvidenceStatus`). A plain link reads "No review status". */
+    status?: string;
     createdAt?: string | Date | null;
     linkId?: string;           // present on link rows we can unlink
     evidenceId?: string;       // present on direct-evidence rows we can unlink
 }
+
+/** `EvidenceLinkKind` members that `sharedPanels.evidenceTab.linkKinds` labels. */
+const PLAIN_LINK_KINDS: ReadonlySet<string> = new Set(['FILE', 'LINK', 'INTEGRATION_RESULT', 'BIA']);
 
 export function EvidenceSubTable({
     data,
@@ -96,6 +124,7 @@ export function EvidenceSubTable({
     tenantHref: (path: string) => string;
 }) {
     const t = useTranslations('sharedPanels');
+    const te = useTranslations('evidence');
     const rows = useMemo<EvidenceTableRow[]>(() => {
         const links = data?.links ?? [];
         // EP-3 — Evidence entities reach the control through the
@@ -109,29 +138,28 @@ export function EvidenceSubTable({
         for (const el of links) {
             out.push({
                 rowKey: `link-${el.id}`,
-                kindBadge: {
-                    label: el.kind,
+                kind: {
+                    source: 'link',
+                    value: el.kind,
                     variant: el.kind === 'FILE' ? 'success' : 'info',
                 },
-                titleCell: 'link-href',
-                titleHref: el.url ?? undefined,
-                titleNote: el.note ?? undefined,
-                statusCell: 'createdBy',
+                href: el.url ?? undefined,
+                note: el.note ?? undefined,
                 createdByName: el.createdBy?.name ?? undefined,
                 createdAt: el.createdAt,
                 linkId: el.id,
             });
         }
         for (const ev of directEvidence) {
-            // LINK-type evidence carries its URL in `content`; render it
-            // as an external href so a task URL-evidence row reads the
-            // same as a control link row. FILE / TEXT evidence keep the
-            // title-link-to-library treatment.
+            // LINK-type evidence carries its URL in `content`; it renders
+            // under the title as an external href. The title itself always
+            // opens the record in the library, where it is reviewed.
             const isUrlEvidence = ev.type === 'LINK' && !!ev.content;
             out.push({
                 rowKey: `ev-${ev.id}`,
-                kindBadge: {
-                    label: ev.type,
+                kind: {
+                    source: 'evidence',
+                    value: ev.type,
                     variant:
                         ev.type === 'FILE'
                             ? 'success'
@@ -139,23 +167,11 @@ export function EvidenceSubTable({
                               ? 'neutral'
                               : 'info',
                 },
-                titleCell: isUrlEvidence ? 'link-href' : 'evidence-title',
-                titleHref: isUrlEvidence ? (ev.content ?? undefined) : undefined,
-                titleNote: isUrlEvidence ? ev.title : undefined,
                 titleText: ev.title,
+                href: isUrlEvidence ? (ev.content ?? undefined) : undefined,
                 evidenceId: ev.id,
-                statusCell: 'badge',
-                statusBadge: {
-                    label: ev.status,
-                    variant:
-                        ev.status === 'APPROVED'
-                            ? 'success'
-                            : ev.status === 'REJECTED'
-                              ? 'error'
-                              : ev.status === 'SUBMITTED'
-                                ? 'info'
-                                : 'neutral',
-                },
+                createdByName: ev.addedBy?.name ?? undefined,
+                status: ev.status,
                 createdAt: ev.createdAt,
             });
         }
@@ -168,46 +184,67 @@ export function EvidenceSubTable({
                 {
                     id: 'type',
                     header: t('evidenceTab.colType'),
-                    cell: ({ row }) => (
-                        <StatusBadge variant={row.original.kindBadge.variant}>
-                            {row.original.kindBadge.label}
-                        </StatusBadge>
-                    ),
+                    cell: ({ row }) => {
+                        const { kind } = row.original;
+                        // A plain link's LINK reads "Plain link" so it cannot be
+                        // mistaken for a library LINK record, which has a review
+                        // status. A local set, not a `t.has` probe: most
+                        // hand-rolled next-intl test mocks implement only `t`
+                        // (see `entity-prev-next-nav.tsx`).
+                        const label =
+                            kind.source === 'evidence'
+                                ? evidenceTypeLabel(kind.value, te)
+                                : PLAIN_LINK_KINDS.has(kind.value)
+                                  ? t(`evidenceTab.linkKinds.${kind.value}`)
+                                  : kind.value;
+                        return <StatusBadge variant={kind.variant}>{label}</StatusBadge>;
+                    },
                 },
                 {
                     id: 'title',
                     header: t('evidenceTab.colTitle'),
                     cell: ({ row }) => {
                         const r = row.original;
-                        if (r.titleCell === 'link-href') {
+                        const external = r.href ? (
+                            <a
+                                href={r.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={textLinkVariants({ tone: 'link' })}
+                            >
+                                {r.href}
+                            </a>
+                        ) : null;
+                        if (!r.evidenceId) {
+                            // A plain link: its address, then its note. The
+                            // note used to render only when there was NO
+                            // address, so a web link's note never showed.
                             return (
-                                <span className="text-sm">
-                                    {r.titleHref ? (
-                                        <a
-                                            href={r.titleHref}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className={textLinkVariants({ tone: 'link' })}
-                                        >
-                                            {r.titleHref}
-                                        </a>
-                                    ) : (
-                                        r.titleNote || '—'
-                                    )}
+                                <span className="flex flex-col text-sm">
+                                    {external}
+                                    {r.note ? (
+                                        <span className="text-xs text-content-muted">
+                                            {r.note}
+                                        </span>
+                                    ) : null}
+                                    {!external && !r.note ? '—' : null}
                                 </span>
                             );
                         }
                         return (
-                            <span className="text-sm">
+                            <span className="flex flex-col text-sm">
                                 <Link
                                     // Deep-link to the specific evidence record
                                     // (opens its detail sheet) instead of the
                                     // whole library.
-                                    href={tenantHref(r.evidenceId ? `/evidence?ev=${r.evidenceId}` : `/evidence`)}
+                                    href={tenantHref(`/evidence?ev=${r.evidenceId}`)}
                                     className={textLinkVariants({ tone: 'link' })}
                                 >
                                     {r.titleText}
                                 </Link>
+                                {external ? (
+                                    <span className="text-xs">{external}</span>
+                                ) : null}
                             </span>
                         );
                     },
@@ -227,14 +264,18 @@ export function EvidenceSubTable({
                     id: 'status',
                     header: t('evidenceTab.colStatus'),
                     cell: ({ row }) => {
-                        // Approval status only — never the creator name.
+                        // Approval status only — never the creator name. A
+                        // plain link never reached the library, so it has no
+                        // review status, and says so rather than a bare dash.
                         const r = row.original;
-                        return r.statusBadge ? (
-                            <StatusBadge variant={r.statusBadge.variant}>
-                                {r.statusBadge.label}
+                        return r.status ? (
+                            <StatusBadge variant={evidenceStatusVariant(r.status)}>
+                                {evidenceStatusLabel(r.status, te)}
                             </StatusBadge>
                         ) : (
-                            <span className="text-content-subtle">—</span>
+                            <span className="text-xs text-content-subtle">
+                                {t('evidenceTab.noReviewStatus')}
+                            </span>
                         );
                     },
                 },
@@ -284,7 +325,7 @@ export function EvidenceSubTable({
                       ]
                     : []),
             ]),
-        [canWrite, onUnlink, onUnlinkEvidence, tenantHref, t],
+        [canWrite, onUnlink, onUnlinkEvidence, tenantHref, t, te],
     );
 
     // E2E semantics — preserve the pre-migration contract:

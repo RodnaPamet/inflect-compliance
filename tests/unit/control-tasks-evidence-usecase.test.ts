@@ -74,11 +74,38 @@ describe('getControlEvidenceTab', () => {
     it('returns links + direct evidence in a single bundled payload', async () => {
         (mockDb.control.findFirst as jest.Mock).mockResolvedValue({ id: 'c-1' });
         (ControlRepository.listEvidenceLinks as jest.Mock).mockResolvedValue([{ id: 'l-1' }]);
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([{ id: 'e-1' }]);
+        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
+            { id: 'e-1', evidenceControlLinks: [] },
+        ]);
 
         const res = await getControlEvidenceTab(readerCtx, 'c-1');
 
-        expect(res).toEqual({ links: [{ id: 'l-1' }], evidence: [{ id: 'e-1' }] });
+        // Each evidence row now also carries `addedBy` (#4126) — null when
+        // its join row names nobody.
+        expect(res).toEqual({ links: [{ id: 'l-1' }], evidence: [{ id: 'e-1', addedBy: null }] });
+    });
+
+    it("names who added each library record to THIS control (#4126 — 'Added by' was a dash)", async () => {
+        (mockDb.control.findFirst as jest.Mock).mockResolvedValue({ id: 'c-1' });
+        (ControlRepository.listEvidenceLinks as jest.Mock).mockResolvedValue([]);
+        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([
+            { id: 'e-1', title: 'Export', evidenceControlLinks: [{ createdBy: { id: 'u-1', name: 'Ada' } }] },
+        ]);
+
+        const res = await getControlEvidenceTab(readerCtx, 'c-1');
+
+        // Flattened to `addedBy`; the join array itself does not reach the client.
+        expect(res.evidence).toEqual([{ id: 'e-1', title: 'Export', addedBy: { id: 'u-1', name: 'Ada' } }]);
+        // One read for the page, with the join scoped to this control — so a
+        // record on several controls reports who added it HERE, and no
+        // per-row query is made.
+        expect(mockDb.evidence.findMany).toHaveBeenCalledTimes(1);
+        const args = (mockDb.evidence.findMany as jest.Mock).mock.calls[0][0];
+        expect(args.include.evidenceControlLinks).toEqual({
+            where: { controlId: 'c-1', tenantId: readerCtx.tenantId },
+            select: { createdBy: { select: { id: true, name: true } } },
+            take: 1,
+        });
     });
 
     it('throws notFound when the control is missing (neither query fires)', async () => {

@@ -20,7 +20,7 @@ import {
     EVIDENCE_UPLOAD_HINT,
     formatBytes,
 } from '@/lib/evidence-upload-limits';
-import { evidenceStatusVariant } from '@/app/t/[tenantSlug]/(app)/evidence/evidence-labels';
+import { evidenceStatusVariant } from '@/components/evidence/evidence-labels';
 
 describe('formatBytes', () => {
     it('renders sub-kilobyte sizes in bytes', () => {

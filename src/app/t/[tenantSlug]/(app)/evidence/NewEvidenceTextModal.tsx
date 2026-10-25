@@ -33,6 +33,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { RequiredMarker } from '@/components/ui/required-marker';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 
 interface ControlOption {
@@ -133,12 +134,10 @@ export function NewEvidenceTextModal({
                 body: JSON.stringify({ ...form, type: 'TEXT' }),
             });
             if (!res.ok) {
-                const err = await res
-                    .json()
-                    .catch(() => ({ error: tx('text.createFailed') }));
-                throw new Error(
-                    err.error || err.message || tx('text.createFailed'),
-                );
+                // The error body is the envelope `{ error: { code, message } }`;
+                // `err.error || …` read "[object Object]" (#4126).
+                const err = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(err, tx('text.createFailed')));
             }
             const data = await res.json();
             // Revalidate every `/evidence?…` SWR cache entry so the list

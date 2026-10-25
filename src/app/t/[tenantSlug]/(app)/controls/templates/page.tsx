@@ -16,6 +16,7 @@ import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // listControlTemplates → ControlTemplateRepository.list (ControlTemplate model).
 interface ControlTemplateRow {
@@ -86,8 +87,11 @@ export default function ControlTemplatesPage() {
                 body: JSON.stringify({ templateIds: Array.from(selectedIds) }),
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(typeof data.error === 'string' ? data.error : data.message || t('templates.installFailed'));
+                // The error body is the envelope `{ error: { code, message } }`;
+                // reading `data.error` as a string or `data.message` dropped
+                // the server's reason for the generic fallback (#4126).
+                const data = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(data, t('templates.installFailed')));
             }
             const result = await res.json();
             // Each row carries `skipped: true` when a control with that code
