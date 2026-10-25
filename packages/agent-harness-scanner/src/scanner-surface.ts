@@ -24,7 +24,7 @@ import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
 import { GCP_IAM_ORIGIN, GCP_READ_PATHS, GOOGLE_OAUTH_ORIGIN, GOOGLE_TOKEN_PATH } from './sources/gcp-service-accounts';
 import { GITHUB_API_ORIGIN, GITHUB_READ_PATHS } from './sources/github-actions';
-import { HARNESS_REGISTER_TOOL, MCP_MESSAGES } from './http';
+import { HARNESS_REGISTER_TOOL, MCP_MESSAGES, OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE } from './http';
 import { INFLECT_MCP_PATH } from './sources/inflect-register';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
@@ -37,8 +37,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * the Entra source (#3686). 0.6.0: the MCP source (#3686). 0.7.0: the register
  * source (#3686). 0.8.0: the GitHub Actions source (#3784). 0.9.0: reports
  * under `inflect-agent-harness/3`, and the GCP service-account source (#3785).
+ * 0.10.0: the OpenShell source (#3936) — a gRPC gateway read, declared below as
+ * its own surface because it is neither a GET nor JSON-RPC over HTTP.
  */
-export const SCANNER_VERSION = '0.9.0';
+export const SCANNER_VERSION = '0.10.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -105,8 +107,48 @@ export const SCANNER_SURFACE = {
             tool: HARNESS_REGISTER_TOOL,
         },
     ],
+    // The client's own OpenShell gateway, named in its configuration. The
+    // gateway speaks gRPC and publishes no REST transcoding, so this is neither
+    // a `reads` (GET) nor a `lists` (JSON-RPC) entry: it names the ONE service
+    // and the FIVE read RPCs the scanner may call on it, out of the 84 that
+    // service declares. The siblings it must never call — `ExecSandbox`,
+    // `DeleteSandbox`, `AttachSandboxProvider` — sit on the same service, which
+    // is why the list is declared rather than assumed.
+    //
+    // Two scopes, kept apart: `sandbox:read` for the four sandbox reads, and
+    // `provider:read` ONLY for `GetProviderProfile`, which an estate reaches
+    // only by opting in to reading providers. The opt-in exists because
+    // `ListSandboxProviders` returns a message whose `credentials` map is
+    // marked secret in the proto.
+    readsGateway: [
+        {
+            source: 'runtime',
+            product: 'openshell',
+            method: 'POST',
+            host: 'configured',
+            service: OPENSHELL_SERVICE,
+            rpcs: [...OPENSHELL_METHODS],
+            scopes: [OPENSHELL_READ_SCOPE, OPENSHELL_PROFILE_SCOPE],
+        },
+    ],
     sends: [{ method: 'POST', path: INGEST_PATH_TEMPLATE }],
 } as const;
+
+/**
+ * Whether one gRPC call is on the declared surface: the one service, and one of
+ * its declared read RPCs. The path form is gRPC's own,
+ * `/<package>.<Service>/<Method>`.
+ *
+ * Held beside `isDeclaredRequest` the way `isDeclaredMcpMessage` is: the
+ * request log of every OpenShell test is checked against it, so the declaration
+ * cannot drift from the code.
+ */
+export function isDeclaredGatewayCall(pathname: string): boolean {
+    const m = /^\/([A-Za-z0-9_.]+)\/([A-Za-z0-9_]+)$/.exec(pathname);
+    if (m === null) return false;
+    const [, service, rpc] = m;
+    return service === OPENSHELL_SERVICE && (OPENSHELL_METHODS as readonly string[]).includes(rpc);
+}
 
 export function scannerManifestHash(): string {
     return `sha256:${createHash('sha256').update(canonicalJson(SCANNER_SURFACE), 'utf8').digest('hex')}`;
@@ -170,5 +212,8 @@ export function isDeclaredRequest(method: string, url: string): boolean {
     // The register read posts to the tenant's `/api/mcp`; its messages are held
     // by `isDeclaredRegisterMessage`.
     if (pathname === INFLECT_MCP_PATH) return true;
+    // A gRPC call to the client's gateway: the service and RPC decide, not the
+    // host, which the estate configures.
+    if (isDeclaredGatewayCall(pathname)) return true;
     return /^\/api\/t\/[^/]+\/admin\/agents\/harness-scans$/.test(pathname);
 }
