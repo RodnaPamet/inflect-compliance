@@ -148,8 +148,8 @@ jobs:
       #  median 61 minutes against 16. So a push releases only when no other
       #  entry is waiting; the merge that empties the queue releases everything
       #  since the last version in one go. A release that would raise a
-      #  coverage floor never waits, because nothing else raises them and the
-      #  floor guard fails every build once they fall behind by its slack.
+      #  coverage floor never waits, because nothing else raises them and a
+      #  floor that lags the live count is a weaker floor.
       #  Scheduled and manual runs release regardless. The rule and its edge
       #  cases live in scripts/lib/release-queue-gate.js.
       #

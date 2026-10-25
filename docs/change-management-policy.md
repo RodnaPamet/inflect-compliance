@@ -14,8 +14,7 @@ mechanism alone does not record.
 A release waits while the merge queue is still building other entries, because
 its commit, pushed straight to main, would invalidate every candidate in flight.
 It never waits when it would raise a coverage floor: the release is what raises
-the floors, and the floor guard fails every build once they fall too far
-behind. So one release can carry several merges, and a version can trail a merge
+the floors, and a floor that lags the live count protects less. So one release can carry several merges, and a version can trail a merge
 by up to a day. Deploys do not wait for it: images are published on every push
 to main. The rule is in `scripts/lib/release-queue-gate.js`.
 

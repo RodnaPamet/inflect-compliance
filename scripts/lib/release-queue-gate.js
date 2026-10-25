@@ -27,17 +27,21 @@
  * A RELEASE THAT WOULD RAISE A FLOOR NEVER WAITS
  * ──────────────────────────────────────────────
  * The release is also the only thing that raises the coverage floors
- * (`scripts/raise-coverage-floors.mjs`, the prepare step), and the guard
- * `tests/guards/rendered-coverage-floor.test.ts` fails every build once more
- * tests have merged since the last release than its slack allows: 8 rendered
- * tests, 4 E2E specs, 3 registered primitives. Rendered tests reached main at
- * 20 to 23 a day on 2026-10-24 and 25, so a release held through a busy
- * afternoon would turn every queue candidate and main itself red, eject the
- * whole queue, and leave nothing to merge and so nothing to release until the
- * daily run. So whenever a release would raise any floor, it goes out now,
- * whatever the queue holds. That keeps the floors exactly as fresh as they
- * were before the gate; only a merge that added no test, spec or primitive
- * can wait. Over 2026-10-18..25 that was 181 of 236 merges.
+ * (`scripts/raise-coverage-floors.mjs`, the prepare step). When this gate was
+ * written, `tests/guards/rendered-coverage-floor.test.ts` failed every build
+ * once more tests had merged since the last release than its slack allowed
+ * (8 rendered tests, 4 E2E specs, 3 registered primitives), and rendered tests
+ * reached main at 20 to 23 a day on 2026-10-24 and 25: a release held through
+ * a busy afternoon would have turned every queue candidate and main red. So
+ * whenever a release would raise any floor, it goes out now, whatever the
+ * queue holds. Only a merge that added no test, spec or primitive can wait:
+ * over 2026-10-18..25 that was 181 of 236 merges.
+ *
+ * The guard has since stopped failing on lag: it holds each change to its
+ * base commit instead. The exception stays because the stored floor is still
+ * the guard's only check where no base can be read, and a floor that lags the
+ * live count by a day of merges is a weaker one. Dropping the exception would
+ * let those merges wait too, at that cost.
  *
  * FAILING OPEN
  * ────────────
