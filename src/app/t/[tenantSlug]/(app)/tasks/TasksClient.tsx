@@ -98,8 +98,10 @@ const buildSourceLabels = taskSourceLabels;
 // action via the task detail page. RESOLVED is omitted here because it
 // is retired from the PICKERS (CLOSED made it a redundant intermediate)
 // — it is still a live status on existing rows, which is why the status
-// FILTER continues to offer it.
-const buildBulkStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'].map(sv => ({ value: sv, label: statusLabels[sv] || sv }));
+// FILTER continues to offer it. OPEN is omitted because no transition
+// leads to it (`TASK_TRANSITIONS`), so choosing it refused the whole
+// batch (#4278).
+const buildBulkStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => ['TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'].map(sv => ({ value: sv, label: statusLabels[sv] || sv }));
 
 interface TaskListItem {
     id: string;
@@ -178,6 +180,13 @@ interface TasksClientProps {
     appPermissions: {
         tasks: { create: boolean; edit: boolean };
     };
+    /**
+     * The admin tier the server asks for before it deletes, lists deleted
+     * tasks or restores one (`assertCanAdmin`; the bulk-delete route also
+     * requires `admin.manage`). Gating those on `tasks.edit` offered them to
+     * Editors, who were refused once the undo window ran out (#4278).
+     */
+    canAdmin: boolean;
 }
 
 /**
@@ -201,6 +210,7 @@ function TasksPageInner({
     initialFilters,
     tenantSlug,
     appPermissions,
+    canAdmin,
 }: TasksClientProps) {
     const t = useTranslations('tasks');
     // Memoised on `t` so they keep a stable identity across renders —
@@ -838,10 +848,11 @@ function TasksPageInner({
             },
             // No `confirm: true` — bulk delete routes through the Epic 67
             // undo-toast in handleBulkApply (soft delete, recoverable),
-            // not a blocking confirm dialog.
-            { value: 'delete', label: t('bulk.delete') },
+            // not a blocking confirm dialog. Admin tier only: the server
+            // refuses anyone else (see `canAdmin`).
+            ...(canAdmin ? [{ value: 'delete', label: t('bulk.delete') }] : []),
         ],
-        [tenantSlug, t],
+        [tenantSlug, t, canAdmin],
     );
 
     // R10-PR7 — column-visibility gear.
@@ -1248,10 +1259,10 @@ function TasksPageInner({
                                 The dashboard nav icon is gone with it. */}
                             {/* Recycle-bin view, folded into the labelled
                                 Views menu with every other secondary view.
-                                Only offered to users who can edit — restore
-                                is admin-gated server-side, so showing it to
-                                a reader would advertise an action they'd be
-                                refused.
+                                Only offered to the admin tier — listing deleted
+                                tasks and restoring one are admin-gated
+                                server-side, so showing it to anyone else
+                                would advertise an action they'd be refused.
 
                                 The label is stateful where assets/controls
                                 are static — it names the destination, so the
@@ -1262,7 +1273,7 @@ function TasksPageInner({
                                     {
                                         id: 'views',
                                         items: [
-                                            appPermissions.tasks.edit && {
+                                            canAdmin && {
                                                 id: 'show-deleted-toggle',
                                                 label: showDeleted ? t('list.showLive') : t('list.showDeleted'),
                                                 icon: <Trash className="size-4" />,

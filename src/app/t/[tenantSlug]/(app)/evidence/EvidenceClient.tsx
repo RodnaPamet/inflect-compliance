@@ -1989,8 +1989,10 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         // localized download label on every card.
                         onRowClick={handleEvidenceCardClick}
                         // Selection only where a bulk action exists — the same
-                        // rule as the table's `selectionEnabled`. Without both
-                        // props the gallery renders no checkboxes.
+                        // rule as the table's `selectionEnabled`. Read-only roles
+                        // have none, so they got a checkbox and an empty bar
+                        // (#4277). Without both props the gallery renders no
+                        // checkboxes.
                         selectedIds={selectionEnabled ? selected : undefined}
                         onToggleSelect={
                             selectionEnabled
