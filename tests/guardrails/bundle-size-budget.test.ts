@@ -79,6 +79,8 @@ import * as path from 'node:path';
 import * as vm from 'node:vm';
 import * as zlib from 'node:zlib';
 
+import { budgetTrendLines } from '../helpers/bundle-budget-history';
+
 const ROOT = path.resolve(__dirname, '../..');
 const NEXT_DIR = path.join(ROOT, '.next');
 const BUILD_MANIFEST = path.join(NEXT_DIR, 'build-manifest.json');
@@ -386,7 +388,6 @@ describe('bundle-size budget', () => {
 
     if (!buildPresent) {
         it('skipped — no production build output (run via the Build or Bundle Analyze workflow)', () => {
-            // eslint-disable-next-line no-console
             console.log('[bundle-size-budget] no production .next build present — skipping (no build in this job).');
             expect(true).toBe(true);
         });
@@ -474,6 +475,11 @@ describe('bundle-size budget', () => {
                             `  ${m.pageKey}`
                         );
                     }),
+                // THE TREND, so a fourth consecutive bump does not read as the
+                // first (#4044). Derived from git, printed beside the headroom
+                // rather than reconstructible only by reading three PRs.
+                '[bundle-size-budget] budget history (from git, nothing stored):',
+                ...budgetTrendLines(worstPerBucket.keys()),
             ].join('\n'),
         );
         expect(violations).toEqual([]);
