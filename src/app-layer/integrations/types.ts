@@ -118,10 +118,21 @@ export interface CheckResult {
 
 /**
  * Payload for auto-creating Evidence from a check result.
+ *
+ * Every text field is composed from the provider's answer, so it may carry the
+ * third party's own text. The writers store it through `integrationEvidenceText`
+ * (`./evidence-text`), which sanitises it; a provider does not have to.
  */
 export interface EvidencePayload {
     title: string;
+    /** Prose. Stored as plain text. */
     content: string;
+    /**
+     * Structured detail the writer appends to `content` as pretty-printed JSON.
+     * Kept apart from `content` because the writer sanitises only its string
+     * VALUES: sanitising serialised JSON as text would break it.
+     */
+    contentJson?: Record<string, unknown>;
     type: 'DOCUMENT' | 'SCREENSHOT' | 'LOG' | 'CONFIGURATION' | 'REPORT';
     category?: string;
 }

@@ -56,6 +56,7 @@ import { registry } from '../integrations/registry';
 import { isScheduledCheckProvider, parseAutomationKey } from '../integrations/types';
 import { recordCheckOutcome } from '@/lib/observability/integration-metrics';
 import type { CheckInput, CheckResult } from '../integrations/types';
+import { integrationEvidenceText } from '../integrations/evidence-text';
 import { decryptField } from '@/lib/security/encryption';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -374,6 +375,10 @@ export async function executeControlAutomation(
     // observation the evidence can attest to.
     const evidenceEligible = isRealObservation(result.status);
     if (evidencePayload && evidenceEligible) {
+        // The payload carries the provider's own text; it is sanitised before
+        // it is stored, exactly as the manual run does. See
+        // `integrations/evidence-text`.
+        const text = integrationEvidenceText(evidencePayload);
         const evidence = await prisma.evidence.create({
             data: {
                 tenantId: control.tenantId,
@@ -385,9 +390,9 @@ export async function executeControlAutomation(
                 // usecase writer in usecases/integrations.ts and removes the
                 // former `as EvidenceType` cast (PR-1).
                 type: EvidenceType.TEXT,
-                title: evidencePayload.title,
-                content: evidencePayload.content,
-                category: evidencePayload.category ?? 'integration',
+                title: text.title,
+                content: text.content,
+                category: text.category,
                 status: 'APPROVED',
             },
         });

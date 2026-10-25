@@ -26,6 +26,7 @@ import type { SyncMappingStore, SyncEventLogger } from '@/app-layer/integrations
 import type { SyncEvent } from '@/app-layer/integrations/sync-types';
 import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { integrationEvidenceText } from '@/app-layer/integrations/evidence-text';
 
 jest.mock('@/app-layer/jobs/queue', () => ({
     enqueue: jest.fn().mockResolvedValue({ id: 'mock-job' }),
@@ -681,5 +682,31 @@ describe('GitHub provider — legacy GitHubProvider behavior', () => {
         expect(result).toBeTruthy();
         expect(result!.title).toContain('✅');
         expect(result!.type).toBe('CONFIGURATION');
+    });
+
+    test('a repository, branch and status-check name from GitHub are stored without their markup', () => {
+        // The repository and branch come from the connection and the status
+        // check names from GitHub's rulesets API; all three are interpolated
+        // into the evidence title and body. The writers store the payload
+        // through `integrationEvidenceText`, which must leave none of it live.
+        const hostileRules = [{
+            type: 'required_status_checks',
+            parameters: { required_status_checks: [{ context: 'Build<img src=x onerror=alert(1)>' }, { context: 'Lint' }] },
+        }, { type: 'pull_request', parameters: { required_approving_review_count: 1 } }];
+        const check = evaluateBranchProtection(
+            'acme', '<b>repo</b>', 'release/<script>alert(1)</script>1.2', null, 404, hostileRules,
+        );
+        const payload = new GitHubProvider().mapResultToEvidence(
+            { automationKey: 'github.branch_protection', parsed: { provider: 'github', checkType: 'branch_protection', raw: 'github.branch_protection' }, tenantId: 't', connectionConfig: {}, triggeredBy: 'scheduled' },
+            check,
+        );
+        expect(payload).not.toBeNull();
+
+        const stored = integrationEvidenceText(payload!);
+        expect(stored.title).toBe('✅ GitHub Branch Protection: acme/repo:release/1.2');
+        expect(stored.content).toContain('**Repository:** acme/repo');
+        expect(stored.content).toContain('**Branch:** release/1.2');
+        expect(stored.content).toContain('required via ruleset (Build, Lint)');
+        expect(`${stored.title}\n${stored.content}`).not.toMatch(/<img|<script|<b>|onerror/);
     });
 });

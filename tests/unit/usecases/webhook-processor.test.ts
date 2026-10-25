@@ -344,10 +344,13 @@ describe('processIncomingWebhook — signature verification', () => {
 // Provider-impl dispatch + automation-key fan-out
 // ──────────────────────────────────────────────────────────────────────
 describe('processIncomingWebhook — provider dispatch', () => {
-    function setupHappyPath(opts: { triggeredKeys?: string[] } = {}) {
+    function setupHappyPath(opts: { triggeredKeys?: string[]; eventType?: string | null } = {}) {
         mockRegistry.getProvider.mockReturnValueOnce(mockProviderImpl);
         mockPrisma.integrationWebhookEvent.findFirst.mockResolvedValueOnce(null);
-        mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({ id: 'evt-1', eventType: 'opened' });
+        mockPrisma.integrationWebhookEvent.create.mockResolvedValueOnce({
+            id: 'evt-1',
+            eventType: opts.eventType === undefined ? 'opened' : opts.eventType,
+        });
         mockPrisma.integrationConnection.findMany.mockResolvedValueOnce([
             { id: 'c-1', tenantId: 't-1', secretEncrypted: '{"webhookSecret":"s1"}', configJson: {} },
         ]);
@@ -469,6 +472,41 @@ describe('processIncomingWebhook — provider dispatch', () => {
             expect.objectContaining({
                 data: expect.objectContaining({ evidenceId: 'ev-1', controlId: 'ctrl-1' }),
             }),
+        );
+    });
+
+    it("stores the sender's event type, and the triggered key, without their markup", async () => {
+        // The event type is the webhook body's own `action` / `event_type`,
+        // persisted unchanged; a hostile sender must not get markup into the
+        // Evidence row built from it. The automation key is the provider's
+        // return value and a tenant's control key, so it is sanitised too.
+        setupHappyPath({
+            triggeredKeys: ['github.<b>branch_protection</b>'],
+            eventType: 'opened<img src=x onerror=alert(1)>',
+        });
+        mockPrisma.control.findMany.mockResolvedValueOnce([{ id: 'ctrl-1', name: 'Branch protection' }]);
+        mockPrisma.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
+        mockPrisma.evidence.create.mockResolvedValue({ id: 'ev-1' });
+
+        await processIncomingWebhook(makeInput());
+
+        const data = mockPrisma.evidence.create.mock.calls[0][0].data;
+        expect(data.title).toBe('[github] Webhook: github.branch_protection');
+        expect(data.content).toBe(
+            'Automated evidence from github webhook event.\nEvent type: opened\nExecution ID: exec-1',
+        );
+    });
+
+    it("says 'unknown' for an event type that is blank once sanitised", async () => {
+        setupHappyPath({ triggeredKeys: ['build-passed'], eventType: '<b></b>' });
+        mockPrisma.control.findMany.mockResolvedValueOnce([{ id: 'ctrl-1', name: 'Build OK' }]);
+        mockPrisma.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
+        mockPrisma.evidence.create.mockResolvedValue({ id: 'ev-1' });
+
+        await processIncomingWebhook(makeInput());
+
+        expect(mockPrisma.evidence.create.mock.calls[0][0].data.content).toBe(
+            'Automated evidence from github webhook event.\nEvent type: unknown\nExecution ID: exec-1',
         );
     });
 

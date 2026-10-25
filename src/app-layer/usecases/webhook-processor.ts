@@ -27,6 +27,7 @@ import { PrismaLocalStore } from '../integrations/prisma-local-store';
 import { extractSignature, verifyHmacSha256, verifyGitHubSignature } from '../integrations/webhook-crypto';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import { getPermissionsForRole } from '@/lib/permissions';
 import crypto from 'crypto';
 import { buildSystemContext } from '../context-system';
@@ -424,6 +425,13 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
             );
 
             // 8. Create executions/evidence for triggered automation keys
+            //
+            // The event type is the sender's own text — the body's `action` or
+            // `event_type`, persisted unchanged at step 3 — so it is sanitised
+            // before it goes into an Evidence row. So is the automation key: the
+            // provider returns it, and it equals a key a tenant typed on a
+            // control. The provider name is a registry key (step 1).
+            const evidenceEventType = sanitizePlainText(event.eventType) || 'unknown';
             if (processResult.triggeredKeys && processResult.triggeredKeys.length > 0) {
                 for (const automationKey of processResult.triggeredKeys) {
                     // Find controls with this automationKey in the tenant
@@ -460,8 +468,8 @@ export async function processIncomingWebhook(input: WebhookInput): Promise<Webho
                                 // Webhook-created evidence is text-based; EvidenceType enum uses FILE/LINK/TEXT.
                                 // Map to TEXT as the semantically closest value for automation-generated content.
                                 type: EvidenceType.TEXT,
-                                title: `[${provider}] Webhook: ${automationKey}`,
-                                content: `Automated evidence from ${provider} webhook event.\nEvent type: ${event.eventType ?? 'unknown'}\nExecution ID: ${execution.id}`,
+                                title: `[${provider}] Webhook: ${sanitizePlainText(automationKey)}`,
+                                content: `Automated evidence from ${provider} webhook event.\nEvent type: ${evidenceEventType}\nExecution ID: ${execution.id}`,
                                 category: 'integration',
                                 // SUBMITTED, not APPROVED.
                                 //

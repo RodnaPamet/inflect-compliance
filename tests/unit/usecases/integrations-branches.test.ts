@@ -617,6 +617,39 @@ describe('runAutomationForControl — the evidence gate', () => {
         expect(h.evidenceCreate.mock.calls[0][0].data.category).toBe('integration');
     });
 
+    it("stores the provider's text sanitised: no markup in title, body or category, JSON details intact", async () => {
+        // The payload is composed from the third party's answer (a repository
+        // or branch name, a change number), so the row must not carry its
+        // markup. The JSON block is sanitised value by value, so it still
+        // parses and a URL in it keeps its query string.
+        const h = harness({ id: 'conn-1', configJson: {}, secretEncrypted: null });
+        resolveTo(
+            jest.fn().mockResolvedValue(passed()),
+            jest.fn().mockReturnValue({
+                title: 'Branch Protection: acme/<img src=x onerror=alert(1)>repo',
+                content: 'acme/repo:<script>alert(1)</script>main: PASS',
+                contentJson: {
+                    examples: [{ number: 'CHG<b>01</b> a<b', approval: 'PENDING' }],
+                    link: 'https://acme.example/change?a=1&region=us',
+                },
+                type: 'REPORT',
+                category: 'github:<i>branch</i>',
+            } as EvidencePayload),
+        );
+
+        await runAutomationForControl(makeRequestContext('EDITOR'), 'ctl-1');
+
+        const ev = h.evidenceCreate.mock.calls[0][0].data;
+        expect(ev.title).toBe('Branch Protection: acme/repo');
+        expect(ev.category).toBe('github:branch');
+        const head = 'acme/repo:main: PASS\n\n';
+        expect(ev.content.startsWith(head)).toBe(true);
+        expect(JSON.parse(ev.content.slice(head.length))).toEqual({
+            examples: [{ number: 'CHG01 a', approval: 'PENDING' }],
+            link: 'https://acme.example/change?a=1&region=us',
+        });
+    });
+
     it('stores a NULL author when the run has no acting user (scheduled job)', async () => {
         const h = harness({ id: 'conn-1', configJson: {}, secretEncrypted: null });
         resolveTo(

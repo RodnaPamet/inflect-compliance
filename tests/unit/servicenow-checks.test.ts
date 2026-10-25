@@ -11,6 +11,7 @@
 import { runServiceNowCheck, type ChangeRecord } from '@/app-layer/integrations/providers/servicenow/checks';
 import { ServiceNowProvider } from '@/app-layer/integrations/providers/servicenow';
 import type { CheckInput } from '@/app-layer/integrations/types';
+import { integrationEvidenceText } from '@/app-layer/integrations/evidence-text';
 
 const CHECK = 'change_approved_before_implementation';
 
@@ -206,6 +207,41 @@ describe('evidence', () => {
         // was empty" as though it demonstrated the control.
         expect(p.mapResultToEvidence(input(), { ...base, status: 'ERROR' })).toBeNull();
         expect(p.mapResultToEvidence(input(), { ...base, status: 'NOT_APPLICABLE' })).toBeNull();
+    });
+
+    it('is stored with its change numbers free of markup and its detail JSON still parseable', () => {
+        // The change numbers are ServiceNow's text and land in the stored body.
+        // Through the writers' sanitiser (`integrationEvidenceText`) a hostile
+        // one loses its markup, and the JSON block after the summary still
+        // parses: the mapper hands the details over as `contentJson`, so only
+        // their string values are sanitised, never the serialised text — where
+        // `a<b` would open a "tag" that swallows the rest of the document.
+        const result = runServiceNowCheck(CHECK, [
+            chg({ number: 'CHG<img src=x onerror=alert(1)>01', approval: 'not_requested' }),
+            chg({ number: 'CHG02 a<b', approval: 'requested' }),
+            chg({ number: 'CHG03' }),
+        ]);
+        const payload = new ServiceNowProvider().mapResultToEvidence(input(), result);
+        expect(payload).not.toBeNull();
+
+        const stored = integrationEvidenceText(payload!);
+        const head = `${result.summary}\n\n`;
+        expect(stored.content.startsWith(head)).toBe(true);
+        const details = JSON.parse(stored.content.slice(head.length));
+        expect(details.examples).toEqual([
+            { number: 'CHG01', approval: 'PENDING' },
+            { number: 'CHG02 a', approval: 'PENDING' },
+        ]);
+        expect(details.failed).toBe(2);
+        expect(stored.content).not.toMatch(/<img|onerror/);
+    });
+
+    it('stores a safe result in the same shape as before: summary, a blank line, the details JSON', () => {
+        const result = runServiceNowCheck(CHECK, [chg({ number: 'CHG01', approval: 'not_requested' }), chg()]);
+        const stored = integrationEvidenceText(new ServiceNowProvider().mapResultToEvidence(input(), result)!);
+        expect(stored.content).toBe(`${result.summary}\n\n${JSON.stringify(result.details, null, 2)}`);
+        expect(stored.title).toBe(`ServiceNow change approvals — ${CHECK}`);
+        expect(stored.category).toBe('change-management');
     });
 });
 

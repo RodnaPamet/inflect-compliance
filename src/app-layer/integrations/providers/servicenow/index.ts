@@ -145,7 +145,11 @@ export class ServiceNowProvider implements ScheduledCheckProvider {
         if (result.status !== 'PASSED' && result.status !== 'FAILED') return null;
         return {
             title: `ServiceNow change approvals — ${input.parsed.checkType}`,
-            content: `${result.summary}\n\n${JSON.stringify(result.details, null, 2)}`,
+            content: result.summary,
+            // Appended to `content` as JSON by the writer, which sanitises its
+            // string values (the change numbers are ServiceNow's text) without
+            // breaking the JSON. See `integrations/evidence-text`.
+            contentJson: result.details,
             type: 'REPORT',
             category: 'change-management',
         };
