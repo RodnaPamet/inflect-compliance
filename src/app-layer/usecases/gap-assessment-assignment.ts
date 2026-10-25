@@ -34,6 +34,7 @@ import { logEvent } from '../events/audit';
 import { createTask } from './task';
 import { snapshotNis2Readiness } from './nis2-readiness';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 
 export const NIS2_RESPONDENT_ROLES = ['CEO', 'IT', 'HR', 'PROCUREMENT', 'ANYONE'] as const;
 export type Nis2RespondentRole = (typeof NIS2_RESPONDENT_ROLES)[number];
@@ -114,6 +115,10 @@ export async function dispatchAssignments(
         let created = 0;
         let updated = 0;
         let tasksCreated = 0;
+        // For the assignee's notification link, which must carry the
+        // `/t/<slug>` prefix — a bare tenant path 404'd from the bell (#4128).
+        // Resolved once, not per role.
+        const tenantSlug = await resolveTenantSlugForLinks(db, ctx);
 
         // Bounded to the 5 respondent roles, all inside one tenant transaction;
         // the per-role upsert/task cannot be hoisted into a single query.
@@ -159,7 +164,7 @@ export async function dispatchAssignments(
                         type: 'GENERAL',
                         title: 'NIS2 gap assessment assigned',
                         message: `You have ${questionIds.length} NIS2 questions to answer (${role}).`,
-                        linkUrl: `/audits/nis2-gap/respond/${assignment.id}`,
+                        linkUrl: tenantPageLink(tenantSlug, `/audits/nis2-gap/respond/${assignment.id}`),
                         dedupeKey: `NIS2_GAP_ASSIGNMENT:${assignment.id}:${assigneeUserId}`,
                     },
                 }).catch(() => { /* dedupe/notification failure must not fail dispatch */ });
