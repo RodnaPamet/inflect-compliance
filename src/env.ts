@@ -451,12 +451,6 @@ export const env = createEnv({
         // break, it expires. Guarded now by
         // `tests/guardrails/sub-processor-record-agrees-with-code.test.ts`.
         TYPESAFE_API_KEY: z.string().optional(),
-        // Laya — Convai Innovations' open-weights System One model, running on
-        // infrastructure WE operate. Deployment configuration only: no tenant
-        // setting reaches either of these, for the same SSRF reason the Jev host is
-        // a constant. The key is optional because most Laya servers sit behind a
-        // network boundary rather than an auth header, and requiring one would push
-        // operators toward the external path.
 
         // ── Private-address egress allowlist, SELF-HOSTED ONLY (#3328) ──
         //

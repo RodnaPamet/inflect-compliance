@@ -2762,6 +2762,25 @@ description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
 a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
 until it does.
 
+**A new engine passes the driver conformance suite before it is switched on**
+(Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
+hold ten run scenarios and one admission scenario. An engine supplies an
+adapter, which scripts the model's turns and reads back an observation. The
+scenarios assert only on that observation. The helper reads `adapter.engine`
+for two describe titles and nothing else, and
+`tests/unit/driver-conformance-variances.test.ts` counts the reads. Do not add
+an engine branch to the helper. A difference belongs in the adapter, or in a
+VARIANCE that names the stronger property and the owner decision accepting it
+(`checkVariances`, which runs as a case of its own). Flue declares none.
+
+Two scenarios are easy to weaken by accident:
+
+- **The kill scenario** holds every engine to the per-model-call check above.
+- **The ledger scenario** is `ledger-accounts-for-every-call`. A `MODEL_CALL`
+  step may cover a dispatch if it names how many calls it covers (owner
+  decision 2026-10-25, #4197). The count is asserted against the model inputs
+  and is never inferred from the number of steps.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

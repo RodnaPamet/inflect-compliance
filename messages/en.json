@@ -149,7 +149,11 @@
       "collapsePanel": "Collapse {title} panel",
       "countValue": "Count {value}",
       "percentOfTotal": "{percent} of total",
-      "labelValueOfTotal": "{label}: {value} of {total}"
+      "labelValueOfTotal": "{label}: {value} of {total}",
+      "regulatorWording": "Show the regulator wording",
+      "frameworkSectionNavigator": "Framework section navigator",
+      "sankeyFlow": "Cross-tier traceability flow (Sankey)",
+      "treeExpansionControls": "Tree expansion controls"
     },
     "calendar": {
       "prevYear": "Go to previous year",

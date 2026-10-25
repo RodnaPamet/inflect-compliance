@@ -24,7 +24,22 @@ let row: SettingsRow = { agentDriver: 'STATIC' };
 
 const upsert = jest.fn(async (_args: unknown): Promise<unknown> => ({}));
 const findUnique = jest.fn(async (_args: unknown): Promise<unknown> => row);
-const mockDb = { tenantSecuritySettings: { findUnique, upsert } };
+/**
+ * The TEXT read the usecase does now (#4224), in the shape
+ * `SELECT "agentDriver"::text` returns: a row array, empty when there is no
+ * settings row. Driven off the same `row` fixture, so every case below keeps
+ * its meaning.
+ *
+ * Worth knowing what this double CANNOT express, because it is why #4224
+ * survived: a real Prisma client meeting a stored value its enum was not
+ * generated with fails the whole read, and `findUnique` above returned the
+ * string happily — so `row = { agentDriver: 'PROPOSE' }` passed here while the
+ * same value answered 500 in production. The reachability of that path is
+ * proved against a real database in
+ * `tests/integration/agent-driver-unknown-stored-mode.test.ts`.
+ */
+const queryRaw = jest.fn(async (): Promise<unknown> => (row ? [row] : []));
+const mockDb = { tenantSecuritySettings: { findUnique, upsert }, $queryRaw: queryRaw };
 
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),

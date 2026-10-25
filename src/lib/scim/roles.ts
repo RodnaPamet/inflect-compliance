@@ -104,6 +104,11 @@ export function isScimProtectedRole(role: string): boolean {
  * agent keys until a person noticed. Reactivation is allowed with it, because a
  * Groups push could grant the role anyway. ADMIN and OWNER stay protected,
  * and a role added to `Role` is protected here by default too.
+ *
+ * A deprovision of an AI_ADMIN tells the workspace's OWNERs
+ * (`notifyOwnersOfScimAiAdminDeprovision`, owner decision of 2026-10-25): on
+ * the members page only an OWNER switches one off, so this is the one way it
+ * happens without an OWNER's hand on it.
  */
 export function isScimStatusProtectedRole(role: string): boolean {
     return !(SCIM_GROUP_ASSIGNABLE_ROLES as readonly string[]).includes(role);

@@ -34,11 +34,25 @@ jest.mock('@/app-layer/repositories/ControlRepository', () => ({
     },
 }));
 
+jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
+    EvidenceRepository: {
+        create: jest.fn(),
+        createControlLinks: jest.fn(),
+    },
+}));
+
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(),
 }));
 
+jest.mock('@/lib/cache/list-cache', () => ({
+    ...jest.requireActual('@/lib/cache/list-cache'),
+    bumpEntityCacheVersion: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
+import { EvidenceRepository } from '@/app-layer/repositories/EvidenceRepository';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { logEvent } from '@/app-layer/events/audit';
 import {
     listEvidenceLinks,
@@ -135,6 +149,86 @@ describe('linkEvidence', () => {
 
     it('rejects READER (link-evidence gate)', async () => {
         await expect(linkEvidence(readerCtx, 'c-1', { kind: 'FILE' })).rejects.toBeDefined();
+    });
+});
+
+describe('linkEvidence — a web link is a library record (#4126 follow-up)', () => {
+    beforeEach(() => {
+        (mockDb.control.findFirst as jest.Mock).mockResolvedValue({ id: 'c-1' });
+        (EvidenceRepository.create as jest.Mock).mockImplementation(async (_db: any, _ctx: any, data: any) => ({
+            id: 'ev-1',
+            ...data,
+        }));
+    });
+
+    it('creates a DRAFT LINK record joined to the control, and no plain link row', async () => {
+        const res = await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://ci.example.com/run/1', note: 'CI run' });
+
+        expect(EvidenceRepository.create).toHaveBeenCalledWith(mockDb, editorCtx, {
+            type: 'LINK',
+            title: 'CI run',
+            content: 'https://ci.example.com/run/1',
+            status: 'DRAFT',
+        });
+        expect(EvidenceRepository.createControlLinks).toHaveBeenCalledWith(mockDb, editorCtx, 'ev-1', ['c-1']);
+        expect(ControlRepository.linkEvidence).not.toHaveBeenCalled();
+        // The response is the record, so an API caller can address it.
+        expect(res).toMatchObject({ id: 'ev-1', type: 'LINK', status: 'DRAFT' });
+    });
+
+    it('is titled by its address when it has no note', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: '  https://ci.example.com/run/2 ', note: '   ' });
+        expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2]).toMatchObject({
+            title: 'https://ci.example.com/run/2',
+            content: 'https://ci.example.com/run/2',
+        });
+    });
+
+    it('sanitises the note it is titled by', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test', note: '<script>alert(1)</script>Report' });
+        expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2].title).not.toMatch(/<script/);
+    });
+
+    it('audits the record’s creation and the control link, and bumps both list caches', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test' });
+
+        const payloads = (logEvent as jest.Mock).mock.calls.map((c) => c[2]);
+        expect(payloads.map((p) => p.action)).toEqual(['CREATE', 'CONTROL_EVIDENCE_LINKED']);
+        expect(payloads[0]).toMatchObject({ entityType: 'Evidence', entityId: 'ev-1' });
+        expect(payloads[1].detailsJson).toMatchObject({ targetId: 'ev-1', relation: 'LINK' });
+        expect((bumpEntityCacheVersion as jest.Mock).mock.calls.map((c) => c[1]).sort()).toEqual(['control', 'evidence']);
+    });
+
+    it('needs the control’s gate only, not evidence.edit — a controls-scoped key keeps working', async () => {
+        const controlsOnly = {
+            ...editorCtx,
+            appPermissions: {
+                ...editorCtx.appPermissions,
+                evidence: { ...editorCtx.appPermissions.evidence, edit: false },
+            },
+        };
+        await expect(linkEvidence(controlsOnly, 'c-1', { kind: 'LINK', url: 'https://x.test' })).resolves.toMatchObject({ id: 'ev-1' });
+    });
+
+    it('refuses a link with no address, and writes nothing', async () => {
+        await expect(linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: '   ' })).rejects.toThrow(/needs a url/i);
+        expect(EvidenceRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('throws notFound for a control outside the tenant, before writing a record', async () => {
+        (mockDb.control.findFirst as jest.Mock).mockResolvedValue(null);
+        await expect(linkEvidence(editorCtx, 'missing', { kind: 'LINK', url: 'https://x.test' })).rejects.toThrow(/Control not found/i);
+        expect(mockDb.control.findFirst).toHaveBeenCalledWith({
+            where: { id: 'missing', tenantId: editorCtx.tenantId },
+            select: { id: true },
+        });
+        expect(EvidenceRepository.create).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('rejects READER before reading anything', async () => {
+        await expect(linkEvidence(readerCtx, 'c-1', { kind: 'LINK', url: 'https://x.test' })).rejects.toBeDefined();
+        expect(mockDb.control.findFirst).not.toHaveBeenCalled();
     });
 });
 

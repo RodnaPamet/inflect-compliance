@@ -149,7 +149,11 @@
       "collapsePanel": "Свий панела {title}",
       "countValue": "Брой {value}",
       "percentOfTotal": "{percent} от общо",
-      "labelValueOfTotal": "{label}: {value} от {total}"
+      "labelValueOfTotal": "{label}: {value} от {total}",
+      "regulatorWording": "Покажи формулировката на регулатора",
+      "frameworkSectionNavigator": "Навигатор по разделите на рамката",
+      "sankeyFlow": "Поток на проследимост между нивата (Санки)",
+      "treeExpansionControls": "Контроли за разгъване на дървото"
     },
     "calendar": {
       "prevYear": "Към предходната година",

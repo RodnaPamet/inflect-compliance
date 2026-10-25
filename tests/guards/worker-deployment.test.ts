@@ -43,6 +43,7 @@ const PROD_COMPOSE_FILES = [
 interface ComposeService {
     command?: string | string[];
     entrypoint?: string | string[];
+    environment?: Record<string, unknown> | string[];
 }
 interface ComposeFile {
     services?: Record<string, ComposeService>;
@@ -150,5 +151,46 @@ describe('which compose file is the deployed one', () => {
     it('every production-like compose file declares a role at all', () => {
         const unlabelled = PROD_COMPOSE_FILES.filter((f) => roleOf(f) === null);
         expect({ unlabelled }).toEqual({ unlabelled: [] });
+    });
+});
+
+/**
+ * THE APP TIER IS GIVEN ONLY VARIABLES THE CODE DECLARES.
+ *
+ * `src/env.ts` declares every variable the code reads, and its `runtimeEnv`
+ * names each one. A variable a Compose file sets on `app` or `worker` that
+ * `runtimeEnv` does not name configures nothing: no code can read it.
+ *
+ * That is how the retired Laya estate outlived its retirement (#4178). The
+ * canonical file dropped the `laya` service and `LAYA_BASE_URL` when the
+ * variable left `env.ts`. The root and staging files kept both: the variable
+ * on app and worker, pointing at an always-on 6.68 GB service that a refused
+ * setting could never reach. Nothing compared those two files with the code.
+ */
+describe('the app and worker are given only variables the code declares', () => {
+    const declared = new Set(
+        [...read('src/env.ts').matchAll(/^\s+([A-Z][A-Z0-9_]*): process\.env\.\1,?\s*$/gm)].map(
+            (m) => m[1],
+        ),
+    );
+
+    /** The keys of a Compose `environment`, in either of its two shapes. */
+    const keysOf = (env: ComposeService['environment']): string[] =>
+        Array.isArray(env) ? env.map((e) => e.split('=')[0]) : Object.keys(env ?? {});
+
+    it('reads the declarations from runtimeEnv (denominator, not findings)', () => {
+        expect(declared.size).toBeGreaterThan(50);
+        expect(declared.has('DATABASE_URL')).toBe(true);
+    });
+
+    describe.each(PROD_COMPOSE_FILES)('%s', (file) => {
+        const services = (yaml.load(read(file)) as ComposeFile).services ?? {};
+
+        it.each(['app', 'worker'])('%s sets nothing src/env.ts does not declare', (name) => {
+            const service = services[name];
+            expect(service).toBeDefined();
+            const undeclared = keysOf(service?.environment).filter((k) => !declared.has(k));
+            expect({ [name]: undeclared }).toEqual({ [name]: [] });
+        });
     });
 });

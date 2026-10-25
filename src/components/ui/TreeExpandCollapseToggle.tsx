@@ -18,6 +18,7 @@
  */
 
 import { cn } from '@inflect/ui/lib/cn';
+import { useTranslations } from 'next-intl';
 import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { getExpandToggleState } from '@/lib/framework-tree/tree-helpers';
 
@@ -46,6 +47,7 @@ export function TreeExpandCollapseToggle({
     className,
     id = 'tree-toggle',
 }: TreeExpandCollapseToggleProps) {
+    const t = useTranslations('common.ui');
     // Derive tri-state. Disabling the no-op direction makes the
     // affordance honest: when nothing's expanded, "Collapse all" is
     // pointless and clicking it would be confusing. The state
@@ -64,7 +66,7 @@ export function TreeExpandCollapseToggle({
                 className,
             )}
             role="group"
-            aria-label="Tree expansion controls"
+            aria-label={t('treeExpansionControls')}
             data-tree-toggle-id={id}
         >
             <button
