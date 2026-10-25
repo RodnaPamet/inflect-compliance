@@ -152,14 +152,14 @@ describe('the suggestion is a question about the tenant, against the seeded cata
         expect(await suggestLegacyEvidenceControls(ctx())).toEqual([]);
     });
 
-    it('REGRESSION — resolves a control linked to the SEEDED spellings: ISO27001 5.18, SOC2 CC6.1, NIS2 Art.21(2)(i)', async () => {
+    it('REGRESSION — resolves a control linked to the SEEDED spellings: ISO27001 5.18, SOC2 CC6.3, NIS2 Art.21(2)(i)', async () => {
         // Before the fix this returned [] for every one of these links: the
         // module asked for `iso27001` / `A.5.18` and `nis2` / `Art. 21(2)(i)`.
         await prisma.controlRequirementLink.createMany({
             data: [
                 { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.18') },
                 { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.16') },
-                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.3') },
                 { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('NIS2', 'Art.21(2)(i)') },
             ],
         });
@@ -168,7 +168,7 @@ describe('the suggestion is a question about the tenant, against the seeded cata
             ['ISO27001', '5.16'],
             ['ISO27001', '5.18'],
             ['NIS2', 'Art.21(2)(i)'],
-            ['SOC2', 'CC6.1'],
+            ['SOC2', 'CC6.3'],
         ]);
         expect(new Set(s.map((x) => x.controlId))).toEqual(new Set([ourControlId]));
         expect(s[0].controlName).toBe('Access reviews');
@@ -207,7 +207,7 @@ describe('the suggestion is a question about the tenant, against the seeded cata
 
     it('does NOT return another tenant’s control, even on the same seeded requirement', async () => {
         await prisma.controlRequirementLink.create({
-            data: { tenantId: T2, controlId: otherControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+            data: { tenantId: T2, controlId: otherControlId, requirementId: await seededRequirement('SOC2', 'CC6.3') },
         });
         // Ours sees nothing...
         expect(await suggestLegacyEvidenceControls(ctx(T1))).toEqual([]);
@@ -219,7 +219,7 @@ describe('the suggestion is a question about the tenant, against the seeded cata
 
     it('does not suggest a soft-deleted control', async () => {
         await prisma.controlRequirementLink.create({
-            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.3') },
         });
         expect(await suggestLegacyEvidenceControls(ctx())).toHaveLength(1);
         await prisma.control.update({ where: { id: ourControlId }, data: { deletedAt: new Date() } });
@@ -229,7 +229,7 @@ describe('the suggestion is a question about the tenant, against the seeded cata
     it('is ordered stably, so two calls agree', async () => {
         await prisma.controlRequirementLink.createMany({
             data: [
-                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.3') },
                 { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.18') },
             ],
         });
@@ -241,7 +241,7 @@ describe('the suggestion is a question about the tenant, against the seeded cata
 
     it('a READER may see it — the creator choosing where to file needs this read', async () => {
         await prisma.controlRequirementLink.create({
-            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.3') },
         });
         const s = await suggestLegacyEvidenceControls(ctx(T1, 'READER'));
         expect(s).toHaveLength(1);
