@@ -184,6 +184,33 @@ export async function deleteAuditRowsForTenants(
  * `audit-hash-chain.test.ts`) and clean up by that prefix rather than by
  * tenant, because the tenant is shared with rows they did not create.
  */
+/**
+ * Delete this suite's `AuditLog` rows for the given USER ids.
+ *
+ * The sibling of `deleteAuditRowsForTenants`, and the one that unblocks
+ * `user.deleteMany`: `AuditLog.userId` is one of fifteen non-cascading foreign
+ * keys into `User`, so an audit row the suite wrote as that user outlives it
+ * and the teardown's own user delete fails.
+ *
+ * ADDED BECAUSE THE GUARD ALREADY NAMED IT (#3343). `CLEARS_AUDIT_ROWS` in
+ * `tests/guards/integration-suite-audit-teardown.test.ts` has matched
+ * `deleteAuditRowsForUsers` since #3342, and nothing exported it — so a suite
+ * could satisfy that classifier by calling a function that does not exist, and
+ * I reached for the name from the regex rather than the exports. This module's
+ * header says to add a selector here when something needs one; two org
+ * teardowns do.
+ */
+export async function deleteAuditRowsForUsers(
+    db: RawSqlClient,
+    userIds: string | readonly string[],
+): Promise<number> {
+    const ids = asArray(userIds);
+    if (ids.length === 0) return 0;
+    return withAuditTriggersDisabled(db, (tx) =>
+        tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "userId" = ANY($1::text[])`, ids),
+    );
+}
+
 export async function deleteAuditRowsByActionLike(
     db: RawSqlClient,
     actionPattern: string,
