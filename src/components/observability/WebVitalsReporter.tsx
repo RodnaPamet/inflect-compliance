@@ -53,6 +53,10 @@ export function WebVitalsReporter() {
             value: metric.value,
             rating: (metric as { rating?: string }).rating,
             navigationType: (metric as { navigationType?: string }).navigationType,
+            // Present at runtime in web-vitals 6.2.3 (and in Next's bundled copy,
+            // which is the one that runs) but absent from this install's .d.ts, so
+            // it is read through a cast exactly as `rating` and `navigationType` are.
+            navigationId: (metric as { navigationId?: string | number }).navigationId,
             route: typeof window !== 'undefined' ? window.location.pathname : '/',
         });
     }, []);

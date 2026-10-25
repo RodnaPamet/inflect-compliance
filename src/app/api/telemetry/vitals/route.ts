@@ -53,6 +53,13 @@ export async function POST(request: Request): Promise<NextResponse> {
                 route: typeof m.route === 'string' ? m.route : '/',
                 navigationType:
                     typeof m.navigationType === 'string' ? m.navigationType : undefined,
+                // A public, unauthenticated sink: accept only the two shapes the
+                // library produces and drop anything else, rather than passing a
+                // caller-chosen value into a log field.
+                navigationId:
+                    typeof m.navigationId === 'string' || typeof m.navigationId === 'number'
+                        ? m.navigationId
+                        : undefined,
             });
         }
     } catch {
