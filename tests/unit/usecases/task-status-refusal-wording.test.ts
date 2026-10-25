@@ -13,9 +13,6 @@
  * the UI does, and names a task by its title rather than its id.
  */
 
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntry: jest.fn().mockResolvedValue(undefined),
-}));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 jest.mock('@/app-layer/usecases/task-source-reconcile', () => ({
     reconcileTaskSource: jest.fn(),
@@ -82,14 +79,18 @@ async function refusal(p: Promise<unknown>): Promise<string> {
     throw new Error('expected the call to be refused');
 }
 
-/** No raw status enum, no internal vocabulary, no database id. */
-function expectUserFacing(message: string) {
-    // The enum values are SCREAMING_SNAKE; no display name is.
-    for (const status of ALL_TASK_STATUSES) {
-        expect(message).not.toMatch(new RegExp(`\\b${status}\\b`));
-    }
-    expect(message).not.toMatch(/work-item/i);
-    expect(message).not.toContain(TASK_ID);
+/**
+ * What in `message` is not user copy: a raw status enum (they are
+ * SCREAMING_SNAKE; no display name is), the internal word "work-item", or
+ * the task's database id. Empty for a user-facing message.
+ */
+function rawFragments(message: string): string[] {
+    const raw: string[] = ALL_TASK_STATUSES.filter((status) =>
+        new RegExp(`\\b${status}\\b`).test(message),
+    );
+    if (/work-item/i.test(message)) raw.push('work-item');
+    if (message.includes(TASK_ID)) raw.push(TASK_ID);
+    return raw;
 }
 
 beforeEach(() => {
@@ -104,7 +105,7 @@ describe('single-task status refusals', () => {
         const message = await refusal(setTaskStatus(ctx, TASK_ID, 'OPEN'));
 
         expect(message).toBe('A task cannot move from Triaged to Open.');
-        expectUserFacing(message);
+        expect(rawFragments(message)).toEqual([]);
     });
 
     it('the reviewer gate names the review status, not IN_REVIEW', async () => {
@@ -115,7 +116,7 @@ describe('single-task status refusals', () => {
         expect(message).toBe(
             'This task has a reviewer, so it must be In review before it can be closed. Move it to In review for sign-off first.',
         );
-        expectUserFacing(message);
+        expect(rawFragments(message)).toEqual([]);
     });
 
     it('a terminal move without a resolution names the status', async () => {
@@ -124,7 +125,7 @@ describe('single-task status refusals', () => {
         const message = await refusal(setTaskStatus(ctx, TASK_ID, 'CANCELED'));
 
         expect(message).toBe('A resolution is required when moving a task to Canceled.');
-        expectUserFacing(message);
+        expect(rawFragments(message)).toEqual([]);
     });
 
     it('the type-relevance rule names the type and targets, not the enum values', async () => {
@@ -148,7 +149,7 @@ describe('bulk status refusals name the task by its title, never its id', () => 
         expect(message).toBe(
             'Cannot change the status of "Rotate the edge certificates": A task cannot move from Closed to Triaged.',
         );
-        expectUserFacing(message);
+        expect(rawFragments(message)).toEqual([]);
     });
 
     it('the reviewer gate in the batch', async () => {
@@ -161,7 +162,7 @@ describe('bulk status refusals name the task by its title, never its id', () => 
         expect(message).toBe(
             'Cannot change the status of "Review the vendor DPA": This task has a reviewer, so it must be In review before it can be closed. Move it to In review for sign-off first.',
         );
-        expectUserFacing(message);
+        expect(rawFragments(message)).toEqual([]);
     });
 
     it('the type-relevance rule in the batch', async () => {
@@ -175,7 +176,7 @@ describe('bulk status refusals name the task by its title, never its id', () => 
         expect(message).toBe(
             'Cannot change the status of "Close the pen-test gap": Control Gap tasks must have a control, or a link to a control or framework requirement.',
         );
-        expectUserFacing(message);
+        expect(rawFragments(message)).toEqual([]);
         expect(message).not.toMatch(/CONTROL_GAP|FRAMEWORK_REQUIREMENT|controlId/);
     });
 });
