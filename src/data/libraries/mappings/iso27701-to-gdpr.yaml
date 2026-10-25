@@ -17,7 +17,12 @@ description: >
   and processor Annex B) and the GDPR articles they help satisfy. Relationships
   ported from the Microsoft Data Protection Mapping Project (MIT). Structural
   traceability guidance, not legal advice or a compliance guarantee.
-version: 1
+# Version 2 changes no entry. The two clause-6 entries below named a node the
+# ISO 27701 library did not make assessable until its own version 2, so a
+# database that imported version 1 holds neither. A set whose content is
+# unchanged is skipped at import, and this bump is what makes such a database
+# import it again and resolve them.
+version: 2
 source_framework_ref: ISO27701-2019
 target_framework_ref: GDPR
 
