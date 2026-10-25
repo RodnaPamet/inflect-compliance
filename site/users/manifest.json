@@ -5,7 +5,27 @@
             "group": "Page guides",
             "label": "{{ui:nav.govern}}",
             "docs": [
+                "docs/user/guide/govern/assets.md",
+                "docs/user/guide/govern/risks.md",
+                "docs/user/guide/govern/controls.md",
                 "docs/user/guide/govern/"
+            ]
+        },
+        {
+            "group": "Page guides",
+            "label": "{{ui:nav.comply}}",
+            "docs": [
+                "docs/user/guide/comply/tasks.md",
+                "docs/user/guide/comply/evidence.md",
+                "docs/user/guide/comply/"
+            ]
+        },
+        {
+            "group": "Page guides",
+            "label": "{{ui:nav.manage}}",
+            "docs": [
+                "docs/user/guide/manage/policies.md",
+                "docs/user/guide/manage/"
             ]
         },
         {
