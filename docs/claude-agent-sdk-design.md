@@ -127,7 +127,7 @@ driver would have to reproduce:
 | Runtime-supplied tools are reported, not hidden | `flue/runtime-tools.ts` (`task`, `activate_skill`) |
 | Kill switch asked per turn, not only at start | before boot in `flue/execute.ts`, then before every model call: the interceptor in `flue/telemetry.ts` awaits the run binding's `beforeModelCall` (#4196) |
 | Run caps (wall clock, tool calls, tokens) charged per tool call, and checked again before every model call | `createRunBudget` in `execute.ts`; `beforeModelCall` refuses the next model call once a cap has latched (#4196) |
-| Every model call and tool call is a hash-chained `WorkflowStep` | `MODEL_CALL` / `TOOL_CALL` through `recordStep` |
+| Every tool call is a hash-chained `WorkflowStep`, and every model call is counted by a `MODEL_CALL` step naming how many calls it covers (owner decision 2026-10-25, #4197) | `TOOL_CALL` and `MODEL_CALL` through `recordStep`; one `MODEL_CALL` per dispatch, with `modelCalls` |
 | EU AI Act Art 12 decision row per model call | `flue/model-decision.ts` → `logAiDecision` |
 | Residency: a `LOCAL_ONLY` tenant never reaches an external model | `flue/model-selection.ts`, which picks a model specifier per run, and never `setProvider` per run (module singleton, cross-tenant race) |
 | Delegation is capped and narrows | `flue/delegation-gate.ts` (fan-out), `flue/subagents/` (subset of the parent's tools, depth 1) |
@@ -167,6 +167,35 @@ live in `src/lib/agentic/engine-tools/`, which imports no engine. ESLint refuses
 - `isReasoningEngine(driver)` in `agent-driver.ts` is the single question
   `startWorkflowRun` asks for the registration gate, the skill pin and the
   worker hand-off. A driver missing from its record fails `tsc`.
+
+### The driver conformance suite
+
+Since Step 0b (#PRNUM), one table of scenarios holds every run driver to the
+same controls (`tests/helpers/driver-conformance.ts`). An engine supplies an
+adapter: it scripts the model's turns, starts a run and reads back what
+happened. The scenarios assert only on that observation, never on an internal
+call.
+
+- Ten run scenarios:
+  - a kill switch engaged between model calls;
+  - each of the three caps;
+  - the ledger accounting for every model call and tool call;
+  - one Art 12 row per model call, carrying its step's digest;
+  - a secret-shaped argument refused before the funnel;
+  - a flagged result withheld from the model;
+  - a `LOCAL_ONLY` tenant never sent to an external model;
+  - the tool surface bounded and every engine-supplied tool reported.
+- One admission scenario, run against the database. An unvouched agent (no
+  binding, not in the register, or suspended) is refused before the run row
+  exists. A vouched agent is the positive control.
+- A variance lets an engine assert a stronger property in place of a
+  scenario, and only with a named owner decision. Flue declares none.
+- Flue runs the run half in `tests/flue/driver-conformance.test.ts` and the
+  admission half in `tests/integration/driver-conformance-admission.test.ts`.
+
+The ledger scenario reflects an owner decision (2026-10-25, #4197). A
+`MODEL_CALL` step may cover a whole dispatch, provided it names how many model
+calls it covers. Flue writes one such step per dispatch.
 
 ### What the harness scanner recognises
 
@@ -686,7 +715,7 @@ Each phase's hardening step fills its row.
 
 Make the engine seam ready for more than Flue. #4111 closed the two gaps on
 `/api/mcp` first (Step 0d). #4176 then delivered the engine-neutral tool core
-(Step 0a).
+(Step 0a), and #PRNUM the driver conformance suite (Step 0b).
 
 #### Step 0a — Engine-neutral tool core
 
@@ -707,62 +736,30 @@ no prompt, and 0H checks it together with the rest of the phase.
 
 #### Step 0b — Driver conformance suite
 
-**Goal.** One reusable test harness that every run driver must pass, so a new
-engine proves it keeps every control in front of it before it can be switched on.
+Delivered by #PRNUM (#4138). The work done:
 
-```text
-You are implementing Step 0b of the roadmap in docs/claude-agent-sdk-design.md.
-Read its "Global rules", "Definition of done" and "Step 0b", and the table
-"Every Inflect control, mapped to an SDK mechanism" in the same document. Step 0a
-is merged.
+- `tests/helpers/driver-conformance.ts` holds two engine-agnostic tables. The
+  run table has ten scenarios. The admission table has one scenario, checked
+  for three unvouched standings with a vouched positive control. An engine
+  supplies an adapter, and the scenarios assert only on what the adapter
+  observes.
+- A variance names a stronger property and the owner decision accepting it, or
+  the suite fails. Flue declares none.
+- Flue runs the run half in the `flue` project
+  (`tests/flue/driver-conformance.test.ts`). The real boot, driver, tool core,
+  AI Guard and Art 12 writer run behind faux model transports. Flue runs the
+  admission half against the database
+  (`tests/integration/driver-conformance-admission.test.ts`).
+- Flue failed two scenarios as first written, and neither was weakened. The
+  kill switch was asked only before boot and at the tool boundary (#4196). It
+  was fixed first, in #4201. The ledger scenario asked for one `MODEL_CALL` step
+  per model call (#4197). The owner chose the less restrictive bar on
+  2026-10-25: every model call counted by a `MODEL_CALL` step that names how
+  many calls it covers. That scenario changed for every engine.
 
-Goal: tests/helpers/driver-conformance.ts exports a scenario table that a driver
-test file instantiates with an engine adapter. Flue is the first subject.
-
-1. Design an adapter interface an engine supplies: how to script model turns (a
-   faux provider or a fake client), how to start a run of a given definition, and
-   how to read the run's ledger and decision rows. Keep the scenarios
-   engine-agnostic.
-2. Write one scenario per control, each asserting the observable outcome rather
-   than an internal call:
-   - kill switch engaged after the first turn: the run halts before the next
-     model call, with the kill reason;
-   - each run cap (tool calls, tokens, wall clock) halts the run with that cap's
-     reason;
-   - exactly one MODEL_CALL step per model call and one TOOL_CALL step per tool
-     call, written through recordStep;
-   - one AiDecisionLog row per model call, carrying the step's input digest;
-   - a secret-shaped tool argument is refused before the funnel runs;
-   - a flagged tool result never reaches the next model call;
-   - a LOCAL_ONLY tenant is refused or routed locally, never sent to an external
-     model;
-   - a tool outside the resolved set is unreachable, and every engine-supplied
-     tool is reported (see flue/runtime-tools.ts);
-   - an unvouched agent is refused before the run row exists.
-3. Let an adapter declare a VARIANCE for a scenario its engine cannot satisfy as
-   written. A variance names the stronger property the engine asserts instead
-   and the owner decision that accepts it. The suite fails an adapter that
-   declares a variance without naming a decision, and the variance never changes
-   the shared scenario. (Managed Agents will need two; see Step 5b in
-   docs/claude-managed-agents-design.md.)
-4. Instantiate the suite for Flue in tests/flue/ (Flue is ESM-only, so it runs in
-   the flue jest project). Flue declares no variance.
-5. If Flue fails a scenario, do not weaken the scenario. Stop, report the
-   failure, and open an issue that names it.
-
-Deliver per the Definition of done.
-```
-
-**Hardening**
-
-- [ ] Each scenario is mutation-proved against Flue: disabling the per-turn kill check, the cap charge and the argument guard each turns exactly the matching scenario red.
-- [ ] The suite contains no `if (engine === …)` branch; engine differences live only in the adapter.
-- [ ] A variance without a named owner decision fails the suite (test), and Flue declares none.
-- [ ] A scenario that cannot observe its outcome fails, rather than passing vacuously. An empty ledger is asserted non-empty before it is inspected.
-- [ ] The Flue instantiation runs in CI in the `flue` project and uploads coverage, and `coverage-gate-population` stays green.
-- [ ] The helper is named for its invariant (`driver-conformance`), not for the step.
-
-**Exit.** `tests/flue/` runs every conformance scenario against Flue and passes, and a future engine needs only an adapter to be held to the same bar.
+The Current state section "The driver conformance suite" describes the result.
+The design and the decisions are in
+`docs/implementation-notes/2026-10-25-driver-conformance-suite.md`.
 
 #### Step 0c — Agent engines settings page
 
