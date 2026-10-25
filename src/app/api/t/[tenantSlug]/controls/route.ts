@@ -37,11 +37,6 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
     const query = ControlsQuerySchema.parse(sp);
 
-    if (query.includeDeleted === 'true') {
-        const controls = await listControlsWithDeleted(ctx);
-        return jsonResponse(controls);
-    }
-
     const filters = {
         status: query.status,
         applicability: query.applicability,
@@ -52,6 +47,13 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         due: query.due,
         evidence: query.evidence,
     };
+
+    if (query.includeDeleted === 'true') {
+        // The Deleted view keeps the toolbar's filters and search active, so
+        // the read honours them (Assets does the same).
+        const controls = await listControlsWithDeleted(ctx, filters);
+        return jsonResponse(controls);
+    }
 
     // If pagination params present, use paginated response
     if (query.limit !== undefined || query.cursor !== undefined) {

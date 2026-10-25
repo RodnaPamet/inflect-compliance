@@ -23,7 +23,8 @@
  *     progress math, edge cases at zero).
  *   - runConsistencyCheck — admin/owner gate (Epic 1 OWNER superset),
  *     missingCode/duplicateCode/overdue projections.
- *   - listControlsWithDeleted — admin gate + withDeleted wrapping.
+ *   - listControlsWithDeleted — admin gate, filters reach the repository,
+ *     linked-task counts attached like the live list.
  */
 
 const mockDb = {
@@ -54,6 +55,7 @@ jest.mock('@/lib/cache/list-cache', () => ({
 jest.mock('@/app-layer/repositories/ControlRepository', () => ({
     ControlRepository: {
         list: jest.fn(),
+        listDeleted: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
         getHeaderById: jest.fn(),
@@ -529,17 +531,47 @@ describe('runConsistencyCheck', () => {
 // ─── listControlsWithDeleted ───────────────────────────────────────
 
 describe('listControlsWithDeleted', () => {
-    it('returns rows including soft-deleted (withDeleted wrapper) for ADMIN', async () => {
-        (mockDb.control.findMany as jest.Mock).mockResolvedValue([{ id: 'c-1' }]);
+    beforeEach(() => {
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(
+            new Map([['c-1', { total: 2, done: 1 }]]),
+        );
+    });
+
+    it('reads the soft-deleted rows from the repository, with linked-task counts', async () => {
+        // Same enrichment as the live list — the view's Tasks column read
+        // 0/0 for every row when the read selected scalars only.
+        (ControlRepository.listDeleted as jest.Mock).mockResolvedValue([{ id: 'c-1' }]);
         const rows = await listControlsWithDeleted(adminCtx);
-        expect(rows).toEqual([{ id: 'c-1' }]);
-        const findManyArgs = (mockDb.control.findMany as jest.Mock).mock.calls[0][0];
-        expect(findManyArgs._withDeleted).toBe(true);
+        expect(rows).toEqual([{ id: 'c-1', taskTotal: 2, taskDone: 1 }]);
+        // Still a whole-tenant scan, still capped.
+        const [, , , options] = (ControlRepository.listDeleted as jest.Mock).mock.calls[0];
+        expect(options).toEqual({ take: 5000 });
+    });
+
+    it('passes the toolbar filters through to the repository', async () => {
+        // The route used to call this with no filters at all, so search,
+        // status, applicability, owner and health were dropped in the view.
+        (ControlRepository.listDeleted as jest.Mock).mockResolvedValue([]);
+        await listControlsWithDeleted(adminCtx, {
+            status: 'IMPLEMENTED',
+            ownerUserId: 'u-1,u-2',
+            q: 'backup',
+            due: 'soon',
+            ids: 'c-1,c-2',
+        });
+        const [, , filters] = (ControlRepository.listDeleted as jest.Mock).mock.calls[0];
+        expect(filters).toMatchObject({
+            status: 'IMPLEMENTED',
+            ownerUserId: 'u-1,u-2',
+            q: 'backup',
+            due: 'soon',
+            ids: ['c-1', 'c-2'],
+        });
     });
 
     it('rejects AUDITOR (admin gate, not audit)', async () => {
         await expect(listControlsWithDeleted(auditorCtx)).rejects.toBeDefined();
-        expect(mockDb.control.findMany).not.toHaveBeenCalled();
+        expect(ControlRepository.listDeleted).not.toHaveBeenCalled();
     });
 
     it('rejects READER', async () => {
@@ -547,7 +579,7 @@ describe('listControlsWithDeleted', () => {
     });
 
     it('accepts OWNER (admin superset)', async () => {
-        (mockDb.control.findMany as jest.Mock).mockResolvedValue([]);
+        (ControlRepository.listDeleted as jest.Mock).mockResolvedValue([]);
         await expect(listControlsWithDeleted(ownerCtx)).resolves.toEqual([]);
     });
 });

@@ -6,7 +6,6 @@ import { assertCanReadControls } from '../../policies/control.policies';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanAdmin } from '../../policies/common';
-import { withDeleted } from '@/lib/soft-delete';
 import { cachedListRead } from '@/lib/cache/list-cache';
 
 // Safety cap on the recycle-bin view's tenant-wide scan. It intentionally
@@ -249,9 +248,36 @@ export async function getControlActivity(ctx: RequestContext, controlId: string)
     });
 }
 
-export async function listControlsWithDeleted(ctx: RequestContext) {
+/**
+ * The "Deleted controls" view: ONLY soft-deleted controls, under the same
+ * filters as the live list and in the same row shape (owner, framework links,
+ * evidence counts, linked-task counts), so the view's columns read the same
+ * way they do on live rows.
+ *
+ * It used to be `withDeleted({ where: { tenantId } })` — every control, live
+ * and deleted alike, with every filter dropped and only scalars selected — so
+ * the view listed the whole register with an em dash where Restore/Purge
+ * belong, and "No deleted controls" could only show for an empty workspace.
+ */
+export async function listControlsWithDeleted(
+    ctx: RequestContext,
+    filters?: ControlListInputFilters,
+) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, (db) =>
-        db.control.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const }, take: FULL_SCAN_CAP }))
-    );
+    const idRestriction = await resolveControlIdRestriction(ctx, filters);
+    const repoFilters = toRepoFilters(filters, idRestriction);
+    return runInTenantContext(ctx, async (db) => {
+        const controls = await ControlRepository.listDeleted(db, ctx, repoFilters, { take: FULL_SCAN_CAP });
+        // Same unified linked-task counts the live list attaches.
+        const counts = await TaskRepository.countLinkedToControls(
+            db,
+            ctx,
+            controls.map((c) => c.id),
+        );
+        return controls.map((c) => ({
+            ...c,
+            taskTotal: counts.get(c.id)?.total ?? 0,
+            taskDone: counts.get(c.id)?.done ?? 0,
+        }));
+    });
 }

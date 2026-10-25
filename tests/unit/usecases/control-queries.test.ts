@@ -38,6 +38,7 @@ jest.mock('@/app-layer/policies/common', () => ({
 jest.mock('@/app-layer/repositories/ControlRepository', () => ({
     ControlRepository: {
         list: jest.fn(),
+        listDeleted: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
         getHeaderById: jest.fn(),
@@ -425,18 +426,25 @@ describe('runConsistencyCheck', () => {
 // listControlsWithDeleted — admin-only gate
 // ──────────────────────────────────────────────────────────────────────
 describe('listControlsWithDeleted', () => {
+    beforeEach(() => {
+        (ControlRepository.listDeleted as jest.Mock).mockReset();
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
+    });
+
     it('asserts admin permission', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([]);
+        (ControlRepository.listDeleted as jest.Mock).mockResolvedValueOnce([]);
         await listControlsWithDeleted(ctx);
         expect(policyCalls).toEqual(['admin']);
     });
 
-    it('includes soft-deleted rows via withDeleted wrapper', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([{ id: 'c-1' }]);
-        await listControlsWithDeleted(ctx);
-
-        // The withDeleted mock decorates the query with includeDeleted:true.
-        const args = tenantDb.control.findMany.mock.calls[0][0];
-        expect(args.includeDeleted).toBe(true);
+    it('reads through the repository\'s deleted-only read, not a raw findMany', async () => {
+        // The raw `withDeleted({ where: { tenantId } })` it replaced returned
+        // live rows too (`withDeleted` only lifts the soft-delete filter).
+        (ControlRepository.listDeleted as jest.Mock).mockResolvedValueOnce([{ id: 'c-1' }]);
+        const rows = await listControlsWithDeleted(ctx, { q: 'vpn' });
+        expect(rows).toEqual([{ id: 'c-1', taskTotal: 0, taskDone: 0 }]);
+        expect(tenantDb.control.findMany).not.toHaveBeenCalled();
+        const [, , filters] = (ControlRepository.listDeleted as jest.Mock).mock.calls[0];
+        expect(filters).toMatchObject({ q: 'vpn' });
     });
 });
