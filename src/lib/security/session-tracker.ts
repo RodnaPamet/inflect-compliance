@@ -38,7 +38,9 @@
  */
 
 import { randomBytes } from 'node:crypto';
+import type { NextRequest } from 'next/server';
 
+import { env } from '@/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { recordSessionPolicyResolution } from '@/lib/observability/metrics';
@@ -397,6 +399,26 @@ export interface RevokeResult {
     /** The sessionId we revoked, for audit + UI confirmation. */
     sessionId: string | null;
     userId: string | null;
+}
+
+/**
+ * The `userSessionId` of the session JWT this request carries, or `null` when
+ * there is none — no cookie, an API key, or a token minted without a row.
+ *
+ * Read with `getToken`, which verifies the cookie the way the edge middleware
+ * does; the id is server-minted at sign-in and never taken from the request
+ * body. Callers still check the row is the caller's own and live before
+ * trusting it to name "this session" (`session-security.ts`).
+ */
+export async function currentSessionIdOf(req: NextRequest): Promise<string | null> {
+    try {
+        const { getToken } = await import('next-auth/jwt');
+        const token = await getToken({ req, secret: env.AUTH_SECRET });
+        const id = token?.userSessionId;
+        return typeof id === 'string' && id !== '' ? id : null;
+    } catch {
+        return null;
+    }
 }
 
 /**

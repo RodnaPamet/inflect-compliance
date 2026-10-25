@@ -154,6 +154,25 @@ export interface FlueRunBinding {
     guardDelegateOutput?: (text: string, taskId: string | undefined) => Promise<void>;
 
     /**
+     * MAY THE RUN MAKE ITS NEXT MODEL CALL? (#4196)
+     *
+     * The kill switch was asked once, before boot, and then only at the tool
+     * boundary. A kill engaged mid-run refused each tool call, but the refusal
+     * reached the model as an ordinary tool error: the model was called again,
+     * and the run settled COMPLETED. A killed agent went on sending tenant
+     * content to the model provider for the rest of its dispatch. A cap that
+     * latched at a tool call behaved the same way.
+     *
+     * A callback for the reason `guardDelegateOutput` is one: the kill read
+     * reaches Prisma, which the interceptor's ESM graph cannot load. The
+     * interceptor awaits it before every `model` operation and no other.
+     *
+     * THROWS to stop the call. The driver latches the reason before it throws,
+     * so the settle names the kill or the cap rather than the throw.
+     */
+    beforeModelCall?: () => Promise<void>;
+
+    /**
      * RECORD A COMPLETED DELEGATION IN THE STEP LEDGER (#3473, part 3).
      *
      * A callback for the same reason `guardDelegateOutput` is one: the ledger

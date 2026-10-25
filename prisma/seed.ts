@@ -16,6 +16,9 @@ import {
 import { loadCatalogFile } from './catalog-loader';
 import { fixtureArray, fixtureObject } from './fixture-io';
 import { parseIsoClause } from '@/lib/controls/control-taxonomy';
+import path from 'node:path';
+import { syncLibrariesAtStartup } from '@/app-layer/usecases/library-sync';
+import { scanMappingSetDirectory } from '@/app-layer/services/mapping-set-importer';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -1381,6 +1384,26 @@ Reviewed at least annually.` },
     }
     console.log(`✅ ISO 27701 privacy risk templates seeded (${iso27701RiskTemplates.length})`);
 
+    // ─── COSO ICF 2013 and AIUC-1 ───
+    // The two catalogues that declare the SAME framework key as their library
+    // file, so in production the catalogue writes the row and the library sync
+    // below leaves it alone (scripts/seed-framework-catalogs.ts says why). This
+    // file applied neither, so the sync used to find no catalogue row and import
+    // both as library rows with no pack: the opposite owner from production, and
+    // neither framework installable. Applied here, before the sync, as the
+    // container start orders them.
+    for (const rel of [
+        'prisma/fixtures/coso-icf-2013-control-templates.json',
+        'prisma/fixtures/aiuc-1-control-templates.json',
+    ]) {
+        const result = await applyCatalogFile(prisma, loadCatalogFile(rel), rel);
+        console.log(
+            `✅ ${path.basename(rel)}: ${result.requirements.upserted} requirements, ` +
+                `${result.templates.created} templates, ` +
+                `tasks ${result.tasks.created}c/${result.tasks.unchanged}=`,
+        );
+    }
+
     // ─── Internal Controls library (imported from customer GRC export) ───
     // 151 deduped internal controls, seeded as GLOBAL ControlTemplates — NOT a
     // standalone pack. Each carries an objective, success criteria, and testing/
@@ -1415,6 +1438,41 @@ Reviewed at least annually.` },
 
 
 
+
+    // ─── Framework libraries and crosswalks ───
+    // What scripts/sync-framework-libraries.ts runs at every container start,
+    // after the catalogue seed: the library rows no catalogue owns (GDPR, NIST
+    // CSF 2.0 and the library copies of the other frameworks) and every
+    // crosswalk. A database this file seeded had none of them, so gap analysis,
+    // traceability and inherited coverage showed nothing in dev and in E2E.
+    // Called through the same function the container start calls, so the two
+    // cannot drift.
+    //
+    // Stricter than the container start, on purpose: there a dropped set is
+    // logged and the deploy goes on; here it fails the seed. A dev or E2E
+    // database that silently lacks part of the catalogue is the drift this
+    // exists to close, and `tests/guardrails/mapping-targets-exist.test.ts`
+    // already refuses an entry that cannot resolve, so none is expected.
+    const librariesDir = path.resolve(process.cwd(), 'src/data/libraries');
+    const mappingsDir = path.join(librariesDir, 'mappings');
+    const libSync = await syncLibrariesAtStartup(prisma, { librariesDir, mappingsDir });
+    const setsOnDisk = scanMappingSetDirectory(mappingsDir).length;
+    const unresolved = libSync.mappingSets.results.flatMap((r) =>
+        r.errors.map((e) => `${r.sourceFrameworkRef} → ${r.targetFrameworkRef}: ${e.message}`),
+    );
+    if (libSync.summary.failed > 0 || libSync.mappingSets.results.length !== setsOnDisk || unresolved.length > 0) {
+        throw new Error(
+            `Framework-library sync incomplete: ${libSync.summary.failed} libraries failed, ` +
+                `${setsOnDisk - libSync.mappingSets.results.length} of ${setsOnDisk} crosswalks not imported, ` +
+                `${unresolved.length} entries unresolved` +
+                (unresolved.length > 0 ? `:\n  ${unresolved.join('\n  ')}` : ''),
+        );
+    }
+    console.log(
+        `✅ Framework libraries: ${libSync.summary.created} created, ${libSync.summary.updated} updated, ` +
+            `${libSync.summary.skipped} unchanged, ${libSync.catalogueOwnedKeys.length} left to the catalogue; ` +
+            `${libSync.mappingSets.results.length} crosswalks, ${libSync.mappingSets.summary.totalEntries} mappings`,
+    );
 
     console.log('✅ All Framework Packs seeded');
 

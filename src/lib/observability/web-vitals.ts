@@ -124,6 +124,29 @@ export interface WebVitalSample {
     /** Raw page pathname; normalized here. */
     route: string;
     navigationType?: string;
+    /**
+     * The navigation a metric HAPPENED FOR — `Metric.navigationId`, which
+     * web-vitals documents as "particularly relevant for soft navigations where
+     * the metric may be reported for a previous URL".
+     *
+     * Carried because it is the only field that separates a replayed metric from
+     * a legitimate soft-navigation re-report, and those have opposite meanings
+     * for a baseline. Same navigationId with more than one beacon at the same
+     * value is a re-subscription replaying a buffered entry (see #4194 and
+     * `bindReporter`'s per-subscription `prevValue`); a different navigationId is
+     * the library doing its job.
+     *
+     * Without it, value equality is the only available proxy — and that proxy is
+     * nearly exact for a continuous metric and catastrophically wrong for a
+     * quantised one. De-duplicating INP by value collapses a frequency
+     * distribution rather than removing duplicates, moving its p75 from 72 ms to
+     * 176 ms, because the browser rounds interaction latency to 8 ms and
+     * repeated values are the instrument working.
+     *
+     * LOG ONLY, never a metric label — it is unbounded, and the histogram's
+     * three attributes are bounded deliberately.
+     */
+    navigationId?: number;
 }
 
 /**
@@ -152,6 +175,7 @@ export function recordWebVital(sample: WebVitalSample): void {
         rating,
         route,
         navigationType: sample.navigationType ?? null,
+        navigationId: sample.navigationId ?? null,
     });
 }
 

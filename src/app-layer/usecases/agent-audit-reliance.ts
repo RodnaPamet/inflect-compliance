@@ -269,7 +269,9 @@ export async function assembleAgentAuditReliancePack(
         return pack.id;
     });
 
-    await freezeAuditPack(ctx, packId);
+    // No Statement of Applicability (#4129): the freeze attaches one to an
+    // ordinary pack, but every item of this pack is the planner's decision.
+    await freezeAuditPack(ctx, packId, { attachStatementOfApplicability: false });
 
     return { packId, status: 'FROZEN', controls: counts.controls, workpapers: counts.workpapers, summary: plan.summary };
 }

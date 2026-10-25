@@ -65,6 +65,12 @@ import LinkedTasksPanel from '@/components/LinkedTasksPanel';
 
 const tenantHref = (p: string) => `/t/acme${p}`;
 
+// Every assertion here waits for the mocked fetch to land and the table to
+// re-render. On a loaded CI shard that can outlast findBy's default 1 s while
+// the table still shows its loading state. These tests are about which rows
+// render, not how fast.
+const RENDER_WAIT = { timeout: 10_000 };
+
 function mountFetchWith(payload: unknown) {
     (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(
         async () =>
@@ -101,7 +107,7 @@ describe('LinkedTasksPanel — response-shape resilience', () => {
                 tenantHref={tenantHref}
             />,
         );
-        expect(await screen.findByText('Triage finding')).toBeInTheDocument();
+        expect(await screen.findByText('Triage finding', {}, RENDER_WAIT)).toBeInTheDocument();
     });
 
     it('still renders rows from the legacy raw-array shape', async () => {
@@ -122,7 +128,7 @@ describe('LinkedTasksPanel — response-shape resilience', () => {
                 tenantHref={tenantHref}
             />,
         );
-        expect(await screen.findByText('Old shape task')).toBeInTheDocument();
+        expect(await screen.findByText('Old shape task', {}, RENDER_WAIT)).toBeInTheDocument();
     });
 
     it('falls back to the empty state on a malformed payload — no crash', async () => {
@@ -137,7 +143,7 @@ describe('LinkedTasksPanel — response-shape resilience', () => {
         );
         await waitFor(() => {
             expect(screen.getByText(/no linked tasks/i)).toBeInTheDocument();
-        });
+        }, RENDER_WAIT);
     });
 
     // Same UX as the global Tasks table: the title is a LINK to the
@@ -164,7 +170,7 @@ describe('LinkedTasksPanel — response-shape resilience', () => {
                 canWrite
             />,
         );
-        const titleEl = await screen.findByText('Clickable task');
+        const titleEl = await screen.findByText('Clickable task', {}, RENDER_WAIT);
         // The pencil + the right-side sheet are gone; the title is a
         // navigating link to /tasks/{id} (matches the Tasks page).
         expect(

@@ -69,7 +69,46 @@ type AnthropicBlock =
     | { type: string; [k: string]: unknown };
 
 /**
+ * An assistant turn exactly as the API returned it, carried for replay (#4153).
+ *
+ * This is the Anthropic provider's {@link ProviderTurn.providerPart}. The
+ * `kind` tag means a part written by some other provider is never mistaken for
+ * one of ours. A turn that carries it is replayed from it, not rebuilt.
+ */
+interface AnthropicReplay {
+    readonly kind: 'anthropic-content';
+    readonly content: readonly unknown[];
+}
+
+function isAnthropicReplay(part: unknown): part is AnthropicReplay {
+    return (
+        typeof part === 'object' &&
+        part !== null &&
+        (part as { kind?: unknown }).kind === 'anthropic-content' &&
+        Array.isArray((part as { content?: unknown }).content)
+    );
+}
+
+/**
  * Build Anthropic's `messages` from the loop's history.
+ *
+ * AN ASSISTANT TURN IS REPLAYED, NOT REBUILT, when it carries its replay part
+ * (#4153). The reply's content goes back exactly as it came, in its order:
+ * `thinking` and `redacted_thinking` blocks with their signatures, the text
+ * blocks untrimmed, and the `tool_use` blocks with their inputs. On the Claude 5
+ * models thinking is on by default (it cannot be turned off on Opus 5.5), and
+ * its blocks carry the model's reasoning and its progress notes between tool
+ * calls. Two rules follow from the API:
+ *
+ *   - blocks a model cannot read are dropped, unbilled, but never edited;
+ *   - a replayed block stays valid only while the system prompt, the tools
+ *     array and every earlier message are byte-identical to when it was
+ *     produced. The loop sends the same system and tools on every round-trip,
+ *     and its history is append-only.
+ *
+ * Rebuilding the turn from `text` + `toolCalls` dropped every thinking block,
+ * and would have broken that prefix in any case. Only a turn with no replay
+ * part, which is every turn built by hand in a test, is rebuilt the old way.
  *
  * CONSECUTIVE TOOL RESULTS ARE BATCHED into one user message, because that is
  * the API's shape: a turn that requested three tools expects one user message
@@ -94,6 +133,10 @@ export function buildMessages(req: ProviderRequest): Array<{ role: 'user' | 'ass
             continue;
         }
         flush();
+        if (isAnthropicReplay(entry.providerPart)) {
+            out.push({ role: 'assistant', content: entry.providerPart.content });
+            continue;
+        }
         const blocks: unknown[] = [];
         if (entry.text !== null && entry.text.trim() !== '') blocks.push({ type: 'text', text: entry.text });
         for (const c of entry.toolCalls) blocks.push({ type: 'tool_use', id: c.id, name: c.name, input: c.args ?? {} });
@@ -135,7 +178,24 @@ export function parseTurn(data: {
             ? { tokensIn: data.usage.input_tokens, tokensOut: data.usage.output_tokens }
             : undefined;
 
-    return { text: text === '' ? null : text, toolCalls, stopReason, usage };
+    // THE REPLAY PART, unless a `tool_use` block was unusable. The filter above
+    // drops a block with no id or name, so the loop would dispatch, and answer,
+    // fewer calls than the replayed turn names, and the API rejects a
+    // `tool_use` with no `tool_result`. In that case only, the turn is rebuilt
+    // from what was parsed, the way it was before #4153.
+    const toolUseBlocks = blocks.filter((b) => b.type === 'tool_use').length;
+    const providerPart: AnthropicReplay | undefined =
+        Array.isArray(data.content) && toolUseBlocks === toolCalls.length
+            ? { kind: 'anthropic-content', content: data.content }
+            : undefined;
+
+    return {
+        text: text === '' ? null : text,
+        toolCalls,
+        stopReason,
+        usage,
+        ...(providerPart === undefined ? {} : { providerPart }),
+    };
 }
 
 export class SpecifierMismatchError extends Error {

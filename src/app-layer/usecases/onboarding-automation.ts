@@ -16,6 +16,8 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
+import { isAppError } from '@/lib/errors/types';
+import { logger } from '@/lib/observability/logger';
 import type { AssetType, TaskType } from '@prisma/client';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,11 +108,34 @@ export function selectApplicableRisks(selectedFrameworks: string[], assetTypes: 
 
 // ─── Run Step Action ───
 
+/**
+ * One framework pack the wizard tried to install and could not. Stored in
+ * `stepData._actionResults` and READ by the wizard, which names the framework
+ * and the reason to the user (#4125 — these used to be swallowed into a
+ * `details` string nothing displayed).
+ */
+export interface FrameworkInstallFailure {
+    /** The framework key as the wizard selected it. */
+    framework: string;
+    /** Its display name, as the wizard recorded it at selection; else the key. */
+    name: string;
+    packKey: string;
+    /**
+     * The error's own message when it is meant for the user (an `AppError`
+     * with `expose`, e.g. the install permission refusal), otherwise `null`
+     * and the wizard shows a generic sentence — an unexpected error's text
+     * can carry internals and never reaches the browser.
+     */
+    message: string | null;
+}
+
 export interface StepActionResult {
     action: string;
     created: number;
     skipped: number;
     details: string;
+    /** FRAMEWORK_INSTALL only: every pack that failed to install. */
+    failures?: FrameworkInstallFailure[];
 }
 
 /**
@@ -143,12 +168,16 @@ export async function runStepAction(
 
 async function executeFrameworkInstall(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
     const selectedFrameworks: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
+    // The display names the picker stored beside the selection, so a failure
+    // can name the framework the way the user saw it.
+    const labels: Record<string, unknown> = allData['FRAMEWORK_SELECTION']?.frameworkLabels || {};
     let created = 0;
     let skipped = 0;
     const details: string[] = [];
+    const failures: FrameworkInstallFailure[] = [];
 
     if (selectedFrameworks.length === 0) {
-        return { action: 'FRAMEWORK_INSTALL', created, skipped, details: '' };
+        return { action: 'FRAMEWORK_INSTALL', created, skipped, details: '', failures };
     }
 
     // Resolve every selected framework's installable packs dynamically from
@@ -174,12 +203,23 @@ async function executeFrameworkInstall(ctx: RequestContext, allData: StepData): 
                 details.push(`${fw}: ${result.controlsCreated} controls, ${result.tasksCreated} tasks`);
             } catch (e) {
                 details.push(`${fw}: pack "${packKey}" install failed`);
+                const label = labels[fw];
+                failures.push({
+                    framework: fw,
+                    name: typeof label === 'string' && label.trim() !== '' ? label : fw,
+                    packKey,
+                    message: isAppError(e) && e.expose ? e.message : null,
+                });
+                logger.warn('onboarding framework install failed', {
+                    component: 'onboarding', framework: fw, packKey,
+                    error: e instanceof Error ? { name: e.name, message: e.message } : { name: 'UnknownError', message: String(e) },
+                });
                 skipped++;
             }
         }
     }
 
-    return { action: 'FRAMEWORK_INSTALL', created, skipped, details: details.join('; ') };
+    return { action: 'FRAMEWORK_INSTALL', created, skipped, details: details.join('; '), failures };
 }
 
 // ─── Asset Creation (idempotent by name) ───
@@ -385,17 +425,24 @@ async function executeTeamSetup(ctx: RequestContext, allData: StepData): Promise
 
 // ─── Store automation results ───
 
+/**
+ * Records a step's automation result under `stepData._actionResults[step]`,
+ * stamped with `ranAt` so a reader can tell which of two framework installs
+ * (FRAMEWORK_SELECTION, then CONTROL_BASELINE_INSTALL re-running it) is the
+ * newer. Returns the updated onboarding row, or `undefined` when there is
+ * none, so the caller can hand the wizard the result it just produced.
+ */
 export async function storeActionResult(ctx: RequestContext, step: string, result: StepActionResult) {
-    await runInTenantContext(ctx, async (db) => {
+    return runInTenantContext(ctx, async (db) => {
         const existing = await OnboardingRepository.getByTenantId(db, ctx);
-        if (!existing) return;
+        if (!existing) return undefined;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const currentData = (existing.stepData as Record<string, any>) || {};
         const actionResults = currentData._actionResults || {};
-        actionResults[step] = result;
+        actionResults[step] = { ...result, ranAt: new Date().toISOString() };
 
         // Store via saveStepData under the _actionResults key
-        await OnboardingRepository.saveStepData(db, ctx, '_actionResults', actionResults);
+        return OnboardingRepository.saveStepData(db, ctx, '_actionResults', actionResults);
     });
 }

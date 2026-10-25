@@ -484,10 +484,14 @@ as a telemetry failure. Per-tenant policy lives on
 oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
 `expiresAt` at insert time). The admin UI lives at
 `/admin/members` — Sessions column + modal + per-row revoke,
-backed by `GET/DELETE /api/t/:slug/admin/sessions`. The pre-Epic-C
-endpoints (`security/sessions/revoke-current` etc.) and the
-`User.sessionVersion` bump still work as the coarse-grained
-backstop.
+backed by `GET/DELETE /api/t/:slug/admin/sessions`. "Sign Out Other
+Sessions" (`security/sessions/revoke-current`) stamps the caller's
+OTHER `UserSession` rows and keeps the one named by the request JWT's
+`userSessionId` (#4117); it bumps `User.sessionVersion` only when that
+session cannot be identified. Revoke All (`revoke-all`, ACTIVE members
+only, the caller's current session kept) and per-user revocation bump
+`sessionVersion` AND stamp the rows — the version bump stays the
+coarse-grained backstop for a token whose row was never written.
 
 **C.4 — Audit event streaming.** Every committed audit row is
 fired through `streamAuditEvent` into a per-tenant in-memory
@@ -2719,6 +2723,14 @@ the prefix with no default, so a new engine names its own audit rows. Flue's
 prefix is `'flue'`, which keeps every guard source byte-identical to what it was
 before the move.
 
+**Every model call is preceded by the kill switch and the caps** (#4196). A kill
+engaged mid-run used to refuse only the tool calls: the model was called again
+and the run settled COMPLETED. On Flue the interceptor in `flue/telemetry.ts`
+awaits the run binding's `beforeModelCall` once per model operation, keyed on
+the operation object, because the runtime intercepts every streamed chunk of
+one call with the same object. Do not move the check to the tool boundary or
+the agent render: the tool boundary is too late, and the render cannot await.
+
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
 backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
@@ -2728,6 +2740,19 @@ next engine is vouched, pinned and kept off the web tier without anybody
 remembering those lines. A comparison that genuinely means Flue (the
 `FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
 stays a comparison.
+
+**The engine choice has one control: the "Agent engines" section on Admin → AI
+features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
+`GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and
+the `PUT` stays `admin.tenant_lifecycle`. The page gates each section, not the
+whole page. The six-term `flue-wiring` checklist stays OWNER-only. The section
+requests it only for a viewer who can change the engine, so an admin's visit
+writes no `AUTHZ_DENIED` row. Do not put a second engine control anywhere
+else: the Flue card on Integrations was that, and it was removed. A new engine
+is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
+description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
+a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
+until it does.
 
 ## Testing Conventions
 

@@ -680,3 +680,84 @@ describe('updateTenantMfaPolicy — what the caller is told, and what is read', 
         expect(mockEnrollCount).toHaveBeenCalledTimes(1);
     });
 });
+
+// ─── Audit (#4117) ──────────────────────────────────────────────────
+//
+// A change to who must prove what at sign-in, or to how long a sign-in may
+// last, wrote no audit row at all: `updateTenantMfaPolicy` upserted and
+// returned. Each change now writes one row naming the old and new value, and a
+// save that changes nothing writes none.
+describe('updateTenantMfaPolicy — audit', () => {
+    const mockLog = jest.requireMock('../../../src/app-layer/events/audit').logEvent as jest.Mock;
+    const { validateAuditDetailsJson } = jest.requireActual(
+        '@/app-layer/schemas/json-columns.schemas',
+    ) as typeof import('@/app-layer/schemas/json-columns.schemas');
+
+    function eventsByAction() {
+        return new Map(
+            mockLog.mock.calls.map(([, , payload]) => [payload.action as string, payload]),
+        );
+    }
+
+    it('records an MFA policy change with its before and after values', async () => {
+        mockSettingsFind.mockResolvedValue({ ...settingsRow, mfaPolicy: 'DISABLED' } as never);
+        mockSettingsUpsert.mockResolvedValue({ ...settingsRow, mfaPolicy: 'OPTIONAL' } as never);
+        const ctx = makeRequestContext('ADMIN');
+
+        await updateTenantMfaPolicy(ctx, { mfaPolicy: 'OPTIONAL' } as never);
+
+        const event = eventsByAction().get('MFA_POLICY_CHANGED');
+        expect(event).toMatchObject({
+            entityType: 'TenantSecuritySettings',
+            entityId: ctx.tenantId,
+            detailsJson: {
+                changedFields: ['mfaPolicy'],
+                before: { mfaPolicy: 'DISABLED' },
+                after: { mfaPolicy: 'OPTIONAL' },
+            },
+        });
+        // The payload the real audit writer would accept, not one a mock does.
+        expect(() => validateAuditDetailsJson(event?.detailsJson)).not.toThrow();
+        expect(eventsByAction().has('SESSION_MAX_AGE_CHANGED')).toBe(false);
+    });
+
+    it('records a session-age change with its before and after values', async () => {
+        mockSettingsFind.mockResolvedValue({ ...settingsRow, sessionMaxAgeMinutes: null } as never);
+        mockSettingsUpsert.mockResolvedValue({ ...settingsRow, sessionMaxAgeMinutes: 480 } as never);
+
+        await updateTenantMfaPolicy(makeRequestContext('ADMIN'), {
+            mfaPolicy: 'OPTIONAL',
+            sessionMaxAgeMinutes: 480,
+        } as never);
+
+        const event = eventsByAction().get('SESSION_MAX_AGE_CHANGED');
+        expect(event?.detailsJson).toMatchObject({
+            changedFields: ['sessionMaxAgeMinutes'],
+            before: { sessionMaxAgeMinutes: null },
+            after: { sessionMaxAgeMinutes: 480 },
+        });
+        expect(() => validateAuditDetailsJson(event?.detailsJson)).not.toThrow();
+        // The policy did not move (OPTIONAL → OPTIONAL), so it writes no row.
+        expect(eventsByAction().has('MFA_POLICY_CHANGED')).toBe(false);
+    });
+
+    it('an absent row is audited from the defaults the page shows', async () => {
+        mockSettingsFind.mockResolvedValue(null as never);
+        mockSettingsUpsert.mockResolvedValue({ ...settingsRow, mfaPolicy: 'OPTIONAL' } as never);
+
+        await updateTenantMfaPolicy(makeRequestContext('ADMIN'), { mfaPolicy: 'OPTIONAL' } as never);
+
+        expect(eventsByAction().get('MFA_POLICY_CHANGED')?.detailsJson.before).toEqual({
+            mfaPolicy: 'DISABLED',
+        });
+    });
+
+    it('a save that changes nothing writes no audit row', async () => {
+        mockSettingsFind.mockResolvedValue(settingsRow as never);
+        mockSettingsUpsert.mockResolvedValue(settingsRow as never);
+
+        await updateTenantMfaPolicy(makeRequestContext('ADMIN'), { mfaPolicy: 'OPTIONAL' } as never);
+
+        expect(mockLog).not.toHaveBeenCalled();
+    });
+});

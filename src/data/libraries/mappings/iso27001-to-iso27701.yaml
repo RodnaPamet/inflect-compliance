@@ -30,7 +30,7 @@ description: >
   Management System. Annex A controls extend into the PIMS control guidance of
   clause 6, and into the controller / processor guidance of clauses 7 and 8.
   Structural guidance, not a compliance guarantee.
-version: 2
+version: 3
 source_framework_ref: ISO27001-2022
 target_framework_ref: ISO27701-2019
 
@@ -40,6 +40,10 @@ mapping_entries:
     target_ref: "6"
     strength: RELATED
     rationale: Information security policies are extended with privacy-specific policy guidance in clause 6.
+  - source_ref: A.5.34
+    target_ref: "6"
+    strength: RELATED
+    rationale: Clause 6 carries the PIMS guidance for A.5.34's ISO 27002:2013 predecessor, 18.1.4 (privacy and protection of PII), in 6.15.1.4.
   - source_ref: A.5.34
     target_ref: "7.2.5"
     strength: INTERSECT

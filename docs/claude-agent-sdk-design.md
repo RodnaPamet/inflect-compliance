@@ -93,6 +93,25 @@ Which engine runs is the AND of four terms, each able only to narrow
 Anything else resolves to `static`, with a named reason in the
 `WORKFLOW_RUN_STARTED` audit row.
 
+**Where the tenant sets it.** Admin → AI features, in the "Agent engines"
+section (Step 0c, #4181).
+
+- Every admin can read the gate: `GET /admin/agent-driver` takes `admin.view`.
+- Only an owner can change it: `PUT` takes `admin.tenant_lifecycle`. The change
+  goes through a confirmation that says what happens to running and future runs.
+- An owner also sees the six-term Flue wiring checklist (`GET /admin/flue-wiring`).
+  It is not requested for anyone else, so their visits write no `AUTHZ_DENIED`
+  rows.
+
+Each `StaticDriverReason` has its own sentence. When the deployment's switch is
+off, the choice is disabled. That section is the only control for the column.
+Admin → Integrations used to carry a second control, and now links to the
+section instead.
+
+A later engine gets its choice on that section by adding its mode to
+`AGENT_DRIVER_MODES`, and its name and description to
+`admin.agentEngines.engine` in both catalogues.
+
 ### How Flue was made safe, which is the template
 
 Flue (`@flue/runtime`, an in-process ESM library) is the precedent for running
@@ -106,8 +125,8 @@ driver would have to reproduce:
 | The advertised tool set is the grant ∩ card ∩ scope ∩ autonomy ceiling | `offerToolSet` (`engine-tools/offer-tools.ts`) |
 | Sandboxes, bash, file write/edit and channels are refused | `flue/refused-capabilities.ts` + `tests/guards/flue-refused-capabilities.test.ts` |
 | Runtime-supplied tools are reported, not hidden | `flue/runtime-tools.ts` (`task`, `activate_skill`) |
-| Kill switch asked per turn, not only at start | `flue/execute.ts` |
-| Run caps (wall clock, tool calls, tokens) charged per tool call | `createRunBudget` in `execute.ts` |
+| Kill switch asked per turn, not only at start | before boot in `flue/execute.ts`, then before every model call: the interceptor in `flue/telemetry.ts` awaits the run binding's `beforeModelCall` (#4196) |
+| Run caps (wall clock, tool calls, tokens) charged per tool call, and checked again before every model call | `createRunBudget` in `execute.ts`; `beforeModelCall` refuses the next model call once a cap has latched (#4196) |
 | Every model call and tool call is a hash-chained `WorkflowStep` | `MODEL_CALL` / `TOOL_CALL` through `recordStep` |
 | EU AI Act Art 12 decision row per model call | `flue/model-decision.ts` → `logAiDecision` |
 | Residency: a `LOCAL_ONLY` tenant never reaches an external model | `flue/model-selection.ts`, which picks a model specifier per run, and never `setProvider` per run (module singleton, cross-tenant race) |
@@ -531,7 +550,7 @@ Phases 2 and 3 can run in parallel: 3 depends only on Phase 0.
 | --- | --- | --- | --- |
 | 0a | Engine-neutral tool core | — | Standard (delivered by #4176) |
 | 0b | Driver conformance suite | 0a | Standard |
-| 0c | Agent engines settings page | — | Standard |
+| 0c | Agent engines settings page | — | Significant — route permission (delivered by #4181) |
 | 0d | `/api/mcp` per-key budget and argument guard | — | Significant — security middleware (delivered by #4111) |
 | 0H | Phase 0 hardening | 0a–0d | Standard |
 | 1a | Agent profile model and usecases | 0H | Significant — schema migration, new encrypted column |
@@ -747,53 +766,22 @@ Deliver per the Definition of done.
 
 #### Step 0c — Agent engines settings page
 
-**Goal.** Give the tenant's engine choice a page. Today it can only be set through
-`PUT /api/t/{slug}/admin/agent-driver`, which this repository calls a column
-with governance prose attached.
+Delivered by #4181 (#4139). The prompt's premises differed from the code in two
+places. The code won, and the owner decided both on 2026-10-25:
 
-```text
-You are implementing Step 0c of the roadmap in docs/claude-agent-sdk-design.md.
-Read its "Global rules", "Definition of done" and "Step 0c", then
-docs/implementation-notes/2026-09-23-agent-driver-tenant-toggle.md,
-src/app-layer/usecases/agent-driver-setting.ts and
-src/app/api/t/[tenantSlug]/admin/agent-driver/route.ts.
+- **Reading the setting needed a route permission change.** The read was
+  OWNER-only. `GET /admin/agent-driver` now takes `admin.view`, and the PUT
+  stays `admin.tenant_lifecycle`. The AI features page gates each section rather
+  than the whole page.
+- **A second control already existed.** `FlueEngineCard` on Admin →
+  Integrations toggled the same column. It was removed, and its six-term
+  checklist moved into the section, for owners.
 
-Goal: a section "Agent engines" on /admin/ai-features that shows the whole driver
-gate and lets a permitted user change the tenant's engine.
-
-1. Read the existing GET response. Render each term of the gate: the operator's
-   env switch, the tenant setting, whether this build implements the engine, and
-   the reason the effective engine is what it is (ENV_DISABLED,
-   TENANT_NOT_OPTED_IN, UNRECOGNISED_SETTING, DRIVER_NOT_IMPLEMENTED,
-   NO_WORKFLOW_REQUESTS_IT), each in plain words.
-2. A control to choose the engine, offering only the values the API accepts today
-   (STATIC, FLUE). Later steps add theirs. A change goes through ConfirmDialog,
-   which names what changes for running and future runs.
-3. A user who does not hold the route's permission (admin.tenant_lifecycle) sees
-   the state read-only, with one sentence saying who can change it. Do not hide
-   the section.
-4. When the env switch is off, show that the deployment has not enabled engines
-   and disable the control, rather than letting a PUT succeed into an inert
-   setting.
-5. No new route, no new permission, no new usecase. If the existing API cannot
-   express something the page needs, stop and report it.
-
-Tests: rendered tests (testid-first) for each reason and for the read-only state;
-one E2E spec using the isolatedTenant fixture that changes the engine and sees
-the audit row in the audit log page.
-
-Deliver per the Definition of done.
-```
-
-**Hardening**
-
-- [ ] Every `StaticDriverReason` value renders a distinct, translated sentence; a test iterates the union, so a new reason without a sentence fails.
-- [ ] An ADMIN (no `admin.tenant_lifecycle`) sees the read-only state, and a crafted PUT from that session is 403 with an `AUTHZ_DENIED` audit row.
-- [ ] With the env switch off, the control is disabled and the page says why.
-- [ ] Strings are in `en.json` and `bg.json`; `i18n-completeness` and `i18n-adoption-ratchet` stay green.
-- [ ] The E2E spec uses `isolatedTenant` and asserts the `AGENT_DRIVER_MODE_CHANGED` row in the audit trail.
-
-**Exit.** An OWNER can see and change the tenant's engine without a curl command, and everyone else can see why the tenant runs on the engine it does.
+The result is described in the Current state under "The driver seam". The design
+and decisions are in
+`docs/implementation-notes/2026-10-25-agent-engines-settings-section.md`. The
+step has no prompt left to run. 0H checks it together with the rest of the
+phase.
 
 #### Step 0d — `/api/mcp` per-key budget and argument guard
 

@@ -3441,16 +3441,16 @@
       "cancel": "Cancel",
       "cycle": "Cycle",
       "frameworkLabel": "Framework",
-      "frameworkHint": "The compliance framework this audit cycle tracks (ISO 27001, SOC 2, NIS2…). Controls and evidence are filtered by this on the cycle dashboard.",
+      "frameworkHint": "The compliance framework this audit cycle tracks. Only frameworks in use in this workspace are listed, that is, frameworks with at least one control mapped to their requirements.",
       "selectFramework": "Select framework…",
       "searchFrameworks": "Search frameworks…",
       "cycleName": "Cycle name",
       "cycleNamePlaceholder": "e.g. ISO27001 Recertification 2025",
       "auditPeriod": "Audit period",
-      "auditPeriodHint": "The reporting window the cycle evidences. Pick a preset for the usual quarterly / annual audits, or choose a custom range on the calendar. Optional — you can set this later.",
+      "auditPeriodHint": "The reporting window the cycle evidences. Pick a preset for the usual quarterly / annual audits, or choose a custom range on the calendar. Optional, but set it now if the audit has one: the page cannot change it after the cycle is created.",
       "selectAuditPeriod": "Select audit period",
       "emptyTitle": "No audit cycles yet",
-      "emptyDesc": "Create your first audit cycle for ISO 27001 or NIS2.",
+      "emptyDesc": "Create an audit cycle for a framework in use in this workspace.",
       "addCycle": "Add Audit Cycle",
       "packCount": "{count, plural, one {# pack} other {# packs}}",
       "openCycle": "Open cycle",
@@ -3464,7 +3464,12 @@
       "newCycleTitle": "New audit cycle",
       "newCycleDesc": "Start a new audit cycle for a compliance framework. Controls, evidence, and readiness are tracked against it.",
       "createCycle": "Create cycle",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "emptyDescReadOnly": "Owners, Admins and Editors can create audit cycles.",
+      "frameworksLoading": "Loading frameworks…",
+      "noFrameworkInUseHint": "No framework is in use in this workspace yet. A framework is in use once at least one control is mapped to its requirements.",
+      "openFrameworks": "Open Frameworks to install one.",
+      "frameworksLoadError": "Could not load the frameworks in use. Close the form and open it again."
     },
     "cycleDetail": {
       "cycleFallback": "Cycle",
@@ -3507,13 +3512,13 @@
       "reqCoverage": "Requirement Coverage",
       "controlsImplemented": "Controls Implemented",
       "evidenceCompleteness": "Evidence Completeness",
-      "keyPolicies": "Key Policies",
+      "keyPolicies": "Linked Policies",
       "taskCompletion": "Task Completion",
       "openIssues": "Open Issues",
       "reqMappedDetail": "{mapped}/{total} requirements mapped",
       "controlsImplDetail": "{implemented}/{total} controls IMPLEMENTED",
       "evidenceDetail": "{withEvidence}/{total} controls with evidence",
-      "policiesDetail": "{found}/{expected} key policies found",
+      "policiesDetail": "{withPolicy}/{total} controls with a linked policy",
       "tasksDetail": "{overdue} overdue task(s)",
       "issuesDetail": "{open} open issue(s)",
       "recommendedActions": "Recommended Next Actions",
@@ -3547,7 +3552,7 @@
       "copyShareLink": "Copy share link",
       "shareLinkCopied": "Share link copied",
       "itemsEmptyTitle": "No items in this pack yet",
-      "itemsEmptyDesc": "Add evidence, controls, or risks to this audit pack from the source pages.",
+      "itemsEmptyDesc": "Add controls, policies or evidence to this draft pack with Add items.",
       "tasks": "Tasks: {done}/{total}",
       "evidence": "Evidence: {count}",
       "exports": "Exports",
@@ -3573,8 +3578,9 @@
         "statusRESOLVED": "Resolved",
         "createFinding": "Create finding",
         "createObservation": "Create observation",
-        "findingCreated": "Finding created and linked to the cycle.",
-        "materializeError": "Failed to create finding from this entry."
+        "findingCreated": "Finding created and attached to this cycle's fieldwork audit.",
+        "materializeError": "Failed to create finding from this entry.",
+        "findingCreatedNoAudit": "Finding created. This cycle has no fieldwork audit, so the finding is not attached to the cycle."
       },
       "shareCreated": "Share link created",
       "shareError": "Could not create the share link. Please try again.",
@@ -3663,7 +3669,17 @@
         "confirm": "Freeze pack"
       },
       "shareLinkOnceWarning": "This link is shown only once and can't be retrieved again. Copy it now — if you lose it, revoke the link and generate a new one.",
-      "sharesOnceNote": "Share URLs are shown only once when created and can't be copied again from here. If a link is lost, revoke it and generate a new one."
+      "sharesOnceNote": "Share URLs are shown only once when created and can't be copied again from here. If a link is lost, revoke it and generate a new one.",
+      "itemsEmptyDescReadOnly": "Owners, Admins and Editors can add controls, policies and evidence to a draft pack.",
+      "sharesRestricted": "Only Owners and Admins can see this pack's share links.",
+      "sharesLoadError": "Could not load the share links.",
+      "soaItemName": "Statement of Applicability — {framework}",
+      "removeItem": {
+        "aria": "Remove {item} from the pack",
+        "removed": "Item removed from the pack",
+        "undo": "Undo",
+        "error": "Could not remove the item. Please try again."
+      }
     },
     "auditor": {
       "portalCrumb": "Auditor Portal",
@@ -3888,10 +3904,10 @@
     "auditorsAdmin": {
       "crumb": "Auditor management",
       "title": "Auditor management",
-      "subtitle": "Invite named auditors and control which packs each can access.",
+      "subtitle": "Keep a list of the named external auditors and the packs each one is meant to see. The list gives them no access: to let an auditor read a pack, send them a share link.",
       "inviteAuditor": "Invite auditor",
       "emptyTitle": "No auditors yet",
-      "emptyDesc": "Invite an external auditor to give them access to frozen audit packs.",
+      "emptyDesc": "Record the external auditors who review your packs. To let one read a pack, send them a share link from the pack's page.",
       "statusINVITED": "Invited",
       "statusACTIVE": "Active",
       "statusREVOKED": "Revoked",
@@ -3912,7 +3928,7 @@
       "revokeSuccess": "Access revoked",
       "revokeError": "Could not revoke access. Please try again.",
       "inviteTitle": "Invite auditor",
-      "inviteDesc": "The auditor is added to this tenant. Grant them access to specific packs afterwards.",
+      "inviteDesc": "The auditor is added to this workspace's list. No invitation is sent, and nothing recorded here lets them into Inflect.",
       "emailLabel": "Email",
       "emailPlaceholder": "auditor@example.com",
       "nameLabel": "Name",
@@ -3925,14 +3941,18 @@
       "revokeAccessConfirm": "Revoke access",
       "revokeAccount": "Revoke account",
       "revokeAccountTitle": "Revoke auditor account?",
-      "revokeAccountDesc": "{name} will lose access to every pack and can no longer sign in. Inviting them again reactivates the account.",
+      "revokeAccountDesc": "{name} is marked revoked and loses every pack grant recorded here. Share links are not affected: revoke those on each pack's page. Inviting them again reactivates the account.",
       "undo": "Undo",
       "revokeAccountTypeToConfirm": "Type {name} to confirm",
       "revokeAccountConfirm": "Revoke account",
       "revokeAccountSuccess": "Auditor account revoked",
       "revokeAccountError": "Could not revoke the auditor account. Please try again.",
       "grantRevokedError": "Cannot grant pack access to a revoked auditor. Re-invite them first.",
-      "grantRevokedNote": "Access is revoked. Re-invite this auditor to grant pack access again."
+      "grantRevokedNote": "Access is revoked. Re-invite this auditor to grant pack access again.",
+      "restrictedTitle": "Auditor management is for Owners and Admins",
+      "restrictedDesc": "Only Owners and Admins can see and change the list of named auditors.",
+      "loadErrorTitle": "Couldn't load auditors",
+      "retry": "Retry"
     },
     "cycleStatus": {
       "PLANNING": "Planning",
@@ -4401,6 +4421,7 @@
     "sso": {
       "crumbSelf": "SSO & Identity",
       "loading": "Loading SSO & Identity…",
+      "loadFailed": "Could not load the single sign-on settings",
       "notConfigured": "Not Configured",
       "enforced": "Enforced",
       "enabled": "Enabled",
@@ -4417,6 +4438,8 @@
       "issuerUrl": "Issuer URL",
       "clientId": "Client ID",
       "clientSecret": "Client Secret",
+      "showSecret": "Show client secret",
+      "hideSecret": "Hide client secret",
       "scopes": "Scopes",
       "entityId": "IdP Entity ID",
       "ssoUrl": "SSO URL",
@@ -4437,9 +4460,11 @@
       "delete": "Delete",
       "savedOk": "Configuration saved successfully",
       "setupOwnerOnly": "Only an Owner can set up single sign-on, because it decides who can sign in as which member.",
+      "manageOnly": "Only an Owner or an Admin can see and change single sign-on. Your role does not include managing the workspace.",
       "trustOwnerOnly": "Only an Owner can change the identity provider, its certificate or client ID, or the email domains. You can still rename this configuration, change its other settings, and switch it on, off or to enforced.",
       "trustChangeUnlinks": "Changing the identity provider, its certificate or client ID, the email domains or account creation unlinks every member from this configuration. Each member's next SSO sign-in links them again by email.",
       "deletedOk": "Configuration deleted",
+      "deleteFailed": "Delete failed",
       "saveFailed": "Save failed",
       "unknownError": "Unknown error",
       "howTitle": "How SSO works",
@@ -4665,8 +4690,8 @@
       "invitationSent": "Invitation sent to {email}",
       "reactivated": "Reactivated {email}",
       "addedAs": "Added {email} as {role}",
-      "memberAddedEmailed": "{email} will get {role} access as soon as they sign in with this email. We also emailed them an invite link.",
-      "memberAddedNotEmailed": "{email} will get {role} access as soon as they sign in with this email. The invite was not emailed — copy the link below and send it to them.",
+      "memberAddedEmailed": "{email} gets {role} access the next time they sign in with Google or Microsoft using this email. If they sign in any other way, they get it when they open the invite link and accept the invite. We also emailed them an invite link.",
+      "memberAddedNotEmailed": "{email} gets {role} access the next time they sign in with Google or Microsoft using this email. If they sign in any other way, they get it when they open the invite link and accept the invite. The invite was not emailed — copy the link below and send it to them.",
       "inviteLinkLabel": "Or share this link:",
       "inviteLinkLabelNotEmailed": "Invite link:",
       "copyInviteLink": "Copy invite link",
@@ -4688,6 +4713,7 @@
       "removalFailed": "Failed to remove member",
       "removedToast": "Removed {email}",
       "bulkDeactivatedToast": "Deactivated {count} members",
+      "bulkDeactivateDescription": "Deactivating ends the selected members' access and keeps their records. Invite them again to let them back in.",
       "bulkRemovedToast": "Removed {count} members",
       "revokeInviteAction": "Revoke invitation",
       "inviteRevocationFailed": "Failed to revoke invitation",
@@ -4743,26 +4769,35 @@
       "sessionMgmtTitle": "Session Management",
       "sessionMgmtDesc": "Revoke active sessions. Revoked users must sign in again.",
       "signOutOthers": "Sign Out Other Sessions",
-      "signOutOthersDesc": "Invalidate all your active sessions across devices.",
+      "signOutOthersDesc": "Sign out every other device and browser where you are signed in. You stay signed in here.",
       "revokeAll": "Revoke All User Sessions",
-      "revokeAllDesc": "Force all organization members to sign in again. Use for incidents.",
-      "revokeSpecificLabel": "Revoke sessions for a specific user",
-      "userIdPlaceholder": "User ID",
+      "revokeAllDesc": "Sign out every active member of this workspace, everywhere they are signed in. You stay signed in here. Use for incidents.",
+      "revokeSpecificLabel": "Revoke one member's sessions",
+      "pickMemberPlaceholder": "Choose a member",
       "revoke": "Revoke",
       "failedLoadSettings": "Failed to load security settings",
+      "saveBlockedUntilLoaded": "Saving is turned off until the saved settings load, so this page cannot overwrite them. Reload the page to try again.",
       "failedSave": "Failed to save",
       "settingsSaved": "Security settings saved successfully.",
       "failedSaveSettings": "Failed to save settings",
-      "revokeMyConfirm": "This will sign you out of all devices. Continue?",
-      "mySessionsRevoked": "Your sessions have been revoked. You will be signed out shortly.",
+      "signOutOthersConfirmTitle": "Sign out your other sessions?",
+      "signOutOthersConfirmBody": "Every other device and browser where you are signed in is signed out, in every workspace you belong to. You stay signed in here.",
+      "signOutOthersConfirmLabel": "Revoke other sessions",
+      "otherSessionsRevoked": "Your other sessions were signed out. You are still signed in here.",
+      "mySessionsRevoked": "This session could not be told apart from your others, so all of them were signed out, this one included. You will be taken to the sign-in page.",
       "failedRevokeSessions": "Failed to revoke sessions",
       "revocationFailed": "Revocation failed",
-      "revokeAllConfirm": "WARNING: This will sign out ALL users in your organization. Are you sure?",
-      "allRevoked": "Sessions revoked for {count} users. Everyone will need to sign in again.",
+      "revokeAllConfirmTitle": "Revoke every member's sessions?",
+      "revokeAllConfirmBody": "Every active member of this workspace is signed out on every device. A session belongs to the person, not the workspace, so this also signs them out of every other workspace they belong to. Deactivated members are not affected. You stay signed in here, and your other sessions are signed out.",
+      "revokeAllConfirmLabel": "Revoke all sessions",
+      "allRevoked": "Sessions revoked for {count} active members. You are still signed in here.",
+      "allRevokedIncludingYou": "Sessions revoked for {count} active members, you included. You will be taken to the sign-in page.",
       "failedRevoke": "Failed to revoke",
       "bulkRevocationFailed": "Bulk revocation failed",
-      "revokeUserConfirm": "Revoke all sessions for user {id}?",
-      "userSessionsRevoked": "Sessions revoked for user.",
+      "revokeUserConfirmTitle": "Revoke the sessions of {name}?",
+      "revokeUserConfirmBody": "{name} is signed out on every device. A session belongs to the person, not the workspace, so this also signs them out of every other workspace they belong to.",
+      "revokeUserConfirmLabel": "Revoke sessions",
+      "userSessionsRevoked": "Sessions revoked for {name}.",
       "failedRevokeUser": "Failed to revoke user sessions",
       "userRevocationFailed": "User revocation failed",
       "agentEnforcement": {
@@ -4770,18 +4805,19 @@
         "on": "Enforcing",
         "off": "Not enforcing",
         "notEnforcing": "Agent registration is not being enforced. Any credential can act at the tool boundary, registered or not — the agent register is a catalogue, and the tool allowlist, autonomy limits, policy card, circuit breaker and kill switch refuse nothing.",
-        "enforcingClean": "Agent registration is enforced. Only credentials bound to a registered agent can act, and every credential is bound.",
-        "enforcingWithUnbound": "Agent registration is enforced, but {count} credential(s) are not bound to an agent. Those are being refused at the tool boundary right now.",
+        "enforcingClean": "Agent registration is enforced. Every credential that can use the agent tools is bound to an active registered agent.",
+        "enforcingWithUnbound": "Agent registration is enforced, but {count} credential(s) that can use the agent tools are not bound to an active registered agent. Those are being refused at the tool boundary right now.",
         "breakingNow": "{count} credential(s) are being refused at the tool boundary right now:",
         "wouldBreak": "{count} credential(s) would stop working the moment enforcement is switched on:",
         "enableAction": "Enforce registration",
         "disableAction": "Stop enforcing",
         "enableTitle": "Enforce agent registration",
         "disableTitle": "Stop enforcing agent registration",
-        "enableBody": "From the moment this is on, the tool boundary refuses any credential that is not bound to a registered agent. This applies to the whole workspace and takes effect immediately.",
+        "enableBody": "From the moment this is on, the tool boundary refuses any credential that is not bound to an active registered agent. This applies to the whole workspace and takes effect immediately.",
         "disableBody": "This removes the boundary for the whole workspace. Any credential will be able to act, registered or not, and nothing in the product will look different afterwards — which is why this asks you to type the workspace name.",
         "typeToConfirm": "Type {slug} to confirm",
         "unavailable": "You do not have permission to read the agent register, so this setting cannot be changed here. Enforcing agent registration requires the agent register permission as well as security settings access.",
+        "loadFailed": "Could not load agent-registration enforcement.",
         "saveFailed": "Could not change agent-registration enforcement."
       },
       "apiKeyRotation": {
@@ -5615,29 +5651,6 @@
       "recentActivity": "Recent sync activity",
       "activityEmpty": "No SharePoint activity yet."
     },
-    "flue": {
-      "title": "Flue agent engine",
-      "description": "Run agentic workflows on the Flue reasoning engine instead of the static step-walker. Six terms have to agree; until they all do, every run executes on the static engine and succeeds, so nothing else would tell you.",
-      "statusReady": "Ready",
-      "statusBlocked": "Not wired",
-      "optIn": "Opt this workspace in",
-      "optOut": "Opt out",
-      "saveFailed": "Could not change the engine for this workspace.",
-      "runsOnFlue": "Runs in this workspace execute on the Flue engine.",
-      "runsOnStatic": "Runs still execute on the static engine — waiting on: {term}.",
-      "operatorTerm": "Set on the deployment",
-      "fix": "Set up →",
-      "count": "{count} available",
-      "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand.",
-      "term": {
-        "ENV": "The deployment allows the Flue engine",
-        "TENANT": "This workspace has opted in",
-        "BUILD": "This build ships a Flue implementation",
-        "WORKFLOW": "A workflow asks for the Flue engine",
-        "REGISTERED_AGENT": "An active, risk-assessed agent is registered",
-        "BOUND_KEY": "A live API key is bound to that agent"
-      }
-    },
     "integrations": {
       "title": "Integrations",
       "loadFailed": "Failed to load integrations",
@@ -5921,7 +5934,9 @@
         "writeNotRecorded": "Not recorded",
         "writePaired": "Write, paired",
         "writeUnpaired": "Write, no pairing"
-      }
+      },
+      "agentEnginesMoved": "The agent engine setting is on the AI features page.",
+      "agentEnginesLink": "Open agent engines →"
     },
     "forbidden": {
       "title": "Admin Access Required",
@@ -5976,6 +5991,7 @@
       "copied": "Copied!",
       "copy": "Copy",
       "loadFailed": "Failed to load API keys",
+      "loading": "Loading API keys…",
       "createFailed": "Create failed",
       "revokeFailed": "Revoke failed",
       "colName": "Name",
@@ -5993,6 +6009,10 @@
       "namePlaceholder": "e.g. CI/CD Pipeline, Monitoring Agent",
       "expiryAria": "About key expiry",
       "noExpiry": "No expiry",
+      "expiry30Days": "30 days",
+      "expiry90Days": "90 days",
+      "expiry180Days": "180 days",
+      "expiry1Year": "1 year",
       "creating": "Creating...",
       "createKey": "Create Key",
       "cancel": "Cancel",
@@ -6297,7 +6317,8 @@
       "theme": "Theme",
       "privacy": "Privacy & data protection",
       "dsarRequests": "Data subject requests",
-      "agentCredentials": "Agent credentials"
+      "agentCredentials": "Agent credentials",
+      "sandboxRuntime": "Sandbox runtime"
     },
     "resourceLabels": {
       "controls": "Controls",
@@ -6640,6 +6661,59 @@
         "description": "Drafts answers to incoming security questionnaires from your existing policies and controls. Every answer can be edited before the questionnaire is returned."
       }
     },
+    "agentEngines": {
+      "title": "Agent engines",
+      "description": "This setting chooses which engine runs this workspace's agents. The built-in engine runs each workflow's steps exactly as written. A reasoning engine lets a model choose which of the agent's tools to call. On either engine, every call goes through the agent's grants, policy card, autonomy ceiling and kill switch.",
+      "loadFailed": "Couldn't load the agent engine setting.",
+      "saveFailed": "Couldn't change the engine for this workspace.",
+      "runsOnFlue": "In this workspace, workflows that ask for the Flue engine run on it.",
+      "reason": {
+        "ENV_DISABLED": "Runs use the built-in engine because the Flue engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
+        "TENANT_NOT_OPTED_IN": "Runs use the built-in engine because this workspace has not chosen the Flue engine.",
+        "UNRECOGNISED_SETTING": "Runs use the built-in engine because this version does not recognise the stored choice. A newer version probably wrote it during an upgrade. Choose an engine again to replace it.",
+        "DRIVER_NOT_IMPLEMENTED": "Runs use the built-in engine because this version of Inflect does not include the Flue engine, even though both the deployment and this workspace ask for it.",
+        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because no workflow in this version asks for the Flue engine, even though both the deployment and this workspace allow it.",
+        "UNKNOWN": "Runs use the built-in engine, but the reason could not be shown. Reload the page to try again."
+      },
+      "deploymentOffHeading": "Agent engines are not turned on for this deployment",
+      "deploymentOffBody": "The choice below is disabled. No run would change until the deployment's Flue switch is on, and only the deployment's operator can turn it on.",
+      "chosen": "This workspace's engine: {engine}.",
+      "ownerOnly": "Only a workspace owner can change the engine.",
+      "choiceAria": "Engine for this workspace",
+      "engine": {
+        "STATIC": {
+          "name": "Built-in engine",
+          "description": "Runs each workflow's steps in order, exactly as written. No model chooses the calls."
+        },
+        "FLUE": {
+          "name": "Flue engine",
+          "description": "A model chooses which of the agent's tools to call, in workflows that ask for this engine. Every call still goes through the agent's grants and controls."
+        }
+      },
+      "gateHeading": "What decides the engine",
+      "wiringHeading": "What a Flue run needs before it can start",
+      "confirmTitle": {
+        "STATIC": "Switch this workspace to the built-in engine?",
+        "FLUE": "Switch this workspace to the Flue engine?"
+      },
+      "confirmBody": {
+        "FLUE": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the Flue engine if its workflow asks for it and the conditions below are met. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time.",
+        "STATIC": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the built-in engine. You can switch back at any time."
+      },
+      "confirmLabel": "Switch engine",
+      "term": {
+        "ENV": "The deployment allows the Flue engine",
+        "TENANT": "This workspace has opted in",
+        "BUILD": "This build ships a Flue implementation",
+        "WORKFLOW": "A workflow asks for the Flue engine",
+        "REGISTERED_AGENT": "An active, risk-assessed agent is registered",
+        "BOUND_KEY": "A live API key is bound to that agent"
+      },
+      "count": "{count} available",
+      "operatorTerm": "Set on the deployment",
+      "fix": "Set up →",
+      "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand."
+    },
     "modules": {
       "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",
       "heading": "Modules",
@@ -6751,6 +6825,70 @@
       "reports": "Reports",
       "admin": "Admin",
       "mcp": "Agent runtime"
+    },
+    "sandboxRuntime": {
+      "heading": "Sandbox runtime",
+      "breadcrumb": "Sandbox runtime",
+      "intro": "What this deployment declared to its sandbox runtime. These are the deployment's own records, not readings taken from the running sandbox.",
+      "noReadApiHeading": "These values are declarations, not readings",
+      "noReadApiBody": "The sandbox runtime reads its configuration once at startup and offers no way to ask it what it is using. Every row below is what this deployment declared; none of it has been confirmed by the running sandbox.",
+      "notConfiguredHeading": "No sandbox runtime on this deployment",
+      "notConfiguredBody": "This deployment has not declared a sandbox runtime, so nothing below is in force. The rows are listed so the settings are known before one is installed.",
+      "digestLabel": "Configuration digest",
+      "appliedAtLabel": "Applied",
+      "sectionChannels": "Reporting channels",
+      "chartKeyLabel": "Chart key",
+      "noChartKey": "No chart key - environment variable only",
+      "envVarsLabel": "Environment variables",
+      "defaultLabel": "When unset",
+      "defaultsOn": "Sends data",
+      "defaultsOff": "Sends nothing",
+      "sectionEnforcement": "Enforcement",
+      "requiredLabel": "Required value",
+      "policyPathLabel": "Policy path",
+      "sectionExecution": "Sandboxed execution",
+      "executionPendingHeading": "Not switchable from this page",
+      "executionPendingBody": "This switch is installed with the sandbox runtime itself. Until then the row reports what the deployment permits and offers no control.",
+      "status": {
+        "not-configured": "Not installed",
+        "set-in-code": "Set in code",
+        "unreachable": "No answer",
+        "declared-not-observed": "Declared",
+        "tenant-switch": "Available"
+      },
+      "execution": {
+        "name": "Run agent tools in a sandbox",
+        "description": "Whether this deployment runs agent tool calls inside the sandbox runtime rather than in the application process."
+      },
+      "channel": {
+        "anonymous-telemetry": {
+          "name": "Anonymous usage telemetry",
+          "description": "Usage counts sent to the sandbox runtime's maintainers. This is the one channel that sends data when nothing is configured."
+        },
+        "otlp-traces": {
+          "name": "Traces (OTLP)",
+          "description": "Execution traces sent to a collector you choose. Sends nothing unless an endpoint is set."
+        },
+        "ocsf-file": {
+          "name": "Security events to a file (OCSF)",
+          "description": "Security events written as OCSF records to a directory on the sandbox host."
+        },
+        "ocsf-over-otlp": {
+          "name": "Security events to a collector (OCSF over OTLP)",
+          "description": "The same security events sent to a collector instead of a file. Configurable only by environment variable, so a reader auditing the Helm chart would not find it."
+        }
+      },
+      "enforcement": {
+        "enforcement": {
+          "name": "Network rules are enforced",
+          "description": "Every endpoint in a committed policy must enforce rather than log. A policy that only logs allows the traffic it reports."
+        },
+        "landlock-compatibility": {
+          "name": "Filesystem isolation is required",
+          "description": "Landlock must be a hard requirement rather than best effort. Best effort means a host without Landlock runs the sandbox with no filesystem isolation and still reports success."
+        }
+      },
+      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below."
     }
   },
   "riskManager": {
@@ -7437,7 +7575,8 @@
       "description": "Browse standards, install control packs, and track requirement coverage",
       "createFramework": "Create framework",
       "importFramework": "Import framework",
-      "installed": "Installed",
+      "installed": "In use",
+      "inUseHint": "At least one of this framework's requirements has a mapped control",
       "available": "Available",
       "requirements": "Requirements",
       "packs": "Packs",
@@ -7553,7 +7692,9 @@
       "mappingsCreated": "Mappings Created",
       "viewControls": "View Controls →",
       "backToFramework": "Back to Framework",
-      "packsEmpty": "No packs available for this framework."
+      "packsEmpty": "No packs available for this framework.",
+      "restrictedTitle": "You cannot install frameworks",
+      "restricted": "Only an Owner or Admin can install a framework pack, or a member whose custom role allows installing frameworks. Ask one of them to install it. You can still read this framework's requirements."
     },
     "templates": {
       "loading": "Loading template library...",
@@ -7575,7 +7716,8 @@
       "requirementsCount": "{count} requirements",
       "mappedRequirements": "Mapped Requirements",
       "defaultTasks": "Default Tasks",
-      "suggestedEvidence": "Suggested Evidence Types",
+      "suggestedEvidence": "Suggested Evidence",
+      "installFailed": "The install did not finish. Reload the page to see what was added.",
       "emptyFilter": "No templates match your filters."
     },
     "loadingAria": "Loading frameworks",
@@ -10417,7 +10559,7 @@
     "submitting": "Submitting…",
     "submitDecision": "Submit decision",
     "closeTitle": "Close access review campaign",
-    "closeBody": "Closing executes every <b>REVOKE</b> and <b>MODIFY</b> decision against the live tenant memberships. <b>CONFIRM</b> decisions stay untouched. A signed PDF evidence artifact will be generated and linked to the campaign. This cannot be undone.",
+    "closeBody": "Closing carries out every <b>Revoked</b> and <b>Modified</b> decision against the live workspace memberships. <b>Confirmed</b> decisions change nothing. An evidence PDF is then produced and linked to the campaign. It carries a SHA-256 hash of its contents; it is not digitally signed. This cannot be undone.",
     "closeFailed": "Failed to close campaign",
     "closing": "Closing…",
     "closeGenerate": "Close + generate evidence",
@@ -10440,7 +10582,7 @@
     "crumbTests": "Tests",
     "undoVerdict": "Discard",
     "undoDialogTitle": "Discard the verdict on {email}",
-    "undoExplainer": "The recorded {verdict} will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
+    "undoExplainer": "The recorded verdict ({verdict}) will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
     "undoReasonLabel": "Why are you discarding this verdict?",
     "undoReasonPlaceholder": "Recorded against the wrong person, wrong verdict chosen, …",
     "undoConfirm": "Discard verdict",
@@ -10513,7 +10655,43 @@
     "fieldCrossPreparer": "Second preparing agent",
     "crossPreparerHint": "Optional. Prepares the first agent's own pack — an agent never prepares the pack it is reviewed by. Left empty, a person prepares that one pack when the packs are prepared.",
     "agentPackPreparedBy": "Prepared by {agent}",
-    "agentPackPreparedByPerson": "Prepared by a person — the preparing agent's own pack"
+    "agentPackPreparedByPerson": "Prepared by a person — the preparing agent's own pack",
+    "statusLabels": {
+      "OPEN": "Open",
+      "IN_REVIEW": "In review",
+      "CLOSED": "Closed"
+    },
+    "verdictLabels": {
+      "CONFIRM": "Confirmed",
+      "REVOKE": "Revoked",
+      "MODIFY": "Modified"
+    },
+    "emptyListReadOnly": "No access reviews yet.",
+    "fieldPeriod": "Audit period (optional)",
+    "periodHint": "The period this review covers. It is shown in the Period column and printed on the evidence PDF.",
+    "periodPlaceholder": "Select the period",
+    "dlPeriod": "Period",
+    "colNotes": "Justification",
+    "ownRowCannotDecide": "Your own access — someone else decides it",
+    "regenerateEvidence": "Produce evidence PDF",
+    "regenerating": "Producing…",
+    "evidenceMissingCanRegenerate": "The decisions were carried out, but the evidence PDF could not be produced when the campaign closed. Click Produce evidence PDF to produce it from the recorded decisions.",
+    "evidenceMissingAskAdmin": "The decisions were carried out, but the evidence PDF could not be produced when the campaign closed. An Owner or Admin can produce it again from this page.",
+    "changeReviewer": "Change reviewer",
+    "changeDueDate": "Change due date",
+    "settingsTitle": "Change reviewer or due date",
+    "settingsExplainer": "Decisions already recorded stay as they are. The new reviewer records the rest, and gets the reminder emails from now on.",
+    "settingsFailed": "Failed to save the change",
+    "saving": "Saving…",
+    "saveSettings": "Save changes",
+    "roleLabels": {
+      "OWNER": "Owner",
+      "ADMIN": "Admin",
+      "EDITOR": "Editor",
+      "READER": "Reader",
+      "AUDITOR": "Auditor",
+      "AI_ADMIN": "AI admin"
+    }
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",
@@ -12432,7 +12610,11 @@
         "selected": "Selected",
         "selectAtLeastOne": "Select at least one framework to continue.",
         "badgeMostPopular": "Most Popular",
-        "badgeEu": "EU"
+        "badgeEu": "EU",
+        "installFailedTitle": "Some frameworks were not installed",
+        "installFailedItem": "{framework}: {message}",
+        "installFailedFallback": "The install did not finish.",
+        "installFailedHint": "You can install a framework later from the Frameworks page."
       },
       "assets": {
         "intro": "Add your key information assets. These are the systems, databases, and services you need to protect.",
@@ -12617,7 +12799,7 @@
       },
       "returnChannel": {
         "title": "Send feedback to the team",
-        "subtitle": "Comment, request more evidence, or raise a finding or question. The team is notified.",
+        "subtitle": "Comment, request more evidence, or raise a finding or question. Your message appears on the pack's page for the team.",
         "kindLabel": "Type",
         "kind": {
           "COMMENT": "Comment",
@@ -12669,6 +12851,12 @@
           "DISSENTED": "dissented",
           "INDETERMINATE": "indeterminate"
         }
+      },
+      "soaItemName": "Statement of Applicability — {framework}",
+      "packStatus": {
+        "DRAFT": "Draft",
+        "FROZEN": "Frozen",
+        "EXPORTED": "Exported"
       }
     }
   },

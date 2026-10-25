@@ -8,7 +8,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
+import { useSWRConfig } from 'swr';
+import { useTenantApiUrl, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { useEnterSubmit } from '@/components/ui/hooks';
@@ -96,6 +98,37 @@ function computeVisibleSteps(data: StepData) {
     return STEPS.filter((s) => stepApplicable(s.key, data));
 }
 
+/** One pack the server could not install — `FrameworkInstallFailure`. */
+interface InstallFailure {
+    framework: string;
+    name?: string;
+    packKey: string;
+    message: string | null;
+}
+
+/**
+ * The failures of the NEWEST framework install the server recorded.
+ *
+ * Two steps install frameworks — FRAMEWORK_SELECTION, and
+ * CONTROL_BASELINE_INSTALL re-running it — and each stores its result under
+ * `stepData._actionResults[step]` stamped with `ranAt`. Only the newer one
+ * says what is true now: a later run that succeeded clears an earlier
+ * failure. Exported for the rendered test.
+ */
+export function latestFrameworkInstall(stepData: StepData | null | undefined): { ranAt: string; failures: InstallFailure[] } | null {
+    const results = stepData?._actionResults ?? {};
+    const runs = ['FRAMEWORK_SELECTION', 'CONTROL_BASELINE_INSTALL']
+        .map((k) => results[k])
+        .filter((r) => r && r.action === 'FRAMEWORK_INSTALL')
+        .sort((a, b) => String(b.ranAt ?? '').localeCompare(String(a.ranAt ?? '')));
+    const newest = runs[0];
+    if (!newest) return null;
+    return {
+        ranAt: String(newest.ranAt ?? ''),
+        failures: Array.isArray(newest.failures) ? newest.failures : [],
+    };
+}
+
 interface OnboardingState {
     status: string;
     currentStep: string;
@@ -133,6 +166,8 @@ export default function OnboardingWizard() {
     const t = useTranslations('onboarding');
     const { tenantSlug, permissions } = useTenantContext();
     const tenantHref = useTenantHref();
+    const tenantApiUrl = useTenantApiUrl();
+    const { mutate } = useSWRConfig();
     const router = useRouter();
 
     const [state, setState] = useState<OnboardingState | null>(null);
@@ -142,6 +177,8 @@ export default function OnboardingWizard() {
     const [error, setError] = useState<string | null>(null);
     const [localData, setLocalData] = useState<StepData>({});
     const [successBanner, setSuccessBanner] = useState(false);
+    // The `ranAt` of an install-failure notice the user closed this session.
+    const [dismissedInstallRun, setDismissedInstallRun] = useState<string | null>(null);
 
     // ─── Load state ───
     const loadState = useCallback(async () => {
@@ -287,6 +324,9 @@ export default function OnboardingWizard() {
             // Complete the last step first
             await apiFetch(apiUrl(tenantSlug, 'step'), 'POST', { step: 'REVIEW_AND_FINISH', action: 'complete' });
             await apiFetch(apiUrl(tenantSlug, 'finish'), 'POST');
+            // The dashboard's "Complete your setup" card reads this status;
+            // refresh it so the card is gone when we land there.
+            void mutate(tenantApiUrl(CACHE_KEYS.onboarding.metrics()));
             setSuccessBanner(true);
             setTimeout(() => {
                 router.push(tenantHref('/dashboard'));
@@ -414,6 +454,16 @@ export default function OnboardingWizard() {
     const visibleCompletedCount = state.completedSteps.filter((s) =>
         visibleSteps.some((v) => v.key === s),
     ).length;
+    // #4125 — Continue on the framework step installs what is chosen, so it
+    // needs a choice; the server refuses an empty one too. The wizard offers
+    // no Skip for this step.
+    const noFrameworkChosen =
+        currentStep.key === 'FRAMEWORK_SELECTION' &&
+        !(localData.FRAMEWORK_SELECTION?.selectedFrameworks?.length > 0);
+    // #4125 — framework install failures used to be stored and never read.
+    const installRun = latestFrameworkInstall(state.stepData);
+    const installFailures =
+        installRun && installRun.ranAt !== dismissedInstallRun ? installRun.failures : [];
 
     return (
         <div className="space-y-default animate-fadeIn" data-testid="onboarding-wizard">
@@ -434,6 +484,27 @@ export default function OnboardingWizard() {
                     {error}
                     <button onClick={() => setError(null)} className="ml-auto text-content-error hover:text-content-emphasis text-xs">&times;</button>
                 </div>
+            )}
+
+            {installFailures.length > 0 && (
+                <InlineNotice
+                    variant="error"
+                    title={t('wizard.frameworks.installFailedTitle')}
+                    onDismiss={() => setDismissedInstallRun(installRun?.ranAt ?? null)}
+                    id="framework-install-failures"
+                >
+                    <ul className="list-disc pl-4">
+                        {installFailures.map((f) => (
+                            <li key={`${f.framework}:${f.packKey}`}>
+                                {t('wizard.frameworks.installFailedItem', {
+                                    framework: f.name || f.framework,
+                                    message: f.message || t('wizard.frameworks.installFailedFallback'),
+                                })}
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="mt-1">{t('wizard.frameworks.installFailedHint')}</p>
+                </InlineNotice>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-section">
@@ -528,7 +599,8 @@ export default function OnboardingWizard() {
                                     <Button
                                         variant="primary"
                                         onClick={() => handleCompleteStep(currentStep.key)}
-                                        disabled={saving}
+                                        disabled={saving || noFrameworkChosen}
+                                        data-testid="wizard-continue"
                                     >
                                         {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                                         {t('wizard.continue')} <ChevronRight className="w-3.5 h-3.5" />

@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server';
 import { requirePermission } from '@/lib/security/permission-middleware';
-import { updateTenantMemberRole, removeTenantMember } from '@/app-layer/usecases/tenant-admin';
+import {
+    updateTenantMemberRole,
+    updateTenantMemberRoleAndCustomRole,
+    removeTenantMember,
+} from '@/app-layer/usecases/tenant-admin';
 import { assignCustomRole } from '@/app-layer/usecases/custom-roles';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
@@ -21,14 +25,14 @@ const UpdateMemberSchema = z
         // it is refused here rather than written.
         customRoleId: z.string().min(1).nullable().optional(),
     })
-    // The two halves below run as separate writes, role first. Asking for a
-    // role that carries no custom role (OWNER, AI_ADMIN — `mayCarryCustomRole`)
-    // AND a custom role in one body would commit the first and refuse the
-    // second; refuse the body instead. The other order cannot slip through
-    // either: a role change into OWNER or AI_ADMIN is refused while the member
-    // still carries a custom role, so `{ role: 'OWNER', customRoleId: null }`
-    // for a member who carries one commits nothing — the custom role is removed
-    // on its own first (#3720).
+    // A body naming both halves is applied all or nothing (#4118). Asking for
+    // a role that carries no custom role (OWNER, AI_ADMIN — `mayCarryCustomRole`)
+    // AND a custom role in one body can never succeed, so it is refused here,
+    // before the database. The other order is refused by the usecase: a role
+    // change into OWNER or AI_ADMIN is refused while the member still carries a
+    // custom role, so `{ role: 'OWNER', customRoleId: null }` for a member who
+    // carries one commits nothing — the custom role is removed on its own
+    // first (#3720).
     .superRefine((v, issue) => {
         if (v.role && !mayCarryCustomRole(v.role) && typeof v.customRoleId === 'string') {
             issue.addIssue({
@@ -48,16 +52,21 @@ export const PATCH = withApiErrorHandling(
 
             let result;
 
-            // If role change requested, update enum role
-            if (input.role) {
+            if (input.role && input.customRoleId !== undefined) {
+                // Both: every check of both halves before either write, so a
+                // refused custom role leaves the role as it was (#4118).
+                result = await updateTenantMemberRoleAndCustomRole(ctx, {
+                    membershipId: params.membershipId,
+                    role: input.role,
+                    customRoleId: input.customRoleId,
+                });
+            } else if (input.role) {
                 result = await updateTenantMemberRole(ctx, {
                     membershipId: params.membershipId,
                     role: input.role,
                 });
-            }
-
-            // If customRoleId change requested (even if null = unassign)
-            if (input.customRoleId !== undefined) {
+            } else if (input.customRoleId !== undefined) {
+                // `null` unassigns.
                 result = await assignCustomRole(
                     ctx,
                     params.membershipId,

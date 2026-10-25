@@ -721,11 +721,27 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     },
 
     // ── Which ENGINE executes this tenant's agentic runs ────────────
+    // Method-scoped (owner decision 2026-10-25, #4139): READING the gate is
+    // admin.view, so an ADMIN sees on the AI features page why the tenant runs
+    // on the engine it does; CHANGING it stays OWNER-only. First match wins, so
+    // the GET rule sits above the rule that covers every other method.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agent-driver(\\/.*)?$`),
+        methods: ['GET'],
+        permission: 'admin.view',
+        note:
+            'Read which engine this tenant\'s agentic runs execute on, and why: the '
+            + 'tenant\'s setting, the operator\'s env switch, whether the build has the '
+            + 'engine, and the reason the effective engine is what it is. Every admin '
+            + 'can see it, because a gate nobody can read looks the same as a broken '
+            + 'one. The six-term wiring checklist, which adds counts over the agent '
+            + 'register, stays on admin/flue-wiring under admin.tenant_lifecycle.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agent-driver(\\/.*)?$`),
         permission: 'admin.tenant_lifecycle',
         note:
-            'The customer half of the two-key agentic-driver gate. Switching '
+            'Change the customer half of the two-key agentic-driver gate. Switching '
             + 'to FLUE hands an external agent runtime the decision of what to '
             + 'TRY against this tenant\'s compliance data — `runReadTool` '
             + 'still decides what is PERMITTED, so no register control moves, '
@@ -738,12 +754,11 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         path: new RegExp(`^${T}\\/admin\\/flue-wiring(\\/.*)?$`),
         permission: 'admin.tenant_lifecycle',
         note:
-            'Read-only, and gated with the SAME key as the driver toggle it '
-            + 'sits beside rather than a narrower read key. The response is a '
-            + 'superset of that route\'s facts — the env switch, the build '
-            + 'flag, the workflow term, plus two counts over the agent '
-            + 'register — so a lower key here would be a way to read what '
-            + 'tenant-lifecycle guards.',
+            'Read-only, and gated with the key that CHANGES the driver (the '
+            + 'agent-driver PUT) rather than the admin.view its GET takes. The '
+            + 'response adds two counts over the agent register to the driver '
+            + 'gate\'s facts, and it is the owner\'s checklist for wiring a Flue '
+            + 'run, shown beside the control only an owner can use.',
     },
 
     // ── Optional product modules (per tenant) ───────────────────────
@@ -1782,6 +1797,16 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'roles, which is what reading a campaign has always required.',
     },
     {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/evidence\\/regenerate$`),
+        methods: ['POST'],
+        permission: 'access_reviews.close',
+        note:
+            'Producing a CLOSED member campaign\'s evidence PDF again when it ' +
+            'failed at close (#4130). The second half of closing, so the close ' +
+            'key: OWNER + ADMIN, mirroring the assertCanAdmin in ' +
+            'regenerateAccessReviewEvidence. It executes no decision.',
+    },
+    {
         path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/evidence$`),
         methods: ['GET'],
         permission: 'access_reviews.view',
@@ -1859,6 +1884,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'Reading one campaign and its activity. Mirrors the ' +
             'assertCanRead in getAccessReview / getAccessReviewWithActivity.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+$`),
+        methods: ['PATCH'],
+        permission: 'access_reviews.create',
+        note:
+            'Changing an open campaign\'s reviewer or due date (#4130), and ' +
+            'nothing else. The key that names them at creation: OWNER + ADMIN, ' +
+            'mirroring the assertCanAdmin in updateAccessReviewSettings. After ' +
+            'every leaf above, like the GET: `[^/]+$` would swallow ' +
+            '`/connected` and `/agents`, whose only method is POST.',
     },
     {
         path: new RegExp(`^${T}\\/access-reviews$`),

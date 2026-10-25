@@ -232,9 +232,14 @@ export interface ImportMappingSetResult {
     readonly targetFrameworkRef: string;
     readonly created: number;
     readonly updated: number;
+    /** Active mappings this import closed because the file no longer names their pair. */
+    readonly retired: number;
     readonly skippedDuplicate: boolean;
     readonly errors: Array<{ entry: number; sourceRef: string; targetRef: string; message: string }>;
 }
+
+/** One key per (source code, target code) pair; NUL cannot occur in a code. */
+const pairKey = (sourceCode: string, targetCode: string): string => `${sourceCode}\u0000${targetCode}`;
 
 /**
  * Import a single mapping-set YAML into the database.
@@ -245,6 +250,18 @@ export interface ImportMappingSetResult {
  * 3. Upsert RequirementMappingSet
  * 4. Resolve each entry's source/target requirement refs to DB IDs
  * 5. Bulk upsert RequirementMapping records
+ * 6. Retire the set's active mappings the file no longer names
+ *
+ * An entry removed from the file is RETIRED, not deleted: its row keeps its
+ * history and gets `validTo = now`, which `activeMappingWindow` (every
+ * traceability and gap-analysis read) already excludes. An entry added back
+ * revives its row. Before this, an entry removed from a file stayed active in
+ * every database that had imported it, for good.
+ *
+ * Retirement compares the pair of codes the file names with the pair of codes
+ * the row points at, so the rule reads the way the file does: a row is active
+ * exactly while some entry names its pair. An entry that fails to resolve this
+ * run still names its pair, and retires nothing.
  *
  * Returns a detailed result including any entries that failed reference resolution.
  *
@@ -301,6 +318,7 @@ export async function importMappingSet(
                 targetFrameworkRef: stored.target_framework_ref,
                 created: 0,
                 updated: 0,
+                retired: 0,
                 skippedDuplicate: true,
                 errors: [],
             };
@@ -385,10 +403,18 @@ export async function importMappingSet(
         });
     }
 
-    // Bulk-load existing mappings for this set (1 query instead of N)
+    // Bulk-load existing mappings for this set (1 query instead of N), with the
+    // codes and validity step 6 retires by.
     const existingMappings = await db.requirementMapping.findMany({
         where: { mappingSetId: mappingSet.id },
-        select: { sourceRequirementId: true, targetRequirementId: true },
+        select: {
+            id: true,
+            sourceRequirementId: true,
+            targetRequirementId: true,
+            validTo: true,
+            sourceRequirement: { select: { code: true } },
+            targetRequirement: { select: { code: true } },
+        },
     });
     const existingKeys = new Set(
         existingMappings.map(m => `${m.sourceRequirementId}::${m.targetRequirementId}`),
@@ -418,6 +444,8 @@ export async function importMappingSet(
             update: {
                 strength: entry.strength,
                 rationale: entry.rationale,
+                // An entry added back to the file revives a row it retired.
+                validTo: null,
             },
         });
 
@@ -428,12 +456,27 @@ export async function importMappingSet(
         }
     }
 
+    // 6. Retire the active mappings whose pair no entry names any more.
+    const named = new Set(stored.mapping_entries.map((e) => pairKey(e.source_ref, e.target_ref)));
+    const now = new Date();
+    const toRetire = existingMappings
+        .filter((m) => m.validTo === null || m.validTo > now)
+        .filter((m) => !named.has(pairKey(m.sourceRequirement.code, m.targetRequirement.code)))
+        .map((m) => m.id);
+    if (toRetire.length > 0) {
+        await db.requirementMapping.updateMany({
+            where: { id: { in: toRetire } },
+            data: { validTo: now },
+        });
+    }
+
     logger.info('Mapping set imported', {
         component,
         urn: stored.urn,
         setId: mappingSet.id,
         created,
         updated,
+        retired: toRetire.length,
         errors: errors.length,
         total: stored.mapping_entries.length,
     });
@@ -445,6 +488,7 @@ export async function importMappingSet(
         targetFrameworkRef: stored.target_framework_ref,
         created,
         updated,
+        retired: toRetire.length,
         skippedDuplicate: false,
         errors,
     };

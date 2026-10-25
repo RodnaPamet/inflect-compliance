@@ -121,6 +121,11 @@ export function isMemberRoleChangeRole(role: string): role is MemberRoleChangeRo
  * role change and an Entra group mapping that yields one. OWNER's own checks
  * predate this list and keep their wording; `AI_ADMIN` joined it in deploy 2 of
  * #3699 (owner decision: an ADMIN can neither assign nor remove it).
+ *
+ * On the members page the same holder alone DEACTIVATES or REMOVES a
+ * membership holding one of these (`deactivateTenantMember`,
+ * `removeTenantMember`; AI_ADMIN since #4118). A SCIM deprovision is its own
+ * rule (`isScimStatusProtectedRole`).
  */
 export const OWNER_MANAGED_ROLES = ['OWNER', 'AI_ADMIN'] as const satisfies readonly Role[];
 
@@ -131,6 +136,23 @@ export function isOwnerManagedRole(role: string): boolean {
 /** The refusal for moving a member into or out of an owner-managed role without the key. */
 export function ownerManagedRoleMessage(role: string): string {
     return `Only an OWNER can assign or remove the ${role} role.`;
+}
+
+/**
+ * The named reason a deactivation or removal of an OWNER-managed membership is
+ * refused with when the caller lacks `admin.owner_management`
+ * (`ForbiddenError.details`). Ending an OWNER's membership has been an OWNER's
+ * act since the role change asked it; an AI_ADMIN's joined it in #4118 (owner
+ * decision): an ADMIN, who can neither assign nor remove the role, does not get
+ * to switch the membership off or delete it instead.
+ */
+export const OWNER_MANAGED_MEMBERSHIP_END_REFUSAL = 'ENDING_OWNER_MANAGED_MEMBERSHIP_IS_OWNER_TIER' as const;
+
+/** The refusal for deactivating or removing an owner-managed membership without the key. */
+export function ownerManagedMembershipEndMessage(role: string, verb: 'deactivate' | 'remove'): string {
+    // OWNER keeps the sentence it has always had.
+    if (role === 'OWNER') return `Only OWNERs can ${verb} an OWNER membership.`;
+    return `Only an OWNER can ${verb} an ${role} membership.`;
 }
 
 /**

@@ -8,12 +8,24 @@
  */
 const policyCalls: string[] = [];
 
-jest.mock('@/app-layer/policies/common', () => ({
-    assertCanRead: jest.fn(() => policyCalls.push('read')),
-    assertCanWrite: jest.fn(() => policyCalls.push('write')),
-    assertCanAdmin: jest.fn(() => policyCalls.push('admin')),
-    assertCanAudit: jest.fn(),
-}));
+// Each gate records that it ran AND enforces, by delegating to the real one.
+// The previous mocks recorded without enforcing, so a "requires admin" test
+// passed on whatever else happened to throw (a missing policy fixture), and
+// could not tell a widened gate from an unchanged one.
+jest.mock('@/app-layer/policies/common', () => {
+    const actual = jest.requireActual('@/app-layer/policies/common');
+    const recorded = (name: string, fn: (ctx: unknown) => void) =>
+        jest.fn((ctx: unknown) => {
+            policyCalls.push(name);
+            return fn(ctx);
+        });
+    return {
+        assertCanRead: recorded('read', actual.assertCanRead),
+        assertCanWrite: recorded('write', actual.assertCanWrite),
+        assertCanAdmin: recorded('admin', actual.assertCanAdmin),
+        assertCanAudit: recorded('audit', actual.assertCanAudit),
+    };
+});
 
 const policyRepoGetById = jest.fn();
 jest.mock('@/app-layer/repositories/PolicyRepository', () => ({
@@ -36,6 +48,7 @@ const tenantDb: any = {
     tenantMembership: { findMany: jest.fn() },
     notification: { create: jest.fn() },
     user: { findMany: jest.fn() },
+    tenant: { findUnique: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => {
     const actual = jest.requireActual('@/lib/db-context');
@@ -65,6 +78,7 @@ beforeEach(() => {
     tenantDb.tenantMembership.findMany.mockReset();
     tenantDb.notification.create.mockReset().mockResolvedValue({ id: 'n1' });
     tenantDb.user.findMany.mockReset();
+    tenantDb.tenant.findUnique.mockReset().mockResolvedValue({ slug: 'looked-up' });
 });
 
 const ctx = makeRequestContext('EDITOR');
@@ -218,7 +232,35 @@ describe('requirePolicyAcknowledgement (campaign)', () => {
     it('requires admin', async () => {
         await expect(
             requirePolicyAcknowledgement(makeRequestContext('EDITOR'), 'p1', { audience: { type: 'all' } }),
-        ).rejects.toThrow();
+        ).rejects.toThrow(/administrative/);
+    });
+
+    it('stays admin-only: an AUDITOR, who may read the roster, may not request (#4128)', async () => {
+        await expect(
+            requirePolicyAcknowledgement(makeRequestContext('AUDITOR'), 'p1', { audience: { type: 'all' } }),
+        ).rejects.toThrow(/administrative/);
+        expect(policyRepoGetById).not.toHaveBeenCalled();
+    });
+
+    it('links each notification to the policy inside the workspace, not a bare /policies path (#4128)', async () => {
+        policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'P' });
+        tenantDb.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }]);
+        tenantDb.policyAcknowledgementAssignment.createMany.mockResolvedValueOnce({ count: 1 });
+        await requirePolicyAcknowledgement(makeRequestContext('ADMIN'), 'p1', { audience: { type: 'all' } });
+        const data = tenantDb.notification.create.mock.calls[0][0].data;
+        expect(data.linkUrl).toBe('/t/acme/policies/p1');
+        // The context carried the slug, so nothing was looked up.
+        expect(tenantDb.tenant.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('looks the slug up when the context carries none', async () => {
+        policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'P' });
+        tenantDb.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }]);
+        tenantDb.policyAcknowledgementAssignment.createMany.mockResolvedValueOnce({ count: 1 });
+        await requirePolicyAcknowledgement(makeRequestContext('ADMIN', { tenantSlug: undefined }), 'p1', {
+            audience: { type: 'all' },
+        });
+        expect(tenantDb.notification.create.mock.calls[0][0].data.linkUrl).toBe('/t/looked-up/policies/p1');
     });
 
     it('refuses a non-PUBLISHED policy', async () => {
@@ -261,10 +303,27 @@ describe('requirePolicyAcknowledgement (campaign)', () => {
 });
 
 describe('getPolicyAcknowledgementRoster', () => {
-    it('requires admin', async () => {
-        await expect(
-            getPolicyAcknowledgementRoster(makeRequestContext('EDITOR'), 'p1'),
-        ).rejects.toThrow();
+    // Owner decision (#4128): OWNER, ADMIN and AUDITOR may READ the roster and
+    // its attestation log — acknowledgement evidence is what an auditor asks
+    // for. It was `assertCanAdmin`, which refused the AUDITOR.
+    it.each(['EDITOR', 'READER', 'AI_ADMIN'])('refuses %s', async (role) => {
+        await expect(getPolicyAcknowledgementRoster(makeRequestContext(role), 'p1')).rejects.toThrow(
+            /permission to perform audit actions/,
+        );
+        expect(policyRepoGetById).not.toHaveBeenCalled();
+    });
+
+    it.each(['OWNER', 'ADMIN', 'AUDITOR'])('lets %s read it', async (role) => {
+        policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'P' });
+        tenantDb.policyAcknowledgementAssignment.findMany.mockResolvedValueOnce([{ userId: 'u1' }]);
+        tenantDb.policyAcknowledgement.findMany.mockResolvedValueOnce([{ userId: 'u1', acknowledgedAt: new Date('2026-06-01') }]);
+        tenantDb.user.findMany.mockResolvedValueOnce([{ id: 'u1', name: 'One', email: 'one@x.com' }]);
+
+        const roster = await getPolicyAcknowledgementRoster(makeRequestContext(role), 'p1');
+
+        expect(policyCalls).toEqual(['audit']);
+        expect(roster.acknowledgedCount).toBe(1);
+        expect(roster.attestations.map((a) => a.userId)).toEqual(['u1']);
     });
 
     it('computes % complete from assignments vs acknowledgements', async () => {

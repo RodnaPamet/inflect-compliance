@@ -88,6 +88,9 @@ describe('dispatchAssignments', () => {
                 upsert: jest.fn().mockResolvedValue({ id: 'asg-1' }),
             },
             notification: { create: jest.fn().mockResolvedValue({}) },
+            // The context below carries no `tenantSlug` (a job-style context),
+            // so the notification link's slug is looked up.
+            tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'acme' }) },
             ...over,
         };
     }
@@ -115,6 +118,16 @@ describe('dispatchAssignments', () => {
         // Only CEO + IT had an assignee → 2 tasks.
         expect(mockCreateTask).toHaveBeenCalledTimes(2);
         expect(res.tasksCreated).toBe(2);
+    });
+
+    it('links the assignee notification inside the workspace, not to a bare tenant path (#4128)', async () => {
+        const d = db();
+        withDb(d);
+        await dispatchAssignments(ctx(), 'a1', { CEO: 'user-ceo' });
+        expect(d.notification.create).toHaveBeenCalledTimes(1);
+        expect(d.notification.create.mock.calls[0][0].data.linkUrl).toBe('/t/acme/audits/nis2-gap/respond/asg-1');
+        // Looked up once for the dispatch, not once per role.
+        expect(d.tenant.findUnique).toHaveBeenCalledTimes(1);
     });
 
     it('counts an existing assignment as updated and skips the task when the assignee is unchanged', async () => {

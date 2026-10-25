@@ -591,7 +591,12 @@ const HIGH_MULTIPLICITY = 5;
 // the guard at the mechanism that now carries the property — `readOnly: false`,
 // `set.proposals()` and `proposalOutcomeMessage(proposals)` — each of which
 // names one site.
-const AMBIGUOUS_NEEDLE_BASELINE = 1162;
+// 1162 -> 1161 on 2026-10-25 (#4129). The audit-cycle form's picker dropped
+// its hard-coded ISO 27001 / NIS2 seed options, so `/ISO\/IEC 27001:2022/` in
+// `tests/unit/epic55-framework-picker-migration.test.ts` no longer had the
+// seed's copy of the label beside the page's FW_META one. That test's seed
+// pins are gone with the seeds; it now names the in-use read once.
+const AMBIGUOUS_NEEDLE_BASELINE = 1161;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

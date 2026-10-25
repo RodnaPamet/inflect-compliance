@@ -161,12 +161,19 @@ describe('Framework Coverage & Templates', () => {
             expect(() => assertCanViewFrameworks(denied as any)).toThrow();
         });
 
-        it('assertCanInstallFrameworkPack rejects non-ADMIN', () => {
+        it('assertCanInstallFrameworkPack rejects non-ADMIN built-in roles', () => {
+            // The gate reads `appPermissions.frameworks.install` since #4125
+            // (it read `ctx.role`), so each context carries the role's real
+            // permission set. The outcome for built-in roles is unchanged;
+            // the custom-role cases are in
+            // tests/unit/policies/framework-install-permission.test.ts.
             const { assertCanInstallFrameworkPack } = require('../../src/app-layer/policies/framework.policies');
-            expect(() => assertCanInstallFrameworkPack({ role: 'READER' } as any)).toThrow();
-            expect(() => assertCanInstallFrameworkPack({ role: 'EDITOR' } as any)).toThrow();
-            expect(() => assertCanInstallFrameworkPack({ role: 'AUDITOR' } as any)).toThrow();
-            expect(() => assertCanInstallFrameworkPack({ role: 'ADMIN' } as any)).not.toThrow();
+            const { getPermissionsForRole } = require('../../src/lib/permissions');
+            const ctx = (role: string) => ({ role, appPermissions: getPermissionsForRole(role) });
+            expect(() => assertCanInstallFrameworkPack(ctx('READER') as any)).toThrow();
+            expect(() => assertCanInstallFrameworkPack(ctx('EDITOR') as any)).toThrow();
+            expect(() => assertCanInstallFrameworkPack(ctx('AUDITOR') as any)).toThrow();
+            expect(() => assertCanInstallFrameworkPack(ctx('ADMIN') as any)).not.toThrow();
         });
     });
 

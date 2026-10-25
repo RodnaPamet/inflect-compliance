@@ -31,6 +31,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { createFinding } from './finding';
+import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 import { getBreachProvider } from '@/app-layer/services/vendor-monitoring/breach-provider';
 import { getTlsProvider } from '@/app-layer/services/vendor-monitoring/tls-provider';
 import {
@@ -328,6 +329,10 @@ export async function runVendorMonitor(
         let notifiedCount = 0;
         const alerting = planned.filter((p) => p.eventType === 'BREACH_DETECTED' || p.eventType === 'ATTESTATION_EXPIRED');
         if (vendor.ownerUserId && alerting.length > 0 && evCreated > 0) {
+            // `/t/<slug>`-prefixed — a bare `/vendors/<id>` 404'd from the bell
+            // (#4128). The sweep runs under a system context with no slug, so
+            // the helper looks it up.
+            const linkUrl = tenantPageLink(await resolveTenantSlugForLinks(db, ctx), `/vendors/${vendor.id}`);
             const res = await db.notification.createMany({
                 data: alerting.map((p) => ({
                     tenantId: ctx.tenantId,
@@ -335,7 +340,7 @@ export async function runVendorMonitor(
                     type: 'VENDOR_POSTURE_ALERT' as const,
                     title: p.eventType === 'BREACH_DETECTED' ? `Vendor breach: ${vendor.name}` : `Vendor attestation expired: ${vendor.name}`,
                     message: p.summary,
-                    linkUrl: `/vendors/${vendor.id}`,
+                    linkUrl,
                     dedupeKey: `${ctx.tenantId}:VENDOR_POSTURE_ALERT:${p.fingerprint}:${vendor.ownerUserId}:${dayStamp(now)}`,
                 })),
                 skipDuplicates: true,

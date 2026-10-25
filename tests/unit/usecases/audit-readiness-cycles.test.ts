@@ -13,10 +13,10 @@
  * external audit readiness. The narrow load-bearing assertions:
  *
  *   1. createAuditCycle: assertCanManageAuditCycles gate; rejects
- *      a frameworkKey that is not installed for the tenant (PR-O — a
- *      cycle can be created for ANY installed framework, not just the
- *      hardcoded ISO27001 / NIS2 pair; the generic scorer handles the
- *      rest).
+ *      a frameworkKey that is not IN USE in the tenant (PR-O — a cycle
+ *      can be created for any framework, not just the hardcoded
+ *      ISO27001 / NIS2 pair; #4129 — but only one in use, the rule
+ *      `isFrameworkInUse` owns and has its own tests).
  *   2. listAuditCycles: assertCanViewPack (READER + AUDITOR allowed).
  *   3. getAuditCycle / updateAuditCycle: notFound when the row is not
  *      in the caller tenant.
@@ -29,6 +29,14 @@ jest.mock('@/lib/db-context', () => ({
 
 jest.mock('../../../src/app-layer/events/audit', () => ({
     logEvent: jest.fn().mockResolvedValue(undefined),
+}));
+
+// #4129 — "in use" is decided by `isFrameworkInUse` (framework/coverage.ts),
+// which runs its own queries; this file asserts what createAuditCycle does
+// with the answer.
+const mockInUse = jest.fn();
+jest.mock('@/app-layer/usecases/framework/coverage', () => ({
+    isFrameworkInUse: (...args: unknown[]) => mockInUse(...args),
 }));
 
 import {
@@ -45,6 +53,7 @@ const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockInUse.mockResolvedValue(true);
 });
 
 describe('createAuditCycle', () => {
@@ -66,18 +75,18 @@ describe('createAuditCycle', () => {
         ).rejects.toThrow();
     });
 
-    it('rejects a frameworkKey that is not installed with badRequest', async () => {
-        // PR-O — the installed-framework lookup returns null for an
-        // unknown key, so the create is rejected before any row is written.
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ framework: { findFirst: jest.fn().mockResolvedValue(null) } } as never),
-        );
+    it('rejects a frameworkKey that is not in use with badRequest', async () => {
+        // #4129 — the check used to be a GLOBAL catalogue lookup, so any
+        // shipped framework passed. A framework no control is mapped to is
+        // now refused before any row is written, with a readable reason.
+        mockInUse.mockResolvedValue(false);
         await expect(
             createAuditCycle(makeRequestContext('ADMIN'), {
                 ...validInput,
                 frameworkKey: 'NOT-A-FRAMEWORK',
             }),
-        ).rejects.toThrow(/installed framework/);
+        ).rejects.toThrow(/not in use in this workspace/);
+        expect(mockRunInTx).not.toHaveBeenCalled();
         // Regression: a refactor that loosened the framework-key
         // validation would let typos like "ISO 27001" through and
         // those rows would never match the framework-pack join in
@@ -85,14 +94,11 @@ describe('createAuditCycle', () => {
         // signal as to why.
     });
 
-    it('accepts any installed framework (not just ISO27001 / NIS2)', async () => {
-        // PR-O — a custom / non-ISO-NIS2 framework that is installed for
-        // the tenant must be allowed; the generic scorer handles it.
+    it('accepts any framework in use (not just ISO27001 / NIS2)', async () => {
+        // PR-O — a custom / non-ISO-NIS2 framework that is in use in the
+        // tenant must be allowed; the generic scorer handles it.
         let capturedArgs: any;
         mockRunInTx
-            .mockImplementationOnce(async (_ctx, fn) =>
-                fn({ framework: { findFirst: jest.fn().mockResolvedValue({ key: 'SOC2' }) } } as never),
-            )
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({
                     auditCycle: {
@@ -107,14 +113,12 @@ describe('createAuditCycle', () => {
         await createAuditCycle(makeRequestContext('ADMIN'), { ...validInput, frameworkKey: 'SOC2' });
 
         expect(capturedArgs.data.frameworkKey).toBe('SOC2');
+        expect(mockInUse).toHaveBeenCalledWith(expect.anything(), 'SOC2');
     });
 
     it('persists tenantId from ctx (input cannot override)', async () => {
         let capturedArgs: any;
         mockRunInTx
-            .mockImplementationOnce(async (_ctx, fn) =>
-                fn({ framework: { findFirst: jest.fn().mockResolvedValue({ key: 'ISO27001' }) } } as never),
-            )
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({
                     auditCycle: {
@@ -138,9 +142,6 @@ describe('createAuditCycle', () => {
 
     it('emits AUDIT_CYCLE_CREATED audit', async () => {
         mockRunInTx
-            .mockImplementationOnce(async (_ctx, fn) =>
-                fn({ framework: { findFirst: jest.fn().mockResolvedValue({ key: 'ISO27001' }) } } as never),
-            )
             .mockImplementationOnce(async (_ctx, fn) =>
                 fn({
                     auditCycle: { create: jest.fn().mockResolvedValue({ id: 'cyc-1' }) },

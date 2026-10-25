@@ -28,6 +28,8 @@ import {
     AUDIT_STATUS_VARIANT,
     DEFAULT_STATUS_VARIANT,
 } from '../../_lib/status-variants';
+import { isNotFoundError, useAuditReadinessAccess } from '../../_lib/use-audit-access';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const FW_META: Record<string, { icon: AppIconName; label: string }> = {
     ISO27001: { icon: 'shield', label: 'ISO/IEC 27001:2022' },
@@ -81,6 +83,7 @@ export default function CycleDetailPage() {
     const cycleId = params.cycleId as string;
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
     const toast = useToast();
+    const access = useAuditReadinessAccess();
 
     const [creating, setCreating] = useState(false);
     // #3681 — the agent-audit reliance pack is assembled and frozen in one
@@ -99,7 +102,17 @@ export default function CycleDetailPage() {
     // network blip (retryable), `data === null` is the genuine 404 — before,
     // an un-caught rejection left `cycle` null and the !cycle branch
     // masqueraded as "not found".
-    const cycleQuery = useTenantSWR<AuditCycleDetail | null>(CACHE_KEYS.audits.cycle(cycleId));
+    //
+    // #4129 — but the server never answers a missing cycle with `null`: it
+    // throws `notFound`, `apiGet` throws on the 404, and the error branch won,
+    // so "not found" was unreachable. A 404 is now latched as `missing` (a
+    // later blip must not turn it into a retry screen); any other error is
+    // still the outage.
+    const [missing, setMissing] = useState(false);
+    const cycleQuery = useTenantSWR<AuditCycleDetail | null>(CACHE_KEYS.audits.cycle(cycleId), {
+        onError: (e) => { if (isNotFoundError(e)) setMissing(true); },
+        onSuccess: () => setMissing(false),
+    });
     const cycle = cycleQuery.data ?? null;
 
     // The preview is advisory — it only populates the "what would a default
@@ -127,7 +140,7 @@ export default function CycleDetailPage() {
     // revalidation (focus / reconnect) must not replace a page that still holds
     // good data, and the guard is `data === undefined` rather than `!data`
     // because `null` is this endpoint's SUCCESSFUL "no such cycle" answer.
-    const loadError = Boolean(cycleQuery.error) && cycleQuery.data === undefined;
+    const loadError = Boolean(cycleQuery.error) && cycleQuery.data === undefined && !missing;
     const load = useCallback(() => {
         void cycleQuery.mutate();
         void previewQuery.mutate();
@@ -144,8 +157,10 @@ export default function CycleDetailPage() {
                 body: JSON.stringify({ auditCycleId: cycleId, name: tx('cycleDetail.defaultPackName', { framework: cycle.frameworkKey }) }),
             });
             if (!packRes.ok) {
+                // `apiErrorMessage`, not `err.message`: the API puts the reason
+                // under `error.message`, so the old read always fell back.
                 const err = await packRes.json().catch(() => null);
-                toast.error(err?.message || tx('cycleDetail.createPackError'));
+                toast.error(apiErrorMessage(err, tx('cycleDetail.createPackError')));
                 setCreating(false);
                 return;
             }
@@ -166,7 +181,10 @@ export default function CycleDetailPage() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ items }),
                     });
-                    if (!itemsRes.ok) toast.error(tx('cycleDetail.addItemsError'));
+                    if (!itemsRes.ok) {
+                        const err = await itemsRes.json().catch(() => null);
+                        toast.error(apiErrorMessage(err, tx('cycleDetail.addItemsError')));
+                    }
                 }
             }
             router.push(`/t/${tenantSlug}/audits/packs/${pack.id}`);
@@ -186,7 +204,9 @@ export default function CycleDetailPage() {
             });
             const body = await res.json().catch(() => null);
             if (!res.ok) {
-                setRelianceRefusal(body?.message || tx('cycleDetail.relianceError'));
+                // The named refusal (`NO_WORKPAPERS_IN_PERIOD`, …) is the
+                // ConflictError's message, under `error.message` (#4129).
+                setRelianceRefusal(apiErrorMessage(body, tx('cycleDetail.relianceError')));
                 return;
             }
             router.push(`/t/${tenantSlug}/audits/packs/${body.packId}`);
@@ -213,7 +233,10 @@ export default function CycleDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status }),
             });
-            if (!res.ok) throw new Error(tx('cycleDetail.statusError'));
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, tx('cycleDetail.statusError')));
+            }
             return res.json().catch(() => null);
         },
         // The cycle list shows each cycle's status badge.
@@ -225,9 +248,10 @@ export default function CycleDetailPage() {
         if (!cycle || status === cycle.status) return;
         try {
             await statusMutation.trigger(status);
-            toast.success(tx('cycleDetail.statusChanged', { status }));
-        } catch {
-            toast.error(tx('cycleDetail.statusError'));
+            // The label, not the stored value (`IN_PROGRESS`) — #4129.
+            toast.success(tx('cycleDetail.statusChanged', { status: tx(`cycleStatus.${status}` as Parameters<typeof tx>[0]) }));
+        } catch (e) {
+            toast.error(e instanceof Error && e.message ? e.message : tx('cycleDetail.statusError'));
         }
     };
 
@@ -240,6 +264,13 @@ export default function CycleDetailPage() {
     if (loading) {
         return (
             <EntityDetailLayout loading title="" breadcrumbs={breadcrumbs}>
+                <></>
+            </EntityDetailLayout>
+        );
+    }
+    if (missing) {
+        return (
+            <EntityDetailLayout empty={{ message: tx('cycleDetail.notFound') }} title="" breadcrumbs={breadcrumbs}>
                 <></>
             </EntityDetailLayout>
         );
@@ -303,16 +334,20 @@ export default function CycleDetailPage() {
             }
             actions={
                 <>
-                    {/* feat/audit-cycle-unify — advance/close the cycle. */}
-                    <Combobox
-                        id="cycle-status-select"
-                        hideSearch
-                        options={CYCLE_STATUSES.map((s): ComboboxOption => ({ value: s, label: tx(`cycleStatus.${s}` as Parameters<typeof tx>[0]) }))}
-                        selected={{ value: cycle.status, label: tx(`cycleStatus.${cycle.status}` as Parameters<typeof tx>[0]) }}
-                        setSelected={(opt) => { if (opt) void changeStatus(opt.value); }}
-                        disabled={savingStatus}
-                        buttonProps={{ variant: 'secondary', className: 'text-sm' }}
-                    />
+                    {/* feat/audit-cycle-unify — advance/close the cycle. Only
+                        for the roles the server lets change it (#4129); the
+                        status itself is in the meta strip for everyone. */}
+                    {access.manageCycles && (
+                        <Combobox
+                            id="cycle-status-select"
+                            hideSearch
+                            options={CYCLE_STATUSES.map((s): ComboboxOption => ({ value: s, label: tx(`cycleStatus.${s}` as Parameters<typeof tx>[0]) }))}
+                            selected={{ value: cycle.status, label: tx(`cycleStatus.${cycle.status}` as Parameters<typeof tx>[0]) }}
+                            setSelected={(opt) => { if (opt) void changeStatus(opt.value); }}
+                            disabled={savingStatus}
+                            buttonProps={{ variant: 'secondary', className: 'text-sm' }}
+                        />
+                    )}
                     <Link
                         href={`/t/${tenantSlug}/audits/cycles/${cycleId}/readiness`}
                         className={buttonVariants({ variant: 'secondary', size: 'sm' })}
@@ -327,9 +362,13 @@ export default function CycleDetailPage() {
             <div className={cn(cardVariants(), 'space-y-default')}>
                 <div className="flex items-center justify-between">
                     <Heading level={2}>{tx('cycleDetail.defaultPackPreview')}</Heading>
-                    <Button variant="primary" onClick={createDefaultPack} disabled={creating || preview === null} id="create-default-pack-btn" icon={<AppIcon name="package" size={16} />}>
-                        {creating ? tx('cycleDetail.creating') : tx('cycleDetail.pack')}
-                    </Button>
+                    {/* Creating the pack and adding its items: Owner, Admin,
+                        Editor — the server's rule, now the page's (#4129). */}
+                    {access.managePacks && (
+                        <Button variant="primary" onClick={createDefaultPack} disabled={creating || preview === null} id="create-default-pack-btn" icon={<AppIcon name="package" size={16} />}>
+                            {creating ? tx('cycleDetail.creating') : tx('cycleDetail.pack')}
+                        </Button>
+                    )}
                 </div>
 
                 {preview ? (
@@ -356,7 +395,10 @@ export default function CycleDetailPage() {
                 </p>
             </div>
 
-            {/* #3681 — the agent-audit reliance pack. */}
+            {/* #3681 — the agent-audit reliance pack. Shown only to who can
+                assemble it: its route takes audits.manage AND admin.manage, and
+                assembling freezes the pack (Owner, Admin) — #4129. */}
+            {access.assembleReliancePack && (
             <div className={cn(cardVariants(), 'space-y-default')} id="cycle-reliance-card">
                 <div className="flex items-center justify-between">
                     <Heading level={2}>{tx('cycleDetail.relianceTitle')}</Heading>
@@ -377,6 +419,7 @@ export default function CycleDetailPage() {
                     </p>
                 )}
             </div>
+            )}
 
             {/* feat/audit-cycle-unify — fieldwork audits attached to this cycle. */}
             <div className="space-y-compact">
@@ -412,7 +455,7 @@ export default function CycleDetailPage() {
                             className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between hover:bg-bg-muted/50 transition block')} id={`pack-link-${p.id}`}>
                             <div>
                                 <span className="font-medium text-sm">{p.name}</span>
-                                <StatusBadge variant={AUDIT_PACK_STATUS_VARIANT[p.status] ?? DEFAULT_STATUS_VARIANT} className="ml-2">{p.status}</StatusBadge>
+                                <StatusBadge variant={AUDIT_PACK_STATUS_VARIANT[p.status] ?? DEFAULT_STATUS_VARIANT} className="ml-2">{tx(`packStatus.${p.status}` as Parameters<typeof tx>[0])}</StatusBadge>
                             </div>
                             <span className="text-xs text-content-subtle">→</span>
                         </Link>

@@ -77,7 +77,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { REPO_ROOT } from '../helpers/repo-files';
-import { callExpressionOf, declarationOf } from '../helpers/source-blocks';
+import { callExpressionOf, codeOf, declarationOf } from '../helpers/source-blocks';
 import { computeLibraryTextHash, parseLibraryFile, scanLibraryDirectory } from '@/app-layer/libraries';
 
 const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
@@ -342,5 +342,54 @@ describe("a library's text change reaches a database that already holds it", () 
             ];
         });
         expect(stale).toEqual([]);
+    });
+});
+
+/**
+ * ═══ A SEEDED DEV OR E2E DATABASE GETS WHAT THE CONTAINER START GIVES ═══
+ *
+ * `prisma/seed.ts` builds the dev and E2E databases and is not run on a deploy.
+ * It now calls `syncLibrariesAtStartup`, the function the container start
+ * calls, so those databases get the library rows and every crosswalk.
+ *
+ * The sync leaves alone every framework row a catalogue owns (one with a
+ * pack). Two catalogues declare the same key as their library (AIUC-1, COSO),
+ * and in production the catalogue writes that row first. If `seed.ts` stops
+ * applying one of them, or applies it after the sync, the sync finds no
+ * catalogue row, writes the library's instead, and the framework has the
+ * opposite owner in dev and E2E with no pack to install. Nothing else fails:
+ * the crosswalks resolve against either row. So each such catalogue must be
+ * applied in `seed.ts` before the sync. The population is derived, not listed:
+ * the catalogue seeder's fixtures whose framework key a library also declares.
+ */
+const SEED = 'prisma/seed.ts';
+
+describe('a seeded dev or E2E database gets what the container start gives', () => {
+    const seed = codeOf(read(SEED));
+    const libraryKeys = new Set(
+        scanLibraryDirectory(LIBRARIES_DIR).map((e) => parseLibraryFile(e.filePath).objects.framework.ref_id),
+    );
+    const sharedKey = [...catalogFixtures()].filter((file) => {
+        const fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8')) as {
+            framework?: { key?: string };
+        };
+        return fixture.framework?.key !== undefined && libraryKeys.has(fixture.framework.key);
+    });
+
+    it('finds the catalogues that share a key with their library (denominator)', () => {
+        expect(sharedKey.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('the seed runs the container start\'s library sync', () => {
+        expect(callExpressionOf(seed, 'syncLibrariesAtStartup')).toMatch(/^syncLibrariesAtStartup\(prisma,/);
+    });
+
+    it('the seed applies each of those catalogues before the sync', () => {
+        const sync = seed.indexOf('syncLibrariesAtStartup(');
+        const late = sharedKey.filter((file) => {
+            const at = seed.indexOf(`'prisma/fixtures/${file}'`);
+            return at < 0 || at > sync;
+        });
+        expect(late).toEqual([]);
     });
 });

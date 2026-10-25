@@ -2,18 +2,10 @@
 /**
  * Unit tests for `src/app-layer/usecases/framework/fixtures.ts`.
  *
- * Wave-10 / stage-3h branch coverage. Two exported functions:
- *
- *   - `upsertRequirements` — framework-bulk import/update with
- *     optional deprecation of missing rows. Branches:
- *       • policy gate (assertCanInstallFrameworkPack)
- *       • framework not found
- *       • empty fixture array
- *       • duplicate codes within the fixture
- *       • existing requirement → update (un-deprecate) + sortOrder
- *         fallback to existing
- *       • new requirement → create + sortOrder default 0
- *       • deprecateMissing on → updateMany with `notIn(codes)`
+ * Wave-10 / stage-3h branch coverage. The module's one export (its
+ * requirement writer, `upsertRequirements`, was removed in the #4125
+ * follow-up: framework requirements are a global catalogue no workspace
+ * may rewrite):
  *
  *   - `computeRequirementsDiff` — produces added / removed / changed
  *     sets + unmapped-new-requirements count. Branches:
@@ -32,7 +24,6 @@
 const policyCalls: string[] = [];
 
 jest.mock('@/app-layer/policies/framework.policies', () => ({
-    assertCanInstallFrameworkPack: jest.fn(() => policyCalls.push('install')),
     assertCanViewFrameworks: jest.fn(() => policyCalls.push('view')),
 }));
 
@@ -63,7 +54,7 @@ jest.mock('@/lib/db-context', () => {
     };
 });
 
-import { upsertRequirements, computeRequirementsDiff } from '@/app-layer/usecases/framework/fixtures';
+import { computeRequirementsDiff } from '@/app-layer/usecases/framework/fixtures';
 import { makeRequestContext } from '../../helpers/make-context';
 
 beforeEach(() => {
@@ -78,148 +69,6 @@ beforeEach(() => {
 });
 
 const ctx = makeRequestContext('ADMIN');
-
-describe('upsertRequirements — guard rails', () => {
-    it('invokes assertCanInstallFrameworkPack before any read', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
-        prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
-        await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'Access control' },
-        ]);
-        expect(policyCalls[0]).toBe('install');
-    });
-
-    it('throws notFound when the framework key does not resolve', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue(null);
-        await expect(
-            upsertRequirements(ctx, 'missing', [{ code: 'X', title: 'Y' }]),
-        ).rejects.toThrow(/Framework not found/);
-    });
-
-    it('throws badRequest when the fixture is empty', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        await expect(upsertRequirements(ctx, 'iso', [])).rejects.toThrow(
-            /At least one requirement required/,
-        );
-    });
-
-    it('throws badRequest with the duplicate code list when codes collide', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        await expect(
-            upsertRequirements(ctx, 'iso', [
-                { code: 'A.1', title: 'First' },
-                { code: 'A.2', title: 'Second' },
-                { code: 'A.1', title: 'Dup' },
-                { code: 'A.2', title: 'Dup2' },
-            ]),
-        ).rejects.toThrow(/Duplicate requirement codes in fixture: A.1, A.2/);
-        // The unique-set check happens BEFORE any DB write — no
-        // upsert side-effects when validation rejects.
-        expect(prismaMock.frameworkRequirement.create).not.toHaveBeenCalled();
-        expect(prismaMock.frameworkRequirement.update).not.toHaveBeenCalled();
-    });
-});
-
-describe('upsertRequirements — create/update paths', () => {
-    it('creates a brand-new requirement with sortOrder default 0', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
-        prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
-        const result = await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'Access control' },
-        ]);
-        expect(prismaMock.frameworkRequirement.create).toHaveBeenCalledWith({
-            data: expect.objectContaining({
-                code: 'A.5.1',
-                title: 'Access control',
-                sortOrder: 0,
-            }),
-        });
-        expect(result).toEqual({
-            frameworkKey: 'iso',
-            created: 1,
-            updated: 0,
-            deprecated: 0,
-        });
-    });
-
-    it('updates an existing requirement and un-deprecates it (deprecatedAt: null)', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        prismaMock.frameworkRequirement.findUnique.mockResolvedValue({
-            id: 'r-existing',
-            sortOrder: 42,
-            deprecatedAt: new Date('2025-01-01'),
-        });
-        prismaMock.frameworkRequirement.update.mockResolvedValue({ id: 'r-existing' });
-        const result = await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'Access control (revised)' },
-        ]);
-        expect(prismaMock.frameworkRequirement.update).toHaveBeenCalledWith({
-            where: { id: 'r-existing' },
-            data: expect.objectContaining({
-                title: 'Access control (revised)',
-                // Falls back to existing.sortOrder when the fixture
-                // omits the field.
-                sortOrder: 42,
-                deprecatedAt: null,
-            }),
-        });
-        expect(result).toEqual({
-            frameworkKey: 'iso',
-            created: 0,
-            updated: 1,
-            deprecated: 0,
-        });
-    });
-
-    it('uses explicit sortOrder from the fixture when provided', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
-        prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
-        await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'X', sortOrder: 17 },
-        ]);
-        expect(prismaMock.frameworkRequirement.create).toHaveBeenCalledWith({
-            data: expect.objectContaining({ sortOrder: 17 }),
-        });
-    });
-
-    it('deprecateMissing: true → updateMany sets deprecatedAt on rows not in the fixture', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
-        prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
-        prismaMock.frameworkRequirement.updateMany.mockResolvedValue({ count: 4 });
-
-        const result = await upsertRequirements(
-            ctx,
-            'iso',
-            [{ code: 'A.5.1', title: 'X' }],
-            { deprecateMissing: true },
-        );
-
-        expect(prismaMock.frameworkRequirement.updateMany).toHaveBeenCalledWith({
-            where: {
-                frameworkId: 'fw-1',
-                code: { notIn: ['A.5.1'] },
-                deprecatedAt: null,
-            },
-            data: { deprecatedAt: expect.any(Date) },
-        });
-        expect(result.deprecated).toBe(4);
-    });
-
-    it('deprecateMissing default (false) → updateMany never runs', async () => {
-        prismaMock.framework.findFirst.mockResolvedValue({ id: 'fw-1', key: 'iso' });
-        prismaMock.frameworkRequirement.findUnique.mockResolvedValue(null);
-        prismaMock.frameworkRequirement.create.mockResolvedValue({ id: 'r-1' });
-        const result = await upsertRequirements(ctx, 'iso', [
-            { code: 'A.5.1', title: 'X' },
-        ]);
-        expect(prismaMock.frameworkRequirement.updateMany).not.toHaveBeenCalled();
-        expect(result.deprecated).toBe(0);
-    });
-});
 
 describe('computeRequirementsDiff — guard rails', () => {
     it('invokes assertCanViewFrameworks (read-only diff)', async () => {

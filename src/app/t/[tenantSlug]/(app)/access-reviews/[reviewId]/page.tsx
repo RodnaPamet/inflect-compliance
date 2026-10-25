@@ -30,6 +30,10 @@ export default async function AccessReviewDetailPage({
             initialReview={review}
             currentUserId={ctx.userId}
             isAdmin={ctx.permissions.canAdmin}
+            // #4130 — each affordance follows BOTH gates its server path
+            // takes: the route's key and the usecase's `assertCanAdmin`.
+            canManage={ctx.permissions.canAdmin && ctx.appPermissions.access_reviews.create}
+            canRegenerateEvidence={ctx.permissions.canAdmin && ctx.appPermissions.access_reviews.close}
         />
     );
 }

@@ -21,9 +21,9 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { cardVariants } from '@/components/ui/card';
 import { Plus, UserPlus, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
-import { RequirePermission } from '@/components/require-permission';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';
+import { useAuditReadinessAccess } from '../_lib/use-audit-access';
 import { cn } from '@inflect/ui/lib/cn';
 
 interface PackAccessRef { auditPackId: string; grantedAt: string }
@@ -47,6 +47,9 @@ export default function AuditorsManagementPage() {
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
     const tx = useTranslations('audits');
     const toast = useToast();
+    // #4129 — the auditor list is Owner and Admin only (`assertCanManageAuditors`),
+    // and for anyone else the refused read used to render "No auditors yet".
+    const access = useAuditReadinessAccess();
 
     const [inviteOpen, setInviteOpen] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
@@ -67,13 +70,19 @@ export default function AuditorsManagementPage() {
     // Two `fetch` + `useEffect` + `useState` triples became two SWR keys, on
     // the same strings the mutations below target — a mutation keyed on a
     // near-miss string updates nothing and reads as a slow network.
-    const auditorsQuery = useTenantSWR<AuditorRow[]>(CACHE_KEYS.audits.auditors());
+    //
+    // A role the server refuses is not asked at all; it is told why below.
+    const auditorsQuery = useTenantSWR<AuditorRow[]>(access.manageAuditors ? CACHE_KEYS.audits.auditors() : null);
     const auditors = auditorsQuery.data ?? [];
     const loading = auditorsQuery.isLoading;
+    // An outage is not a first run: a failed FIRST read shows the load error
+    // with Retry, never "No auditors yet". A failed background revalidation
+    // keeps the list on screen.
+    const loadFailed = Boolean(auditorsQuery.error) && auditorsQuery.data === undefined;
 
     // The pack list only names grants; a failure degrades to the id fallback
     // rather than blocking the page, which is what the old `.catch` did.
-    const packsQuery = useTenantSWR<PackRow[]>(CACHE_KEYS.audits.packs());
+    const packsQuery = useTenantSWR<PackRow[]>(access.manageAuditors ? CACHE_KEYS.audits.packs() : null);
     const packs = packsQuery.data ?? [];
 
     const auditorsData = auditorsQuery.data;
@@ -305,7 +314,7 @@ export default function AuditorsManagementPage() {
                     <Heading level={1} id="auditors-admin-heading">{tx('auditorsAdmin.title')}</Heading>
                     <p className="text-content-muted text-sm">{tx('auditorsAdmin.subtitle')}</p>
                 </div>
-                <RequirePermission resource="audits" action="manage">
+                {access.manageAuditors && (
                     <Button
                         variant="primary"
                         icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -314,10 +323,28 @@ export default function AuditorsManagementPage() {
                     >
                         {tx('auditorsAdmin.inviteAuditor')}
                     </Button>
-                </RequirePermission>
+                )}
             </div>
 
-            {auditors.length === 0 ? (
+            {!access.manageAuditors ? (
+                <div className={cardVariants({ density: 'none' })} id="auditors-restricted">
+                    <EmptyState
+                        variant="missing-prereqs"
+                        icon={UserPlus}
+                        title={tx('auditorsAdmin.restrictedTitle')}
+                        description={tx('auditorsAdmin.restrictedDesc')}
+                    />
+                </div>
+            ) : loadFailed ? (
+                <div className={cardVariants({ density: 'none' })} id="auditors-load-error">
+                    <EmptyState
+                        variant="missing-prereqs"
+                        title={tx('auditorsAdmin.loadErrorTitle')}
+                        description={tx('auditorsAdmin.loadError')}
+                        primaryAction={{ label: tx('auditorsAdmin.retry'), onClick: () => { void loadAuditors(); } }}
+                    />
+                </div>
+            ) : auditors.length === 0 ? (
                 <div className={cardVariants({ density: 'none' })}>
                     <EmptyState
                         icon={UserPlus}
@@ -348,7 +375,7 @@ export default function AuditorsManagementPage() {
                                     <div className="flex items-center gap-tight">
                                         <StatusBadge variant={STATUS_BADGE[a.status]}>{tx(`auditorsAdmin.status${a.status}`)}</StatusBadge>
                                         <span className="text-xs text-content-subtle">{tx('auditorsAdmin.invitedOn', { date: formatDate(a.createdAt) })}</span>
-                                        {a.status !== 'REVOKED' && (
+                                        {a.status !== 'REVOKED' && access.changeAuditorAccess && (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -371,6 +398,7 @@ export default function AuditorsManagementPage() {
                                                 <li key={pa.auditPackId} className="inline-flex items-center gap-tight rounded-full border border-border-subtle bg-bg-elevated px-2 py-1 text-xs">
                                                     <AppIcon name="package" size={12} />
                                                     <span className="truncate max-w-trunc-default">{packName(pa.auditPackId)}</span>
+                                                    {access.changeAuditorAccess && (
                                                     <Tooltip content={tx('auditorsAdmin.revokeAccessAria', { pack: packName(pa.auditPackId) })}>
                                                         <Button
                                                             variant="ghost"
@@ -382,13 +410,14 @@ export default function AuditorsManagementPage() {
                                                             id={`revoke-access-${a.id}-${pa.auditPackId}`}
                                                         />
                                                     </Tooltip>
+                                                    )}
                                                 </li>
                                             ))}
                                         </ul>
                                     )}
                                 </div>
 
-                                {isRevoked ? (
+                                {!access.changeAuditorAccess ? null : isRevoked ? (
                                     <p className="text-xs text-content-subtle">{tx('auditorsAdmin.grantRevokedNote')}</p>
                                 ) : (
                                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-tight">

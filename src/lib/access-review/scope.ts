@@ -108,6 +108,20 @@ export const AGENT_CAMPAIGN_REFUSAL = 'AGENT_CAMPAIGN_NOT_AVAILABLE';
 export const AGENT_CAMPAIGN_OWN_FLOW = 'AGENT_CAMPAIGN_OWN_FLOW';
 
 /**
+ * May an open campaign of this scope have its reviewer and due date changed
+ * (`updateAccessReviewSettings`, #4130)?
+ *
+ * Every scope but AGENT. An AGENT campaign's reviewer is a READER of register
+ * data (`mayReadAgentSubjects`), named when the agent flow creates it, and that
+ * flow has no verb that moves it; changing who reads the register is the agent
+ * flow's decision to make, not a side effect of a generic settings edit. One
+ * predicate, so the usecase, the overdue email and the page cannot disagree.
+ */
+export function campaignSettingsEditable(scope: string): boolean {
+    return scope !== 'AGENT';
+}
+
+/**
  * May this caller read an AGENT campaign's SUBJECTS?
  *
  * A subject is a registered agent. The register itself is read under the

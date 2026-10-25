@@ -110,6 +110,7 @@ function makeMappingResult(overrides: Partial<ImportMappingSetResult> = {}): Imp
         targetFrameworkRef: 'NIST-CSF-2.0',
         created: 14,
         updated: 0,
+        retired: 0,
         skippedDuplicate: false,
         errors: [],
         ...overrides,
