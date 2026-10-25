@@ -436,6 +436,82 @@ describe('the audit trail fingerprints the loadable set', () => {
     });
 });
 
+// ─────── the caller-supplied check, and where it sits in the funnel ───────
+
+/**
+ * `runReadTool`'s `afterAuthorize` hook (#4205).
+ *
+ * `/api/mcp` scans a direct caller's read arguments through this hook. It used
+ * to scan in the route, ahead of this whole function, which meant a made-up
+ * tool name carrying secret-shaped arguments wrote a hash-chained
+ * `AI_GUARD_EGRESS_*` row — streamed to the tenant's SIEM — and a call the gate
+ * would have refused was reported as `ai_guard_blocked` with no `AUTHZ_DENIED`
+ * row for the refusal that actually applied.
+ *
+ * These three assertions are the ones the ROUTE's own suite cannot make: it
+ * mocks this registry, so its mock invokes the hook itself and would stay green
+ * if the real funnel stopped calling it. Found exactly that way — gutting the
+ * call here reddened nothing over there.
+ */
+describe('afterAuthorize runs inside the funnel, after the gate and before the call', () => {
+    it('is never reached for a name this build does not know', async () => {
+        const inv = invocationFor();
+        let scanned = 0;
+
+        await expect(
+            runReadTool(inv, 'no_such_tool', {}, {
+                afterAuthorize: async () => {
+                    scanned += 1;
+                },
+            }),
+        ).rejects.toBeInstanceOf(McpToolNotFoundError);
+
+        // Step 0 refused, so no row of the caller's choosing was written.
+        expect(scanned).toBe(0);
+        expect(denials()).toEqual([]);
+    });
+
+    it('is never reached when the gate refuses, which audits its own row instead', async () => {
+        const inv = invocationFor({
+            offered: CATALOGUE.filter((n) => n !== 'get_framework_status'),
+        });
+        let scanned = 0;
+
+        await refusalOf(() =>
+            runReadTool(inv, 'get_framework_status', {}, {
+                afterAuthorize: async () => {
+                    scanned += 1;
+                },
+            }),
+        );
+
+        expect(scanned).toBe(0);
+        // The refusal that actually applied is the one on the record.
+        expect(denials()).toHaveLength(1);
+    });
+
+    it('runs for an authorized call, and a throw from it stops the call executing', async () => {
+        const inv = invocationFor({ granted: ['list_risks'] });
+        let scanned = 0;
+
+        await expect(
+            runReadTool(inv, 'list_risks', {}, {
+                afterAuthorize: async () => {
+                    scanned += 1;
+                    throw new Error('scan refused this call');
+                },
+            }),
+        ).rejects.toThrow('scan refused this call');
+
+        // Both halves matter. That it RAN is what a dropped call would break;
+        // that the call left no invocation row is what proves it ran BEFORE
+        // step 3 rather than after a read had already happened — the property
+        // the scan was in the route to get, and the one it keeps here.
+        expect(scanned).toBe(1);
+        expect(invocations()).toEqual([]);
+    });
+});
+
 // ──────────── the propose funnel's own refusals, before any write ────────────
 
 /**
