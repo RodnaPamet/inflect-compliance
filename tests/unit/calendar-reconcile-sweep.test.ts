@@ -274,7 +274,6 @@ describe('the sweep needs no knowledge of how permissions changed', () => {
         // transitive imports of the kind that made the calendar aggregation
         // unimportable there until #1990 cut the edge. Connection-level errors
         // are therefore detected by NAME.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const fs = require('node:fs') as typeof import('node:fs');
         const src = fs.readFileSync(
             require('node:path').resolve(__dirname, '../../src/app-layer/usecases/calendar-reconcile-sweep.ts'),

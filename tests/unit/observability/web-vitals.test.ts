@@ -108,6 +108,78 @@ describe('web-vitals recorder', () => {
         });
     });
 
+    describe('navigationId reaches the LOG and never a metric label (#4194)', () => {
+        // It is the only field that separates a replayed metric from a
+        // legitimate soft-navigation re-report, and those mean opposite things
+        // for a baseline. Measured before it was carried: one LCP value emitted
+        // six times with every beacon `navigate` — which cannot be a soft-nav
+        // re-report — so the replay was real but only provable for the handful
+        // of rows where no soft navigation was involved.
+        //
+        // Asserted on the LOG rather than on "it does not throw", which the
+        // sibling navigationType case settles for and which would pass if the
+        // field were dropped entirely.
+        const load = () => {
+            const logged: Array<Record<string, unknown>> = [];
+            const recorded: Array<Record<string, unknown>> = [];
+            jest.resetModules();
+            jest.doMock('@/lib/observability/logger', () => ({
+                log: (_l: string, _m: string, fields: Record<string, unknown>) => {
+                    logged.push(fields);
+                },
+            }));
+            jest.doMock('@opentelemetry/api', () => ({
+                metrics: {
+                    getMeter: () => ({
+                        createHistogram: () => ({
+                            record: (_v: number, attrs: Record<string, unknown>) => {
+                                recorded.push(attrs);
+                            },
+                        }),
+                    }),
+                },
+            }));
+             
+            const mod = require('@/lib/observability/web-vitals');
+            return { mod, logged, recorded };
+        };
+
+        it('logs the navigationId it was given', () => {
+            const { mod, logged } = load();
+            mod.recordWebVital({
+                name: 'LCP', value: 741.7, rating: 'good',
+                route: '/t/acme/dashboard', navigationType: 'soft-navigation',
+                navigationId: 'nav-7',
+            });
+            expect(logged).toHaveLength(1);
+            expect(logged[0]).toMatchObject({ vital: 'LCP', navigationId: 'nav-7' });
+        });
+
+        it('logs null when it is absent, so a missing id is not a missing field', () => {
+            // A beacon from a client that does not send it must be
+            // distinguishable from one where the field was dropped in transit.
+            const { mod, logged } = load();
+            mod.recordWebVital({ name: 'LCP', value: 1, route: '/x' });
+            expect(logged[0]).toHaveProperty('navigationId', null);
+        });
+
+        it('keeps it OUT of the histogram attributes, which are bounded', () => {
+            // The cardinality guarantee this module exists to hold. A
+            // navigationId is per-navigation, so one label would make the
+            // series unbounded — the exact failure the three fixed attributes
+            // are chosen to avoid.
+            const { mod, recorded } = load();
+            mod.recordWebVital({
+                name: 'LCP', value: 741.7, rating: 'good',
+                route: '/t/acme/dashboard', navigationId: 'nav-7',
+            });
+            expect(recorded).toHaveLength(1);
+            expect(Object.keys(recorded[0]!).sort()).toEqual([
+                'http.route', 'web.vital', 'web.vital.rating',
+            ]);
+        });
+    });
+
     describe('acceptVitalBeacon — per-IP limiter', () => {
         it('passes normal volume and caps a flood', () => {
             const ip = `1.2.3.${Math.floor(Math.random() * 1000)}`;

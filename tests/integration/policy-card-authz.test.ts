@@ -180,8 +180,8 @@ describeFn('editing a policy card is privileged (real route, real DB)', () => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
                 await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
             }).catch(() => {});
-            await prisma.tenant.deleteMany({ where: { id: TENANT } }).catch(() => {});
-            await prisma.user.deleteMany({ where: { id: USER } }).catch(() => {});
+            await prisma.tenant.deleteMany({ where: { id: TENANT } });
+            await prisma.user.deleteMany({ where: { id: USER } });
         }
         await prisma.$disconnect();
     });

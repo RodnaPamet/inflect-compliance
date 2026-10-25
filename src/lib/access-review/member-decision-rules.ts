@@ -13,10 +13,10 @@
  *   2. Demoting or revoking an OWNER membership needs a closer holding
  *      `admin.owner_management`. The last-OWNER guard applies as well.
  *   3. A MODIFY sets a built-in role only, never a custom role.
- *   4. Changing an AI admin's role needs a closer holding
+ *   4. Changing an AI admin's role, or revoking one, needs a closer holding
  *      `admin.owner_management`, as it does on the members page, where only an
- *      OWNER moves a member out of that role (#4130). A REVOKE of one is not
- *      refused here: the members page lets an ADMIN deactivate one too.
+ *      OWNER moves a member out of that role (#4130) or deactivates one
+ *      (#4118).
  *   5. Nobody decides the row whose subject is themselves — not the assigned
  *      reviewer, not an ADMIN, not an OWNER (#4130). A reviewer certifying
  *      their own access is the segregation-of-duties failure an access review
@@ -50,7 +50,7 @@ export const MEMBER_DECISION_REFUSAL_MESSAGE: Readonly<Record<MemberDecisionRefu
     OWNER_SUBJECT_NEEDS_OWNER_CLOSER:
         'Demoting or revoking an OWNER membership through a campaign is an OWNER’s change: only an OWNER can close this campaign.',
     AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER:
-        'Changing an AI admin’s role through a campaign is an OWNER’s change, as it is on the members page: only an OWNER can close this campaign.',
+        'Changing or revoking an AI admin’s access through a campaign is an OWNER’s change, as it is on the members page: only an OWNER can close this campaign.',
     CAMPAIGN_SUBJECT_MAY_NOT_DECIDE_OWN_ACCESS:
         'Nobody records, changes or discards the decision on their own access: somebody else — the campaign’s reviewer, or another OWNER or ADMIN — decides that row.',
 };

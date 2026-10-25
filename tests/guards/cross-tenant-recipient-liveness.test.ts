@@ -135,7 +135,6 @@ describe('cross-tenant recipient resolution requires a live tenant', () => {
      * fails here and gets classified by a human rather than slipping in.
      */
     it('the class has exactly the members we have classified', () => {
-        // eslint-disable-next-line no-console
         console.log(`recipient-resolving jobs: ${files.length}\n  ${files.join('\n  ')}`);
         expect(files.sort()).toEqual([
             'src/app-layer/jobs/access-review-overdue-escalation.ts',

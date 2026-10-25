@@ -151,6 +151,50 @@ describe('revokeUserSessions — self vs other', () => {
     });
 });
 
+describe('revokeUserSessions — an Owner or AI admin is an Owner\'s to sign out (owner decision, 2026-10-25)', () => {
+    const member = (role: string) =>
+        mockMembershipFindUnique.mockResolvedValueOnce({ id: 'm1', tenantId: 'tenant-1', userId: 'other', role } as never);
+
+    it.each(['OWNER', 'AI_ADMIN'])('refuses an ADMIN revoking a %s, by name, and revokes nothing', async (role) => {
+        member(role);
+        const err = await revokeUserSessions(makeRequestContext('ADMIN'), 'other').catch((e) => e);
+        expect(err).toMatchObject({
+            status: 403,
+            details: { reason: 'REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER' },
+        });
+        expect(err.message).toBe(`Only an OWNER can revoke an ${role}'s sessions.`);
+        expect(mockUserUpdate).not.toHaveBeenCalled();
+        expect(mockSessionUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it.each(['OWNER', 'AI_ADMIN'])('lets an OWNER revoke a %s', async (role) => {
+        member(role);
+        await revokeUserSessions(makeRequestContext('OWNER'), 'other');
+        expect(mockUserUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'other' } }));
+    });
+
+    it('still lets an ADMIN revoke an EDITOR or another ADMIN', async () => {
+        member('EDITOR');
+        await revokeUserSessions(makeRequestContext('ADMIN'), 'other');
+        member('ADMIN');
+        await revokeUserSessions(makeRequestContext('ADMIN'), 'other');
+        expect(mockUserUpdate).toHaveBeenCalledTimes(2);
+    });
+
+    it('still lets an Owner-managed member revoke their own sessions', async () => {
+        const ctx = makeRequestContext('AI_ADMIN');
+        await revokeUserSessions(ctx, ctx.userId);
+        expect(mockUserUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: ctx.userId } }));
+    });
+
+    it('Revoke All is not narrowed: an ADMIN still signs out every active member, Owners included', async () => {
+        mockMembershipFindMany.mockResolvedValueOnce([{ userId: 'owner-1' }, { userId: 'ai-1' }] as never);
+        const result = await revokeAllTenantSessions(makeRequestContext('ADMIN'), null);
+        expect(result.usersAffected).toBe(2);
+        expect(mockMembershipFindUnique).not.toHaveBeenCalled();
+    });
+});
+
 describe('revokeOtherSessions — "Sign Out Other Sessions" keeps this session', () => {
     it('revokes every OTHER row of the caller and bumps no sessionVersion', async () => {
         // #4117: this used to delegate to revokeUserSessions, whose version bump

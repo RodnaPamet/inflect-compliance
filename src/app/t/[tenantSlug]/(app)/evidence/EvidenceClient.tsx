@@ -70,7 +70,7 @@ import {
     EVIDENCE_FILTER_KEYS,
     evidenceFreshnessLabels,
 } from './filter-defs';
-import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel } from './evidence-labels';
+import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel } from '@/components/evidence/evidence-labels';
 import {
     evidenceFreshnessBucket,
     reviewCurrencyAnchor,
@@ -436,7 +436,6 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         if (ev) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setDetailEvidenceId(ev);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setDetailSheetOpen(true);
         }
     }, [searchParams]);
@@ -645,7 +644,6 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // Distinct sparkline colour per card (canonical allocator) — no two cards
     // on the row share a colour. Memo on [] so the random allocation is stable
     // for this page view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'draft', 'submitted', 'approved']),
         [],

@@ -49,7 +49,6 @@ describe('the Next image optimizer is disabled', () => {
         // file composes plugins (next-intl, bundle-analyzer) and a source-level
         // regex would pass on the flag appearing anywhere, including inside
         // the docblock that explains it.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const raw = require(CONFIG) as unknown;
         const resolved = (typeof raw === 'function' ? (raw as () => unknown)() : raw) as {
             default?: { images?: { unoptimized?: boolean } };

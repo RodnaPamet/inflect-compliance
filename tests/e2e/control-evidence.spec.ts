@@ -11,6 +11,8 @@
  * All selectors use existing id attributes — no data-testid additions.
  */
 import { randomUUID } from 'node:crypto';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 
@@ -26,14 +28,38 @@ async function createControl(page: Page, slug: string): Promise<string> {
     return new URL(page.url()).pathname;
 }
 
-/** Link a URL evidence record to the open control's Evidence tab. */
-async function linkUrlEvidence(page: Page, note: string): Promise<void> {
-    await page.click('#tab-evidence');
-    await page.click('#link-evidence-btn');
-    await page.fill('#evidence-url-input', 'https://example.com/evidence-doc');
-    await page.fill('#evidence-note-input', note);
-    await page.click('#submit-evidence-btn');
-    await expect(page.locator('#evidence-table')).toBeVisible({ timeout: 10000 });
+/**
+ * Insert a PLAIN link (a `ControlEvidenceLink` row of kind LINK) on a
+ * control, straight into the database. Nothing in the product writes one any
+ * more — a link added on the Evidence tab, in the controls list's edit panel
+ * or through `POST /controls/:id/evidence` is a library record (#4126) — but
+ * rows saved before that still show and can still be removed. Such a row is
+ * legacy data, so it is seeded the way legacy data exists: as a row. The
+ * connection is the one `global-teardown.ts` uses.
+ */
+async function seedPlainLink(
+    tenant: { tenantId: string; ownerUserId: string },
+    controlDetailPath: string,
+    note: string,
+): Promise<void> {
+    const controlId = controlDetailPath.split('/').filter(Boolean).pop() ?? '';
+    const prisma = new PrismaClient({
+        adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
+    });
+    try {
+        await prisma.controlEvidenceLink.create({
+            data: {
+                tenantId: tenant.tenantId,
+                controlId,
+                kind: 'LINK',
+                url: 'https://example.com/plain-link',
+                note,
+                createdByUserId: tenant.ownerUserId,
+            },
+        });
+    } finally {
+        await prisma.$disconnect();
+    }
 }
 
 test.describe('Control → Evidence Linking', () => {
@@ -78,14 +104,53 @@ test.describe('Control → Evidence Linking', () => {
         await authedPage.click('#tab-evidence');
         await authedPage.click('#link-evidence-btn');
         await authedPage.fill('#evidence-url-input', 'https://example.com/evidence-doc');
-        await authedPage.fill('#evidence-note-input', `Test link ${uid}`);
+        // A link is a library record, so it is named by the Title field.
+        await authedPage.fill('#control-upload-title', `Test link ${uid}`);
         await authedPage.click('#submit-evidence-btn');
 
-        await expect(authedPage.locator('#evidence-table')).toBeVisible({ timeout: 10000 });
-        await expect(authedPage.locator('#evidence-table')).toContainText('LINK');
-        await expect(authedPage.locator('#evidence-table')).toContainText(
-            'https://example.com/evidence-doc',
+        const table = authedPage.locator('#evidence-table');
+        await expect(table).toBeVisible({ timeout: 10000 });
+        await expect(table).toContainText(`Test link ${uid}`);
+        await expect(table).toContainText('https://example.com/evidence-doc');
+        // A library record, so it has a review status (#4126).
+        await expect(table).toContainText('Draft');
+
+        // …and it is in the evidence library, where it can be reviewed.
+        await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/evidence`);
+        await expect(
+            authedPage.getByRole('main').getByText(`Test link ${uid}`).first(),
+        ).toBeVisible({ timeout: 15000 });
+    });
+
+    test('a link sent to the API is a library record, titled by its note', async ({
+        authedPage,
+        isolatedTenant,
+    }) => {
+        const uid = Date.now().toString(36);
+        const controlDetailPath = await createControl(authedPage, isolatedTenant.tenantSlug);
+        const controlId = controlDetailPath.split('/').filter(Boolean).pop();
+
+        // The route the API and the controls list's edit panel share. It used
+        // to write a plain link nothing in the library could review.
+        const res = await authedPage.request.post(
+            `/api/t/${isolatedTenant.tenantSlug}/controls/${controlId}/evidence`,
+            { data: { kind: 'LINK', url: 'https://example.com/api-link', note: `API link ${uid}` } },
         );
+        expect(res.status()).toBe(201);
+        expect(await res.json()).toMatchObject({ type: 'LINK', status: 'DRAFT', title: `API link ${uid}` });
+
+        await authedPage.goto(controlDetailPath);
+        await authedPage.waitForSelector('#control-title', { timeout: 15000 });
+        await authedPage.click('#tab-evidence');
+        const table = authedPage.locator('#evidence-table');
+        await expect(table).toContainText(`API link ${uid}`, { timeout: 10000 });
+        await expect(table).toContainText('Draft');
+        await expect(table).not.toContainText('Plain link');
+
+        await authedPage.goto(`/t/${isolatedTenant.tenantSlug}/evidence`);
+        await expect(
+            authedPage.getByRole('main').getByText(`API link ${uid}`).first(),
+        ).toBeVisible({ timeout: 15000 });
     });
 
     test('the + Evidence form offers both file upload and URL link', async ({
@@ -124,8 +189,16 @@ test.describe('Control → Evidence Linking', () => {
         await authedPage.goto(controlDetailPath);
         await authedPage.waitForSelector('#control-title', { timeout: 15000 });
 
-        // This test needs a row to unlink — create one first.
-        await linkUrlEvidence(authedPage, `Test link ${uid}`);
+        // This test needs a row to unlink — seed an older plain link.
+        await seedPlainLink(isolatedTenant, controlDetailPath, `Test link ${uid}`);
+        await authedPage.reload();
+        await authedPage.waitForSelector('#control-title', { timeout: 15000 });
+        await authedPage.click('#tab-evidence');
+        await expect(authedPage.locator('#evidence-table')).toBeVisible({ timeout: 10000 });
+        // Labelled as a plain link with no review status, note included.
+        await expect(authedPage.locator('#evidence-table')).toContainText('Plain link');
+        await expect(authedPage.locator('#evidence-table')).toContainText('No review status');
+        await expect(authedPage.locator('#evidence-table')).toContainText(`Test link ${uid}`);
 
         // Count rows before
         const rowsBefore = await authedPage

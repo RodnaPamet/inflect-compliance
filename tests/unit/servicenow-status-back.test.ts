@@ -59,7 +59,6 @@ describe('an unsigned or wrongly-signed callback is rejected', () => {
     const BODY = JSON.stringify({ sys_id: 'INC1', state: '6' });
 
     function sign(body: string, secret: string): string {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const crypto = require('node:crypto') as typeof import('node:crypto');
         return crypto.createHmac('sha256', secret).update(body).digest('hex');
     }

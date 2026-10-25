@@ -116,8 +116,11 @@ import { computeNextDueAt } from '../utils/cadence';
  * a SCRIPT or INTEGRATION plan. The runner uses this to drive the
  * COMPLETE → evidence → finding flow.
  *
- * `evidenceContent` is treated as plain-text and sanitised at the
- * Evidence persistence boundary (Epic D.2 manifest).
+ * `evidenceContent` is stored on the evidence row as given; nothing below
+ * sanitises it. Every handler today composes it from rows Inflect already
+ * stores, not from a third party's answer at run time.
+ * A handler that puts a third party's text into it sanitises that text
+ * itself, as the integration writers do (`integrations/evidence-text`).
  */
 export interface AutomationHandlerResult {
     result: 'PASS' | 'FAIL' | 'INCONCLUSIVE';

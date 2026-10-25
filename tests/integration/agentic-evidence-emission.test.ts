@@ -910,7 +910,6 @@ describe('a foreign string cannot ride into the artefact body', () => {
         expect(all).not.toContain('steal()');
         // …and one label cannot inflate the body without bound. 5 KB in, and the
         // whole artefact stays far under it.
-        // eslint-disable-next-line no-console
         // The LABEL, not the whole body. `all` is every artefact for the tenant
         // joined together, so its total length says nothing about this defect —
         // the claim is that ONE foreign label cannot inflate a body without

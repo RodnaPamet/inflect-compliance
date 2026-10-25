@@ -46,7 +46,7 @@ const CONFIG = { url: 'https://mcp.example.com/rpc' };
 beforeEach(() => {
     jest.clearAllMocks();
     initializeMock.mockResolvedValue({ protocolVersion: '2025-06-18' });
-    listToolsMock.mockResolvedValue([{ name: 'q', description: 'd', inputSchema: {} }]);
+    listToolsMock.mockResolvedValue({ tools: [{ name: 'q', description: 'd', inputSchema: {} }], refusedNames: 0 });
 });
 
 describe('what the provider declares about itself', () => {
@@ -234,9 +234,12 @@ describe('validating a connection', () => {
         // nothing else — no tool list, no grant, no token. Connecting is not
         // permission, and there is no field here through which it could become
         // permission by accident.
-        listToolsMock.mockResolvedValue([
-            { name: 'dangerous_write', description: 'd', inputSchema: {} },
-        ]);
+        listToolsMock.mockResolvedValue({
+            tools: [
+                { name: 'dangerous_write', description: 'd', inputSchema: {} },
+            ],
+            refusedNames: 0,
+        });
 
         const r = await provider.validateConnection(CONFIG, {});
 
@@ -264,7 +267,7 @@ describe('a connection configured for Entra', () => {
     beforeEach(() => {
         mintMock.mockReset();
         initializeMock.mockReset().mockResolvedValue({ protocolVersion: '2025-06-18' });
-        listToolsMock.mockReset().mockResolvedValue([]);
+        listToolsMock.mockReset().mockResolvedValue({ tools: [], refusedNames: 0 });
     });
 
     it('mints a token and presents it as a Bearer header', async () => {
@@ -332,7 +335,7 @@ describe('a connection configured for Entra', () => {
         // Entra field would refuse to save a correct configuration — and the
         // #3340 both-credentials check is where that would have bitten.
         initializeMock.mockResolvedValue(undefined);
-        listToolsMock.mockResolvedValue([]);
+        listToolsMock.mockResolvedValue({ tools: [], refusedNames: 0 });
 
         const r = await provider.validateConnection(
             { url: 'https://mcp.example.com/rpc', scope: 'https://x/.default' },

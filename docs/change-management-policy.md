@@ -5,10 +5,51 @@
 > on-call rotation lives in [`docs/incident-response.md`](incident-response.md).
 
 This policy describes how changes reach production. It captures the **rapid
-release model already in effect** — semantic-release auto-versions every push to
-main, staging deploys automatically, production is gated by a GitHub Environment
-approval — and adds the written contract (approver matrix, emergency bypass,
-audit trail) that the mechanism alone does not record.
+release model already in effect** — semantic-release auto-versions main (on
+each push that leaves the merge queue empty, plus a daily run), every merge to
+`main` goes through the merge queue's required checks, and the image built
+from it reaches production without a further approval — and adds the written
+contract (approver matrix, emergency bypass, audit trail) that the mechanism
+alone does not record.
+
+## How a change reaches production
+
+This is the pipeline as it runs on 2026-10-25:
+
+1. **Merge.** A pull request reaches `main` only through the merge queue, whose
+   required checks are `Lint`, `Typecheck`, `Test`, `Build`, `Security` and
+   `Ratchets` (`ci.yml`'s required-set notes record why it is that set). This
+   is the last gate a person or a check can hold a change at.
+2. **Publish.** `.github/workflows/ghcr-publish.yml` runs on the push to `main`,
+   builds the image, Trivy-scans it, and only on a passing scan pushes it to
+   GHCR as `:latest` and `:sha-<short>`. A failed scan leaves the previous
+   `:latest` in place.
+3. **Roll out.** Watchtower on the production VM follows `:latest` and replaces
+   the `app` and `worker` containers when it moves. A change to the Compose
+   structure itself does not travel this way: it goes through
+   `deploy/apply.sh`, run by an operator (`docs/deployment.md`).
+
+Two stages this policy used to describe do not exist, and neither is implied
+by anything above (#4056):
+
+- **There is no staging environment.** Nothing deploys `docker-compose.staging.yml`;
+  `npm run smoke:staging` runs against `localhost:3000`.
+- **There is no approval between merge and production.** A `production` GitHub
+  Environment with required reviewers was created on 2026-10-24, but no
+  workflow deploys the application through it — the only workflow that names
+  it is `scanner-vm.yml`, which operates the scanner VM. Building that deploy
+  path needs CI credentials for the production VM, which this repository has
+  never had; #4056 tracks it. Until it exists, a merge is a release to
+  production within the time it takes to publish the image and for Watchtower
+  to notice it.
+
+A release waits while the merge queue is still building other entries, because
+its commit, pushed straight to main, would invalidate every candidate in flight.
+That includes a release that would raise a coverage floor: between releases the
+floor guard holds each change to its base commit, so a floor that trails the live
+count fails nothing. So one release can carry several merges, and a version, and
+the coverage floors, can trail a merge by up to a day. Deploys do not wait for it: images are published on every push
+to main. The rule is in `scripts/lib/release-queue-gate.js`.
 
 It is **not** an ITIL change-advisory-board process: the repository ships several
 production releases on a busy day (e.g. 2026-06-25 cut v1.585, v1.586, v1.587),
@@ -38,15 +79,15 @@ rule does not):
 
 | Class | What it is | Process |
 |-------|-----------|---------|
-| **STANDARD** | Routine, low-risk, fully covered by the automated pipeline. ~95% of changes. | PR review + CI green → auto-deploy to staging → GitHub Environment approval for production. |
+| **STANDARD** | Routine, low-risk, fully covered by the automated pipeline. ~95% of changes. | PR review + required checks green in the merge queue → merge → image published and rolled out by Watchtower. |
 | **SIGNIFICANT** | Schema migration, security-affecting middleware change, dependency major bump, cross-tenant data backfill. | Same as STANDARD **plus** the PR description carries a rollback plan **and** a second engineer's `Sign-off:`. |
-| **EMERGENCY** | Active production incident where the standard process would extend customer impact. | Incident commander declares EMERGENCY; the PR gets one explicit senior-engineer reviewer; the deploy fires (staging-first gate bypassed). A retrospective PR follows within 5 business days. |
+| **EMERGENCY** | Active production incident where the standard process would extend customer impact. | Incident commander declares EMERGENCY; the PR gets one explicit senior-engineer reviewer; it merges through the queue like any change and rolls out the same way. A retrospective PR follows within 5 business days. |
 
 Grounding examples from the last 30 days of `CHANGELOG.md`:
 
 - **STANDARD** — #1264 (`feat(api-docs): populate openapi.json + Swagger UI`),
   #1260 (`feat(observability): business-level KPI metrics`): feature PRs, CI
-  green, normal production approval.
+  green, merged through the queue.
 - **SIGNIFICANT** — #1267 (`infra(db): read-replica routing`) touched the Prisma
   client + a migration-class concern; #1265 (`infra(cdn): CloudFront`) changed
   infrastructure. Both warrant a rollback plan + second sign-off.
@@ -65,9 +106,9 @@ Grounding examples from the last 30 days of `CHANGELOG.md`:
 | SCIM / SSO config change | PR reviewer | Security engineer |
 | Sub-processor addition or activation | PR reviewer | Repo owner, recorded on the inventory PR |
 
-The production GitHub Environment approver (the person who clicks "Approve" on the
-gated `deploy-production` job) is recorded separately by GitHub and is part of the
-audit trail below.
+There is no production approver after merge (see "How a change reaches
+production"). The PR reviewer, and the second approver where the matrix names
+one, are the people who decide a change reaches production.
 
 ### Sub-processors: who confirms which half of step 2
 
@@ -106,10 +147,14 @@ inventory entry — not from the inventory pull request merging.
 
 The durable record an auditor can request, all retained for the life of the repo:
 
-- **Every change** = a GitHub PR + CI run + (for production) a GitHub Environment
-  approval. GitHub retains the PR, its reviews, and the deployment-approval record.
-- **Production deploys** are recorded in `CHANGELOG.md` (auto-generated by
-  semantic-release, with the PR and commit linked).
+- **Every change** = a GitHub PR + its merge-queue CI run. GitHub retains the PR,
+  its reviews and the check results. There is no deployment-approval record,
+  because there is no deployment approval (#4056).
+- **What reached production** is the `ghcr-publish.yml` run for the merge commit:
+  its image is tagged `:sha-<short>` with that commit, and its Trivy result is in
+  the run. Releases are recorded in `CHANGELOG.md` (auto-generated by
+  semantic-release, with the PR and commit linked). A release can batch several
+  merges, so every merged PR is listed within a day of merging.
 - **SIGNIFICANT+ sign-off** = the second approver's PR review, OR a PR comment /
   description line of the form `Sign-off: <name> (<reason>)`. Enforcement today is
   human PR review; a CI gate that blocks a SIGNIFICANT+ PR (conventional-commit
@@ -133,10 +178,10 @@ The durable record an auditor can request, all retained for the life of the repo
    `emergency/<incident-id>-<short-desc>`.
 3. A second engineer (any senior engineer, **not** the author) reviews and
    approves. The on-call may not self-approve their own fix.
-4. The deploy fires. The standard staging-first gate is bypassed by running the
-   deploy workflow via `workflow_dispatch` with `environment: production`
-   directly. (The normal path runs `gate → build-image → deploy-staging →
-   smoke-staging → deploy-production`; an emergency skips the staging legs.)
+4. The fix merges through the merge queue and rolls out like any other change.
+   There is no staging leg to skip and no deploy workflow to dispatch: the
+   merge queue's required checks are the only gate, and an emergency does not
+   bypass them.
 5. Within **5 business days**, a retrospective PR titled
    `chore(retro): <emergency PR ref>` re-runs any skipped checks and documents:
    - what was bypassed,
@@ -145,8 +190,12 @@ The durable record an auditor can request, all retained for the life of the repo
 
 ## Rollback policy
 
-- **Application: rollback-by-redeploy.** Every released container image stays in
-  GHCR for at least 30 days; rollback = redeploy the previous tag (no rebuild).
+- **Application: rollback-by-redeploy.** Every published image is also tagged
+  `:sha-<short>`, and no workflow deletes them from GHCR; rollback = run the
+  previous image again (no rebuild). Because Watchtower follows `:latest`, that
+  means pointing `:latest` back at the previous image, or pinning `app` and
+  `worker` to its `:sha-` tag through `deploy/apply.sh` — a revert merged
+  through the queue also works, but builds a new image.
 - **Database migrations are non-rollback.** A migration that breaks production
   gets a **forward-fix** migration — the canonical pattern. Reverting a migration
   against live data is the larger risk.
@@ -173,9 +222,9 @@ in-scope part.
 
 ## On-call coverage
 
-- **Standard hours:** the PR reviewer plus the GitHub Environment approver gate
-  production.
-- **Out of hours:** the on-call rotation holds the production-approval permission.
+- **Standard hours:** the PR reviewer and the merge queue's required checks gate
+  production; there is no separate production approver.
+- **Out of hours:** the on-call rotation reviews and merges.
   The rotation itself is defined in
   [`docs/incident-response.md`](incident-response.md); this policy cross-links
   there rather than duplicating it.

@@ -42,7 +42,6 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(),
 }));
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { logEvent: mockLogEvent } = require('@/app-layer/events/audit');
 
 // Mock repositories

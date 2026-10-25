@@ -21,6 +21,24 @@ import localPlugin from './eslint-rules/index.js';
 // at tests/guards/no-raw-prompt-logging.test.ts imports the same list, so the
 // lint scope and the swept population cannot drift apart.
 import { AGENTIC_PATH_GLOBS } from './eslint-rules/agentic-path.js';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+
+// The compiler's target and exclusions, read the way tsc reads them (the file
+// carries comments), so `local/regex-within-ts-target` polices the files tsc
+// checks, at the target tsc checks them against, with no copied value.
+const TSCONFIG = (() => {
+    const file = fileURLToPath(new URL('./tsconfig.json', import.meta.url));
+    const { config, error } = ts.readConfigFile(file, ts.sys.readFile);
+    if (error) throw new Error(`eslint.config.mjs: cannot read tsconfig.json: ${error.messageText}`);
+    const target = String(config.compilerOptions?.target ?? '').toUpperCase();
+    const year = target === 'ESNEXT' ? 9999 : target === 'ES6' ? 2015 : Number(/^ES(\d{4})$/.exec(target)?.[1]);
+    if (!Number.isInteger(year)) throw new Error(`eslint.config.mjs: unrecognised tsconfig target "${target}"`);
+    // A file has an extension after a name (`prisma/seed.ts`); a leading dot
+    // alone is a directory (`.claude`).
+    const ignores = (config.exclude ?? []).map((e) => (/[^/]\.\w+$/.test(e) ? e : `${e}/**`));
+    return { targetYear: year, ignores };
+})();
 
 // The platform-wide `no-restricted-syntax` bans. A const, because a later
 // block that sets `no-restricted-syntax` for its own files REPLACES this list
@@ -84,6 +102,16 @@ const HARNESS_SCANNER_IMPORT_PATTERNS = [
 const config = [
     ...nextCoreWebVitals,
     {
+        // A suppression comment that suppresses nothing is an error, not a
+        // warning. It was a warning, and over a hundred built up: some for rules
+        // switched off for the file, some a line away from the finding they
+        // were written for, which left that finding live and the comment
+        // claiming otherwise (#4228 found ten). An unused one is also a
+        // standing licence for whatever lands on that line next. Delete it,
+        // or move it onto the line the rule reports.
+        linterOptions: { reportUnusedDisableDirectives: 'error' },
+    },
+    {
         ignores: [
             '.next/**',
             // Local E2E (`scripts/e2e-local.mjs`) writes a Next build
@@ -93,6 +121,13 @@ const config = [
             // (`@next/next/no-assign-module-variable` etc.) — they're
             // build artefacts, not source.
             '.next-test/**',
+            // The worker, scheduler and one-shot job bundles that
+            // `scripts/build-worker.mjs` writes (gitignored). esbuild inlines
+            // `src/` into them, so linting them reports src's own rules
+            // against a copy of src — 41 `local/require-mcp-tool-authorization`
+            // errors on the inlined tool registry alone, for anyone who has
+            // built the worker locally. CI never sees them; that is the gap.
+            'dist/**',
             'node_modules/**',
             // Claude Code runtime state. `.claude/worktrees/<id>/` holds
             // FULL checkouts of the repo, so `eslint .` would lint every
@@ -181,6 +216,15 @@ const config = [
             // NAMED, not non-null: `agentId: null` and `policyCardVersion:
             // NO_POLICY_CARD` are correct values, silence is not.
             'local/require-agent-attribution': 'error',
+            // `WorkflowRun.driver` is the enum `AgentDriverMode`, and a Prisma
+            // client meeting a value it was not generated with fails the WHOLE
+            // operation. After a rollback past a third engine, every run read
+            // naming no `select` — the run store, the run list, the run page —
+            // and every `update` that returns the row failed with it (#4241).
+            // So every record-returning `workflowRun` call omits the column or
+            // selects around it, and a reader that needs the engine reads it as
+            // text. See eslint-rules/rules/no-typed-run-driver-read.js.
+            'local/no-typed-run-driver-read': 'error',
 
             // An MCP tool DECLARES the authorization its human equivalent
             // applies and never performs its own. The funnel is the one gate;
@@ -558,6 +602,11 @@ const config = [
         files: ['tests/**/*.ts', 'tests/**/*.tsx'],
         rules: {
             'local/require-agent-attribution': 'off',
+            // Same reasoning again: a production invariant, and the suite that
+            // proves it has to break it. The #4241 integration test's CONTROL is
+            // an unqualified `workflowRun.findFirst` that must throw, and fixture
+            // writes read back whole rows of runs this build wrote itself.
+            'local/no-typed-run-driver-read': 'off',
             // Same reasoning, same shape. `require-mcp-tool-authorization`'s
             // companion guard is `tests/guards/mcp-tools-use-shared-authz.test.ts`,
             // whose population is `repoFiles({ under: 'src' })` — it runs the
@@ -569,6 +618,18 @@ const config = [
             // unwritable, which is the same trap the sibling rule above fell
             // into with the legacy-backfill fixture.
             'local/require-mcp-tool-authorization': 'off',
+        },
+    },
+    {
+        // #3922 — jest's transform does not typecheck, so regex syntax newer
+        // than the tsconfig target runs green locally and fails the Typecheck
+        // job after the push. Scoped to the files tsc checks: `.ts` / `.tsx`
+        // (tsc reports nothing for an allowJs `.js`), minus tsconfig's own
+        // `exclude`. See eslint-rules/rules/regex-within-ts-target.js.
+        files: ['**/*.ts', '**/*.tsx'],
+        ignores: TSCONFIG.ignores,
+        rules: {
+            'local/regex-within-ts-target': ['error', { target: TSCONFIG.targetYear }],
         },
     },
 ];

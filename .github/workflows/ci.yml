@@ -240,7 +240,7 @@ permissions:
 env:
   NODE_VERSION: "24"
   SKIP_ENV_VALIDATION: "1"
-  # The Jest test job runs ~1/6 of ~1650 test files per shard with
+  # The Jest test job runs ~1/7 of ~1650 test files per shard with
   # `jest --runInBand`, which holds every file's module graph in ONE
   # process for the whole shard (no worker recycling —
   # `workerIdleMemoryLimit` is inert in-band), and the coverage job runs
@@ -531,8 +531,53 @@ jobs:
         # workflow-level note describes, a day after the fifth leg. This is the
         # sixth leg that note named, with `check-merged-coverage.ts`'s count
         # raised by one. A seventh is the next step.
-        shard: [1, 2, 3, 4, 5, 6]
-        total: [6]
+        #
+        # ─── MEASURED 2026-10-25 (#3977), SO A SEVENTH ARRIVES WITH A REASON ──
+        #
+        # Four bumps had been made without anyone measuring what consumes the
+        # heap. One hash-shuffled 1/50 slice of the suite (61 files), run
+        # in-band as these shards are:
+        #
+        #   heap cap 8192   peak rss 1925 MB   16 of 60 steps receded   69 s
+        #   heap cap 4096   peak rss 1809 MB                            74 s
+        #   heap cap 2048   peak rss 1840 MB                            63 s
+        #   + forced GC     peak rss 1553 MB   28 of 60 steps receded  123 s
+        #
+        # Three things follow, and they rule out the cheap fixes:
+        #
+        #   · IT IS NOT A LEAK. Post-GC retained heap over those 61 files rises
+        #     and then PLATEAUS — quartile means 365, 753, 935, 851 MB. A
+        #     retained reference climbs monotonically; this saturates. So more
+        #     shards are not buying days against a leak.
+        #   · THE CAP IS NOT THE CONSUMER. Quartering it (8192 -> 2048) moves
+        #     peak rss by 4%, so there is no large collectible pool waiting on a
+        #     tighter GC schedule. Peak rss is about twice post-GC heap, which
+        #     is ordinary V8 overhead.
+        #   · FORCING GC IS NOT AFFORDABLE. `--expose-gc` plus `--logHeapUsage`
+        #     (jest-runner calls `globalThis.gc?.()` only on that path) buys 19%
+        #     peak for 79% wall clock. That does not fit the 35-minute budget.
+        #
+        # So the growth is what the note above already says it is — cumulative
+        # module-graph weight, held once per in-band shard — and a smaller share
+        # per shard is the right lever. A seventh leg is therefore legitimate
+        # rather than another increment, and it is sublinear: 8.3x the files
+        # (61 -> ~506 per shard) against roughly 5x the memory.
+        #
+        # Whoever takes it: `tests/reporters/heap-summary-reporter.js` prints
+        # the block these numbers came from, and its `shape` verdict is only
+        # trustworthy in-band — in workers mode it samples the parent, which
+        # runs no tests and therefore never recedes.
+        #
+        # SEVEN since 2026-10-25 (#3977), and the first of these legs added with
+        # the measurement in hand rather than instead of it. The block above
+        # records it: the growth is cumulative module-graph weight held once per
+        # in-band shard, it is not a leak (post-GC retained heap plateaus), the
+        # cap is not the consumer (quartering it moves peak rss 4%), and forcing
+        # GC costs 79% wall clock for 19% peak. A smaller share per shard is
+        # therefore the only lever that works, which makes this leg the right
+        # answer rather than the third guess.
+        shard: [1, 2, 3, 4, 5, 6, 7]
+        total: [7]
 
     env:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
@@ -644,8 +689,8 @@ jobs:
       # database is safe from CONCURRENT interference — two suites writing the
       # same row at the same instant. It is NOT safe from ORDERING dependence: a
       # suite that reads a row a sibling created, or deletes one a sibling still
-      # needs, is decided by which sibling ran first. `--shard=K/4` hashes file
-      # paths, so adding any test file re-partitions all four shards and changes
+      # needs, is decided by which sibling ran first. `--shard=K/N` hashes file
+      # paths, so adding any test file re-partitions every shard and changes
       # that ordering — which is how a PR touching none of this reddens suites it
       # has never heard of (#3336, measured on #3332).
       #
@@ -802,7 +847,15 @@ jobs:
     env:
       SKIP_ENV_VALIDATION: '1'
     steps:
+      # Two commits, not one: tests/guards/rendered-coverage-floor.test.ts
+      # measures the change against its base, which is the FIRST PARENT of
+      # the commit checked out here — the base branch for a pull request's
+      # test-merge commit, the candidates ahead for a merge-queue squash,
+      # the previous main for a push. With the default depth of 1 that
+      # parent is absent and the guard fails, saying so.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
 
       - name: Setup Node + Prisma client
         uses: ./.github/actions/setup-node-prisma
@@ -1011,7 +1064,7 @@ jobs:
       # make the gate stricter-looking while measuring less.
       # Semantics are pinned by tests/unit/scripts/check-merged-coverage.test.ts.
       - name: "Gate: test coverage thresholds"
-        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 8
+        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 9
 
       # Only kept for post-mortem on a RED run.
       - name: Upload merged coverage inputs
@@ -1039,7 +1092,31 @@ jobs:
     timeout-minutes: 25
 
     steps:
+      # FULL HISTORY, FOR THE BUNDLE-BUDGET TREND (#4044).
+      #
+      # `bundle-size-budget` reports each bucket's budget TRAJECTORY beside its
+      # headroom, so the fourth consecutive bump to eat the headroom does not
+      # read like the first — three crossed these budgets inside two days, each
+      # consuming what the last left, and two sessions read their own encounter
+      # as a one-off because nothing could show a trend. The history comes from
+      # git rather than a generated file, because a stored number beside its own
+      # source is what rotted the `measured max` comments three times.
+      #
+      # This is the ONLY job where that guardrail does real work: it skips
+      # unless a production `.next` is present, and this job builds one.
+      #
+      # DEPTH 0 RATHER THAN A NUMBER, measured 2026-10-25: the raises of
+      # #4003/#4020/#4025 sit 185-230 commits behind a main that moves ~58
+      # commits a day. Any depth chosen today would quietly stop covering the
+      # window it was picked for — the same rot, relocated into this file.
+      # History is ~5,600 commits, which is cheap beside the `next build` below.
+      #
+      # If this ever goes back to a shallow checkout, the trend does not break
+      # the gate: `budgetTrendLines` prints that it has no history and names
+      # this setting. `tests/unit/bundle-budget-history.test.ts` asserts that.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Node + Prisma client
         uses: ./.github/actions/setup-node-prisma
@@ -2367,7 +2444,20 @@ jobs:
     # This is the lesson from the two cancellations generalised: a job
     # sitting at 20% of its budget on a median day tells you nothing
     # about its p99, and a timeout is only ever hit on a bad day.
-    timeout-minutes: 12
+    #
+    # 12 → 25 on 2026-10-25 for the SAST gate below (#4047), which in the
+    # merge queue waits up to 10 minutes for the PR's CodeQL check before
+    # it fails closed. The old 12 was the rest of this job's worst case;
+    # the gate's wait is added on top of it, plus margin, because a job
+    # cancelled at its ceiling says nothing about why it stopped.
+    timeout-minutes: 25
+
+    # A job-level block REPLACES the workflow's permissions, so the two
+    # this job already used are restated beside the one it adds.
+    permissions:
+      contents: read
+      pull-requests: write # dependency-review comments; also reads the queued PR
+      checks: read         # the SAST gate reads the PR's CodeQL check
 
     steps:
       - uses: actions/checkout@v7
@@ -2389,6 +2479,27 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      # ── SAST: BLOCKING in the merge queue on alerts the PR introduces ──
+      # Neither CodeQL context can be required (see the required-set notes
+      # at the top of this file), so until #4047 a HIGH SAST finding could
+      # reach `main` while a HIGH container CVE could not. This step reads
+      # the PR's own `CodeQL` check, which GitHub's code-scanning app posts
+      # and fails when the PR introduces alerts at or above the repository's
+      # threshold. Only `success` passes; a missing or unfinished check is
+      # waited for, up to 10 minutes, then fails closed. Queue-only,
+      # because on the PR itself that check is already visible. Needs no
+      # dependencies, so it runs before the install.
+      #
+      # Skipped when code scanning is off (`CODE_SCANNING_ENABLED`, the
+      # variable the `codeql` job reads): there is then no check to read.
+      # Locked by tests/guardrails/security-gate-strictness.test.ts.
+      - name: "Gate: code-scanning alerts the PR introduces (merge queue)"
+        if: ${{ github.event_name == 'merge_group' && vars.CODE_SCANNING_ENABLED == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: node scripts/sast-alert-gate.mjs
 
       - name: Install dependencies
         # CI hardening — retry npm ci on transient registry network errors.

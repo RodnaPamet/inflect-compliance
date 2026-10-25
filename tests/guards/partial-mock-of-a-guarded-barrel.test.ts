@@ -116,7 +116,6 @@ describe('a file shadowing a directory barrel forwards every export', () => {
         const pairs = shadowingPairs();
         // Positive control: an empty sweep would pass the next test vacuously.
         expect(pairs.length).toBeGreaterThanOrEqual(1);
-        // eslint-disable-next-line no-console
         console.log(
             `#3433 — ${pairs.length} file(s) shadow a directory barrel: ` +
                 pairs.map((x) => path.relative(ROOT, x.shim)).join(', '),

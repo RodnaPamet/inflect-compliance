@@ -25,6 +25,11 @@ const mockDb = {
     tenantSecuritySettings: { findUnique: jest.fn(async () => row) },
     registeredAgent: { count: registeredAgentCount },
     tenantApiKey: { count: tenantApiKeyCount },
+    // The TEXT read of `agentDriver` (#4224), in the shape
+    // `SELECT "agentDriver"::text` returns — a row array, empty when the
+    // settings row is absent. Driven off the same `row` fixture so every case
+    // below keeps its meaning.
+    $queryRaw: jest.fn(async (): Promise<unknown> => (row ? [row] : [])),
 };
 
 jest.mock('@/lib/db-context', () => ({

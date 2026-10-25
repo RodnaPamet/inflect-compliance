@@ -167,9 +167,13 @@ describeFn('policy attestation loop (integration)', () => {
         expect(entry?.status).toBe('ACKNOWLEDGED_SUPERSEDED');
         expect(entry?.supersededAckAt).not.toBeNull();
 
-        // The carried assignee was re-notified (dedupeKey scoped to the new version).
+        // The carried assignee was re-notified (dedupeKey scoped to this publish of the new version).
         const notif = await globalPrisma.notification.findFirst({
-            where: { tenantId: TENANT_ID, userId: readerUserId, dedupeKey: `POLICY_ACK_REQUIRED:${v2.id}:${readerUserId}` },
+            where: {
+                tenantId: TENANT_ID,
+                userId: readerUserId,
+                dedupeKey: { startsWith: `POLICY_ACK_REQUIRED:${v2.id}:publish-` },
+            },
         });
         expect(notif).not.toBeNull();
     });
@@ -261,6 +265,17 @@ describeFn('policy attestation loop (integration)', () => {
         // dedupe key was v1's own, so this notification was silently dropped.
         await rollbackPolicy(admin, p.id);
         expect(await readerNotifs()).toBe(3);
+
+        // And forward to v2 again, which the reader was notified about when it
+        // was first published. That publish's key was v2's own as well, so the
+        // second publish told nobody.
+        await publishPolicy(admin, p.id, v2.id, { bypassApprovalReason: 'test' });
+        expect(await readerNotifs()).toBe(4);
+
+        // A request on the version now in force does not ask the reader a
+        // second time: the publish that carried them onto it already did.
+        await requirePolicyAcknowledgement(admin, p.id, { audience: { type: 'users', userIds: [readerUserId] } });
+        expect(await readerNotifs()).toBe(4);
     });
 
     it('an AUDITOR reads the roster and attestation log, but may not request acknowledgements (#4128)', async () => {

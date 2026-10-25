@@ -29,7 +29,12 @@ import { applySecurityHeaders } from '@/lib/security/headers';
 import { resolveCorsConfig, isOriginAllowed, applyCorsHeaders, CORS_PREFLIGHT_HEADERS } from '@/lib/security/cors';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
 import { edgeLogger } from '@/lib/observability/edge-logger';
-import { documentLoadRoute, DOCUMENT_LOAD_MSG } from '@/lib/observability/vital-route';
+import {
+    documentLoadRoute,
+    DOCUMENT_LOAD_MSG,
+    softNavigationRoute,
+    SOFT_NAVIGATION_MSG,
+} from '@/lib/observability/vital-route';
 
 /**
  * GAP-04 — Edge middleware: centralized auth guard + CSP for ALL routes.
@@ -643,6 +648,22 @@ export default async function middleware(
     });
     if (documentRoute !== null) {
         edgeLogger.info(DOCUMENT_LOAD_MSG, { route: documentRoute });
+    }
+
+    // AND ONE PER CLIENT-SIDE NAVIGATION (#4195), which is what four of the
+    // five web-vitals now fire on. Counted separately rather than folded into
+    // the line above: `document_load` answers "is anyone using the app", the
+    // two together answer "are beacons being dropped", and merging them would
+    // make every existing query of the first silently wrong. Same bounded
+    // shape — route only, nothing per-identity.
+    const softNavRoute = softNavigationRoute({
+        rsc: req.headers.get('rsc'),
+        routerPrefetch: req.headers.get('next-router-prefetch'),
+        pathname,
+        passedThrough: isPassThrough,
+    });
+    if (softNavRoute !== null) {
+        edgeLogger.info(SOFT_NAVIGATION_MSG, { route: softNavRoute });
     }
 
     return res;

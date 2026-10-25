@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test-mock pattern. */
 /** SP-F3 — .docx detection + DOCX→sanitised-HTML conversion. */
 jest.mock('mammoth', () => ({
     __esModule: true,

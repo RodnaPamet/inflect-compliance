@@ -22,6 +22,12 @@
  *     ALL tags AND HTML-entity-decodes so a stored `&lt;script&gt;`
  *     can't roundtrip back into a `<script>` somewhere downstream.
  *
+ * And one helper for a value that is a URL rather than prose:
+ *
+ *   - `sanitizeUrlText(input)` — percent-encodes the characters that can
+ *     open markup or end an attribute. `sanitizePlainText` must NOT be
+ *     used on a URL: see that helper for why it corrupts query strings.
+ *
  * Library choice
  * --------------
  *   `sanitize-html` over DOMPurify+jsdom because it runs natively on
@@ -201,6 +207,47 @@ export function sanitizePlainText(input: string | null | undefined): string {
     // Fixed point: `current` is tag-free even after decoding, so the decoded
     // form is both safe AND the readable literal text.
     return decodeHtmlEntities(current);
+}
+
+// ─── URL profile ────────────────────────────────────────────────────
+
+/**
+ * Characters a URL may not contain unencoded (RFC 3986) that HTML reads as
+ * markup or as the end of an attribute value: `<` `>` `"` and the backtick,
+ * whitespace, and the C0 controls and DEL. A browser percent-encodes them
+ * before it sends a request, so encoding them here leaves the link pointing
+ * where it pointed. `'` is deliberately absent: RFC 3986 allows it, and an
+ * encoded `%27` is not, strictly, the same URL.
+ */
+const URL_MARKUP_CHARS = /[<>"`\s\u0000-\u001f\u007f]/g;
+
+/**
+ * Neutralise markup in a user-supplied URL without changing where it points.
+ *
+ * WHY NOT `sanitizePlainText`. That helper parses its input as HTML, and an
+ * HTML parser decodes the legacy entities that need no closing semicolon
+ * inside text — `&reg`, `&para`, `&sect`, `&times`, `&not`, `&copy`, `&lt`
+ * and about a hundred more. In a URL `&` is the query separator, so
+ * `?lang=en&region=us` came back as `?lang=en®ion=us`, `&param=` as `¶m=`
+ * and `&timestamp=` as `×tamp=`: a stored link that goes somewhere else.
+ *
+ * So this does not parse at all. It trims, then percent-encodes every
+ * {@link URL_MARKUP_CHARS} character. The result contains no `<` or `>`, so no
+ * renderer can find a tag in it, and no `"` or whitespace, so it cannot end a
+ * double-quoted or unquoted attribute. `&` and any entity are left exactly as
+ * typed: in every HTML context an entity is text, never markup.
+ *
+ * It does NOT judge the scheme. A `javascript:` link survives this, as it
+ * survives `sanitizePlainText`; refusing to render one is `normaliseHref` in
+ * `@/lib/security/safe-url`.
+ *
+ * Returns `''` for `null` / `undefined` / a non-string, like the other
+ * helpers.
+ */
+export function sanitizeUrlText(input: string | null | undefined): string {
+    if (input == null) return '';
+    if (typeof input !== 'string') return '';
+    return input.trim().replace(URL_MARKUP_CHARS, (c) => encodeURIComponent(c));
 }
 
 // ─── Convenience helpers ────────────────────────────────────────────

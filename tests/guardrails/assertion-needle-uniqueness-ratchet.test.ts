@@ -1177,8 +1177,12 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
     many each file adds. One assertion that WAS removable went in the same work
     rather than here — a `not.toContain(host)` on a digest, below a
     `toMatch(/^sha256:[0-9a-f]{64}$/)` that already made it impossible to fail.
+
+    1408 -> 1402 (2026-10-25): `k8s-runbook-coverage.test.ts` was deleted with
+    the Kubernetes runbook it pinned in `docs/deployment.md`, a cluster that
+    never existed. Its six section-bound reads go with it. Measured.
 */
-const UNANALYSABLE_READ_BASELINE = 1408;
+const UNANALYSABLE_READ_BASELINE = 1402;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

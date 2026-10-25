@@ -68,7 +68,6 @@ describe('a refusal always carries a readable reason, even for a non-Error throw
         mockDb.integrationConnection.findMany.mockResolvedValue([
             { id: 'c1', configJson: {}, secretEncrypted: 'BAD' },
         ]);
-        // eslint-disable-next-line no-throw-literal -- deliberately not an Error
         decrypt.mockImplementation(() => { throw 'DEK unavailable'; });
 
         const r = await resolveDirectoryWriter({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
@@ -80,7 +79,6 @@ describe('a refusal always carries a readable reason, even for a non-Error throw
     });
 
     it('WRITER_REFUSED stringifies a non-Error thrown by the constructor', async () => {
-        // eslint-disable-next-line no-throw-literal -- deliberately not an Error
         createAd.mockImplementation(() => { throw 'ldap bind rejected'; });
 
         const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'AUTOMATIC' });
@@ -103,7 +101,6 @@ describe('a refusal always carries a readable reason, even for a non-Error throw
         mockDb.integrationConnection.findMany.mockResolvedValue([
             { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: 'BAD' },
         ]);
-        // eslint-disable-next-line no-throw-literal -- deliberately not an Error
         decrypt.mockImplementation(() => { throw 'DEK unavailable'; });
 
         const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });

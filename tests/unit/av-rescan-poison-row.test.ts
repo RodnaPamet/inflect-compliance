@@ -284,7 +284,6 @@ function seedMany(count: number, prefix = 'f'): Row[] {
 }
 
 function loadJob() {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('@/app-layer/jobs/av-rescan') as typeof import('@/app-layer/jobs/av-rescan');
 }
 

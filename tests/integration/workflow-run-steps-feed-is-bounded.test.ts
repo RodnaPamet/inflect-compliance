@@ -48,6 +48,7 @@ import {
     MAX_CHECKPOINT_PROPOSALS,
 } from '@/app-layer/usecases/run-checkpoint-review';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -195,9 +196,19 @@ describeFn('the run step feed (real DB, real RLS)', () => {
                     `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, t,
                 );
             }).catch(() => {});
-            await prisma.tenant.deleteMany({ where: { id: t } }).catch(() => {});
         }
-        await prisma.user.deleteMany({ where: { id: { in: [USER_A, USER_B] } } }).catch(() => {});
+        // AUDIT ROWS FIRST (#3343). Removing the `.catch(() => {})` from the
+        // tenant delete below turned this suite red with
+        // `Foreign key constraint violated on AuditLog_tenantId_fkey` — the
+        // handler had been discarding exactly that, so the tenants survived the
+        // teardown and whichever suite ran next in the shard inherited them.
+        //
+        // This file matched the #3342 guard's `CLEARS_AUDIT_ROWS` only because
+        // it drops to `session_replication_role` for `TenantMembership`; it
+        // never cleared `AuditLog`.
+        await deleteAuditRowsForTenants(prisma, [TENANT_A, TENANT_B]);
+        await prisma.tenant.deleteMany({ where: { id: { in: [TENANT_A, TENANT_B] } } });
+        await prisma.user.deleteMany({ where: { id: { in: [USER_A, USER_B] } } });
         await prisma.$disconnect();
     });
 

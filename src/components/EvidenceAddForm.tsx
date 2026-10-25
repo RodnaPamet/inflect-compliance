@@ -8,6 +8,10 @@
  * fields disable). Presentational only — each page owns its state +
  * submit handler and passes them in, plus the element ids it needs to
  * keep stable for E2E selectors.
+ *
+ * On the control tab a link becomes a library record (#4126), so that
+ * page passes `linkTitleRequired` and no note handlers: the link is named
+ * by the Title field, as in the library's own link dialog.
  */
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -46,8 +50,20 @@ export interface EvidenceAddFormProps {
     onTitleChange: (value: string) => void;
     url: string;
     onUrlChange: (value: string) => void;
-    note: string;
-    onNoteChange: (value: string) => void;
+    /**
+     * The link's note. Optional: a surface whose link becomes a library
+     * record (the control tab, #4126) passes neither, because a library
+     * LINK record has no note field — the library's own link dialog asks
+     * for a title and an address only. Absent `onNoteChange` ⇒ no note box.
+     */
+    note?: string;
+    onNoteChange?: (value: string) => void;
+    /**
+     * A link needs the Title field. Set where the link becomes a library
+     * record, whose create path refuses an untitled one: the submit waits
+     * for a title as well as an address, and the URL field says why.
+     */
+    linkTitleRequired?: boolean;
     onSubmit: (e: React.FormEvent) => void;
     error: string;
     /** A file upload is in flight — shows the progress bar + "Uploading…". */
@@ -74,12 +90,16 @@ export function EvidenceAddForm({
     onUrlChange,
     note,
     onNoteChange,
+    linkTitleRequired = false,
     onSubmit,
     error,
     uploading,
     saving,
 }: EvidenceAddFormProps) {
     const t = useTranslations('panels.evidenceForm');
+    // The server is the authority on what a link needs; this only keeps the
+    // button from offering a submit the create path would refuse.
+    const linkReady = !!url.trim() && (!linkTitleRequired || !!title.trim());
     return (
         <>
             {canWrite && (
@@ -139,7 +159,10 @@ export function EvidenceAddForm({
                             )}
                     </div>
                     <div className="space-y-compact border-t border-border-subtle pt-3">
-                        <FormField label={t('orLinkUrl')}>
+                        <FormField
+                            label={t('orLinkUrl')}
+                            description={linkTitleRequired ? t('linkNeedsTitle') : undefined}
+                        >
                             <Input
                                 type="url"
                                 placeholder={t('urlPlaceholder')}
@@ -149,14 +172,16 @@ export function EvidenceAddForm({
                                 disabled={!!file}
                             />
                         </FormField>
-                        <Textarea
-                            rows={2}
-                            placeholder={t('noteOptional')}
-                            value={note}
-                            onChange={(e) => onNoteChange(e.target.value)}
-                            id={ids.note}
-                            disabled={!!file}
-                        />
+                        {onNoteChange && (
+                            <Textarea
+                                rows={2}
+                                placeholder={t('noteOptional')}
+                                value={note ?? ''}
+                                onChange={(e) => onNoteChange(e.target.value)}
+                                id={ids.note}
+                                disabled={!!file}
+                            />
+                        )}
                     </div>
                     {error && (
                         <div
@@ -185,7 +210,7 @@ export function EvidenceAddForm({
                     <Button
                         type="submit"
                         variant="primary"
-                        disabled={uploading || saving || (!file && !url.trim())}
+                        disabled={uploading || saving || (!file && !linkReady)}
                         id={ids.submit}
                     >
                         {uploading ? t('uploading') : saving ? t('linking') : t('add')}

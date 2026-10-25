@@ -14,7 +14,7 @@
  * is reachable from the NIS2 framework view (resume-later surface).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 import {
     Accordion,
@@ -92,6 +92,7 @@ export function Nis2SelfAssessmentStep({
     onCompleted?: () => void;
     onSkip?: () => void;
 }) {
+    const t = useTranslations('common.ui');
     const locale = useLocale();
     const lang = locale === 'de' ? 'de' : 'en';
     const [state, setState] = useState<AssessmentState | null>(null);
@@ -121,8 +122,8 @@ export function Nis2SelfAssessmentStep({
         }
     }, [base]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         load();
     }, [load]);
 
@@ -253,7 +254,7 @@ export function Nis2SelfAssessmentStep({
                                                     </span>
                                                     <InfoTooltip
                                                         content={q.text[lang]}
-                                                        aria-label="Show the regulator wording"
+                                                        aria-label={t('regulatorWording')}
                                                     />
                                                     <StatusBadge
                                                         variant={criticalityVariant(q.criticality)}

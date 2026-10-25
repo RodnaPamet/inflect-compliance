@@ -105,7 +105,7 @@ export const MACHINE_CALLER_PREFIXES = [
     // Per-provider raw-body signature verification; the tenant is resolved
     // from the IntegrationConnection and never from the caller.
     '/api/integrations/webhooks',
-    // `Bearer <TenantApiKey>` → `authenticateMcpRequest` → verifyApiKey with
+    // `Bearer <TenantApiKey>` → `verifyMcpCredential` → verifyApiKey with
     // an `mcp:read` capability scope.
     '/api/mcp',
     // The inbound A2A endpoint (#3679): another organisation's agent, which has

@@ -107,7 +107,6 @@ describe('CI timeout ceilings', () => {
      * pass for a job that declares none.
      */
     function ciJobs(): Record<string, { name?: string; 'timeout-minutes'?: number }> {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const yaml = require('js-yaml');
         const doc = yaml.load(CI) as {
             jobs: Record<string, { name?: string; 'timeout-minutes'?: number }>;
@@ -187,7 +186,10 @@ describe('CI timeout ceilings', () => {
             Ratchets: 20,
             'Coverage (≥60%)': 8,
             'Trivy Image Scan': 25,
-            Security: 12,
+            // 12 -> 25 on 2026-10-25 (#4047): the SAST gate waits up to
+            // 10 minutes in the merge queue for the PR's CodeQL check,
+            // on top of the 12 this job's other work needs.
+            Security: 25,
             E2E: 40,
             'Docker Build': 40,
             // Added 2026-08-04 — the sweep's own blind spot. Every one

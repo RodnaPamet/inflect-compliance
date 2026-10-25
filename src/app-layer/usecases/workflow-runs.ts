@@ -97,7 +97,8 @@ import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
 import { captureAuditNarrativeAfterRun } from './audit-workpaper-narrative';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
-import { isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
+import { isReasoningEngine, recordedModeOf, type AgentDriver } from '@/lib/agentic/agent-driver';
+import { readRecordedRunDriver, readRecordedRunDrivers } from '@/lib/agentic/agent-driver-stored-mode';
 import {
     estimateTokens,
     type WorkflowContext,
@@ -720,7 +721,15 @@ export async function resumeWorkflowRun(
                 data: { status: 'DONE', actorUserId: ctx.userId },
             });
         }
-        await db.workflowRun.update({ where: { id: runId }, data: { status: 'RUNNING' } });
+        // `omit: { driver: true }` on every record-returning `workflowRun`
+        // write here, for the reason `updateRun` gives (#4241): the returned
+        // row is mapped scalar by scalar, so an engine this build does not know
+        // fails the write after it ran.
+        await db.workflowRun.update({
+            where: { id: runId },
+            data: { status: 'RUNNING' },
+            omit: { driver: true },
+        });
         // ═══ ART 14: A RESUME IS AN ACCEPTANCE ═══
         //
         // The run is the reviewable event for a model call. A Flue run that the
@@ -805,6 +814,7 @@ export async function resumeWorkflowRun(
             db.workflowRun.update({
                 where: { id: runId },
                 data: { stepCount: resumedFrom + 1 },
+                omit: { driver: true },
             }),
         );
         await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId });
@@ -863,6 +873,9 @@ export async function abortWorkflowRun(ctx: RequestContext, runId: string): Prom
         await db.workflowRun.update({
             where: { id: runId },
             data: { status: 'ABORTED', completedAt: new Date() },
+            // The operator's stop has to work on a run this build cannot name
+            // the engine of (#4241) — that is when it is most likely needed.
+            omit: { driver: true },
         });
         // ═══ ART 14: AN ABORT IS A REJECTION ═══
         //
@@ -887,9 +900,16 @@ export async function abortWorkflowRun(ctx: RequestContext, runId: string): Prom
 
 export async function getWorkflowRun(ctx: RequestContext, runId: string) {
     assertCanRead(ctx);
-    const run = await runInTenantContext(ctx, (db) =>
-        db.workflowRun.findFirst({
+    const run = await runInTenantContext(ctx, async (db) => {
+        const row = await db.workflowRun.findFirst({
             where: { id: runId, tenantId: ctx.tenantId },
+            // THE ENGINE IS READ SEPARATELY, AS TEXT (#4241). This row is read
+            // whole, and a whole row whose `driver` holds a value this build's
+            // enum does not know fails the read outright — the run page caught
+            // that and answered 404 for a run that exists. So the typed read
+            // omits the column, and `readRecordedRunDriver` supplies it coerced:
+            // the recorded engine, or `UNRECOGNISED`, never a guess.
+            omit: { driver: true },
             include: {
                 steps: { orderBy: { seq: 'asc' } },
                 // WHAT THIS RUN PROPOSED, by step.
@@ -917,8 +937,10 @@ export async function getWorkflowRun(ctx: RequestContext, runId: string) {
                     orderBy: { stepSeq: 'asc' },
                 },
             },
-        }),
-    );
+        });
+        if (!row) return null;
+        return { ...row, driver: await readRecordedRunDriver(db, ctx.tenantId, row.id) };
+    });
     if (!run) throw notFound('Workflow run not found');
     return run;
 }
@@ -950,8 +972,8 @@ export async function listWorkflowRuns(
         Object.values(WorkflowRunStatus),
         'workflow run status',
     );
-    return runInTenantContext(ctx, (db) =>
-        db.workflowRun.findMany({
+    return runInTenantContext(ctx, async (db) => {
+        const runs = await db.workflowRun.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 status,
@@ -962,6 +984,11 @@ export async function listWorkflowRuns(
             },
             orderBy: { startedAt: 'desc' },
             take: opts.take ?? 50,
+            // WITHOUT THE ENGINE, which is read below as text (#4241) — see
+            // `getWorkflowRun`. Here the cost of the typed read was the whole
+            // list: one run stamped with an engine this build does not know
+            // failed the page for every run the tenant has.
+            omit: { driver: true },
             // HOW MANY PROPOSALS ARE ACTUALLY WAITING on this run.
             //
             // A filtered relation count rather than a join, because the list
@@ -974,8 +1001,11 @@ export async function listWorkflowRuns(
             include: {
                 _count: { select: { proposals: { where: { status: 'PENDING' } } } },
             },
-        }),
-    );
+        });
+        // ONE text read for the page, not one per row.
+        const driverOf = await readRecordedRunDrivers(db, ctx.tenantId, runs.map((r) => r.id));
+        return runs.map((r) => ({ ...r, driver: driverOf(r.id) }));
+    });
 }
 
 // ─── The executor ───────────────────────────────────────────────────
@@ -1077,7 +1107,7 @@ async function executeFrom(
     // occurrence turns any whole-file `toMatch(/selectRunDriver/)` into a
     // needle that two positions satisfy.
     const { run, driver } = selectRunDriver(def, permittedDriver);
-    const driverLabel = driver === 'flue' ? 'FLUE' : 'STATIC';
+    const driverLabel = recordedModeOf(driver);
 
     // ── A RUN AN A2A PEER STARTED CARRIES THAT ON EVERY SEGMENT (#3679) ──────
     //
@@ -1286,7 +1316,7 @@ async function createSealedRun(
                     // …and on WHICH ENGINE. Written in the CREATE rather than
                     // updated after the walk: a run that crashes mid-step still
                     // has to be able to say what was executing it.
-                    driver: driver === 'flue' ? 'FLUE' : 'STATIC',
+                    driver: recordedModeOf(driver),
                     // …and, for a run an A2A peer's task started, WHICH peer
                     // and WHICH verified message (#3679). Write-once at the
                     // database; R17 and R14 are keyed on it.
@@ -1324,6 +1354,9 @@ async function createSealedRun(
             await db.workflowRun.update({
                 where: { id: created.id },
                 data: { contextJson: sealed.json, contextHash: sealed.hash },
+                // This build just wrote the engine, so it knows it; omitted
+                // anyway so every record-returning write reads one way (#4241).
+                omit: { driver: true },
             });
             recordWorkflowContextBytes(sealed.bytes);
             return created;

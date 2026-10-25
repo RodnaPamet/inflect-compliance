@@ -25,6 +25,7 @@ import {
     McpClientError,
     MCP_MAX_RESPONSE_BYTES,
 } from '@/app-layer/integrations/mcp/client';
+import { MCP_TOOL_NAME_MAX_LENGTH } from '@/lib/mcp/external-tool-name';
 
 /** A Response whose body streams `text` in one chunk. */
 const bodyOf = (
@@ -119,7 +120,7 @@ describe('what comes back is bounded and distrusted', () => {
         expect(payload.length).toBeLessThan(MCP_MAX_RESPONSE_BYTES);
         safeFetchMock.mockResolvedValue(bodyOf(payload));
 
-        await expect(listTools(OPTS)).resolves.toHaveLength(1);
+        await expect(listTools(OPTS)).resolves.toEqual({ tools, refusedNames: 0 });
     });
 
     it('does not echo a non-JSON body into the error', async () => {
@@ -156,7 +157,81 @@ describe('what comes back is bounded and distrusted', () => {
         // list anyway — it is input to a pin — but the direction matters.
         safeFetchMock.mockResolvedValue(bodyOf(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} })));
 
-        await expect(listTools(OPTS)).resolves.toEqual([]);
+        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0 });
+    });
+
+    it('refuses an unusable tool NAME and counts it, keeping the order of the rest (#4238)', async () => {
+        // Another party's text becomes the qualified name everywhere downstream,
+        // including the source of a hash-chained audit row that streams to the
+        // tenant's SIEM. The MCP specification's own limit is 128 characters.
+        // A name past it is refused, never truncated: two long names sharing a
+        // prefix would truncate to one name, and a pin keyed on it would belong
+        // to whichever came first.
+        const at = (name: unknown) => ({ name, description: 'd', inputSchema: {} });
+        const longest = 'n'.repeat(MCP_TOOL_NAME_MAX_LENGTH);
+        const advertised = [
+            at('first'),
+            at('n'.repeat(MCP_TOOL_NAME_MAX_LENGTH + 1)),
+            at(longest),
+            at(''),
+            at(42),
+            { description: 'no name at all', inputSchema: {} },
+            at('last'),
+        ];
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: advertised } })),
+        );
+
+        const read = await listTools(OPTS);
+        expect({ names: read.tools.map((t) => t.name), refusedNames: read.refusedNames }).toEqual({
+            names: ['first', longest, 'last'],
+            refusedNames: 4,
+        });
+    });
+
+    it('refuses a tool NAME carrying a control, line-break or invisible character, and counts it', async () => {
+        // A line break forges a line in any reader that prints the name as
+        // text; a bidi override or a zero-width character makes one name read
+        // as another on screen; a lone surrogate is stored as U+FFFD, so two
+        // names would become one. Other printable characters are accepted
+        // (owner decision, 2026-10-25), because a real server may use them.
+        const refused = {
+            'line feed': 'a\nb',
+            'carriage return': 'a\rb',
+            tab: 'a\tb',
+            NUL: 'a\u0000b',
+            DEL: 'a\u007fb',
+            'C1 next line': 'a\u0085b',
+            'line separator': 'a b',
+            'paragraph separator': 'a b',
+            'right-to-left override': 'a‮b',
+            'left-to-right isolate': 'a⁦b',
+            'left-to-right mark': 'a‎b',
+            'zero-width space': 'a​b',
+            'zero-width joiner': 'a‍b',
+            'byte order mark': '﻿ab',
+            'soft hyphen': 'a­b',
+            'variation selector': 'a️b',
+            'Hangul filler': 'aㅤb',
+            'tag character': 'a\u{E0041}b',
+            'lone high surrogate': 'a\ud800b',
+            'lone low surrogate': 'a\udc00b',
+        };
+        const accepted = ['ns/tool', 'ns:tool', 'two words', 'café', 'café', '工具', '\u{1F527}tool', 'v1.2-x_y'];
+        const at = (name: string) => ({ name, description: 'd', inputSchema: {} });
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                result: { tools: [...Object.values(refused).map(at), ...accepted.map(at)] },
+            })),
+        );
+
+        const read = await listTools(OPTS);
+        expect({ names: read.tools.map((t) => t.name), refusedNames: read.refusedNames }).toEqual({
+            names: accepted,
+            refusedNames: Object.keys(refused).length,
+        });
     });
 
     it('turns a non-2xx into a client error rather than parsing the body', async () => {

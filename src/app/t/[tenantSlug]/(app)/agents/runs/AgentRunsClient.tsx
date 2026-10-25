@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
@@ -21,8 +22,12 @@ export interface RunRow {
     status: string;
     stepCount: number;
     costTokens: number;
-    /** The engine that walked this run, as recorded on the row at its start. */
-    driver: 'STATIC' | 'FLUE';
+    /**
+     * The engine that walked this run, as recorded on the row at its start —
+     * or `UNRECOGNISED` for an engine this build does not know (#4241), which
+     * is the truth during a rollback rather than a guess at one.
+     */
+    driver: RecordedRunDriver;
     startedAt: string;
     completedAt: string | null;
     approvalExpiresAt: string | null;

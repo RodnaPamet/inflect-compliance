@@ -135,7 +135,6 @@ describe('visual editor reachability', () => {
         // The builder's arm, and the label it resolves.
         expect(commands).toMatch(/newAutomation\?:\s*\(\)\s*=>\s*void/);
         expect(commands).toMatch(/t\('cmdNewAutomationLabel'\)/);
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const en = require('../../messages/en.json');
         expect(en.automation.canvas.cmdNewAutomationLabel).toBe('New automation workflow');
 

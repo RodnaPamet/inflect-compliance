@@ -116,6 +116,7 @@ import { killRefusalMessage, resolveKillState } from '@/lib/agentic/kill-switch'
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
+import { ENGINE_RUN_CAPS } from '@/lib/agentic/run-caps';
 import { makeRequestContext } from '../helpers/make-context';
 
 import type { RequestContext } from '@/app-layer/types';
@@ -244,6 +245,8 @@ describe('a kill switch engaged mid-run stops the next model call', () => {
             'run-1',
             KILL,
             killRefusalMessage('AGENT'),
+            // No cap latched, so none is carried beside the kill (#4230).
+            null,
         );
         expect(recordAgentKillRefusal).toHaveBeenCalledWith({ scope: 'AGENT', drill: false });
         // Not reported as a cap or as a crash.
@@ -326,5 +329,131 @@ describe('a kill switch engaged mid-run stops the next model call', () => {
         } finally {
             clock.mockRestore();
         }
+    });
+});
+
+/**
+ * ═══ A KILL IS STILL OBSERVED AFTER A CAP HAS LATCHED (#4230) ═══
+ *
+ * `beforeModelCall` read the cap latch before the kill switch. Once a cap had
+ * latched, every later model call threw the cap's message and the switch was
+ * never read again. The run stopped, but no kill refusal was counted, no
+ * `WORKFLOW_RUN_AGENT_KILLED` row was written, and the run settled at the cap
+ * as if only the budget had stopped it.
+ *
+ * The cap latches here at a TOOL call, as it does in a real run. The run starts
+ * with its STEPS budget already spent by earlier segments, so the first tool
+ * call is refused by the engine's own wrapper before the tool runs. The status
+ * names the kill, and the cap travels beside it with the order this process
+ * saw the two in (#4209).
+ */
+describe('a kill engaged after a cap has latched is still observed', () => {
+    const KILL = { scope: 'TENANT', switchId: 'sw-3', engagedAt: new Date('2026-10-25T12:00:00Z') };
+    /** What earlier segments spent: all of the STEPS budget. */
+    const STEPS_SPENT = ENGINE_RUN_CAPS.STEPS;
+
+    /** The bound run, as the interceptor and the runtime reach it. */
+    function bound() {
+        const binding = readRunBinding('run-1');
+        if (!binding?.beforeModelCall) throw new Error('harness: the run was bound without beforeModelCall');
+        return { binding, beforeModelCall: binding.beforeModelCall };
+    }
+
+    /** One tool call through the engine's wrapper, which must refuse it at the cap. */
+    async function toolCallRefusedAtTheCap(): Promise<void> {
+        const { binding } = bound();
+        await expect(binding.tools[0].run({ toolCallId: 't1', data: {} })).rejects.toThrow(/STEPS/);
+    }
+
+    it('reads the switch on the next model call, and settles at the kill with the cap beside it', async () => {
+        mockRead = async () => {
+            const { beforeModelCall } = bound();
+            await beforeModelCall();
+            await toolCallRefusedAtTheCap();
+            // The operator presses stop after the cap has latched.
+            killState = KILL;
+            await beforeModelCall();
+            return { text: 'unreachable', metadata: {} };
+        };
+
+        const out = await executeFlueRun(CTX, 'run-1', DEF, STEPS_SPENT, Date.now(), 'anthropic/claude');
+
+        expect(out.status).toBe('ABORTED');
+        // The kill was read and counted, not shadowed by the latch.
+        expect(recordAgentKillRefusal).toHaveBeenCalledWith({ scope: 'TENANT', drill: false });
+        expect(haltRunAtKill).toHaveBeenCalledWith(CTX, 'run-1', KILL, killRefusalMessage('TENANT'), {
+            halt: expect.objectContaining({ kind: 'STEPS', source: 'ENGINE' }),
+            observedFirst: 'CAP',
+        });
+        // One settlement. The cap is carried by the kill's, not written as a
+        // second terminal state.
+        expect(haltRunAtCap).not.toHaveBeenCalled();
+        expect(failRun).not.toHaveBeenCalled();
+    });
+
+    it('does the same when the runtime turns the refusal into a tidy finish', async () => {
+        // The success path settles separately from the catch, so it is driven
+        // separately.
+        mockRead = async () => {
+            const { beforeModelCall } = bound();
+            await beforeModelCall();
+            await toolCallRefusedAtTheCap();
+            killState = KILL;
+            await beforeModelCall().catch(() => undefined);
+            return { text: 'finished', metadata: {} };
+        };
+
+        const out = await executeFlueRun(CTX, 'run-1', DEF, STEPS_SPENT, Date.now(), 'anthropic/claude');
+
+        expect(out.status).toBe('ABORTED');
+        expect(haltRunAtKill).toHaveBeenCalledWith(CTX, 'run-1', KILL, killRefusalMessage('TENANT'), {
+            halt: expect.objectContaining({ kind: 'STEPS' }),
+            observedFirst: 'CAP',
+        });
+        expect(haltRunAtCap).not.toHaveBeenCalled();
+    });
+
+    it('records the kill as first when a cap latches after it', async () => {
+        // A tool call still in flight can latch a cap after the kill was found.
+        // The order is the one this process saw, so it must not read as CAP.
+        mockRead = async () => {
+            const { beforeModelCall } = bound();
+            await beforeModelCall();
+            killState = KILL;
+            await expect(beforeModelCall()).rejects.toThrow();
+            await toolCallRefusedAtTheCap();
+            // And a later kill finding does not rewrite the order.
+            await beforeModelCall();
+            return { text: 'unreachable', metadata: {} };
+        };
+
+        const out = await executeFlueRun(CTX, 'run-1', DEF, STEPS_SPENT, Date.now(), 'anthropic/claude');
+
+        expect(out.status).toBe('ABORTED');
+        expect(haltRunAtKill).toHaveBeenCalledWith(CTX, 'run-1', KILL, killRefusalMessage('TENANT'), {
+            halt: expect.objectContaining({ kind: 'STEPS' }),
+            observedFirst: 'KILL',
+        });
+    });
+
+    it('still settles at the cap when no switch is engaged', async () => {
+        // The control. Reading the switch first must change nothing for a run
+        // that was only capped: it settles at the cap, and is not reported as
+        // a kill.
+        mockRead = async () => {
+            const { beforeModelCall } = bound();
+            await beforeModelCall();
+            await toolCallRefusedAtTheCap();
+            await beforeModelCall();
+            return { text: 'unreachable', metadata: {} };
+        };
+
+        const out = await executeFlueRun(CTX, 'run-1', DEF, STEPS_SPENT, Date.now(), 'anthropic/claude');
+
+        expect(out.status).toBe('FAILED');
+        expect(haltRunAtCap).toHaveBeenCalledWith(CTX, 'run-1', expect.objectContaining({ kind: 'STEPS' }), null);
+        expect(haltRunAtKill).not.toHaveBeenCalled();
+        // Asked at boot and before both model calls, the second one included.
+        expect(resolveKillState).toHaveBeenCalledTimes(1 + 2);
     });
 });

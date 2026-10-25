@@ -202,8 +202,9 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
         if (!selectedParam || consumedSelectedParam.current === selectedParam) return;
         consumedSelectedParam.current = selectedParam;
         loadAudit(selectedParam);
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAudit is
-        // re-created every render; the ref guard is what makes this run once.
+        // loadAudit is re-created every render; the ref guard is what makes
+        // this run once.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedParam]);
 
     /**

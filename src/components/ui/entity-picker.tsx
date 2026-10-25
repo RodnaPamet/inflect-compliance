@@ -312,6 +312,7 @@ export function EntityPicker({
     // candidate set automatically.
     useEffect(() => {
         let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         void fetchCandidates(
             tenantSlug,
@@ -320,12 +321,10 @@ export function EntityPicker({
         )
             .then((rows) => {
                 if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setCandidates(rowsFromResponse(entityType, rows, t('ui.untitled')));
             })
             .finally(() => {
                 if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setLoading(false);
             });
         return () => {

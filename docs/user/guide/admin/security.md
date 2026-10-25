@@ -21,6 +21,7 @@ This page sets the rules for everyone. To set up MFA for your own account, click
 | Turn agent registration enforcement on or off | Owner, Admin |
 | Change the API-key rotation age | Owner, Admin |
 | Revoke your own sessions, one member's, or everyone's | Owner, Admin |
+| Revoke the sessions of one Owner or one AI admin | Owner |
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. If your workspace uses custom roles, what you can do depends on the permissions your role was given. The **{{ui:admin.security.agentEnforcement.title}}** card also needs permission to read the workspace's agent register. Without it, the card shows a note in place of its button.
 
@@ -87,6 +88,7 @@ Each of these opens a dialog that says what will happen. Nothing is revoked unti
 - **{{ui:admin.security.signOutOthers}}** revokes your sessions on every other device and browser. You stay signed in on the browser you are using. Click **{{ui:admin.security.signOutOthersConfirmLabel}}** in the dialog. If Inflect cannot tell the session you are using apart from your others, it revokes all of them, this one included, and the page takes you to the sign-in page.
 - **{{ui:admin.security.revokeAll}}** revokes the sessions of every active member of the workspace, on every device. Deactivated members are not affected. You stay signed in on the browser you are using, and your other sessions are revoked. Keep it for a security incident. Click **{{ui:admin.security.revokeAllConfirmLabel}}** in the dialog. The page then says how many members it covered.
 - To revoke one member's sessions, pick them in the list under {{ui:admin.security.revokeSpecificLabel}} and click **{{ui:admin.security.revoke}}**, then **{{ui:admin.security.revokeUserConfirmLabel}}** in the dialog. The list shows the workspace's active members, without you: use **{{ui:admin.security.signOutOthers}}** for your own sessions. To revoke a member's sessions one device at a time, use the {{ui:admin.members.colSessions}} column on the **{{ui:admin.nav.members}}** page instead.
+- Only an Owner can revoke one Owner's or one AI admin's sessions, as only an Owner can deactivate one. If you are not an Owner, the field reads {{ui:admin.security.revokeOwnerOnlyHint}}. **{{ui:admin.security.revokeAll}}** is not limited this way: it still signs out every active member, Owners and AI admins included.
 
 A session belongs to the person, not to the workspace. Revoking someone's sessions here also signs them out of every other workspace they belong to, and the dialogs say so.
 
@@ -112,6 +114,7 @@ A session belongs to the person, not to the workspace. Revoking someone's sessio
 | **{{ui:admin.security.apiKeyRotation.unavailable}}** | The card could not load the rotation age | Reload the page. If the note stays, ask an Owner |
 | The button in the agent registration dialog stays greyed out | What you typed does not match the workspace's short name exactly | Type the name exactly as the field's label shows it |
 | **Target user is not a member of this tenant** | The person stopped being a member after the page loaded | Reload the page |
+| **Only an OWNER can revoke an OWNER's sessions.** or **Only an OWNER can revoke an AI_ADMIN's sessions.** | You picked an Owner or an AI admin, and you are not an Owner | Ask an Owner to revoke them |
 | **{{ui:admin.security.mySessionsRevoked}}** | Inflect could not tell the session you are using apart from your others, so it revoked all of them | Sign in again |
 | **{{ui:admin.security.failedRevokeSessions}}** | Your own sessions could not be revoked | Try again |
 | **{{ui:admin.security.failedRevoke}}** or **{{ui:admin.security.failedRevokeUser}}** | The revocation did not go through, and the reason was not given | Reload the page and try again |

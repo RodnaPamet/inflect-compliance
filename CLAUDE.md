@@ -144,7 +144,12 @@ Trivy blocks on `CRITICAL,HIGH` (container scan). The structural
 ratchet at `tests/guardrails/security-gate-strictness.test.ts` fails
 CI if either gate is silently re-lowered (`moderate` → `high` /
 `critical`, or `CRITICAL,HIGH` → `CRITICAL`) or `next` is downgraded
-back to 14.x.
+back to 14.x. SAST is the third gate (#4047): neither CodeQL context
+can be required, so a step of the required `Security` job fails a
+merge-queue candidate unless the PR's own `CodeQL` check (GitHub's
+new-alert comparison) succeeded. It fails closed, waiting up to 10
+minutes for a missing or unfinished check (`scripts/sast-alert-gate.mjs`),
+and the same ratchet pins it.
 
 Async-request-API: this migration is COMPLETE. Every dynamic route
 handler types `params` as `Promise<…>` and awaits it itself (354 of
@@ -243,7 +248,7 @@ POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
 `{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route except `agents/questions`, the only one that supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
 
-`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
+`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. It is charged BEFORE the invocation is built (`verifyMcpCredential`, then the charge, then `completeMcpAuthentication`): building it sends a live `tools/list` to every external connection the agent is granted, and a malformed request is charged one unit and builds nothing (#4205). Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
 
 **Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
 through `API_READ_LIMIT` (120/min) at the Edge middleware via
@@ -491,7 +496,12 @@ OTHER `UserSession` rows and keeps the one named by the request JWT's
 session cannot be identified. Revoke All (`revoke-all`, ACTIVE members
 only, the caller's current session kept) and per-user revocation bump
 `sessionVersion` AND stamp the rows — the version bump stays the
-coarse-grained backstop for a token whose row was never written.
+coarse-grained backstop for a token whose row was never written. Signing
+ONE person out — per-user or one device — of an OWNER or AI_ADMIN needs
+`admin.owner_management`, as deactivating one does
+(`assertMayRevokeSessionsOf`, `REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER`;
+owner decision, 2026-10-25); Revoke All does not ask it, being the incident
+lever.
 
 **C.4 — Audit event streaming.** Every committed audit row is
 fired through `streamAuditEvent` into a per-tenant in-memory
@@ -860,10 +870,13 @@ new tenant-membership creation path).
   (`CAMPAIGN_MODIFY_ROLES`; `CAMPAIGN_NEVER_PROMOTES_TO_OWNER`) and never a
   custom role (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`) — refused at the schema and
   again at close — and a REVOKE or MODIFY of a LIVE OWNER needs a closer holding
-  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`); the last-OWNER
-  guard still applies to that closer. Each refusal is the WHOLE close, before any
-  row executes, so a decision stored before the rule is never applied and never
-  dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` / `_CLOSE_REFUSED`.
+  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`), as does a REVOKE
+  or MODIFY of a LIVE AI_ADMIN (`AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER`, matching
+  the members page, where only an OWNER moves one out of the role or deactivates
+  it); the last-OWNER guard still applies to that closer. Each refusal is the
+  WHOLE close, before any row executes, so a decision stored before the rule is
+  never applied and never dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` /
+  `_CLOSE_REFUSED`.
   Reasons live in `src/lib/access-review/member-decision-rules.ts`.
 
 ### Observability
@@ -989,13 +1002,16 @@ Adding a new model ⇒ classify it in the doc's inventory table (the
 ### Change Management
 
 **See `docs/change-management-policy.md`** — the written contract over the
-existing rapid-release pipeline (semantic-release auto-versions every push to
-main; staging auto-deploys; production is gated by a GitHub Environment approval).
+existing rapid-release pipeline (semantic-release auto-versions main on each push
+that leaves the merge queue empty, plus a daily run, so its commit does not
+invalidate queue candidates in flight; a merge reaches production with no further
+approval, through `ghcr-publish.yml` and Watchtower — there is no staging stage
+and no deployment approval yet built, #4056).
 It defines the three change classes (STANDARD / SIGNIFICANT / EMERGENCY), the
 approval matrix (who is the required second approver for migrations, infra, secret
 rotations, SSO/SCIM changes), the emergency-bypass + retrospective procedure, the
 rollback policy (app = redeploy prior image; migrations = forward-fix, never
-revert), and the audit trail (PR + CI + Environment approval + CHANGELOG). It is
+revert), and the audit trail (PR + merge-queue CI + published image + CHANGELOG). It is
 the policy twin of `docs/deployment.md` (operational) and cross-links
 `docs/incident-response.md` (on-call rotation). A SIGNIFICANT change — a schema
 migration, a security-middleware change, a dependency major bump — must carry a
@@ -2738,8 +2754,11 @@ without a classification fails `tsc`. The registration gate, the skill pin and
 the worker hand-off in `startWorkflowRun` and `resumeWorkflowRun` ask it, so the
 next engine is vouched, pinned and kept off the web tier without anybody
 remembering those lines. A comparison that genuinely means Flue (the
-`FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
-stays a comparison.
+Flue-specific gate in `agent-driver-policy.ts`) stays a comparison. Which engine
+a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — is
+`recordedModeOf(driver)`, a `Record<AgentDriver, AgentDriverMode>`, never a
+`'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
+every run it walks as STATIC (#4270).
 
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
@@ -2753,6 +2772,25 @@ is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
 description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
 a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
 until it does.
+
+**A new engine passes the driver conformance suite before it is switched on**
+(Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
+hold ten run scenarios and one admission scenario. An engine supplies an
+adapter, which scripts the model's turns and reads back an observation. The
+scenarios assert only on that observation. The helper reads `adapter.engine`
+for two describe titles and nothing else, and
+`tests/unit/driver-conformance-variances.test.ts` counts the reads. Do not add
+an engine branch to the helper. A difference belongs in the adapter, or in a
+VARIANCE that names the stronger property and the owner decision accepting it
+(`checkVariances`, which runs as a case of its own). Flue declares none.
+
+Two scenarios are easy to weaken by accident:
+
+- **The kill scenario** holds every engine to the per-model-call check above.
+- **The ledger scenario** is `ledger-accounts-for-every-call`. A `MODEL_CALL`
+  step may cover a dispatch if it names how many calls it covers (owner
+  decision 2026-10-25, #4197). The count is asserted against the model inputs
+  and is never inferred from the number of steps.
 
 ## Testing Conventions
 
@@ -2837,8 +2875,8 @@ until it does.
   2026-08-25 — it was `push`/`schedule`/`dispatch`-only while a separate
   `Coverage (shard N/4)` matrix re-ran the whole suite to instrument it).
 
-  It now merges **six** artifacts, and which six is load-bearing.
-  Coverage is collected by the jobs that already run the suite: the four
+  It now merges **nine** artifacts, and which nine is load-bearing.
+  Coverage is collected by the jobs that already run the suite: the seven
   `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files), `Ratchets`
   (guards + guardrails + contracts, 661 files) and `Flue`
   (`coverage-shard-flue`). Those sets are

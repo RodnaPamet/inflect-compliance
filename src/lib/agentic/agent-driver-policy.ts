@@ -22,6 +22,7 @@
  * whichever neighbour is nearest.
  */
 import prisma from '@/lib/prisma';
+import { readStoredDriverMode } from '@/lib/agentic/agent-driver-stored-mode';
 import { logger } from '@/lib/observability/logger';
 import { env } from '@/env';
 
@@ -56,11 +57,15 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
 
     let stored: string | null = null;
     try {
-        const row = await prisma.tenantSecuritySettings.findUnique({
-            where: { tenantId },
-            select: { agentDriver: true },
-        });
-        stored = row?.agentDriver ?? null;
+        // AS TEXT (#4224), through the reader the settings usecase also uses.
+        // Through the generated client a stored value this build's enum does not
+        // contain THREW, and the catch below turned it into
+        // `TENANT_NOT_OPTED_IN` — reporting a tenant whose engine we could not
+        // read as one that never chose. Reading the bytes lets
+        // `resolveAgentDriver` reach its own `UNRECOGNISED_SETTING` arm, which
+        // says what is actually true. The catch now covers only a database that
+        // did not answer.
+        stored = await readStoredDriverMode(prisma, tenantId);
     } catch (err) {
         logger.warn('agent-driver: settings read failed, falling back to the static engine', {
             tenantId,

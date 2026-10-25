@@ -41,7 +41,7 @@ const tenantDb: any = {
         create: jest.fn(),
     },
     policyAcknowledgementAssignment: {
-        createMany: jest.fn(),
+        createManyAndReturn: jest.fn(),
         findMany: jest.fn(),
     },
     policyVersion: { findMany: jest.fn() },
@@ -72,7 +72,7 @@ beforeEach(() => {
     tenantDb.policyAcknowledgement.findUnique.mockReset();
     tenantDb.policyAcknowledgement.findMany.mockReset();
     tenantDb.policyAcknowledgement.create.mockReset();
-    tenantDb.policyAcknowledgementAssignment.createMany.mockReset();
+    tenantDb.policyAcknowledgementAssignment.createManyAndReturn.mockReset();
     tenantDb.policyAcknowledgementAssignment.findMany.mockReset();
     tenantDb.policyVersion.findMany.mockReset().mockResolvedValue([]);
     tenantDb.tenantMembership.findMany.mockReset();
@@ -245,7 +245,7 @@ describe('requirePolicyAcknowledgement (campaign)', () => {
     it('links each notification to the policy inside the workspace, not a bare /policies path (#4128)', async () => {
         policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'P' });
         tenantDb.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }]);
-        tenantDb.policyAcknowledgementAssignment.createMany.mockResolvedValueOnce({ count: 1 });
+        tenantDb.policyAcknowledgementAssignment.createManyAndReturn.mockResolvedValueOnce([{ userId: 'u1' }]);
         await requirePolicyAcknowledgement(makeRequestContext('ADMIN'), 'p1', { audience: { type: 'all' } });
         const data = tenantDb.notification.create.mock.calls[0][0].data;
         expect(data.linkUrl).toBe('/t/acme/policies/p1');
@@ -256,7 +256,7 @@ describe('requirePolicyAcknowledgement (campaign)', () => {
     it('looks the slug up when the context carries none', async () => {
         policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'P' });
         tenantDb.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }]);
-        tenantDb.policyAcknowledgementAssignment.createMany.mockResolvedValueOnce({ count: 1 });
+        tenantDb.policyAcknowledgementAssignment.createManyAndReturn.mockResolvedValueOnce([{ userId: 'u1' }]);
         await requirePolicyAcknowledgement(makeRequestContext('ADMIN', { tenantSlug: undefined }), 'p1', {
             audience: { type: 'all' },
         });
@@ -281,20 +281,32 @@ describe('requirePolicyAcknowledgement (campaign)', () => {
     it('assigns the resolved audience, dedupes, and notifies each', async () => {
         policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'Acceptable Use' });
         tenantDb.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }, { userId: 'u2' }]);
-        tenantDb.policyAcknowledgementAssignment.createMany.mockResolvedValueOnce({ count: 2 });
+        tenantDb.policyAcknowledgementAssignment.createManyAndReturn.mockResolvedValueOnce([{ userId: 'u1' }, { userId: 'u2' }]);
         const out = await requirePolicyAcknowledgement(makeRequestContext('ADMIN'), 'p1', { audience: { type: 'all' } });
         expect(out).toEqual({ policyVersionId: 'v1', assignedCount: 2 });
-        const createManyArg = tenantDb.policyAcknowledgementAssignment.createMany.mock.calls[0][0];
+        const createManyArg = tenantDb.policyAcknowledgementAssignment.createManyAndReturn.mock.calls[0][0];
         expect(createManyArg.skipDuplicates).toBe(true);
         expect(createManyArg.data).toHaveLength(2);
         expect(createManyArg.data[0]).toMatchObject({ policyVersionId: 'v1', assignedById: 'user-1' });
         expect(tenantDb.notification.create).toHaveBeenCalledTimes(2);
     });
 
+    it('notifies only the people it newly assigned', async () => {
+        // u1 already holds an assignment on v1 (an earlier request, or a publish
+        // that carried the campaign forward) and was told then.
+        policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'P' });
+        tenantDb.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }, { userId: 'u2' }]);
+        tenantDb.policyAcknowledgementAssignment.createManyAndReturn.mockResolvedValueOnce([{ userId: 'u2' }]);
+        const out = await requirePolicyAcknowledgement(makeRequestContext('ADMIN'), 'p1', { audience: { type: 'all' } });
+        expect(out.assignedCount).toBe(2);
+        expect(tenantDb.notification.create).toHaveBeenCalledTimes(1);
+        expect(tenantDb.notification.create.mock.calls[0][0].data.userId).toBe('u2');
+    });
+
     it('scopes a role audience to that role', async () => {
         policyRepoGetById.mockResolvedValueOnce({ id: 'p1', status: 'PUBLISHED', currentVersionId: 'v1', title: 'P' });
         tenantDb.tenantMembership.findMany.mockResolvedValueOnce([{ userId: 'u1' }]);
-        tenantDb.policyAcknowledgementAssignment.createMany.mockResolvedValueOnce({ count: 1 });
+        tenantDb.policyAcknowledgementAssignment.createManyAndReturn.mockResolvedValueOnce([{ userId: 'u1' }]);
         await requirePolicyAcknowledgement(makeRequestContext('ADMIN'), 'p1', { audience: { type: 'role', role: 'EDITOR' as any } });
         const where = tenantDb.tenantMembership.findMany.mock.calls[0][0].where;
         expect(where.role).toBe('EDITOR');

@@ -235,11 +235,11 @@ function IdentityAccountsContent() {
             setError(true);
         } finally {
             if (seq === requestSeq.current) {
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setLoading(false);
             }
         }
     }, [apiUrl, query]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { void load(); }, [load]);
 
     const setProtection = useCallback(async (account: AccountRow, isProtected: boolean, why: string | null) => {

@@ -30,6 +30,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { RequiredMarker } from '@/components/ui/required-marker';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 
 interface ControlOption {
@@ -123,12 +124,11 @@ export function NewEvidenceLinkModal({
                 }),
             });
             if (!res.ok) {
-                const err = await res
-                    .json()
-                    .catch(() => ({ error: tx('linkModal.createFailed') }));
-                throw new Error(
-                    err.error || err.message || tx('linkModal.createFailed'),
-                );
+                // The error body is the envelope `{ error: { code, message } }`;
+                // `err.error || …` handed that OBJECT to `new Error`, which read
+                // "[object Object]" (#4126).
+                const err = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(err, tx('linkModal.createFailed')));
             }
             const data = await res.json();
             const evidenceUrlPrefix = apiUrl(CACHE_KEYS.evidence.list());

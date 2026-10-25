@@ -111,11 +111,17 @@ const CATALOGUE = {
 };
 
 /** Route the two GETs the page makes; `pairings` is what the setter has stored. */
-function mockFetch(opts: { pairings?: Array<{ writeToolName: string; readToolName: string }>; failWith?: string } = {}) {
+function mockFetch(
+    opts: {
+        pairings?: Array<{ writeToolName: string; readToolName: string }>;
+        failWith?: string;
+        refusedNames?: number;
+    } = {},
+) {
     global.fetch = jest.fn(async (url: string, init?: { method?: string }) => {
         const u = String(url);
         if (u.includes('/admin/agents/external-tools')) {
-            return { ok: true, json: async () => CATALOGUE };
+            return { ok: true, json: async () => ({ ...CATALOGUE, refusedNames: opts.refusedNames ?? 0 }) };
         }
         if (u.includes('/admin/external-prior-state-read')) {
             if (init?.method && opts.failWith) {
@@ -261,5 +267,28 @@ describe('a refused pairing', () => {
         const row = screen.getByTestId('prior-state-pairing-set_employee_work_email');
         expect(within(row).getByText(/cannot run/)).toBeInTheDocument();
         expect(picker().value).toBe('');
+    });
+});
+
+describe('tools the reader refused for their name (#4238)', () => {
+    // The reader refuses a tool whose name is past the MCP limit, or carries a
+    // control, line-break or invisible character. Unsaid, that tool would look
+    // like one the server never offered, so the page says how many were left
+    // out, and why, without quoting a name.
+    const notice = () => document.getElementById('external-tools-refused-names');
+
+    it('says so, with the limit, when the catalogue left tools out', async () => {
+        mockFetch({ refusedNames: 2 });
+        await renderPage();
+        expect(notice()).not.toBeNull();
+        expect(notice()!.textContent).toContain('128');
+        expect(notice()!.textContent).toContain('invisible');
+    });
+
+    it('says nothing when none were left out', async () => {
+        // The positive control: a notice on every catalogue would pass the case
+        // above while telling the operator nothing.
+        await renderPage();
+        expect(notice()).toBeNull();
     });
 });

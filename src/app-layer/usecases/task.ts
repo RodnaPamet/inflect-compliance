@@ -11,7 +11,7 @@ import { createWatcherNotifications, type WatcherActivityKind } from '../notific
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import { env } from '@/env';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
-import { sanitizePlainText } from '@/lib/security/sanitize';
+import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -1542,7 +1542,11 @@ export async function linkTaskEvidence(
     data: { url: string; note?: string | null },
 ) {
     assertCanWriteTasks(ctx);
-    const url = data.url.trim();
+    // The URL becomes the row's `content` and, with no note, its title. It is
+    // percent-encoded rather than run through `sanitizePlainText`, which would
+    // decode `&region=` into `®ion=` (see `sanitizeUrlText`). A note that is
+    // blank once its markup is gone falls back to the URL, like no note.
+    const url = sanitizeUrlText(data.url);
     const note = data.note ? sanitizePlainText(data.note) : null;
     const result = await runInTenantContext(ctx, async (db) => {
         const task = await db.task.findFirst({
@@ -1555,7 +1559,7 @@ export async function linkTaskEvidence(
                 tenantId: ctx.tenantId,
                 taskId,
                 type: 'LINK',
-                title: note || url,
+                title: note?.trim() ? note : url,
                 content: url,
                 status: 'DRAFT',
                 ownerUserId: ctx.userId,
