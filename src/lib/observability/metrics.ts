@@ -866,6 +866,9 @@ function getEntraRoleSync() {
  *   - `custom_role_held` — the mapping yields AI_ADMIN but the membership carries
  *                       a custom role, which that role never does; nothing was
  *                       written (#3699).
+ *   - `foreign_directory` — a sign-in from a Microsoft directory other than the
+ *                       workspace's configured one, or with none configured;
+ *                       no mapping applied, refused when the gate is on.
  *
  * A `gate_denied` spike means a tenant's gate is denying logins (often a
  * misconfigured mapping). No tenantId/userId label — fleet-health signal;
@@ -882,7 +885,8 @@ export function recordEntraRoleSync(attrs: {
         | 'no_match'
         | 'no_mappings'
         | 'ambiguous_tie'
-        | 'custom_role_held';
+        | 'custom_role_held'
+        | 'foreign_directory';
 }): void {
     getEntraRoleSync().add(1, { outcome: attrs.outcome });
 }
