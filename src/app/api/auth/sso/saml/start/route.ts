@@ -5,6 +5,7 @@ import {
     buildSamlInstance,
     generateAuthnRequest,
     encodeSamlRelayState,
+    newSamlRequestBinding,
 } from '@/lib/security/saml-client';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { isCrossSiteStart, prepareSsoFlow } from '@/lib/auth/sso-flow';
@@ -113,7 +114,10 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const callbackUrl = `${baseUrl}/api/auth/sso/saml/callback`;
     const spIssuer = `${baseUrl}/saml/metadata/${tenant.slug}`;
 
-    const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer);
+    // The AuthnRequest's ID is chosen here and sealed into the flow, so the
+    // callback accepts only the response that answers it.
+    const request = newSamlRequestBinding();
+    const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer, request);
 
     // ── Keep the flow in this browser; RelayState is only its id ──
     // (src/lib/auth/sso-flow.ts)
@@ -121,6 +125,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         tenantSlug: tenant.slug,
         providerId: provider.id,
         returnTo,
+        request,
     }));
 
     // ── Generate AuthnRequest and redirect ──

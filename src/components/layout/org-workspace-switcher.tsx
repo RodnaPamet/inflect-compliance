@@ -46,6 +46,7 @@ import type {
 } from './tenant-switcher';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 
+import { useTranslations } from 'next-intl';
 export interface OrgWorkspaceSwitcherProps {
     /**
      * Tenant memberships the popover surfaces under "Workspaces".
@@ -73,6 +74,7 @@ export function OrgWorkspaceSwitcher({
     memberships,
     orgMemberships,
 }: OrgWorkspaceSwitcherProps) {
+    const t = useTranslations('common.ui');
     const { orgName, orgSlug } = useOrgContext();
     const [open, setOpen] = useState(false);
     const close = useCallback(() => setOpen(false), []);
@@ -86,7 +88,7 @@ export function OrgWorkspaceSwitcher({
             sideOffset={6}
             popoverContentClassName="w-[240px] p-1"
             content={
-                <Popover.Menu aria-label="Switch context">
+                <Popover.Menu aria-label={t('switchContext')}>
                     {/* PR-2 — Organizations come first when the
                         active context is itself an organization.
                         Mirrors TenantSwitcher's "Organizations"
@@ -187,7 +189,7 @@ export function OrgWorkspaceSwitcher({
             <button
                 type="button"
                 className={SWITCHER_PILL_CLASS}
-                aria-label={`Current organization: ${orgName}. Click to switch.`}
+                aria-label={t('currentOrganization', { name: orgName })}
                 aria-expanded={open}
                 aria-haspopup="menu"
                 data-testid="top-chrome-org-switcher"

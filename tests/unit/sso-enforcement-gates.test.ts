@@ -59,6 +59,7 @@ jest.mock('@/app-layer/repositories/SsoConfigRepository', () => ({
     findById: jest.fn(async () => ({ id: 'idp-1', tenantId: 'tenant-b' })),
     setEnforced: jest.fn(async () => ({ id: 'idp-1', isEnforced: true })),
 }));
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
 jest.mock('@/lib/observability/context', () => ({
     __esModule: true,
     mergeRequestContext: () => undefined,

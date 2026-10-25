@@ -9,7 +9,7 @@ import {
     verifyIdToken,
 } from '@/lib/security/oidc-client';
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
-import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
+import { ssoLog, generateSsoRequestId, emailDomainForLog } from '@/lib/security/sso-logging';
 import { issueSsoHandoff, ssoHandoffResponse } from '@/lib/auth/sso-handoff';
 import { clearSsoFlow, readBoundSsoFlow } from '@/lib/auth/sso-flow';
 import { sanitizeRedirectPath } from '@/lib/auth/guard';
@@ -175,7 +175,7 @@ export async function GET(req: NextRequest) {
         ssoLog('warn', 'Identity linking rejected', {
             requestId, tenantSlug: state.tenantSlug, providerType: 'OIDC',
             providerId: provider.id, stage: 'identity_linking',
-            meta: { reason: linkResult.reason, email: claims.email },
+            meta: { reason: linkResult.reason, emailDomain: emailDomainForLog(claims.email) },
         });
         return redirectToLogin(
             req,

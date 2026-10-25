@@ -50,6 +50,7 @@ import { cardVariants } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { useLocalStorage } from '@/components/ui/hooks';
 
+import { useTranslations } from 'next-intl';
 // ─── Width bounds ──────────────────────────────────────────────────
 // The docked panel is user-resizable between these. 320px is the
 // default (the roadmap's fixed v1 width); 280 keeps the content
@@ -138,6 +139,7 @@ export function AsidePanel({
     openOnMount = false,
     onClose,
 }: AsidePanelProps) {
+    const t = useTranslations('common.ui');
     const [collapsed, setCollapsed] = useLocalStorage<boolean>(
         `aside:collapsed:${surfaceKey}`,
         defaultCollapsed,
@@ -243,7 +245,7 @@ export function AsidePanel({
                         type="button"
                         onClick={() => setCollapsed(false)}
                         className={ICON_BUTTON_CLASS}
-                        aria-label={`Expand ${title} panel`}
+                        aria-label={t('expandPanel', { title })}
                         aria-expanded={false}
                     >
                         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -274,7 +276,7 @@ export function AsidePanel({
                     <div
                         role="separator"
                         aria-orientation="vertical"
-                        aria-label={`Resize ${title} panel`}
+                        aria-label={t('resizePanel', { title })}
                         aria-valuenow={width}
                         aria-valuemin={MIN_WIDTH}
                         aria-valuemax={MAX_WIDTH}
@@ -308,7 +310,7 @@ export function AsidePanel({
                                 type="button"
                                 onClick={() => setCollapsed(true)}
                                 className={ICON_BUTTON_CLASS}
-                                aria-label={`Collapse ${title} panel`}
+                                aria-label={t('collapsePanel', { title })}
                                 aria-expanded
                             >
                                 <ChevronRight

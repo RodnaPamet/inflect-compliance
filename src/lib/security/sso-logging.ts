@@ -88,3 +88,15 @@ export function redactSsoUrl(url: string): string {
         return '[INVALID_URL]';
     }
 }
+
+/**
+ * The part of an email address an SSO log line may carry: its domain, which is
+ * what telling a `domain_mismatch` from a wrong provider needs. The full
+ * address identifies a person, and log lines are kept and shipped outside the
+ * product.
+ */
+export function emailDomainForLog(email: string | null | undefined): string | null {
+    if (!email) return null;
+    const at = email.lastIndexOf('@');
+    return at >= 0 ? email.slice(at + 1).toLowerCase() : null;
+}

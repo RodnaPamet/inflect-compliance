@@ -42,6 +42,7 @@
 import { cn } from "@inflect/ui/lib/cn";
 import type { ReactNode } from "react";
 
+import { useTranslations } from 'next-intl';
 export type StatusBreakdownVariant =
     | "brand"
     | "success"
@@ -128,6 +129,7 @@ export function StatusBreakdown({
     ariaLabel,
     className,
 }: StatusBreakdownProps) {
+    const t = useTranslations('common.ui');
     const computedTotal =
         total ?? items.reduce((sum, item) => sum + item.value, 0);
 
@@ -173,7 +175,7 @@ export function StatusBreakdown({
                         {showCount && (
                             <span
                                 className="min-w-[2rem] text-right font-mono text-content-emphasis"
-                                aria-label={`Count ${item.value}`}
+                                aria-label={t('countValue', { value: item.value })}
                             >
                                 {item.value}
                             </span>
@@ -181,7 +183,7 @@ export function StatusBreakdown({
                         {showPercent && (
                             <span
                                 className="min-w-[3rem] text-right text-content-muted"
-                                aria-label={`${percentLabel} of total`}
+                                aria-label={t('percentOfTotal', { percent: percentLabel })}
                             >
                                 {percentLabel}
                             </span>
@@ -194,7 +196,11 @@ export function StatusBreakdown({
                             role="progressbar"
                             aria-label={
                                 typeof item.label === "string"
-                                    ? `${item.label}: ${item.value} of ${computedTotal}`
+                                    ? t('labelValueOfTotal', {
+                                          label: item.label,
+                                          value: item.value,
+                                          total: computedTotal,
+                                      })
                                     : undefined
                             }
                             aria-valuenow={item.value}

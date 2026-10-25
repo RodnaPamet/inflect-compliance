@@ -26,6 +26,7 @@ import {
   createFilterDefs,
   createTypedFilterDefs,
   numberCodec,
+  optionsFromEnum,
   stringCodec,
   typedOptionsFromEnum,
 } from '../../src/components/ui/filter/filter-definitions';
@@ -43,6 +44,7 @@ import {
   type OwnerReference,
 } from '../../src/components/ui/filter/filter-examples';
 import { CircleDot, Flag, Activity } from 'lucide-react';
+import { createElement } from 'react';
 
 // ─── 1. Contract sanity ──────────────────────────────────────────────
 
@@ -360,5 +362,46 @@ describe('typedOptionsFromEnum', () => {
     for (const o of opts) {
       expect(o.icon).toBeUndefined();
     }
+  });
+});
+
+
+// ─── A filter icon need not be a Lucide component (#3358) ────────────
+//
+// `FilterDefInput.icon` used to narrow to `LucideIcon` while `Filter.icon` was
+// already the wider `FilterIcon` and `filter-list.tsx` already drew all three
+// forms (it branches on `isReactNode` at three sites). Combined with
+// `tests/guards/no-lucide.test.ts`, which fails any NEW `lucide-react` import
+// site, that made the documented builder unreachable from new code: a new list
+// page could satisfy neither the type nor the guard.
+//
+// THE TYPE WIDENING IS PROVED BY `tsc`, NOT BY THESE ASSERTIONS. TypeScript
+// types are erased, so a runtime test passes whether the parameter is
+// `LucideIcon` or `FilterIcon`. What these add is that the value is carried
+// through UNTOUCHED rather than coerced or dropped — and, crucially, that this
+// FILE now contains a ReactNode-icon call site, so re-narrowing the type makes
+// `npm run typecheck` fail here. Measured: reverting `icon` to `LucideIcon`
+// errors on these calls.
+describe('a filter icon need not be a Lucide component (#3358)', () => {
+  it('createFilterDefs carries a ReactNode icon through untouched', () => {
+    const node = createElement('svg', { 'data-icon': 'custom' });
+    const { getFilter } = createFilterDefs({
+      status: {
+        label: 'Status',
+        icon: node,
+        options: [{ value: 'OPEN', label: 'Open' }],
+      },
+    });
+    // Identity, not merely truthiness: a builder that re-wrapped or
+    // element-constructed the value would break the `isReactNode` branch the
+    // renderer relies on.
+    expect(getFilter('status')!.icon).toBe(node);
+  });
+
+  it('optionsFromEnum carries one through to every option', () => {
+    const node = createElement('svg', { 'data-icon': 'custom' });
+    const opts = optionsFromEnum({ OPEN: 'Open', CLOSED: 'Closed' }, node);
+    expect(opts).toHaveLength(2);
+    for (const o of opts) expect(o.icon).toBe(node);
   });
 });

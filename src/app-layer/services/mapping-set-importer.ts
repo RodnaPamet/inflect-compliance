@@ -34,6 +34,7 @@ import { isValidMappingStrength } from '../domain/requirement-mapping.types';
 import type { PrismaTx } from '@/lib/db-context';
 import type { MappingStrengthValue } from '../domain/requirement-mapping.types';
 import { logger } from '@/lib/observability/logger';
+import { canonicalJson } from '@/lib/canonical-json';
 
 // ─── YAML Schema ─────────────────────────────────────────────────────
 
@@ -166,19 +167,19 @@ export function parseMappingSetString(content: string, sourceName: string = '<st
 // ─── Content Hash ────────────────────────────────────────────────────
 
 /**
- * Compute a content hash for deduplication.
- * Includes URN, version, framework refs, and all entry source/target/strength.
+ * Compute a content hash for deduplication: SHA-256 over the canonical JSON
+ * of the whole parsed set, the name, the description and every entry's
+ * rationale included.
+ *
+ * It covered only the urn, the version, the framework refs and each entry's
+ * source, target and strength until 2026-10-24, so a reworded rationale under
+ * the same version was skipped by every database already holding the set.
+ * Unlike a library, a mapping set records no version diff and notifies
+ * nobody, so there is nothing a version bump would keep straight, and the
+ * text belongs in the hash.
  */
 export function computeMappingSetHash(stored: StoredMappingSet): string {
-    const hashInput = [
-        stored.urn,
-        stored.version.toString(),
-        stored.source_framework_ref,
-        stored.target_framework_ref,
-        ...stored.mapping_entries.map(e => `${e.source_ref}|${e.target_ref}|${e.strength}`),
-    ].join('||');
-
-    return crypto.createHash('sha256').update(hashInput).digest('hex');
+    return crypto.createHash('sha256').update(canonicalJson(stored)).digest('hex');
 }
 
 // ─── Directory Scanner ───────────────────────────────────────────────
