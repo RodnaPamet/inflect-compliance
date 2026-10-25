@@ -15,7 +15,6 @@
  *     not only the coarse tier of its base role;
  *   - a refused bulk action shows the server's reason.
  */
-import * as React from 'react';
 import { act, configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 
 jest.setTimeout(180_000);

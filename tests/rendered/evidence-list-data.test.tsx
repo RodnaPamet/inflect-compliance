@@ -12,7 +12,6 @@
  *     The page held the SSR slice (the first 100) in state and never fetched
  *     the rest; it now does when the server says the slice is short.
  */
-import * as React from 'react';
 import { act, configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 
 jest.setTimeout(180_000);

@@ -12,7 +12,6 @@
  *
  * Mounted in Bulgarian, so an English string reaching the DOM is visible.
  */
-import * as React from 'react';
 import { configure, screen, waitFor } from '@testing-library/react';
 
 jest.setTimeout(180_000);
