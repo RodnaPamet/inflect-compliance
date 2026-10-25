@@ -103,6 +103,9 @@ URL (as they already did for an absent note).
   Its population is `ENCRYPTED_FIELDS`, and `Evidence.content` is deliberately
   outside it because the list searches it. The write-path test file's coverage
   map points at the new test file instead.
-- **Two vendor URLs already have the query-string defect.** `Vendor.websiteUrl`
-  and a vendor document's `externalUrl` go through `sanitizePlainText`. Left for
-  a change of their own.
+- **The two vendor URLs that had the same query-string defect move too.**
+  `Vendor.websiteUrl` (create and update) and a vendor document's `externalUrl`
+  went through `sanitizePlainText` and now go through `sanitizeUrlText`. A
+  policy's external link is not affected: its URL is `externalUrl`, which is
+  stored as validated, and `sanitizePolicyContent('EXTERNAL_LINK', …)` sees
+  only the version's descriptive text.
