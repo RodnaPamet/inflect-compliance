@@ -666,10 +666,10 @@
       "businessProcessesPlaceholder": "Процеси, които този актив поддържа",
       "dependenciesNote": "Свободен текст — без връзка към активи или контроли.",
       "businessProcessesNote": "Свободен текст. Използвайте платното на процесните карти за реална връзка.",
-      "retentionNote": "Четима политика (напр. „7 години“). Структурираната дата отдолу задвижва авто-архивирането.",
+      "retentionNote": "Четима политика (напр. „7 години“). Структурираната дата отдолу задвижва автоматичното изтриване.",
       "retentionUntil": "Задържане до",
       "retentionUntilPlaceholder": "Изберете дата…",
-      "retentionUntilNote": "Структурирана дата на изтичане — активът се архивира автоматично след нея.",
+      "retentionUntilNote": "Структурирана дата на изтичане — след нея активът се изтрива автоматично. Може да бъде възстановен от „Изтрити активи“ в рамките на 90 дни, след което се заличава окончателно.",
       "saveFailed": "Активът не можа да бъде запазен. Опитайте отново.",
       "createFailed": "Активът не можа да бъде създаден. Опитайте отново."
     },
@@ -886,7 +886,7 @@
     "import": {
       "title": "Импортиране на активи от CSV",
       "csvFormat": "CSV формат",
-      "csvDesc": "Качете CSV файл с поне колона Name. Незадължителни колони: Type, Status, Owner, Classification, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (ГГГГ-ММ-ДД), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
+      "csvDesc": "Качете CSV файл с поне колони Name и Type. Незадължителни колони: Status, Owner, Classification, Location, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (ГГГГ-ММ-ДД), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
       "chooseFile": "Изберете CSV файл",
       "assetsToImport": "{count} актив(а) за импортиране",
       "importing": "Импортиране… ({count})",
@@ -903,6 +903,7 @@
       "moreRows": "+още {count}…",
       "invalidCsv": "Не са намерени валидни редове. Уверете се, че CSV файлът има заглавна колона „Name“.",
       "importComplete": "Импортирането завърши — създадени са {created} от {total} актива",
+      "importFailed": "Импортирането е неуспешно — не е създаден нито един актив",
       "errors": "Грешки",
       "viewRegister": "Преглед на регистъра на активите →",
       "importMore": "Импортиране на още",
@@ -921,7 +922,14 @@
       }
     },
     "list": {
-      "ownerImported": "импортиран"
+      "ownerImported": "импортиран",
+      "loadError": "Активите не можаха да бъдат заредени. Презаредете страницата, за да опитате отново."
+    },
+    "vulnSeverity": {
+      "CRITICAL": "Критична",
+      "HIGH": "Висока",
+      "MEDIUM": "Средна",
+      "LOW": "Ниска"
     },
     "viewVulnerabilities": "Преглед на уязвимости",
     "openVulnsAria": "{count} отворени уязвимости",
