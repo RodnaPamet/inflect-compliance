@@ -14,7 +14,8 @@
 
 const mockDb = {
     control: { findFirst: jest.fn() },
-    evidence: { findMany: jest.fn() },
+    evidence: { findMany: jest.fn(), findFirst: jest.fn() },
+    fileRecord: { findFirst: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -41,6 +42,12 @@ jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
     },
 }));
 
+jest.mock('@/app-layer/repositories/FileRepository', () => ({
+    FileRepository: {
+        findBySha256: jest.fn(),
+    },
+}));
+
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(),
 }));
@@ -52,6 +59,7 @@ jest.mock('@/lib/cache/list-cache', () => ({
 
 import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
 import { EvidenceRepository } from '@/app-layer/repositories/EvidenceRepository';
+import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { logEvent } from '@/app-layer/events/audit';
 import {
@@ -130,25 +138,26 @@ describe('getControlEvidenceTab', () => {
     });
 });
 
-describe('linkEvidence', () => {
+describe('linkEvidence — an integration result is still a plain row', () => {
     it('creates a link and emits CONTROL_EVIDENCE_LINKED', async () => {
         (ControlRepository.linkEvidence as jest.Mock).mockResolvedValue({ id: 'l-1' });
 
-        const res = await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' });
+        const res = await linkEvidence(editorCtx, 'c-1', { kind: 'INTEGRATION_RESULT', note: 'nightly scan' });
 
         expect(res).toEqual({ id: 'l-1' });
+        expect(EvidenceRepository.create).not.toHaveBeenCalled();
         const payload = (logEvent as jest.Mock).mock.calls[0][2];
         expect(payload.action).toBe('CONTROL_EVIDENCE_LINKED');
-        expect(payload.detailsJson.relation).toBe('FILE');
+        expect(payload.detailsJson.relation).toBe('INTEGRATION_RESULT');
     });
 
     it('throws notFound when the control is missing', async () => {
         (ControlRepository.linkEvidence as jest.Mock).mockResolvedValue(null);
-        await expect(linkEvidence(editorCtx, 'missing', { kind: 'FILE' })).rejects.toThrow(/Control not found/i);
+        await expect(linkEvidence(editorCtx, 'missing', { kind: 'INTEGRATION_RESULT' })).rejects.toThrow(/Control not found/i);
     });
 
     it('rejects READER (link-evidence gate)', async () => {
-        await expect(linkEvidence(readerCtx, 'c-1', { kind: 'FILE' })).rejects.toBeDefined();
+        await expect(linkEvidence(readerCtx, 'c-1', { kind: 'INTEGRATION_RESULT' })).rejects.toBeDefined();
     });
 });
 
@@ -187,6 +196,29 @@ describe('linkEvidence — a web link is a library record (#4126 follow-up)', ()
     it('sanitises the note it is titled by', async () => {
         await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test', note: '<script>alert(1)</script>Report' });
         expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2].title).not.toMatch(/<script/);
+    });
+
+    it('sanitises the address it stores: markup characters are percent-encoded, as a browser would', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test/?q=<script>alert(1)</script>' });
+        const data = (EvidenceRepository.create as jest.Mock).mock.calls[0][2];
+        expect(data.content).toBe('https://x.test/?q=%3Cscript%3Ealert(1)%3C/script%3E');
+        expect(data.title).toBe('https://x.test/?q=%3Cscript%3Ealert(1)%3C/script%3E');
+    });
+
+    it('keeps a parameter that reads like a legacy HTML entity — `&region` is not decoded to `®ion`', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test/report?lang=en&region=us' });
+        expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2]).toMatchObject({
+            title: 'https://x.test/report?lang=en&region=us',
+            content: 'https://x.test/report?lang=en&region=us',
+        });
+    });
+
+    it('keeps a query string intact through sanitisation — `&` is not stored as `&amp;`', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test/a?b=1&c=2' });
+        expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2]).toMatchObject({
+            title: 'https://x.test/a?b=1&c=2',
+            content: 'https://x.test/a?b=1&c=2',
+        });
     });
 
     it('audits the record’s creation and the control link, and bumps both list caches', async () => {
@@ -229,6 +261,194 @@ describe('linkEvidence — a web link is a library record (#4126 follow-up)', ()
     it('rejects READER before reading anything', async () => {
         await expect(linkEvidence(readerCtx, 'c-1', { kind: 'LINK', url: 'https://x.test' })).rejects.toBeDefined();
         expect(mockDb.control.findFirst).not.toHaveBeenCalled();
+    });
+});
+
+describe('linkEvidence — an uploaded file is a library record', () => {
+    const storedFile = {
+        id: 'f-1',
+        pathKey: 'tenants/t-1/evidence/2026/10/0b1c_soc2.pdf',
+        originalName: 'soc2.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 2048,
+        sha256: 'a1b2',
+        status: 'STORED',
+        scanStatus: 'CLEAN',
+    };
+
+    beforeEach(() => {
+        (mockDb.control.findFirst as jest.Mock).mockResolvedValue({ id: 'c-1' });
+        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue(storedFile);
+        (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue(null);
+        (FileRepository.findBySha256 as jest.Mock).mockResolvedValue(storedFile);
+        (EvidenceRepository.create as jest.Mock).mockImplementation(async (_db: any, _ctx: any, data: any) => ({
+            id: 'ev-f',
+            ...data,
+        }));
+    });
+
+    function expectNothingWritten() {
+        expect(EvidenceRepository.create).not.toHaveBeenCalled();
+        expect(EvidenceRepository.createControlLinks).not.toHaveBeenCalled();
+        expect(ControlRepository.linkEvidence).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    }
+
+    it('creates a DRAFT FILE record from the stored file, joined to the control, and no plain row', async () => {
+        // A url in the body is ignored: the record's content is the file's own
+        // storage key, read from the FileRecord.
+        const res = await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1', url: 'https://evil.test/x', note: 'SOC 2 report' });
+
+        expect(mockDb.fileRecord.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 'f-1', tenantId: editorCtx.tenantId },
+        }));
+        expect(EvidenceRepository.create).toHaveBeenCalledWith(mockDb, editorCtx, {
+            type: 'FILE',
+            title: 'SOC 2 report',
+            content: 'tenants/t-1/evidence/2026/10/0b1c_soc2.pdf',
+            fileName: 'soc2.pdf',
+            fileSize: 2048,
+            fileRecordId: 'f-1',
+            status: 'DRAFT',
+        });
+        expect(EvidenceRepository.createControlLinks).toHaveBeenCalledWith(mockDb, editorCtx, 'ev-f', ['c-1']);
+        expect(ControlRepository.linkEvidence).not.toHaveBeenCalled();
+        expect(res).toMatchObject({ id: 'ev-f', type: 'FILE', status: 'DRAFT', fileRecordId: 'f-1' });
+    });
+
+    it('is titled by the file name when it has no note', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1', note: '   ' });
+        expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2].title).toBe('soc2.pdf');
+    });
+
+    it('sanitises the note it is titled by', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1', note: '<script>alert(1)</script>Report' });
+        expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2].title).toBe('Report');
+    });
+
+    it('audits the record’s creation and the control link, and bumps both list caches', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' });
+
+        const payloads = (logEvent as jest.Mock).mock.calls.map((c) => c[2]);
+        expect(payloads.map((p) => p.action)).toEqual(['CREATE', 'CONTROL_EVIDENCE_LINKED']);
+        expect(payloads[0]).toMatchObject({ entityType: 'Evidence', entityId: 'ev-f' });
+        expect(payloads[0].detailsJson.after).toEqual({ title: 'soc2.pdf', type: 'FILE', fileRecordId: 'f-1' });
+        expect(payloads[1]).toMatchObject({ entityType: 'Control', entityId: 'c-1' });
+        expect(payloads[1].detailsJson).toMatchObject({ targetEntity: 'Evidence', targetId: 'ev-f', relation: 'FILE' });
+        expect((bumpEntityCacheVersion as jest.Mock).mock.calls.map((c) => c[1]).sort()).toEqual(['control', 'evidence']);
+    });
+
+    it('joins the live record that already holds the file, instead of a second record for the same bytes', async () => {
+        const held = { id: 'ev-old', type: 'FILE', title: 'Old upload', fileRecordId: 'f-1', status: 'APPROVED' };
+        (mockDb.evidence.findFirst as jest.Mock)
+            .mockResolvedValueOnce(null) // none of them is on this control yet
+            .mockResolvedValueOnce(held);
+
+        const res = await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1', note: 'ignored' });
+
+        expect(res).toBe(held);
+        expect(EvidenceRepository.create).not.toHaveBeenCalled();
+        expect(EvidenceRepository.createControlLinks).toHaveBeenCalledTimes(1);
+        expect(EvidenceRepository.createControlLinks).toHaveBeenCalledWith(mockDb, editorCtx, 'ev-old', ['c-1']);
+        // Only live (not deleted, not archived) records in this tenant count,
+        // and the pick is stable.
+        const [onControlQuery, anyQuery] = (mockDb.evidence.findFirst as jest.Mock).mock.calls.map((c) => c[0]);
+        expect(onControlQuery.where).toEqual({
+            tenantId: editorCtx.tenantId,
+            fileRecordId: 'f-1',
+            deletedAt: null,
+            isArchived: false,
+            evidenceControlLinks: { some: { tenantId: editorCtx.tenantId, controlId: 'c-1' } },
+        });
+        expect(anyQuery.where).toEqual({ tenantId: editorCtx.tenantId, fileRecordId: 'f-1', deletedAt: null, isArchived: false });
+        expect(anyQuery.orderBy).toEqual([{ createdAt: 'asc' }, { id: 'asc' }]);
+        // No CREATE — nothing was created; the link is audited against that record.
+        const payloads = (logEvent as jest.Mock).mock.calls.map((c) => c[2]);
+        expect(payloads.map((p) => p.action)).toEqual(['CONTROL_EVIDENCE_LINKED']);
+        expect(payloads[0].detailsJson).toMatchObject({ targetId: 'ev-old', relation: 'FILE' });
+    });
+
+    it('changes nothing when a record holding the file is already on the control', async () => {
+        const onControl = { id: 'ev-on', type: 'FILE', fileRecordId: 'f-1' };
+        (mockDb.evidence.findFirst as jest.Mock).mockResolvedValueOnce(onControl);
+
+        const res = await linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' });
+
+        expect(res).toBe(onControl);
+        expect(mockDb.evidence.findFirst).toHaveBeenCalledTimes(1);
+        expectNothingWritten();
+    });
+
+    it('refuses a file outside the tenant (or missing) with 404, writing nothing', async () => {
+        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue(null);
+        await expect(linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'other-tenants-file' }))
+            .rejects.toMatchObject({ status: 404, message: 'File not found' });
+        expectNothingWritten();
+    });
+
+    it('refuses a FILE with no fileId with 400, before reading anything', async () => {
+        await expect(linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: '  ' }))
+            .rejects.toMatchObject({ status: 400, message: 'A file needs a fileId.' });
+        await expect(linkEvidence(editorCtx, 'c-1', { kind: 'FILE' })).rejects.toMatchObject({ status: 400 });
+        expect(mockDb.control.findFirst).not.toHaveBeenCalled();
+        expect(mockDb.fileRecord.findFirst).not.toHaveBeenCalled();
+        expectNothingWritten();
+    });
+
+    it.each([
+        ['the file itself is quarantined', { scanStatus: 'INFECTED', status: 'FAILED' }, { scanStatus: 'INFECTED' }],
+        ['another record with the same bytes is quarantined', {}, { id: 'f-other', scanStatus: 'INFECTED' }],
+    ])('refuses it with the upload path’s FILE_INFECTED when %s', async (_label, fileOverrides, hashMatch) => {
+        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue({ ...storedFile, ...fileOverrides });
+        (FileRepository.findBySha256 as jest.Mock).mockResolvedValue({ ...storedFile, ...hashMatch });
+
+        await expect(linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' }))
+            .rejects.toMatchObject({ status: 400, message: 'FILE_INFECTED' });
+        expectNothingWritten();
+    });
+
+    it.each([
+        ['a type the upload does not accept', { mimeType: 'application/x-msdownload' }, 'FILE_TYPE_NOT_ALLOWED'],
+        ['an empty file', { sizeBytes: 0 }, 'FILE_TOO_LARGE'],
+        ['a size over the upload cap', { sizeBytes: 10 * 1024 * 1024 * 1024 }, 'FILE_TOO_LARGE'],
+        ['a file that is not stored', { status: 'PENDING' }, 'FILE_NOT_STORED'],
+    ])('refuses %s, writing nothing', async (_label, fileOverrides, code) => {
+        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue({ ...storedFile, ...fileOverrides });
+        await expect(linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' }))
+            .rejects.toMatchObject({ status: 400, message: code });
+        expectNothingWritten();
+    });
+
+    it('accepts a file whose scan has not finished — the upload path stores those too, and the download gate decides', async () => {
+        const pending = { ...storedFile, scanStatus: 'PENDING' };
+        (mockDb.fileRecord.findFirst as jest.Mock).mockResolvedValue(pending);
+        (FileRepository.findBySha256 as jest.Mock).mockResolvedValue(pending);
+        await expect(linkEvidence(editorCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' })).resolves.toMatchObject({ id: 'ev-f' });
+    });
+
+    it('needs the control’s gate only, not evidence.edit — a controls-scoped key keeps working', async () => {
+        const controlsOnly = {
+            ...editorCtx,
+            appPermissions: {
+                ...editorCtx.appPermissions,
+                evidence: { ...editorCtx.appPermissions.evidence, edit: false, upload: false },
+            },
+        };
+        await expect(linkEvidence(controlsOnly, 'c-1', { kind: 'FILE', fileId: 'f-1' })).resolves.toMatchObject({ id: 'ev-f' });
+    });
+
+    it('throws notFound for a control outside the tenant, before reading the file', async () => {
+        (mockDb.control.findFirst as jest.Mock).mockResolvedValue(null);
+        await expect(linkEvidence(editorCtx, 'missing', { kind: 'FILE', fileId: 'f-1' })).rejects.toThrow(/Control not found/i);
+        expect(mockDb.fileRecord.findFirst).not.toHaveBeenCalled();
+        expectNothingWritten();
+    });
+
+    it('rejects READER before reading anything', async () => {
+        await expect(linkEvidence(readerCtx, 'c-1', { kind: 'FILE', fileId: 'f-1' })).rejects.toMatchObject({ status: 403 });
+        expect(mockDb.control.findFirst).not.toHaveBeenCalled();
+        expect(mockDb.fileRecord.findFirst).not.toHaveBeenCalled();
+        expectNothingWritten();
     });
 });
 

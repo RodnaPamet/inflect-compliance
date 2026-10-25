@@ -2667,7 +2667,7 @@ exports[`API contract — per-schema snapshots schema: EvidenceLinkRequest 1`] =
   "required": [
     "kind"
   ],
-  "description": "Attach evidence to a control. LINK kinds carry a URL and create a DRAFT evidence-library record of type LINK, joined to the control and titled by the note, or by the URL when there is none; the response is that record. FILE kinds reference an uploaded FileRecord by id; INTEGRATION_RESULT kinds are emitted by automation runs."
+  "description": "Attach evidence to a control. LINK kinds carry a URL and create a DRAFT evidence-library record of type LINK, joined to the control and titled by the note, or by the URL when there is none; the response is that record. FILE kinds reference an uploaded FileRecord by \`fileId\` (required) and are joined to the control as an evidence-library record: the live record that already holds that file when there is one, otherwise a new DRAFT record of type FILE titled by the note, or by the file name when there is none; the response is that record. A file the evidence upload would refuse (type, size, malware scan) or that is not stored is refused. INTEGRATION_RESULT kinds are emitted by automation runs."
 }"
 `;
 
