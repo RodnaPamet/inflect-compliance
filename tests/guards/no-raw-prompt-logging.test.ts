@@ -221,6 +221,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // instead, matching the sibling above. A hole that can be closed should be.
     'src/lib/agentic/subagent-fanout-policy.ts — identifier bound elsewhere',
     'src/lib/agentic/open-run-streams.ts — identifier bound elsewhere',
+    'src/lib/agentic/openshell/executor.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     // RELOCATION, not a new hole. `haltRunAtCap` was extracted from the static
     // driver into the shared settlement module when a second engine arrived —
@@ -768,7 +769,24 @@ const SINK_FLOOR = 30;
 // the same shape as `setConcurrencyCap`'s `previousCap` / `cap` beside it. A
 // budget is a token count read from one integer column and passed in as a
 // number; "from what to what" is the whole point of the row.
-const MEASURED_HOLES = 202;
+// 202 -> 206: THE OPENSHELL BACKEND'S TWO LOG SINKS (4.2, #3962). Both sit in
+// `openshell/executor.ts`, and all four holes are `identifier bound elsewhere`
+// — which the docblock above calls ORDINARY for a new file, as distinct from a
+// SPREAD or HELPER kind. That distinction holds here: every field NAME is
+// written at the sink; only the values are identifiers the rule cannot open.
+//
+// The four, so the entry can be audited rather than trusted: `sandboxId` twice
+// (a function parameter), `outcome` (a destructured deletion enum), and an
+// error-message expression. None is prompt-derived — a sandbox id and a
+// deletion outcome are not model input — and the sink carrying them exists to
+// make a leaked sandbox findable.
+//
+// This LOOSENS `HOLES_PER_SINK_CEILING`: (202+6)/111 = 1.8739 becomes
+// (206+6)/113 = 1.8761. Stated plainly because this file's convention is that a
+// loosening carries its reason. Two sinks at two holes each is just above the
+// existing average, and the alternative was to log nothing when a sandbox may
+// have leaked.
+const MEASURED_HOLES = 206;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -819,7 +837,7 @@ const MEASURED_HOLES = 202;
 // long note under `MEASURED_HOLES` says why that was accepted rather than
 // worked around, and that draining an existing sink is what would actually
 // move it.
-const MEASURED_SINKS = 111;
+const MEASURED_SINKS = 113;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
