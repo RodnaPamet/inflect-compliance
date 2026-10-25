@@ -66,9 +66,9 @@ beforeAll(async () => {
     // The audit writer's FK. Seeded here rather than inherited from a sibling
     // suite — see the note in legacy-access-profile.test.ts.
     await prisma.user.upsert({
-        where: { id: 'user-1' },
+        where: { id: 'lgrc-user-1' },
         update: {},
-        create: { id: 'user-1', email: 'reconciler@lgrc.test', name: 'Reconciler' },
+        create: { id: 'lgrc-user-1', email: 'reconciler@lgrc.test', name: 'Reconciler' },
     });
 });
 

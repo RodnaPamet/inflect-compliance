@@ -46,11 +46,11 @@ beforeAll(async () => {
     // The audit writer inserts `userId` with an FK to `User`, so a context with a
     // userId that has no row fails the write — not the usecase's fault, and the
     // reason the pull test did not hit it: a job context carries no user.
-    // `makeRequestContext` defaults to 'user-1'.
+    // `makeRequestContext` defaults to 'lgm-user-1'.
     await prisma.user.upsert({
-        where: { id: 'user-1' },
+        where: { id: 'lgm-user-1' },
         update: {},
-        create: { id: 'user-1', email: 'mapper@lgm.test', name: 'Mapper' },
+        create: { id: 'lgm-user-1', email: 'mapper@lgm.test', name: 'Mapper' },
     });
 });
 

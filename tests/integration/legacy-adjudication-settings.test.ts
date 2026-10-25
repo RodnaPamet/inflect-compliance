@@ -44,8 +44,8 @@ beforeAll(async () => {
         create: { id: T, name: 'Adjudication Tenant', slug: T },
     });
     await prisma.user.upsert({
-        where: { id: 'user-1' }, update: {},
-        create: { id: 'user-1', email: 'admin@las.test', name: 'Admin' },
+        where: { id: 'las-user-1' }, update: {},
+        create: { id: 'las-user-1', email: 'admin@las.test', name: 'Admin' },
     });
 });
 

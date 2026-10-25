@@ -96,8 +96,8 @@ beforeAll(async () => {
         await prisma.tenant.upsert({ where: { id }, update: {}, create: { id, name, slug: id } });
     }
     await prisma.user.upsert({
-        where: { id: 'user-1' }, update: {},
-        create: { id: 'user-1', email: 'reviewer@lra.test', name: 'Reviewer' },
+        where: { id: 'lra-user-1' }, update: {},
+        create: { id: 'lra-user-1', email: 'reviewer@lra-actions.test', name: 'Reviewer' },
     });
     await prisma.user.upsert({
         where: { id: 'user-owner' }, update: {},
@@ -308,7 +308,7 @@ describe('each action writes what it claims', () => {
             decideLegacyAccount(ctx(), {
                 connectionId, accountKey: 'alovelace', executionId,
                 action: {
-                    kind: 'NON_PERSON', ownerUserId: 'user-1',
+                    kind: 'NON_PERSON', ownerUserId: 'lra-user-1',
                     justification: 'batch job for the nightly export',
                 },
             })
