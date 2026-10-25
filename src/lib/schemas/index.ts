@@ -335,7 +335,7 @@ export const LinkEvidenceSchema = z.object({
     url: z.string().url().optional().nullable(),
     note: z.string().optional().nullable(),
 }).strip().openapi('EvidenceLinkRequest', {
-    description: 'Attach evidence to a control. FILE kinds reference an uploaded FileRecord by id; LINK kinds carry a URL; INTEGRATION_RESULT kinds are emitted by automation runs.',
+    description: 'Attach evidence to a control. LINK kinds carry a URL and create a DRAFT evidence-library record of type LINK, joined to the control and titled by the note, or by the URL when there is none; the response is that record. FILE kinds reference an uploaded FileRecord by id; INTEGRATION_RESULT kinds are emitted by automation runs.',
 });
 
 export const InstallTemplatesSchema = z.object({

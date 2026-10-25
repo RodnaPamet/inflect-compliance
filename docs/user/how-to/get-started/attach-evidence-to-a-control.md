@@ -23,7 +23,7 @@ Evidence shows that a control is in place, for example a signed policy, a screen
 7. Click **{{ui:panels.evidenceForm.add}}**. It stays greyed out until you choose a file, or type both an address and a title. While it works it reads {{ui:panels.evidenceForm.uploading}} or {{ui:panels.evidenceForm.linking}}.
 8. The form closes, and the evidence appears in the table and in {{ui:nav.evidence}}. The count on the {{ui:controls.detailPage.tabEvidence}} tab goes up by one.
 
-Some links in the table may be plain links. A plain link was saved on the control only, as every link added on this tab was before links became library records. It is not in the library and has no review status. The table shows the two apart:
+Some links in the table may be plain links. A plain link was saved on the control only, as every link added to a control was before links became library records. It is not in the library and has no review status. The table shows the two apart:
 
 | Column | A file or link you add | A plain link |
 | --- | --- | --- |
