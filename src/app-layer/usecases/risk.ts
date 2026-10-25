@@ -820,7 +820,6 @@ export async function deleteRisk(ctx: RequestContext, id: string) {
 // ─── Restore / Purge / Include Deleted ───
 
 import { restoreEntity, purgeEntity } from './soft-delete-operations';
-import { withDeleted } from '@/lib/soft-delete';
 
 export async function restoreRisk(ctx: RequestContext, id: string) {
     const result = await restoreEntity(ctx, 'Risk', id);
@@ -840,19 +839,37 @@ export async function purgeRisk(ctx: RequestContext, id: string) {
 // memory guard against a pathological tenant rather than a page size.
 const FULL_SCAN_CAP = 5000;
 
-export async function listRisksWithDeleted(ctx: RequestContext) {
+/**
+ * The deleted-risks read (`GET /risks?includeDeleted=true`): ONLY soft-deleted
+ * risks, under the same filters and search as `listRisks`, in the same row
+ * shape (the list's select, linked-task counts and owner) plus who deleted
+ * each and when.
+ *
+ * It used to be `withDeleted({ where: { tenantId } })` here: `withDeleted`
+ * only lifts the soft-delete read filter, so it returned every risk, live and
+ * deleted alike; no filter reached it; and with no `select` it returned full
+ * rows, decrypting `treatmentNotes` on every one. The Controls twin was fixed
+ * the same way (#4275).
+ */
+export async function listRisksWithDeleted(ctx: RequestContext, filters: RiskFilters = {}) {
     assertCanAdmin(ctx);
-    // This read was unbounded while its direct Controls twin
-    // (`listControlsWithDeleted`) was capped. It is worse than the twin on
-    // two counts: no `select`, so it returns full rows, and `Risk` carries
-    // encrypted columns — so the Epic-B middleware decrypts `treatmentNotes`
-    // on every row it returns.
-    //
-    // The Layer-D2 unbounded-findMany budget never saw it: D2 scans
-    // `src/app-layer/repositories`, and this lives in usecases.
-    return runInTenantContext(ctx, (db) =>
-        db.risk.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const }, take: FULL_SCAN_CAP }))
-    );
+    const { rows, counts } = await runInTenantContext(ctx, async (db) => {
+        // Still a whole-tenant scan when unfiltered, so still capped.
+        const rows = await RiskRepository.listDeleted(db, ctx, filters, { take: FULL_SCAN_CAP });
+        const counts = await TaskRepository.countLinkedToEntities(
+            db,
+            ctx,
+            'RISK' as TaskLinkEntityType,
+            rows.map((r: { id: string }) => r.id),
+        );
+        return { rows, counts };
+    });
+    const withCounts = rows.map((r) => ({
+        ...r,
+        taskTotal: counts.get(r.id)?.total ?? 0,
+        taskDone: counts.get(r.id)?.done ?? 0,
+    }));
+    return attachOwnerUsers(ctx, withCounts);
 }
 
 export async function linkControlToRisk(ctx: RequestContext, riskId: string, controlId: string) {
