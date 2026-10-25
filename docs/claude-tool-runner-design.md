@@ -185,11 +185,18 @@ step with its own preserved-thinking checks.
 ### What it does to the assistant
 
 Nothing, by recommendation. The assistant's loop is provider-neutral, and the
-owner chose that in #3808. One observation from this research belongs to its
-own issue: `tool-loop.ts`'s message builder drops `thinking` blocks between
-turns. On Opus 5.5 those carry the model's reasoning and its progress notes
-between tool calls. Passing them back unchanged is what the API expects, and
-the API drops, unbilled, any block a model cannot read.
+owner chose that in #3808.
+
+This research turned up one defect, which Step 2x (#4153) fixed: the message
+builder in `tool-loop.ts` dropped `thinking` blocks between turns. On Opus 5.5
+those blocks carry the model's reasoning, and its progress notes between tool
+calls. The API expects them back unchanged, and drops, unbilled, any block a
+model cannot read.
+
+The Anthropic provider now hands the loop the reply's content as an opaque
+`providerPart`, which only that provider reads. `buildMessages` replays that
+content exactly as returned, so the next request carries every block, in order.
+A provider that sets no part gets the history it always got.
 
 ## Decisions for the owner
 
