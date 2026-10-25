@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { Prisma, PolicyStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
-import { parseEnumListFilter } from '../domain/list-filter';
+import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 
 /** Counts backing the six KPI filter cards on the Policies list page. */
 export interface PolicyKpiCounts {
@@ -296,7 +296,18 @@ export class PolicyRepository {
             Object.values(PolicyStatus),
             'policy status',
         );
-        if (filters?.category) where.category = filters.category;
+        // The Category facet is multi-select, so the value arrives
+        // comma-joined, and an equality on the joined string matched nothing
+        // once two were picked (#4279). Category is free text, so a single
+        // category may itself hold a comma: match the raw value as well as
+        // its comma-split members.
+        const categories = parseIdListFilter(filters?.category);
+        if (categories) {
+            where.category =
+                typeof categories === 'string'
+                    ? categories
+                    : { in: [...new Set([filters!.category!.trim(), ...categories.in])] };
+        }
         if (filters?.language) where.language = filters.language;
         if (filters?.q) {
             where.OR = [

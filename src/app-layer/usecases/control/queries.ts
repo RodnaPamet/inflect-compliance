@@ -6,15 +6,8 @@ import { assertCanReadControls } from '../../policies/control.policies';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanAdmin } from '../../policies/common';
-import { withDeleted } from '@/lib/soft-delete';
 import { cachedListRead } from '@/lib/cache/list-cache';
 
-// Safety cap on the recycle-bin view's tenant-wide scan. It intentionally
-// reads the whole tenant, so it can't paginate — the cap is a latency/memory
-// guard against a pathological tenant rather than a page size. Mirrors the
-// health-scan cap (`HEALTH_VERDICT_SCAN_CAP` in ./health) and the identical
-// constant in ./dashboard, which owns the other two whole-tenant scans.
-const FULL_SCAN_CAP = 5000;
 
 // ─── Queries ───
 
@@ -249,9 +242,30 @@ export async function getControlActivity(ctx: RequestContext, controlId: string)
     });
 }
 
-export async function listControlsWithDeleted(ctx: RequestContext) {
+/**
+ * The "Deleted controls" view. Same filters and the same row shape as
+ * `listControls`, so the view's columns and filters mean what they mean on
+ * the live list; the repository narrows to soft-deleted rows.
+ */
+export async function listControlsWithDeleted(
+    ctx: RequestContext,
+    filters?: ControlListInputFilters,
+    options: { take?: number } = {},
+) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, (db) =>
-        db.control.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const }, take: FULL_SCAN_CAP }))
-    );
+    const idRestriction = await resolveControlIdRestriction(ctx, filters);
+    const repoFilters = toRepoFilters(filters, idRestriction);
+    return runInTenantContext(ctx, async (db) => {
+        const controls = await ControlRepository.listDeleted(db, ctx, repoFilters, options);
+        const counts = await TaskRepository.countLinkedToControls(
+            db,
+            ctx,
+            controls.map((c) => c.id),
+        );
+        return controls.map((c) => ({
+            ...c,
+            taskTotal: counts.get(c.id)?.total ?? 0,
+            taskDone: counts.get(c.id)?.done ?? 0,
+        }));
+    });
 }
