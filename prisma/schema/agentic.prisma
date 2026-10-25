@@ -433,6 +433,26 @@ model WorkflowRun {
   /// therefore halted, on purpose — trust-on-first-use here would let anyone
   /// who can clear the head bypass the chain entirely.
   contextHash       String?
+  /// UNPOPULATED, AND NOT A PLACEHOLDER (#3910). Nothing in `src` writes this
+  /// column, and nothing has; every run ever executed has it NULL.
+  ///
+  /// A run's narrative output lives on its SYNTHESIS step, in
+  /// `WorkflowStep.outputJson`. That is the single sink the engine keeps
+  /// (`tests/guards/flue-model-output-has-one-destination.test.ts`), and this
+  /// column is the first place a reader looks instead — where NULL reads as
+  /// "this run produced no summary" rather than "nothing fills this in".
+  ///
+  /// DROPPING IT IS NOT A TIDY-UP, which is why it is documented rather than
+  /// deleted. It is in the Epic B manifest (`ENCRYPTED_FIELDS.WorkflowRun`),
+  /// `tests/guardrails/agentic-engine-coverage.test.ts` REQUIRES it to be, and
+  /// the DEK/KEK rotation sweeps iterate manifest fields — so a drop is a
+  /// migration plus a manifest removal plus that guardrail plus a rolling
+  /// deploy in which older containers still name the column in their SELECT
+  /// lists. Four coupled changes for a column holding no data.
+  ///
+  /// `tests/guardrails/agentic-engine-coverage.test.ts` keeps this comment TRUE:
+  /// it fails if any `workflowRun` write starts setting `summary`. If you are
+  /// adding a writer, that is fine — update this comment in the same diff.
   summary           String?
   stepCount         Int               @default(0)
   costTokens        Int               @default(0)
