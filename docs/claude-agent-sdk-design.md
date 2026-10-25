@@ -93,6 +93,25 @@ Which engine runs is the AND of four terms, each able only to narrow
 Anything else resolves to `static`, with a named reason in the
 `WORKFLOW_RUN_STARTED` audit row.
 
+**Where the tenant sets it.** Admin → AI features, in the "Agent engines"
+section (Step 0c, #4139).
+
+- Every admin can read the gate: `GET /admin/agent-driver` takes `admin.view`.
+- Only an owner can change it: `PUT` takes `admin.tenant_lifecycle`. The change
+  goes through a confirmation that says what happens to running and future runs.
+- An owner also sees the six-term Flue wiring checklist (`GET /admin/flue-wiring`).
+  It is not requested for anyone else, so their visits write no `AUTHZ_DENIED`
+  rows.
+
+Each `StaticDriverReason` has its own sentence. When the deployment's switch is
+off, the choice is disabled. That section is the only control for the column.
+Admin → Integrations used to carry a second control, and now links to the
+section instead.
+
+A later engine gets its choice on that section by adding its mode to
+`AGENT_DRIVER_MODES`, and its name and description to
+`admin.agentEngines.engine` in both catalogues.
+
 ### How Flue was made safe, which is the template
 
 Flue (`@flue/runtime`, an in-process ESM library) is the precedent for running

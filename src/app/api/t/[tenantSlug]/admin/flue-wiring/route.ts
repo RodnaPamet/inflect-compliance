@@ -2,11 +2,12 @@
  * GET /api/t/{slug}/admin/flue-wiring — which of the six terms a Flue run
  * needs are satisfied, and which one is blocking.
  *
- * OWNER-only via `admin.tenant_lifecycle`, the SAME key as the driver toggle
- * this sits beside. The response is strictly a superset of that route's facts
- * — the tenant's mode, the env switch, the build flag, the workflow term, plus
- * two counts over the register — so gating it any lower would make a narrower
- * key a way to read what the wider one guards.
+ * This route is OWNER-only, through `admin.tenant_lifecycle`. That is the key
+ * that CHANGES the driver (`PUT /admin/agent-driver`), not the `admin.view`
+ * that reading the driver takes. The response is the owner's checklist for
+ * wiring a Flue run. It holds the driver gate's facts plus two counts over the
+ * agent register, and the AI features page shows it beside the control only an
+ * owner can use. An ADMIN reads the gate itself from the agent-driver GET.
  *
  * READ-ONLY on purpose. Every term is fixed on the surface that owns it: the
  * tenant's half through `PUT /admin/agent-driver`, the register through

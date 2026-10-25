@@ -5609,29 +5609,6 @@
       "recentActivity": "Recent sync activity",
       "activityEmpty": "No SharePoint activity yet."
     },
-    "flue": {
-      "title": "Flue agent engine",
-      "description": "Run agentic workflows on the Flue reasoning engine instead of the static step-walker. Six terms have to agree; until they all do, every run executes on the static engine and succeeds, so nothing else would tell you.",
-      "statusReady": "Ready",
-      "statusBlocked": "Not wired",
-      "optIn": "Opt this workspace in",
-      "optOut": "Opt out",
-      "saveFailed": "Could not change the engine for this workspace.",
-      "runsOnFlue": "Runs in this workspace execute on the Flue engine.",
-      "runsOnStatic": "Runs still execute on the static engine — waiting on: {term}.",
-      "operatorTerm": "Set on the deployment",
-      "fix": "Set up →",
-      "count": "{count} available",
-      "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand.",
-      "term": {
-        "ENV": "The deployment allows the Flue engine",
-        "TENANT": "This workspace has opted in",
-        "BUILD": "This build ships a Flue implementation",
-        "WORKFLOW": "A workflow asks for the Flue engine",
-        "REGISTERED_AGENT": "An active, risk-assessed agent is registered",
-        "BOUND_KEY": "A live API key is bound to that agent"
-      }
-    },
     "integrations": {
       "title": "Integrations",
       "loadFailed": "Failed to load integrations",
@@ -5915,7 +5892,9 @@
         "writeNotRecorded": "Not recorded",
         "writePaired": "Write, paired",
         "writeUnpaired": "Write, no pairing"
-      }
+      },
+      "agentEnginesMoved": "The agent engine setting is on the AI features page.",
+      "agentEnginesLink": "Open agent engines →"
     },
     "forbidden": {
       "title": "Admin Access Required",
@@ -6633,6 +6612,59 @@
         "name": "Questionnaire autofill",
         "description": "Drafts answers to incoming security questionnaires from your existing policies and controls. Every answer can be edited before the questionnaire is returned."
       }
+    },
+    "agentEngines": {
+      "title": "Agent engines",
+      "description": "This setting chooses which engine runs this workspace's agents. The built-in engine runs each workflow's steps exactly as written. A reasoning engine lets a model choose which of the agent's tools to call. On either engine, every call goes through the agent's grants, policy card, autonomy ceiling and kill switch.",
+      "loadFailed": "Couldn't load the agent engine setting.",
+      "saveFailed": "Couldn't change the engine for this workspace.",
+      "runsOnFlue": "In this workspace, workflows that ask for the Flue engine run on it.",
+      "reason": {
+        "ENV_DISABLED": "Runs use the built-in engine because the Flue engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
+        "TENANT_NOT_OPTED_IN": "Runs use the built-in engine because this workspace has not chosen the Flue engine.",
+        "UNRECOGNISED_SETTING": "Runs use the built-in engine because this version does not recognise the stored choice. A newer version probably wrote it during an upgrade. Choose an engine again to replace it.",
+        "DRIVER_NOT_IMPLEMENTED": "Runs use the built-in engine because this version of Inflect does not include the Flue engine, even though both the deployment and this workspace ask for it.",
+        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because no workflow in this version asks for the Flue engine, even though both the deployment and this workspace allow it.",
+        "UNKNOWN": "Runs use the built-in engine, but the reason could not be shown. Reload the page to try again."
+      },
+      "deploymentOffHeading": "Agent engines are not turned on for this deployment",
+      "deploymentOffBody": "The choice below is disabled. No run would change until the deployment's Flue switch is on, and only the deployment's operator can turn it on.",
+      "chosen": "This workspace's engine: {engine}.",
+      "ownerOnly": "Only a workspace owner can change the engine.",
+      "choiceAria": "Engine for this workspace",
+      "engine": {
+        "STATIC": {
+          "name": "Built-in engine",
+          "description": "Runs each workflow's steps in order, exactly as written. No model chooses the calls."
+        },
+        "FLUE": {
+          "name": "Flue engine",
+          "description": "A model chooses which of the agent's tools to call, in workflows that ask for this engine. Every call still goes through the agent's grants and controls."
+        }
+      },
+      "gateHeading": "What decides the engine",
+      "wiringHeading": "What a Flue run needs before it can start",
+      "confirmTitle": {
+        "STATIC": "Switch this workspace to the built-in engine?",
+        "FLUE": "Switch this workspace to the Flue engine?"
+      },
+      "confirmBody": {
+        "FLUE": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the Flue engine if its workflow asks for it and the conditions below are met. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time.",
+        "STATIC": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the built-in engine. You can switch back at any time."
+      },
+      "confirmLabel": "Switch engine",
+      "term": {
+        "ENV": "The deployment allows the Flue engine",
+        "TENANT": "This workspace has opted in",
+        "BUILD": "This build ships a Flue implementation",
+        "WORKFLOW": "A workflow asks for the Flue engine",
+        "REGISTERED_AGENT": "An active, risk-assessed agent is registered",
+        "BOUND_KEY": "A live API key is bound to that agent"
+      },
+      "count": "{count} available",
+      "operatorTerm": "Set on the deployment",
+      "fix": "Set up →",
+      "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand."
     },
     "modules": {
       "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",
