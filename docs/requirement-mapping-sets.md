@@ -251,7 +251,7 @@ directory rather than editing rows by hand.
 | `IMDA-MGF-2026` | `ISO42001-2023` | `imda-mgf-to-iso-42001.yaml` | 47 |
 | `IMDA-MGF-2026` | `OWASP-ASI-TOP10` | `imda-mgf-to-owasp-agentic.yaml` | 27 |
 | `ISO27001-2022` | `AIUC-1` | `iso27001-to-aiuc-1.yaml` | 59 |
-| `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 14 |
+| `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 9 |
 | `ISO27001-2022` | `NIST-CSF-2.0` | `iso27001-to-nist-csf.yaml` | 14 |
 | `ISO27001-2022` | `OWASP-ASI-TOP10` | `iso27001-to-owasp-agentic.yaml` | 39 |
 | `ISO27001-2022` | `SOC2-2017` | `iso27001-to-soc2.yaml` | 26 |

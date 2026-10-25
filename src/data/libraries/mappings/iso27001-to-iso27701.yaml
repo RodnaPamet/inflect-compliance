@@ -7,6 +7,17 @@
 # single ISO 27001 control that ISO 27701 expands into full controller (clause
 # 7) and processor (clause 8) guidance.
 #
+# Every entry maps an assessable node to an assessable node, because a heading
+# gets no requirement row and an entry naming one is dropped at import. That
+# shapes the bridge in two places (version 2 removed five entries for it):
+#   - ISO 27001's management clauses (4-10), and ISO 27701 clause 5 that
+#     extends them, are headings in their libraries and absent from both
+#     catalogues. No entry can name them, so the ISMS -> PIMS clause 5 bridge
+#     is not expressed here.
+#   - ISO 27701 clauses 7 and 8 are headings over their controls, so an entry
+#     names the control an Annex A control reaches (A.5.34 -> 7.2.5, A.5.23 ->
+#     8.5.7), never the clause as a whole.
+#
 # Attribution: mapping relationships derived from the structural relationship
 # between ISO/IEC 27001 and ISO/IEC 27701 as described in ISO/IEC 27701:2019
 # Annex F; clause identifiers only, no ISO text. See also the Microsoft Data
@@ -16,42 +27,19 @@ urn: urn:inflect:mappingset:iso27001-to-iso27701
 name: "ISO/IEC 27001:2022 → ISO/IEC 27701:2019 (PIMS)"
 description: >
   Bridge from the ISO 27001 ISMS into the ISO 27701 Privacy Information
-  Management System. Management clauses extend into PIMS clause 5, Annex A
-  controls into clause 6, and A.5.34 (PII protection) into the controller /
-  processor guidance of clauses 7 and 8. Structural guidance, not a compliance
-  guarantee.
-version: 1
+  Management System. Annex A controls extend into the PIMS control guidance of
+  clause 6, and into the controller / processor guidance of clauses 7 and 8.
+  Structural guidance, not a compliance guarantee.
+version: 2
 source_framework_ref: ISO27001-2022
 target_framework_ref: ISO27701-2019
 
 mapping_entries:
-  # ─── ISMS management clauses → PIMS-specific management requirements ───
-  - source_ref: "5"
-    target_ref: "5"
-    strength: RELATED
-    rationale: ISO 27001 leadership requirements are extended by PIMS-specific management requirements in clause 5.
-  - source_ref: "6"
-    target_ref: "5"
-    strength: INTERSECT
-    rationale: ISO 27001 planning / risk assessment is extended to cover privacy risks in the PIMS.
-  - source_ref: "8"
-    target_ref: "5"
-    strength: RELATED
-    rationale: ISO 27001 operational planning and control is extended to privacy processing operations.
-
   # ─── Annex A controls → PIMS-specific control guidance (clause 6) ───
   - source_ref: A.5.1
     target_ref: "6"
     strength: RELATED
     rationale: Information security policies are extended with privacy-specific policy guidance in clause 6.
-  - source_ref: A.5.34
-    target_ref: "7"
-    strength: SUBSET
-    rationale: A.5.34 (privacy and protection of PII) is the single ISO 27001 control that ISO 27701 clause 7 expands into full PII-controller guidance.
-  - source_ref: A.5.34
-    target_ref: "8"
-    strength: SUBSET
-    rationale: A.5.34 also expands into ISO 27701 clause 8 PII-processor guidance.
   - source_ref: A.5.34
     target_ref: "7.2.5"
     strength: INTERSECT
