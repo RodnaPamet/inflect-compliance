@@ -204,7 +204,7 @@ describe('completeOnboardingStep — the framework step (#4125)', () => {
         mockCompleteStep.mockResolvedValueOnce({ id: 'ob-1', stepData } as never);
         const result = {
             action: 'FRAMEWORK_INSTALL', created: 0, skipped: 1, details: '',
-            failures: [{ framework: 'ISO27001', packKey: 'iso', message: 'nope' }],
+            failures: [{ framework: 'ISO27001', name: 'ISO/IEC 27001', packKey: 'iso', message: 'nope' }],
         };
         mockRunStepAction.mockResolvedValueOnce(result);
         const stored = { id: 'ob-1', stepData: { ...stepData, _actionResults: { FRAMEWORK_SELECTION: result } } };

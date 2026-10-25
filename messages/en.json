@@ -7434,7 +7434,7 @@
       "description": "Browse standards, install control packs, and track requirement coverage",
       "createFramework": "Create framework",
       "importFramework": "Import framework",
-      "inUse": "In use",
+      "installed": "In use",
       "inUseHint": "At least one of this framework's requirements has a mapped control",
       "available": "Available",
       "requirements": "Requirements",

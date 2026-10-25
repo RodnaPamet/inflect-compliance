@@ -13,7 +13,7 @@ Add a framework, such as ISO 27001 or NIS2, when your organisation needs to meet
 
 1. Click **{{ui:nav.audits}}** under {{ui:nav.comply}} in the sidebar. The {{ui:audits.title}} page opens. Frameworks have no sidebar entry of their own.
 2. In the page header, beside {{ui:audits.hub.related}}, click **{{ui:audits.nav.frameworks}}**. The {{ui:frameworks.list.heading}} page opens. You can also click **{{ui:common.search}}** in the sidebar, or press Ctrl+K (⌘K on a Mac), and choose **Go to Frameworks**.
-3. Find the framework. Each one is marked {{ui:frameworks.list.inUse}} or {{ui:frameworks.list.available}}, and shows its number of {{ui:frameworks.list.requirements}} and {{ui:frameworks.list.packs}} and its {{ui:frameworks.list.coverage}}. {{ui:frameworks.list.inUse}} means at least one of the framework's requirements has a control mapped to it; hold the pointer over the label to see this. Click the framework's name to open it.
+3. Find the framework. Each one is marked {{ui:frameworks.list.installed}} or {{ui:frameworks.list.available}}, and shows its number of {{ui:frameworks.list.requirements}} and {{ui:frameworks.list.packs}} and its {{ui:frameworks.list.coverage}}. {{ui:frameworks.list.installed}} means at least one of the framework's requirements has a control mapped to it; hold the pointer over the label to see this. Click the framework's name to open it.
 4. Click **{{ui:frameworks.detail.installPack}}** at the top of the framework's page. To install a particular pack, open the **{{ui:frameworks.detail.packsTab}}** tab instead and click **{{ui:frameworks.detail.installPack}}** beside that pack.
 5. If the framework has more than one pack, choose one under {{ui:frameworks.install.selectAPack}}. When there is only one, or you picked a pack in step 4, the page goes straight to the preview.
 6. Check the preview. It counts the {{ui:frameworks.install.newControls}} the pack will create and the controls that {{ui:frameworks.install.alreadyExist}}, then lists each control with its number of tasks. A control your workspace already has is marked {{ui:frameworks.install.exists}}. To choose another pack, click **{{ui:frameworks.install.back}}**.
@@ -38,14 +38,14 @@ A new workspace has a setup wizard, and its {{ui:onboarding.wizard.steps.framewo
 4. Click each framework you need. A chosen framework reads {{ui:onboarding.wizard.frameworks.selected}}. **{{ui:onboarding.wizard.continue}}** stays greyed out until you choose at least one. The step has no skip.
 5. Click **{{ui:onboarding.wizard.continue}}**. Inflect installs every pack of each framework you chose.
 
-The wizard shows no preview and no count of what it created. If a framework could not be installed, the wizard says {{ui:onboarding.wizard.frameworks.installFailedTitle}} at the top and names each framework with the reason. Afterwards, open the {{ui:frameworks.list.heading}} page to check that each framework now reads {{ui:frameworks.list.inUse}}. Once the wizard reads {{ui:onboarding.wizard.completeTitle}}, add further frameworks from the {{ui:frameworks.list.heading}} page.
+The wizard shows no preview and no count of what it created. If a framework could not be installed, the wizard says {{ui:onboarding.wizard.frameworks.installFailedTitle}} at the top and names each framework with the reason. Afterwards, open the {{ui:frameworks.list.heading}} page to check that each framework now reads {{ui:frameworks.list.installed}}. Once the wizard reads {{ui:onboarding.wizard.completeTitle}}, add further frameworks from the {{ui:frameworks.list.heading}} page.
 
 ## What happens next
 
 - The new controls appear on the **{{ui:nav.controls}}** page with the status {{ui:controls.statusLabels.NOT_STARTED}}. Each comes with its starter tasks, which are open and assigned to the person who installed the framework.
 - If a new control's template names a policy your workspace already has, matched by title, Inflect links that policy to the control.
 - On the framework's **{{ui:frameworks.detail.reqTab}}** tab, click a requirement to see the controls mapped to it. The **{{ui:frameworks.detail.coverageTab}}** tab counts {{ui:frameworks.detail.mapped}} and {{ui:frameworks.detail.unmapped}} requirements.
-- The framework now reads {{ui:frameworks.list.inUse}}. That label, and the coverage figure, only mean that controls are mapped to the requirements. They do not show whether the controls work. Evidence and tests show that.
+- The framework now reads {{ui:frameworks.list.installed}}. That label, and the coverage figure, only mean that controls are mapped to the requirements. They do not show whether the controls work. Evidence and tests show that.
 - You can run the install again later. It creates only the controls that are missing, and the controls you already have keep their details.
 - The installation is recorded in the workspace's audit log, with the number of controls, tasks and mappings it created.
 

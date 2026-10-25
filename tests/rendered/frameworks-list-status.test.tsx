@@ -107,7 +107,7 @@ describe('the In use badge', () => {
             />,
         );
         const card = screen.getByTestId('fw-card-ISO27001');
-        expect(within(card).getByText(en.frameworks.list.inUse)).toBeTruthy();
+        expect(within(card).getByText(en.frameworks.list.installed)).toBeTruthy();
         expect(within(card).getByText(en.frameworks.list.inUseHint)).toBeTruthy();
         expect(card.textContent).not.toContain('Installed');
     });

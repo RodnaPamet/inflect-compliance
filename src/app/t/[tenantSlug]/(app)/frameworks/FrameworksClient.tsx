@@ -252,7 +252,7 @@ export function FrameworksClient({
             coverageUnknown
         ) : row.isInstalled ? (
             <Tooltip content={t('list.inUseHint')}>
-                <StatusBadge variant="success">{t('list.inUse')}</StatusBadge>
+                <StatusBadge variant="success">{t('list.installed')}</StatusBadge>
             </Tooltip>
         ) : (
             <StatusBadge variant="warning">{t('list.available')}</StatusBadge>
