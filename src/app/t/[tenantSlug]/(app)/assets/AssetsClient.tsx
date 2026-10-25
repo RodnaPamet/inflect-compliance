@@ -859,7 +859,12 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         },
         {
             // Per-asset OPEN-vulnerability signal — count tinted by the top
-            // severity, deep-linking to the filtered global Vulnerabilities view.
+            // severity. It counts open CVE matches AND open scanner findings,
+            // so it links to the asset's own Vulnerabilities tab, which lists
+            // both (open only, by default). The global Vulnerabilities page it
+            // used to open lists CVE matches alone, of every status, so an
+            // asset whose open items were scanner findings showed a number the
+            // linked page did not contain.
             id: 'vulnerabilities',
             header: tx('colHeaders.vulnerabilities'),
             accessorFn: (a) => a.openVulnCount ?? 0,
@@ -868,7 +873,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 if (!a.openVulnCount) return <span className="text-content-muted text-xs">—</span>;
                 return (
                     <Link
-                        href={tenantHref(`/vulnerabilities?assetId=${a.id}`)}
+                        href={tenantHref(`/assets/${a.id}?tab=vulnerabilities`)}
                         onClick={(e) => e.stopPropagation()}
                         aria-label={tx('openVulnsAria', { count: a.openVulnCount })}
                         className="inline-flex"

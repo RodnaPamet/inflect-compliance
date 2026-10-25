@@ -21,7 +21,9 @@
  *   4. a failed load reads as an error, not as an empty register or as the
  *      previous query's rows;
  *   5. ↑/↓ in the preview panel walk the rows in the order the table shows;
- *   6. types, statuses and severities render as labels, not enum codes.
+ *   6. the Vulns badge keeps its count and opens the asset's own
+ *      Vulnerabilities tab, which lists everything the count adds up;
+ *   7. types, statuses and severities render as labels, not enum codes.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -447,7 +449,27 @@ describe('Assets list — preview panel arrow keys', () => {
     });
 });
 
-// ─── 6. Labels, not codes ───────────────────────────────────────────
+// ─── 6. The Vulns badge opens the list of what it counts ────────────
+
+/** The href the Vulns badge carries — the URL the detail-page test opens. */
+const VULNS_TAB_HREF = (id: string) => `/t/acme/assets/${id}?tab=vulnerabilities`;
+
+describe('Assets list — the Vulns badge', () => {
+    it("keeps its count and links to the asset's own Vulnerabilities tab", async () => {
+        await mountAs('READER');
+        // The count is unchanged: open CVE matches + open scanner findings.
+        const badge = screen.getByRole('link', {
+            name: A.openVulnsAria.replace('{count}', String(BRAVO.openVulnCount)),
+        });
+        expect(badge.textContent).toBe(String(BRAVO.openVulnCount));
+        // Not the global /vulnerabilities page, which lists CVE matches only
+        // (of every status) and so could not contain a scanner-finding count.
+        // tests/rendered/asset-detail-tab-deep-link.test.tsx opens this URL.
+        expect(badge.getAttribute('href')).toBe(VULNS_TAB_HREF(BRAVO.id));
+    });
+});
+
+// ─── 7. Labels, not codes ───────────────────────────────────────────
 
 describe('Assets list — types, statuses and severities are labels', () => {
     it('the Type cell shows the label the Type filter uses', async () => {

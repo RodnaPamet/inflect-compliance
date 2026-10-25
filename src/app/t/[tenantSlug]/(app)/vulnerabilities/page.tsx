@@ -18,8 +18,10 @@ export default async function VulnerabilitiesPage({
     const resolved = await params;
     const sp = await searchParams;
     const ctx = await getTenantCtx(resolved);
-    // Deep-link support: the per-asset vuln badge on the assets list links here
-    // with ?assetId=<id>, scoping the global view to that asset's vulnerabilities.
+    // Deep-link support: the asset page's "See all vulnerabilities" link lands
+    // here with ?assetId=<id>, scoping the global view to that asset's CVE
+    // matches. (The assets list's Vulns badge now opens the asset's own
+    // Vulnerabilities tab instead, which also lists its scanner findings.)
     const assetId = typeof sp.assetId === 'string' && sp.assetId ? sp.assetId : undefined;
     const rows = (await listVulnerabilities(ctx, { assetId, take: 500 })) as unknown as VulnRow[];
 
