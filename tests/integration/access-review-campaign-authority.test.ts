@@ -237,8 +237,10 @@ describeFn('access-review campaigns hold the members page’s OWNER-tier rules (
 
         // …and B's only OWNER, closing a campaign that revokes them, meets the
         // last-OWNER guard: OWNER-tier is necessary, not sufficient.
+        // The verdict is recorded by tenant B's ADMIN, as backup: nobody decides
+        // their own access (#4130), so the OWNER may not record it themselves.
         const last = await campaign(b.owner.ctx, b.owner.userId, [b.owner]);
-        await submitDecision(b.owner.ctx, last.decisionOf(b.owner.userId), { decision: 'REVOKE', notes: 'rotation' });
+        await submitDecision(adminB.ctx, last.decisionOf(b.owner.userId), { decision: 'REVOKE', notes: 'rotation' });
         await expect(closeAccessReview(b.owner.ctx, last.accessReviewId)).rejects.toThrow(/zero ACTIVE OWNERs/);
         expect(await membership(b.owner.membershipId)).toMatchObject({ role: 'OWNER', status: 'ACTIVE' });
     });

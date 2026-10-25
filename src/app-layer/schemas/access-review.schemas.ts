@@ -116,6 +116,27 @@ export const CreateAccessReviewSchema = z
 
 export type CreateAccessReviewInput = z.infer<typeof CreateAccessReviewSchema>;
 
+// ── updateAccessReviewSettings (#4130) ─────────────────────────────
+
+/**
+ * What may change on an open campaign: its reviewer and its due date, and
+ * nothing else. `.strict()`, so a body naming the scope, the name or the period
+ * is refused rather than having those keys dropped in silence — the scope
+ * decides which subjects were frozen and the period is printed on the evidence,
+ * so neither may move after creation. `dueAt: null` clears the due date.
+ */
+export const UpdateAccessReviewSettingsSchema = z
+    .object({
+        reviewerUserId: z.string().min(1, 'reviewerUserId must not be empty').optional(),
+        dueAt: z.union([DateField, z.null()]).optional(),
+    })
+    .strict()
+    .refine((v) => v.reviewerUserId !== undefined || v.dueAt !== undefined, {
+        message: 'Nothing to change: send reviewerUserId, dueAt, or both.',
+    });
+
+export type UpdateAccessReviewSettingsInput = z.infer<typeof UpdateAccessReviewSettingsSchema>;
+
 // ── submitDecision ─────────────────────────────────────────────────
 
 /**
