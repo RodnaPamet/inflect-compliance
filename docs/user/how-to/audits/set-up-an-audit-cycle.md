@@ -7,7 +7,7 @@ An audit cycle is one audit against one framework, such as your ISO 27001 recert
 - Owners and Admins can create a cycle. The {{ui:audits.cycles.cycle}} button appears for those roles only.
 - Changing a cycle's status takes the Owner, Admin or Editor role.
 - Every role can open the cycles and look at them.
-- The framework must be installed in your workspace. The list of frameworks offers only the installed ones.
+- The list of frameworks offers every framework on the {{ui:frameworks.list.heading}} page. It does not have to read {{ui:frameworks.list.inUse}} there first.
 - Decide on the cycle's name and, if you know it, the period the audit covers. You cannot change either on the page after the cycle is created.
 
 ## Steps
@@ -45,7 +45,7 @@ The audit then appears under {{ui:audits.cycleDetail.fieldworkAudits}} on the cy
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | No {{ui:audits.cycles.cycle}} button on the {{ui:audits.cycles.title}} page | Your role cannot create cycles | Ask an Owner or Admin |
-| {{ui:audits.cycles.createError}} | The cycle was not created. Your role may not create cycles, or the framework is not installed in this workspace | Choose a framework from the list again and retry. If it still fails, ask an Owner or Admin |
+| {{ui:audits.cycles.createError}} | The cycle was not created. Your role may not create cycles, or the framework you chose is not on the {{ui:frameworks.list.heading}} page | Choose a framework from the list again and retry. If it still fails, ask an Owner or Admin |
 | {{ui:audits.cycles.loadErrorTitle}} | The list of cycles could not be loaded | Click **{{ui:audits.cycles.retry}}** |
 | {{ui:audits.cycleDetail.statusError}} | The status did not change, and the list shows the old one again. Only Owners, Admins and Editors can change it | Ask someone with one of those roles |
 | {{ui:audits.cycleDetail.loadError}} | The cycle's page could not be loaded, or the cycle no longer exists | Click **{{ui:audits.cycleDetail.retry}}**. If it keeps failing, go back to {{ui:audits.cycles.title}} and open the cycle from its card |

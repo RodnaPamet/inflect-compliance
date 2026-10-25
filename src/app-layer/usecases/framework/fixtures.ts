@@ -1,5 +1,5 @@
 ﻿import { RequestContext } from '../../types';
-import { assertCanViewFrameworks, assertCanInstallFrameworkPack } from '../../policies/framework.policies';
+import { assertCanViewFrameworks, assertCanEditFrameworkCatalogue } from '../../policies/framework.policies';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
@@ -23,7 +23,9 @@ export async function upsertRequirements(
     requirements: RequirementFixture[],
     options: { deprecateMissing?: boolean } = {}
 ) {
-    assertCanInstallFrameworkPack(ctx);
+    // Writes the GLOBAL requirement rows, so a custom role may narrow this
+    // gate but never widen it — see the policy.
+    assertCanEditFrameworkCatalogue(ctx);
     const db = prisma;
 
     const fw = await db.framework.findFirst({ where: { key: frameworkKey } });

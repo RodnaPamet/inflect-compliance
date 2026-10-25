@@ -65,6 +65,13 @@ export interface FrameworksClientProps {
     /** R2-P3 — framework keys whose coverage failed to compute (≠ genuine 0%). */
     coverageErrors?: string[];
     tenantSlug: string;
+    /**
+     * Whether the viewer holds `frameworks.install` — the key the install API
+     * checks (`assertCanInstallFrameworkPack`). Resolved by the server page
+     * from the request context; absent reads as `false`, so the Import
+     * framework entry point is never offered to someone the server refuses.
+     */
+    canInstall?: boolean;
 }
 
 // listFrameworks row (Framework + _count).
@@ -139,6 +146,7 @@ export function FrameworksClient({
     coverages,
     coverageErrors = [],
     tenantSlug,
+    canInstall = false,
 }: FrameworksClientProps) {
     const t = useTranslations('frameworks');
     const [view, setView] = useViewMode('frameworks', 'cards');
@@ -170,11 +178,14 @@ export function FrameworksClient({
         columns: frameworkColumnList,
     });
 
-    // B8 — pick the first uninstalled framework as the "Import"
+    // B8 — pick the first framework not yet in use as the "Import"
     // CTA target. Falls back to the first framework when everything
-    // is already installed; if there are none at all the CTA hides.
+    // is already in use; if there are none at all the CTA hides. A
+    // framework whose coverage failed to compute is unknown, not
+    // unused, so it is never picked as the "not in use" target.
     const importHref = useMemo(() => {
         const uninstalled = frameworks.find((fw) => {
+            if (coverageErrors.includes(fw.key)) return false;
             const cov = coverages[fw.key];
             return !cov || cov.mapped === 0;
         });
@@ -222,6 +233,31 @@ export function FrameworksClient({
     // publish hook does not care about: it takes rows, not a fetch.
     usePublishDisplayedOrder(CACHE_KEYS.frameworks.list(), rows, frameworkOrderKey);
 
+    // #4125 — one rendering of the coverage figure and the status badge for
+    // BOTH views. The cards view used to print a failed coverage calculation
+    // as "0%" and the framework as Available, which reads exactly like a
+    // framework nobody has started; only the table handled `coverageError`.
+    const coverageUnknown = (
+        <Tooltip content={t('list.coverageError')}>
+            <span className="text-xs text-content-subtle underline decoration-dotted">
+                {t('list.coverageUnknownShort')}
+            </span>
+        </Tooltip>
+    );
+    // "In use" rather than "Installed": the flag is derived from coverage
+    // (at least one requirement has a mapped control), not from a pack
+    // install, so the hint says what it actually means.
+    const statusBadge = (row: FwRow) =>
+        row.coverageError ? (
+            coverageUnknown
+        ) : row.isInstalled ? (
+            <Tooltip content={t('list.inUseHint')}>
+                <StatusBadge variant="success">{t('list.inUse')}</StatusBadge>
+            </Tooltip>
+        ) : (
+            <StatusBadge variant="warning">{t('list.available')}</StatusBadge>
+        );
+
     return (
         <div className="space-y-section animate-fadeIn">
             <div className="flex items-end justify-between gap-default flex-wrap">
@@ -257,7 +293,11 @@ export function FrameworksClient({
                         for the first uninstalled framework. Hides
                         when there's literally nothing in the
                         catalogue (seed not run). */}
-                    {importHref && (
+                    {/* #4125 — shown only to a member who can install: the
+                        install API checks `frameworks.install`, so offering
+                        the wizard to anyone else ends in a refusal at its
+                        last click. */}
+                    {canInstall && importHref && (
                         <Link href={importHref}>
                             <Button
                                 variant="primary"
@@ -308,13 +348,7 @@ export function FrameworksClient({
                                             ? row.kind.replace('_', ' ')
                                             : undefined
                                     }
-                                    badge={
-                                        row.isInstalled ? (
-                                            <StatusBadge variant="success">{t('list.installed')}</StatusBadge>
-                                        ) : (
-                                            <StatusBadge variant="warning">{t('list.available')}</StatusBadge>
-                                        )
-                                    }
+                                    badge={statusBadge(row)}
                                 />
                                 <CardList.CardContent
                                     kv={[
@@ -328,7 +362,9 @@ export function FrameworksClient({
                                         },
                                         {
                                             label: t('list.coverage'),
-                                            value: `${row.coveragePercent}%`,
+                                            value: row.coverageError
+                                                ? coverageUnknown
+                                                : `${row.coveragePercent}%`,
                                         },
                                     ]}
                                 >
@@ -353,18 +389,20 @@ export function FrameworksClient({
                                             )}
                                         </p>
                                     )}
-                                    <ProgressBar
-                                        value={row.coveragePercent}
-                                        size="sm"
-                                        variant={
-                                            row.coveragePercent === 100
-                                                ? 'success'
-                                                : row.coveragePercent > 0
-                                                ? 'brand'
-                                                : 'neutral'
-                                        }
-                                        aria-label={`${row.name} coverage`}
-                                    />
+                                    {!row.coverageError && (
+                                        <ProgressBar
+                                            value={row.coveragePercent}
+                                            size="sm"
+                                            variant={
+                                                row.coveragePercent === 100
+                                                    ? 'success'
+                                                    : row.coveragePercent > 0
+                                                    ? 'brand'
+                                                    : 'neutral'
+                                            }
+                                            aria-label={`${row.name} coverage`}
+                                        />
+                                    )}
                                 </CardList.CardContent>
                             </CardList.Card>
                         );
@@ -416,11 +454,7 @@ export function FrameworksClient({
                             header: t('list.coverage'),
                             cell: ({ row }) => (
                                 row.original.coverageError ? (
-                                    <Tooltip content={t('list.coverageError')}>
-                                        <span className="text-xs text-content-subtle underline decoration-dotted">
-                                            {t('list.coverageUnknownShort')}
-                                        </span>
-                                    </Tooltip>
+                                    coverageUnknown
                                 ) : (
                                     <span className="tabular-nums text-xs text-content-default">
                                         {row.original.coveragePercent}%
@@ -431,12 +465,7 @@ export function FrameworksClient({
                         {
                             id: 'status',
                             header: t('list.status'),
-                            cell: ({ row }) =>
-                                row.original.isInstalled ? (
-                                    <StatusBadge variant="success">{t('list.installed')}</StatusBadge>
-                                ) : (
-                                    <StatusBadge variant="warning">{t('list.available')}</StatusBadge>
-                                ),
+                            cell: ({ row }) => statusBadge(row.original),
                         },
                     ])}
                 />
@@ -489,7 +518,7 @@ export function FrameworksClient({
                     >
                         {t('list.close')}
                     </Button>
-                    {importHref && (
+                    {canInstall && importHref && (
                         <Link href={importHref}>
                             <Button
                                 variant="primary"

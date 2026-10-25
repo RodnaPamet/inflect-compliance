@@ -9,6 +9,9 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading, Eyebrow } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { apiErrorMessage } from '@/lib/api-error';
+import { usePermissions } from '@/lib/tenant-context-provider';
 import { cn } from '@inflect/ui/lib/cn';
 
 // getFramework (framework/catalog.ts) — only the name is read here.
@@ -30,6 +33,8 @@ interface TemplateTask {
     id: string;
     title: string;
     description: string | null;
+    /** The proof artefact the task produces, as authored in the catalogue. */
+    evidenceHint: string | null;
 }
 interface CatalogTemplate {
     id: string;
@@ -52,6 +57,10 @@ export default function TemplateLibraryPage() {
     const tenantSlug = params.tenantSlug as string;
     const frameworkKey = params.frameworkKey as string;
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
+    // #4125 — both install actions call `assertCanInstallFrameworkPack`,
+    // which reads `frameworks.install`. Without it no install control is
+    // offered: the buttons used to render for every role and fail silently.
+    const canInstall = usePermissions().frameworks.install;
 
     const [templates, setTemplates] = useState<CatalogTemplate[]>([]);
     const [framework, setFramework] = useState<FrameworkSummary | null>(null);
@@ -68,6 +77,7 @@ export default function TemplateLibraryPage() {
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [bulkInstalling, setBulkInstalling] = useState(false);
     const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
+    const [installError, setInstallError] = useState<string | null>(null);
 
     const fetchTemplates = useCallback(async () => {
         const params = new URLSearchParams({ action: 'templates' });
@@ -101,32 +111,54 @@ export default function TemplateLibraryPage() {
         fetchTemplates();
     }, [category, section, fetchTemplates]);
 
+    // Both installs check `res.ok` and show the server's own message. They
+    // used to ignore the response and swallow every error, so a refused
+    // install did nothing visible — and the bulk one cleared the selection
+    // as if it had worked. A failed bulk install now keeps the selection.
     const installTemplate = async (code: string) => {
         setInstalling(code);
+        setInstallError(null);
         try {
-            await fetch(apiUrl(`/frameworks/${frameworkKey}?action=install-template`), {
+            const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=install-template`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ templateCode: code }),
             });
+            if (!res.ok) {
+                const body: unknown = await res.json().catch(() => null);
+                setInstallError(apiErrorMessage(body, tx('templates.installFailed')));
+                return;
+            }
             await fetchTemplates();
-        } catch { /* ignore */ }
-        setInstalling(null);
+        } catch {
+            setInstallError(tx('templates.installFailed'));
+        } finally {
+            setInstalling(null);
+        }
     };
 
     const bulkInstall = async () => {
         if (selected.size === 0) return;
         setBulkInstalling(true);
+        setInstallError(null);
         try {
-            await fetch(apiUrl(`/frameworks/${frameworkKey}?action=bulk-install`), {
+            const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=bulk-install`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ templateCodes: Array.from(selected) }),
             });
+            if (!res.ok) {
+                const body: unknown = await res.json().catch(() => null);
+                setInstallError(apiErrorMessage(body, tx('templates.installFailed')));
+                return;
+            }
             setSelected(new Set());
             await fetchTemplates();
-        } catch { /* ignore */ }
-        setBulkInstalling(false);
+        } catch {
+            setInstallError(tx('templates.installFailed'));
+        } finally {
+            setBulkInstalling(false);
+        }
     };
 
     const toggleSelect = (code: string) => {
@@ -177,7 +209,7 @@ export default function TemplateLibraryPage() {
                         <span className="text-[var(--brand-default)]">{tx('templates.availableCount', { count: available })}</span>
                     </div>
                 </div>
-                {selected.size > 0 && (
+                {canInstall && selected.size > 0 && (
                     <Button
                         variant="primary"
                         onClick={bulkInstall}
@@ -216,20 +248,38 @@ export default function TemplateLibraryPage() {
                     buttonProps={{ className: 'w-48' }}
                     caret
                 />
-                <Button variant="secondary" size="xs" onClick={selectAll} id="select-all-btn">{tx('templates.selectAllUninstalled')}</Button>
+                {canInstall && (
+                    <Button variant="secondary" size="xs" onClick={selectAll} id="select-all-btn">{tx('templates.selectAllUninstalled')}</Button>
+                )}
             </div>
+
+            {installError && (
+                <InlineNotice variant="error" onDismiss={() => setInstallError(null)} id="template-install-error">
+                    {installError}
+                </InlineNotice>
+            )}
 
             {/* Template cards */}
             <div className="space-y-compact" id="template-list">
                 {templates.map(t => {
                     const isExpanded = expandedTemplate === t.code;
                     const isSelected = selected.has(t.code);
+                    // The template's own authored evidence, one line per
+                    // distinct hint across its tasks. Replaces a hardcoded
+                    // DOCUMENT / SCREENSHOT / LOG shown for every template.
+                    const evidenceHints = [
+                        ...new Set(
+                            t.tasks
+                                .map((task) => task.evidenceHint?.trim())
+                                .filter((hint): hint is string => Boolean(hint)),
+                        ),
+                    ];
 
                     return (
                         <div key={t.code} className={cn(cardVariants({ density: 'none' }), 'transition-colors', isSelected ? 'ring-1 ring-[var(--ring)]/50' : '')} id={`template-${t.code}`}>
                             <div className="flex items-start gap-compact">
                                 {/* Checkbox */}
-                                {!t.installed && (
+                                {canInstall && !t.installed && (
                                     <input
                                         type="checkbox"
                                         checked={isSelected}
@@ -255,7 +305,7 @@ export default function TemplateLibraryPage() {
                                                 )}
                                             </div>
                                         </button>
-                                        {!t.installed && (
+                                        {canInstall && !t.installed && (
                                             <Button
                                                 variant="primary"
                                                 size="xs"
@@ -310,15 +360,21 @@ export default function TemplateLibraryPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Suggested evidence */}
-                                            <div>
-                                                <Eyebrow>{tx('templates.suggestedEvidence')}</Eyebrow>
-                                                <div className="flex flex-wrap gap-1">
-                                                    {['DOCUMENT', 'SCREENSHOT', 'LOG'].map(type => (
-                                                        <span key={type} className="text-xs bg-bg-default text-content-muted px-2 py-0.5 rounded">{type}</span>
-                                                    ))}
+                                            {/* Suggested evidence — only when the template's
+                                                tasks name some. */}
+                                            {evidenceHints.length > 0 && (
+                                                <div data-testid={`suggested-evidence-${t.code}`}>
+                                                    <Eyebrow>{tx('templates.suggestedEvidence')}</Eyebrow>
+                                                    <div className="space-y-1">
+                                                        {evidenceHints.map((hint) => (
+                                                            <div key={hint} className="flex items-center gap-tight text-xs">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-border-emphasis" />
+                                                                <span className="text-content-default">{hint}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

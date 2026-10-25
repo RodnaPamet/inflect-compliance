@@ -216,7 +216,16 @@ export async function listTemplates(
         defaultFrequency: t.defaultFrequency,
         isGlobal: t.isGlobal,
         installed: installedCodes.has(t.code),
-        tasks: t.tasks.map((tt) => ({ id: tt.id, title: tt.title, description: tt.description })),
+        // `evidenceHint` is the proof artefact the task produces, as authored
+        // in the catalogue. The template library's "Suggested evidence" lists
+        // these; it used to print the same three hardcoded type names for
+        // every template.
+        tasks: t.tasks.map((tt) => ({
+            id: tt.id,
+            title: tt.title,
+            description: tt.description,
+            evidenceHint: tt.evidenceHint,
+        })),
         requirements: t.requirementLinks.map((rl) => ({
             code: rl.requirement.code,
             title: rl.requirement.title,

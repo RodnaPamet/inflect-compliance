@@ -35,9 +35,46 @@ export function assertCanViewFrameworks(ctx: RequestContext) {
     }
 }
 
+/**
+ * The tenant-scoped framework writes: installing a pack, installing one or
+ * many templates, bulk-mapping controls to requirements, and the builder's
+ * per-tenant requirement order.
+ *
+ * Reads the GRANULAR, custom-role-aware `frameworks.install` key — the same
+ * flag every install button in the UI is gated on (`<RequirePermission
+ * resource="frameworks" action="install">`).
+ *
+ * It was `ctx.role !== 'OWNER' && ctx.role !== 'ADMIN'`. For a member with a
+ * custom role `ctx.role` is the membership's built-in role, not the custom
+ * role, so the button and the server disagreed in both directions: a custom
+ * role on an ADMIN base with install switched off saw no button but was
+ * allowed, and one on an EDITOR base with install switched on saw the button
+ * and was refused at the last click (#4125).
+ *
+ * WHO THIS CHANGES. Nobody with a built-in role: OWNER and ADMIN carry
+ * `frameworks.install: true` and EDITOR, AUDITOR, READER and AI_ADMIN carry
+ * `false` (`getPermissionsForRole`), which is exactly the old OWNER/ADMIN
+ * line. A custom role now follows its own grant. An API key follows its
+ * scopes (`frameworks:write` grants install), not the role it is assigned
+ * from them.
+ */
 export function assertCanInstallFrameworkPack(ctx: RequestContext) {
+    if (!ctx.appPermissions.frameworks.install) {
+        throw forbidden('You do not have permission to install frameworks.');
+    }
+}
+
+/**
+ * Rewriting a framework's REQUIREMENTS (`upsertRequirements`). Unlike every
+ * write above, this changes the GLOBAL catalogue row every tenant reads, so it
+ * keeps the coarse OWNER/ADMIN line AND requires the install key. A tenant's
+ * custom role can narrow it, never widen it: an EDITOR-based role that holds
+ * `frameworks.install` installs packs but does not edit the shared catalogue.
+ */
+export function assertCanEditFrameworkCatalogue(ctx: RequestContext) {
+    assertCanInstallFrameworkPack(ctx);
     // Epic 1 — OWNER is a superset of ADMIN per CLAUDE.md RBAC.
     if (ctx.role !== 'OWNER' && ctx.role !== 'ADMIN') {
-        throw forbidden('Only OWNER or ADMIN can install framework packs');
+        throw forbidden('Only OWNER or ADMIN can edit framework requirements');
     }
 }

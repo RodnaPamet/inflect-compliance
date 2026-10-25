@@ -37,6 +37,8 @@ export default async function FrameworksPage({
             coverages={coverages}
             coverageErrors={coverageErrors}
             tenantSlug={tenantSlug}
+            // The key the install API checks — see FrameworksClient.
+            canInstall={ctx.appPermissions.frameworks.install}
         />
     );
 }
