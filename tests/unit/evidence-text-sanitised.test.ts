@@ -90,6 +90,7 @@ import { scanUploadOrRefuse } from '@/app-layer/services/file-scan';
 import { getStorageProvider } from '@/lib/storage';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../helpers/make-context';
+import { CreateEvidenceSchema, UpdateEvidenceSchema } from '@/lib/schemas';
 
 const mockRepoCreate = EvidenceRepository.create as jest.Mock;
 const mockRepoUpdate = EvidenceRepository.update as jest.Mock;
@@ -266,6 +267,33 @@ describe('evidence.updateEvidence sanitises what it writes, three-state', () => 
         mockDb.evidence.findFirst.mockResolvedValue({ type: 'TEXT', status: 'APPROVED', content: 'Approved body' });
         await updateEvidence(ctx, 'ev-1', { content: `Approved body${SCRIPT}` });
         expect(updatePatch().status).toBeUndefined();
+    });
+});
+
+describe('evidence.updateEvidence — an empty body clears a note and cannot clear a link', () => {
+    it.each([null, '', '   ', '<b></b>'])('clears a TEXT note sent as %j', async (sent) => {
+        mockDb.evidence.findFirst.mockResolvedValue({ type: 'TEXT', status: 'DRAFT', content: 'Old note' });
+        await updateEvidence(ctx, 'ev-1', { content: sent });
+        expect(updatePatch().content).toBeNull();
+    });
+
+    it.each([null, '', '   '])('refuses clearing a LINK URL sent as %j, and writes nothing', async (sent) => {
+        mockDb.evidence.findFirst.mockResolvedValue({ type: 'LINK', status: 'DRAFT', content: QUERY_URL });
+        await expect(updateEvidence(ctx, 'ev-1', { content: sent })).rejects.toThrow(/A link needs a URL/);
+        expect(mockRepoUpdate).not.toHaveBeenCalled();
+    });
+
+    it('a LINK body sent back as stored, even null, is not an edit', async () => {
+        mockDb.evidence.findFirst.mockResolvedValue({ type: 'LINK', status: 'DRAFT', content: null });
+        await updateEvidence(ctx, 'ev-1', { content: null, folder: 'Archive' });
+        expect(updatePatch().content).toBeUndefined();
+    });
+
+    it('the update schema takes null for content (the edit form sends it); create refuses SCREENSHOT', () => {
+        expect(UpdateEvidenceSchema.safeParse({ content: null }).success).toBe(true);
+        // `EvidenceType` in the database is FILE | LINK | TEXT; SCREENSHOT failed the insert with a 500.
+        expect(CreateEvidenceSchema.safeParse({ title: 'x', type: 'SCREENSHOT' }).success).toBe(false);
+        expect(CreateEvidenceSchema.safeParse({ title: 'x', type: 'TEXT' }).success).toBe(true);
     });
 });
 

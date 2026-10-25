@@ -76,7 +76,7 @@
     },
     "release.yml:release": {
         "kind": "never",
-        "reason": "semantic-release runs on push to main only, and does real work only when a commit actually cuts a release \u2014 so a broken release toolchain stays latent until the next fix:/feat: commit.",
+        "reason": "semantic-release runs on main only (a push that leaves the merge queue empty, a daily schedule, or a manual dispatch), and does real work only when a commit actually cuts a release \u2014 so a broken release toolchain stays latent until the next fix:/feat: commit.",
         "coveredBy": "`npm run release:check-notes` in the Lint job renders release notes through the real plugin on every PR. This is the worked example of closing an instance of this class."
     },
     "restore-drill-freshness.yml:freshness": {
