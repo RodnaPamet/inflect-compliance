@@ -96,6 +96,29 @@ function attributesFor(op: FlueExecutionOperation): Record<string, string> {
 }
 
 /**
+ * The model operations this process has already asked about (#4196).
+ *
+ * The runtime intercepts one model call several times, all with the SAME
+ * operation object: once to open the provider stream, then once for every
+ * chunk the stream yields and once for its result (`wrapProviderStream`). Only
+ * the first is the call. Asking on every one of them read the kill switch
+ * eight times per call, measured against the faux provider.
+ *
+ * Keyed on the object, not the turn id. A transient retry builds a fresh
+ * operation for the same turn, and a retry is a new call to the provider, so
+ * it is asked again. A `WeakSet`, so a finished call's operation is not held.
+ * `tests/flue/interceptor-asks-before-each-model-call.test.ts` pins one ask
+ * per call, so a runtime that changed either half of this fails there.
+ */
+const ASKED_MODEL_CALLS = new WeakSet<FlueExecutionOperation>();
+
+function isFirstSightOfModelCall(operation: FlueExecutionOperation): boolean {
+    if (operation.type !== 'model' || ASKED_MODEL_CALLS.has(operation)) return false;
+    ASKED_MODEL_CALLS.add(operation);
+    return true;
+}
+
+/**
  * Install the instrumentation. Returns the disposer `instrument` hands back.
  *
  * Called once per process, beside `start()`. `instrument` throws
@@ -136,6 +159,11 @@ export function installFlueTelemetry(): () => Promise<void> {
                         const binding = ctx.instanceId
                             ? readRunBinding(ctx.instanceId)
                             : undefined;
+                        // THE KILL SWITCH AND THE CAPS, BEFORE EVERY MODEL CALL
+                        // (#4196). Inside the span, so a call refused here is
+                        // traced as an attempt that failed. THROWS to refuse,
+                        // and then `next()` never runs: nothing is sent.
+                        if (isFirstSightOfModelCall(operation)) await binding?.beforeModelCall?.();
                         // THE SPAN'S LOWER BOUND, held in THIS frame (#3473
                         // part 3). Two delegations in one turn are two
                         // interceptor invocations, so each keeps its own —

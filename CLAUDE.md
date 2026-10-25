@@ -2719,6 +2719,14 @@ the prefix with no default, so a new engine names its own audit rows. Flue's
 prefix is `'flue'`, which keeps every guard source byte-identical to what it was
 before the move.
 
+**Every model call is preceded by the kill switch and the caps** (#4196). A kill
+engaged mid-run used to refuse only the tool calls: the model was called again
+and the run settled COMPLETED. On Flue the interceptor in `flue/telemetry.ts`
+awaits the run binding's `beforeModelCall` once per model operation, keyed on
+the operation object, because the runtime intercepts every streamed chunk of
+one call with the same object. Do not move the check to the tool boundary or
+the agent render: the tool boundary is too late, and the render cannot await.
+
 **"Is this a reasoning engine" is `isReasoningEngine(driver)`**
 (`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
 backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
