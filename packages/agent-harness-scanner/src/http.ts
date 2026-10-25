@@ -109,6 +109,116 @@ export const MCP_PROTOCOL_VERSION = '2025-06-18';
 /** The three messages the scanner may send an MCP server, and no other. `scanner-surface.ts` declares them. */
 export const MCP_MESSAGES = ['initialize', 'notifications/initialized', 'tools/list'] as const;
 
+/**
+ * The OpenShell gateway, as the reader reaches it: the gRPC endpoint and the
+ * bearer token every call carries.
+ */
+export interface OpenShellTarget {
+    /** The gateway's gRPC endpoint, https. */
+    readonly url: string;
+    /** The bearer header, and nothing else. */
+    readonly headers: Readonly<Record<string, string>>;
+}
+
+/**
+ * THE OPENSHELL GATEWAY READ — a wire of its own, not a widened `ReadOnlyHttp`.
+ *
+ * The gateway speaks gRPC and nothing else: `proto/openshell.proto` at the
+ * pinned release declares 84 RPCs on `openshell.v1.OpenShell` and carries ZERO
+ * `google.api.http` annotations, so there is no REST transcoding for `getJson`
+ * to reach. Widening `ReadOnlyHttp` with a second verb was considered and
+ * refused (owner ruling 2026-10-24): its one-method shape is what makes a
+ * source unable to write BY CONSTRUCTION, and a second method would turn that
+ * into a property maintained by review. `McpListingWire` and `RegisterReadWire`
+ * are the precedent — a narrow wire per protocol, each with its own declared
+ * surface.
+ *
+ * READ-ONLY IS HELD THREE INDEPENDENT WAYS, which is why it is worth stating:
+ *
+ *   1. THIS INTERFACE. Three methods. There is no create, exec, delete or
+ *      set-policy to call, and no method parameter to smuggle one through.
+ *   2. THE DECLARED SURFACE. `scanner-surface.ts` names these three and they
+ *      are hashed into `scannerManifestHash()`, so a fourth cannot ship without
+ *      changing the hash every tenant sees on every scan.
+ *   3. THE TOKEN'S SCOPE. All three RPCs declare `scope: "sandbox:read"` with
+ *      `workspace_role: "user"` in the proto. Every mutation the reader must
+ *      never make — `CreateSandbox`, `DeleteSandbox`, `ExecSandbox`,
+ *      `AttachSandboxProvider` — declares `sandbox:write`. So a correctly
+ *      scoped credential is refused by the GATEWAY before the method runs,
+ *      independently of anything in this repository.
+ *
+ * The third is the only one that still holds if this file is wrong, which is
+ * the reason the reader asks for `sandbox:read` and refuses to widen it.
+ */
+export interface OpenShellReadWire {
+    /** One page of `ListSandboxes`. Throws `SourceReadError`. */
+    listSandboxes(
+        target: OpenShellTarget,
+        cursor: string | null,
+    ): Promise<{ readonly sandboxes: readonly unknown[]; readonly nextCursor: string | null }>;
+    /** `GetSandbox` — one sandbox, including `spec.policy`. Throws `SourceReadError`. */
+    getSandbox(target: OpenShellTarget, sandboxId: string): Promise<unknown>;
+    /**
+     * `GetSandboxPolicyStatus` — the revision the runtime has LOADED, which is
+     * what separates a policy in force from one merely stored. Same
+     * `sandbox:read` scope as the rest.
+     */
+    getSandboxPolicyStatus(target: OpenShellTarget, sandboxId: string): Promise<unknown>;
+    /**
+     * `ListSandboxProviders` — the providers attached to one sandbox.
+     *
+     * SECRET-BEARING IN SHAPE, which is why reading it is opt-in. The
+     * `Provider` message it returns carries
+     * `map<string, string> credentials = 3 [(openshell.options.v1.secret) = true]`.
+     * Whether the gateway populates that under a `sandbox:read` token is NOT
+     * established here, so the reader is built for the worse case: the call is
+     * gated off by default and the member is never read.
+     */
+    listSandboxProviders(target: OpenShellTarget, sandboxId: string): Promise<{ readonly providers: readonly unknown[] }>;
+    /**
+     * `GetProviderProfile` — the profile a provider was created from, which
+     * declares the endpoints a credential is scoped to.
+     *
+     * A DEFINITION, not an instance: `ProviderProfileCredential` carries
+     * `name`, `env_vars` and `auth_style` and NO value, unlike the `Provider`
+     * instance above. So this call is not secret-bearing — but it needs
+     * `provider:read`, a SECOND scope on the client's credential, which is why
+     * it is reached only through the same opt-in.
+     */
+    getProviderProfile(target: OpenShellTarget, profileId: string): Promise<unknown>;
+}
+
+/** The fully-qualified gRPC service the reader calls, and no other. */
+export const OPENSHELL_SERVICE = 'openshell.v1.OpenShell';
+
+/**
+ * The three methods the reader may call on it, and no other. The siblings it
+ * must not call sit on the SAME service — `ExecSandbox` and `DeleteSandbox`
+ * among them — which is why this list is declared rather than assumed.
+ */
+export const OPENSHELL_METHODS = [
+    'ListSandboxes',
+    'GetSandbox',
+    'GetSandboxPolicyStatus',
+    'ListSandboxProviders',
+    'GetProviderProfile',
+] as const;
+
+/**
+ * The one OAuth scope the reader asks for. Named here so the request and the
+ * declaration cannot drift: every method above requires exactly this, and every
+ * mutation requires `sandbox:write`, which this token does not carry.
+ */
+export const OPENSHELL_READ_SCOPE = 'sandbox:read';
+
+/**
+ * The second scope, asked for ONLY when an estate opts in to reading providers.
+ * `GetProviderProfile` requires it; nothing else the reader calls does. Kept
+ * separate from `OPENSHELL_READ_SCOPE` so a default scan asks for one scope and
+ * the widening is visible in configuration rather than implied.
+ */
+export const OPENSHELL_PROFILE_SCOPE = 'provider:read';
+
 export interface TokenExchange {
     /**
      * The OAuth 2.0 client-credentials grant against `tokenUrl`, which must be on
@@ -289,6 +399,7 @@ export function createSourceWire(
     readonly tokens: TokenExchange;
     readonly mcp: McpListingWire;
     readonly register: RegisterReadWire;
+    readonly openshell: OpenShellReadWire;
 } {
     const responseCap = caps.response ?? MAX_RESPONSE_BYTES;
     const charge = budget(caps.source ?? MAX_SOURCE_BYTES);
@@ -470,6 +581,49 @@ export function createSourceWire(
         },
     };
 
+    /*
+        THE OPENSHELL WIRE IS DECLARED AND NOT YET CARRIED.
+
+        The gateway speaks gRPC: HTTP/2 framing and protobuf encoding, which
+        this `Transport` — fetch over JSON, shared by every other wire — does
+        not do. Reaching it needs either a gRPC client dependency, which lands
+        in the BLOCKING `npm audit --omit=dev --audit-level=moderate` gate and
+        in this scanner's own supply chain, or generated protobuf codecs from
+        NVIDIA's pinned protos. That is a dependency decision, and it is not
+        this change.
+
+        So the three methods answer UNREACHABLE with a reason that says which
+        step is missing. That is the contract's own rule rather than a
+        placeholder: "a source that could not be read is reported, never
+        omitted", and UNREACHABLE is the reason that claims least. A scan
+        configured for OpenShell therefore reports INCOMPLETE/UNREACHABLE and
+        signs a truthful report, instead of throwing or — far worse — returning
+        COMPLETE with no sandboxes, which would read as an estate that runs
+        none.
+
+        The source itself is complete and fully tested against a fake wire
+        (`tests/unit/agent-harness-scanner/openshell-source.test.ts`): the
+        policy-to-verdict mapping is pure and needs no transport. Only the
+        bytes are missing.
+    */
+    const openshell: OpenShellReadWire = {
+        async listSandboxes() {
+            throw new SourceReadError('UNREACHABLE', 'the OpenShell gRPC transport is not built into this scanner');
+        },
+        async getSandbox() {
+            throw new SourceReadError('UNREACHABLE', 'the OpenShell gRPC transport is not built into this scanner');
+        },
+        async getSandboxPolicyStatus() {
+            throw new SourceReadError('UNREACHABLE', 'the OpenShell gRPC transport is not built into this scanner');
+        },
+        async listSandboxProviders() {
+            throw new SourceReadError('UNREACHABLE', 'the OpenShell gRPC transport is not built into this scanner');
+        },
+        async getProviderProfile() {
+            throw new SourceReadError('UNREACHABLE', 'the OpenShell gRPC transport is not built into this scanner');
+        },
+    };
+
     const register: RegisterReadWire = {
         async read(target) {
             const session = await mcp.open(target);
@@ -486,7 +640,7 @@ export function createSourceWire(
         },
     };
 
-    return { http, tokens, mcp, register };
+    return { http, tokens, mcp, register, openshell };
 }
 
 /**

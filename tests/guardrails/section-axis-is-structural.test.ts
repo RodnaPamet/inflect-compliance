@@ -143,7 +143,10 @@ describe('the section axis is structural, not a tier (#2619)', () => {
             GDPR: 4,
             'IMDA-MGF-2026': 4,
             'ISO27001-2022': 4,
-            'ISO27701-2019': 2,
+            // PIMS Controls (clause 6), PII Controller, PII Processor. Clause 6
+            // became assessable in library version 2; the catalogue already
+            // shipped it under the same category.
+            'ISO27701-2019': 3,
             'ISO42001-2023': 16,
             'NIS2-2022': 12,
             'NIST-CSF-2.0': 6,

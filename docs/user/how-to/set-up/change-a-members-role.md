@@ -33,7 +33,7 @@ A member's role decides what they can see and do in this workspace. Change it wh
 - A message reads {{ui:admin.members.roleUpdated}}, and the row shows the new role. A custom role shows as a tag beside it.
 - The member's new permissions apply the next time they open a page or take an action.
 - The change is recorded in the workspace's audit log. Open it from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
-- Your workspace may map Microsoft Entra ID groups to roles, on the {{ui:admin.nav.entra}} page. If so, a member in a mapped group can have their role set to that group's role when they sign in with Microsoft. This never changes an Owner.
+- Your workspace may map Microsoft Entra ID groups to roles, on the {{ui:admin.nav.entra}} page. If so, a member in a mapped group can have their role set to that group's role when they sign in with Microsoft, using an account in the Microsoft directory set up on that page. A sign-in from any other directory gets no role from the mappings. This never changes an Owner.
 
 ## Deactivate a member
 

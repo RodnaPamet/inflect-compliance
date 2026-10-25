@@ -160,6 +160,28 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     flue: true,
 };
 
+/**
+ * IS THIS DRIVER A REASONING ENGINE — a model choosing its own calls in a loop —
+ * rather than the static walk over a hand-written step array?
+ *
+ * The question `startWorkflowRun` asks before it requires a registered agent,
+ * pins skills, or hands the run to the worker. It used to ask it by comparing
+ * against the literal `'flue'`, which is right only while Flue is the one
+ * engine: the next engine would have run unvouched, unpinned and inline.
+ *
+ * A `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
+ * without a classification here is a compile error rather than a silent
+ * `undefined` read as false (Step 0a, `docs/claude-agent-sdk-design.md`).
+ */
+const REASONING_ENGINE: Readonly<Record<AgentDriver, boolean>> = {
+    static: false,
+    flue: true,
+};
+
+export function isReasoningEngine(driver: AgentDriver): boolean {
+    return REASONING_ENGINE[driver];
+}
+
 /** The independent terms the decision is composed from. */
 export interface AgentDriverTerms {
     /**
