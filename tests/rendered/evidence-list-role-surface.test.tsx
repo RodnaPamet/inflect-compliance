@@ -279,3 +279,23 @@ describe('Evidence list — a custom role follows its evidence grants', () => {
         expect(screen.getByText(enText('evidence.list.createFileUpload'))).toBeInTheDocument();
     });
 });
+
+describe('Evidence list — an unarchive the server refuses says why', () => {
+    it('shows the "set a new retention date first" refusal', async () => {
+        const message = "This evidence's retention date has passed. Set a new retention date first, then unarchive it.";
+        const archived = evidenceRow({ id: 'ev-old', title: 'Expired export', isArchived: true });
+        const server = makeServer({
+            rows: [archived],
+            mutate: (call) =>
+                call.path === '/evidence/ev-old/unarchive'
+                    ? { status: 409, body: { error: { code: 'CONFLICT', message } } }
+                    : undefined,
+        });
+        mount(server, { role: 'EDITOR' });
+        await screen.findByText('Expired export');
+        await act(async () => {
+            fireEvent.click(document.getElementById('unarchive-ev-old')!);
+        });
+        await waitFor(() => expect(toastError.mock.calls.map((c) => c[0])).toContain(message));
+    });
+});

@@ -12,7 +12,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { logEvent } from '../events/audit';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound } from '@/lib/errors/types';
+import { ConflictError, notFound } from '@/lib/errors/types';
 import { runEvidenceRetentionSweep } from '../jobs/retention';
 
 /**
@@ -55,6 +55,20 @@ export async function updateEvidenceRetention(
             const days = data.retentionDays ?? evidence.retentionDays ?? 0;
             const base = evidence.createdAt;
             updateData.retentionUntil = new Date(base.getTime() + days * 86_400_000);
+        }
+
+        // #4277 — a retention date that is empty or still ahead is the way
+        // back for evidence its old date archived. `expiredAt` is the
+        // retention sweep's stamp; while it stays set the row belongs to the
+        // Archived view, so unarchiving alone could never return it to the
+        // active list. A past date leaves the stamp: the row really has
+        // expired, and the nightly sweep would archive it again anyway.
+        const nextRetention = updateData.retentionUntil as Date | null | undefined;
+        if (
+            nextRetention !== undefined &&
+            (nextRetention === null || nextRetention.getTime() > Date.now())
+        ) {
+            updateData.expiredAt = null;
         }
 
         const updated = await db.evidence.update({
@@ -187,9 +201,23 @@ export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string)
         if (!evidence) throw notFound('Evidence not found');
         if (!evidence.isArchived) return evidence; // idempotent
 
+        // #4277 — refuse while the retention date has passed. Unarchiving such
+        // a row used to leave it under Archived (its `expiredAt` stayed set)
+        // and the nightly sweep archived it again; the user is told what to do
+        // instead.
+        if (evidence.retentionUntil && evidence.retentionUntil.getTime() <= Date.now()) {
+            throw new ConflictError(
+                "This evidence's retention date has passed. Set a new retention date first, then unarchive it.",
+                { reason: 'RETENTION_DATE_PASSED' },
+            );
+        }
+
         const updated = await db.evidence.update({
             where: { id: evidenceId },
-            data: { isArchived: false },
+            // `expiredAt` goes too: with the retention date empty or ahead, an
+            // expiry stamp left from an earlier date would keep the row in
+            // the Archived view after it is unarchived.
+            data: { isArchived: false, expiredAt: null },
         });
 
         await logEvent(db, ctx, {
