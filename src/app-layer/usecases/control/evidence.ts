@@ -18,7 +18,7 @@ import { logEvent } from '../../events/audit';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
-import { sanitizePlainText } from '@/lib/security/sanitize';
+import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { isAllowedMime, isAllowedSize, FILE_MAX_SIZE_BYTES } from '@/lib/storage';
 
 // ─── Evidence Links ───
@@ -128,9 +128,10 @@ export async function linkEvidence(ctx: RequestContext, controlId: string, data:
 }
 
 async function linkEvidenceRecord(ctx: RequestContext, controlId: string, data: { url?: string | null; note?: string | null }) {
-    // Sanitised like every other Evidence writer. `sanitizePlainText` returns
-    // decoded text, so a query string's `&` survives as `&`, not `&amp;`.
-    const url = data.url ? sanitizePlainText(data.url).trim() : '';
+    // A URL, so `sanitizeUrlText`, as the evidence library's own LINK writer
+    // uses: `sanitizePlainText` would decode `&region=` in a query string
+    // into `®ion=`.
+    const url = sanitizeUrlText(data.url);
     if (!url) throw badRequest('A link needs a url.');
     const note = data.note ? sanitizePlainText(data.note).trim() : '';
     const evidence = await runInTenantContext(ctx, async (db) => {

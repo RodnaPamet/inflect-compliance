@@ -198,11 +198,19 @@ describe('linkEvidence — a web link is a library record (#4126 follow-up)', ()
         expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2].title).not.toMatch(/<script/);
     });
 
-    it('sanitises the address it stores', async () => {
+    it('sanitises the address it stores: markup characters are percent-encoded, as a browser would', async () => {
         await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test/?q=<script>alert(1)</script>' });
         const data = (EvidenceRepository.create as jest.Mock).mock.calls[0][2];
-        expect(data.content).toBe('https://x.test/?q=');
-        expect(data.title).toBe('https://x.test/?q=');
+        expect(data.content).toBe('https://x.test/?q=%3Cscript%3Ealert(1)%3C/script%3E');
+        expect(data.title).toBe('https://x.test/?q=%3Cscript%3Ealert(1)%3C/script%3E');
+    });
+
+    it('keeps a parameter that reads like a legacy HTML entity — `&region` is not decoded to `®ion`', async () => {
+        await linkEvidence(editorCtx, 'c-1', { kind: 'LINK', url: 'https://x.test/report?lang=en&region=us' });
+        expect((EvidenceRepository.create as jest.Mock).mock.calls[0][2]).toMatchObject({
+            title: 'https://x.test/report?lang=en&region=us',
+            content: 'https://x.test/report?lang=en&region=us',
+        });
     });
 
     it('keeps a query string intact through sanitisation — `&` is not stored as `&amp;`', async () => {

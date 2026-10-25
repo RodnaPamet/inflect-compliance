@@ -27,8 +27,10 @@ POST /controls/:id/evidence {kind: FILE, fileId, note}
 All of it runs in one `runInTenantContext` transaction, under the control's gate
 only, and the `evidence` and `control` list caches are bumped afterwards. The
 response is the Evidence record. INTEGRATION_RESULT still writes a plain row.
-The LINK branch now also runs its address through `sanitizePlainText`, which
-returns decoded text, so a query string's `&` is stored as `&`.
+The LINK branch now also runs its address through `sanitizeUrlText`, as the
+evidence library's own LINK writer does. It percent-encodes the characters that
+could open markup and leaves `&` as typed; `sanitizePlainText` would have decoded
+`?lang=en&region=us` into `?lang=en®ion=us`.
 
 Nothing in the product posts a FILE to this route: the control pages upload
 through `/evidence/uploads`, and the test-run page posts FILE to the test run's
