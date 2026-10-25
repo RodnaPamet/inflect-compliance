@@ -132,3 +132,36 @@ describe('new control — create refused', () => {
         );
     });
 });
+
+describe('new control — plan limit reached', () => {
+    it('says it in words, without the machine prefix', async () => {
+        // The exact message `assertWithinLimit` throws, built by the same
+        // formatter the server uses.
+        const { formatPlanLimitMessage } = require('@/lib/billing/plan-limit-message');
+        fetchMock.mockResolvedValue(
+            json(
+                {
+                    error: {
+                        code: 'FORBIDDEN',
+                        message: formatPlanLimitMessage({ plan: 'FREE', resource: 'control', limit: 10, current: 10 }),
+                    },
+                },
+                403,
+            ),
+        );
+        render(withSWR(<NewControlModal open setOpen={() => {}} tenantSlug="acme" />));
+        fireEvent.change(document.getElementById('control-name-input') as HTMLInputElement, {
+            target: { value: 'Access reviews' },
+        });
+        await act(async () => {
+            fireEvent.click(document.getElementById('create-control-btn') as HTMLElement);
+        });
+        const banner = await waitFor(() => {
+            const el = document.getElementById('new-control-error');
+            expect(el).toHaveTextContent('Your plan allows 10 controls');
+            return el as HTMLElement;
+        });
+        expect(banner).not.toHaveTextContent('plan_limit_exceeded');
+        expect(banner).not.toHaveTextContent('control(s)');
+    });
+});

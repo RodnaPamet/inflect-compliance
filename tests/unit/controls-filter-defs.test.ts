@@ -31,6 +31,8 @@ import {
     buildControlFilters,
     categoryOptionsFromControls,
     CONTROL_FILTER_KEYS,
+    controlCategoryLabel,
+    mergeOwnerOptions,
     ownerOptionsFromControls,
 } from '../../src/app/t/[tenantSlug]/(app)/controls/filter-defs';
 
@@ -175,6 +177,64 @@ describe('categoryOptionsFromControls', () => {
                 { category: undefined as unknown as null },
             ]),
         ).toEqual([]);
+    });
+});
+
+describe('category labels — a stored theme constant is never shown raw', () => {
+    // A custom control created on the Controls page stores one of the four
+    // ISO 27002 theme constants, and with an auto-minted `CTL-N` code no
+    // framework rule renames it — so the derived category IS the constant.
+    it('labels a theme constant with its localized categoryLabels entry', () => {
+        expect(controlCategoryLabel('TECHNOLOGICAL', tControls)).toBe(
+            (EN.controls as { categoryLabels: Record<string, string> }).categoryLabels.TECHNOLOGICAL,
+        );
+        expect(controlCategoryLabel('TECHNOLOGICAL', tControls)).not.toBe('TECHNOLOGICAL');
+    });
+
+    it('passes any other derived category through untouched', () => {
+        expect(controlCategoryLabel('Access control', tControls)).toBe('Access control');
+    });
+
+    it('the Category filter option keeps the derived VALUE and shows the label', () => {
+        const live = buildControlFilters(
+            [{ code: 'CTL-7', annexId: null, category: 'TECHNOLOGICAL' }],
+            tControls,
+            tGroup,
+        );
+        const category = live.find((f) => f.key === 'category');
+        // The value is what the client-side category filter compares against;
+        // only the text a reader sees changes.
+        expect(category?.options).toEqual([{ value: 'TECHNOLOGICAL', label: 'Technological' }]);
+    });
+});
+
+describe('mergeOwnerOptions — the owner picker does not collapse', () => {
+    // Owner is a server filter: after one pick the loaded rows are that
+    // owner's alone, so options derived from them offer no second owner.
+    const ada = { value: 'u-ada', label: 'Ada — ada@acme.com', displayLabel: 'Ada' };
+    const bob = { value: 'u-bob', label: 'Bob — bob@acme.com', displayLabel: 'Bob' };
+
+    it('keeps every owner seen before', () => {
+        expect(mergeOwnerOptions([ada, bob], [ada])).toEqual([ada, bob]);
+    });
+
+    it('adds owners that appear later, sorted by label', () => {
+        expect(mergeOwnerOptions([bob], [ada])).toEqual([ada, bob]);
+    });
+
+    it('returns the previous list itself when nothing is new', () => {
+        const pool = [ada, bob];
+        expect(mergeOwnerOptions(pool, [bob])).toBe(pool);
+    });
+
+    it('buildControlFilters uses the pool over the loaded rows', () => {
+        const live = buildControlFilters(
+            [{ owner: { id: 'u-ada', name: 'Ada', email: 'ada@acme.com' }, category: null }],
+            tControls,
+            tGroup,
+            [ada, bob],
+        );
+        expect(live.find((f) => f.key === 'ownerUserId')?.options).toEqual([ada, bob]);
     });
 });
 

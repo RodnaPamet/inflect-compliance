@@ -188,6 +188,26 @@ describe("ControlEditPanel (editable control side panel)", () => {
         expect(patched).toBe(false);
     });
 
+    it("shows the status as its localized label, not the enum", () => {
+        // The badge printed `status.replace(/_/g, " ")` — "NEEDS REVIEW",
+        // "NOT STARTED" — while the table beside it shows the label.
+        const en = require("../../messages/en.json");
+        render(
+            withQuery(
+                <ControlEditPanel
+                    tenantSlug="acme"
+                    control={{ ...CONTROL, status: "NEEDS_REVIEW" }}
+                    canWrite
+                    onClose={jest.fn()}
+                    onSaved={jest.fn()}
+                />,
+            ),
+        );
+        const panel = screen.getByTestId("control-edit-panel");
+        expect(panel).toHaveTextContent(en.controls.filterEnums.status.NEEDS_REVIEW);
+        expect(panel).not.toHaveTextContent("NEEDS REVIEW");
+    });
+
     it("has an Activity tab that shows the feed", async () => {
         renderPanel();
         fireEvent.click(screen.getByText("Activity"));

@@ -58,6 +58,8 @@ import {
     categorizeControl,
     type CategorizableControl,
 } from '@/lib/controls/control-taxonomy';
+// Dependency-free as well — the four ISO 27002 theme constants.
+import { isControlCategoryTheme } from '@/lib/controls/control-categories';
 
 /** Surface-namespace resolver (`useTranslations('controls')`). */
 type T = (key: string, values?: Record<string, unknown>) => string;
@@ -78,6 +80,23 @@ export function buildControlStatusLabels(t: T): Record<string, string> {
         NEEDS_REVIEW: t('filterEnums.status.NEEDS_REVIEW'),
         NOT_APPLICABLE: t('filterEnums.status.NOT_APPLICABLE'),
     };
+}
+
+/**
+ * Display label for a DERIVED category value (`categorizeControl(c).category`).
+ *
+ * A custom control's category is stored as one of the four ISO 27002 theme
+ * constants the create dialog writes (`TECHNOLOGICAL`, …), and with a code
+ * like the auto-minted `CTL-N` no framework rule renames it, so the derived
+ * value IS the constant. Every list surface — the Category column, the
+ * Category filter and the Browse rail — showed it raw. Themes get their
+ * localized `categoryLabels.*` label (the one the dialogs already show);
+ * any other derived value is already prose ("Access control") and passes
+ * through. Only the LABEL changes: filter option values stay the derived
+ * value the client-side category filter compares against.
+ */
+export function controlCategoryLabel(value: string, t: T): string {
+    return isControlCategoryTheme(value) ? t(`categoryLabels.${value}`) : value;
 }
 
 function applicabilityLabels(t: T): Record<string, string> {
@@ -212,6 +231,29 @@ export function ownerOptionsFromControls(
 }
 
 /**
+ * Union of two owner-option lists, deduped by value, sorted like
+ * `ownerOptionsFromControls`.
+ *
+ * The owner options are derived from the loaded rows, and the Owner facet is
+ * a SERVER filter: once one owner is picked, the loaded rows are that owner's
+ * controls only, so options derived from them alone collapse to the one
+ * owner already chosen and a second can never be picked. The page keeps a
+ * pool that only grows — `mergeOwnerOptions(pool, ownerOptionsFromControls(rows))`
+ * on every load — so every owner seen stays pickable. Returns `previous`
+ * itself when `next` adds nothing, so the caller can tell "unchanged" by
+ * identity.
+ */
+export function mergeOwnerOptions(
+    previous: ReadonlyArray<FilterOption>,
+    next: ReadonlyArray<FilterOption>,
+): ReadonlyArray<FilterOption> {
+    const seen = new Set(previous.map((o) => o.value));
+    const added = next.filter((o) => !seen.has(o.value));
+    if (added.length === 0) return previous;
+    return [...previous, ...added].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
  * Build category options from the controls currently loaded on the page.
  *
  * #8a — the options are the DERIVED framework-native category
@@ -220,11 +262,13 @@ export function ownerOptionsFromControls(
  * like "TECHNOLOGICAL"). Building from the raw column made the picker offer
  * values that never appear in a cell (and the server filtered the raw column,
  * so a pick on the derived-looking label matched nothing). Dedupe on the
- * derived string and surface it as both value and label; ControlsClient filters
- * the loaded rows on this same derived value.
+ * derived string and use it as the option value; ControlsClient filters the
+ * loaded rows on this same derived value. `labelFor` turns it into the text
+ * shown (`controlCategoryLabel`, so a theme constant reads "Technological").
  */
 export function categoryOptionsFromControls(
     controls: ReadonlyArray<CategorizableControl>,
+    labelFor: (value: string) => string = (value) => value,
 ): FilterOption[] {
     const seen = new Set<string>();
     for (const c of controls) {
@@ -232,22 +276,26 @@ export function categoryOptionsFromControls(
         if (cat) seen.add(cat);
     }
     return Array.from(seen)
-        .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value, label: value }));
+        .map((value) => ({ value, label: labelFor(value) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /**
  * Produce the Filter[] array that FilterSelect consumes, with `options` on
  * the owner/category defs replaced by the runtime-derived lists. Returns
  * the same `FilterDef[]` shape (options is the only field that changes).
+ *
+ * `ownerOptions` overrides the owner list derived from `loaded` — the page
+ * passes its accumulated pool (see `mergeOwnerOptions`).
  */
 export function buildControlFilters(
     loaded: ReadonlyArray<CategorizableControl & { owner?: OwnerLike | null }>,
     t: T,
     tGroup: TGroup,
+    ownerOptions?: ReadonlyArray<FilterOption>,
 ): FilterDef[] {
-    const ownerOpts = ownerOptionsFromControls(loaded);
-    const categoryOpts = categoryOptionsFromControls(loaded);
+    const ownerOpts = ownerOptions ? [...ownerOptions] : ownerOptionsFromControls(loaded);
+    const categoryOpts = categoryOptionsFromControls(loaded, (value) => controlCategoryLabel(value, t));
     return buildControlFilterDefs(t, tGroup).filters.map((f) => {
         if (f.key === 'ownerUserId') return { ...f, options: ownerOpts };
         if (f.key === 'category') return { ...f, options: categoryOpts };
