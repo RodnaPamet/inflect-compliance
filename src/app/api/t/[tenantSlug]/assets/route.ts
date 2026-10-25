@@ -25,13 +25,22 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
 
     if (query.includeDeleted === 'true') {
         // Honour the same toolbar filters the client keeps active in deleted mode.
-        const assets = await listAssetsWithDeleted(ctx, {
-            type: query.type,
-            status: query.status,
-            criticality: query.criticality,
-            q: query.q,
-        });
-        return jsonResponse(assets);
+        //
+        // `{ rows, truncated }`, like the live branch below. This returned the
+        // bare array, and the client reads `data.rows`, so the deleted view
+        // showed "No deleted assets" whatever had been deleted, and Restore
+        // and Purge could not be reached (#4276).
+        const assets = await listAssetsWithDeleted(
+            ctx,
+            {
+                type: query.type,
+                status: query.status,
+                criticality: query.criticality,
+                q: query.q,
+            },
+            { take: LIST_BACKFILL_CAP + 1 },
+        );
+        return jsonResponse(applyBackfillCap(assets));
     }
 
     const hasPagination = query.limit || query.cursor;

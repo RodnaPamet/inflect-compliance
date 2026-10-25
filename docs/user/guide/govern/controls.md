@@ -109,7 +109,7 @@ A status or owner change shows **{{ui:controls.bulk.applied}}** and clears the s
 
 ### Restore or purge a deleted control
 
-Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. A deleted control is marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. This view also lists the controls that are not deleted, with a dash in that column. In it, the search and every filter but {{ui:controls.filters.category}} have no effect, and the {{ui:controls.colHeaders.owner}}, {{ui:controls.colHeaders.tasks}} and {{ui:controls.colHeaders.evidence}} columns show a dash or zero for every row.
+Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. It lists only deleted controls, each marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. The search and the {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}} and {{ui:controls.filters.category}} filters narrow it as they narrow the normal list.
 
 - **{{ui:controls.deleted.restore}}** brings the control back into the list. A message reads **{{ui:controls.deleted.restoredToast}}**.
 - **{{ui:controls.deleted.purge}}** deletes it permanently. The **{{ui:controls.deleted.purgeTitle}}** dialog asks you to type the control's code, or its name if it has none, then click **{{ui:controls.deleted.purge}}**. This cannot be undone.
@@ -129,10 +129,9 @@ Choose **{{ui:controls.deleted.toggle}}** again to return to the normal list.
 | --- | --- | --- |
 | **{{ui:controls.empty.noRecordsTitle}}** | The workspace has no controls | Click **{{ui:controls.empty.installFramework}}** or **{{ui:controls.empty.installTemplates}}**. Only roles that can add controls can install anything on the pages they open |
 | **{{ui:controls.empty.filterTitle}}** | Controls exist, but none match the search and filters | Click **{{ui:controls.empty.clearFilters}}** |
-| **{{ui:controls.empty.filterTitle}}** after picking two or more owners | The {{ui:controls.filters.owner}} filter finds nothing when more than one owner is picked | Pick one owner at a time |
 | A banner saying how many flagged controls are shown | You came from the consistency check on the {{ui:controls.dashboard.title}}, and the list shows only the controls it flagged | Click **{{ui:controls.list.flaggedClear}}** in the banner |
 | Fewer controls than expected, with no filter pill | You came from the {{ui:controls.dashboard.controlsDueSoon}} or {{ui:controls.dashboard.missingEvidence}} card, and the list shows only those controls. {{ui:controls.empty.clearFilters}} does not undo this | Click **{{ui:nav.controls}}** in the sidebar |
-| **{{ui:controls.deleted.emptyTitle}}** | The workspace has no controls at all, deleted or not | Nothing to restore |
+| **{{ui:controls.deleted.emptyTitle}}** | No control is deleted | Nothing to restore |
 | **{{ui:controls.list.loadError}}** | The list did not load | Reload the page |
 | **{{ui:controls.health.loadError}}** above the table | The health verdicts did not load, so the {{ui:controls.list.healthColumn}} column shows dashes | Reload the page |
 | **{{ui:controls.detail.taskRows.error}}** under a row | The control's tasks did not load | Collapse the row and open it again |

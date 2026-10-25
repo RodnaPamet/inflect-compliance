@@ -30,9 +30,12 @@
  * carries the value as READ_ONLY, as the design's hardening lists ask.
  *
  * The run column has one writer, the run create in
- * `app-layer/usecases/workflow-runs.ts`, which stores
- * `driver === 'flue' ? 'FLUE' : 'STATIC'`. It cannot produce any other value, so
- * a third value only ever reaches that column through a change to that line.
+ * `app-layer/usecases/workflow-runs.ts`, which stores `recordedModeOf(driver)`
+ * for the driver `selectRunDriver` chose. That table names a mode for every
+ * driver, so the run writer is held to the same rule: a driver this build can
+ * run must record a WRITTEN value (#4270). A driver whose
+ * `DRIVER_IMPLEMENTED` flag is false is never chosen, so it may name a
+ * READ_ONLY one.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -65,7 +68,12 @@ jest.mock('@/lib/observability', () => ({
 jest.mock('@/lib/agentic/workflow-registry', () => ({ listWorkflowDefinitions: () => [] }));
 
 import { setAgentDriverSetting } from '@/app-layer/usecases/agent-driver-setting';
-import { coerceStoredDriverMode } from '@/lib/agentic/agent-driver';
+import {
+    AGENT_DRIVERS,
+    DRIVER_IMPLEMENTED,
+    coerceStoredDriverMode,
+    recordedModeOf,
+} from '@/lib/agentic/agent-driver';
 import { makeRequestContext } from '../helpers/make-context';
 
 const ENUMS = path.resolve(__dirname, '../../prisma/schema/enums.prisma');
@@ -137,5 +145,26 @@ describe('AgentDriverMode values ship in two deploys (#4241)', () => {
             ...valuesAt('WRITTEN').map((v) => [v, 'accepted'] as const),
         ]);
         expect(outcome).toEqual(expected);
+    });
+
+    it('the run writer records only a WRITTEN value for a driver this build can run (#4270)', () => {
+        // FAILING HERE MEANS a driver `selectRunDriver` can choose records a
+        // mode that is not WRITTEN yet: its runs would store a value the image
+        // production rolls back to cannot read. Either leave the driver's
+        // `DRIVER_IMPLEMENTED` flag false until its mode is WRITTEN, or move
+        // the mode to WRITTEN in a later deploy, as the settings writer's.
+        const runnable = AGENT_DRIVERS.filter((d) => DRIVER_IMPLEMENTED[d]);
+        // Positive control: with no runnable driver the check below holds
+        // over nothing.
+        expect(runnable).toContain('static');
+        const recorded = Object.fromEntries(runnable.map((d) => [d, ROLLOUT[recordedModeOf(d)]]));
+        expect(recorded).toEqual(Object.fromEntries(runnable.map((d) => [d, 'WRITTEN'])));
+    });
+
+    it('every driver records a distinct mode, so the column names the engine (#4270)', () => {
+        // A two-way ternary recorded every driver but one as STATIC. Distinct
+        // modes are what let the column answer which engine walked a run.
+        const modes = AGENT_DRIVERS.map(recordedModeOf);
+        expect(new Set(modes).size).toBe(AGENT_DRIVERS.length);
     });
 });

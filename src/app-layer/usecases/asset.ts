@@ -791,12 +791,16 @@ export async function purgeAsset(ctx: RequestContext, id: string) {
     return purgeEntity(ctx, 'Asset', id);
 }
 
-export async function listAssetsWithDeleted(ctx: RequestContext, filters?: AssetFilters) {
+export async function listAssetsWithDeleted(
+    ctx: RequestContext,
+    filters?: AssetFilters,
+    options: { take?: number } = {},
+) {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
         // ONLY soft-deleted rows (the repository adds `deletedAt: { not: null }`),
         // honouring the same type/status/criticality/q filters as the live list.
-        const rows = await AssetRepository.listDeleted(db, ctx, filters);
+        const rows = await AssetRepository.listDeleted(db, ctx, filters, options);
         // Same rollups as listAssets so the deleted-assets view renders with the
         // identical column set (task counts + open-vuln signal).
         return enrichAssetRows(db, ctx, rows);
