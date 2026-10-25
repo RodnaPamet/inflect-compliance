@@ -269,7 +269,20 @@ describe('the denominator is actually emitted (#3547)', () => {
         // The failure this prevents is specific: `passedThrough: true` would
         // compile, pass every behavioural test above, and silently count
         // redirects to `/login`.
-        expect(source).toContain('passedThrough: isPassThrough');
+        //
+        // BOUND TO THE CALL, not a bare needle. `passedThrough: isPassThrough`
+        // appeared once when this was written and appears twice since #4195
+        // added the soft-navigation counter — so the bare needle had become
+        // satisfiable by the OTHER call site, and the document counter's own
+        // term could have been replaced by a literal with this still green.
+        // `assertion-needle-uniqueness-ratchet` caught it on a diff that
+        // changed nothing in this assertion, which is the case its header says
+        // it exists for.
+        //
+        // `[^}]*` rather than `.*`: it cannot cross out of the object literal,
+        // so it is not an interior span of the kind
+        // `assertion-span-reach-ratchet` counts.
+        expect(source).toMatch(/documentLoadRoute\(\{[^}]*passedThrough:\s*isPassThrough/);
     });
 
     it('reads the dest header from the request rather than inventing it', () => {
