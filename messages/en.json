@@ -7891,7 +7891,8 @@
       "linksFailedDetail": "Task created, but {count, plural, one {# link} other {# links}} failed to attach: {detail}. Add them from the task page.",
       "linksFailed": "Task created, but {count, plural, one {# link} other {# links}} failed to attach.",
       "requiresControlOrLink": "Audit Finding / Control Gap requires a control or framework requirement link.",
-      "requiresAssetOrControl": "Incident requires an asset or control link."
+      "requiresAssetOrControl": "Incident requires an asset or control link.",
+      "linkedRecord": "Linked record"
     },
     "detail": {
       "notFound": "Task not found",

@@ -256,6 +256,29 @@ async function fetchCandidates(
     }
 }
 
+/**
+ * The label the picker would show for ONE entity, or `null` when it cannot
+ * be resolved (the fetch failed, the id is not in the candidate set, or the
+ * type needs an `extraQuery` the caller does not have).
+ *
+ * For a caller that holds an id without the picker's selection — the task
+ * form's preset link, staged by the page it was opened from — so it can
+ * show the record's name instead of its id.
+ */
+export async function fetchEntityLabel(
+    tenantSlug: string,
+    kind: EntityPickerKind,
+    entityId: string,
+    untitled: string,
+    extraQuery?: Record<string, string>,
+): Promise<string | null> {
+    const rows = await fetchCandidates(tenantSlug, kind, extraQuery);
+    return (
+        rowsFromResponse(kind, rows, untitled).find((r) => r.id === entityId)
+            ?.label ?? null
+    );
+}
+
 export interface EntityPickerProps {
     /** Tenant slug — needed for the API URL. */
     tenantSlug: string;
@@ -268,8 +291,12 @@ export interface EntityPickerProps {
      * type.
      */
     value: string;
-    /** Fires on selection. `''` when the user clears the picker. */
-    onChange: (entityId: string) => void;
+    /**
+     * Fires on selection. `''` when the user clears the picker. `label` is
+     * the picked option's display text, for a caller that lists the
+     * selection afterwards (it should show the name, not the id).
+     */
+    onChange: (entityId: string, label?: string) => void;
     /** Stable id for the trigger (used by tests + a11y). */
     id?: string;
     /** Stable testid prefix. Defaults to "entity-picker". */
@@ -347,7 +374,12 @@ export function EntityPicker({
             id={id}
             options={options}
             selected={options.find((o) => o.value === value) ?? null}
-            setSelected={(opt) => onChange(opt?.value ?? '')}
+            setSelected={(opt) =>
+                onChange(
+                    opt?.value ?? '',
+                    typeof opt?.label === 'string' ? opt.label : undefined,
+                )
+            }
             placeholder={
                 loading
                     ? t('ui.loading')

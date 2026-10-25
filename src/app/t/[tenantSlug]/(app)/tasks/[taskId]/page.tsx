@@ -57,6 +57,7 @@ import { Pen2, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 import { IconAction } from '@/components/ui/icon-action';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage } from '@/lib/api-error';
 // Shared with the list's Severity column and the Severity filter — this
 // page rendered the raw enum (`CRITICAL`) next to a filter chip reading
 // "Critical".
@@ -168,17 +169,15 @@ function errorMessage(e: unknown, fallback: string): string {
  * fails on.
  *
  * The server's own message is preferred over `fallback` so a reviewer-gate
- * 403 or a missing-resolution 400 reaches the user verbatim.
+ * 403 or a missing-resolution 400 reaches the user verbatim. It sits at
+ * `error.message` in the API envelope (`{ error: { code, message } }`);
+ * reading only a string `error` fell through to `fallback` on every real
+ * refusal.
  */
 async function okOrThrow(res: Response, fallback: string): Promise<Response> {
     if (res.ok) return res;
-    const data: unknown = await res.json().catch(() => ({}));
-    const body = (data ?? {}) as { error?: unknown; message?: unknown };
-    throw new Error(
-        (typeof body.error === 'string' && body.error) ||
-            (typeof body.message === 'string' && body.message) ||
-            fallback,
-    );
+    const data: unknown = await res.json().catch(() => null);
+    throw new Error(apiErrorMessage(data, fallback));
 }
 
 const TERMINAL_STATUS_VERB_KEY: Record<string, string> = {

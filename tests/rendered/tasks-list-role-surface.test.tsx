@@ -29,6 +29,7 @@
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { SWRConfig } from 'swr';
 
 const CURRENT_USER = 'user-me';
@@ -187,13 +188,23 @@ function installFetch() {
  * Mount as `role` — the write surface comes from the SAME resolver the
  * server page uses, so this cannot drift from the permission model the
  * way a hand-written `{ create: true, edit: true }` literal would.
+ *
+ * `customTasks` overrides the granular `tasks` keys, the way a custom role
+ * built on `role` would — the coarse tier stays the base role's.
  */
-function mountAs(role: Role) {
+function mountAs(
+    role: Role,
+    customTasks?: Partial<ReturnType<typeof getPermissionsForRole>['tasks']>,
+) {
     const perms = getPermissionsForRole(role);
+    const tasks = { ...perms.tasks, ...customTasks };
+    // The coarse tiers `computePermissions` derives from the base role.
+    const canWrite = role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR';
+    const canAdmin = role === 'OWNER' || role === 'ADMIN';
     currentPermissions = {
         canRead: perms.tasks.view,
-        canWrite: perms.tasks.edit,
-        canAdmin: role === 'OWNER' || role === 'ADMIN',
+        canWrite,
+        canAdmin,
         canAudit: role === 'AUDITOR',
         canExport: true,
     };
@@ -205,12 +216,37 @@ function mountAs(role: Role) {
                     initialMetrics={METRICS}
                     tenantSlug="acme"
                     appPermissions={{
-                        tasks: { create: perms.tasks.create, edit: perms.tasks.edit },
+                        tasks: { create: tasks.create, edit: tasks.edit, assign: tasks.assign },
+                        admin: { manage: perms.admin.manage },
                     }}
+                    permissions={{ canWrite, canAdmin }}
                 />
             </TooltipProvider>
         </SWRConfig>,
     );
+}
+
+/** The bulk bar's action labels, after selecting every row. */
+async function bulkActionLabels(): Promise<string[]> {
+    await selectEveryRow();
+    const select = await waitFor(() => {
+        const el = document.getElementById('bulk-action-select');
+        expect(el).not.toBeNull();
+        return el;
+    });
+    fireEvent.click(select as HTMLElement);
+    const listbox = await screen.findByRole('listbox');
+    return within(listbox)
+        .getAllByRole('option')
+        .map((o) => o.textContent?.trim() ?? '');
+}
+
+/** The Views menu's item labels — empty when the menu is not rendered. */
+async function viewsMenuLabels(): Promise<string[]> {
+    const trigger = document.getElementById('tasks-views-menu');
+    if (!trigger) return [];
+    await userEvent.setup().click(trigger);
+    return (await screen.findAllByRole('menuitem')).map((m) => m.textContent?.trim() ?? '');
 }
 
 /** Tick every row's selection checkbox. */
@@ -251,7 +287,7 @@ describe('Tasks list — the write surface each role actually gets', () => {
         view.unmount();
     });
 
-    it.each(['OWNER', 'ADMIN', 'EDITOR'] as const)(
+    it.each(['OWNER', 'ADMIN'] as const)(
         '%s can create, quick-edit, and reach all four bulk actions',
         async (role) => {
             mountAs(role);
@@ -260,30 +296,61 @@ describe('Tasks list — the write surface each role actually gets', () => {
             expect(screen.getByRole('button', { name: LIST.addBtn })).toBeInTheDocument();
             expect(screen.getByTestId(`task-quick-edit-${HIGH_TASK.id}`)).toBeInTheDocument();
 
-            await selectEveryRow();
-
             // The bulk bar appears with the selection and offers the four
             // actions the tasks API supports — assign, status, due, delete.
-            const select = await waitFor(() => {
-                const el = document.getElementById('bulk-action-select');
-                expect(el).not.toBeNull();
-                return el;
-            });
-            expect(select).not.toBeNull();
-            fireEvent.click(select as HTMLElement);
+            expect(await bulkActionLabels()).toEqual([
+                BULK.assign,
+                BULK.changeStatus,
+                BULK.setDueDate,
+                BULK.delete,
+            ]);
+        },
+    );
 
-            const listbox = await screen.findByRole('listbox');
-            const labels = within(listbox)
-                .getAllByRole('option')
-                .map((o) => o.textContent?.trim());
-            expect(labels).toEqual(
-                expect.arrayContaining([
-                    BULK.assign,
-                    BULK.changeStatus,
-                    BULK.setDueDate,
-                    BULK.delete,
-                ]),
-            );
+    it('EDITOR can create, quick-edit and bulk assign / status / due — but not bulk delete', async () => {
+        mountAs('EDITOR');
+        await screen.findByText(HIGH_TASK.title);
+
+        expect(screen.getByRole('button', { name: LIST.addBtn })).toBeInTheDocument();
+        expect(screen.getByTestId(`task-quick-edit-${HIGH_TASK.id}`)).toBeInTheDocument();
+
+        // `bulk/delete` requires `admin.manage` and `bulkDeleteTask`
+        // asserts `canAdmin`. Offering Delete to an Editor looked like it
+        // worked — rows gone, undo toast up — until the window ended and
+        // the call came back refused.
+        expect(await bulkActionLabels()).toEqual([
+            BULK.assign,
+            BULK.changeStatus,
+            BULK.setDueDate,
+        ]);
+    });
+
+    it('a custom role with tasks.edit but not tasks.assign gets no bulk Assign', async () => {
+        // `bulk/assign` is gated on `tasks.assign`, not `tasks.edit`.
+        mountAs('EDITOR', { assign: false });
+        await screen.findByText(HIGH_TASK.title);
+
+        const labels = await bulkActionLabels();
+        expect(labels).not.toContain(BULK.assign);
+        expect(labels).toEqual([BULK.changeStatus, BULK.setDueDate]);
+    });
+
+    it.each(['OWNER', 'ADMIN'] as const)('%s is offered the Deleted view', async (role) => {
+        mountAs(role);
+        await screen.findByText(HIGH_TASK.title);
+
+        expect(await viewsMenuLabels()).toContain(LIST.showDeleted);
+    });
+
+    it.each(['EDITOR', 'READER', 'AUDITOR'] as const)(
+        '%s is not offered the Deleted view the server would refuse',
+        async (role) => {
+            mountAs(role);
+            await screen.findByText(HIGH_TASK.title);
+
+            // Listing deleted tasks and restoring one both assert
+            // `canAdmin`; the view was offered on `tasks.edit` alone.
+            expect(await viewsMenuLabels()).not.toContain(LIST.showDeleted);
         },
     );
 
