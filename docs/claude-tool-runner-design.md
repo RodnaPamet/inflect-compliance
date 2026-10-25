@@ -193,20 +193,22 @@ the API drops, unbilled, any block a model cannot read.
 
 ## Decisions for the owner
 
-1. **Make this the builder's first engine.** Recommended, in place of the Agent
-   SDK, for the reasons in the table at the top. The Agent SDK design's Step 4a
+1. **Make this the builder's first engine.** **Decided (owner, 2026-10-25):
+   yes**, in place of the Agent SDK, for the reasons in the table at the top. The Agent SDK design's Step 4a
    becomes a confirmation spike, run only if a profile needs that engine.
-2. **Serial tool dispatch in v1.** `disable_parallel_tool_use` costs extra turns
+2. **Serial tool dispatch in v1.** **Decided (owner, 2026-10-25): serial.**
+   `disable_parallel_tool_use` costs extra turns
    on fan-out-heavy work. A per-run mutex inside `run` keeps the ledger exact
    and allows parallel requests, at the price of a lock to get right. v1 takes
    the simpler shape.
-3. **A direct SDK dependency.** It adds one package the repo already carries
+3. **A direct SDK dependency.** **Decided (owner, 2026-10-25): take the
+   dependency** (`@anthropic-ai/sdk`, Step 2a). It adds one package the repo already carries
    transitively. The alternative, extending the raw-`fetch` provider pattern
    into a full agent loop, is #3808's choice for the assistant. It does not
    carry over: an engine for customer-built agents gains a lot from the SDK's
    handling of `pause_turn`, refusal fallbacks and thinking blocks.
-4. **`LOCAL_ONLY` tenants.** Proposed: refused on this engine with a named
-   reason, and served by Flue. An Anthropic-compatible local gateway would lift
+4. **`LOCAL_ONLY` tenants.** **Decided (owner, 2026-10-25): refused on this
+   engine with a named reason, and served by Flue.** An Anthropic-compatible local gateway would lift
    the refusal without a code change.
 
 ## Roadmap (future direction)

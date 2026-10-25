@@ -429,8 +429,9 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
 
 ## Decisions for the owner
 
-1. **Which engine runs the builder's agents first.** Recommended: the Tool
-   Runner (`docs/claude-tool-runner-design.md`, decision 1). The Agent SDK
+1. **Which engine runs the builder's agents first.** **Decided (owner,
+   2026-10-25): the Tool Runner** (`docs/claude-tool-runner-design.md`,
+   decision 1). Phase 2 builds it, and Phase 4 stays conditional. The Agent SDK
    brings hooks, a permission engine, subagent definitions and compaction. It
    costs a subprocess and a lockdown whose every line exists to turn a default
    off. The Tool Runner brings an in-process loop with nothing to turn off. This
@@ -438,16 +439,19 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    something the Tool Runner engine cannot give it, such as hook-based deferral
    of a call to a human.
 2. **The four #3351 questions, for instructions instead of compose text.**
-   *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
+   **Decided (owner, 2026-10-25): all four answers below are accepted as
+   written.** Step 1a builds to them. *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
    run, and rendered as text, never markup. *Through the AI Guard:* scanned at
    save; at run time it is the operator's own fenced block, never mixed into
    tool output. *Which model:* the existing Anthropic sub-processor; naming the
    new data category on the row is proposed as sufficient, matching the
-   2026-10-18 decision for Flue. *Unresolvable:* a profile asking for a tool
-   the agent is not granted is refused at save, never silently dropped at run.
-3. **Who approves a profile version.** Proposed: `admin.agent_registry`, with
-   author ≠ approver, as for tenant skills. A new key would be cleaner, at the
-   price of a custom-role migration.
+   2026-10-18 decision for Flue, and accepted as such. *Unresolvable:* a
+   profile asking for a tool the agent is not granted is refused at save, never
+   silently dropped at run.
+3. **Who approves a profile version.** **Decided (owner, 2026-10-25):
+   `admin.agent_registry`, with author ≠ approver**, as for tenant skills. The
+   rule is held in the usecase and by a CHECK. A new key would have been cleaner,
+   at the price of a custom-role migration, and was declined.
 4. **Delegation in v1.** Proposed off. Turning it on later is a reviewed diff
    that adds `Agent` back with a subset-only definition.
 5. **Branding.** The builder says "Agent", and names Claude as "Powered by
