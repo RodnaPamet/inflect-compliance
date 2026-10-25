@@ -60,5 +60,6 @@ module.exports = {
         'no-router-push-in-row-click': require('./rules/no-router-push-in-row-click'),
         'no-brand-focus-indicator': require('./rules/no-brand-focus-indicator'),
         'no-translucent-focus-indicator': require('./rules/no-translucent-focus-indicator'),
+        'regex-within-ts-target': require('./rules/regex-within-ts-target'),
     },
 };
