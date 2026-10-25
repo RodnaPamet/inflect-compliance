@@ -345,8 +345,11 @@ describeFn('task usecase — branch coverage (integration)', () => {
         // legal bulk transition
         const r = await bulkSetTaskStatus(ctx, [a.id, b.id], 'TRIAGED');
         expect(r.count).toBe(2);
-        // illegal bulk transition (TRIAGED → OPEN is not allowed)
-        await expect(bulkSetTaskStatus(ctx, [a.id, b.id], 'OPEN')).rejects.toThrow(/illegal/i);
+        // illegal bulk transition (TRIAGED → OPEN is not allowed); the refusal
+        // names the task and the statuses the way the list shows them (#4278)
+        await expect(bulkSetTaskStatus(ctx, [a.id, b.id], 'OPEN')).rejects.toThrow(
+            /Cannot change the status of "bulk-a": A task cannot move from Triaged to Open/,
+        );
         // bulk due date
         await bulkSetTaskDueDate(ctx, [a.id, b.id], new Date().toISOString());
         await bulkSetTaskDueDate(ctx, [a.id, b.id], null);
