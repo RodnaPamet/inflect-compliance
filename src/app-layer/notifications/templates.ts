@@ -57,6 +57,57 @@ export function buildTaskAssignedEmail(payload: TaskAssignedPayload): EmailTempl
     };
 }
 
+// ─── Task Assigned — bulk digest ───
+
+/**
+ * ONE email for everything a bulk Assign handed one person (#4278). The
+ * single-task email per task would be N near-identical mails for one click;
+ * no email at all left the assignee to find the work by chance. Sent only
+ * when the action newly assigned two or more tasks to them — exactly one
+ * goes out as the ordinary `buildTaskAssignedEmail`.
+ */
+export interface TaskAssignedDigestPayload {
+    tasks: Array<{ taskTitle: string; taskKey?: string | null; taskType: string }>;
+    assigneeName: string;
+    assignerName?: string;
+    tenantSlug: string;
+}
+
+export function buildTaskAssignedDigestEmail(payload: TaskAssignedDigestPayload): EmailTemplateResult {
+    const { tasks, assigneeName, assignerName, tenantSlug } = payload;
+    const count = tasks.length;
+    const byLine = assignerName ? ` by ${assignerName}` : '';
+    const link = appLink(`/t/${tenantSlug}/tasks`);
+    const line = (t: TaskAssignedDigestPayload['tasks'][number]) =>
+        `${t.taskKey ? `[${t.taskKey}] ` : ''}${t.taskTitle}`;
+
+    return {
+        subject: `${count} tasks assigned to you`,
+        bodyText: [
+            `Hi ${assigneeName},`,
+            '',
+            `You have been assigned ${count} tasks${byLine}:`,
+            '',
+            ...tasks.map((t) => `  ${line(t)}`),
+            '',
+            `View your tasks: ${link}`,
+            '',
+            '— Inflect Compliance',
+        ].join('\n'),
+        bodyHtml: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${count} tasks assigned to you</h2>
+  <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(assigneeName)},</p>
+  <p style="color: #444; line-height: 1.5;">You have been assigned <strong>${count}</strong> tasks${byLine ? ` by <strong>${escapeHtml(assignerName!)}</strong>` : ''}:</p>
+  <div style="background: #f4f6fa; border-left: 4px solid #4f46e5; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+    ${tasks.map((t) => `<div style="padding: 2px 0;"><strong>${escapeHtml(line(t))}</strong></div>`).join('\n    ')}
+  </div>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
+</div>`.trim(),
+    };
+}
+
 // ─── Evidence Expiring ───
 
 export interface EvidenceExpiringPayload {

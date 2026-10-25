@@ -26,6 +26,13 @@ import {
 import { getSlaStatus } from '../services/sla';
 import { reconcileTaskSource } from './task-source-reconcile';
 import { restoreEntity } from './soft-delete-operations';
+import { createHash } from 'crypto';
+import {
+    memberCanSignOffTasks,
+    REVIEWER_CANNOT_SIGN_OFF,
+    REVIEWER_CANNOT_SIGN_OFF_MESSAGE,
+    REVIEWER_ELIGIBILITY_SELECT,
+} from './task-reviewer-eligibility';
 
 // Every tasks route reaches the domain through this module (see
 // tests/unit/tasks-routes-authz.test.ts); the checklist verb lives in its own
@@ -163,6 +170,30 @@ async function assertActiveMembers(
             'INVALID_USER',
             'User is not an active member of this tenant',
         );
+    }
+}
+
+/**
+ * #4278 — the reviewer must be able to SIGN OFF: their role can edit tasks
+ * (see `task-reviewer-eligibility.ts`). A reviewer who cannot change status
+ * leaves the task completable by nobody. Checked on every write that names a
+ * reviewer — create and update; clearing one (`null`) is not checked. An
+ * absent membership is left to `assertActiveMembers`, which runs first and
+ * gives its own refusal. Existing tasks are not touched: the rule applies
+ * when a reviewer is NAMED.
+ */
+async function assertReviewerCanSignOff(
+    db: PrismaTx,
+    ctx: RequestContext,
+    reviewerUserId: string | null | undefined,
+) {
+    if (!reviewerUserId) return;
+    const membership = await db.tenantMembership.findFirst({
+        where: { tenantId: ctx.tenantId, userId: reviewerUserId, status: 'ACTIVE' },
+        select: REVIEWER_ELIGIBILITY_SELECT,
+    });
+    if (membership && !memberCanSignOffTasks(membership)) {
+        throw badRequest(REVIEWER_CANNOT_SIGN_OFF_MESSAGE, { reason: REVIEWER_CANNOT_SIGN_OFF });
     }
 }
 
@@ -310,6 +341,19 @@ export async function getTask(ctx: RequestContext, taskId: string) {
     return runInTenantContext(ctx, async (db) => {
         const task = await TaskRepository.getById(db, ctx, taskId);
         if (!task) throw notFound('Task not found');
+        // #4278 — can the named reviewer actually sign this task off? A
+        // reviewer whose role cannot edit tasks (named before the rule) or
+        // who is no longer an active member leaves the task completable by
+        // nobody. Existing tasks are NOT migrated; this flag lets the task
+        // page say so where the reviewer is changed. `null` = no reviewer.
+        let reviewerCanSignOff: boolean | null = null;
+        if (task.reviewerUserId) {
+            const membership = await db.tenantMembership.findFirst({
+                where: { tenantId: ctx.tenantId, userId: task.reviewerUserId, status: 'ACTIVE' },
+                select: REVIEWER_ELIGIBILITY_SELECT,
+            });
+            reviewerCanSignOff = membership ? memberCanSignOffTasks(membership) : false;
+        }
         // Audit Coherence S8 (2026-05-24) — attach the derived SLA
         // status alongside the raw row. The service is pure (severity
         // + createdAt + currentStatus); no extra query, no schema
@@ -317,6 +361,7 @@ export async function getTask(ctx: RequestContext, taskId: string) {
         // pill; auditors see triage vs resolve breach booleans.
         return {
             ...task,
+            reviewerCanSignOff,
             sla: getSlaStatus(task.severity, task.createdAt, task.status),
         };
     });
@@ -360,6 +405,7 @@ export async function createTask(ctx: RequestContext, input: {
         // ctx.tenantId on write — resolve them against an ACTIVE membership
         // first so a foreign id cannot be persisted.
         await assertActiveMembers(db, ctx, [input.assigneeUserId, input.reviewerUserId]);
+        await assertReviewerCanSignOff(db, ctx, input.reviewerUserId);
         // `controlId` / `findingId` are direct FKs written straight onto the
         // row. Prisma's FK check runs BELOW row-level security, so a foreign
         // id inserts cleanly and only shows up later as a null relation —
@@ -477,6 +523,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
         // with ctx.tenantId on write — resolve it against an ACTIVE
         // membership first (createTask does the same for assignee+reviewer).
         await assertActiveMembers(db, ctx, [patch.reviewerUserId]);
+        await assertReviewerCanSignOff(db, ctx, patch.reviewerUserId);
         // Re-point of the control FK is body-supplied too — see the note on
         // `assertRefInTenant`. Only checked when the patch actually carries
         // the field, so an unrelated PATCH does not pay for a lookup.
@@ -1188,6 +1235,45 @@ export async function assignTask(ctx: RequestContext, taskId: string, assigneeUs
     return result;
 }
 
+/**
+ * Who a TASK_ASSIGNED email goes to and who it says sent it, or `null`
+ * when there is nobody to mail.
+ *
+ * The assignee is resolved THROUGH an active membership of this tenant.
+ * `User` carries no RLS policy, so a bare `user.findUnique` is a global
+ * lookup: a foreign user id would resolve and then be emailed the task
+ * title, key and tenant slug. That is both a cross-tenant disclosure and a
+ * user-id existence oracle (mail sent vs not). Joining through
+ * TenantMembership makes the notification reachable only for someone who
+ * is genuinely in this tenant.
+ */
+async function resolveTaskAssignmentEmailParties(
+    db: PrismaTx,
+    ctx: RequestContext,
+    assigneeUserId: string,
+): Promise<{ toEmail: string; assigneeName: string; assignerName?: string } | null> {
+    const membership = await db.tenantMembership.findFirst({
+        where: {
+            userId: assigneeUserId,
+            tenantId: ctx.tenantId,
+            status: 'ACTIVE',
+        },
+        select: { user: { select: { email: true, name: true } } },
+    });
+    const assignee = membership?.user;
+    if (!assignee?.email) return null;
+
+    const assigner = await db.user.findUnique({
+        where: { id: ctx.userId },
+        select: { name: true },
+    });
+    return {
+        toEmail: assignee.email,
+        assigneeName: assignee.name || assignee.email,
+        assignerName: assigner?.name || undefined,
+    };
+}
+
 /** Look up assignee email and enqueue TASK_ASSIGNED notification */
 async function enqueueTaskAssignedNotification(
     db: PrismaTx,
@@ -1199,48 +1285,85 @@ async function enqueueTaskAssignedNotification(
     assigneeUserId: string,
 ): Promise<void> {
     try {
-        // Resolve the assignee THROUGH an active membership of this tenant.
-        //
-        // `User` carries no RLS policy, so a bare `user.findUnique` is a
-        // global lookup: a foreign user id would resolve and then be emailed
-        // the task title, key and tenant slug. That is both a cross-tenant
-        // disclosure and a user-id existence oracle (mail sent vs not).
-        // Joining through TenantMembership makes the notification reachable
-        // only for someone who is genuinely in this tenant.
-        const membership = await db.tenantMembership.findFirst({
-            where: {
-                userId: assigneeUserId,
-                tenantId: ctx.tenantId,
-                status: 'ACTIVE',
-            },
-            select: { user: { select: { email: true, name: true } } },
-        });
-        const assignee = membership?.user;
-        if (!assignee?.email) return;
-
-        const assigner = await db.user.findUnique({
-            where: { id: ctx.userId },
-            select: { name: true },
-        });
+        const parties = await resolveTaskAssignmentEmailParties(db, ctx, assigneeUserId);
+        if (!parties) return;
 
         await enqueueEmail(db, {
             tenantId: ctx.tenantId,
             type: 'TASK_ASSIGNED',
-            toEmail: assignee.email,
+            toEmail: parties.toEmail,
             entityId: taskId,
             requestId: ctx.requestId,
             payload: {
                 taskTitle,
                 taskKey,
                 taskType,
-                assigneeName: assignee.name || assignee.email,
-                assignerName: assigner?.name || undefined,
+                assigneeName: parties.assigneeName,
+                assignerName: parties.assignerName,
                 tenantSlug: ctx.tenantSlug || '',
             },
         });
     } catch (err) {
         // Fire-and-forget — never break the task operation
         logger.warn('failed to enqueue task assignment email', { component: 'notifications' });
+    }
+}
+
+/** A task a bulk Assign newly handed to its assignee, as the notifications need it. */
+interface NewlyAssignedTask {
+    id: string;
+    title: string;
+    key: string | null;
+    type: string;
+}
+
+/**
+ * #4278 — the email half of bulk Assign's notifications: ONE email to the
+ * assignee for everything the action newly handed them. Exactly one task
+ * goes out as the ordinary TASK_ASSIGNED email — same template, same
+ * per-(task, day) dedupe key as the single-task path, so the two paths
+ * collapse into one mail. Two or more go out as the digest, deduped per
+ * (task set, day): a repeat of the same bulk action the same day sends
+ * nothing new, a different set sends its own digest.
+ *
+ * Inside the caller's transaction, like the single-task email (the outbox
+ * row commits with the assignment), and fire-and-forget like it.
+ */
+async function enqueueBulkTaskAssignedNotification(
+    db: PrismaTx,
+    ctx: RequestContext,
+    assigneeUserId: string,
+    tasks: NewlyAssignedTask[],
+): Promise<void> {
+    if (tasks.length === 0) return;
+    if (tasks.length === 1) {
+        const [task] = tasks;
+        await enqueueTaskAssignedNotification(db, ctx, task.id, task.title, task.key, task.type, assigneeUserId);
+        return;
+    }
+    try {
+        const parties = await resolveTaskAssignmentEmailParties(db, ctx, assigneeUserId);
+        if (!parties) return;
+
+        const taskSet = createHash('sha256')
+            .update([...tasks.map((t) => t.id)].sort().join(','))
+            .digest('hex')
+            .slice(0, 32);
+        await enqueueEmail(db, {
+            tenantId: ctx.tenantId,
+            type: 'TASK_ASSIGNED',
+            toEmail: parties.toEmail,
+            entityId: `bulk-assign:${taskSet}`,
+            requestId: ctx.requestId,
+            payload: {
+                tasks: tasks.map((t) => ({ taskTitle: t.title, taskKey: t.key, taskType: t.type })),
+                assigneeName: parties.assigneeName,
+                assignerName: parties.assignerName,
+                tenantSlug: ctx.tenantSlug || '',
+            },
+        });
+    } catch (err) {
+        logger.warn('failed to enqueue bulk task assignment email', { component: 'notifications' });
     }
 }
 
@@ -1336,23 +1459,42 @@ async function emitTaskAssignedNotification(
     },
 ): Promise<void> {
     if (!task.assigneeUserId || !ctx.tenantSlug) return;
+    await emitTaskAssignedNotifications(ctx, task.assigneeUserId, [task]);
+}
+
+/**
+ * The bell for each of `tasks`, now `assigneeUserId`'s — one TASK_ASSIGNED
+ * notification per task, through `createAssignmentNotification` (its
+ * per-(task, user, day) dedupe key and its `publishNotificationEvent` push).
+ * Bulk Assign calls it with every task it newly assigned (#4278); the
+ * single-task path with one. ONE transaction for the set, after the
+ * assignment committed, fire-and-forget — the same posture as the single
+ * bell, so a notification failure never touches the assignment.
+ */
+async function emitTaskAssignedNotifications(
+    ctx: RequestContext,
+    assigneeUserId: string,
+    tasks: Array<{ id: string; title: string; key: string | null }>,
+): Promise<void> {
+    if (tasks.length === 0 || !ctx.tenantSlug) return;
     const tenantSlug = ctx.tenantSlug;
-    const assigneeUserId = task.assigneeUserId;
     try {
-        await runInTenantContext(ctx, (db) =>
-            createAssignmentNotification(db, 'TASK_ASSIGNED', {
-                tenantId: task.tenantId,
-                assigneeUserId,
-                entityId: task.id,
-                entityLabel: task.title,
-                entityKey: task.key,
-                tenantSlug,
-            }),
-        );
+        await runInTenantContext(ctx, async (db) => {
+            for (const task of tasks) {
+                await createAssignmentNotification(db, 'TASK_ASSIGNED', {
+                    tenantId: ctx.tenantId,
+                    assigneeUserId,
+                    entityId: task.id,
+                    entityLabel: task.title,
+                    entityKey: task.key,
+                    tenantSlug,
+                });
+            }
+        });
     } catch (err) {
         logger.warn('failed to create task-assigned notification', {
             component: 'notifications',
-            taskId: task.id,
+            taskIds: tasks.map((t) => t.id),
             error: err instanceof Error ? err.message : String(err),
         });
     }
@@ -1761,6 +1903,14 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
         const rows = await TaskRepository.listByIds(db, ctx, taskIds);
         if (rows.length === 0) throw notFound('No matching tasks found');
         const applied = new Set(rows.map((r) => r.id));
+        // #4278 — the tasks this action hands to someone NEW: a task that
+        // already had this assignee is not news, and an unassign notifies
+        // nobody (as on the single-task path).
+        const newlyAssigned: NewlyAssignedTask[] = assigneeUserId
+            ? rows
+                  .filter((r) => r.assigneeUserId !== assigneeUserId)
+                  .map((r) => ({ id: r.id, title: r.title, key: r.key, type: r.type }))
+            : [];
 
         const result = await TaskRepository.bulkAssign(db, ctx, [...applied], assigneeUserId);
         // Audit only ids that actually resolved. Sequential by design —
@@ -1775,10 +1925,20 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
                 metadata: { assigneeUserId, bulk: true },
             });
         }
-        return { ...result, ...bulkResults(taskIds, applied) };
+        // #4278 — bulk Assign told nobody, while assigning one task emails
+        // and bells the assignee. One email for the whole set, inside the
+        // transaction like the single-task email.
+        if (assigneeUserId) {
+            await enqueueBulkTaskAssignedNotification(db, ctx, assigneeUserId, newlyAssigned);
+        }
+        return { result: { ...result, ...bulkResults(taskIds, applied) }, newlyAssigned };
     });
+    // …and a bell per newly assigned task, after the commit.
+    if (assigneeUserId) {
+        await emitTaskAssignedNotifications(ctx, assigneeUserId, outcome.newlyAssigned);
+    }
     await bumpEntityCacheVersion(ctx, 'task');
-    return outcome;
+    return outcome.result;
 }
 
 /**

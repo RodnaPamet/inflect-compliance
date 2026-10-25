@@ -225,6 +225,9 @@ export function NewTaskFields({
                         id="task-reviewer-input"
                         name="reviewerUserId"
                         tenantSlug={tenantSlug}
+                        // Only members whose role can edit tasks — the
+                        // server refuses anyone else as reviewer (#4278).
+                        audience="task-reviewer"
                         selectedId={form.fields.reviewerUserId || null}
                         onChange={(userId) =>
                             form.setField('reviewerUserId', userId ?? '')

@@ -279,6 +279,55 @@ describe('task detail — mutation failures are surfaced, successes reach the li
     });
 });
 
+/**
+ * #4278 — a reviewer named before the reviewer rule, whose role cannot edit
+ * tasks (or who has left), can never sign the task off. Those tasks were not
+ * migrated; the task page says so beside the reviewer picker that fixes it.
+ */
+describe('task detail — a reviewer who cannot sign off is called out', () => {
+    beforeEach(() => {
+        fetchMock.mockReset();
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    function mountWith(reviewerCanSignOff: boolean) {
+        const task = {
+            ...TASK,
+            reviewerUserId: 'user-rex',
+            reviewer: { id: 'user-rex', name: 'Rex Reader', email: 'rex@example.com' },
+            reviewerCanSignOff,
+        };
+        fetchMock.mockImplementation(async (url: string) =>
+            url.split('?')[0] === '/api/t/acme/tasks/task_1' ? json(task) : baseGet(url),
+        );
+        renderPage();
+    }
+
+    it('shows the note when the server says the reviewer cannot sign off', async () => {
+        mountWith(false);
+        await waitForTaskLoaded();
+
+        const note = await waitFor(() => {
+            const el = document.getElementById('task-reviewer-cannot-sign-off');
+            if (!el) throw new Error('no note yet');
+            return el;
+        });
+        expect(note).toHaveTextContent(EN.reviewerCannotSignOff);
+        // …and the picker beside it offers only members who CAN sign off.
+        await waitFor(() =>
+            expect(fetchMock).toHaveBeenCalledWith('/api/t/acme/users/assignable?audience=task-reviewer'),
+        );
+    });
+
+    it('shows nothing when the reviewer can sign off', async () => {
+        mountWith(true);
+        await waitForTaskLoaded();
+        await screen.findByText('Rex Reader');
+
+        expect(document.getElementById('task-reviewer-cannot-sign-off')).toBeNull();
+    });
+});
+
 /** GETs against the bare list key (no query string). */
 function getCountExactList(): number {
     return fetchMock.mock.calls.filter(

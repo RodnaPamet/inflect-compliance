@@ -219,6 +219,12 @@ interface TaskDetail {
     createdBy: { name: string | null } | null;
     // TP-6 — reviewer + watchers, both returned by getById.
     reviewer: { id: string; name: string | null; email: string | null } | null;
+    /**
+     * #4278 — whether the reviewer can sign this task off (`null` with no
+     * reviewer). False for a reviewer named before the rule whose role
+     * cannot edit tasks, or one no longer an active member.
+     */
+    reviewerCanSignOff?: boolean | null;
     watchers: {
         id: string;
         userId: string;
@@ -1202,6 +1208,9 @@ export default function TaskDetailPage() {
                                 id="task-reviewer-input"
                                 name="reviewerUserId"
                                 tenantSlug={tenantSlug}
+                                // Only members whose role can edit tasks —
+                                // the server refuses anyone else (#4278).
+                                audience="task-reviewer"
                                 selectedId={reviewerValue}
                                 onChange={(uid) => setReviewerDraft(uid ?? null)}
                                 placeholder={t('detail.noReviewer')}
@@ -1212,6 +1221,16 @@ export default function TaskDetailPage() {
                             {savingReviewer ? t('detail.saving') : t('detail.setReviewer')}
                         </Button>
                     </div>
+                    {/* #4278 — a reviewer named before the rule, whose
+                        role cannot edit tasks (or who has left), can never
+                        sign the task off. Existing tasks were not
+                        migrated; this is where it is said, beside the
+                        picker that fixes it. */}
+                    {task.reviewerCanSignOff === false && (
+                        <p className="mt-2 text-sm text-content-warning" id="task-reviewer-cannot-sign-off" role="status">
+                            {t('detail.reviewerCannotSignOff')}
+                        </p>
+                    )}
                 </div>
             )}
 

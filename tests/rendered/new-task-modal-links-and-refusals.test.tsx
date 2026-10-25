@@ -91,8 +91,19 @@ function response({ status = 200, body }: Reply): Response {
     } as unknown as Response;
 }
 
+const EDITOR = { id: 'user-editor', name: 'Erin Editor', email: 'erin@example.com', image: null };
+const READER = { id: 'user-reader', name: 'Rex Reader', email: 'rex@example.com', image: null };
+
 function installFetch() {
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        // The roster is the server's to narrow (#4278): the reviewer picker
+        // asks for `audience=task-reviewer` and gets only who may review.
+        if (String(input) === '/api/t/acme/users/assignable?audience=task-reviewer') {
+            return response({ body: [EDITOR] });
+        }
+        if (String(input) === '/api/t/acme/users/assignable') {
+            return response({ body: [EDITOR, READER] });
+        }
         const url = String(input).split('?')[0];
         const method = init?.method ?? 'GET';
         if (method === 'POST' && url === '/api/t/acme/tasks') {
@@ -191,6 +202,37 @@ describe('new-task form — staged links show names, not codes', () => {
         expect(warning).toContain(`${LINK.CONTROL}: ${PRESET_CONTROL.code}: ${PRESET_CONTROL.name}`);
         expect(warning).not.toContain(PRESET_CONTROL.id);
         expect(warning).not.toContain('CONTROL ');
+    });
+});
+
+describe('new-task form — the reviewer picker (#4278)', () => {
+    /** Open a people picker and read its option labels. */
+    async function optionsOf(inputId: string): Promise<string> {
+        const trigger = await waitFor(() => {
+            const el = document.getElementById(inputId);
+            if (!el) throw new Error(`no ${inputId} yet`);
+            return el;
+        });
+        fireEvent.click(trigger);
+        const listbox = await screen.findByRole('listbox');
+        await waitFor(() => expect(within(listbox).queryAllByRole('option').length).toBeGreaterThan(0));
+        const text = listbox.textContent ?? '';
+        fireEvent.keyDown(listbox, { key: 'Escape' });
+        return text;
+    }
+
+    it('offers only members whose role can edit tasks; the assignee picker offers everyone', async () => {
+        mount();
+
+        const reviewers = await optionsOf('task-reviewer-input');
+        expect(reviewers).toContain(EDITOR.name);
+        expect(reviewers).not.toContain(READER.name);
+        expect(global.fetch).toHaveBeenCalledWith('/api/t/acme/users/assignable?audience=task-reviewer');
+
+        await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+        const assignees = await optionsOf('task-assignee-input');
+        expect(assignees).toContain(EDITOR.name);
+        expect(assignees).toContain(READER.name);
     });
 });
 

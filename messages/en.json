@@ -7978,6 +7978,7 @@
       "reviewerLabel": "Reviewer:",
       "noReviewer": "No reviewer",
       "setReviewer": "Set reviewer",
+      "reviewerCannotSignOff": "This reviewer cannot sign the task off — only an active member whose role can edit tasks can. Choose another reviewer.",
       "reviewerFailed": "Failed to set reviewer",
       "watchersLabel": "Watchers:",
       "noWatchers": "No watchers",

@@ -158,6 +158,16 @@ interface TaskListItem {
         annexId: string | null;
     } | null;
     /**
+     * Controls linked through Links (CONTROL TaskLinks), resolved by the
+     * list read — the Linked control filter offers them beside `control`.
+     */
+    linkedControls?: Array<{
+        id: string;
+        code: string | null;
+        name: string | null;
+        annexId: string | null;
+    }>;
+    /**
      * Only populated in the Deleted view — `listDeleted` selects these
      * two extra columns, the live list does not (they would be null on
      * every row). Optional rather than nullable so the live payload,
