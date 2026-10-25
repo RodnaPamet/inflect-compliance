@@ -140,6 +140,28 @@ describe('installPack — RBAC + idempotency + audit', () => {
         ).rejects.toThrow();
     });
 
+    // #4125 — the gate follows the custom-role-aware `frameworks.install`
+    // key the Install Pack button is shown on, not the membership's built-in
+    // role. Both cases below went the other way under the old role check.
+    it('refuses a custom role on an ADMIN base with install switched off — before any read', async () => {
+        const admin = makeRequestContext('ADMIN');
+        const ctx = makeRequestContext('ADMIN', {
+            appPermissions: { ...admin.appPermissions, frameworks: { view: true, install: false } },
+        });
+        await expect(installPack(ctx, 'iso27001-2022')).rejects.toThrow(/permission to install frameworks/i);
+        expect(mockPackFind).not.toHaveBeenCalled();
+    });
+
+    it('admits a custom role on an EDITOR base with install switched on', async () => {
+        const editor = makeRequestContext('EDITOR');
+        const ctx = makeRequestContext('EDITOR', {
+            appPermissions: { ...editor.appPermissions, frameworks: { view: true, install: true } },
+        });
+        mockPackFind.mockResolvedValueOnce(null);
+        // Past the gate: it reaches the pack lookup.
+        await expect(installPack(ctx, 'no-such-pack')).rejects.toThrow(/Pack not found/);
+    });
+
     it('throws notFound for missing pack', async () => {
         mockPackFind.mockResolvedValueOnce(null);
 

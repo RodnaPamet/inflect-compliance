@@ -42,7 +42,7 @@ As the reviewer of an access review campaign, you go through the people in it an
 - The bar at the top of the page counts the people with a decision, out of the total.
 - Every decision is written to the workspace's audit log, naming who made it.
 - When every row has a decision, an Owner or Admin can close the campaign. Inflect does not tell them that you have finished, so let them know.
-- If you revoke or change the role of an Owner, or change the role of an AI admin, only an Owner can close the campaign.
+- If you revoke or change the role of an Owner or an AI admin, only an Owner can close the campaign.
 - If the campaign has a due date, you get a reminder email each day while decisions are pending, from 7 days before the due date to 3 days after it. These emails go out only if your workspace sends email notifications.
 
 ## Change a decision

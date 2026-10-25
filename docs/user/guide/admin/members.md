@@ -22,6 +22,7 @@ Click **{{ui:nav.admin}}**, the gear icon at the bottom of the sidebar. The {{ui
 | Deactivate or remove a member who is not an Owner or an AI admin | Owner, Admin |
 | Deactivate or remove an Owner or an AI admin | Owner |
 | See a member's sessions and sign them out of a device | Owner, Admin |
+| Sign an Owner or an AI admin out of a device | Owner |
 | Set a member's line of defence | Owner, on every row except their own |
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. An Admin whose membership carries a custom role can do only what that custom role allows, which may not include this page.
@@ -107,6 +108,8 @@ You cannot set your own line; another Owner sets it. If the member owns an audit
 ### Sign a member out of a device
 
 Click the number in the member's {{ui:admin.members.colSessions}} column, or **{{ui:admin.members.viewSessions}}** in the row's menu. Click **{{ui:admin.members.revoke}}** beside the device, then confirm. The device is signed out on its next request, and the entry leaves the list.
+
+Only an Owner can revoke an Owner's or an AI admin's sessions. Anyone else sees their sessions without a **{{ui:admin.members.revoke}}** button, and the dialog reads {{ui:admin.members.sessionsOwnerOnly}}
 
 Revoking a session does not stop the member signing in again. To end their access, deactivate them.
 

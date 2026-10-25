@@ -168,7 +168,11 @@ describe('FrameworksClient — view toggle rollout', () => {
         ).not.toBeNull();
     });
 
-    it('renders Installed badge when coverage > 0 mapped', () => {
+    // #4125 — the badge reads "In use", not "Installed": it is derived from
+    // coverage (at least one requirement has a mapped control), not from a
+    // pack install. tests/rendered/frameworks-list-status.test.tsx holds the
+    // hint and the coverage-error state.
+    it('renders the In use badge when coverage > 0 mapped', () => {
         const { getByTestId } = render(
             <FrameworksClient
                 frameworks={FW_FIXTURES}
@@ -178,7 +182,7 @@ describe('FrameworksClient — view toggle rollout', () => {
         );
         const isoCard = getByTestId('fw-card-ISO27001');
         const nisCard = getByTestId('fw-card-NIS2');
-        expect(isoCard.textContent).toContain('Installed');
+        expect(isoCard.textContent).toContain('In use');
         expect(nisCard.textContent).toContain('Available');
     });
 

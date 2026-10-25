@@ -243,7 +243,7 @@ POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
 `{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route except `agents/questions`, the only one that supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
 
-`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
+`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. It is charged BEFORE the invocation is built (`verifyMcpCredential`, then the charge, then `completeMcpAuthentication`): building it sends a live `tools/list` to every external connection the agent is granted, and a malformed request is charged one unit and builds nothing (#4205). Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
 
 **Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
 through `API_READ_LIMIT` (120/min) at the Edge middleware via
@@ -491,7 +491,12 @@ OTHER `UserSession` rows and keeps the one named by the request JWT's
 session cannot be identified. Revoke All (`revoke-all`, ACTIVE members
 only, the caller's current session kept) and per-user revocation bump
 `sessionVersion` AND stamp the rows — the version bump stays the
-coarse-grained backstop for a token whose row was never written.
+coarse-grained backstop for a token whose row was never written. Signing
+ONE person out — per-user or one device — of an OWNER or AI_ADMIN needs
+`admin.owner_management`, as deactivating one does
+(`assertMayRevokeSessionsOf`, `REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER`;
+owner decision, 2026-10-25); Revoke All does not ask it, being the incident
+lever.
 
 **C.4 — Audit event streaming.** Every committed audit row is
 fired through `streamAuditEvent` into a per-tenant in-memory
@@ -860,10 +865,13 @@ new tenant-membership creation path).
   (`CAMPAIGN_MODIFY_ROLES`; `CAMPAIGN_NEVER_PROMOTES_TO_OWNER`) and never a
   custom role (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`) — refused at the schema and
   again at close — and a REVOKE or MODIFY of a LIVE OWNER needs a closer holding
-  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`); the last-OWNER
-  guard still applies to that closer. Each refusal is the WHOLE close, before any
-  row executes, so a decision stored before the rule is never applied and never
-  dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` / `_CLOSE_REFUSED`.
+  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`), as does a REVOKE
+  or MODIFY of a LIVE AI_ADMIN (`AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER`, matching
+  the members page, where only an OWNER moves one out of the role or deactivates
+  it); the last-OWNER guard still applies to that closer. Each refusal is the
+  WHOLE close, before any row executes, so a decision stored before the rule is
+  never applied and never dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` /
+  `_CLOSE_REFUSED`.
   Reasons live in `src/lib/access-review/member-decision-rules.ts`.
 
 ### Observability

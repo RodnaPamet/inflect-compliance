@@ -246,9 +246,23 @@ describe('getTestDashboardMetrics', () => {
         const groupByArgs = (mockDb.controlTestRun.groupBy as jest.Mock).mock.calls[0][0];
         const periodStart = groupByArgs.where.createdAt.gte as Date;
         const delta = before - periodStart.getTime();
-        const sevenDays = 7 * 86_400_000;
-        expect(delta).toBeGreaterThan(sevenDays - 5_000);
-        expect(delta).toBeLessThan(sevenDays + 5_000);
+
+        // Derived with the SAME calendar arithmetic the usecase uses
+        // (`periodStart.setDate(getDate() - periodDays)`), not from
+        // `7 * 86_400_000`. Seven days is only seven times 86_400_000 ms when no
+        // UTC-offset change falls inside the window, so the old form failed on
+        // the two DST transition days a year — measured on Europe/Sofia on
+        // 2026-10-25, where the real delta was 608_400_000 against an expected
+        // 604_800_000: out by exactly one hour, which a 5 s tolerance cannot
+        // absorb. CI runners are UTC and have no transitions, so that assertion
+        // was green where it was checked and red only on developer machines
+        // (#4192).
+        const expectedStart = new Date(before);
+        expectedStart.setDate(expectedStart.getDate() - 7);
+        const expectedDelta = before - expectedStart.getTime();
+
+        expect(delta).toBeGreaterThan(expectedDelta - 5_000);
+        expect(delta).toBeLessThan(expectedDelta + 5_000);
     });
 });
 

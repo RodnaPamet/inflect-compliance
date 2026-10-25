@@ -20,7 +20,7 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { RejectReasonModal } from './RejectReasonModal';
-import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel, evidenceTypeLabel, evidenceReviewActionLabel } from './evidence-labels';
+import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel, evidenceTypeLabel, evidenceReviewActionLabel } from '@/components/evidence/evidence-labels';
 import type { EditEvidenceInitial } from './EditEvidenceModal';
 import { evidenceContentRole } from '@/lib/evidence-content';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';

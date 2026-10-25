@@ -66,6 +66,7 @@ async function main(): Promise<number> {
         `  ${notImported > 0 ? '⚠' : '✓'} mapping sets: ${mappingSets.summary.imported} imported, ` +
             `${mappingSets.summary.skipped} unchanged, ${notImported} failed of ${onDisk}, ` +
             `${mappingSets.summary.totalEntries} entries written, ` +
+            `${mappingSets.summary.retired} retired (their entry left its file), ` +
             `${mappingSets.summary.failed} entries unresolved (the importer logs each)`,
     );
     if (notImported > 0) return 1;

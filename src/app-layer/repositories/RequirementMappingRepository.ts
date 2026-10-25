@@ -54,11 +54,19 @@ export function activeMappingWindow(now: Date = new Date()) {
     };
 }
 
-const MAPPING_SET_INCLUDE = {
-    sourceFramework: { select: { id: true, key: true, name: true } },
-    targetFramework: { select: { id: true, key: true, name: true } },
-    _count: { select: { mappings: true } },
-} as const;
+/**
+ * A mapping set with its frameworks and the count of its ACTIVE mappings.
+ * Counted through `activeMappingWindow` like every other read, so a mapping the
+ * importer retired is not advertised as available. A function, not a constant,
+ * so `now` is the moment of the read rather than of module load.
+ */
+function mappingSetInclude() {
+    return {
+        sourceFramework: { select: { id: true, key: true, name: true } },
+        targetFramework: { select: { id: true, key: true, name: true } },
+        _count: { select: { mappings: { where: activeMappingWindow() } } },
+    } as const;
+}
 
 // ─── Repository ──────────────────────────────────────────────────────
 
@@ -82,7 +90,7 @@ export class RequirementMappingRepository {
                 sourceUrn: input.sourceUrn ?? null,
                 contentHash: input.contentHash ?? null,
             },
-            include: MAPPING_SET_INCLUDE,
+            include: mappingSetInclude(),
         });
     }
 
@@ -114,7 +122,7 @@ export class RequirementMappingRepository {
                 sourceUrn: input.sourceUrn ?? null,
                 contentHash: input.contentHash ?? null,
             },
-            include: MAPPING_SET_INCLUDE,
+            include: mappingSetInclude(),
         });
     }
 
@@ -122,7 +130,7 @@ export class RequirementMappingRepository {
     static async listMappingSets(db: PrismaTx) {
         return db.requirementMappingSet.findMany({
             orderBy: { createdAt: 'asc' },
-            include: MAPPING_SET_INCLUDE,
+            include: mappingSetInclude(),
         });
     }
 
@@ -130,7 +138,7 @@ export class RequirementMappingRepository {
     static async getMappingSetById(db: PrismaTx, id: string) {
         return db.requirementMappingSet.findUnique({
             where: { id },
-            include: MAPPING_SET_INCLUDE,
+            include: mappingSetInclude(),
         });
     }
 
@@ -147,7 +155,7 @@ export class RequirementMappingRepository {
                     targetFrameworkId,
                 },
             },
-            include: MAPPING_SET_INCLUDE,
+            include: mappingSetInclude(),
         });
     }
 

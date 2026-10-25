@@ -100,3 +100,36 @@ describe('EvidenceAddForm — canonical shape', () => {
         expect(document.getElementById('t-note')).toBeDisabled();
     });
 });
+
+// #4126 — on the control tab a link becomes a library record, whose create
+// path refuses an untitled one and has no note field.
+describe('EvidenceAddForm — a link that becomes a library record', () => {
+    it('waits for a title as well as an address, and says why', () => {
+        const { rerender } = render(<Harness url="https://x.test" linkTitleRequired />);
+        expect(document.getElementById('t-submit')).toBeDisabled();
+        expect(
+            screen.getByText('A link is saved to the evidence library and needs a title.'),
+        ).not.toBeNull();
+
+        rerender(<Harness url="https://x.test" title="Q3 review" linkTitleRequired />);
+        expect(document.getElementById('t-submit')).not.toBeDisabled();
+    });
+
+    it('still lets a file go without a title', () => {
+        const file = new File(['x'], 'e.txt', { type: 'text/plain' });
+        render(<Harness file={file} linkTitleRequired />);
+        expect(document.getElementById('t-submit')).not.toBeDisabled();
+    });
+
+    it('renders no note box when the page passes no note handler', () => {
+        render(<Harness onNoteChange={undefined} note={undefined} linkTitleRequired />);
+        expect(document.getElementById('t-note')).toBeNull();
+        expect(document.getElementById('t-url')).not.toBeNull();
+    });
+
+    it('keeps the note and the address-only gate where a link is not a library record', () => {
+        render(<Harness url="https://x.test" />);
+        expect(document.getElementById('t-note')).not.toBeNull();
+        expect(document.getElementById('t-submit')).not.toBeDisabled();
+    });
+});

@@ -665,6 +665,11 @@ export default function MembersAdminPage() {
         }
     }, [apiUrl, fetchMembers, sessionsModalUser, t]);
 
+    // Only an OWNER revokes an OWNER's or an AI_ADMIN's sessions, as only an
+    // OWNER deactivates one (owner decision, 2026-10-25). One's own are one's own.
+    const mayRevokeSessionsOf = (m: Member) =>
+        canManageOwnerRoles || !isOwnerManagedRole(m.role) || m.userId === viewerUserId;
+
     // ─── Filter (R14-PR7 — search retired; full list shown) ───
     const filteredMembers = members;
 
@@ -1345,6 +1350,12 @@ export default function MembersAdminPage() {
                             description={t('members.sessionsEmptyBody')}
                         />
                     ) : (
+                        <>
+                        {sessionsModalUser && !mayRevokeSessionsOf(sessionsModalUser) && (
+                            <p className="text-xs text-content-muted mb-2" id="sessions-owner-only">
+                                {t('members.sessionsOwnerOnly')}
+                            </p>
+                        )}
                         <ul className="space-y-tight" id="sessions-list">
                             {memberSessions.map((s) => (
                                 <li
@@ -1363,18 +1374,21 @@ export default function MembersAdminPage() {
                                             {s.sessionId}
                                         </p>
                                     </div>
-                                    <Button
-                                        variant="secondary"
-                                        size="xs"
-                                        onClick={() => handleRevokeSession(s.sessionId)}
-                                        disabled={revokingSessionId === s.sessionId}
-                                        id={`revoke-session-${s.sessionId}`}
-                                    >
-                                        {revokingSessionId === s.sessionId ? t('members.revoking') : t('members.revoke')}
-                                    </Button>
+                                    {sessionsModalUser && mayRevokeSessionsOf(sessionsModalUser) && (
+                                        <Button
+                                            variant="secondary"
+                                            size="xs"
+                                            onClick={() => handleRevokeSession(s.sessionId)}
+                                            disabled={revokingSessionId === s.sessionId}
+                                            id={`revoke-session-${s.sessionId}`}
+                                        >
+                                            {revokingSessionId === s.sessionId ? t('members.revoking') : t('members.revoke')}
+                                        </Button>
+                                    )}
                                 </li>
                             ))}
                         </ul>
+                        </>
                     )}
                 </Modal.Body>
             </Modal>

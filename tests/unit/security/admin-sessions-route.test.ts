@@ -16,6 +16,7 @@ const mockListActiveSessionsForTenant = jest.fn();
 const mockListActiveSessionsForUserInTenant = jest.fn();
 const mockRevokeSessionById = jest.fn();
 const mockFindOwnTenantSession = jest.fn();
+const mockMembershipFindUnique = jest.fn();
 
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...args: unknown[]) => mockGetTenantCtx(...args),
@@ -43,11 +44,14 @@ jest.mock('@/lib/security/session-tracker', () => ({
     findOwnTenantSession: (...args: unknown[]) => mockFindOwnTenantSession(...args),
 }));
 
-// Stub prisma in case the audit path tries to reach it.
+// Stub prisma in case the audit path tries to reach it. The membership read
+// is the session usecase's role lookup for the Owner-only rule.
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {},
-    prisma: {},
+    prisma: {
+        tenantMembership: { findUnique: (...args: unknown[]) => mockMembershipFindUnique(...args) },
+    },
 }));
 
 import { GET, DELETE } from '@/app/api/t/[tenantSlug]/admin/sessions/route';
@@ -57,7 +61,7 @@ import { getPermissionsForRole } from '@/lib/permissions';
 // ── Fixtures ──
 
 function makeCtx(
-    role: 'ADMIN' | 'EDITOR' | 'AUDITOR' | 'READER',
+    role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'AUDITOR' | 'READER',
     overrides: Partial<RequestContext> = {},
 ): RequestContext {
     return {
@@ -68,9 +72,9 @@ function makeCtx(
         role,
         permissions: {
             canRead: true,
-            canWrite: role === 'ADMIN' || role === 'EDITOR',
-            canAdmin: role === 'ADMIN',
-            canAudit: role === 'AUDITOR' || role === 'ADMIN',
+            canWrite: role === 'ADMIN' || role === 'EDITOR' || role === 'OWNER',
+            canAdmin: role === 'ADMIN' || role === 'OWNER',
+            canAudit: role === 'AUDITOR' || role === 'ADMIN' || role === 'OWNER',
             canExport: role !== 'READER',
         },
         appPermissions: getPermissionsForRole(role),
@@ -102,6 +106,8 @@ beforeEach(() => {
     mockListActiveSessionsForUserInTenant.mockReset();
     mockRevokeSessionById.mockReset();
     mockFindOwnTenantSession.mockReset();
+    // The target's membership: an EDITOR unless a test says otherwise.
+    mockMembershipFindUnique.mockReset().mockResolvedValue({ role: 'EDITOR' });
 });
 
 // ─── GET /admin/sessions ───────────────────────────────────────────
@@ -240,6 +246,57 @@ describe('DELETE /api/t/:slug/admin/sessions', () => {
         );
         expect(res.status).toBe(400);
         expect(mockFindOwnTenantSession).not.toHaveBeenCalled();
+    });
+
+    it.each(['OWNER', 'AI_ADMIN'])(
+        "refuses an ADMIN revoking a %s's session — 403, named, nothing revoked (owner decision, 2026-10-25)",
+        async (role) => {
+            mockGetTenantCtx.mockResolvedValue(makeCtx('ADMIN'));
+            mockFindOwnTenantSession.mockResolvedValue({ id: 'row-1', userId: 'target-user', revokedAt: null });
+            mockMembershipFindUnique.mockResolvedValue({ role });
+
+            const res = await DELETE(
+                makeReq('DELETE', { body: { sessionId: 'sid-1' } }),
+                { params: { tenantSlug: 'acme' } },
+            );
+
+            expect(res.status).toBe(403);
+            expect(JSON.stringify(await res.json())).toContain(`Only an OWNER can revoke an ${role}'s sessions.`);
+            expect(mockMembershipFindUnique).toHaveBeenCalledWith({
+                where: { tenantId_userId: { tenantId: 'tenant-1', userId: 'target-user' } },
+                select: { role: true },
+            });
+            expect(mockRevokeSessionById).not.toHaveBeenCalled();
+        },
+    );
+
+    it("lets an OWNER revoke an OWNER's session", async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('OWNER'));
+        mockFindOwnTenantSession.mockResolvedValue({ id: 'row-1', userId: 'target-user', revokedAt: null });
+        mockMembershipFindUnique.mockResolvedValue({ role: 'OWNER' });
+        mockRevokeSessionById.mockResolvedValue({ revoked: true, sessionId: 'sid-1', userId: 'target-user' });
+        mockAppendAuditEntry.mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null });
+
+        const res = await DELETE(
+            makeReq('DELETE', { body: { sessionId: 'sid-1' } }),
+            { params: { tenantSlug: 'acme' } },
+        );
+        expect(res.status).toBe(200);
+        expect(mockRevokeSessionById).toHaveBeenCalled();
+    });
+
+    it("lets an Owner-managed member's own session be revoked by them, without reading their role", async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('ADMIN', { userId: 'me' }));
+        mockFindOwnTenantSession.mockResolvedValue({ id: 'row-1', userId: 'me', revokedAt: null });
+        mockRevokeSessionById.mockResolvedValue({ revoked: true, sessionId: 'sid-1', userId: 'me' });
+        mockAppendAuditEntry.mockResolvedValue({ id: 'a', entryHash: 'h', previousHash: null });
+
+        const res = await DELETE(
+            makeReq('DELETE', { body: { sessionId: 'sid-1' } }),
+            { params: { tenantSlug: 'acme' } },
+        );
+        expect(res.status).toBe(200);
+        expect(mockMembershipFindUnique).not.toHaveBeenCalled();
     });
 
     it('returns 403 + audit for a READER', async () => {

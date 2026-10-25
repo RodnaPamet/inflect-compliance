@@ -1273,13 +1273,25 @@ export async function publishPolicy(
         });
 
         const result = await PolicyRepository.getById(db, ctx, policyId);
-        return { result, carriedAckUserIds, policyTitle: policy.title };
+        return {
+            result,
+            carriedAckUserIds,
+            policyTitle: policy.title,
+            lifecycleVersion: policy.lifecycleVersion + 1,
+        };
     });
 
     // Re-notify carried-forward assignees that the revised policy needs a
     // FRESH acknowledgement — OUTSIDE the publish transaction (best-effort;
-    // a notification failure must never fail or roll back the publish). The
-    // dedupeKey is scoped to the NEW version so it fires once per revision.
+    // a notification failure must never fail or roll back the publish).
+    //
+    // The dedupeKey is scoped to THIS PUBLISH, not to the version alone. A
+    // version can be published more than once — v2, roll back to v1, publish
+    // v2 again — and a key of `<versionId>:<userId>` collided with v2's first
+    // publish on the unique index, so the second publish told nobody. The
+    // publish's identity is the lifecycle version it produced, as a rollback's
+    // is: a re-publish notifies again, a retry of the same publish still
+    // dedupes.
     if (published.carriedAckUserIds.length > 0) {
         try {
             await runInTenantContext(ctx, async (db) => {
@@ -1297,7 +1309,7 @@ export async function publishPolicy(
                                 title,
                                 message,
                                 linkUrl,
-                                dedupeKey: `POLICY_ACK_REQUIRED:${versionId}:${userId}`,
+                                dedupeKey: `POLICY_ACK_REQUIRED:${versionId}:publish-${published.lifecycleVersion}:${userId}`,
                             },
                         })
                         .catch(() => { /* dedupe/notification failure must not fail publish */ });

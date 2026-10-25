@@ -11,9 +11,8 @@
  * Proposals were still guarded (`createAgentProposal` scans each item at the
  * queue); a read's arguments were not.
  *
- * This is the same slice, in the same place relative to the funnel: BEFORE
- * `runReadTool`, because the funnel both authorizes and executes, and a scan
- * after it would report on a read that already ran.
+ * This is the same slice, in the same place relative to the read: before it
+ * executes, because a scan after it would report on a read that already ran.
  *
  * ## Both verdicts refuse
  *
@@ -22,7 +21,23 @@
  * anything acts on it, and a direct MCP call has no run to park and no
  * reviewer waiting, so the only honest answer is no. The guard itself writes
  * the hash-chained audit row for any non-clean verdict, carrying rule ids only.
- * The refusal reaches the caller as a JSON-RPC error with the same rule ids.
+ *
+ * ## The caller is not told which rule fired (#4205)
+ *
+ * The refusal reaches the caller as a JSON-RPC error naming the verdict and
+ * nothing else. It used to carry the rule ids, and this route has no latch:
+ * a caller, or a prompt-injected agent, could retry and learn which rule fired
+ * each time, which is how a payload is tuned to slip past the scanner.
+ * `propose-tools.ts` withholds the ids for the same reason. The audit row
+ * keeps them for the people who need them.
+ *
+ * ## It runs after the gate (#4205)
+ *
+ * The route passes it to `runReadTool` as `beforeRun`, which runs after the
+ * tool has resolved and passed `authorizeToolCall`. Before #4205 it ran ahead
+ * of both: a made-up tool name with secret-shaped arguments wrote a guard row
+ * whose source was the caller's own text, and a call the gate would have
+ * refused was recorded as a guard verdict instead of `AUTHZ_DENIED`.
  *
  * ## What it deliberately does not do
  *
@@ -37,7 +52,8 @@
  * caller's model, which Inflect neither runs nor can protect from here.
  */
 import type { RequestContext } from '@/app-layer/types';
-import { assertGuardAllowed, assertNoReviewRequired, guardEgress } from '@/app-layer/ai/guard';
+import { guardEgress } from '@/app-layer/ai/guard';
+import { forbidden } from '@/lib/errors/types';
 
 /** The guard's `source` for a direct MCP call, so its audit rows say where they came from. */
 export function mcpArgumentSource(toolName: string): string {
@@ -56,9 +72,15 @@ export async function assertMcpArgumentsAllowed(
     args: unknown,
 ): Promise<void> {
     const outcome = await guardEgress(ctx, args, { source: mcpArgumentSource(toolName) });
-    // The narrower assertion first, so a block reports itself as blocked rather
+    // The narrower refusal first, so a block reports itself as blocked rather
     // than as the milder "review required" it also is — the order
-    // `ReviewLatch.check` uses for the same reason.
-    assertGuardAllowed(outcome);
-    assertNoReviewRequired(outcome);
+    // `ReviewLatch.check` uses for the same reason. The codes are the ones
+    // `assertGuardAllowed` / `assertNoReviewRequired` use; the rule ids are not
+    // repeated.
+    if (outcome.blocked) {
+        throw forbidden('ai_guard_blocked: the AI Guard refused these arguments.');
+    }
+    if (outcome.reviewRequired) {
+        throw forbidden('ai_guard_review_required: the AI Guard flagged these arguments for review.');
+    }
 }
