@@ -49,6 +49,7 @@ jest.mock('@/app-layer/events/onboarding.events', () => ({
 jest.mock('@/app-layer/usecases/onboarding-automation', () => ({
     runStepAction: jest.fn(),
     storeActionResult: jest.fn().mockResolvedValue(undefined),
+    assertFrameworkPackChoices: jest.fn().mockResolvedValue(undefined),
 }));
 
 import {
@@ -60,7 +61,7 @@ import {
 } from '@/app-layer/usecases/onboarding';
 import { runInTenantContext } from '@/lib/db-context';
 import { OnboardingRepository } from '@/app-layer/repositories/OnboardingRepository';
-import { runStepAction, storeActionResult } from '@/app-layer/usecases/onboarding-automation';
+import { assertFrameworkPackChoices, runStepAction, storeActionResult } from '@/app-layer/usecases/onboarding-automation';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
@@ -191,6 +192,25 @@ describe('completeOnboardingStep — the framework step (#4125)', () => {
         await expect(
             completeOnboardingStep(makeRequestContext('ADMIN'), 'FRAMEWORK_SELECTION'),
         ).rejects.toThrow(/at least one framework/i);
+        expect(mockCompleteStep).not.toHaveBeenCalled();
+        expect(mockRunStepAction).not.toHaveBeenCalled();
+    });
+
+    it('refuses a selection whose framework needs a pack chosen, before writing', async () => {
+        // EU drone operations: its packs are its subcategories, and the
+        // framework step must name at least one of them.
+        const stepData = { FRAMEWORK_SELECTION: { selectedFrameworks: ['EU-UAS-OPS'], selectedPacks: { 'EU-UAS-OPS': [] } } };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockGetByTenantId.mockResolvedValueOnce({
+            status: 'IN_PROGRESS', completedSteps: ['COMPANY_PROFILE'], stepData,
+        } as never);
+        const { badRequest } = jest.requireActual('@/lib/errors/types');
+        (assertFrameworkPackChoices as jest.Mock).mockRejectedValueOnce(badRequest('Choose at least one pack of EU-UAS-OPS to continue.'));
+
+        await expect(
+            completeOnboardingStep(makeRequestContext('ADMIN'), 'FRAMEWORK_SELECTION'),
+        ).rejects.toThrow(/at least one pack of EU-UAS-OPS/);
+        expect(assertFrameworkPackChoices).toHaveBeenCalledWith(expect.anything(), stepData.FRAMEWORK_SELECTION);
         expect(mockCompleteStep).not.toHaveBeenCalled();
         expect(mockRunStepAction).not.toHaveBeenCalled();
     });

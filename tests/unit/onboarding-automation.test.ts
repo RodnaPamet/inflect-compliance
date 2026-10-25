@@ -51,6 +51,8 @@ import {
     STARTER_RISKS,
     runStepAction,
     storeActionResult,
+    assertFrameworkPackChoices,
+    chosenPacksFor,
 } from '@/app-layer/usecases/onboarding-automation';
 import { makeRequestContext } from '../helpers/make-context';
 import { forbidden } from '@/lib/errors/types';
@@ -230,6 +232,8 @@ beforeEach(() => {
         const catalog: Record<string, string[]> = {
             iso27001: ['ISO27001_2022_BASE'],
             nis2: ['NIS2_BASELINE'],
+            // A framework whose packs are its subcategories.
+            'eu-uas-ops': ['EU_UAS_OPEN_A1', 'EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3', 'EU_UAS_LUC'],
         };
         const grouped = new Map<string, string[]>();
         for (const k of keys) {
@@ -335,6 +339,71 @@ describe('executeFrameworkInstall', () => {
         // Branch: `allData['FRAMEWORK_SELECTION']?.selectedFrameworks || []`.
         expect(r?.created).toBe(0);
         expect(r?.skipped).toBe(0);
+    });
+
+    it('installs only the chosen packs of a framework with several', async () => {
+        // The EU drone framework's packs are its subcategories; a tenant that
+        // flies A2 and A3 gets those two, not A1 and the LUC as well.
+        const r = await runStepAction(ctx, 'FRAMEWORK_SELECTION', {}, {
+            FRAMEWORK_SELECTION: {
+                selectedFrameworks: ['EU-UAS-OPS'],
+                selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3'] },
+            },
+        });
+        expect((installPack as jest.Mock).mock.calls.map((c) => c[1])).toEqual(['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3']);
+        expect(r?.created).toBe(6);
+        expect(r?.failures).toEqual([]);
+    });
+
+    it('installs none of them, and says so, when no pack was chosen', async () => {
+        // Completion refuses this state now; a state saved before that rule
+        // must not fall back to installing every subcategory.
+        const r = await runStepAction(ctx, 'FRAMEWORK_SELECTION', {}, {
+            FRAMEWORK_SELECTION: {
+                selectedFrameworks: ['EU-UAS-OPS'],
+                frameworkLabels: { 'EU-UAS-OPS': 'EU Drone Operations' },
+                selectedPacks: { 'EU-UAS-OPS': ['SOMETHING_ELSE'] },
+            },
+        });
+        expect(installPack).not.toHaveBeenCalled();
+        expect(r?.skipped).toBe(1);
+        expect(r?.failures).toEqual([
+            expect.objectContaining({ framework: 'EU-UAS-OPS', name: 'EU Drone Operations', packKey: '' }),
+        ]);
+    });
+});
+
+describe('assertFrameworkPackChoices', () => {
+    it('accepts a single-pack framework with no pack choice at all', async () => {
+        await expect(assertFrameworkPackChoices(ctx, { selectedFrameworks: ['ISO27001'] })).resolves.toBeUndefined();
+    });
+
+    it('refuses a framework with several packs and none chosen', async () => {
+        await expect(
+            assertFrameworkPackChoices(ctx, { selectedFrameworks: ['EU-UAS-OPS'], selectedPacks: { 'EU-UAS-OPS': [] } }),
+        ).rejects.toThrow(/at least one pack of EU-UAS-OPS/);
+        await expect(
+            assertFrameworkPackChoices(ctx, { selectedFrameworks: ['EU-UAS-OPS'] }),
+        ).rejects.toThrow(/at least one pack of EU-UAS-OPS/);
+    });
+
+    it('refuses a chosen key that is not one of its packs', async () => {
+        await expect(
+            assertFrameworkPackChoices(ctx, {
+                selectedFrameworks: ['EU-UAS-OPS'],
+                selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2', 'ISO27001_2022_BASE'] },
+            }),
+        ).rejects.toThrow(/Not a pack of EU-UAS-OPS: ISO27001_2022_BASE/);
+    });
+
+    it('accepts a valid choice, and reads the choice case-insensitively', async () => {
+        await expect(
+            assertFrameworkPackChoices(ctx, {
+                selectedFrameworks: ['eu-uas-ops'],
+                selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2'] },
+            }),
+        ).resolves.toBeUndefined();
+        expect(chosenPacksFor({ selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2', 7, ''] } }, 'eu-uas-ops')).toEqual(['EU_UAS_OPEN_A2']);
     });
 });
 

@@ -10,7 +10,7 @@ import {
     emitOnboardingFinished,
     emitOnboardingRestarted,
 } from '../events/onboarding.events';
-import { runStepAction, storeActionResult } from './onboarding-automation';
+import { assertFrameworkPackChoices, runStepAction, storeActionResult } from './onboarding-automation';
 import { logger } from '@/lib/observability/logger';
 import {
     recordOnboardingStepCompleted,
@@ -188,10 +188,14 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
         // step completed empty before this rule cannot be re-completed empty.
         // (The `skip` action is a separate path and still advances.)
         if (step === 'FRAMEWORK_SELECTION') {
-            const selected = (existing.stepData as Record<string, any> | null)?.FRAMEWORK_SELECTION?.selectedFrameworks;
+            const frameworkStep = (existing.stepData as Record<string, any> | null)?.FRAMEWORK_SELECTION;
+            const selected = frameworkStep?.selectedFrameworks;
             if (!Array.isArray(selected) || selected.length === 0) {
                 throw badRequest('Choose at least one framework to continue.');
             }
+            // A framework whose packs are its subcategories (EU drone
+            // operations) needs at least one of them chosen as well.
+            await assertFrameworkPackChoices(ctx, frameworkStep);
         }
 
         // Idempotent: already completed

@@ -16,7 +16,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
-import { isAppError } from '@/lib/errors/types';
+import { badRequest, isAppError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import type { AssetType, TaskType } from '@prisma/client';
 
@@ -166,6 +166,43 @@ export async function runStepAction(
 
 // ─── Framework Install ───
 
+const NO_PACK_CHOSEN = 'Choose at least one of its packs to install it.';
+
+/**
+ * The packs chosen for one framework on the framework step, looked up
+ * case-insensitively like the selection itself.
+ */
+export function chosenPacksFor(frameworkStep: StepData | undefined, frameworkKey: string): string[] {
+    const chosen = (frameworkStep?.selectedPacks ?? {}) as Record<string, unknown>;
+    const entry = Object.entries(chosen).find(([k]) => k.toLowerCase() === frameworkKey.toLowerCase());
+    const list = entry?.[1];
+    return Array.isArray(list) ? list.filter((k): k is string => typeof k === 'string' && k.length > 0) : [];
+}
+
+/**
+ * Refuse a framework step that selects a framework with several packs but
+ * chooses none of them, or chooses a key that is not one of its packs.
+ * Called when the step is completed, so the wizard cannot advance past a
+ * choice the install would then have to guess.
+ */
+export async function assertFrameworkPackChoices(ctx: RequestContext, frameworkStep: StepData | undefined) {
+    const selected: string[] = Array.isArray(frameworkStep?.selectedFrameworks) ? frameworkStep.selectedFrameworks : [];
+    if (selected.length === 0) return;
+    const packsByFramework = await resolveFrameworkPackKeys(ctx, selected);
+    for (const fw of selected) {
+        const packs = packsByFramework.get(fw.toLowerCase()) ?? [];
+        if (packs.length <= 1) continue;
+        const chosen = chosenPacksFor(frameworkStep, fw);
+        if (chosen.length === 0) {
+            throw badRequest(`Choose at least one pack of ${fw} to continue.`);
+        }
+        const unknown = chosen.filter((k) => !packs.includes(k));
+        if (unknown.length > 0) {
+            throw badRequest(`Not a pack of ${fw}: ${unknown.join(', ')}`);
+        }
+    }
+}
+
 async function executeFrameworkInstall(ctx: RequestContext, allData: StepData): Promise<StepActionResult> {
     const selectedFrameworks: string[] = allData['FRAMEWORK_SELECTION']?.selectedFrameworks || [];
     // The display names the picker stored beside the selection, so a failure
@@ -188,11 +225,33 @@ async function executeFrameworkInstall(ctx: RequestContext, allData: StepData): 
     const packsByFramework = await resolveFrameworkPackKeys(ctx, selectedFrameworks);
 
     for (const fw of selectedFrameworks) {
-        const packKeys = packsByFramework.get(fw.toLowerCase()) ?? [];
-        if (packKeys.length === 0) {
+        const allPackKeys = packsByFramework.get(fw.toLowerCase()) ?? [];
+        if (allPackKeys.length === 0) {
             details.push(`${fw}: no installable pack in catalog`);
             skipped++;
             continue;
+        }
+
+        // A framework with several packs installs only the ones chosen —
+        // its packs are its subcategories, and installing all of them would
+        // give every tenant controls for operations it does not fly. Step
+        // completion already refuses an empty choice; this is the backstop
+        // for a state saved before that rule.
+        let packKeys = allPackKeys;
+        if (allPackKeys.length > 1) {
+            packKeys = chosenPacksFor(allData['FRAMEWORK_SELECTION'], fw).filter((k) => allPackKeys.includes(k));
+            if (packKeys.length === 0) {
+                details.push(`${fw}: no pack chosen`);
+                const label = labels[fw];
+                failures.push({
+                    framework: fw,
+                    name: typeof label === 'string' && label.trim() !== '' ? label : fw,
+                    packKey: '',
+                    message: NO_PACK_CHOSEN,
+                });
+                skipped++;
+                continue;
+            }
         }
 
         for (const packKey of packKeys) {

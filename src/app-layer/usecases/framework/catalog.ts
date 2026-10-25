@@ -48,7 +48,15 @@ export async function listInstallableFrameworks(ctx: RequestContext) {
         where: { packs: { some: {} }, retiredAt: null },
         include: {
             _count: { select: { requirements: true } },
-            packs: { select: { _count: { select: { templateLinks: true } } } },
+            packs: {
+                select: {
+                    key: true,
+                    name: true,
+                    description: true,
+                    templateLinks: { select: { templateId: true } },
+                },
+                orderBy: { key: 'asc' },
+            },
         },
         orderBy: { key: 'asc' },
     });
@@ -59,7 +67,18 @@ export async function listInstallableFrameworks(ctx: RequestContext) {
         description: f.description,
         kind: f.kind,
         requirementCount: f._count.requirements,
-        controlCount: f.packs.reduce((sum, p) => sum + p._count.templateLinks, 0),
+        // DISTINCT templates across the packs. A framework whose packs are its
+        // subcategories links the shared controls into every one of them, so
+        // a sum would count the EU UAS core seven times over.
+        controlCount: new Set(f.packs.flatMap((p) => p.templateLinks.map((l) => l.templateId))).size,
+        // More than one pack means the tenant chooses which to install — the
+        // onboarding picker and the install wizard both require at least one.
+        packs: f.packs.map((p) => ({
+            key: p.key,
+            name: p.name,
+            description: p.description,
+            controlCount: p.templateLinks.length,
+        })),
     }));
 }
 

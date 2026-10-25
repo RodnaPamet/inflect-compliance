@@ -232,6 +232,7 @@ export const FRAMEWORK_KEY_LABELS: Record<string, string> = {
     'EU-AI-ACT': 'EU AI Act',
     'IMDA-MGF': 'IMDA MGF',
     'AIUC-1': 'AIUC-1',
+    'EU-UAS-OPS': 'EU Drones',
     INTERNAL_CONTROLS: 'Internal Control',
 };
 

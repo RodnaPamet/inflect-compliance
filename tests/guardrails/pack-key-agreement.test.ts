@@ -47,9 +47,13 @@ const SEED = 'prisma/seed.ts';
  */
 const PACK_KEY_DIVERGENCES: Record<string, { dev: string; production: string }> = {};
 
-/** framework key -> pack key, for every CatalogFile a production seeder applies. */
-function productionPacks(): Map<string, string> {
-    const packs = new Map<string, string>();
+/**
+ * framework key -> pack keys, for every CatalogFile a production seeder
+ * applies. Usually one; several for a framework whose packs are its
+ * subcategories (`packs` in the CatalogFile).
+ */
+function productionPacks(): Map<string, string[]> {
+    const packs = new Map<string, string[]>();
     for (const s of appliedSources()) {
         if (!s.reachesProduction || !s.file.endsWith('.json')) continue;
         let doc: unknown;
@@ -58,9 +62,16 @@ function productionPacks(): Map<string, string> {
         } catch {
             continue;
         }
-        const obj = (doc ?? {}) as { pack?: { key?: unknown }; framework?: { key?: unknown } };
-        if (typeof obj.pack?.key === 'string' && typeof obj.framework?.key === 'string') {
-            packs.set(obj.framework.key, obj.pack.key);
+        const obj = (doc ?? {}) as {
+            pack?: { key?: unknown };
+            packs?: Array<{ key?: unknown }>;
+            framework?: { key?: unknown };
+        };
+        const keys = [obj.pack?.key, ...(obj.packs ?? []).map((p) => p?.key)].filter(
+            (k): k is string => typeof k === 'string',
+        );
+        if (keys.length > 0 && typeof obj.framework?.key === 'string') {
+            packs.set(obj.framework.key, keys);
         }
     }
     return packs;
@@ -97,7 +108,7 @@ describe('the two seeding paths agree on pack keys', () => {
         const stale: string[] = [];
         for (const [fw, { dev, production }] of Object.entries(PACK_KEY_DIVERGENCES)) {
             if (!seed.includes(`'${dev}'`)) stale.push(`${fw}: seed.ts no longer declares ${dev}`);
-            if (prodPacks.get(fw) !== production) {
+            if (!(prodPacks.get(fw) ?? []).includes(production)) {
                 stale.push(`${fw}: no applied CatalogFile declares ${production}`);
             }
         }
@@ -115,7 +126,7 @@ describe('the two seeding paths agree on pack keys', () => {
         // construction: DORA and NIS2 converted, their blocks went with them,
         // and there is no second writer left to disagree.
         const unexplained: string[] = [];
-        for (const [fwKey, packKey] of prodPacks) {
+        for (const [fwKey, packKeys] of prodPacks) {
             // BUILDS, not mentions. A converted framework can still be NAMED
             // in seed.ts — ISO 27001's coverage-link block re-fetches it with
             // `framework.findUniqueOrThrow({ where: { key: 'ISO27001' } })`
@@ -130,11 +141,13 @@ describe('the two seeding paths agree on pack keys', () => {
                 .slice(1)
                 .some((block) => block.slice(0, 400).includes(`key: '${fwKey}'`));
             if (!seedBuildsFramework) continue;
-            if (seed.includes(`'${packKey}'`)) continue;
             if (PACK_KEY_DIVERGENCES[fwKey]) continue;
-            unexplained.push(
-                `${fwKey}: seed.ts builds the framework but never names its pack ${packKey}`,
-            );
+            for (const packKey of packKeys) {
+                if (seed.includes(`'${packKey}'`)) continue;
+                unexplained.push(
+                    `${fwKey}: seed.ts builds the framework but never names its pack ${packKey}`,
+                );
+            }
         }
         expect(unexplained).toEqual([]);
     });
@@ -160,7 +173,7 @@ describe('the two seeding paths agree on pack keys', () => {
         // moved onto applyCatalogFile, their seed.ts blocks went with them,
         // and one key now serves both paths.
         for (const [fw, pack] of [['DORA', 'DORA_BASELINE'], ['NIS2', 'NIS2_BASELINE']]) {
-            expect(prodPacks.get(fw)).toBe(pack);
+            expect(prodPacks.get(fw)).toEqual([pack]);
             expect(PACK_KEY_DIVERGENCES[fw]).toBeUndefined();
         }
     });

@@ -58,7 +58,7 @@ const seed = read('prisma/seed.ts');
 const declaredSomewhere = (key: string): boolean => declaringSources(key).length > 0;
 
 /** Library framework ref_id → seed wiring proof (framework key + pack key). */
-const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> = {
+const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string | string[] }> = {
     'ISO27001-2022': { frameworkKey: 'ISO27001', packKey: 'ISO27001_2022_BASE' },
     'ISO42001-2023': { frameworkKey: 'ISO42001', packKey: 'ISO42001_BASELINE' },
     'NIS2-2022': { frameworkKey: 'NIS2', packKey: 'NIS2_BASELINE' },
@@ -83,6 +83,16 @@ const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> =
     // The library ref_id and the catalogue key are the same string on purpose:
     // both writers converge on one Framework row.
     'AIUC-1': { frameworkKey: 'AIUC-1', packKey: 'AIUC_1_BASELINE' },
+    // Seven packs, not one: one per operating subcategory, which the install
+    // wizard makes a tenant choose among (at least one). Each is wired, and
+    // tests/guardrails/eu-uas-framework-coverage.test.ts holds what each covers.
+    'EU-UAS-OPS': {
+        frameworkKey: 'EU-UAS-OPS',
+        packKey: [
+            'EU_UAS_OPEN_A1', 'EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3', 'EU_UAS_STS_01', 'EU_UAS_STS_02',
+            'EU_UAS_OPERATIONAL_AUTHORISATION', 'EU_UAS_LUC',
+        ],
+    },
 };
 
 /** Library frameworks intentionally shipped WITHOUT a starter pack. */
@@ -143,7 +153,9 @@ describe('Framework starter-pack completeness', () => {
         const missing: string[] = [];
         for (const [refId, { frameworkKey, packKey }] of Object.entries(STARTER_PACKS)) {
             if (!declaredSomewhere(frameworkKey)) missing.push(`${refId}: framework key ${frameworkKey}`);
-            if (!declaredSomewhere(packKey)) missing.push(`${refId}: pack key ${packKey}`);
+            for (const key of [packKey].flat()) {
+                if (!declaredSomewhere(key)) missing.push(`${refId}: pack key ${key}`);
+            }
         }
         expect(missing).toEqual([]);
     });

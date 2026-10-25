@@ -1,0 +1,996 @@
+# EU Drone Operations — Implementing Regulation (EU) 2019/947 — Framework Library
+#
+# WHAT THIS IS. The operating rules for unmanned aircraft systems in the EU, as
+# consolidated up to Amendment 5 (Regulation (EU) 2024/1110, applicable from
+# 1 May 2025), plus the operator obligations of the U-space regulation
+# (Regulation (EU) 2021/664). It is the operator's side of EU drone law; the
+# product rules of Delegated Regulation (EU) 2019/945 bind manufacturers and are
+# referenced only where an operator relies on them (class labels, remote ID).
+#
+# HOW IT IS CUT. By operating SUBCATEGORY, because that is the axis an
+# operator's compliance work follows: section A binds every operation; B is the
+# open category's common rules and C-E its subcategories A1, A2 and A3; F is the
+# specific category's common rules, G the standard-scenario declaration, H and I
+# the scenarios STS-01 and STS-02, J the operational authorisation (SORA or
+# PDRA) and K the light UAS operator certificate. The catalogue fixture ships
+# one PACK per subcategory and the install wizard makes a tenant choose at least
+# one, so a tenant flying only A2 installs only what governs A2.
+#
+# OUT OF SCOPE. The certified category (certified aircraft and operator,
+# licensed pilot) is regulated like manned aviation and is not modelled; Article
+# 16 model aircraft clubs are not modelled; Articles addressed only to Member
+# States or competent authorities (17, 18, 21-23) are not modelled.
+#
+# LICENSING. EU legislation may be reused under Commission Decision
+# 2011/833/EU with the source acknowledged; only the Official Journal text is
+# authentic. The article and point references and their titles are the
+# regulation's. Every description is Inflect's own account of what the provision
+# asks an operator to demonstrate — paraphrase, not a reproduction. Figures taken
+# from EASA's acceptable means of compliance and guidance material are attributed
+# to EASA in the control content that uses them.
+#
+# ONE FRAMEWORK ROW. prisma/fixtures/eu-uas-ops-control-templates.json declares
+# this same key and generates its requirements from this file, so the library
+# import and the catalogue converge on a single Framework row (the COSO and
+# AIUC-1 precedent).
+#
+# THE KEY CARRIES NO EDITION. The regulation is amended in place under stable
+# article and point references; a new amendment is a content update on the same
+# rows, recorded by bumping `version` (and `text_hash`).
+
+urn: urn:inflect:library:eu-uas-ops
+locale: en
+ref_id: EU-UAS-OPS
+name: "EU Drone Operations (Regulation (EU) 2019/947)"
+description: >
+  The operating rules for drones in the EU: Commission Implementing Regulation
+  (EU) 2019/947 as amended up to Regulation (EU) 2024/1110, which applies from
+  1 May 2025, together with the U-space operator obligations of Regulation
+  (EU) 2021/664. It is organised by operating subcategory: the open category's
+  A1, A2 and A3, and the specific category's standard scenarios STS-01 and
+  STS-02, operational authorisation and the light UAS operator certificate.
+  Article and point references and titles are the regulation's; the
+  descriptions are Inflect's account of what each asks an operator to
+  demonstrate.
+copyright: >
+  Implementing Regulation (EU) 2019/947 and Regulation (EU) 2021/664, (c)
+  European Union, https://eur-lex.europa.eu/. Reuse is authorised under
+  Commission Decision 2011/833/EU, provided the source is acknowledged; only
+  the Official Journal text is authentic. The figures cited from EASA's
+  acceptable means of compliance and guidance material (ED Decisions
+  2019/021/R to 2025/018/R) are attributed to EASA, whose material may be
+  reproduced provided the source is acknowledged. Every description is
+  Inflect's own. Not legal advice.
+version: 1
+text_hash: c326a4a078dcd0c76fdb3682b3d3f3238b72fec36e9b5d42812db83f36a6bf84
+publication_date: "2025-05-01"
+provider: European Union
+packager: inflect
+kind: REGULATION
+
+objects:
+  framework:
+    urn: urn:inflect:framework:eu-uas-ops
+    ref_id: EU-UAS-OPS
+    name: "EU Drone Operations (Regulation (EU) 2019/947)"
+    description: >
+      Fifty-one obligations of Regulation (EU) 2019/947 and Regulation (EU)
+      2021/664 in eleven sections: one that binds every operation, four for
+      the open category and its subcategories, and six for the specific
+      category and its routes.
+    requirement_nodes:
+      # ─── A. Every operation ──────────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:a
+        ref_id: A
+        name: "Every operation"
+        description: >-
+          Obligations that bind every UAS operator whatever it flies: which
+          category an operation belongs to, remote pilot competency and age,
+          the aircraft's airworthiness basis, registration, geographical
+          zones, occurrence reporting and U-space airspace.
+        depth: 1
+        assessable: false
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.3
+        ref_id: "Art.3"
+        name: "Categories of UAS operations"
+        description: >-
+          Every operation is flown in the 'open', 'specific' or 'certified'
+          category, and the operator can show which and why before it flies.
+          An open operation needs no prior authorisation or declaration; a
+          specific one needs an operational authorisation, a declaration
+          against a standard scenario or an LUC privilege; a certified one
+          needs a certified aircraft and operator.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.8
+        ref_id: "Art.8"
+        name: "Rules and procedures for the competency of remote pilots"
+        description: >-
+          Remote pilots hold the competency their category asks for: in the
+          open category the one set in Part A for the subcategory flown, and
+          in the specific category the one the authorisation, standard
+          scenario or LUC sets, covering at least procedures, communication,
+          flight-path and automation management, teamwork, decision-making,
+          situational awareness, workload and handover.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.9
+        ref_id: "Art.9"
+        name: "Minimum age for remote pilots"
+        description: >-
+          No remote pilot is younger than 16, except where the regulation
+          allows it (a C0 toy, a privately built aircraft under 250 g, or
+          direct supervision by a pilot who meets the age). A pilot flying
+          under a national derogation that lowers the age does so only on the
+          territory of the State that granted it.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.10
+        ref_id: "Art.10"
+        name: "Rules and procedures for the airworthiness of UAS"
+        description: >-
+          Each aircraft meets the technical and airworthiness rules of
+          Delegated Regulation (EU) 2019/945 for its class, unless it is
+          privately built, flown within a model aircraft club or one of the
+          older aircraft Article 20 still admits, and the operator can show
+          which of those bases applies to every aircraft it flies.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.14
+        ref_id: "Art.14"
+        name: "Registration of UAS operators and certified UAS"
+        description: >-
+          The operator is registered in the Member State where it resides or
+          has its principal place of business, and in no other, keeps its
+          registration data accurate, displays its registration number on
+          every aircraft that needs one and loads it into the aircraft's
+          remote identification. A camera or other sensor able to capture
+          personal data makes even a sub-250 g aircraft subject to
+          registration.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.15
+        ref_id: "Art.15"
+        name: "Operational conditions for UAS geographical zones"
+        description: >-
+          Before flying, the operator knows the geographical zones each State
+          publishes for safety, security, privacy or environmental reasons,
+          applies the conditions a zone imposes (prohibitions, prior
+          authorisation, class or equipment restrictions) and holds any
+          permission a zone requires.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.19
+        ref_id: "Art.19"
+        name: "Safety information"
+        description: >-
+          The operator reports safety-related occurrences to the competent
+          authority as Regulation (EU) No 376/2014 requires, and exchanges
+          safety information about its aircraft. For operations that need no
+          certificate or declaration, the mandatory set is the occurrences
+          that caused a fatal or serious injury or involved an aircraft other
+          than an unmanned one.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      - urn: urn:inflect:req:eu-uas-ops:u-space-art.6
+        ref_id: "U-space Art.6"
+        name: "Obligations of UAS operators in U-space airspace (Regulation (EU) 2021/664)"
+        description: >-
+          Where a State has designated U-space airspace, the operator flies
+          there only with the mandatory U-space services (network
+          identification, geo-awareness, flight authorisation and traffic
+          information) from a certified service provider, submits a flight
+          authorisation request before each individual flight and complies
+          with the authorisation it receives.
+        parent_urn: urn:inflect:req:eu-uas-ops:a
+        depth: 2
+        assessable: true
+        section: "A. Every operation"
+        category: "A. Every operation"
+
+      # ─── B. Open category ────────────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:b
+        ref_id: B
+        name: "Open category"
+        description: >-
+          Rules that apply to every operation in the 'open' category,
+          whichever subcategory it is flown in: the conditions that keep an
+          operation open, the 120 m height limit, the operator's and the
+          remote pilot's responsibilities, and how long a pilot's competency
+          lasts.
+        depth: 1
+        assessable: false
+        category: "B. Open category"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.4
+        ref_id: "Art.4"
+        name: "'Open' category of UAS operations"
+        description: >-
+          An operation stays in the open category only while all of its
+          conditions hold: an eligible aircraft under 25 kg, a safe distance
+          from people and never over assemblies, visual line of sight, no
+          higher than 120 m, and no dangerous goods carried or material
+          dropped. Breaking any one of them makes it a specific-category
+          operation.
+        parent_urn: urn:inflect:req:eu-uas-ops:b
+        depth: 2
+        assessable: true
+        section: "B. Open category"
+        category: "B. Open category"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.20
+        ref_id: "Art.20"
+        name: "Particular provisions concerning the use of certain UAS in the 'open' category"
+        description: >-
+          An aircraft that carries no class label and is not privately built
+          may still fly in the open category only if it was placed on the
+          market before 1 January 2024: in subcategory A1 when it weighs less
+          than 250 g, and in subcategory A3 when it weighs less than 25 kg.
+        parent_urn: urn:inflect:req:eu-uas-ops:b
+        depth: 2
+        assessable: true
+        section: "B. Open category"
+        category: "B. Open category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.open.010
+        ref_id: "UAS.OPEN.010"
+        name: "General provisions"
+        description: >-
+          Open-category flights stay within 120 m of the closest point of the
+          earth's surface, measured with the terrain. Near an artificial
+          obstacle taller than 105 m the limit may rise to 15 m above it, but
+          only at the request of the entity responsible for the obstacle.
+        parent_urn: urn:inflect:req:eu-uas-ops:b
+        depth: 2
+        assessable: true
+        section: "B. Open category"
+        category: "B. Open category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.open.050
+        ref_id: "UAS.OPEN.050"
+        name: "Responsibilities of the UAS operator"
+        description: >-
+          The operator has procedures suited to the operation and its risk,
+          uses radio spectrum without causing interference, designates a
+          remote pilot for every flight, makes sure pilots and support staff
+          are competent, know its procedures and the manufacturer's
+          instructions and have the zone information, keeps the geo-awareness
+          data current, keeps each class aircraft with its declaration of
+          conformity and class label, and in A2 and A3 has every involved
+          person informed of the risks and consenting.
+        parent_urn: urn:inflect:req:eu-uas-ops:b
+        depth: 2
+        assessable: true
+        section: "B. Open category"
+        category: "B. Open category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.open.060
+        ref_id: "UAS.OPEN.060"
+        name: "Responsibilities of the remote pilot"
+        description: >-
+          Before each flight the remote pilot is competent and carries proof
+          of it, has current zone information, has checked the area, obstacles
+          and people, and has an aircraft fit to fly with active remote
+          identification and a payload within its mass limits. In flight the
+          pilot is fit, keeps visual line of sight, respects zone limits,
+          keeps control, follows the operator's procedures and keeps clear of
+          emergency responses.
+        parent_urn: urn:inflect:req:eu-uas-ops:b
+        depth: 2
+        assessable: true
+        section: "B. Open category"
+        category: "B. Open category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.open.070
+        ref_id: "UAS.OPEN.070"
+        name: "Duration and validity of the remote pilot online theoretical competency and certificates of remote pilot competency"
+        description: >-
+          The A1/A3 online competency and the A2 certificate each last five
+          years. The operator can show how each pilot revalidates within
+          validity, by demonstrating competencies again or by refresher
+          training from the competent authority or its designated entity, and
+          that a pilot whose credential has expired re-sits the examination.
+        parent_urn: urn:inflect:req:eu-uas-ops:b
+        depth: 2
+        assessable: true
+        section: "B. Open category"
+        category: "B. Open category"
+
+      # ─── C. Open: subcategory A1 ─────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:c
+        ref_id: C
+        name: "Open: subcategory A1"
+        description: >-
+          Subcategory A1: flights over people with the lightest aircraft,
+          where uninvolved people may be overflown only by the smallest
+          classes and assemblies of people never are.
+        depth: 1
+        assessable: false
+        category: "C. Open: subcategory A1"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.open.020
+        ref_id: "UAS.OPEN.020"
+        name: "UAS operations in subcategory A1"
+        description: >-
+          Subcategory A1 flights never overfly assemblies of people. With a
+          class C1 aircraft the pilot expects no uninvolved person to be
+          overflown and keeps any unexpected overflight short; only the
+          lightest aircraft (class C0, privately built or legacy under 250 g)
+          may overfly uninvolved people. A C1 pilot has passed the online
+          training and examination.
+        parent_urn: urn:inflect:req:eu-uas-ops:c
+        depth: 2
+        assessable: true
+        section: "C. Open: subcategory A1"
+        category: "C. Open: subcategory A1"
+
+      # ─── D. Open: subcategory A2 ─────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:d
+        ref_id: D
+        name: "Open: subcategory A2"
+        description: >-
+          Subcategory A2: flights with a class C2 aircraft close to, but never
+          over, uninvolved people, flown by a pilot holding the A2 certificate
+          of remote pilot competency.
+        depth: 1
+        assessable: false
+        category: "D. Open: subcategory A2"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.open.030
+        ref_id: "UAS.OPEN.030"
+        name: "UAS operations in subcategory A2"
+        description: >-
+          Subcategory A2 flights use a class C2 aircraft with active and
+          updated remote identification and geo-awareness, never overfly
+          uninvolved people, and keep at least 30 m from them, or 5 m in
+          low-speed mode after the pilot has evaluated the conditions. The
+          pilot holds the A2 certificate of remote pilot competency.
+        parent_urn: urn:inflect:req:eu-uas-ops:d
+        depth: 2
+        assessable: true
+        section: "D. Open: subcategory A2"
+        category: "D. Open: subcategory A2"
+
+      # ─── E. Open: subcategory A3 ─────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:e
+        ref_id: E
+        name: "Open: subcategory A3"
+        description: >-
+          Subcategory A3: flights far from people and at least 150 m from
+          residential, commercial, industrial and recreational areas, with the
+          heavier open-category aircraft.
+        depth: 1
+        assessable: false
+        category: "E. Open: subcategory A3"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.open.040
+        ref_id: "UAS.OPEN.040"
+        name: "UAS operations in subcategory A3"
+        description: >-
+          Subcategory A3 flights take place where no uninvolved person will be
+          endangered during the whole operation and at least 150 m from
+          residential, commercial, industrial and recreational areas, with an
+          eligible aircraft under 25 kg. The pilot has passed the A1/A3 online
+          training and examination.
+        parent_urn: urn:inflect:req:eu-uas-ops:e
+        depth: 2
+        assessable: true
+        section: "E. Open: subcategory A3"
+        category: "E. Open: subcategory A3"
+
+      # ─── F. Specific category ────────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:f
+        ref_id: F
+        name: "Specific category"
+        description: >-
+          Rules that apply to every operation in the 'specific' category,
+          whether it is declared against a standard scenario, authorised by
+          the competent authority or authorised by the operator itself under a
+          light UAS operator certificate.
+        depth: 1
+        assessable: false
+        category: "F. Specific category"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.5
+        ref_id: "Art.5"
+        name: "'Specific' category of UAS operations"
+        description: >-
+          An operation that cannot meet the open category's conditions is
+          flown only on a basis the specific category recognises: an
+          operational authorisation from the competent authority of the State
+          of registration, a declaration against a standard scenario, or the
+          privileges of a light UAS operator certificate.
+        parent_urn: urn:inflect:req:eu-uas-ops:f
+        depth: 2
+        assessable: true
+        section: "F. Specific category"
+        category: "F. Specific category"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.13
+        ref_id: "Art.13"
+        name: "Cross-border operations or operations outside the state of registration"
+        description: >-
+          Before a specific-category operation takes place partly or wholly in
+          another Member State, the operator gives that State's competent
+          authority what it needs: for an authorised operation, a copy of the
+          authorisation and the locations with any updated mitigations, and
+          the operation waits for that authority's confirmation; for a
+          declared operation or an LUC operation, the declaration or terms of
+          approval.
+        parent_urn: urn:inflect:req:eu-uas-ops:f
+        depth: 2
+        assessable: true
+        section: "F. Specific category"
+        category: "F. Specific category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.010
+        ref_id: "UAS.SPEC.010"
+        name: "General provisions"
+        description: >-
+          The operator's basis for each specific operation is a risk
+          assessment, a declaration or an LUC with the right privileges, and
+          the operator regularly evaluates whether its mitigations remain
+          adequate and updates them when they are not.
+        parent_urn: urn:inflect:req:eu-uas-ops:f
+        depth: 2
+        assessable: true
+        section: "F. Specific category"
+        category: "F. Specific category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.050
+        ref_id: "UAS.SPEC.050"
+        name: "Responsibilities of the UAS operator"
+        description: >-
+          The operator has procedures and limitations for safety, security,
+          protection against unlawful interference, data protection and
+          nuisance; designates a pilot for each flight; trains pilots and
+          essential staff to the competency its basis requires; flies within
+          its declared or authorised limits; keeps personnel, maintenance and
+          operations records for at least three years; maintains its aircraft
+          with qualified staff; and fits every aircraft with a green flashing
+          light and active remote identification.
+        parent_urn: urn:inflect:req:eu-uas-ops:f
+        depth: 2
+        assessable: true
+        section: "F. Specific category"
+        category: "F. Specific category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.060
+        ref_id: "UAS.SPEC.060"
+        name: "Responsibilities of the remote pilot"
+        description: >-
+          The remote pilot is fit, competent and carries proof of competency.
+          Before flight the pilot has current zone information, a compatible
+          operating environment, a safe aircraft with active remote
+          identification and has informed the air traffic service and others
+          as required; in flight the pilot stays within the limits, avoids
+          collision with manned aircraft, respects zones and procedures and
+          keeps clear of emergency responses.
+        parent_urn: urn:inflect:req:eu-uas-ops:f
+        depth: 2
+        assessable: true
+        section: "F. Specific category"
+        category: "F. Specific category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.090
+        ref_id: "UAS.SPEC.090"
+        name: "Access"
+        description: >-
+          The operator gives any person the competent authority has authorised
+          access to any facility, aircraft, document, record, data or
+          procedure relevant to its declared or authorised activity, including
+          activity it has contracted out.
+        parent_urn: urn:inflect:req:eu-uas-ops:f
+        depth: 2
+        assessable: true
+        section: "F. Specific category"
+        category: "F. Specific category"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.100
+        ref_id: "UAS.SPEC.100"
+        name: "Use of certified equipment and certified unmanned aircraft"
+        description: >-
+          Where the operator flies a certificated aircraft, it complies with
+          Delegated Regulation (EU) 2024/1107; where it fits certified
+          equipment to an uncertificated aircraft, it records the equipment's
+          service time, follows its instructions and airworthiness directives
+          and applies mandated safety measures and mandatory safety
+          information.
+        parent_urn: urn:inflect:req:eu-uas-ops:f
+        depth: 2
+        assessable: true
+        section: "F. Specific category"
+        category: "F. Specific category"
+
+      # ─── G. Specific: standard scenario declarations ─────────────────
+      - urn: urn:inflect:req:eu-uas-ops:g
+        ref_id: G
+        name: "Specific: standard scenario declarations"
+        description: >-
+          The declaration an operator submits instead of applying for an
+          authorisation when its operation fits a standard scenario, and how
+          long that declaration stays valid.
+        depth: 1
+        assessable: false
+        category: "G. Specific: standard scenario declarations"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.020
+        ref_id: "UAS.SPEC.020"
+        name: "Operational declaration"
+        description: >-
+          An operator whose operation fits a standard scenario may declare it
+          to the competent authority of its State of registration instead of
+          applying for an authorisation. The declaration states the operation
+          complies with the scenario, commits to its mitigations and confirms
+          insurance where required; the operation starts only once the
+          authority confirms receipt and completeness, and any change is
+          notified without delay.
+        parent_urn: urn:inflect:req:eu-uas-ops:g
+        depth: 2
+        assessable: true
+        section: "G. Specific: standard scenario declarations"
+        category: "G. Specific: standard scenario declarations"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.085
+        ref_id: "UAS.SPEC.085"
+        name: "Duration and validity of an operational declaration"
+        description: >-
+          A declaration lasts two years. It stops counting as complete if the
+          authority finds the operation is not run as declared, if the
+          conditions change so it no longer complies, or if the authority is
+          refused access.
+        parent_urn: urn:inflect:req:eu-uas-ops:g
+        depth: 2
+        assessable: true
+        section: "G. Specific: standard scenario declarations"
+        category: "G. Specific: standard scenario declarations"
+
+      # ─── H. Specific: STS-01 ─────────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:h
+        ref_id: H
+        name: "Specific: STS-01"
+        description: >-
+          Standard scenario STS-01: visual line of sight over a controlled
+          ground area in a populated environment, with a class C5 aircraft.
+        depth: 1
+        assessable: false
+        category: "H. Specific: STS-01"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-01.010
+        ref_id: "UAS.STS-01.010"
+        name: "General provisions"
+        description: >-
+          STS-01 flights stay within 120 m of the surface (or 15 m above a
+          tall obstacle at its owner's request), the operational volume
+          reaches no more than 30 m above that limit, and the aircraft carries
+          no dangerous goods.
+        parent_urn: urn:inflect:req:eu-uas-ops:h
+        depth: 2
+        assessable: true
+        section: "H. Specific: STS-01"
+        category: "H. Specific: STS-01"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-01.020
+        ref_id: "UAS.STS-01.020"
+        name: "UAS operations in STS-01"
+        description: >-
+          STS-01 flights are flown in visual line of sight, to the operations
+          manual, over a controlled ground area made up of the flight
+          geography, a contingency area at least 10 m beyond it and a ground
+          risk buffer sized by height and mass, at a ground speed below 5 m/s,
+          by a pilot holding the standard-scenario theoretical certificate and
+          STS-01 practical accreditation, with a class C5 aircraft.
+        parent_urn: urn:inflect:req:eu-uas-ops:h
+        depth: 2
+        assessable: true
+        section: "H. Specific: STS-01"
+        category: "H. Specific: STS-01"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-01.030
+        ref_id: "UAS.STS-01.030"
+        name: "Responsibilities of the UAS operator"
+        description: >-
+          The STS-01 operator writes an operations manual, defines the
+          operational volume and ground risk buffer, proves its contingency
+          and emergency procedures by flight test or simulation, keeps an
+          emergency response plan, checks external services, loads zone data
+          where required, has the controlled ground area in place before each
+          flight, has everyone inside it informed and consenting, and keeps
+          each aircraft's C5 conformity documents and label.
+        parent_urn: urn:inflect:req:eu-uas-ops:h
+        depth: 2
+        assessable: true
+        section: "H. Specific: STS-01"
+        category: "H. Specific: STS-01"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-01.040
+        ref_id: "UAS.STS-01.040"
+        name: "Responsibilities of the remote pilot"
+        description: >-
+          The STS-01 remote pilot checks before each flight that the flight
+          termination means work and remote identification is active, and in
+          flight keeps the aircraft in visual line of sight with a thorough
+          airspace scan, may be assisted by an observer with clear
+          communication, keeps control and discontinues the flight when it
+          poses a risk.
+        parent_urn: urn:inflect:req:eu-uas-ops:h
+        depth: 2
+        assessable: true
+        section: "H. Specific: STS-01"
+        category: "H. Specific: STS-01"
+
+      # ─── I. Specific: STS-02 ─────────────────────────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:i
+        ref_id: I
+        name: "Specific: STS-02"
+        description: >-
+          Standard scenario STS-02: beyond visual line of sight over a
+          controlled ground area in a sparsely populated environment, with a
+          class C6 aircraft and, optionally, airspace observers.
+        depth: 1
+        assessable: false
+        category: "I. Specific: STS-02"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-02.010
+        ref_id: "UAS.STS-02.010"
+        name: "General provisions"
+        description: >-
+          STS-02 flights stay within 120 m of the surface (or 15 m above a
+          tall obstacle at its owner's request), the operational volume
+          reaches no more than 30 m above that limit, and the aircraft carries
+          no dangerous goods.
+        parent_urn: urn:inflect:req:eu-uas-ops:i
+        depth: 2
+        assessable: true
+        section: "I. Specific: STS-02"
+        category: "I. Specific: STS-02"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-02.020
+        ref_id: "UAS.STS-02.020"
+        name: "UAS operations in STS-02"
+        description: >-
+          STS-02 flights are flown to the operations manual over a controlled
+          ground area entirely in a sparsely populated environment, with a
+          ground risk buffer at least the distance the aircraft would likely
+          travel after flight termination, in visibility above 5 km, within 1
+          km of the pilot without observers or 2 km with them, by an
+          accredited pilot, with a class C6 aircraft that cannot breach its
+          flight geography.
+        parent_urn: urn:inflect:req:eu-uas-ops:i
+        depth: 2
+        assessable: true
+        section: "I. Specific: STS-02"
+        category: "I. Specific: STS-02"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-02.030
+        ref_id: "UAS.STS-02.030"
+        name: "Responsibilities of the UAS operator"
+        description: >-
+          The STS-02 operator writes an operations manual, defines the
+          operational volume and ground risk buffer, proves its contingency
+          and emergency procedures, keeps an emergency response plan, checks
+          external services, loads zone data where required, takes measures
+          against intrusion into the controlled ground area, has everyone
+          inside it informed and consenting, and prepares its airspace
+          observers before the operation.
+        parent_urn: urn:inflect:req:eu-uas-ops:i
+        depth: 2
+        assessable: true
+        section: "I. Specific: STS-02"
+        category: "I. Specific: STS-02"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-02.040
+        ref_id: "UAS.STS-02.040"
+        name: "Responsibilities of the remote pilot"
+        description: >-
+          The STS-02 remote pilot verifies the flight termination means and
+          remote identification before each flight, keeps the aircraft in
+          sight at launch and recovery, flies a pre-programmed trajectory when
+          it is out of sight, and discontinues the flight when it poses a
+          risk.
+        parent_urn: urn:inflect:req:eu-uas-ops:i
+        depth: 2
+        assessable: true
+        section: "I. Specific: STS-02"
+        category: "I. Specific: STS-02"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.sts-02.050
+        ref_id: "UAS.STS-02.050"
+        name: "Responsibilities of the airspace observer"
+        description: >-
+          An airspace observer scans the airspace around the aircraft for
+          manned traffic, keeps track of where the aircraft is, directly or
+          with electronic help, and alerts the remote pilot to any hazard so
+          it can be avoided.
+        parent_urn: urn:inflect:req:eu-uas-ops:i
+        depth: 2
+        assessable: true
+        section: "I. Specific: STS-02"
+        category: "I. Specific: STS-02"
+
+      # ─── J. Specific: operational authorisation ──────────────────────
+      - urn: urn:inflect:req:eu-uas-ops:j
+        ref_id: J
+        name: "Specific: operational authorisation"
+        description: >-
+          Operations the competent authority authorises on the strength of the
+          operator's own risk assessment, made with SORA or a predefined risk
+          assessment (PDRA).
+        depth: 1
+        assessable: false
+        category: "J. Specific: operational authorisation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.11
+        ref_id: "Art.11"
+        name: "Rules for conducting an operational risk assessment"
+        description: >-
+          The operator's risk assessment describes the operation, sets safety
+          objectives, determines the unmitigated ground and air risk,
+          identifies mitigations (containment, strategic limits, common rules
+          and airspace, adverse conditions, organisational measures) and the
+          robustness each needs. SORA 2.5, the acceptable means of compliance,
+          or a predefined risk assessment are the established ways to do it.
+        parent_urn: urn:inflect:req:eu-uas-ops:j
+        depth: 2
+        assessable: true
+        section: "J. Specific: operational authorisation"
+        category: "J. Specific: operational authorisation"
+
+      - urn: urn:inflect:req:eu-uas-ops:art.12
+        ref_id: "Art.12"
+        name: "Authorising operations in the 'specific' category"
+        description: >-
+          The competent authority grants an operational authorisation only
+          when the risk assessment's objectives and mitigations are adequate
+          and robust and the operator has confirmed compliance with Union and
+          national rules on privacy, data protection, liability, insurance,
+          security and the environment. The authorisation sets the scope,
+          conditions, mitigations, locations and records the operator must
+          then keep to.
+        parent_urn: urn:inflect:req:eu-uas-ops:j
+        depth: 2
+        assessable: true
+        section: "J. Specific: operational authorisation"
+        category: "J. Specific: operational authorisation"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.030
+        ref_id: "UAS.SPEC.030"
+        name: "Application for an operational authorisation"
+        description: >-
+          Before an operation the authorisation route requires, the operator
+          applies to the competent authority of its State of registration with
+          its registration number, the accountable manager's name, the risk
+          assessment, the proposed mitigations, an operations manual where the
+          risk and complexity need one and confirmation of insurance where
+          required, and applies again on any significant change.
+        parent_urn: urn:inflect:req:eu-uas-ops:j
+        depth: 2
+        assessable: true
+        section: "J. Specific: operational authorisation"
+        category: "J. Specific: operational authorisation"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.040
+        ref_id: "UAS.SPEC.040"
+        name: "Issuing of an operational authorisation"
+        description: >-
+          An authorisation is issued once the application is complete and, for
+          any part of the operation in controlled airspace, a procedure for
+          coordination with the airspace service provider is in place; it
+          states its exact scope.
+        parent_urn: urn:inflect:req:eu-uas-ops:j
+        depth: 2
+        assessable: true
+        section: "J. Specific: operational authorisation"
+        category: "J. Specific: operational authorisation"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.070
+        ref_id: "UAS.SPEC.070"
+        name: "Transferability of an operational authorisation"
+        description: >-
+          An operational authorisation belongs to the operator it was issued
+          to and cannot be transferred to another.
+        parent_urn: urn:inflect:req:eu-uas-ops:j
+        depth: 2
+        assessable: true
+        section: "J. Specific: operational authorisation"
+        category: "J. Specific: operational authorisation"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.spec.080
+        ref_id: "UAS.SPEC.080"
+        name: "Duration and validity of an operational authorisation"
+        description: >-
+          An operational authorisation lasts as long as it states and only
+          while the operator complies with the regulation and its conditions.
+          When it is revoked or surrendered, the operator returns a digital
+          acknowledgement to the competent authority without delay.
+        parent_urn: urn:inflect:req:eu-uas-ops:j
+        depth: 2
+        assessable: true
+        section: "J. Specific: operational authorisation"
+        category: "J. Specific: operational authorisation"
+
+      # ─── K. Specific: light UAS operator certificate (LUC) ───────────
+      - urn: urn:inflect:req:eu-uas-ops:k
+        ref_id: K
+        name: "Specific: light UAS operator certificate (LUC)"
+        description: >-
+          The light UAS operator certificate: an organisation approval,
+          resting on a safety management system, whose privileges may let the
+          holder authorise its own operations.
+        depth: 1
+        assessable: false
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.010
+        ref_id: "UAS.LUC.010"
+        name: "General requirements for an LUC"
+        description: >-
+          Only a legal person may apply for an LUC. The application describes
+          the management system, including the organisational structure and
+          the safety management system, names the responsible personnel
+          including the person who authorises operations, and states that the
+          documents have been verified as compliant.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.020
+        ref_id: "UAS.LUC.020"
+        name: "Responsibilities of the LUC holder"
+        description: >-
+          The LUC holder meets the operator and pilot responsibilities of the
+          specific category, stays within its terms of approval, exercises
+          operational control over every operation under its LUC,
+          risk-assesses each operation that needs it, and keeps risk
+          assessments, mitigations and personnel records for at least three
+          years, protected from damage, alteration and theft.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.030
+        ref_id: "UAS.LUC.030"
+        name: "Safety management system"
+        description: >-
+          The LUC holder runs a safety management system proportionate to its
+          size and activities: an accountable manager, clear responsibilities,
+          a safety policy and objectives, key safety personnel, safety risk
+          management, safety promotion, documented key processes, an
+          independent compliance monitoring function and oversight of what
+          subcontractors deliver.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.040
+        ref_id: "UAS.LUC.040"
+        name: "LUC manual"
+        description: >-
+          The LUC holder gives the competent authority an LUC manual
+          describing its organisation, procedures and activities, with a
+          commitment signed by the accountable manager (and the chief
+          executive when they differ), procedures for partner organisations
+          and subcontractors, amendments sent to the authority and relevant
+          parts distributed to staff.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.050
+        ref_id: "UAS.LUC.050"
+        name: "Terms of approval of the LUC holder"
+        description: >-
+          The LUC is issued once the holder meets the responsibilities, safety
+          management and manual requirements, and it states the operator's
+          identification, privileges, authorised types of operation,
+          authorised area or airspace and any special limitations.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.060
+        ref_id: "UAS.LUC.060"
+        name: "Privileges of the LUC holder"
+        description: >-
+          Within its terms of approval the LUC may grant the holder the
+          privilege to authorise its own operations without submitting a
+          declaration or applying for an operational authorisation; the holder
+          exercises that privilege only as far as the LUC specifies.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.070
+        ref_id: "UAS.LUC.070"
+        name: "Changes in the LUC management system"
+        description: >-
+          A change to the LUC holder's terms of approval, or a significant
+          change to its safety management system, needs the competent
+          authority's approval before it takes effect.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.075
+        ref_id: "UAS.LUC.075"
+        name: "Transferability of an LUC"
+        description: >-
+          An LUC cannot be transferred, except through a change of ownership
+          of the organisation that the competent authority has approved.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.080
+        ref_id: "UAS.LUC.080"
+        name: "Duration and validity of an LUC"
+        description: >-
+          An LUC has no fixed term: it stays valid while the holder complies
+          with the regulation and the issuing State's requirements and has not
+          surrendered it or had it revoked, and on revocation or surrender the
+          holder returns a digital acknowledgement without delay.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
+
+      - urn: urn:inflect:req:eu-uas-ops:uas.luc.090
+        ref_id: "UAS.LUC.090"
+        name: "Access"
+        description: >-
+          The LUC holder gives any person the competent authority has
+          authorised access to any facility, aircraft, document, record, data
+          or procedure relevant to its certified, authorised or declared
+          activity, including contracted work.
+        parent_urn: urn:inflect:req:eu-uas-ops:k
+        depth: 2
+        assessable: true
+        section: "K. Specific: light UAS operator certificate (LUC)"
+        category: "K. Specific: light UAS operator certificate (LUC)"
