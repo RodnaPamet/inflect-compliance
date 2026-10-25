@@ -355,7 +355,17 @@ export class EvidenceRepository {
             andConditions.push({
                 OR: [
                     { title: { contains: filters.q, mode: 'insensitive' } },
-                    { content: { contains: filters.q, mode: 'insensitive' } },
+                    // `content` is searched only where it is something a user
+                    // wrote — a note's body, a link's address. For a FILE it
+                    // holds the storage key (`tenants/<id>/evidence/<yyyy>/
+                    // <mm>/<uuid>_<name>`), so "evidence", "tenants" or a
+                    // year matched every uploaded file. An allowlist, as
+                    // `evidenceContentRole` is: a new type is not searched
+                    // by its `content` until someone decides it should be.
+                    {
+                        type: { in: [EvidenceType.TEXT, EvidenceType.LINK] },
+                        content: { contains: filters.q, mode: 'insensitive' },
+                    },
                     { fileName: { contains: filters.q, mode: 'insensitive' } },
                 ],
             });

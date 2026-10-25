@@ -33,6 +33,7 @@ import { useTranslations } from 'next-intl';
 import { isEvidenceContentEditable } from '@/lib/evidence-content';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -90,6 +91,12 @@ export interface EditEvidenceModalProps {
     controls: ControlOption[];
     initial: EditEvidenceInitial | null;
     onSaved?: () => void;
+    /**
+     * Offer "Replace file" (FILE evidence). `replaceEvidenceFile` asserts the
+     * custom-role `evidence.upload` grant, which edit access does not imply.
+     * Defaults to true.
+     */
+    canReplaceFile?: boolean;
 }
 
 function controlLabel(c: ControlOption): string {
@@ -103,6 +110,7 @@ export function EditEvidenceModal({
     controls,
     initial,
     onSaved,
+    canReplaceFile = true,
 }: EditEvidenceModalProps) {
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('evidence');
@@ -135,6 +143,9 @@ export function EditEvidenceModal({
     // PART 4 — replace-file affordance (FILE-type evidence only).
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [replacing, setReplacing] = useState(false);
+    // Set when a file was replaced while the form held other unsaved edits:
+    // the modal stays open so those edits are not lost, and says so.
+    const [replacedNotice, setReplacedNotice] = useState(false);
 
     const controlOptions = useMemo<ComboboxOption<ControlOption>[]>(
         () =>
@@ -184,6 +195,7 @@ export function EditEvidenceModal({
             setInitialRetention(ymd);
             setSubmitting(false);
             setReplacing(false);
+            setReplacedNotice(false);
             setError(null);
             setIsDirty(false);
         }
@@ -290,6 +302,10 @@ export function EditEvidenceModal({
             setIsDirty(false);
             setOpen(false);
             onSaved?.();
+        } catch {
+            // A thrown fetch (offline, blocked) used to escape `try/finally`
+            // as an unhandled rejection: no message, and the form unchanged.
+            setError(t('edit.updateFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -313,7 +329,12 @@ export function EditEvidenceModal({
                 return;
             }
             onSaved?.();
-            setOpen(false);
+            // The replacement is saved on its own; the rest of the form is
+            // not. Closing here (the raw setter, past the unsaved-changes
+            // guard) dropped every other edit without asking, so with edits
+            // pending the modal stays open for them to be saved.
+            if (isDirty) setReplacedNotice(true);
+            else setOpen(false);
         } catch {
             setError(t('edit.replaceFailed'));
         } finally {
@@ -373,6 +394,15 @@ export function EditEvidenceModal({
                         >
                             {error}
                         </div>
+                    )}
+                    {replacedNotice && !error && (
+                        <InlineNotice
+                            variant="success"
+                            id="edit-evidence-replaced"
+                            className="mb-4"
+                        >
+                            {t('edit.replacedKeepEditing')}
+                        </InlineNotice>
                     )}
                     <fieldset
                         disabled={submitting}
@@ -520,7 +550,7 @@ export function EditEvidenceModal({
                         it stays actionable even while a metadata save is
                         in flight would be wrong — it shares the busy
                         gate below instead. */}
-                    {initial?.type === 'FILE' && (
+                    {initial?.type === 'FILE' && canReplaceFile && (
                         <div className="mt-default border-t border-border-subtle pt-default">
                             <FormField
                                 label={t('edit.replaceFileLabel')}

@@ -86,7 +86,10 @@ export const MILESTONES: Record<MilestoneKey, MilestoneDefinition> = {
         key: 'evidence-all-current',
         preset: 'rain',
         message: 'All evidence is current ✨',
-        description: 'No evidence is overdue or expiring this week.',
+        // The trigger is the tenant-wide aggregate's expired, expiring-soon
+        // (30 days) and needs-review buckets all at zero — not a week. The
+        // page shows the catalogue's `evidence.list.allCurrent*` copy.
+        description: 'No evidence is expired, expiring in the next 30 days, or in need of review.',
     },
     'audit-pack-complete': {
         key: 'audit-pack-complete',

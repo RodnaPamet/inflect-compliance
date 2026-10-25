@@ -113,6 +113,15 @@ export interface EvidenceGalleryProps<T extends EvidenceGalleryRow> {
         row: T,
     ) => { label: string; badge: StatusBadgeVariant } | null;
     /**
+     * Freshness resolver — the same label the table's Freshness column shows
+     * for the row. When supplied it replaces the generic age badge, which
+     * measures the age of a last-refreshed date and so misreads a review
+     * DUE date (a review due in six months read "today").
+     */
+    freshnessStatus?: (
+        row: T,
+    ) => { label: string; badge: StatusBadgeVariant } | null;
+    /**
      * Bulk-selection parity with the table. When both are supplied,
      * each card renders a selection checkbox wired to the SAME
      * selection state the table uses.
@@ -141,6 +150,7 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
     statusBadgeVariant,
     statusLabel,
     retentionStatus,
+    freshnessStatus,
     selectedIds,
     onToggleSelect,
     downloadLabel = 'Download',
@@ -199,6 +209,7 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
                     statusBadgeVariant={statusBadgeVariant}
                     statusLabel={statusLabel}
                     retentionStatus={retentionStatus}
+                    freshnessStatus={freshnessStatus}
                     selected={selectedIds?.has(row.id) ?? false}
                     onToggleSelect={onToggleSelect}
                     selectable={!!(selectedIds && onToggleSelect)}
@@ -220,6 +231,7 @@ interface GalleryCardProps<T extends EvidenceGalleryRow> {
     statusBadgeVariant?: (status: string) => StatusBadgeVariant;
     statusLabel?: (status: string) => string;
     retentionStatus?: (row: T) => { label: string; badge: StatusBadgeVariant } | null;
+    freshnessStatus?: (row: T) => { label: string; badge: StatusBadgeVariant } | null;
     selectable?: boolean;
     selected?: boolean;
     onToggleSelect?: (id: string, next: boolean) => void;
@@ -234,6 +246,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
     statusBadgeVariant,
     statusLabel,
     retentionStatus,
+    freshnessStatus,
     selectable,
     selected,
     onToggleSelect,
@@ -253,6 +266,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
     const isPdf = match.label === 'PDF' && url !== null && scanServable;
 
     const retention = retentionStatus?.(row) ?? null;
+    const freshness = freshnessStatus?.(row) ?? null;
     const statusVariant: StatusBadgeVariant = statusBadgeVariant?.(row.status) ?? 'neutral';
 
     const isPending = String(row.id).startsWith('temp:');
@@ -393,12 +407,21 @@ function GalleryCard<T extends EvidenceGalleryRow>({
                 </div>
 
                 <div className="mt-auto flex flex-wrap items-center gap-1.5">
-                    <FreshnessBadge
-                        lastRefreshedAt={row.lastRefreshedAt ?? row.nextReviewDate ?? row.expiredAt ?? null}
-                        now={now}
-                        compact
-                        data-testid={`evidence-gallery-freshness-${row.id}`}
-                    />
+                    {freshness ? (
+                        <StatusBadge
+                            variant={freshness.badge}
+                            data-testid={`evidence-gallery-freshness-${row.id}`}
+                        >
+                            {freshness.label}
+                        </StatusBadge>
+                    ) : (
+                        <FreshnessBadge
+                            lastRefreshedAt={row.lastRefreshedAt ?? row.nextReviewDate ?? row.expiredAt ?? null}
+                            now={now}
+                            compact
+                            data-testid={`evidence-gallery-freshness-${row.id}`}
+                        />
+                    )}
                     {retention && (
                         <StatusBadge variant={retention.badge}>
                             {retention.label}

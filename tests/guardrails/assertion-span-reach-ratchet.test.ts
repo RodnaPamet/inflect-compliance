@@ -194,7 +194,10 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 142;
 //   whole-file reads where there was one — and it LOWERED all three span and
 //   needle counts, for the same underlying reason. More, smaller files cost
 //   reads and save reach.
-const INTERIOR_SPAN_BASELINE = 310;
+// 310 -> 309 (2026-10-25, #4277). The Evidence list's Freshness cell stopped
+//   rendering `<FreshnessBadge … lastRefreshedAt=>`, so the view-toggle guard's
+//   span over it was replaced by a needle on `evidenceFreshnessBucket(ev, …)`.
+const INTERIOR_SPAN_BASELINE = 309;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.
