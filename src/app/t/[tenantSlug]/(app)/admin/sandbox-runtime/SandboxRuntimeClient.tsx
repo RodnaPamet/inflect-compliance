@@ -174,7 +174,20 @@ export function SandboxRuntimeClient({
                 </dl>
             )}
 
+            {/* "Reporting channels", NOT "where data can leave" — which is what
+                this heading said first and is an overclaim. These four are the
+                paths the RUNTIME reports on; traffic from the sandboxed
+                workload leaves by a different mechanism entirely, governed by
+                the network rules in the next section. An operator reading the
+                broader heading over four rows would take those four as the
+                complete set of egress paths, which is the same mistake the
+                fourth channel's missing chart key produces one level down. A
+                claim is a liability for its breadth, so the heading names only
+                what it covers and the note points at the rest. */}
             <Heading level={2}>{t('sandboxRuntime.sectionChannels')}</Heading>
+            <p className="max-w-3xl text-sm text-content-muted">
+                {t('sandboxRuntime.sectionChannelsNote')}
+            </p>
             {REPORTING_CHANNELS.map((channel) =>
                 row(
                     channel.key,

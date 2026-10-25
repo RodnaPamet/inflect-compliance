@@ -6757,7 +6757,7 @@
       "notConfiguredBody": "This deployment has not declared a sandbox runtime, so nothing below is in force. The rows are listed so the settings are known before one is installed.",
       "digestLabel": "Configuration digest",
       "appliedAtLabel": "Applied",
-      "sectionChannels": "Where data can leave",
+      "sectionChannels": "Reporting channels",
       "chartKeyLabel": "Chart key",
       "noChartKey": "No chart key - environment variable only",
       "envVarsLabel": "Environment variables",
@@ -6808,7 +6808,8 @@
           "name": "Filesystem isolation is required",
           "description": "Landlock must be a hard requirement rather than best effort. Best effort means a host without Landlock runs the sandbox with no filesystem isolation and still reports success."
         }
-      }
+      },
+      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below."
     }
   },
   "riskManager": {
