@@ -111,6 +111,13 @@ const config = [
             // (`@next/next/no-assign-module-variable` etc.) — they're
             // build artefacts, not source.
             '.next-test/**',
+            // The worker, scheduler and one-shot job bundles that
+            // `scripts/build-worker.mjs` writes (gitignored). esbuild inlines
+            // `src/` into them, so linting them reports src's own rules
+            // against a copy of src — 41 `local/require-mcp-tool-authorization`
+            // errors on the inlined tool registry alone, for anyone who has
+            // built the worker locally. CI never sees them; that is the gap.
+            'dist/**',
             'node_modules/**',
             // Claude Code runtime state. `.claude/worktrees/<id>/` holds
             // FULL checkouts of the repo, so `eslint .` would lint every
