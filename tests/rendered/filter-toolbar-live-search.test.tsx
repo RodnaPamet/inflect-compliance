@@ -7,7 +7,7 @@
  * debounce (commits to the FilterProvider query), no Enter required.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
 // FilterToolbar transitively uses Next router hooks via the filter
@@ -97,12 +97,20 @@ describe('FilterToolbar — search inside the filter dropdown', () => {
         ) as HTMLInputElement;
 
         // Typing propagates to the committed query on the debounce — no
-        // Enter press.
-        fireEvent.change(input, { target: { value: 'iso' } });
-        await waitFor(() => {
-            expect(screen.getByTestId('committed-search').textContent).toBe(
-                'iso',
-            );
-        });
+        // Enter press. The debounce runs on fake timers: waiting for it in
+        // wall-clock time gave a 250ms debounce a 1s window, and a GC pause
+        // in a busy shard closed that window once (2026-10-25, #4188's
+        // queue build).
+        jest.useFakeTimers();
+        try {
+            fireEvent.change(input, { target: { value: 'iso' } });
+            expect(screen.getByTestId('committed-search').textContent).toBe('');
+            await act(async () => {
+                await jest.advanceTimersByTimeAsync(250);
+            });
+            expect(screen.getByTestId('committed-search').textContent).toBe('iso');
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
