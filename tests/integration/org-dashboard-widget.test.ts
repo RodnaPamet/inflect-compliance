@@ -123,7 +123,7 @@ describeFn('Epic 41 — OrgDashboardWidget CRUD (DB-backed)', () => {
         }).catch(() => {});
         await prisma.user.deleteMany({
             where: { id: { in: [acmeUserId, acmeReaderUserId] } },
-        }).catch(() => {});
+        });
         await prisma.$disconnect();
     });
 

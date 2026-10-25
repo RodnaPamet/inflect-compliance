@@ -118,7 +118,7 @@ describeFn('Epic O-4 — listOrgMembers usecase (DB-backed)', () => {
                     in: [adminUserId, readerAUserId, readerBUserId, unrelatedUserId].filter(Boolean),
                 },
             },
-        }).catch(() => {});
+        });
         await prisma.$disconnect();
     });
 
