@@ -14,7 +14,8 @@
  *   2. `/controls?create=1` opens the dialog only for a viewer who may create;
  *   3. a controls-dashboard drill-down (`?due=soon`) is visible, does not
  *      leave the Total card reading as selected, and is cleared by
- *      "Clear filters";
+ *      "Clear filters"; and under a Category filter the status cards show
+ *      a dash with the reason, not a count that ignores the filter;
  *   4. a bulk status change the server applied to only some controls says so;
  *   5. a second owner can be picked in the Owner filter;
  *   6. a custom control's stored theme category reads as its label.
@@ -452,6 +453,42 @@ describe('Controls list — a dashboard drill-down is visible and clearable', ()
             'href',
             '/t/acme/controls?status=IN_PROGRESS',
         );
+    });
+});
+
+// ─── 3b. Status cards under a Category filter ────────────────────────
+
+function kpiCard(label: string): HTMLElement {
+    const card = screen
+        .getAllByTestId('kpi-filter-card')
+        .find((el) => el.querySelector('span')?.textContent === label);
+    expect(card).toBeDefined();
+    return card as HTMLElement;
+}
+
+describe('Controls list — the status cards under a Category filter', () => {
+    const STATUS_CARDS = [C.kpi.implemented, C.kpi.inProgress, C.kpi.notStarted];
+
+    it('show a dash and say why, instead of a count that ignores the filter', async () => {
+        // Category is filtered in the browser; the cards are server counts
+        // that cannot see it. KPI has inProgress: 2 — a number that would
+        // contradict a Category-filtered table.
+        mountAs('EDITOR', 'category=TECHNOLOGICAL');
+        await screen.findByText(CUSTOM.name);
+        for (const label of STATUS_CARDS) {
+            const card = kpiCard(label);
+            expect(card.querySelector('[data-metric-value]')).toHaveTextContent('—');
+            expect(card).toHaveTextContent(C.kpi.notCountedByCategory);
+        }
+        // The Total card counts the whole register by design, and says so.
+        expect(kpiCard(C.kpi.total).querySelector('[data-metric-value]')).toHaveTextContent(String(KPI.total));
+    });
+
+    it('show their counts without one (the dash above is the filter, not the page)', async () => {
+        mountAs('EDITOR');
+        await screen.findByText(CUSTOM.name);
+        expect(kpiCard(C.kpi.inProgress).querySelector('[data-metric-value]')).toHaveTextContent(String(KPI.inProgress));
+        expect(screen.queryByText(C.kpi.notCountedByCategory)).not.toBeInTheDocument();
     });
 });
 

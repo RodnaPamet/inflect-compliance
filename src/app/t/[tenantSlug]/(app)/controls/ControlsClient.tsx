@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import type { Row, RowSelectionState } from '@/components/ui/table';
@@ -817,6 +817,20 @@ function ControlsPageInner({
     );
     const { activeKpiId: activeControlKpi, toggle: toggleControlKpi } =
         useKpiFilter(controlKpiDefs);
+    // The three STATUS cards are server counts (`kpiCounts`), and Category is
+    // the one facet applied in the browser (see `clientFilteredControls`), so
+    // under a Category filter they counted every category while their click
+    // showed one. A dash, with the reason under it, rather than a number the
+    // rows beside it contradict. Their click still filters as before; the
+    // Total card is unaffected — it counts the whole register by design.
+    const statusCardsUncounted = (categoryFilter?.length ?? 0) > 0;
+    const statusCardValue = (
+        count: number,
+        tone: 'success' | 'attention' | 'critical' | 'default',
+    ): { value: ReactNode; description?: string; tone: typeof tone } =>
+        statusCardsUncounted
+            ? { value: '—', description: t('kpi.notCountedByCategory'), tone: 'default' }
+            : { value: count, tone };
 
     // ─── Column visibility (Epic 52 / R10-PR6) ───
     // Pagination removed — internal scroll inside the table card
@@ -1423,10 +1437,11 @@ function ControlsPageInner({
             // `/controls/health-verdicts` map keyed by control id. Muted
             // '—' until the map resolves (or if a control isn't in it).
             id: 'health',
-            // Header carries the measured-only caveat: the verdict reflects
-            // MEASURED test operating-effectiveness only. Declared effectiveness
-            // informs valuation/ROI, not health — so a control with declared 95
-            // and no tests reads UNKNOWN here while ROI shows 95%.
+            // Header carries the verdict rule (`computeControlHealthVerdict`),
+            // stated in full by the hint — including that an untested
+            // IMPLEMENTED control reads HEALTHY. Declared effectiveness informs
+            // valuation/ROI, not health. tests/unit/control-health-hint-matches-rule
+            // holds the hint to the rule.
             header: () => (
                 <span className="inline-flex items-center gap-1">
                     {t('list.healthColumn')}
@@ -1976,7 +1991,8 @@ function ControlsPageInner({
                         const cfg: Record<
                             string,
                             {
-                                value: number;
+                                value: ReactNode;
+                                description?: string;
                                 tone?:
                                     | 'success'
                                     | 'attention'
@@ -1989,22 +2005,22 @@ function ControlsPageInner({
                                 value: totalControls,
                                 sparkline: controlTrends.total,
                             },
+                            // Under a Category filter the three status
+                            // cards read `statusCardValue`'s dash and reason
+                            // (see `statusCardsUncounted`).
                             implemented: {
-                                value: implementedControls,
-                                tone: 'success',
+                                ...statusCardValue(implementedControls, 'success'),
                                 sparkline: controlTrends.implemented,
                             },
                             inProgress: {
-                                value: inProgressControls,
-                                tone: 'attention',
+                                ...statusCardValue(inProgressControls, 'attention'),
                                 sparkline: controlTrends.inProgress,
                             },
                             notStarted: {
-                                value: notStartedControls,
-                                tone:
-                                    notStartedControls > 0
-                                        ? 'critical'
-                                        : 'default',
+                                ...statusCardValue(
+                                    notStartedControls,
+                                    notStartedControls > 0 ? 'critical' : 'default',
+                                ),
                                 sparkline: controlTrends.notStarted,
                             },
                         };
@@ -2015,6 +2031,7 @@ function ControlsPageInner({
                                 key={card.id}
                                 label={card.label}
                                 value={c.value}
+                                description={c.description}
                                 tone={c.tone}
                                 sparkline={c.sparkline}
                                 sparklineVariant={sparkColors[card.id as keyof typeof sparkColors]}
