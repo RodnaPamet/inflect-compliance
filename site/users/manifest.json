@@ -9,6 +9,16 @@
             ]
         },
         {
+            "group": "Page guides",
+            "label": "{{ui:nav.admin}}",
+            "docs": [
+                "docs/user/guide/admin/members.md",
+                "docs/user/guide/admin/sso.md",
+                "docs/user/guide/admin/security.md",
+                "docs/user/guide/admin/"
+            ]
+        },
+        {
             "group": "How-to guides",
             "label": "Set up your workspace",
             "docs": [

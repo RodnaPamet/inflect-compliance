@@ -10,6 +10,7 @@ Inflect Compliance helps your organisation run its compliance programme in one p
 The guides follow the app's own sidebar. If you are looking at a page in the app, its guide sits under the same heading here.
 
 - **{{ui:nav.govern}}** covers your assets, risks and controls. Start with the [{{ui:risks.title}}](../../docs/user/guide/govern/risks.md).
+- **{{ui:nav.admin}}** covers running the workspace: its [{{ui:admin.members.title}}](../../docs/user/guide/admin/members.md), [{{ui:admin.sso.title}}](../../docs/user/guide/admin/sso.md), [{{ui:admin.security.title}}](../../docs/user/guide/admin/security.md) and [{{ui:admin.apiKeys.pageTitle}}](../../docs/user/guide/admin/api-keys.md) pages.
 
 Each page guide explains what the page is for, who can use it, what every part of it shows, what each button does, and what to do when something goes wrong.
 
