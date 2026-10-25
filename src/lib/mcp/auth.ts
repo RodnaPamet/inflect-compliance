@@ -184,16 +184,39 @@ async function denyUnresolvedPrincipal(
 }
 
 /**
- * Authenticate an MCP HTTP request. Returns the tenant-scoped RequestContext
- * on success. Throws `unauthorized` if the Bearer key is missing/invalid,
- * `forbidden` if the key lacks an MCP capability scope, and `forbidden` again
- * (with a hash-chained `AUTHZ_DENIED` row) if the tenant requires registered
- * agents and this key does not name an ACTIVE one.
+ * A credential that has been verified and admitted to the endpoint, and
+ * nothing more: no registration gate yet, and no invocation.
+ *
+ * ## Why authentication is two steps (#4205)
+ *
+ * Building the invocation is the expensive half. It resolves the principal,
+ * loads the policy card and sends one live `tools/list` to every external
+ * connection the agent has grants on. `/api/mcp` charges the per-key budget
+ * between the two steps, so a key that is over its budget, or a request that
+ * is malformed, is refused before any of that work is done. When the budget
+ * was charged after the whole of authentication, a key over its budget still
+ * drove those outbound calls on every request, and a malformed body drove them
+ * without being charged at all.
  */
-export async function authenticateMcpRequest(
+export interface VerifiedMcpCredential {
+    /** The raw key context. `apiKeyId` is the verified key, and the budget's key. */
+    keyCtx: RequestContext;
+    audience: readonly string[] | null;
+    tokenExpiresAt: Date | null;
+    now: Clock;
+    surface: { method: string; path: string };
+}
+
+/**
+ * Step one: verify the Bearer credential and its MCP capability scope. Cheap:
+ * a key lookup and, for an exchanged token, a signature check. Throws
+ * `unauthorized` if the key is missing or invalid, and `forbidden` if it lacks
+ * an MCP capability scope.
+ */
+export async function verifyMcpCredential(
     req: NextRequest,
     options: { now?: Clock } = {},
-): Promise<McpAuthResult> {
+): Promise<VerifiedMcpCredential> {
     const now = options.now ?? systemClock;
     const token = extractBearerToken(req.headers.get('authorization'));
     if (!token) {
@@ -238,10 +261,21 @@ export async function authenticateMcpRequest(
         throw forbidden('API key does not have an MCP capability scope (mcp:read / mcp:propose).');
     }
 
-    // Agent-registration gate. Throws (and audits) when this tenant requires
-    // every agent to be in the register and this credential is not bound to an
-    // ACTIVE one.
-    //
+    return {
+        keyCtx: result.ctx,
+        audience,
+        tokenExpiresAt,
+        now,
+        surface: { method: req.method, path: new URL(req.url).pathname },
+    };
+}
+
+/**
+ * Step two: the agent-registration gate, then the invocation. Throws (and
+ * audits) when this tenant requires every agent to be in the register and this
+ * credential is not bound to an ACTIVE one.
+ */
+export async function completeMcpAuthentication(verified: VerifiedMcpCredential): Promise<McpAuthResult> {
     // Its return value is the LIVE ACTIVE agent, or null — a narrower thing than
     // `ctx.agentId`, and the two are used for different jobs. This value keys the
     // deny-by-default tool allowlist, which must apply only to an agent the
@@ -250,15 +284,31 @@ export async function authenticateMcpRequest(
     // that agent's proposal, and narrowing the attribution to "only when ACTIVE"
     // would write those rows unattributed. The gate decides whether the request
     // runs and what it may reach; it does not decide who made it.
-    const surface = { method: req.method, path: new URL(req.url).pathname };
-    const verdict = await assertRegisteredAgent(result.ctx, surface);
+    const verdict = await assertRegisteredAgent(verified.keyCtx, verified.surface);
 
-    const invocation = await buildMcpInvocation(result.ctx, verdict, surface, {
-        audience,
-        tokenExpiresAt,
-        now,
+    const invocation = await buildMcpInvocation(verified.keyCtx, verdict, verified.surface, {
+        audience: verified.audience,
+        tokenExpiresAt: verified.tokenExpiresAt,
+        now: verified.now,
     });
     return { ctx: invocation.ctx, invocation };
+}
+
+/**
+ * Authenticate an MCP HTTP request in one call: `verifyMcpCredential` then
+ * `completeMcpAuthentication`. Throws `unauthorized` if the Bearer key is
+ * missing/invalid, `forbidden` if the key lacks an MCP capability scope, and
+ * `forbidden` again (with a hash-chained `AUTHZ_DENIED` row) if the tenant
+ * requires registered agents and this key does not name an ACTIVE one.
+ *
+ * `/api/mcp` calls the two steps separately, to charge the per-key budget
+ * between them.
+ */
+export async function authenticateMcpRequest(
+    req: NextRequest,
+    options: { now?: Clock } = {},
+): Promise<McpAuthResult> {
+    return completeMcpAuthentication(await verifyMcpCredential(req, options));
 }
 
 /**

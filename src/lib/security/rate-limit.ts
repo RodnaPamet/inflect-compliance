@@ -248,7 +248,8 @@ export const API_READ_LIMIT: RateLimitConfig = {
  * throttle every other customer's.
  *
  * So the budget belongs to the key. The bucket is the VERIFIED
- * `apiKeyId`, charged after `authenticateMcpRequest` succeeds — never a digest
+ * `apiKeyId`, charged once `verifyMcpCredential` succeeds and before the
+ * invocation is built (#4205) — never a digest
  * of the presented token, which is the thing an unauthenticated caller varies
  * (see `docs/rate-limiting.md` → *API-key callers*). An exchanged token
  * resolves to its issuing key, so exchange cannot multiply the budget. The

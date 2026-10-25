@@ -187,6 +187,16 @@ export async function runReadTool(
     inv: McpInvocation,
     name: string,
     rawArgs: unknown,
+    opts: {
+        /**
+         * Runs after the tool has resolved and passed the gate, and before
+         * anything executes. `/api/mcp` scans a direct caller's arguments here
+         * (#4205), so the scan sees only a real tool's name, and a call the
+         * gate refuses is recorded as `AUTHZ_DENIED` rather than as a guard
+         * verdict. THROWS to refuse.
+         */
+        beforeRun?: () => Promise<void>;
+    } = {},
 ): Promise<McpToolResult> {
     // 0. LOAD the tool — through this invocation's pinned manifest, never
     //    straight out of `READ_TOOLS`. A name this build does not know at all is
@@ -213,6 +223,9 @@ export async function runReadTool(
     //    rung can depend on an argument, and validation happens at step 2 —
     //    after the gate, because nothing may run ahead of the gate.
     await authorizeToolCall(inv, { ...tool, capabilityClass: 'read' }, rawArgs);
+
+    // 1b. The caller's own check, after the gate and before anything runs.
+    await opts.beforeRun?.();
 
     // 2. Validate arguments.
     const parsed = tool.argsSchema.safeParse(rawArgs ?? {});

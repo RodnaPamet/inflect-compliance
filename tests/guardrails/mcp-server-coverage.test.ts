@@ -113,9 +113,16 @@ describe('MCP server — authentication inherits the TenantApiKey chain', () => 
     });
 
     it('the route authenticates every request before dispatch', () => {
-        expect(route).toMatch(/authenticateMcpRequest\(req\)/);
-        // Auth must precede body dispatch.
-        expect(route.indexOf('authenticateMcpRequest')).toBeLessThan(route.indexOf('dispatchMcp'));
+        // Two steps since #4205: the credential, then (after the per-key charge)
+        // the invocation. Positions are taken at the CALLS, not the names: each
+        // name also appears in the import block at the top of the file, where
+        // an `indexOf` on the bare name used to land.
+        const verifyAt = route.indexOf('verifyMcpCredential(req)');
+        const completeAt = route.indexOf('completeMcpAuthentication(verified)');
+        const dispatchAt = route.indexOf('dispatchMcp(request');
+        expect(Math.min(verifyAt, completeAt, dispatchAt)).toBeGreaterThan(-1);
+        expect(verifyAt).toBeLessThan(dispatchAt);
+        expect(completeAt).toBeLessThan(dispatchAt);
     });
 
     it('mcp:read + mcp:propose are registered scopes; there is no write-direct scope', () => {
