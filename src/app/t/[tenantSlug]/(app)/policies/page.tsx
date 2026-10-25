@@ -79,6 +79,13 @@ export default async function PoliciesPage({
             initialFilters={filters}
             tenantSlug={tenantSlug}
             permissions={ctx.permissions}
+            // The coarse `permissions` come from the custom role's BASE role
+            // alone; these are the granular keys the routes also check, so the
+            // client can gate on both (#4279).
+            appPermissions={{
+                policies: ctx.appPermissions.policies,
+                admin: { manage: ctx.appPermissions.admin.manage },
+            }}
             translations={{
                 title: t('title'),
                 listDescription: t('listDescription'),

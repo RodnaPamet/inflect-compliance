@@ -43,6 +43,7 @@ import {
 } from './filter-defs';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
@@ -91,12 +92,22 @@ interface PoliciesClientProps {
     initialPolicies: PolicyRow[];
     initialFilters?: Record<string, string>;
     tenantSlug: string;
+    /** Coarse tier, resolved from the (custom role's base) role. */
     permissions: {
         canRead: boolean;
         canWrite: boolean;
         canAdmin: boolean;
         canAudit: boolean;
         canExport: boolean;
+    };
+    /**
+     * The granular keys the policy routes and usecases also check. A custom
+     * role narrows these without changing its base role, so the coarse tier
+     * alone offers buttons the server then refuses (#4279).
+     */
+    appPermissions: {
+        policies: { create: boolean; edit: boolean };
+        admin: { manage: boolean };
     };
     translations: {
         title: string;
@@ -145,9 +156,20 @@ function PoliciesPageInner({
     initialFilters,
     tenantSlug,
     permissions,
+    appPermissions,
     translations: t,
 }: PoliciesClientProps) {
     const tx = useTranslations('policies');
+    // Each flag is the conjunction the server enforces for that action — the
+    // coarse tier AND the granular key — so the page never offers what the
+    // route refuses (and never more than the base role allows):
+    //   create         POST /policies           policies.create + assertCanCreatePolicy
+    //   bulk assign    bulkAssignPolicy         assertCanWritePolicies (policies.edit)
+    //   archive/delete bulk/{archive,delete}    admin.manage + policies.edit + assertCanAdminPolicies
+    const canCreate = permissions.canWrite && appPermissions.policies.create;
+    const canEdit = permissions.canWrite && appPermissions.policies.edit;
+    const canManageLifecycle =
+        permissions.canAdmin && appPermissions.admin.manage && appPermissions.policies.edit;
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     const tGroup = useTranslations('common.filterGroups');
@@ -336,7 +358,10 @@ function PoliciesPageInner({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ policyIds: ids }),
                     });
-                    if (!res.ok) throw new Error(tx('bulk.failed'));
+                    if (!res.ok) {
+                        const errBody = await res.json().catch(() => null);
+                        throw new Error(apiErrorMessage(errBody, tx('bulk.failed')));
+                    }
                     // The optimistic toast above necessarily says `ids.length`
                     // — it is composed BEFORE this request fires (Epic 67
                     // schedules the commit 5s later), so it structurally
@@ -364,8 +389,8 @@ function PoliciesPageInner({
                     await policiesQuery.mutate();
                 },
                 undoAction: () => { void policiesQuery.mutate(); },
-                onError: () => {
-                    toast.error(tx('bulk.failed'));
+                onError: (err) => {
+                    toast.error(err instanceof Error && err.message ? err.message : tx('bulk.failed'));
                     void policiesQuery.mutate();
                 },
             });
@@ -388,11 +413,11 @@ function PoliciesPageInner({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const detail = await res
-                    .json()
-                    .then((b) => (typeof b?.error === 'string' ? b.error : null))
-                    .catch(() => null);
-                throw new Error(detail || tx('bulk.failed'));
+                // The envelope is `{ error: { code, message } }` — an OBJECT,
+                // so reading `body.error` as a string dropped every reason the
+                // server gave ("owner is not an active member", a 403).
+                const errBody = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(errBody, tx('bulk.failed')));
             }
             // Report the SERVER's figure. bulkArchivePolicy and
             // bulkAssignPolicy both return { updated } from a tenant-scoped
@@ -456,16 +481,27 @@ function PoliciesPageInner({
         ];
         // Archive + Delete are admin-gated (mirror the OWNER/ADMIN guards on
         // archivePolicy / bulkDeletePolicy).
-        if (permissions.canAdmin) {
-            // Archive blocks every edit path until restored, so it earns the
-            // confirm it did not have. Delete is a reversible SOFT delete and
-            // routes through the undo-toast instead — the confirm here was the
-            // inverse of the consequences.
-            defs.push({ value: 'archive', label: tx('bulk.archive'), confirm: true });
+        if (canManageLifecycle) {
+            // Archive refuses new versions and approval requests until the
+            // policy is restored, so it earns a confirm. Its OWN wording, in
+            // warning tone like the detail page's: `confirm: true` is the
+            // BulkActionBar's DELETE dialog ("Delete N policies?", "This
+            // removes…", a red Delete button), which described a different
+            // action. Delete is a reversible SOFT delete and routes through
+            // the undo-toast instead.
+            defs.push({
+                value: 'archive',
+                label: tx('bulk.archive'),
+                confirm: {
+                    tone: 'warning',
+                    confirmLabel: tx('bulk.archive'),
+                    description: tx('bulk.archiveConfirmBody'),
+                },
+            });
             defs.push({ value: 'delete', label: tx('bulk.delete') });
         }
         return defs;
-    }, [tenantSlug, permissions.canAdmin, tx]);
+    }, [tenantSlug, canManageLifecycle, tx]);
 
     const liveFilters = useMemo(
         () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0])),
@@ -922,7 +958,7 @@ function PoliciesPageInner({
                 defs: liveFilters,
                 searchId: 'policies-search',
                 searchPlaceholder: tx('list.searchPlaceholder'),
-                toolbarLeading: permissions.canWrite ? (
+                toolbarLeading: canCreate ? (
                     <Button
                         variant="primary"
                         icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -985,14 +1021,19 @@ function PoliciesPageInner({
                 'data-testid': 'policies-table',
                 className: 'hover:bg-bg-muted',
                 // Selection + canonical BulkActionBar; gated on edit so a
-                // READER sees neither checkboxes nor the bar.
-                selectedRows: permissions.canWrite
+                // READER sees neither checkboxes nor the bar. `selectionEnabled`
+                // is what removes the checkbox column — DataTable turns it ON
+                // by default, and with it on a single click selects and only a
+                // double-click opens the policy. Leaving the three props below
+                // undefined was not enough.
+                selectionEnabled: canEdit,
+                selectedRows: canEdit
                     ? Object.fromEntries(Array.from(selected).map((id) => [id, true]))
                     : undefined,
-                onRowSelectionChange: permissions.canWrite
+                onRowSelectionChange: canEdit
                     ? (rows) => setSelected(new Set(rows.map((r) => r.original.id)))
                     : undefined,
-                selectionControls: permissions.canWrite
+                selectionControls: canEdit
                     ? () => (
                           <BulkActionBar
                               actions={policyBulkActions}
@@ -1005,7 +1046,7 @@ function PoliciesPageInner({
                     : undefined,
             }}
         >
-            {permissions.canWrite && (
+            {canCreate && (
                 <NewPolicyModal
                     open={isCreateOpen}
                     setOpen={setIsCreateOpen}

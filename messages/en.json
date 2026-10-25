@@ -3030,6 +3030,7 @@
       "appliedReconciled": "{count, plural, one {# policy updated} other {# policies updated}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
       "undo": "Undo",
       "archivedToast": "{count, plural, one {# policy archived} other {# policies archived}}",
+      "archiveConfirmBody": "Archived policies cannot take new versions, approval requests or a rollback until they are restored. You can restore each one from its page; it comes back as a draft.",
       "assignedToast": "{count, plural, one {# policy updated} other {# policies updated}}"
     },
     "new": {
