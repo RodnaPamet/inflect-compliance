@@ -272,6 +272,10 @@
       "json": "JSON",
       "archive": "Archive",
       "file": "File"
+    },
+    "truncationBanner": {
+      "showingFirst": "Showing the first {cap} results.",
+      "refine": "Refine your filters to narrow the view and see the rest."
     }
   },
   "login": {
