@@ -40,10 +40,32 @@ jest.mock('@/lib/audit', () =>
         appendAuditEntry: jest.fn(async () => undefined),
     }),
 );
-jest.mock('@/lib/mcp/auth', () => ({ authenticateMcpRequest: jest.fn() }));
+jest.mock('@/lib/mcp/auth', () => ({
+    authenticateMcpCredential: jest.fn(),
+    buildInvocationForCredential: jest.fn(),
+}));
 jest.mock('@/lib/mcp/tools/registry', () => ({
     listReadToolDescriptors: jest.fn(() => []),
-    runReadTool: jest.fn(async () => ({ content: [{ type: 'text', text: '{"ok":true}' }] })),
+    // EMULATES THE REAL ORDER, which is the whole point of #4205: resolve the
+    // name, run the gate, THEN `afterAuthorize`, then execute. A mock that
+    // ignored the hook would make every guard assertion below vacuous — the
+    // route would wire a scan nothing ever called, and the suite would be green.
+    //
+    // `toolExecution.ran` stands in for step 3. It is read LAZILY from inside
+    // this factory, which Jest hoists above every declaration, so a ref object
+    // keeps it out of the temporal dead zone.
+    runReadTool: jest.fn(
+        async (
+            _inv: unknown,
+            _name: string,
+            _args: unknown,
+            options?: { afterAuthorize?: () => Promise<void> },
+        ) => {
+            await options?.afterAuthorize?.();
+            toolExecution.ran += 1;
+            return { content: [{ type: 'text', text: '{"ok":true}' }] };
+        },
+    ),
     McpToolNotFoundError: class McpToolNotFoundError extends Error {},
 }));
 jest.mock('@/lib/mcp/tools/propose-tools', () => ({
@@ -65,7 +87,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { POST } from '@/app/api/mcp/route';
 import { appendAuditEntry } from '@/lib/audit';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { authenticateMcpRequest } from '@/lib/mcp/auth';
+import { authenticateMcpCredential, buildInvocationForCredential } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import {
@@ -74,7 +96,11 @@ import {
     MCP_PER_KEY_LIMIT,
 } from '@/lib/security/rate-limit-middleware';
 
-const mockAuth = authenticateMcpRequest as jest.Mock;
+/** Step 3 of the funnel — incremented only when a call actually executes. */
+const toolExecution = { ran: 0 };
+
+const mockCredential = authenticateMcpCredential as jest.Mock;
+const mockInvocation = buildInvocationForCredential as jest.Mock;
 const mockRead = runReadTool as jest.Mock;
 const mockPropose = runProposeTool as jest.Mock;
 const mockAudit = appendAuditEntry as jest.Mock;
@@ -82,19 +108,29 @@ const mockAudit = appendAuditEntry as jest.Mock;
 const HOSTED_EGRESS_IP = '203.0.113.7';
 
 function authenticateAs(apiKeyId: string | undefined): void {
-    mockAuth.mockResolvedValue({
-        invocation: {
-            ctx: {
-                requestId: 'req-test',
-                tenantId: 'tenant-1',
-                userId: 'user-1',
-                role: 'EDITOR',
-                apiKeyId,
-                permissions: {},
-                appPermissions: {},
-            },
-        },
+    const ctx = {
+        requestId: 'req-test',
+        tenantId: 'tenant-1',
+        userId: 'user-1',
+        role: 'EDITOR',
+        apiKeyId,
+        permissions: {},
+        appPermissions: {},
+    };
+    // The two halves of authentication, which #4205 put either side of the
+    // per-key charge. `mockInvocation` is the EXPENSIVE one — in production it
+    // sends a live `tools/list` to every external connection the agent holds a
+    // grant on — so "was it called?" is how the tests below assert that a
+    // refused request reached nobody's server.
+    mockCredential.mockResolvedValue({
+        ctx,
+        verdict: { reason: null },
+        surface: { method: 'POST', path: '/api/mcp' },
+        audience: null,
+        tokenExpiresAt: null,
+        now: () => new Date(),
     });
+    mockInvocation.mockResolvedValue({ ctx });
 }
 
 function toolCall(id: number, name = 'list_risks', args: Record<string, unknown> = {}) {
@@ -114,6 +150,18 @@ function post(body: unknown, ip = HOSTED_EGRESS_IP): NextRequest {
 }
 
 /** Spend `n` messages of `apiKeyId`'s budget, one request each, asserting each passes. */
+function badJson(ip = HOSTED_EGRESS_IP): NextRequest {
+    return new NextRequest('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': ip,
+            authorization: 'Bearer iflk_test',
+        },
+        body: '{ this is not json',
+    });
+}
+
 async function spend(apiKeyId: string, n: number, ip = HOSTED_EGRESS_IP): Promise<void> {
     authenticateAs(apiKeyId);
     for (let i = 0; i < n; i += 1) {
@@ -125,6 +173,7 @@ async function spend(apiKeyId: string, n: number, ip = HOSTED_EGRESS_IP): Promis
 beforeEach(() => {
     clearAllRateLimits();
     jest.clearAllMocks();
+    toolExecution.ran = 0;
     mockGuardMode = 'BALANCED';
 });
 
@@ -205,6 +254,83 @@ describe('/api/mcp — the per-key budget', () => {
     });
 });
 
+describe('/api/mcp — nothing a caller can vary reaches an external server unpaid (#4205)', () => {
+    /**
+     * `mockInvocation` stands in for `buildInvocationForCredential`, which in
+     * production sends one live `tools/list` to EVERY external connection the
+     * agent holds a grant on — outbound traffic to a customer's own server. So
+     * "was it called?" is the measurement these tests are built on: before
+     * #4205 the answer was yes for every refusal below, and none of it was
+     * charged to the key.
+     */
+    it('builds no authority for a request that is over its budget', async () => {
+        await spend('key-over', MCP_PER_KEY_LIMIT.maxAttempts);
+        mockInvocation.mockClear();
+
+        const res = await POST(post(toolCall(1)), {});
+        expect(res.status).toBe(429);
+        expect(mockInvocation).not.toHaveBeenCalled();
+    });
+
+    it('builds no authority for invalid JSON', async () => {
+        authenticateAs('key-badjson');
+        mockInvocation.mockClear();
+
+        const res = await POST(badJson(), {});
+        expect(res.status).toBe(400);
+        expect(mockInvocation).not.toHaveBeenCalled();
+    });
+
+    it('builds no authority for a batch larger than the whole budget', async () => {
+        authenticateAs('key-huge');
+        mockInvocation.mockClear();
+
+        const huge = Array.from({ length: MCP_PER_KEY_LIMIT.maxAttempts + 1 }, (_, i) => toolCall(i));
+        const res = await POST(post(huge), {});
+        expect(res.status).toBe(400);
+        expect(mockInvocation).not.toHaveBeenCalled();
+    });
+
+    it('charges the key for invalid JSON, so a malformed body is not free', async () => {
+        authenticateAs('key-notfree');
+        expect((await POST(badJson(), {})).status).toBe(400);
+
+        // One unit is gone, so only `maxAttempts - 1` messages remain. Before
+        // #4205 the malformed body cost nothing and the whole budget was still
+        // there — which is the state this asserts against.
+        for (let i = 0; i < MCP_PER_KEY_LIMIT.maxAttempts - 1; i += 1) {
+            expect((await POST(post(toolCall(i)), {})).status).toBe(200);
+        }
+        expect((await POST(post(toolCall(999)), {})).status).toBe(429);
+    });
+
+    it('answers an empty batch with a single Invalid Request, not an accepted 202', async () => {
+        authenticateAs('key-empty');
+        mockInvocation.mockClear();
+
+        const res = await POST(post([]), {});
+        // 202-with-no-body told the caller its malformed request had been
+        // accepted: zero messages produce zero responses, which the
+        // notification branch cannot tell from a batch of notifications.
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error.message).toMatch(/^Invalid Request/);
+        expect(mockInvocation).not.toHaveBeenCalled();
+    });
+
+    it('tells a refused batch how many units it actually has left', async () => {
+        const remaining = 5;
+        await spend('key-header', MCP_PER_KEY_LIMIT.maxAttempts - remaining);
+
+        const tooMany = Array.from({ length: remaining + 1 }, (_, i) => toolCall(i));
+        const res = await POST(post(tooMany), {});
+        expect(res.status).toBe(429);
+        // NOT '0'. Five units are still spendable, and a hardcoded zero sends
+        // the caller away for a whole window it does not need to wait.
+        expect(res.headers.get('X-RateLimit-Remaining')).toBe(String(remaining));
+    });
+});
+
 describe('/api/mcp — the pre-authentication ceiling', () => {
     it('bounds one address across every key, in its own scope', async () => {
         // Distinct keys, so no per-key budget is ever reached: what refuses the
@@ -262,26 +388,36 @@ describe('/api/mcp — the AI Guard on a read tool’s arguments', () => {
         expect(mockAudit).not.toHaveBeenCalled();
     });
 
-    it('refuses a secret in the arguments before the funnel runs, and audits rule ids only', async () => {
+    it('refuses a secret in the arguments before the call executes, and audits rule ids only', async () => {
         const body = await callRead({ query: `find ${AWS_DOC_PLACEHOLDER}` });
 
-        expect(body.error.message).toMatch(/^ai_guard_blocked: egress malicious \[/);
-        expect(body.error.message).toContain('egr.api_key.aws_access_key');
-        expect(mockRead).not.toHaveBeenCalled();
+        // THE REFUSAL NAMES NO RULE (#4205). A direct caller has no latch
+        // stopping it from calling again, so echoing the rule that fired let it
+        // vary one argument at a time until something passed.
+        expect(body.error.message).toBe('ai_guard_blocked');
+        expect(body.error.message).not.toContain('egr.api_key.aws_access_key');
 
+        // The funnel is ENTERED — the scan lives inside it now — but step 3
+        // never runs. That is the property, and it is the one the old
+        // `not.toHaveBeenCalled()` was standing in for.
+        expect(mockRead).toHaveBeenCalledTimes(1);
+        expect(toolExecution.ran).toBe(0);
+
+        // The ids are not lost; they are where an operator reads them.
         expect(mockAudit).toHaveBeenCalledTimes(1);
         const entry = mockAudit.mock.calls[0][0];
         expect(entry.action).toBe('AI_GUARD_EGRESS_BLOCKED');
         expect(entry.entityId).toBe('mcp-tool-args:list_risks');
         expect(entry.actorType).toBe('API_KEY');
+        expect(JSON.stringify(entry)).toContain('egr.api_key.aws_access_key');
         expect(JSON.stringify(entry)).not.toContain(AWS_DOC_PLACEHOLDER);
     });
 
     it('refuses a flagged argument too, under the default balanced mode', async () => {
         const body = await callRead({ query: SUSPICIOUS_ASSIGNMENT });
 
-        expect(body.error.message).toMatch(/^ai_guard_review_required: egress suspicious/);
-        expect(mockRead).not.toHaveBeenCalled();
+        expect(body.error.message).toBe('ai_guard_review_required');
+        expect(toolExecution.ran).toBe(0);
         expect(mockAudit.mock.calls[0][0].action).toBe('AI_GUARD_EGRESS_FLAGGED');
     });
 
@@ -290,8 +426,32 @@ describe('/api/mcp — the AI Guard on a read tool’s arguments', () => {
         const body = await callRead({ query: SUSPICIOUS_ASSIGNMENT });
 
         expect(body.result).toBeDefined();
-        expect(mockRead).toHaveBeenCalledTimes(1);
+        expect(toolExecution.ran).toBe(1);
         expect(mockAudit).toHaveBeenCalledTimes(1);
+    });
+
+    it('scans through the funnel, not ahead of it, so an unresolved name never writes a row', async () => {
+        // The route hands `runReadTool` a hook rather than scanning first. That
+        // is what keeps a made-up tool name and a call the gate refuses out of
+        // the egress trail: the real `runReadTool` throws
+        // `McpToolNotFoundError` at step 0 and audits `AUTHZ_DENIED` at step 1,
+        // and neither reaches `afterAuthorize`.
+        //
+        // Asserted structurally here because this suite mocks the funnel: the
+        // route must PASS the hook, and the hook must be what scans. The
+        // ordering inside the funnel is proved against the real one in
+        // `tests/unit/mcp-tool-deny-by-default.test.ts`.
+        await callRead({ status: 'OPEN' });
+        const [, , , options] = mockRead.mock.calls[0];
+        expect(typeof options?.afterAuthorize).toBe('function');
+
+        // And the hook really is the scan — invoking it with a secret refuses.
+        mockAudit.mockClear();
+        const [, , , dirty] = (await (async () => {
+            await callRead({ query: `find ${AWS_DOC_PLACEHOLDER}` });
+            return mockRead.mock.calls[mockRead.mock.calls.length - 1];
+        })()) as [unknown, string, unknown, { afterAuthorize?: () => Promise<void> }];
+        await expect(dirty.afterAuthorize!()).rejects.toThrow('ai_guard_blocked');
     });
 
     it('leaves a propose call to the proposal queue, which scans and quarantines it itself', async () => {

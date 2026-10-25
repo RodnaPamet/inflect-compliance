@@ -128,6 +128,34 @@ export interface McpAuthResult {
     invocation: McpInvocation;
 }
 
+/**
+ * A VERIFIED CREDENTIAL, before any authority is assembled from it (#4205).
+ *
+ * This is the cheap half of authentication: the key (or exchanged token) is
+ * real, live, carries an MCP scope, and passed the registration gate. What it
+ * deliberately does NOT include is the invocation — `buildMcpInvocation` sends
+ * one live `tools/list` to every external connection the agent holds a grant
+ * on, which is outbound traffic to a CUSTOMER's server, and the caller must
+ * not be able to direct that before its budget has been charged.
+ *
+ * Splitting here is what lets `/api/mcp` charge the per-key budget first. The
+ * charge needs a VERIFIED key id, so it cannot precede authentication; the
+ * expensive work must not precede the charge; so the two halves of
+ * authentication go either side of it. Keep them separable: folding the
+ * invocation build back into the verification restores the amplification
+ * described in #4205, where malformed bodies cost a key nothing and still
+ * reached every one of its external servers.
+ */
+export interface McpCredential {
+    /** The raw KEY context — not yet narrowed to the principal. */
+    ctx: RequestContext;
+    verdict: AgentGateVerdict;
+    surface: { method: string; path: string };
+    audience: readonly string[] | null;
+    tokenExpiresAt: Date | null;
+    now: Clock;
+}
+
 const PRINCIPAL_DENIAL_MESSAGE: Record<PrincipalDenialReason, string> = {
     principal_not_a_member:
         'The user this API key was created by is no longer a member of this tenant. An agent holds its principal\'s authority and no more, so the key must be re-minted by a current member.',
@@ -190,10 +218,10 @@ async function denyUnresolvedPrincipal(
  * (with a hash-chained `AUTHZ_DENIED` row) if the tenant requires registered
  * agents and this key does not name an ACTIVE one.
  */
-export async function authenticateMcpRequest(
+export async function authenticateMcpCredential(
     req: NextRequest,
     options: { now?: Clock } = {},
-): Promise<McpAuthResult> {
+): Promise<McpCredential> {
     const now = options.now ?? systemClock;
     const token = extractBearerToken(req.headers.get('authorization'));
     if (!token) {
@@ -253,11 +281,41 @@ export async function authenticateMcpRequest(
     const surface = { method: req.method, path: new URL(req.url).pathname };
     const verdict = await assertRegisteredAgent(result.ctx, surface);
 
-    const invocation = await buildMcpInvocation(result.ctx, verdict, surface, {
-        audience,
-        tokenExpiresAt,
-        now,
+    // STOPS HERE. The invocation is built by `buildInvocationForCredential`,
+    // after the caller has charged what this request costs — see `McpCredential`.
+    return { ctx: result.ctx, verdict, surface, audience, tokenExpiresAt, now };
+}
+
+/**
+ * Assemble the authority for a verified credential — the EXPENSIVE half.
+ *
+ * Separate from the verification above so a caller can charge a budget between
+ * the two. Anything a caller can vary (the body, the batch size) must be
+ * refused before this runs.
+ */
+export async function buildInvocationForCredential(
+    credential: McpCredential,
+): Promise<McpInvocation> {
+    return buildMcpInvocation(credential.ctx, credential.verdict, credential.surface, {
+        audience: credential.audience,
+        tokenExpiresAt: credential.tokenExpiresAt,
+        now: credential.now,
     });
+}
+
+/**
+ * Verify AND assemble, in one call.
+ *
+ * The composed form, kept for callers with no budget to charge in between.
+ * `/api/mcp` deliberately does NOT use it: it needs the two halves either side
+ * of the per-key charge (#4205).
+ */
+export async function authenticateMcpRequest(
+    req: NextRequest,
+    options: { now?: Clock } = {},
+): Promise<McpAuthResult> {
+    const credential = await authenticateMcpCredential(req, options);
+    const invocation = await buildInvocationForCredential(credential);
     return { ctx: invocation.ctx, invocation };
 }
 

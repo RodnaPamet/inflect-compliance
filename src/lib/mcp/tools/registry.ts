@@ -187,6 +187,7 @@ export async function runReadTool(
     inv: McpInvocation,
     name: string,
     rawArgs: unknown,
+    options: { afterAuthorize?: () => Promise<void> } = {},
 ): Promise<McpToolResult> {
     // 0. LOAD the tool — through this invocation's pinned manifest, never
     //    straight out of `READ_TOOLS`. A name this build does not know at all is
@@ -213,6 +214,28 @@ export async function runReadTool(
     //    rung can depend on an argument, and validation happens at step 2 —
     //    after the gate, because nothing may run ahead of the gate.
     await authorizeToolCall(inv, { ...tool, capabilityClass: 'read' }, rawArgs);
+
+    // 1b. A CALLER-SUPPLIED CHECK, after the gate and before anything runs (#4205).
+    //
+    //    `/api/mcp` scans a direct caller's arguments here. It used to scan in
+    //    the route, ahead of this whole function, and that put an untrusted tool
+    //    NAME and untrusted arguments into a hash-chained `AI_GUARD_EGRESS_*`
+    //    row — which is streamed to the tenant's SIEM — for a tool that does not
+    //    exist and for a call that was never authorized. Both refuse earlier
+    //    now: step 0 throws `McpToolNotFoundError` for a name this build does
+    //    not know, and step 1 writes its own `AUTHZ_DENIED` for a call the gate
+    //    rejects. Neither reaches the scan, so neither can be used to write a
+    //    row of the caller's choosing.
+    //
+    //    It sits ABOVE steps 2 and 3, which is the property the scan actually
+    //    needs and the reason it was in the route to begin with: this funnel
+    //    authorizes and executes together, so a scan after it would be
+    //    reporting on a read that had already run.
+    //
+    //    Optional because the hosted-agent paths scan BEFORE they arrive here
+    //    (`runGuardedTool`'s step 1); a second scan would write two rows for one
+    //    call and charge the guard twice.
+    await options.afterAuthorize?.();
 
     // 2. Validate arguments.
     const parsed = tool.argsSchema.safeParse(rawArgs ?? {});

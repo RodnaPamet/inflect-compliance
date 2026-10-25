@@ -150,7 +150,15 @@ function buildTooManyRequestsResponse(
     const headers = new Headers({
         'Retry-After': String(retryAfterSeconds),
         'X-RateLimit-Limit': String(config.maxAttempts),
-        'X-RateLimit-Remaining': '0',
+        // THE UNITS ACTUALLY LEFT, not a hardcoded zero (#4205).
+        //
+        // For a one-unit refusal these are the same number: the caller was
+        // refused because nothing was left. They diverge for a MULTI-unit charge
+        // — an MCP batch of ten refused against three remaining units — where
+        // reporting zero tells the caller to wait out the whole window when it
+        // could send three messages now. `checkRateLimit` already computes this;
+        // only the header discarded it.
+        'X-RateLimit-Remaining': String(Math.max(0, result.remaining)),
         'X-RateLimit-Reset': String(resetAt),
     });
 
