@@ -23,6 +23,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { apiErrorMessage } from '@/lib/api-error';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { UserCombobox, type Member } from '@/components/ui/user-combobox';
+import { FormField } from '@/components/ui/form-field';
 
 type MfaPolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED';
 
@@ -421,20 +422,19 @@ export default function AdminSecurityPage() {
                     are left out: "Sign Out Other Sessions" is your own action, and
                     revoking yourself here would sign this session out too. */}
                 <div className="border-t border-border-default/50 pt-4">
-                    <label htmlFor="revoke-user-picker" className="block text-sm text-content-default mb-2">
-                        {t('security.revokeSpecificLabel')}
-                    </label>
-                    <div className="flex gap-tight">
+                    <div className="flex gap-tight items-end">
                         <div className="flex-1 min-w-0">
-                            <UserCombobox
-                                id="revoke-user-picker"
-                                tenantSlug={tenantSlug}
-                                selectedId={revokeTarget?.id ?? null}
-                                onChange={(_id, member) => setRevokeTarget(member)}
-                                filter={(member) => member.id !== currentUserId}
-                                placeholder={t('security.pickMemberPlaceholder')}
-                                disabled={revoking}
-                            />
+                            <FormField label={t('security.revokeSpecificLabel')}>
+                                <UserCombobox
+                                    id="revoke-user-picker"
+                                    tenantSlug={tenantSlug}
+                                    selectedId={revokeTarget?.id ?? null}
+                                    onChange={(_id, member) => setRevokeTarget(member)}
+                                    filter={(member) => member.id !== currentUserId}
+                                    placeholder={t('security.pickMemberPlaceholder')}
+                                    disabled={revoking}
+                                />
+                            </FormField>
                         </div>
                         <Button
                             variant="destructive"

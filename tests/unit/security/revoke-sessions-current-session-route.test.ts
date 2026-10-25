@@ -8,6 +8,10 @@
  * `currentSessionIdOf` answers null for a request with no session token.
  */
 
+// Imported above the mock factories on purpose: the `@/lib/audit` factory
+// closes over `strictMock`, and the subject import runs it.
+import { strictMock } from '../../helpers/strict-mock';
+
 const mockGetTenantCtx = jest.fn();
 const mockRevokeOtherSessions = jest.fn();
 const mockRevokeAllTenantSessions = jest.fn();
@@ -26,10 +30,14 @@ jest.mock('next-auth/jwt', () => ({
     getToken: (...args: unknown[]) => mockGetToken(...args),
 }));
 
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntryOrQueue: jest.fn(),
-    appendAuditEntry: jest.fn(),
-}));
+jest.mock('@/lib/audit', () =>
+    // strictMock, not a bare subset: an export this factory forgot names itself
+    // at the moment of access instead of resolving to `undefined`.
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntryOrQueue: jest.fn(),
+        appendAuditEntry: jest.fn(),
+    }),
+);
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: {}, prisma: {} }));
 
