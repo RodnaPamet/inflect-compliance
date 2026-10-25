@@ -2297,8 +2297,7 @@
             "enum": [
               "TEXT",
               "FILE",
-              "LINK",
-              "SCREENSHOT"
+              "LINK"
             ],
             "default": "TEXT"
           },
@@ -2362,7 +2361,7 @@
         "required": [
           "title"
         ],
-        "description": "Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly. content is encrypted at rest for TEXT type."
+        "description": "Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly: content is the note for TEXT and the URL for LINK."
       },
       "EvidenceDetail": {
         "type": "object",
@@ -2756,7 +2755,10 @@
             "minLength": 1
           },
           "content": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "controlIds": {
             "type": "array",

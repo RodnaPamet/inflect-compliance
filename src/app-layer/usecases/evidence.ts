@@ -46,6 +46,23 @@ function sanitizeFolder(v: string | null | undefined): string | null | undefined
 }
 
 /**
+ * The body an evidence edit writes: `undefined` (untouched — omitted, or sent
+ * back exactly as stored), `null` (cleared — `null` or blank) or the sanitised
+ * text. Clearing a LINK's URL is refused: a link with no target is no link.
+ */
+function editedEvidenceBody(
+    existing: { type: string; content: string | null },
+    supplied: string | null | undefined,
+): string | null | undefined {
+    if (supplied === undefined || supplied === existing.content) return undefined;
+    if (supplied === null || !supplied.trim()) {
+        if (evidenceContentRole(existing.type) === 'url') throw badRequest('A link needs a URL.');
+        return null;
+    }
+    return sanitizeEvidenceBody(existing.type, supplied) || null;
+}
+
+/**
  * Every evidence record carries a title, and a title that is nothing but
  * markup is no title. The schema's `min(1)` cannot see that — `<b></b>`
  * passes it — so the check runs on the SANITISED value, as `reviewEvidence`
@@ -265,10 +282,10 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
         // somebody actually changes it, and an unrelated edit (a new folder)
         // can neither rewrite that body nor, through the check below, void the
         // row's approval. A body that DID change is sanitised by role.
-        const content =
-            suppliedContent === undefined || suppliedContent === existing.content
-                ? undefined
-                : sanitizeEvidenceBody(existing.type, suppliedContent);
+        //
+        // An empty body CLEARS it: the edit form sends `null` for an empty
+        // box. A note may be cleared; a link may not lose its URL.
+        const content = editedEvidenceBody(existing, suppliedContent);
 
         // R5-P2 #4 — editing the body (TEXT note / LINK url) of an APPROVED
         // item voids the prior approval the same way replacing a file does:
