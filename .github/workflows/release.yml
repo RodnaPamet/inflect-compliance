@@ -1,7 +1,9 @@
 # ───────────────────────────────────────────────────────────────
 #  Release — semantic versioning + changelog generation
 #
-#  Trigger: push to main (after CI passes)
+#  Trigger: push to main, while the merge queue has nothing else waiting
+#           or a coverage floor would rise; plus a daily run, and
+#           workflow_dispatch, that release regardless
 #  Tool: semantic-release (conventional commits → SemVer)
 #
 #  What it does:
@@ -33,6 +35,15 @@ name: Release
 on:
   push:
     branches: [main]
+  # The backstop for the queue gate below. A busy day can keep the merge queue
+  # from ever emptying, and this run releases whatever it holds, so a release
+  # is never held for more than a day. 02:41 UTC is the quietest hour for
+  # merges here (18-25 Oct 2026), and an off-the-hour minute, like every cron
+  # in this repository that fires. Sub-daily crons have never fired here (see
+  # queue-candidate-sweep.yml), so daily is the cadence to rely on.
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
 
 # Only one release at a time
 concurrency:
@@ -49,7 +60,9 @@ jobs:
     name: "Semantic Release"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Only release from main — skip release-bot commits to prevent loops
+    # Only release from main — skip release-bot commits to prevent loops.
+    # A scheduled or manual run has no head_commit; contains() on it is false,
+    # so those runs pass.
     if: >
       github.ref == 'refs/heads/main' &&
       !contains(github.event.head_commit.message, '[skip ci]') &&
@@ -127,9 +140,33 @@ jobs:
         run: |
           echo "::warning title=Release bot has no dedicated identity::RELEASE_APP_ID is unset, so semantic-release will push as github-actions[bot]. That push is DECLINED (GH006) the moment main has required status checks. See the Release identity docblock in .github/workflows/release.yml."
 
+      # ── Merge-queue gate ──────────────────────────────────────────
+      #  The release commit is pushed straight to main, and every merge-queue
+      #  candidate in flight was built on main as it was, so the push
+      #  invalidates them all and the queue rebuilds them. Over 18-25 Oct 2026
+      #  that was 121 of the 171 cancelled queue runs, and a rebuilt PR waited a
+      #  median 61 minutes against 16. So a push releases only when no other
+      #  entry is waiting; the merge that empties the queue releases everything
+      #  since the last version in one go. A release that would raise a
+      #  coverage floor never waits, because nothing else raises them and the
+      #  floor guard fails every build once they fall behind by its slack.
+      #  Scheduled and manual runs release regardless. The rule and its edge
+      #  cases live in scripts/lib/release-queue-gate.js.
+      #
+      #  Placed immediately before semantic-release, so the gap between reading
+      #  an empty queue and pushing is as short as it can be. Only an explicit
+      #  `false` holds the release: a gate that failed to answer releases, as
+      #  every push did before it existed.
+      - name: Wait for the merge queue
+        id: queue-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-queue-gate.mjs
+
       # semantic-release reads .releaserc.json and does everything:
       # analyze commits → determine version → generate notes → publish
       - name: Run semantic-release
+        if: steps.queue-gate.outputs.release != 'false'
         env:
           # App token when configured; GITHUB_TOKEN otherwise (an empty
           # output from a skipped step is falsy, so `||` selects the
@@ -139,7 +176,7 @@ jobs:
         run: npx semantic-release
 
       - name: Post release summary
-        if: success()
+        if: success() && steps.queue-gate.outputs.release != 'false'
         run: |
           echo "### 📦 Release Check Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
