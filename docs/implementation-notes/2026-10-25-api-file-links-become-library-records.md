@@ -45,12 +45,15 @@ own route. So this changes API callers only.
 
 ## Decisions
 
-- **One record per file.** A live (not soft-deleted) Evidence already holding
-  the `FileRecord` is joined rather than a second record created. `fileRecordId`
-  has no unique key, and the upload path's SHA-256 dedup already leaves several
-  records on one file, so the pick is stated: a record already on this control
-  first (a repeated call then writes nothing), else the oldest by `createdAt`,
-  then `id`. An archived record counts as live. Reuse names the existing record,
+- **One record per file.** A live (not soft-deleted, not archived) Evidence
+  already holding the `FileRecord` is joined rather than a second record
+  created. `fileRecordId` has no unique key, and the upload path's SHA-256 dedup
+  already leaves several records on one file, so the pick is stated: a record
+  already on this control first (a repeated call then writes nothing), else the
+  oldest by `createdAt`, then `id`. An archived record does not count: the
+  download gate refuses an archived record, so joining one would put a file on
+  the control that nobody could download through it. A file held only by
+  archived records gets a new DRAFT record. Reuse names the existing record,
   so its status — possibly APPROVED — comes with it; that is the point of one
   record per file.
 - **The upload path's refusals, with its errors.** `uploadEvidenceFile` refuses
@@ -65,8 +68,9 @@ own route. So this changes API callers only.
   one is `FILE_NOT_STORED`.
 - **What is left to the download gate.** A scan still PENDING does not stop
   creation, because the upload path stores files in that state too.
-  `assertTenantKey` on the storage key and the archived / deleted evidence
-  checks also run only at download. None of them is added here.
+  `assertTenantKey` on the storage key also runs only at download, and is not
+  added here. The download gate's archived and deleted checks are not repeated
+  either; this path just never picks such a holder.
 - **No audit row for a refusal.** The upload path writes `FILE_QUARANTINED` when
   it refuses bytes arriving for the first time. Here the bytes are already in
   the tenant and were audited when they were quarantined, so the refusal is an

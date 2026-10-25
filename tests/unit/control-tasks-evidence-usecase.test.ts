@@ -350,15 +350,17 @@ describe('linkEvidence — an uploaded file is a library record', () => {
         expect(EvidenceRepository.create).not.toHaveBeenCalled();
         expect(EvidenceRepository.createControlLinks).toHaveBeenCalledTimes(1);
         expect(EvidenceRepository.createControlLinks).toHaveBeenCalledWith(mockDb, editorCtx, 'ev-old', ['c-1']);
-        // Only live records in this tenant count, and the pick is stable.
+        // Only live (not deleted, not archived) records in this tenant count,
+        // and the pick is stable.
         const [onControlQuery, anyQuery] = (mockDb.evidence.findFirst as jest.Mock).mock.calls.map((c) => c[0]);
         expect(onControlQuery.where).toEqual({
             tenantId: editorCtx.tenantId,
             fileRecordId: 'f-1',
             deletedAt: null,
+            isArchived: false,
             evidenceControlLinks: { some: { tenantId: editorCtx.tenantId, controlId: 'c-1' } },
         });
-        expect(anyQuery.where).toEqual({ tenantId: editorCtx.tenantId, fileRecordId: 'f-1', deletedAt: null });
+        expect(anyQuery.where).toEqual({ tenantId: editorCtx.tenantId, fileRecordId: 'f-1', deletedAt: null, isArchived: false });
         expect(anyQuery.orderBy).toEqual([{ createdAt: 'asc' }, { id: 'asc' }]);
         // No CREATE — nothing was created; the link is audited against that record.
         const payloads = (logEvent as jest.Mock).mock.calls.map((c) => c[2]);

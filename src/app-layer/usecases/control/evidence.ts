@@ -232,7 +232,9 @@ async function linkFileRecord(ctx: RequestContext, controlId: string, data: { fi
             throw badRequest('FILE_NOT_STORED', 'This file is not stored, so it cannot be evidence.');
         }
 
-        const holders = { tenantId: ctx.tenantId, fileRecordId: file.id, deletedAt: null };
+        // Live holders only: an archived record is out of the library's active
+        // view, so the file gets a record of its own rather than reviving one.
+        const holders = { tenantId: ctx.tenantId, fileRecordId: file.id, deletedAt: null, isArchived: false };
         const oldestFirst = [{ createdAt: 'asc' as const }, { id: 'asc' as const }];
         const onControl = await db.evidence.findFirst({
             where: { ...holders, evidenceControlLinks: { some: { tenantId: ctx.tenantId, controlId } } },
