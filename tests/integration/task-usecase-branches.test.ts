@@ -202,7 +202,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
     it('setTaskStatus: no-op, illegal, terminal-without-resolution, terminal-with-resolution', async () => {
         const t = await createTask(ctx, { title: 'status', controlId });
         // no-op (OPEN → OPEN)
-        await expect(setTaskStatus(ctx, t.id, 'OPEN')).rejects.toThrow(/already OPEN/i);
+        await expect(setTaskStatus(ctx, t.id, 'OPEN')).rejects.toThrow(/already Open/);
         // legal non-terminal transition
         const triaged = await setTaskStatus(ctx, t.id, 'TRIAGED');
         expect(triaged?.status).toBe('TRIAGED');
@@ -212,13 +212,13 @@ describeFn('task usecase — branch coverage (integration)', () => {
         const closed = await setTaskStatus(ctx, t.id, 'CLOSED', '  done  ');
         expect(closed?.status).toBe('CLOSED');
         // illegal transition out of terminal CLOSED
-        await expect(setTaskStatus(ctx, t.id, 'OPEN')).rejects.toThrow(/illegal/i);
+        await expect(setTaskStatus(ctx, t.id, 'OPEN')).rejects.toThrow(/cannot move from Closed to Open/);
     });
 
     it('setTaskStatus type-relevance: AUDIT_FINDING + INCIDENT gates and their satisfiers', async () => {
         // AUDIT_FINDING with no controlId + no link → RESOLVE rejected.
         const af = await createTask(ctx, { title: 'audit finding', type: 'AUDIT_FINDING' });
-        await expect(setTaskStatus(ctx, af.id, 'RESOLVED', 'x')).rejects.toThrow(/controlId or a link/i);
+        await expect(setTaskStatus(ctx, af.id, 'RESOLVED', 'x')).rejects.toThrow(/must have a control, or a link/);
         // satisfy via a CONTROL link → now resolvable.
         await addTaskLink(ctx, af.id, 'CONTROL', controlId);
         const afResolved = await setTaskStatus(ctx, af.id, 'RESOLVED', 'fixed');
@@ -226,7 +226,7 @@ describeFn('task usecase — branch coverage (integration)', () => {
 
         // INCIDENT with no controlId/link → rejected; ASSET link satisfies.
         const inc = await createTask(ctx, { title: 'incident', type: 'INCIDENT' });
-        await expect(setTaskStatus(ctx, inc.id, 'RESOLVED', 'x')).rejects.toThrow(/controlId or a link to CONTROL or ASSET/i);
+        await expect(setTaskStatus(ctx, inc.id, 'RESOLVED', 'x')).rejects.toThrow(/Incident tasks must have a control, or a link to a control or asset/);
         await addTaskLink(ctx, inc.id, 'ASSET', assetId);
         const incResolved = await setTaskStatus(ctx, inc.id, 'RESOLVED', 'contained');
         expect(incResolved?.status).toBe('RESOLVED');

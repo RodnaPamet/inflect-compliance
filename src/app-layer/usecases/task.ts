@@ -21,6 +21,7 @@ import {
     formatTransitionError,
     isTerminalStatus,
     REVIEW_TASK_STATUS,
+    taskStatusDisplayName,
 } from '../domain/task-status';
 import { getSlaStatus } from '../services/sla';
 import { reconcileTaskSource } from './task-source-reconcile';
@@ -37,6 +38,17 @@ type TaskType = 'AUDIT_FINDING' | 'CONTROL_GAP' | 'INCIDENT' | 'IMPROVEMENT' | '
 
 /** The types whose relevance rule is not satisfied by the type alone. */
 const LINK_QUALIFIED_TYPES = new Set<TaskType>(['AUDIT_FINDING', 'CONTROL_GAP', 'INCIDENT']);
+
+/**
+ * Display names for the link-qualified types, matching `tasks.typeLabels`
+ * in `messages/en.json`. The relevance refusal reaches the user verbatim,
+ * so it names the type as the Type picker does, not as the enum value.
+ */
+const LINK_QUALIFIED_TYPE_NAMES: Record<'AUDIT_FINDING' | 'CONTROL_GAP' | 'INCIDENT', string> = {
+    AUDIT_FINDING: 'Audit Finding',
+    CONTROL_GAP: 'Control Gap',
+    INCIDENT: 'Incident',
+};
 
 /**
  * Does deciding this row's rule require reading its `TaskLink` rows?
@@ -69,7 +81,7 @@ function assertTypeRelevance(
     if (type === 'AUDIT_FINDING' || type === 'CONTROL_GAP') {
         if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('FRAMEWORK_REQUIREMENT')) {
             throw badRequest(
-                `${prefix}${type} tasks must have a controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT.`
+                `${prefix}${LINK_QUALIFIED_TYPE_NAMES[type]} tasks must have a control, or a link to a control or framework requirement.`
             );
         }
     }
@@ -77,7 +89,7 @@ function assertTypeRelevance(
     if (type === 'INCIDENT') {
         if (!linkEntityTypes.includes('CONTROL') && !linkEntityTypes.includes('ASSET')) {
             throw badRequest(
-                `${prefix}INCIDENT tasks must have a controlId or a link to CONTROL or ASSET.`
+                `${prefix}${LINK_QUALIFIED_TYPE_NAMES.INCIDENT} tasks must have a control, or a link to a control or asset.`
             );
         }
     }
@@ -742,9 +754,10 @@ export function checkReviewerSignOffGate(args: {
     if (toStatus !== 'RESOLVED' && toStatus !== 'CLOSED') return null;
 
     if (fromStatus !== 'IN_REVIEW') {
+        const review = taskStatusDisplayName(REVIEW_TASK_STATUS);
         return {
             kind: 'needs_review',
-            message: `This task has a reviewer and must pass through IN_REVIEW before it can be ${toStatus}. Move it to IN_REVIEW for sign-off first.`,
+            message: `This task has a reviewer, so it must be ${review} before it can be ${taskStatusDisplayName(toStatus).toLowerCase()}. Move it to ${review} for sign-off first.`,
         };
     }
     if (actorUserId !== reviewerUserId) {
@@ -1067,7 +1080,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
             const trimmed = (resolution ?? '').trim();
             if (!trimmed) {
                 throw badRequest(
-                    `A resolution is required when moving a task to ${status}.`,
+                    `A resolution is required when moving a task to ${taskStatusDisplayName(status)}.`,
                 );
             }
             resolution = trimmed;
@@ -1768,6 +1781,18 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
     return outcome;
 }
 
+/**
+ * How a bulk status refusal names the task it stopped on: by the title the
+ * user sees in the list, never by its database id. The refusal reaches the
+ * user verbatim as the bulk action's error.
+ */
+function bulkStatusRefusalPrefix(task: { title?: string | null } | undefined): string {
+    const title = task?.title?.trim();
+    return title
+        ? `Cannot change the status of "${title}": `
+        : 'Cannot change the status of a selected task: ';
+}
+
 export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], status: string, resolution?: string) {
     assertCanWriteTasks(ctx);
 
@@ -1778,7 +1803,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
         const trimmed = (resolution ?? '').trim();
         if (!trimmed) {
             throw badRequest(
-                `A resolution is required when moving a task to ${status}.`,
+                `A resolution is required when moving a task to ${taskStatusDisplayName(status)}.`,
             );
         }
         resolution = trimmed;
@@ -1805,7 +1830,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
             const err = checkTaskTransition(fromStatus, status);
             if (err) {
                 throw badRequest(
-                    `Cannot bulk-transition task ${id}: ${formatTransitionError(err)}`,
+                    `${bulkStatusRefusalPrefix(existing)}${formatTransitionError(err)}`,
                 );
             }
 
@@ -1824,7 +1849,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
                 actorUserId: ctx.userId,
             });
             if (gateViolation) {
-                const detail = `Cannot bulk-transition task ${id}: ${gateViolation.message}`;
+                const detail = `${bulkStatusRefusalPrefix(existing)}${gateViolation.message}`;
                 throw gateViolation.kind === 'wrong_actor'
                     ? forbidden(detail)
                     : badRequest(detail);
@@ -1861,7 +1886,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
                 ctx,
                 status,
                 relevanceRows,
-                (id) => `Cannot bulk-transition task ${id}: `,
+                (id) => bulkStatusRefusalPrefix(existingMap.get(id)),
             );
         }
 

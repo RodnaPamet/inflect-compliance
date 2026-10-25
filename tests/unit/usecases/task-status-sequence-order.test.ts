@@ -221,14 +221,16 @@ describe('task status change — the sequence, not just the effects', () => {
             { id: 'task-9', tenantId: 'tenant-A', title: 't', key: 'k', type: 'AUDIT_FINDING', controlId: null },
         ];
         (TaskRepository.listByIds as jest.Mock).mockResolvedValue([
-            { id: 'task-9', status: 'RESOLVED', type: 'AUDIT_FINDING', controlId: null, reviewerUserId: null },
+            { id: 'task-9', title: 'Fix the firewall rule', status: 'RESOLVED', type: 'AUDIT_FINDING', controlId: null, reviewerUserId: null },
         ]);
         (TaskLinkRepository.listByTaskIds as jest.Mock).mockResolvedValue([
             { taskId: 'task-9', entityType: 'POLICY' },
         ]);
 
         await expect(bulkSetTaskStatus(ctx, ['task-9'], 'CLOSED', 'fixed')).rejects.toThrow(
-            /Cannot bulk-transition task task-9: AUDIT_FINDING tasks must have a controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT\./,
+            // Named by the title the user sees, not the id — and the type
+            // and link targets by their display names, not the enum values.
+            /^Cannot change the status of "Fix the firewall rule": Audit Finding tasks must have a control, or a link to a control or framework requirement\.$/,
         );
         // Refused before any write, so nothing ran and nothing committed.
         expect(trace).toEqual([]);

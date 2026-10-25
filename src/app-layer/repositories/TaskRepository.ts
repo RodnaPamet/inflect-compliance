@@ -725,7 +725,9 @@ export class TaskRepository {
             // `reviewerUserId` is selected because the BULK status path must
             // apply the same reviewer sign-off gate the single-task path does
             // (TP-2) — without it, /tasks/bulk/status was an escape hatch.
-            select: { id: true, status: true, reviewerUserId: true },
+            // `title` names the task in a bulk refusal, which reaches the
+            // user verbatim — the id it used to name means nothing to them.
+            select: { id: true, title: true, status: true, reviewerUserId: true },
         });
     }
 

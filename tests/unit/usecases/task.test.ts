@@ -297,7 +297,7 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
             // Supply one so the type-relevance gate is the rejection
             // path under test, not the resolution-required gate.
             setTaskStatus(makeRequestContext('EDITOR'), 't1', 'RESOLVED', 'fix shipped'),
-        ).rejects.toThrow(/AUDIT_FINDING tasks must have a controlId/);
+        ).rejects.toThrow(/Audit Finding tasks must have a control, or a link to a control or framework requirement/);
         // Regression: a refactor that skipped validateTypeRelevance
         // would let an audit finding be marked "resolved" without
         // pointing at WHICH control was remediated — the audit-pack
