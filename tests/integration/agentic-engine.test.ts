@@ -86,7 +86,7 @@ describeFn('Agentic workflow engine (real DB)', () => {
         await prisma.workflowRun.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
         await prisma.agentProposal.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
         await prisma.risk.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-        await prisma.user.deleteMany({ where: { id: USER } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: USER } });
         await prisma.$disconnect();
     });
 
