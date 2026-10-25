@@ -67,6 +67,8 @@ export interface SyncResult {
             skipped: number;
             failed: number;
             totalEntries: number;
+            /** Active mappings retired because their entry left its file. */
+            retired: number;
         };
     };
     /** Total duration in ms */
@@ -135,7 +137,7 @@ export async function syncAllLibraries(
         // Isolated: failures are caught, logged, and reported but do
         // not roll back framework changes.
         let mappingSetResults: ImportMappingSetResult[] = [];
-        const mappingSummary = { imported: 0, skipped: 0, failed: 0, totalEntries: 0 };
+        const mappingSummary = { imported: 0, skipped: 0, failed: 0, totalEntries: 0, retired: 0 };
 
         if (!options?.skipMappings) {
             logger.info('Sync phase 2: mapping sets', { component });
@@ -154,6 +156,7 @@ export async function syncAllLibraries(
                         mappingSummary.imported++;
                     }
                     mappingSummary.totalEntries += r.created + r.updated;
+                    mappingSummary.retired += r.retired;
                     if (r.errors.length > 0) {
                         mappingSummary.failed += r.errors.length;
                     }

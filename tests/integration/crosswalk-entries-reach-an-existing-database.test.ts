@@ -99,15 +99,17 @@ describeFn('a crosswalk entry naming a former heading reaches a database that al
     let withoutBump: Awaited<ReturnType<typeof syncAllLibraries>>;
     let shipped: Awaited<ReturnType<typeof syncAllLibraries>>;
     const rowsAfter: Record<string, string[]> = {};
-    let syncStartedAt: Date;
 
     beforeAll(async () => {
         await resetDatabase(prisma);
+        // `resetDatabase` leaves the global diff table alone, and the diff is
+        // upserted on (key, from, to), so a row from an earlier run would keep
+        // its old createdAt and stand in for this run's. Its tenant deltas cascade.
+        await prisma.frameworkVersionDiff.deleteMany({ where: { frameworkKey: 'ISO27701-2019' } });
         tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'crosswalk-existing-db-'));
         const versionOneSets = Object.fromEntries(SETS.map((f) => [f, setAtVersion1(f)]));
 
         // 1. The database as version 1 left it.
-        syncStartedAt = new Date();
         v1 = await syncAllLibraries(prisma, writeTree(path.join(tmp, 'v1'), {
             libraries: { 'iso27701-2019.yaml': iso27701AtVersion1() },
             sets: versionOneSets,
@@ -147,7 +149,7 @@ describeFn('a crosswalk entry naming a former heading reaches a database that al
         expect(rows.map((r) => r.code)).toEqual([CLAUSE]);
 
         const diff = await prisma.frameworkVersionDiff.findFirstOrThrow({
-            where: { frameworkKey: 'ISO27701-2019', fromVersion: '1', toVersion: '2', createdAt: { gte: syncStartedAt } },
+            where: { frameworkKey: 'ISO27701-2019', fromVersion: '1', toVersion: '2' },
         });
         expect(JSON.parse(diff.addedCodesJson)).toEqual([CLAUSE]);
         expect(JSON.parse(diff.changedCodesJson)).toEqual([]);
