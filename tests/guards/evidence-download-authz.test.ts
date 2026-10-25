@@ -346,7 +346,9 @@ describe('R5-P1 (5) version-aware deleted/archived gate', () => {
      * refuse when there is no owning evidence at all.
      */
     it('fetches the owning evidence with withDeleted so the gate can see a deleted row', () => {
-        expect(src).toMatch(/db\.evidence\.findFirst\(\s*withDeleted\(/);
+        // Every holder of the file is read (several records can share one), and
+        // the read still sees deleted rows.
+        expect(src).toMatch(/db\.evidence\.findMany\(\s*withDeleted\(/);
     });
 
     it('refuses when there is no owning evidence, for every role', () => {
