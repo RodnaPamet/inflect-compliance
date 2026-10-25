@@ -73,29 +73,21 @@ describe('RBAC Guardrail Scans', () => {
     });
 
     describe('Audit pack RBAC', () => {
-        test('freeze button is wrapped in RequirePermission', () => {
+        // #4129 — this block used to pin `<RequirePermission resource="audits"
+        // action="share">` three times and `action="manage"` four times: the
+        // very gates that disagreed with the server. `audits.share` is held by
+        // AUDITOR, whom every share action refuses, and `audits.manage` is not
+        // held by EDITOR, whom the server lets add items and clone. The page
+        // now reads its gates from `useAuditReadinessAccess` — the role sets
+        // the audit-readiness policies themselves read — and
+        // tests/rendered/audits-role-gates.test.tsx drives each role through
+        // the page. What is pinned here is only that the page reads that one
+        // source and no longer the two keys.
+        test('pack page gates its actions on the server’s role sets', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            // ONE needle naming the element AND its props (#3364).
-            // `/RequirePermission/` occurred 17 times in this file, and the
-            // separate `resource=`/`action=` needle never asserted that the
-            // pair was on a RequirePermission element at all.
-            expect(content).toMatch(/<RequirePermission resource="audits" action="freeze"/);
-        });
-
-        test('share button is wrapped in RequirePermission', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            // Three share controls, all of which must be wrapped (#3364).
-            expect(
-                content.match(/<RequirePermission resource="audits" action="share"/g),
-            ).toHaveLength(3);
-        });
-
-        test('clone button is wrapped in RequirePermission', () => {
-            const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            // Four manage controls, all of which must be wrapped (#3364).
-            expect(
-                content.match(/<RequirePermission resource="audits" action="manage"/g),
-            ).toHaveLength(4);
+            expect(content).toMatch(/const access = useAuditReadinessAccess\(\);/);
+            expect(content).not.toMatch(/action="share"/);
+            expect(content).not.toMatch(/action="freeze"/);
         });
     });
 

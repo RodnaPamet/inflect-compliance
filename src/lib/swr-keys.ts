@@ -155,7 +155,14 @@ export const CACHE_KEYS = {
     // payload (notifications + timeline); mutations on the detail page
     // invalidate it.
     incidents: makeResource('incidents'),
-    frameworks: makeResource('frameworks'),
+    frameworks: {
+        ...makeResource('frameworks'),
+        /**
+         * The frameworks in use in this workspace (a control mapped to one of
+         * their requirements) — what an audit cycle can be created for.
+         */
+        inUse: () => '/frameworks?inUse=true' as const,
+    },
     issues: makeResource('issues'),
     accessReviews: makeResource('access-reviews'),
     // Calendar is a range read-model, not a list/detail resource — the key
