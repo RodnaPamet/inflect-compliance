@@ -50,6 +50,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { MCP_TOOL_NAME_MAX_LENGTH } from '@/lib/mcp/external-tool-name';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 
@@ -114,6 +115,8 @@ export function ExternalToolsClient({
 
     const [connectionId, setConnectionId] = useState<string>(connections[0]?.id ?? '');
     const [tools, setTools] = useState<CatalogueTool[] | null>(null);
+    /** Advertised tools the server named unusably (#4238), so left out. A count, never the names. */
+    const [refusedNames, setRefusedNames] = useState(0);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
@@ -133,6 +136,7 @@ export function ExternalToolsClient({
         setLoading(true);
         setError(null);
         setTools(null);
+        setRefusedNames(0);
         try {
             const res = await fetch(
                 apiUrl(`/admin/agents/external-tools?connectionId=${encodeURIComponent(connectionId)}`),
@@ -147,6 +151,7 @@ export function ExternalToolsClient({
                 return;
             }
             setTools(data.tools ?? []);
+            setRefusedNames(typeof data.refusedNames === 'number' ? data.refusedNames : 0);
 
             // The pairings, in the SAME pass. A separate refresh for them would
             // let the two lists disagree on screen, and the one an operator acts
@@ -378,6 +383,15 @@ export function ExternalToolsClient({
                     {error && <p className="text-sm text-content-error">{error}</p>}
 
                     {loading && <p className="text-sm text-content-muted">{t('externalTools.loading')}</p>}
+
+                    {/* Said rather than silently omitted: a tool the server
+                        advertises and this page does not show would otherwise
+                        look like a server that never offered it. */}
+                    {!loading && refusedNames > 0 && (
+                        <p className="text-sm text-content-muted" id="external-tools-refused-names">
+                            {t('externalTools.refusedNames', { count: refusedNames, max: MCP_TOOL_NAME_MAX_LENGTH })}
+                        </p>
+                    )}
 
                     {/* An empty catalogue and a catalogue not yet read are
                         different facts, so only a completed read renders the
