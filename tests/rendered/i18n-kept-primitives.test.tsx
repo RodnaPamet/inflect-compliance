@@ -50,6 +50,7 @@ import { LossExceedanceCurve } from '@/components/ui/charts/loss-exceedance-curv
 import { RadarChart } from '@/components/ui/charts/radar-chart';
 import { chartReady } from '@inflect/ui/components/ui/charts/types';
 import { EmptyState } from '@/components/ui/empty-state';
+import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { EvidenceGallery } from '@/components/ui/EvidenceGallery';
 import { FrameworkMinimap } from '@/components/ui/FrameworkMinimap';
 import { NumberStepper } from '@/components/ui/number-stepper';
@@ -271,6 +272,34 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
         const dialog = screen.getByRole('dialog');
         expectLocalised(textOfIdRefs(dialog, 'aria-labelledby'), 'Menu');
         expectLocalised(textOfIdRefs(dialog, 'aria-describedby'), 'Popover content');
+    });
+
+    it('KpiFilterCard: the sparkline name, with and without a string label (#3209)', () => {
+        const points = [
+            { date: new Date('2026-01-01T00:00:00Z'), value: 1 },
+            { date: new Date('2026-01-02T00:00:00Z'), value: 2 },
+        ];
+
+        // A STRING label interpolates into the name...
+        const { unmount } = render(
+            <KpiFilterCard label="Risks" value="7" sparkline={points} />,
+        );
+        expectLocalised(
+            screen.getByLabelText(/./).getAttribute('aria-label'),
+            'Risks trend',
+        );
+        unmount();
+
+        // ...and a NON-string label falls to the bare noun. Both arms are
+        // rendered because the two sides of that ternary read different keys,
+        // so a case covering one arm leaves the other's key unproven.
+        render(
+            <KpiFilterCard label={<span>Risks</span>} value="7" sparkline={points} />,
+        );
+        expectLocalised(
+            screen.getByLabelText(/./).getAttribute('aria-label'),
+            'Trend',
+        );
     });
 
     it('InfoTooltip: the help button name', () => {

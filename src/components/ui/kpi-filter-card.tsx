@@ -52,6 +52,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
 
 import { Card } from "@/components/ui/card";
@@ -201,8 +202,12 @@ export function KpiFilterCard({
         id,
     };
 
+    // This card IS a client component, so it resolves its own accessible name
+    // -- the `ariaLabel ?? t(key)` shape #3262 established for the shared
+    // primitives, rather than KpiCard's pass-the-label-in contract (#3209).
+    const tUi = useTranslations('common.ui');
     const sparkLabel =
-        typeof label === "string" ? `${label} trend` : "Trend";
+        typeof label === "string" ? tUi('kpiTrend', { label }) : tUi('trend');
     const hasSparkline = !!sparkline && sparkline.length >= 2;
     const body = (
         // B2 (2026-06-07): the sparkline sits to the RIGHT of the value, not

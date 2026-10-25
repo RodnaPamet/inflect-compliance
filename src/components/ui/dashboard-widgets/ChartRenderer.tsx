@@ -32,6 +32,7 @@
  * never crash because one widget's payload is wrong.
  */
 
+import { useTranslations } from 'next-intl';
 import KpiCard from '@/components/ui/KpiCard';
 import DonutChart from '@/components/ui/DonutChart';
 import {
@@ -125,6 +126,9 @@ function buildTimeSeriesSeries(
 // ─── Renderer ───────────────────────────────────────────────────────
 
 export function ChartRenderer(props: ChartRendererProps) {
+    // KpiCard takes no translator of its own (#3209 tranche 3), so the
+    // accessible names for its trend and loading states are resolved here.
+    const tUi = useTranslations('common.ui');
     const state = props.state ?? 'ready';
 
     // Lifecycle short-circuit. The KPI card has its own dim "—" empty
@@ -152,6 +156,7 @@ export function ChartRenderer(props: ChartRendererProps) {
             return (
                 <KpiCard
                     label={c.label}
+                    trendAriaLabel={tUi('kpiTrend30Day', { label: c.label })}
                     value={c.value}
                     format={c.format}
                     icon={c.icon}

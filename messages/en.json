@@ -153,7 +153,10 @@
       "regulatorWording": "Show the regulator wording",
       "frameworkSectionNavigator": "Framework section navigator",
       "sankeyFlow": "Cross-tier traceability flow (Sankey)",
-      "treeExpansionControls": "Tree expansion controls"
+      "treeExpansionControls": "Tree expansion controls",
+      "kpiTrend30Day": "{label} 30-day trend",
+      "kpiTrend": "{label} trend",
+      "trend": "Trend"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -544,7 +547,9 @@
         "incident": "incident",
         "issue": "issue"
       }
-    }
+    },
+    "kpiTrend30Day": "{label} 30-day trend",
+    "kpiLoading": "{label} loading"
   },
   "clauses": {
     "title": "ISO 27001:2022 Clause Tracker",
