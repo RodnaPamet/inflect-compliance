@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
     DEFAULT_KEY_ROTATION_DAYS,
     MAX_KEY_ROTATION_DAYS,
@@ -80,7 +81,8 @@ export function ApiKeyRotationCard() {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setError(body?.error ?? t('security.apiKeyRotation.saveFailed'));
+                // The envelope's `error` is an OBJECT; rendering it crashed the page.
+                setError(apiErrorMessage(body, t('security.apiKeyRotation.saveFailed')));
                 return;
             }
             adopt((body as { apiKeyRotationDays?: number | null }).apiKeyRotationDays ?? null);

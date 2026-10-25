@@ -157,3 +157,29 @@ describe('a refused read', () => {
         expect(card.querySelector('[data-testid="api-key-rotation-save"]')).toBeNull();
     });
 });
+
+describe('a refused save (#4117)', () => {
+    it("shows the server's sentence rather than putting the error object into the page", async () => {
+        // The route's refusal body is `{ error: { code, message, requestId } }`.
+        // The card used to store `body.error` — the object — and rendering it
+        // threw "objects are not valid as a React child".
+        const user = userEvent.setup();
+        stubSettings(45);
+        const refusal = 'apiKeyRotationDays must be a whole number of days from 7 to 730';
+        const base = globalThis.fetch as jest.Mock;
+        (globalThis as { fetch?: unknown }).fetch = jest.fn(async (url: string, init?: RequestInit) =>
+            (init?.method ?? 'GET') === 'PUT'
+                ? { ok: false, status: 400, json: async () => ({ error: { code: 'BAD_REQUEST', message: refusal, requestId: 'r' } }) }
+                : base(url, init),
+        ) as unknown as typeof fetch;
+        render(<ApiKeyRotationCard />);
+        const card = await screen.findByTestId('api-key-rotation-card');
+        await within(card).findByTestId('api-key-rotation-state');
+
+        await user.click(within(card).getByTestId('api-key-rotation-mode-default'));
+        await user.click(within(card).getByTestId('api-key-rotation-save'));
+
+        expect(await within(card).findByText(refusal)).toBeTruthy();
+        expect(within(card).queryByText(EN.saved)).toBeNull();
+    });
+});

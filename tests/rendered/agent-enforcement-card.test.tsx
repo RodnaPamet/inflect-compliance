@@ -24,7 +24,7 @@
  *      branch, and this is the assertion that says the old branch survived.
  */
 import * as React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 // Mounting the card pulls in the modal/form stack behind the confirm dialog.
 jest.setTimeout(180_000);
@@ -201,5 +201,71 @@ describe('NOT ENFORCING — the pre-flight list is unchanged', () => {
         // And the present-tense block is absent: with the gate off, nothing is
         // being refused, so saying so would be a false sentence.
         expect(rowsOf(card, 'agent-enforcement-refused-now')).toEqual([]);
+    });
+});
+
+// ─── A failed load, and a refused save (#4117) ──────────────────────
+//
+// The card used to show "You do not have permission to read the agent
+// register" for EVERY failed load — a 500 or a dropped connection too — which
+// sends an administrator who holds the permission to ask an Owner for it. And
+// a refused save put the error envelope's OBJECT into state, which crashes the
+// render ("objects are not valid as a React child").
+
+function stubResponses(get: () => unknown, put?: () => unknown): void {
+    (globalThis as { fetch?: unknown }).fetch = jest.fn(async (_url: string, init?: RequestInit) =>
+        (init?.method ?? 'GET') === 'PUT' && put ? put() : get(),
+    ) as unknown as typeof fetch;
+}
+
+const envelope = (status: number, message: string) => ({
+    ok: false,
+    status,
+    json: async () => ({ error: { code: 'X', message, requestId: 'req-1' } }),
+});
+
+describe('a failed load', () => {
+    it('blames permissions only on a 403', async () => {
+        stubResponses(() => envelope(403, 'Forbidden'));
+        render(<AgentEnforcementCard tenantSlug="acme" />);
+        expect(await screen.findByText(EN.unavailable)).toBeTruthy();
+    });
+
+    it("shows the server's sentence for any other refusal", async () => {
+        stubResponses(() => envelope(500, 'The register is temporarily unavailable.'));
+        render(<AgentEnforcementCard tenantSlug="acme" />);
+        expect(await screen.findByText('The register is temporarily unavailable.')).toBeTruthy();
+        expect(screen.queryByText(EN.unavailable)).toBeNull();
+    });
+
+    it('shows a generic load error when the request never answers', async () => {
+        stubResponses(() => {
+            throw new TypeError('Failed to fetch');
+        });
+        render(<AgentEnforcementCard tenantSlug="acme" />);
+        expect(await screen.findByText(EN.loadFailed)).toBeTruthy();
+        expect(screen.queryByText(EN.unavailable)).toBeNull();
+    });
+});
+
+describe('a refused save', () => {
+    it("shows the server's sentence in the dialog instead of crashing", async () => {
+        stubResponses(
+            () => ({ ok: true, status: 200, json: async () => ({ enforcing: false, breaking: [] }) }),
+            () => envelope(403, 'Enforcing agent registration also requires the agent register permission.'),
+        );
+        render(<AgentEnforcementCard tenantSlug="acme" />);
+        await screen.findByTestId('agent-enforcement-state');
+
+        fireEvent.click(screen.getByTestId('agent-enforcement-action'));
+        fireEvent.change(await screen.findByTestId('agent-enforcement-confirm-input'), {
+            target: { value: 'acme' },
+        });
+        fireEvent.click(screen.getByTestId('agent-enforcement-commit'));
+
+        expect(
+            await screen.findByText('Enforcing agent registration also requires the agent register permission.'),
+        ).toBeTruthy();
+        expect(screen.getByTestId('agent-enforcement-card')).toBeTruthy();
     });
 });

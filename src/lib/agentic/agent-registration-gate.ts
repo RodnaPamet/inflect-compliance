@@ -54,6 +54,8 @@ import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import type { AgentRiskTier, AgentStatus } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
+import type { PrismaTx } from '@/lib/db-context';
+import { admitsMcpEndpoint } from '@/lib/mcp/endpoint-scope';
 
 /**
  * Why a request was refused. Carried into the audit row's `detailsJson` so an
@@ -197,7 +199,49 @@ export async function isAgentRegistrationEnforced(tenantId: string): Promise<boo
 export async function evaluateAgentRegistration(ctx: RequestContext): Promise<AgentGateVerdict> {
     const enforcing = await isAgentRegistrationEnforced(ctx.tenantId);
 
-    if (!ctx.agentId) {
+    if (!ctx.agentId) return verdictForBinding(enforcing, null, null);
+
+    // Read the agent by (id, tenantId) rather than by id alone. The FK already
+    // makes a cross-tenant binding unrepresentable, but this query is the one
+    // that decides whether traffic runs, and it does not get to rely on that.
+    const agent = await prisma.registeredAgent.findFirst({
+        where: { id: ctx.agentId, ...gateAgentScope(ctx.tenantId) },
+        select: GATE_AGENT_SELECT,
+    });
+
+    return verdictForBinding(enforcing, ctx.agentId, agent);
+}
+
+/**
+ * The register rows the gate reads a bound credential against: this tenant's,
+ * and not soft-deleted. A bound id with no row inside it is `unresolvable`.
+ */
+function gateAgentScope(tenantId: string) {
+    return { tenantId, deletedAt: null } as const;
+}
+
+const GATE_AGENT_SELECT = { id: true, status: true, autonomyLevel: true, riskTier: true } as const;
+
+/** What the gate reads from a bound credential's register row. */
+interface GateAgentRow {
+    id: string;
+    status: AgentStatus;
+    autonomyLevel: number;
+    riskTier: AgentRiskTier | null;
+}
+
+/**
+ * The verdict, from what the gate read: the credential's bound agent id (null
+ * when unbound) and the register row that id resolved to inside
+ * `gateAgentScope` (null when it resolved to none). Pure, so the enforcement
+ * pre-flight below judges each key by this rule rather than by a copy of it.
+ */
+function verdictForBinding(
+    enforcing: boolean,
+    boundAgentId: string | null,
+    agent: GateAgentRow | null,
+): AgentGateVerdict {
+    if (!boundAgentId) {
         return {
             enforcing,
             agentId: null,
@@ -208,14 +252,6 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
             reason: enforcing ? 'no_agent_binding' : null,
         };
     }
-
-    // Read the agent by (id, tenantId) rather than by id alone. The FK already
-    // makes a cross-tenant binding unrepresentable, but this query is the one
-    // that decides whether traffic runs, and it does not get to rely on that.
-    const agent = await prisma.registeredAgent.findFirst({
-        where: { id: ctx.agentId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, status: true, autonomyLevel: true, riskTier: true },
-    });
 
     if (!agent) {
         return {
@@ -246,6 +282,56 @@ export async function evaluateAgentRegistration(ctx: RequestContext): Promise<Ag
         riskTier: agent.riskTier,
         reason: standing === 'vouched' ? null : enforcing ? denialFor(standing) : null,
     };
+}
+
+/** An API key as the enforcement pre-flight hands it in: its binding and its stored scopes. */
+export interface EnforcementCandidateKey {
+    agentId: string | null;
+    /** `TenantApiKey.scopes`, the JSON array as stored. */
+    scopes: unknown;
+}
+
+/**
+ * The keys the agent tool boundary refuses while this tenant ENFORCES
+ * registration — the pre-flight's "would stop working" list, and its "being
+ * refused now" list when the tenant already enforces (#4117).
+ *
+ * The two checks `authenticateMcpRequest` and `exchangeMcpToken` make, in their
+ * order, by their own code: the endpoint capability gate (`admitsMcpEndpoint`),
+ * then this module's verdict with `enforcing` true. A key the capability gate
+ * refuses never reaches the registration gate, so enforcement changes nothing
+ * for it; a key bound to an agent that is not ACTIVE, or to one the register no
+ * longer holds, is refused just as an unbound one is.
+ *
+ * Liveness (revoked, expired) is the caller's filter: a key the authenticator
+ * already refuses does not stop working because of this setting.
+ */
+export async function keysRefusedWhenEnforcing<K extends EnforcementCandidateKey>(
+    db: Pick<PrismaTx, 'registeredAgent'>,
+    tenantId: string,
+    keys: readonly K[],
+): Promise<K[]> {
+    // The authenticator reads the stored array as it stands; a non-string
+    // element matches no scope, so dropping it changes no admission.
+    const admitted = keys.filter((k) =>
+        admitsMcpEndpoint(
+            Array.isArray(k.scopes) ? k.scopes.filter((s): s is string => typeof s === 'string') : [],
+        ),
+    );
+
+    const boundIds = [...new Set(admitted.flatMap((k) => (k.agentId ? [k.agentId] : [])))];
+    const rows: GateAgentRow[] =
+        boundIds.length === 0
+            ? []
+            : await db.registeredAgent.findMany({
+                  where: { id: { in: boundIds }, ...gateAgentScope(tenantId) },
+                  select: GATE_AGENT_SELECT,
+              });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    return admitted.filter(
+        (k) => verdictForBinding(true, k.agentId, (k.agentId && byId.get(k.agentId)) || null).reason !== null,
+    );
 }
 
 /**

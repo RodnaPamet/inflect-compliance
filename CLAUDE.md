@@ -484,10 +484,14 @@ as a telemetry failure. Per-tenant policy lives on
 oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
 `expiresAt` at insert time). The admin UI lives at
 `/admin/members` — Sessions column + modal + per-row revoke,
-backed by `GET/DELETE /api/t/:slug/admin/sessions`. The pre-Epic-C
-endpoints (`security/sessions/revoke-current` etc.) and the
-`User.sessionVersion` bump still work as the coarse-grained
-backstop.
+backed by `GET/DELETE /api/t/:slug/admin/sessions`. "Sign Out Other
+Sessions" (`security/sessions/revoke-current`) stamps the caller's
+OTHER `UserSession` rows and keeps the one named by the request JWT's
+`userSessionId` (#4117); it bumps `User.sessionVersion` only when that
+session cannot be identified. Revoke All (`revoke-all`, ACTIVE members
+only, the caller's current session kept) and per-user revocation bump
+`sessionVersion` AND stamp the rows — the version bump stays the
+coarse-grained backstop for a token whose row was never written.
 
 **C.4 — Audit event streaming.** Every committed audit row is
 fired through `streamAuditEvent` into a per-tenant in-memory

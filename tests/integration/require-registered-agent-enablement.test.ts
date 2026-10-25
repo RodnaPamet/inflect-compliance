@@ -132,30 +132,54 @@ beforeAll(async () => {
         },
     });
     agentId = agent.id;
+    // A registered agent's AI-system entry is its own (`RegisteredAgent_aiSystemId_key`).
+    const suspendedHost = await prisma.aiSystem.create({
+        data: { tenantId: TENANT, name: 'rra suspended host', ownerUserId: userId },
+    });
+    const suspended = await prisma.registeredAgent.create({
+        data: {
+            tenantId: TENANT,
+            aiSystemId: suspendedHost.id,
+            name: 'rra suspended agent',
+            autonomyLevel: 2,
+            dataAccessScope: 'READ_TENANT_DATA',
+            reversibility: 'REVERSIBLE',
+            provenance: 'FIRST_PARTY',
+            ownerUserId: userId,
+            status: 'SUSPENDED',
+        },
+    });
 
     const past = new Date(Date.now() - 86_400_000);
     const future = new Date(Date.now() + 86_400_000);
+    // A key reaches the registration gate only through the `/api/mcp`
+    // capability gate, so only a key carrying an MCP scope can be refused by it.
+    const mcp = { scopes: ['mcp:read'] };
 
-    // WOULD break: active, no binding.
-    await mintKey('unbound-a');
-    await mintKey('unbound-b', { expiresAt: future });
+    // WOULD break: live, can reach the agent tools, not bound to an ACTIVE agent.
+    await mintKey('unbound-a', mcp);
+    await mintKey('unbound-b', { ...mcp, expiresAt: future });
+    await mintKey('suspended-bound', { ...mcp, agentId: suspended.id });
     // Would NOT break, one reason each.
-    await mintKey('bound', { agentId: agent.id });
-    await mintKey('revoked', { revokedAt: past });
-    await mintKey('expired', { expiresAt: past });
+    await mintKey('bound', { ...mcp, agentId: agent.id });
+    await mintKey('revoked', { ...mcp, revokedAt: past });
+    await mintKey('expired', { ...mcp, expiresAt: past });
+    await mintKey('integration', { scopes: ['controls:read'] });
 });
 
 afterAll(clearProbeRows);
 
 describe('the pre-flight names exactly what would break', () => {
-    it('returns the ACTIVE UNBOUND credentials, as a set of ids', async () => {
+    it('returns the live agent-tool credentials not bound to an ACTIVE agent, as a set of ids', async () => {
+        // #4117: a key bound to a SUSPENDED agent is refused by the gate as an
+        // unbound one is, so it is on the list; it used to be left off.
         const preflight = await previewAgentEnforcement(fullCtx());
         expect(preflight.breaking.map((c) => c.id).sort()).toEqual(
-            [keys['unbound-a'], keys['unbound-b']].sort(),
+            [keys['unbound-a'], keys['unbound-b'], keys['suspended-bound']].sort(),
         );
     });
 
-    it('the three exclusions are exclusions, not an empty database', async () => {
+    it('the four exclusions are exclusions, not an empty database', async () => {
         // POSITIVE CONTROL. Without this, a pre-flight that returned rows from
         // the wrong tenant — or a fixture that never created the bound, revoked
         // and expired keys at all — would satisfy the assertion above.
@@ -163,13 +187,16 @@ describe('the pre-flight names exactly what would break', () => {
             where: { tenantId: TENANT },
             select: { id: true },
         });
-        expect(all).toHaveLength(5);
+        expect(all).toHaveLength(7);
 
         const preflight = await previewAgentEnforcement(fullCtx());
         const breaking = new Set(preflight.breaking.map((c) => c.id));
         expect(breaking.has(keys['bound'])).toBe(false);
         expect(breaking.has(keys['revoked'])).toBe(false);
         expect(breaking.has(keys['expired'])).toBe(false);
+        // #4117: an unbound key with no MCP scope is refused at the capability
+        // gate whatever the setting, so enforcement does not stop it working.
+        expect(breaking.has(keys['integration'])).toBe(false);
     });
 
     it('names each credential, so an operator can act on it', async () => {

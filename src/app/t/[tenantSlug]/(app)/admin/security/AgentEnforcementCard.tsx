@@ -12,6 +12,7 @@ import { Modal } from '@/components/ui/modal';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 
 /**
  * AGENT-REGISTRATION ENFORCEMENT — the switch, and the pre-flight (#2443).
@@ -104,8 +105,14 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
      * legitimate settings administrator can land here and be refused — in which
      * case the card must say it cannot answer, not render "0 credentials
      * affected" and invite them to switch enforcement on.
+     *
+     * Only a 403 is that refusal. Any other failure — a 500, a network error —
+     * is `loadError`, with the server's sentence when it sent one (#4117): the
+     * card used to tell every failure it lacked permission, which sends an
+     * administrator who has it to ask an Owner for a key they already hold.
      */
     const [unavailable, setUnavailable] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [pending, setPending] = useState<'enable' | 'disable' | null>(null);
     const [confirmText, setConfirmText] = useState('');
     const [busy, setBusy] = useState(false);
@@ -114,12 +121,18 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
     const load = useCallback(async () => {
         try {
             const res = await fetch(apiUrl('/admin/security-settings/agent-enforcement'));
-            if (!res.ok) { setUnavailable(true); return; }
-            setPreflight(await res.json());
+            if (res.status === 403) { setUnavailable(true); return; }
+            const body = await res.json().catch(() => null);
+            if (!res.ok || !body) {
+                setLoadError(apiErrorMessage(body, t('security.agentEnforcement.loadFailed')));
+                return;
+            }
+            setLoadError(null);
+            setPreflight(body);
         } catch {
-            setUnavailable(true);
+            setLoadError(t('security.agentEnforcement.loadFailed'));
         }
-    }, [apiUrl]);
+    }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { load(); }, [load]);
@@ -135,11 +148,14 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
-                setError(body?.error ?? t('security.agentEnforcement.saveFailed'));
+                // The envelope's `error` is an OBJECT; rendering it crashed the page.
+                setError(apiErrorMessage(body, t('security.agentEnforcement.saveFailed')));
                 return;
             }
             close();
             await load();
+        } catch {
+            setError(t('security.agentEnforcement.saveFailed'));
         } finally {
             setBusy(false);
         }
@@ -158,6 +174,16 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
                 <p className="text-sm text-content-muted">
                     {t('security.agentEnforcement.unavailable')}
                 </p>
+            </Card>
+        );
+    }
+    if (loadError) {
+        return (
+            <Card data-testid="agent-enforcement-card">
+                <Heading level={2} className="mb-1">{t('security.agentEnforcement.title')}</Heading>
+                <InlineNotice variant="error" icon={null} data-testid="agent-enforcement-load-error">
+                    {loadError}
+                </InlineNotice>
             </Card>
         );
     }
