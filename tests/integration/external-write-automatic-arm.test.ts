@@ -262,7 +262,7 @@ beforeEach(async () => {
         where: { id: connectionId },
         data: { externalWriteMode: 'AUTOMATIC', isEnabled: true },
     });
-    listToolsMock.mockResolvedValue([WRITE_DEF, READ_DEF]);
+    listToolsMock.mockResolvedValue({ tools: [WRITE_DEF, READ_DEF], refusedNames: 0 });
     // The prior-state read answers; the write answers emptily. Both go through
     // the one mock, discriminated by tool name.
     callToolMock.mockImplementation(async (_t: unknown, name: string) =>

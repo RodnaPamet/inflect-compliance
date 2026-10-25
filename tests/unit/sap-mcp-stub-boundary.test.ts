@@ -70,7 +70,7 @@ beforeEach(() => {
 
 describe('the catalogue the stub advertises', () => {
     it('lists exactly the three tools M4 will build against', async () => {
-        const names = (await listTools(OPTS)).map((t) => t.name);
+        const names = (await listTools(OPTS)).tools.map((t) => t.name);
         expect(names).toEqual(TOOL_DEFINITIONS.map((t) => t.name));
         expect(names).toEqual([
             'resolve_entities',
@@ -80,7 +80,7 @@ describe('the catalogue the stub advertises', () => {
     });
 
     it('declares two tools read-only and leaves one hint ABSENT', async () => {
-        const tools = await listTools(OPTS);
+        const { tools } = await listTools(OPTS);
         const hint = (n: string) => tools.find((t) => t.name === n)?.annotations?.readOnlyHint;
 
         expect(hint('resolve_entities')).toBe(true);
@@ -335,7 +335,7 @@ describe('the two failure flags, which are different failures', () => {
         // "The agent had nothing to call" is not "the agent failed" — M2 gave
         // the first its own WorkflowRunStatus for exactly this reason, so the
         // stub has to be able to produce it without looking broken.
-        await expect(listTools(OPTS)).resolves.toEqual([]);
+        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0 });
     });
 
     it('--fail-mode returns a tool ERROR, not a transport failure', async () => {
