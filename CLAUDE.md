@@ -1001,13 +1001,14 @@ existing rapid-release pipeline (semantic-release auto-versions main on each pus
 that leaves the merge queue empty, plus a daily run, so its commit does not
 invalidate queue candidates in flight — except a push that adds a test, spec or
 registered primitive, which releases at once because only a release raises the
-coverage floors; staging auto-deploys; production is gated by a GitHub
-Environment approval).
+coverage floors; a merge reaches production with no further approval, through
+`ghcr-publish.yml` and Watchtower — there is no staging stage and no
+deployment approval yet built, #4056).
 It defines the three change classes (STANDARD / SIGNIFICANT / EMERGENCY), the
 approval matrix (who is the required second approver for migrations, infra, secret
 rotations, SSO/SCIM changes), the emergency-bypass + retrospective procedure, the
 rollback policy (app = redeploy prior image; migrations = forward-fix, never
-revert), and the audit trail (PR + CI + Environment approval + CHANGELOG). It is
+revert), and the audit trail (PR + merge-queue CI + published image + CHANGELOG). It is
 the policy twin of `docs/deployment.md` (operational) and cross-links
 `docs/incident-response.md` (on-call rotation). A SIGNIFICANT change — a schema
 migration, a security-middleware change, a dependency major bump — must carry a
