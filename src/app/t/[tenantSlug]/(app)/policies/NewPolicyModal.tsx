@@ -16,6 +16,7 @@ import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } fr
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -192,11 +193,19 @@ export function NewPolicyModal({
                 result={suggest.result}
                 onConfirm={async (controlIds) => {
                     if (controlIds.length) {
-                        await fetch(apiUrl(`/policies/${suggest.policyId}/control-links`), {
+                        const res = await fetch(apiUrl(`/policies/${suggest.policyId}/control-links`), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ controlIds }),
                         });
+                        // A refused link used to be ignored and the user taken
+                        // to the policy as if the controls were linked. Throw
+                        // instead: the dialog stays open and says why, so they
+                        // can retry or skip.
+                        if (!res.ok) {
+                            const body = await res.json().catch(() => ({}));
+                            throw new Error(apiErrorMessage(body, t('templates.linkFailed')));
+                        }
                     }
                     setSuggest(null);
                     router.push(tenantHref(`/policies/${suggest.policyId}`));

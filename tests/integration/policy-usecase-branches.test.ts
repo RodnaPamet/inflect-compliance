@@ -32,6 +32,7 @@ import {
     decidePolicyApproval,
     publishPolicy,
     archivePolicy,
+    unarchivePolicy,
     deletePolicy,
     listPoliciesWithDeleted,
     bulkAssignPolicy,
@@ -93,6 +94,9 @@ describeFn('policy usecase — branch coverage (integration)', () => {
 
     afterAll(async () => {
         await globalPrisma.notificationOutbox.deleteMany({ where: { tenantId: TENANT_ID } }).catch(() => {});
+        // Publishing a revision re-requests acknowledgement with an in-app
+        // notification, whose user FK would otherwise block the user cleanup.
+        await globalPrisma.notification.deleteMany({ where: { tenantId: TENANT_ID } }).catch(() => {});
         await globalPrisma.policyApproval.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.policyEvidenceItem.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.policyVersion.deleteMany({ where: { tenantId: TENANT_ID } });
@@ -458,6 +462,72 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         expect(after.status).toBe('PUBLISHED');
         expect(after.currentVersionId).toBe(normal.id);
         expect(after.currentVersionId).not.toBe(proposed.id);
+    });
+
+    it('revising a PUBLISHED policy (#4127): a newer version is requested, approved and published while the policy stays PUBLISHED', async () => {
+        const admin = makeRequestContext('ADMIN', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: adminUserId });
+        const policy = await createPolicy(ctx, { title: `Revise ${randomUUID().slice(0, 6)}`, content: '# v1' });
+        const v1 = (await getPolicy(ctx, policy.id)).currentVersion!.id;
+        await publishPolicy(ctx, policy.id, v1, { bypassApprovalReason: 'seed' });
+        // Someone has been asked to acknowledge the live version.
+        await globalPrisma.policyAcknowledgementAssignment.create({
+            data: { policyVersionId: v1, userId: readerUserId, assignedById: ownerUserId },
+        });
+
+        // The editor saves a change to a live policy as a proposal.
+        const v2 = await createPolicyVersion(ctx, policy.id, { contentType: 'MARKDOWN', contentText: '# v2' }, { proposeOnly: true });
+
+        // Requesting approval for it was refused while PUBLISHED; it is now
+        // accepted and leaves the live version live.
+        const request = await requestPolicyApproval(ctx, policy.id, v2.id);
+        let p = await getPolicy(ctx, policy.id);
+        expect(p.status).toBe('PUBLISHED');
+        expect(p.currentVersionId).toBe(v1);
+
+        // Four eyes: the requester (who also wrote v2) cannot approve it.
+        await expect(decidePolicyApproval(ctx, policy.id, request.id, { decision: 'APPROVED' })).rejects.toThrow(
+            /separation of duties/i,
+        );
+        await decidePolicyApproval(admin, policy.id, request.id, { decision: 'APPROVED', comment: 'Reviewed section 3' });
+        p = await getPolicy(ctx, policy.id);
+        expect(p.status).toBe('PUBLISHED');
+        expect(p.currentVersionId).toBe(v1);
+        expect(p.approvals.find((a) => a.id === request.id)?.comment).toBe('Reviewed section 3');
+
+        // Publishing the approved revision needs no bypass.
+        await publishPolicy(admin, policy.id, v2.id);
+        p = await getPolicy(ctx, policy.id);
+        expect(p.status).toBe('PUBLISHED');
+        expect(p.currentVersionId).toBe(v2.id);
+        expect((p.lifecycleHistoryJson as Array<{ versionId: string }>).map((h) => h.versionId)).toEqual([v1]);
+        const bypassRows = await globalPrisma.auditLog.count({
+            where: { tenantId: TENANT_ID, entityId: policy.id, action: 'POLICY_PUBLISH_BYPASS' },
+        });
+        expect(bypassRows).toBe(1); // only the seed publish
+        // ...and the acknowledgement requirement moved to the new version.
+        const carried = await globalPrisma.policyAcknowledgementAssignment.findMany({ where: { policyVersionId: v2.id } });
+        expect(carried.map((a) => a.userId)).toEqual([readerUserId]);
+    });
+
+    it('the archive-and-restore route still revises a published policy', async () => {
+        const admin = makeRequestContext('ADMIN', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: adminUserId });
+        const policy = await createPolicy(ctx, { title: `Restore ${randomUUID().slice(0, 6)}`, content: '# v1' });
+        const v1 = (await getPolicy(ctx, policy.id)).currentVersion!.id;
+        await publishPolicy(ctx, policy.id, v1, { bypassApprovalReason: 'seed' });
+        const v2 = await createPolicyVersion(ctx, policy.id, { contentType: 'MARKDOWN', contentText: '# v2' }, { proposeOnly: true });
+
+        await archivePolicy(ctx, policy.id);
+        await unarchivePolicy(ctx, policy.id);
+        expect((await getPolicy(ctx, policy.id)).status).toBe('DRAFT');
+
+        const request = await requestPolicyApproval(ctx, policy.id, v2.id);
+        expect((await getPolicy(ctx, policy.id)).status).toBe('IN_REVIEW');
+        await decidePolicyApproval(admin, policy.id, request.id, { decision: 'APPROVED' });
+        expect((await getPolicy(ctx, policy.id)).status).toBe('APPROVED');
+        await publishPolicy(admin, policy.id, v2.id);
+        const p = await getPolicy(ctx, policy.id);
+        expect(p.status).toBe('PUBLISHED');
+        expect(p.currentVersionId).toBe(v2.id);
     });
 
     it('markPolicyReviewed + updatePolicyMetadata three-state branches', async () => {

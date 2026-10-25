@@ -6,7 +6,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, usePermissions } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -37,6 +38,10 @@ const EMPTY: EntraConfig = {
 export default function EntraProviderWizard() {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
+    // Setting the provider up, and changing its directory or client ID, is
+    // Owner-tier (src/app-layer/usecases/entra-provider.ts). The server refuses
+    // it either way; this keeps an Admin from typing what they cannot save.
+    const canChangeDirectory = usePermissions().admin.owner_management;
     const [config, setConfig] = useState<EntraConfig>(EMPTY);
     const [configured, setConfigured] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -74,7 +79,8 @@ export default function EntraProviderWizard() {
                 }),
             });
             if (!res.ok) {
-                setError(t('entra.saveFailedGuids'));
+                const body = await res.json().catch(() => null);
+                setError(apiErrorMessage(body, t('entra.saveFailedGuids')));
                 return;
             }
             setConfigured(true);
@@ -130,10 +136,16 @@ export default function EntraProviderWizard() {
                 <Heading level={3}>{t('entra.step2Title')}</Heading>
                 {error && <InlineNotice variant="error">{error}</InlineNotice>}
                 {saved && <InlineNotice variant="success">{t('entra.saved')}</InlineNotice>}
+                {!canChangeDirectory && (
+                    <InlineNotice variant="info" id="entra-directory-owner-only">
+                        {configured ? t('entra.directoryOwnerOnly') : t('entra.setupOwnerOnly')}
+                    </InlineNotice>
+                )}
 
-                <FormField label={t('entra.directoryId')}>
+                <FormField label={t('entra.directoryId')} hint={t('entra.directoryIdHint')}>
                     <Input
                         id="aadTenantId"
+                        disabled={!canChangeDirectory}
                         placeholder="00000000-0000-0000-0000-000000000000"
                         value={config.aadTenantId}
                         onChange={(e) => setConfig((c) => ({ ...c, aadTenantId: e.target.value }))}
@@ -142,6 +154,7 @@ export default function EntraProviderWizard() {
                 <FormField label={t('entra.appClientId')}>
                     <Input
                         id="clientId"
+                        disabled={!canChangeDirectory}
                         placeholder="00000000-0000-0000-0000-000000000000"
                         value={config.clientId}
                         onChange={(e) => setConfig((c) => ({ ...c, clientId: e.target.value }))}
@@ -178,7 +191,12 @@ export default function EntraProviderWizard() {
                 </FormField>
 
                 <div className="flex justify-end pt-default">
-                    <Button variant="primary" onClick={save} disabled={saving}>
+                    <Button
+                        variant="primary"
+                        onClick={save}
+                        disabled={saving || (!configured && !canChangeDirectory)}
+                        id="entra-save-btn"
+                    >
                         {saving ? t('entra.saving') : t('entra.save')}
                     </Button>
                 </div>

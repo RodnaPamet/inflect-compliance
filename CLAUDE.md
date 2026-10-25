@@ -939,7 +939,7 @@ signed its subject in from any browser.
 
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
 
-**SSO trust is Owner-tier.** Creating an OIDC or SAML `TenantIdentityProvider`, or changing one of its trust fields, needs `admin.owner_management`: 403, reason `SSO_TRUST_IS_OWNER_TIER`, naming the changed `fields`. The trust fields are `SSO_TRUST_CONFIG_KEYS` (OIDC issuer, clientId, discoveryUrl; SAML entityId, ssoUrl, certificate) plus `type`, `emailDomains` and the JIT settings. A sign-in through the provider becomes a session for whichever member the identity provider names, matched by email on first sign-in, so an ADMIN who could re-point it could sign in as an OWNER. A trust change removes every `UserIdentityLink` to the provider in the same transaction (`SsoConfigRepository.updateAndRemoveLinks`). The rest of the form, enable, enforce and delete stay ADMIN. The diff is `changedSsoTrustFields` in `src/lib/auth/sso-trust-fields.ts`; a key belongs there only if it decides whom the provider believes. A save that leaves out the JIT settings keeps the stored ones. The Entra (`ENTRA_ID`) provider has its own writer, `usecases/entra-provider.ts`, and is not covered.
+**SSO trust is Owner-tier.** Creating an OIDC or SAML `TenantIdentityProvider`, or changing one of its trust fields, needs `admin.owner_management`: 403, reason `SSO_TRUST_IS_OWNER_TIER`, naming the changed `fields`. The trust fields are `SSO_TRUST_CONFIG_KEYS` (OIDC issuer, clientId, discoveryUrl; SAML entityId, ssoUrl, certificate) plus `type`, `emailDomains` and the JIT settings. A sign-in through the provider becomes a session for whichever member the identity provider names, matched by email on first sign-in, so an ADMIN who could re-point it could sign in as an OWNER. A trust change removes every `UserIdentityLink` to the provider in the same transaction (`SsoConfigRepository.updateAndRemoveLinks`). The rest of the form, enable, enforce and delete stay ADMIN. The diff is `changedSsoTrustFields` in `src/lib/auth/sso-trust-fields.ts`; a key belongs there only if it decides whom the provider believes. A save that leaves out the JIT settings keeps the stored ones. The Entra (`ENTRA_ID`) provider has its own writer, `usecases/entra-provider.ts`, with the same rule over `ENTRA_TRUST_CONFIG_KEYS` (`aadTenantId`, `clientId`): creating it or changing either is Owner-tier. That is not decoration, because `syncEntraMembershipRole` applies the group mappings and the gate only to a sign-in whose token `tid` equals `aadTenantId` (outcome `foreign_directory` otherwise; refused when the gate is on; no configured directory applies nothing). The SCIM Groups path passes no `signInDirectoryId` and is unaffected.
 
 **GAP-04 — type augmentation pattern.** `src/auth.ts` declares two module augmentations: `next-auth` for `Session.user` (id/tenantId/role/mfaPending/memberships) and `next-auth/jwt` for the full JWT shape (every custom field the codebase stores). Middleware reads typed `token.role` / `token.memberships` directly via `getToken({ req, secret })`. There are zero `as any` casts in the auth-critical path; the structural guardrail at `tests/guardrails/auth-stack-pinning.test.ts` fails CI if any are reintroduced.
 
@@ -1583,10 +1583,12 @@ implementation of reminders, closing and the evidence PDF.
   resolution method — read off the frozen subjects rather than re-queried, because
   re-reading at close reintroduces the drift the freeze removed. The hash lets an
   auditor re-derive from the stored rows through `verifySnapshotPayloadHash`.
-- **SOC 2 suggests `CC6.1`, not the brief's `CC6.2`/`CC6.3`**, because this
-  catalogue has one sub-code per criterion and neither exists. A test asserts that
-  ABSENCE so the substitution is revisited if the catalogue changes. Filed
-  separately; see `legacy-evidence-controls.ts`.
+- **SOC 2 suggests the brief's own `CC6.2` and `CC6.3`**, since #3369 completed
+  CC6 to CC6.1-CC6.8. It suggested `CC6.1` as a substitute while the catalogue
+  carried one sub-code per criterion and neither of the brief's codes existed;
+  the test that asserted that ABSENCE is what forced the revisit, and now
+  asserts presence. Six of the eight sub-codes were re-attributions of controls
+  already written under `CC6.1`. See `legacy-evidence-controls.ts`.
 - **A remediation task for a legacy campaign says to act IN THE APPLICATION**, and
   says we never write to it. The connected wording — "in the identity provider" —
   would invite somebody to wait for an automation that cannot exist.
@@ -1947,8 +1949,9 @@ wrote nothing. Rules that are easy to undo:
   keys, not arrays, and turns a `Date` into `{}`); the hash is the hex SHA-256 of
   exactly the stored bytes, so it equals the `FileRecord.sha256`.
   `getAgentReviewPacks` recomputes it on every read and reports `matches`. Filed
-  against A.5.18, CC6.1 (the brief's CC6.3 is in neither SOC 2 representation —
-  a test asserts the absence) and ASI03.
+  against A.5.18, CC6.3 (present in both SOC 2 representations since #3369
+  completed CC6; a test asserts that presence, having asserted its absence
+  before) and ASI03.
 - **The sample uses the existing keyed sampler** (`selectSample`,
   `sampleSizeFor`), seeded per tenant through `deriveSubkey` and epoch-bound to
   the campaign, at close. The second human may read the pack and is neither the
@@ -2682,8 +2685,49 @@ tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
   `TenantMembership.role` ascending to find the most senior member; an AI_ADMIN
   must never sort ahead of ADMIN. The migration is a plain `ADD VALUE`.
 
+### Claude agent engines
 
+An agent builder that lets a customer set up their own agent with no CLI, and
+the engines that run what it builds: the Tool Runner first, the Agent SDK if a
+profile ever needs it, and Managed Agents for profiles that need a container.
+**The three design documents are the source of truth for intent**:
+`docs/claude-agent-sdk-design.md` (the builder, Phases 0, 1, 3 and 4, and the
+global rules every step obeys), `docs/claude-tool-runner-design.md` (Phase 2)
+and `docs/claude-managed-agents-design.md` (Phases 5 and 6). The work is the
+step issues under #4135, one pull request each.
 
+Three of the global rules, because they are the ones a careless edit undoes:
+
+- **The engine decides what to try; the funnel decides what is permitted.**
+  Every tool call any engine makes goes through `runGuardedTool` →
+  `runReadTool` / `runProposeTool`. An engine module holds no permission check,
+  no usecase call and no Prisma call.
+- **Authority only narrows.** A profile's tools are a subset of the agent's
+  grants, instructions teach and never grant, and nothing a tenant writes can
+  widen a grant, a ceiling or a scope.
+- **Nothing new is stored at Anthropic without the sub-processor step.** The
+  hosted engines send Messages API calls only (`thread: false`,
+  `persistSession: false`); Managed Agents stores data by design and is gated in
+  its own phases.
+
+**The tool core is engine-neutral** (`src/lib/agentic/engine-tools/`, Step 0a).
+The scope / autonomy / read-only narrowing (`offerToolSet`), the review latch and
+the guarded call live there, and `eslint.config.mjs` refuses any import of
+`@flue/*`, `valibot` or `@earendil-works/*` under it. An engine supplies only its
+tool shape (a `ToolBuilder`) and its guard source prefix; `runGuardedTool` takes
+the prefix with no default, so a new engine names its own audit rows. Flue's
+prefix is `'flue'`, which keeps every guard source byte-identical to what it was
+before the move.
+
+**"Is this a reasoning engine" is `isReasoningEngine(driver)`**
+(`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
+backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
+without a classification fails `tsc`. The registration gate, the skill pin and
+the worker hand-off in `startWorkflowRun` and `resumeWorkflowRun` ask it, so the
+next engine is vouched, pinned and kept off the web tier without anybody
+remembering those lines. A comparison that genuinely means Flue (the
+`FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
+stays a comparison.
 
 ## Testing Conventions
 

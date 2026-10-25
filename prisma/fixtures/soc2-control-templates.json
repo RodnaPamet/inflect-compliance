@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "SOC 2 Trust Services Criteria control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "Production served SOC2- — 7 templates whose titles restate the criterion ('Specifies objectives'), each carrying the five generic placeholder tasks. These 29 TSC- templates are real controls and were never delivered anywhere. This file replaces that offering.",
-    "grounding": "Requirement titles and summaries come from src/data/libraries/soc2-2017.yaml so the two cannot drift. Task content is grounded in each template's own description — the library is thin for SOC 2 (a one-line COSO paraphrase, no checklist or artifacts). Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/soc2-2017.yaml so the two cannot drift. Task content is grounded in each template's own description — the library is thin for SOC 2 (a one-line COSO paraphrase, no checklist or artifacts). Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry. CC6 was completed to CC6.1-CC6.8 (#3369): the six controls already written under CC6.1 were re-attributed to the sub-code each actually implements, and TSC-CC6-7 was added for CC6.8, which nothing covered. The seven new criteria summaries are paraphrases, marked as such, superseding the one-criterion-per-series depth decision recorded in src/data/libraries/soc2-2017.yaml.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
     "packStrategy": "Reuses SOC2_BASELINE rather than creating SOC2_CORE. The retirement of the seven SOC2- criterion-restatement templates is a separate operator step, not a seeder action — seeders upsert, they do not delete, and deleting customer-visible catalogue rows should be a reviewed action with before/after counts rather than a side effect of a deploy.",
     "provenance": "sourceUrn carried over from the prisma/seed.ts block this file replaced. SOC 2 has no metadataJson in seed.ts and so none here, but it DID carry a sourceUrn, and SOC2_FAMILY_URN in src/app-layer/domain/framework-representation.ts is that exact value — it is how a SOC 2 row is tied to its library family, not decoration."
@@ -73,12 +73,68 @@
       "sortOrder": 7
     },
     {
+      "code": "CC6.2",
+      "title": "User Registration and Credential Removal",
+      "summary": "Before issuing credentials and granting access, the entity registers and authorises new internal and external users whose access it administers; when a user no longer requires access, their credentials are removed. (Paraphrase)",
+      "category": "Security",
+      "section": "CC6",
+      "sortOrder": 8
+    },
+    {
+      "code": "CC6.3",
+      "title": "Least Privilege and Periodic Access Review",
+      "summary": "The entity authorises, modifies and removes access to data, software and functions on the basis of roles and responsibilities, giving consideration to least privilege and segregation of duties, and reviews that access periodically. (Paraphrase)",
+      "category": "Security",
+      "section": "CC6",
+      "sortOrder": 9
+    },
+    {
+      "code": "CC6.4",
+      "title": "Physical Access Restriction",
+      "summary": "The entity restricts physical access to facilities and protected assets — data centre space, back-up media storage and other sensitive locations — to authorised personnel. (Paraphrase)",
+      "category": "Security",
+      "section": "CC6",
+      "sortOrder": 10
+    },
+    {
+      "code": "CC6.5",
+      "title": "Secure Asset and Media Disposal",
+      "summary": "The entity withdraws logical and physical protection from a physical asset only once the ability to read or recover data and software from it has been diminished and is no longer required. (Paraphrase)",
+      "category": "Security",
+      "section": "CC6",
+      "sortOrder": 11
+    },
+    {
+      "code": "CC6.6",
+      "title": "Boundary Protection",
+      "summary": "The entity implements logical access security measures to protect against threats originating outside its system boundaries. (Paraphrase)",
+      "category": "Security",
+      "section": "CC6",
+      "sortOrder": 12
+    },
+    {
+      "code": "CC6.7",
+      "title": "Information Transmission and Movement",
+      "summary": "The entity restricts the transmission, movement and removal of information to authorised users and processes, and protects it while it is in transit, being moved or being removed. (Paraphrase)",
+      "category": "Security",
+      "section": "CC6",
+      "sortOrder": 13
+    },
+    {
+      "code": "CC6.8",
+      "title": "Unauthorised and Malicious Software",
+      "summary": "The entity implements controls to prevent, or to detect and act upon, the introduction of unauthorised or malicious software. (Paraphrase)",
+      "category": "Security",
+      "section": "CC6",
+      "sortOrder": 14
+    },
+    {
       "code": "CC7.1",
       "title": "Anomaly Detection",
       "summary": "To meet its objectives, the entity uses detection and monitoring procedures to identify changes to configurations that result in new vulnerabilities. (Paraphrase)",
       "category": "Security",
       "section": "CC7",
-      "sortOrder": 8
+      "sortOrder": 15
     },
     {
       "code": "CC8.1",
@@ -86,7 +142,7 @@
       "summary": "The entity authorizes, designs, develops or acquires, configures, documents, tests, approves, and implements changes. (Paraphrase)",
       "category": "Security",
       "section": "CC8",
-      "sortOrder": 9
+      "sortOrder": 16
     },
     {
       "code": "CC9.1",
@@ -94,7 +150,7 @@
       "summary": "The entity identifies, selects, and develops risk mitigation activities for risks arising from the use of vendors. (Paraphrase)",
       "category": "Security",
       "section": "CC9",
-      "sortOrder": 10
+      "sortOrder": 17
     }
   ],
   "templates": [
@@ -3356,7 +3412,7 @@
     {
       "code": "TSC-CC5-2",
       "title": "Segregation of duties",
-      "description": "Separate conflicting duties so no single person can both make and approve a sensitive change — code deployment, privileged access grants, payments, and audit-log administration — and compensate with detective monitoring where separation is impractical. Implements SOC 2 CC5.1 and CC6.1.",
+      "description": "Separate conflicting duties so no single person can both make and approve a sensitive change — code deployment, privileged access grants, payments, and audit-log administration — and compensate with detective monitoring where separation is impractical. Implements SOC 2 CC5.1 and CC6.3.",
       "category": "Control Activities",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Engineering Leadership / Finance Lead",
@@ -3365,7 +3421,7 @@
       "testingMethodology": "Evidence:\nObtain the duty-pair definition listing each conflicting act pair and the systems it applies on.\nCollect the configuration capture from each named system showing the second-person requirement on the conflicting act.\nGather the compensating-control record for every pair that could not be separated.\nRetrieve the dated detective-monitoring output for the period with the reviewer's notes.\nObtain the conflict test results drawn from current permission assignments.\n\nAnalysis:\nCheck the duty-pair definition covers the acts that move money, change production, grant privilege or alter audit records.\nVerify in each configuration capture that the second approver cannot be the initiator, rather than merely being a second click.\nConfirm each unseparated pair names both a detective control and a reviewer who is independent of the duty itself.\nFollow the items the monitoring surfaced during the period to the outcome recorded against them.\nCompare the conflict test results with current entitlements and confirm everyone holding both sides was remediated.\n\nOutput:\nA conclusion on whether each documented pair is separated by configuration or covered by a named detective control.\nA list of individuals found holding both sides of a pair, with the remediation state of each.\nAn assessment of whether the detective monitoring ran as often as the compensating-control record claims.",
       "requirementCodes": [
         "CC5.1",
-        "CC6.1"
+        "CC6.3"
       ],
       "tasks": [
         {
@@ -3573,7 +3629,7 @@
     {
       "code": "TSC-CC6-1",
       "title": "Access provisioning and timely revocation",
-      "description": "Grant access only on documented approval from the resource owner, based on job role and least privilege, and revoke all access on termination or role change within the committed time — driven from an authoritative HR record, not from ad-hoc notification. Implements SOC 2 CC6.1.",
+      "description": "Grant access only on documented approval from the resource owner, based on job role and least privilege, and revoke all access on termination or role change within the committed time — driven from an authoritative HR record, not from ad-hoc notification. Implements SOC 2 CC6.2 and CC6.3.",
       "category": "Logical Access",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "IT Operations / People Ops",
@@ -3581,7 +3637,8 @@
       "successCriteria": "Every in-scope system names the owner whose approval a grant needs, and grants carry that approval dated before the access.\nEach job role has a least-privilege profile, and anything granted beyond it was requested separately.\nRevocation fires from the authoritative HR record, not a colleague's notification, and the systems revoked by hand are listed.\nRevocation completed within the committed window of the HR date, with every breach of it flagged.",
       "testingMethodology": "Evidence:\nObtain the system-to-owner list naming the approving resource owner for each in-scope system.\nCollect the role-to-access profiles stating the systems and privilege level each job role receives.\nGather the revocation trigger configuration showing the HR termination and role-change records as its source.\nRetrieve the access request records and the revocation log giving HR date against per-system revocation timestamp.\nObtain the account-to-personnel reconciliation for each in-scope system.\n\nAnalysis:\nSample grants from the period and confirm the approving owner matches the owner list and approved before the access existed.\nCompare the privileges actually held by sampled accounts with the profile their job role carries.\nSelect leavers and role changes from the HR record itself, not from the revocation log, and measure each against the committed window.\nTest the systems listed as revoked by hand to confirm the manual step happened for every leaver in the sample.\nFollow the unmatched accounts in the reconciliation to the disposition recorded for each.\n\nOutput:\nA measurement of revocation elapsed time per leaver and role change against the committed window.\nA list of grants made without a recorded owner approval or exceeding the role profile.\nA statement of accounts found in a system with no matching active person.",
       "requirementCodes": [
-        "CC6.1"
+        "CC6.2",
+        "CC6.3"
       ],
       "tasks": [
         {
@@ -4041,7 +4098,7 @@
     {
       "code": "TSC-CC6-3",
       "title": "Periodic user access review",
-      "description": "Have resource owners review who holds access to each in-scope system at least quarterly, confirming that both the account and its privilege level are still warranted, and remove or downgrade access that is not. Implements SOC 2 CC6.1 and CC4.1.",
+      "description": "Have resource owners review who holds access to each in-scope system at least quarterly, confirming that both the account and its privilege level are still warranted, and remove or downgrade access that is not. Implements SOC 2 CC6.3 and CC4.1.",
       "category": "Logical Access",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "IT Operations / System Owners",
@@ -4049,7 +4106,7 @@
       "successCriteria": "Every in-scope system has a named accountable owner performing its review, rather than the administrator who grants the access.\nThe review population is a dated export of users and their privilege levels taken from the system itself.\nEach account carries a keep, downgrade or remove decision covering its privilege level, attested and dated by the owner.\nThe removals and downgrades the review ordered took effect, confirmed against a listing pulled after the change.",
       "testingMethodology": "Evidence:\nObtain the reviewer assignment list that makes a named owner accountable for each review.\nCollect the dated user and privilege listings that formed each review population.\nGather the completed review sheets carrying a decision on every account.\nRetrieve the change records for the removals and downgrades ordered, with the post-change listings.\nObtain the quarterly review completion summary covering every in-scope system.\n\nAnalysis:\nCompare a review population against a listing pulled at testing time to confirm it was complete when it was drawn.\nConfirm the reviewer named for each system is the accountable owner and not a person who administers that access.\nCheck that every account in the population received a decision and that the privilege level, not only the account, was assessed.\nTrace each remove and downgrade decision to the change record and the post-change listing that shows it took effect.\nExamine the completion summary for systems that missed a quarter and confirm the recovery date recorded was met.\n\nOutput:\nA statement of review completion per in-scope system for each quarter of the period.\nA count of decisions ordered against the number evidenced as effected.\nA list of accounts that survived a review without an owner decision recorded against them.",
       "requirementCodes": [
-        "CC6.1",
+        "CC6.3",
         "CC4.1"
       ],
       "tasks": [
@@ -4253,7 +4310,7 @@
     {
       "code": "TSC-CC6-4",
       "title": "Encryption in transit and at rest",
-      "description": "Encrypt customer data in transit over untrusted networks using current TLS configurations, and at rest in databases, object storage, and backups, with keys held in a managed key store under restricted access and a documented rotation schedule. Implements SOC 2 CC6.1.",
+      "description": "Encrypt customer data in transit over untrusted networks using current TLS configurations, and at rest in databases, object storage, and backups, with keys held in a managed key store under restricted access and a documented rotation schedule. Implements SOC 2 CC6.1 and CC6.7.",
       "category": "Logical Access",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Platform Engineering / Security Engineering",
@@ -4261,7 +4318,8 @@
       "successCriteria": "Every endpoint, database, object store and backup copy holding customer data is in the scope inventory with its mechanism.\nEndpoints negotiate only the versions and ciphers the issued TLS standard permits, and attempts at refused versions fail.\nDatabases, object stores and backup copies report at-rest encryption from the platform, naming the key each uses.\nKeys rotate on the interval their register row states, and no principal outside the permitted list used one.",
       "testingMethodology": "Evidence:\nObtain the dated encryption scope inventory of endpoints, databases, object stores and backup copies holding customer data.\nCollect the issued TLS configuration standard with its version and issue date.\nGather the key register giving each key's purpose, key store, permitted principals and rotation interval.\nRetrieve the endpoint TLS scan output and the at-rest encryption evidence pack for the period.\nObtain the key rotation and access reconciliation with the disposition recorded on each discrepancy.\n\nAnalysis:\nRe-scan a sample of public endpoints and compare the negotiated version and cipher with both the scan output and the issued standard.\nConfirm the attempts at refused protocol versions were actually rejected rather than simply never attempted.\nCheck each database, bucket and backup copy in the inventory against its platform-reported state, treating an absent row as unencrypted.\nCompare last rotation dates with the interval each register row states and measure the overrun on any key past it.\nExamine key use and export records for principals absent from the permitted list and follow each to its disposition.\n\nOutput:\nA per-endpoint record of negotiated TLS version and cipher against the issued standard.\nA statement of at-rest encryption coverage across databases, object stores and backup copies.\nA list of keys past their rotation interval or used by principals outside their permitted list.",
       "requirementCodes": [
-        "CC6.1"
+        "CC6.1",
+        "CC6.7"
       ],
       "tasks": [
         {
@@ -4520,7 +4578,7 @@
     {
       "code": "TSC-CC6-5",
       "title": "Physical access and secure media disposal",
-      "description": "Restrict physical access to facilities and equipment holding in-scope data to authorised personnel, review the authorised list periodically, and destroy or securely wipe media before disposal or reuse — including equipment handled by a sub-service organisation. Implements SOC 2 CC6.1.",
+      "description": "Restrict physical access to facilities and equipment holding in-scope data to authorised personnel, review the authorised list periodically, and destroy or securely wipe media before disposal or reuse — including equipment handled by a sub-service organisation. Implements SOC 2 CC6.4 and CC6.5.",
       "category": "Logical Access",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "IT Operations / Facilities",
@@ -4528,7 +4586,8 @@
       "successCriteria": "Every facility and equipment item holding in-scope data is listed as entity-controlled or held by a named sub-service organisation.\nEach badge, key and door credential for in-scope areas has a holder, a grant date and a reason.\nEvery device retired in the period carries a destruction certificate or wipe log naming the method applied.\nCredentials no longer needed were withdrawn with a deactivation date, and the sub-service physical-security attestation is current.",
       "testingMethodology": "Evidence:\nObtain the dated list of facilities and equipment holding in-scope data, with the party controlling access to each.\nCollect the physical access register of badges, keys and door credentials with holders, areas opened and grant dates.\nGather the issued media sanitisation procedure naming the method required for each media type.\nRetrieve the media disposal records for the period, one per retired device.\nObtain the completed physical access review and the sub-service organisation's current attestation.\n\nAnalysis:\nCompare the credential register against the current personnel list and identify holders who have left or changed role.\nTest at a sample of in-scope doors that the credentials of withdrawn holders no longer open them.\nReconcile the devices retired in the period, taken from the asset register rather than the disposal file, against the disposal records held.\nCheck that each disposal record applies the method the sanitisation procedure requires for that media type.\nRead the sub-service attestation for the period it covers and for exceptions touching physical security over in-scope data.\n\nOutput:\nA list of credential holders retained and withdrawn, with the date each withdrawal took effect.\nA reconciliation of retired assets against the destruction certificates and wipe logs held for them.\nA note on the currency of the sub-service attestation and the exceptions it discloses.",
       "requirementCodes": [
-        "CC6.1"
+        "CC6.4",
+        "CC6.5"
       ],
       "tasks": [
         {
@@ -4787,7 +4846,7 @@
     {
       "code": "TSC-CC6-6",
       "title": "Network segmentation and boundary protection",
-      "description": "Separate the production environment from corporate and development networks, restrict inbound and outbound traffic to what is required, deny administrative access from the public internet outside a controlled path, and review the rule set for drift. Implements SOC 2 CC6.1.",
+      "description": "Separate the production environment from corporate and development networks, restrict inbound and outbound traffic to what is required, deny administrative access from the public internet outside a controlled path, and review the rule set for drift. Implements SOC 2 CC6.6.",
       "category": "Logical Access",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Platform Engineering / Network Lead",
@@ -4795,7 +4854,7 @@
       "successCriteria": "Production, corporate and development zones are mapped, with an enforcement point on every boundary between them.\nEach permitted flow across a boundary has a source, destination, port, direction and the reason it is required.\nAdministrative access arrives only through the controlled path, from an account the standard permits or under a recorded restriction.\nExternal scanning of the entity's address ranges finds no administrative interface without a disposition.",
       "testingMethodology": "Evidence:\nObtain the network zone map naming the zones, the systems in each and the enforcement point on every boundary.\nCollect the documented boundary flow list with the justification recorded against each permitted flow.\nGather the administrative access standard naming the controlled path and the accounts permitted to use it.\nRetrieve the external exposure scan output for the period with its per-interface dispositions.\nObtain the dated live rule-set exports from every enforcement point.\n\nAnalysis:\nCompare each live rule with the documented flow list and mark it matched, broader than documented, or absent from the list entirely.\nConfirm the rules recorded as narrowed or removed carry a change reference and are reflected in the current export.\nAttempt to reach an administrative interface from outside the controlled path and record whether the boundary refused it.\nRe-run an external scan over the entity's address ranges and compare the reachable services found with the output supplied.\nTest a development-to-production flow the flow list does not permit and confirm the enforcement point blocks it.\n\nOutput:\nA rule-by-rule comparison of the live rule set against the documented flows.\nA list of administrative interfaces reachable from outside, with the disposition of each.\nA statement of whether the zone boundaries held under direct test.",
       "requirementCodes": [
-        "CC6.1"
+        "CC6.6"
       ],
       "tasks": [
         {
@@ -5002,6 +5061,227 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "code": "TSC-CC6-7",
+      "title": "Malicious and unauthorised software prevention",
+      "description": "Prevent, or detect and act upon, the introduction of unauthorised or malicious software onto in-scope systems — endpoint and server protection that is deployed and current, restrictions on what software may be installed, and a path from a detection to somebody acting on it. Implements SOC 2 CC6.8.",
+      "category": "Logical Access",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "IT Operations / Security Engineering",
+      "objective": "To ensure software the entity did not authorise cannot run unnoticed on an in-scope system, and that a detection reaches a person who acts on it.",
+      "successCriteria": "Every in-scope system class is named with the preventive or detective mechanism that covers it, so a class with no mechanism is visible rather than assumed.\nThe deployed mechanism reports coverage against the current asset inventory, and systems it does not reach carry a recorded disposition.\nSignature or model versions on covered systems are current to the stated tolerance, and systems outside it are named.\nEach detection in the period reached an outcome — removed, quarantined, or assessed as a false positive by a named reviewer — with none left open without a reason.",
+      "testingMethodology": "Evidence:\nObtain the software-protection standard naming each in-scope system class and the mechanism that covers it.\nCollect the coverage report from the deployed mechanism for the period, with the asset inventory it was compared against.\nGather the signature or model version report showing currency per covered system.\nRetrieve the detection log for the period with the disposition recorded against each entry.\nObtain the installation-restriction configuration for the system classes the standard says enforce it.\n\nAnalysis:\nReconcile the coverage report against the asset inventory and list every in-scope system the mechanism did not reach, then check each against its recorded disposition.\nCompare signature currency per system with the stated tolerance and name the systems outside it.\nTrace each detection to its disposition and confirm a person is named on the ones closed as false positives.\nAttempt to install an unauthorised package on a system class the standard says restricts it and record whether the restriction refused it.\n\nConclusion:\nThe control operates when every in-scope class is covered or dispositioned, currency holds to tolerance, and no detection in the period is open without a reason.",
+      "requirementCodes": [
+        "CC6.8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name every in-scope system class and the mechanism that covers it"
+          },
+          "description": {
+            "en": "List the system classes in scope — servers, developer endpoints, build agents, containers and any appliance holding in-scope data — and against each name the preventive or detective mechanism that covers it. A class with no mechanism is the finding this task exists to surface: record it rather than leaving the row blank, because an absent row reads as covered. Attach the standard with the class-to-mechanism table."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the in-scope system classes, including build agents and containers."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the preventive or detective mechanism covering each class."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any class with no mechanism as an explicit gap."
+              }
+            },
+            {
+              "text": {
+                "en": "State the signature or model currency tolerance the control holds to."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the standard with the class-to-mechanism table."
+              }
+            }
+          ],
+          "evidenceHint": {
+            "en": "Software-protection standard naming each in-scope system class, the mechanism covering it, any class recorded as uncovered, and the currency tolerance."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Deploy the mechanism and reconcile its coverage against the asset inventory"
+          },
+          "description": {
+            "en": "Install or enable the named mechanism across each covered class and then compare what it reports against the asset inventory rather than against itself. The systems that matter are the ones the mechanism cannot see, so the reconciliation is the control — a coverage percentage computed over only the agents that checked in is always high and means nothing. Give every unreached system a recorded disposition."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Enable the mechanism on each system class the standard covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Export its coverage report for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Reconcile that report against the current asset inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Give every in-scope system it did not reach a recorded disposition."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the coverage report with the inventory it was compared against."
+              }
+            }
+          ],
+          "evidenceHint": {
+            "en": "Coverage report from the deployed mechanism for the period, the asset inventory it was reconciled against, and a disposition for each unreached in-scope system."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Restrict what software may be installed on the classes that enforce it"
+          },
+          "description": {
+            "en": "For the system classes the standard says restrict installation, configure the restriction — allowlisting, signed-package enforcement, or removal of administrative rights — and capture the configuration. Record which classes deliberately do not enforce it and what detective control stands in, so the exception is a decision rather than a gap nobody wrote down."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Configure the installation restriction on each class that enforces it."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the configuration from each enforcing system class."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the classes that do not enforce it and the detective control standing in."
+              }
+            },
+            {
+              "text": {
+                "en": "Test an unauthorised install on an enforcing class and record the result."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the configuration capture and the test record."
+              }
+            }
+          ],
+          "evidenceHint": {
+            "en": "Installation-restriction configuration per enforcing system class, the named exceptions with their detective control, and the result of an attempted unauthorised install."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Check signature and model currency and report every system outside tolerance"
+          },
+          "description": {
+            "en": "Check per-system currency against the tolerance the standard states and produce the list of systems outside it. Report the list rather than an average: a fleet mean inside tolerance is compatible with a long tail of stale systems, and the stale tail is what an attacker reaches."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Export per-system signature or model versions for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each against the stated currency tolerance."
+              }
+            },
+            {
+              "text": {
+                "en": "List every system outside tolerance rather than reporting an average."
+              }
+            },
+            {
+              "text": {
+                "en": "Follow each listed system to an update or a recorded reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the currency report with the out-of-tolerance list."
+              }
+            }
+          ],
+          "evidenceHint": {
+            "en": "Signature or model version report showing per-system currency, the list of systems outside tolerance, and the outcome recorded against each."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Follow every detection to an outcome and review the period"
+          },
+          "description": {
+            "en": "Take the period's detections and confirm each reached an outcome — removed, quarantined, or assessed as a false positive by a named reviewer. Then review the control itself: whether coverage, currency and the restriction held, and whether any class moved in or out of scope. An open detection with no reason is the finding."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the period's detections with the disposition against each."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm a named reviewer on each one closed as a false positive."
+              }
+            },
+            {
+              "text": {
+                "en": "List any detection still open and the reason it is open."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-check coverage, currency and the restriction for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the review outcome and any class that moved in or out of scope."
+              }
+            }
+          ],
+          "evidenceHint": {
+            "en": "Detection log for the period with a disposition and, where closed as a false positive, a named reviewer against each entry, plus the dated review record."
+          },
+          "suggestedRole": "Security engineering"
         }
       ]
     },
@@ -6989,6 +7269,7 @@
       "TSC-CC6-4",
       "TSC-CC6-5",
       "TSC-CC6-6",
+      "TSC-CC6-7",
       "TSC-CC7-1",
       "TSC-CC7-2",
       "TSC-CC7-3",

@@ -49,6 +49,7 @@ import { resolveKillState } from '@/lib/agentic/kill-switch';
 import { readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { selectRunDriver } from '@/lib/agentic/drivers';
+import { isReasoningEngine } from '@/lib/agentic/agent-driver';
 import { periodBounds } from '@/lib/agentic/audit-workpaper';
 import { auditNarrativeWorkflow } from '@/lib/agentic/workflows/audit-narrative';
 import type { RequestContext } from '../types';
@@ -193,7 +194,7 @@ export async function runAuditNarrativeDispatch(
             if (!granted.has(`${tenantId}|${agent.id}`)) return { outcome: 'tool_not_granted', runId: null };
 
             const decision = await resolveDriverForRun(tenantId, { workflowKey: auditNarrativeWorkflow.key });
-            if (selectRunDriver(auditNarrativeWorkflow, decision.driver).driver !== 'flue') {
+            if (!isReasoningEngine(selectRunDriver(auditNarrativeWorkflow, decision.driver).driver)) {
                 return { outcome: 'engine_not_flue', runId: null };
             }
             if (await resolveKillState(tenantId, agent.id)) return { outcome: 'auditor_kill_switched', runId: null };

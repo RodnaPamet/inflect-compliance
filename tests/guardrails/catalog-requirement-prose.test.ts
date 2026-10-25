@@ -427,7 +427,7 @@ describe('catalogue requirements carry prose', () => {
         'nist-privacy-control-templates.json': '100 of 100',
         'owasp-aisvs-control-templates.json': '191 of 191',
         'owasp-asi-control-templates.json': '0 of 10',
-        'soc2-control-templates.json': '0 of 10',
+        'soc2-control-templates.json': '0 of 17',
         'ssdf-control-templates.json': '42 of 42',
     };
 

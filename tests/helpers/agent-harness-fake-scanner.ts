@@ -245,6 +245,72 @@ export function validV3ReportBody(): HarnessReportBodyV3 {
     };
 }
 
+/**
+ * The same `/3` estate plus ONE OPENSHELL SANDBOX, as the `runtime` source
+ * reports it (#3936).
+ *
+ * ADDITIVE RATHER THAN FOLDED INTO `validV3ReportBody`, which several suites
+ * assert against by agent count and content. A sandbox is a new SHAPE of agent
+ * under an existing kind, not a new kind, so it earns its own fixture instead
+ * of changing what every other test means.
+ *
+ * What makes it the reference for an OpenShell report:
+ *
+ *   • `runtime` kind, not an `openshell` one. Kinds are a closed list on the
+ *     wire and the contract already defines `runtime` as "a deployment, and the
+ *     secrets it runs with" (decision D1). LangSmith set the precedent.
+ *   • `H3.egress_enforced` appears here. It is NOT frozen per contract version
+ *     — the verifier checks each criterion against the LIVE ladder — which is
+ *     why the ingest defining it must ship before any scanner emits it. See
+ *     `tests/unit/agentic/openshell-deploy-order.test.ts` for what happens when
+ *     it does not.
+ *   • The policy crosses as a POINTER on the evidence, never as content: an
+ *     `openshell-policy:sha256:…` digest, with no host, port, rule or path from
+ *     the policy anywhere in the report.
+ *   • The credential is a reference to the attached provider, not a value and
+ *     not a credential key.
+ */
+export function validV3ReportBodyWithSandbox(): HarnessReportBodyV3 {
+    const v3 = validV3ReportBody();
+    const digest = `openshell-policy:sha256:${'c'.repeat(64)}`;
+    return {
+        ...v3,
+        population: {
+            sources: [...v3.population.sources, { kind: 'runtime', status: 'COMPLETE', rows: 1 }],
+        },
+        agents: [
+            ...v3.agents,
+            {
+                discoveredId: 'openshell:sandbox:s-4817',
+                discoveredVia: ['runtime'],
+                registeredAgentId: null,
+                // The gateway records no accountable owner for a sandbox, and a
+                // label in the estate is something its administrator could write.
+                owner: null,
+                credentials: [
+                    {
+                        ref: 'openshell://sandbox/s-4817/provider/anthropic',
+                        ageDays: null,
+                        expires: null,
+                        boundToAgent: true,
+                        grant: 'unknown',
+                    },
+                ],
+                tools: [],
+                skills: [],
+                verdicts: [
+                    { criterion: 'H3.egress_enforced', met: true, evidence: digest },
+                    { criterion: 'H2.tools_allowlisted', met: true, evidence: digest },
+                    { criterion: 'H3.payloads_guarded', met: true, evidence: digest },
+                    // Unevidenced: this estate did not opt in to reading
+                    // providers, so no profile was read to bind it against.
+                    { criterion: 'H2.credential_bound', met: false, evidence: null },
+                ],
+            },
+        ],
+    } as HarnessReportBodyV3;
+}
+
 /** A credential-shaped string, built at runtime. Never a real credential. */
 function fakeSecret(): string {
     return ['gh', 'p_', 'Q'.repeat(36)].join('');

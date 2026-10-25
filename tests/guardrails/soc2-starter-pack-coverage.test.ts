@@ -124,17 +124,26 @@ describe('SOC 2 delivery', () => {
          * of the standard (#2625).
          *
          * The 2017 TSC runs to ~33 points of focus across the nine Common
-         * Criteria series; this catalogue authors ONE representative criterion
-         * per series (two for CC1) = 10. The reasoning, and why the missing ~23
-         * were not synthesised, is in the header of
-         * src/data/libraries/soc2-2017.yaml.
+         * Criteria series. This catalogue authors ONE representative criterion
+         * per series (two for CC1) EXCEPT CC6, which is complete at CC6.1-CC6.8
+         * since #3369 — so 9 representative + 8 CC6 = 17.
+         *
+         * CC6 was completed because the product's own access-recertification
+         * evidence keys on CC6.3 ("periodically reviewing" access), and with
+         * only CC6.1 present that suggestion resolved to nothing for every
+         * tenant: a feature that looked like it worked and fired for nobody.
+         * Six of the eight sub-codes already had a written control filed under
+         * CC6.1 for want of a code, so most of that change was re-attribution
+         * rather than authoring. The scope note in the header of
+         * src/data/libraries/soc2-2017.yaml records what is still
+         * one-per-series and that the CC6 summaries are paraphrases.
          *
          * Pinned rather than floored because a floor cannot fail for a catalogue
          * going SHORT — the defect #2626 fixed across six other frameworks. If
          * somebody authors the full point list, this number moves in the same
          * diff and the scope note moves with it.
          */
-        expect(applied?.requirements.length).toBe(10);
+        expect(applied?.requirements.length).toBe(17);
         expect(applied?.templates.length).toBeGreaterThanOrEqual(20);
     });
 
@@ -148,8 +157,8 @@ describe('SOC 2 delivery', () => {
      * The LIBRARY models more than the delivered catalogue, and that divergence
      * is a fact a reader needs rather than a bug to fix.
      *
-     * 14 assessable nodes: the 10 Common Criteria above plus A1 / C1 / PI1 / P1,
-     * one per non-security trust category. The seeded fixture carries the 10
+     * 21 assessable nodes: the 17 Common Criteria above plus A1 / C1 / PI1 / P1,
+     * one per non-security trust category. The seeded fixture carries the 17
      * Common Criteria only, so an INSTALLED SOC 2 pack is Security-scoped while
      * this library describes all five categories.
      *
@@ -159,7 +168,7 @@ describe('SOC 2 delivery', () => {
     it('the library models all five trust categories, though the fixture delivers only Security', () => {
         const lib = loadLibrary(parseLibraryFile(path.join(ROOT, 'src/data/libraries/soc2-2017.yaml')), 'soc2-2017.yaml');
         const assessable = lib.framework.nodes.filter((n) => n.assessable);
-        expect(assessable.length).toBe(14);
+        expect(assessable.length).toBe(21);
         for (const ref of ['A1', 'C1', 'PI1', 'P1']) {
             expect(lib.framework.nodesByRefId.get(ref)).toBeDefined();
         }
