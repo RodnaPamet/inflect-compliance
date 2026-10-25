@@ -20,7 +20,7 @@ Open **{{ui:nav.assets}}** under **{{ui:nav.govern}}** in the sidebar. The bread
 | Delete in bulk | Owner, Admin |
 | Open the deleted assets, restore them and purge them | Owner, Admin |
 
-Every role can tick rows, but only Owners, Admins and Editors get the selection bar's actions. Editors are offered **{{ui:assets.bulk.delete}}** there too, and the deletion fails: see [Change many assets at once](#change-many-assets-at-once).
+Every role can tick rows, but only Owners, Admins and Editors get the selection bar's actions, and only Owners and Admins get **{{ui:assets.bulk.delete}}**.
 
 If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page shows its buttons according to the built-in role your custom role is based on, so a button can appear and the change still be refused.
 
@@ -100,7 +100,7 @@ Tick the rows you want, up to 100 at a time. In the selection bar, choose an act
 
 - **{{ui:assets.bulk.setStatus}}** moves every selected asset to {{ui:assets.statusOption.ACTIVE}} or {{ui:assets.statusOption.RETIRED}}.
 - **{{ui:assets.bulk.assignOwner}}** gives them all one owner. Leave the owner empty to unassign them.
-- **{{ui:assets.bulk.delete}}** takes them out of the table at once, and for five seconds a message offers **{{ui:assets.deleted.undo}}**. Nothing is deleted until that time runs out. Only Owners and Admins can delete: when an Editor tries, the request is refused once the five seconds pass, and the rows come back.
+- **{{ui:assets.bulk.delete}}** takes them out of the table at once, and for five seconds a message offers **{{ui:assets.deleted.undo}}**. Nothing is deleted until that time runs out. Owners and Admins only.
 
 A failed status or owner change leaves the rows ticked, so you can try again without picking them again.
 
@@ -127,7 +127,7 @@ At present the view always reads **{{ui:assets.deleted.emptyTitle}}**, even when
 - A new asset gets the next code in the workspace's sequence: AST-1, AST-2 and so on.
 - Every creation, including each imported asset, and every status change, owner change, deletion, restore and purge is recorded in the workspace's audit log, naming who made it.
 - A deleted asset leaves the inventory at once and is removed for good after 90 days. Its name can be used again straight away.
-- When an asset's {{ui:assets.form.retentionUntil}} date has passed, the nightly clean-up deletes it, the same as a deletion by hand. The hint in the form says the asset is retired, but it is deleted.
+- When an asset's {{ui:assets.form.retentionUntil}} date has passed, the nightly clean-up deletes it, the same as a deletion by hand.
 - Retired assets stay in the inventory and count under {{ui:assets.kpi.retired}}.
 - Assigning an owner from this page sends them no notification. Changing the owner on the asset's own page does.
 
@@ -138,7 +138,7 @@ At present the view always reads **{{ui:assets.deleted.emptyTitle}}**, even when
 | **{{ui:assets.noAssets}}** | The workspace has no assets | Click **{{ui:assets.empty.addAssetAction}}**, or import assets |
 | **{{ui:assets.empty.noResultsTitle}}** | No asset matches the search and filters. A list that failed to load after you changed a filter shows the same message | Click **{{ui:assets.empty.clearFilters}}**, or reload the page |
 | **{{ui:assets.deleted.emptyTitle}}** | No asset is deleted | Nothing to restore |
-| **{{ui:assets.bulk.actionFailed}}** | A bulk action did not go through, because more than 100 rows were selected or your role cannot delete | Select fewer rows, or ask an Owner or Admin to delete |
+| **{{ui:assets.bulk.actionFailed}}** | A bulk action did not go through, for example because more than 100 rows were selected | Select fewer rows and try again |
 | A banner saying only the first 5,000 results are shown | More than 5,000 assets match the search and filters | Narrow the list with a filter or the search |
 | **A resource with that unique constraint already exists** in the new-asset dialog | Another asset already has that name | Choose a different name |
 | **Owner must be an active member of this tenant** | The chosen owner is no longer an active member | Choose another owner |

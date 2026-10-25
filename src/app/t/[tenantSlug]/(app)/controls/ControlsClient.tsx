@@ -1272,10 +1272,12 @@ function ControlsPageInner({
             // `/controls/health-verdicts` map keyed by control id. Muted
             // '—' until the map resolves (or if a control isn't in it).
             id: 'health',
-            // Header carries the measured-only caveat: the verdict reflects
-            // MEASURED test operating-effectiveness only. Declared effectiveness
-            // informs valuation/ROI, not health — so a control with declared 95
-            // and no tests reads UNKNOWN here while ROI shows 95%.
+            // Header carries the caveat that declared effectiveness informs
+            // valuation/ROI, not health. The verdict comes from test runs, the
+            // control's status, overdue dates and open exceptions
+            // (`computeControlHealthVerdict`), so a control with declared 95 and no
+            // tests reads UNKNOWN unless it is IMPLEMENTED, and HEALTHY if it is
+            // and nothing else degrades it (#4275).
             header: () => (
                 <span className="inline-flex items-center gap-1">
                     {t('list.healthColumn')}
@@ -2023,6 +2025,11 @@ function ControlsPageInner({
                 // renders in the header-row selection toolbar via
                 // `selectionControls`. For viewers without edit permission,
                 // selection is left off entirely (no checkboxes, no bar).
+                // `selectionEnabled` is what removes the checkboxes: the select
+                // column is on by default, so withholding the bar alone left
+                // read-only roles ticking rows into an empty bar, and a single
+                // click ticked a row instead of opening it (#4275).
+                selectionEnabled: canEditControls,
                 selectionControls: canEditControls
                     ? () => (
                           <BulkActionBar
