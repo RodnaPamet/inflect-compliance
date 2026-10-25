@@ -146,6 +146,40 @@ describe('diffMappings — what an auditor is actually asking', () => {
         expect(d.statusValueKeysChanged).toEqual(['A']);
     });
 
+    it('reports an ADDED, REMOVED and RETARGETED account-type fold, symmetrically', () => {
+        // The same three cases as the status folds, because the risk is the same
+        // and an audited diff covering only one map would report a mapping as
+        // unchanged while the question put to a reviewer about every service
+        // account had been altered.
+        expect(
+            diffMappings(base(), base({ accountTypeValues: { P: 'HUMAN' } }))
+                .accountTypeValueKeysChanged,
+        ).toEqual(['P']);
+        expect(
+            diffMappings(base({ accountTypeValues: { P: 'HUMAN', T: 'SERVICE' } }),
+                base({ accountTypeValues: { P: 'HUMAN' } }))
+                .accountTypeValueKeysChanged,
+        ).toEqual(['T']);
+        expect(
+            diffMappings(base({ accountTypeValues: { P: 'HUMAN' } }),
+                base({ accountTypeValues: { P: 'SERVICE' } }))
+                .accountTypeValueKeysChanged,
+        ).toEqual(['P']);
+    });
+
+    it('keeps the two fold maps apart — a status change is not reported as a type change', () => {
+        // One shared helper computes both, so the wiring is the thing that could
+        // be wrong: passing the same map twice would make these two fields agree
+        // always, and every assertion above would still pass.
+        const d = diffMappings(base(), base({ statusValues: { Z: 'LOCKED' } }));
+        expect(d.statusValueKeysChanged).toEqual(['Z']);
+        expect(d.accountTypeValueKeysChanged).toEqual([]);
+
+        const e = diffMappings(base(), base({ accountTypeValues: { Z: 'SHARED' } }));
+        expect(e.accountTypeValueKeysChanged).toEqual(['Z']);
+        expect(e.statusValueKeysChanged).toEqual([]);
+    });
+
     it('reports a fingerprint change, which is the re-confirmation after drift', () => {
         const d = diffMappings(base(), base({ columnSetFingerprint: 'b'.repeat(64) }));
         expect(d.fingerprintChanged).toEqual({ from: 'a'.repeat(64), to: 'b'.repeat(64) });
@@ -155,7 +189,8 @@ describe('diffMappings — what an auditor is actually asking', () => {
         const d = diffMappings(base(), base());
         expect(d).toEqual({
             fieldsAdded: {}, fieldsRemoved: {}, fieldsChanged: {},
-            layoutChanged: null, statusValueKeysChanged: [], fingerprintChanged: null,
+            layoutChanged: null, statusValueKeysChanged: [],
+            accountTypeValueKeysChanged: [], fingerprintChanged: null,
         });
     });
 });

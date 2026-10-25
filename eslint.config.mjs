@@ -380,6 +380,35 @@ const config = [
         },
     },
     {
+        // ── The engine-neutral tool core imports no engine (Step 0a) ──
+        //
+        // `src/lib/agentic/engine-tools/` is what every engine Inflect runs
+        // shares: the narrowing, the review latch and the guarded call that
+        // send each tool call through the funnel. A second engine has to be
+        // able to import it without importing Flue, and Flue's runtime and
+        // valibot are ESM-only, so one stray import here would also drag them
+        // onto the static graph `flue-esm-modules-stay-off-the-static-graph`
+        // keeps them off. See docs/claude-agent-sdk-design.md, Step 0a.
+        //
+        // This REPLACES the base block's options for these files; the barrel
+        // rule it drops is about UI table imports, which this module has none of.
+        files: ['src/lib/agentic/engine-tools/**/*.ts'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: ['@flue/*', 'valibot', 'valibot/*', '@earendil-works/*'],
+                            message:
+                                'The engine-neutral tool core imports no engine. Engine-shaped code (a schema conversion, a runtime type) belongs in that engine’s own directory.',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    {
         files: ['src/lib/security/**/*', 'src/middleware.ts'],
         rules: {
             '@typescript-eslint/no-explicit-any': 'error',

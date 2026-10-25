@@ -13,6 +13,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import type { SuggestionResultDTO } from '../templates/TemplateControlSuggestModal';
 
@@ -159,13 +160,10 @@ export function useNewPolicyForm({
 
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                const msg =
-                    typeof data.error === 'string'
-                        ? data.error
-                        : data.message ||
-                          (data.error ? JSON.stringify(data.error) : '') ||
-                          'Failed to create policy';
-                throw new Error(msg);
+                // The server's own message — this used to fall back to
+                // `JSON.stringify(data.error)`, so the canonical
+                // `{ error: { code, message } }` envelope showed as raw JSON.
+                throw new Error(apiErrorMessage(data, 'Failed to create policy'));
             }
 
             const policy = await res.json();

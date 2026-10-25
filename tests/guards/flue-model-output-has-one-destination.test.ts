@@ -58,7 +58,8 @@ const A2A_ANSWER = 'src/app-layer/usecases/a2a-run-answer.ts';
 
 describe('output that becomes an action was already scanned', () => {
     it('the egress slice runs before the funnel, on the propose path too', () => {
-        const adapter = read('src/lib/agentic/flue/tools-adapter.ts');
+        // The sandwich moved with the engine-neutral core (Step 0a).
+        const adapter = read('src/lib/agentic/engine-tools/run-guarded-tool.ts');
         const egress = adapter.indexOf('await guardEgress(ctx, args,');
         const funnel = adapter.indexOf('isProposeTool(name)');
         expect(egress).toBeGreaterThan(-1);

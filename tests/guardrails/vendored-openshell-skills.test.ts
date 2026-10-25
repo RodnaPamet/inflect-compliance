@@ -22,9 +22,10 @@
  * is unchecked by construction while the suite stays green. So the test also
  * walks the tree and asserts every vendored path appears in the manifest.
  *
- * `identity-chain-diagnostic/` is this repository's OWN skill, written here,
- * and is excluded by name rather than by pattern: a pattern that happened to
- * exclude a vendored directory would silently stop checking it.
+ * `identity-chain-diagnostic/`, `steward/` and `babysit/` are this
+ * repository's OWN skills, written here, and are excluded by name rather than
+ * by pattern: a pattern that happened to exclude a vendored directory would
+ * silently stop checking it.
  *
  * ── NETWORK-FREE, DELIBERATELY ──────────────────────────────────────────
  *
@@ -46,6 +47,8 @@ const MANIFEST = path.join(SKILLS, 'VENDORED.md');
 /** This repository's own skills, which carry no upstream hash. Named, not matched. */
 const LOCALLY_AUTHORED = new Set([
     'identity-chain-diagnostic/SKILL.md',
+    'steward/SKILL.md',
+    'babysit/SKILL.md',
     'VENDORED.md',
     'OPENSHELL-LOCAL-NOTES.md',
 ]);

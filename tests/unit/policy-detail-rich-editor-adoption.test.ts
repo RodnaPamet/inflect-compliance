@@ -68,12 +68,18 @@ describe('Policy detail — Epic 45.2 RichTextEditor adoption', () => {
         expect(source).toContain('wireContentType');
     });
 
-    it('open-editor seeds editorContentType from the current version', () => {
+    it('open-editor seeds editorContentType from the version it loads', () => {
         // A version saved as HTML should reopen in WYSIWYG mode —
         // that branch is locked here so a future refactor cannot
         // silently downgrade HTML versions to plain markdown.
+        //
+        // #4127 — the version loaded is now the NEWEST one (`seedEditor`),
+        // not `currentVersion`: that is the published pointer, which does
+        // not move when a version is saved, so an edited draft reopened on
+        // its old text. WHICH version is loaded is proven by
+        // tests/rendered/policy-detail-version-targeting.test.tsx.
         expect(source).toMatch(
-            /currentVersion\?\.contentType === ['"]HTML['"][\s\S]{0,80}'HTML'/,
+            /setEditorContentType\(v\?\.contentType === ['"]HTML['"][\s\S]{0,40}'MARKDOWN'\)/,
         );
     });
 

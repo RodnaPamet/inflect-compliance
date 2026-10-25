@@ -205,13 +205,53 @@ export const DEFAULT_STATUS_VALUE_MAP: Readonly<Record<string, CanonicalStatus>>
     E: 'EXPIRED', EXPIRED: 'EXPIRED',
 };
 
+/**
+ * The lookup key a raw cell folds on, for BOTH value maps.
+ *
+ * Trimmed, upper-cased, and runs of whitespace or hyphens collapsed to a single
+ * underscore, so `"service account"`, `"Service-Account"` and `"SERVICE_ACCOUNT"`
+ * are one key. The account-type table has always needed that collapse — it ships
+ * `SERVICE_ACCOUNT` as a default spelling — and sharing one normaliser is what
+ * stops the two maps disagreeing about what a key IS.
+ *
+ * This folds the RAW CELL only. Stored override keys are normalised by
+ * {@link normaliseFoldKeys} where they are saved, so the lookup here is a single
+ * property read on an already-canonical key rather than a scan. The two must
+ * agree, which is why there is one normaliser and not two: a stored fold whose
+ * key the lookup cannot reach is DEAD, and invisibly so — the row folds to
+ * `UNKNOWN` exactly as it would with no fold at all. Measured before changing
+ * this: both live `legacy-mcp` mappings store upper-case keys (`A`, `D`), so no
+ * stored fold changes meaning.
+ */
+function foldKey(raw: string): string {
+    return raw.trim().toUpperCase().replace(/[\s-]+/g, '_');
+}
+
+/**
+ * Re-key a stored fold map onto {@link foldKey}, dropping nothing.
+ *
+ * Two spellings that normalise to one key would collide; last-in wins, which is
+ * the same rule an object literal already has, so no information is lost that the
+ * caller could have expressed. Returns `undefined` unchanged so an absent map
+ * stays absent rather than becoming an empty object — `sameMapping` compares the
+ * two, and turning one into the other would report every re-save as a change.
+ */
+export function normaliseFoldKeys<T extends string>(
+    map: Readonly<Record<string, T>> | undefined,
+): Readonly<Record<string, T>> | undefined {
+    if (map === undefined) return undefined;
+    const out: Record<string, T> = {};
+    for (const [k, v] of Object.entries(map)) out[foldKey(k)] = v;
+    return out;
+}
+
 /** Fold one raw status value through the default map plus any per-connection overrides. */
 export function mapStatusValue(
     raw: unknown,
     overrides?: Readonly<Record<string, CanonicalStatus>>
 ): CanonicalStatus {
     if (typeof raw !== 'string') return 'UNKNOWN';
-    const key = raw.trim().toUpperCase();
+    const key = foldKey(raw);
     if (!key) return 'UNKNOWN';
     return overrides?.[key] ?? DEFAULT_STATUS_VALUE_MAP[key] ?? 'UNKNOWN';
 }
@@ -220,6 +260,49 @@ export function mapStatusValue(
 
 export const ACCOUNT_TYPES = ['HUMAN', 'SERVICE', 'SHARED', 'SYSTEM', 'UNKNOWN'] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
+
+/**
+ * Default account-type spellings, the twin of {@link DEFAULT_STATUS_VALUE_MAP}.
+ *
+ * Moved here from `ingest.ts` so the two value maps sit together and fold through
+ * one normaliser. The table itself is unchanged.
+ */
+export const DEFAULT_ACCOUNT_TYPE_VALUE_MAP: Readonly<Record<string, AccountType>> = {
+    HUMAN: 'HUMAN', USER: 'HUMAN', PERSON: 'HUMAN', EMPLOYEE: 'HUMAN',
+    SERVICE: 'SERVICE', SVC: 'SERVICE', SERVICE_ACCOUNT: 'SERVICE', APP: 'SERVICE',
+    SHARED: 'SHARED', GENERIC: 'SHARED',
+    SYSTEM: 'SYSTEM', BUILTIN: 'SYSTEM',
+};
+
+/**
+ * Fold one raw account-type value through the defaults plus per-connection overrides.
+ *
+ * WHY THIS NEEDS AN OVERRIDE PATH AT ALL, since the default table looks generous:
+ * a database-level source is mostly not people. Oracle ships thirty-odd internal
+ * accounts and SQL Server has `sa` and its `##MS_*` principals, so a column
+ * spelling `H`/`S`, or `P`/`T` for person/technical, folds every row to `UNKNOWN`
+ * and no configuration could fix it. `accountType` is the field that keeps a
+ * reviewer from being shown thirty-five service accounts beside five humans —
+ * it changes what a reviewer is ASKED rather than labelling a row — so a source
+ * class that cannot reach it loses the protection entirely.
+ *
+ * Unrecognised folds to `UNKNOWN`, exactly as status does. NOT inferred from the
+ * username: deriving `SYSTEM` from seeing `SYS` or `DBSNMP` would be this module
+ * guessing, and the subsystem refuses that elsewhere for good reason — a rule
+ * fitted to the population being examined explains away the anomalies the product
+ * exists to find. Which accounts a given engine ships is a fact about THAT engine,
+ * so the shim computing it is correct and already possible; what was missing is
+ * only the ability to fold whatever column the shim emits.
+ */
+export function mapAccountTypeValue(
+    raw: unknown,
+    overrides?: Readonly<Record<string, AccountType>>
+): AccountType {
+    if (typeof raw !== 'string') return 'UNKNOWN';
+    const key = foldKey(raw);
+    if (!key) return 'UNKNOWN';
+    return overrides?.[key] ?? DEFAULT_ACCOUNT_TYPE_VALUE_MAP[key] ?? 'UNKNOWN';
+}
 
 const optionalText = z.string().trim().min(1).max(512).nullish().transform((v) => v ?? null);
 
@@ -327,8 +410,29 @@ export const StoredMappingSchema = z.object({
     /** canonical field → source column name. A field absent here is not collected. */
     fields: z.partialRecord(z.enum(CANONICAL_FIELDS), z.string().min(1).max(256)),
     entitlements: EntitlementLayoutSchema,
-    /** Per-connection status spellings, folded over {@link DEFAULT_STATUS_VALUE_MAP}. */
+    /**
+     * Per-connection status spellings, folded over {@link DEFAULT_STATUS_VALUE_MAP}.
+     *
+     * KEYS ARE NORMALISED BY THE WRITE SEAM — `saveLegacyAccessMapping` runs
+     * {@link normaliseFoldKeys} over this map before storing it, so what is
+     * stored is already the key the fold looks up. Not a Zod `.transform()` on
+     * this field, because that makes the schema's input and output types diverge
+     * and every call site typed on `StoredMapping` then fails to compile. Before that, a map saved as `{ "locked": "LOCKED" }`
+     * was a DEAD fold: `mapStatusValue` upper-cases the raw cell and never
+     * touched the stored key, so the lookup missed and the row folded to
+     * `UNKNOWN` exactly as it would with no fold at all. Invisible, because the
+     * two outcomes are identical. Normalising on write rather than on every
+     * lookup keeps the per-row path a single property read, and leaves the stored
+     * value greppable in one spelling.
+     */
     statusValues: z.record(z.string(), z.enum(CANONICAL_STATUSES)).optional(),
+    /**
+     * Per-connection account-type spellings, folded over
+     * {@link DEFAULT_ACCOUNT_TYPE_VALUE_MAP}. Symmetric with `statusValues` and
+     * optional for the same reason: a mapping saved before this field existed is
+     * still a valid mapping and must keep pulling, folding on the defaults alone.
+     */
+    accountTypeValues: z.record(z.string(), z.enum(ACCOUNT_TYPES)).optional(),
     confirmedAt: z.string(),
     confirmedByUserId: z.string().nullable(),
 });
