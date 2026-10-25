@@ -451,6 +451,38 @@ export function extractTenantSlugFromPath(pathname: string): string | null {
 }
 
 /**
+ * The workspace whose MFA challenge this request must pass first, if any, for
+ * the session's NON-primary workspaces (`mfaPendingTenantIds`; the primary one
+ * is `mfaPending`, handled before this):
+ *   - a path inside a pending workspace answers that workspace;
+ *   - an org path answers the first pending workspace, because an org route
+ *     exposes a portfolio that includes it;
+ *   - any other path answers nothing.
+ * Paths that must stay reachable mid-challenge are the caller's to exempt
+ * (`isMfaAllowedPath`). See `src/lib/auth/workspace-mfa.ts`.
+ */
+export function pendingMfaWorkspaceSlug(
+    pathname: string,
+    token: {
+        memberships?: ReadonlyArray<{ slug: string; tenantId: string }> | null;
+        mfaPendingTenantIds?: readonly string[] | null;
+    },
+): string | null {
+    const pending = new Set(token.mfaPendingTenantIds ?? []);
+    if (pending.size === 0) return null;
+    const memberships = token.memberships ?? [];
+    const slug = extractTenantSlugFromPath(pathname);
+    if (slug) {
+        const membership = memberships.find((m) => m.slug === slug);
+        return membership && pending.has(membership.tenantId) ? slug : null;
+    }
+    if (isOrgPath(pathname)) {
+        return memberships.find((m) => pending.has(m.tenantId))?.slug ?? null;
+    }
+    return null;
+}
+
+/**
  * Pure gate function: check whether a user's memberships array allows access
  * to the given path. Extracted as a pure function so it can be unit-tested
  * without Next.js framework machinery.

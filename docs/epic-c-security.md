@@ -30,7 +30,7 @@
 │             ─ recordNewSession (caps expiresAt, evicts oldest if      │
 │                                  over maxConcurrentSessions)          │
 │             ─ verifyAndTouchSession on every JWT pass                 │
-│                  └─ revoked or expired → SessionRevoked               │
+│                  └─ revoked or expired → throws SessionRevokedError   │
 └──────────────────────────────────────────────────────────────────────┘
 
   Local dev path                       CI / pre-merge path
@@ -48,7 +48,7 @@
 | C.1 — Route → permission map | Declarative map from URL regex to `PermissionKey`. Single source of truth for which routes need which keys; a CI guardrail keeps it in sync with the filesystem. | `src/lib/security/route-permissions.ts` |
 | C.2 — Local secret-detection | `.husky/pre-commit` runs `scripts/detect-secrets.sh` against staged files only. Inline `pragma: allowlist secret` carve-out. | `scripts/detect-secrets.sh`, `.husky/pre-commit`, `.secret-patterns` |
 | C.2 — CI secret-detection | `tests/guardrails/no-secrets.test.ts` walks `git ls-files` with the same patterns; `REPO_BASELINE` lists known-placeholder fixtures. | `tests/guardrails/no-secrets.test.ts` |
-| C.3 — Session metadata + lifecycle | `UserSession` table (sessionId, ip, ua, expiresAt, lastActiveAt, revokedAt). NextAuth `jwt` callback records on first mint; touches throttled to 5min; honours revoked + expired as `SessionRevoked`. | `src/lib/security/session-tracker.ts` |
+| C.3 — Session metadata + lifecycle | `UserSession` table (sessionId, ip, ua, expiresAt, lastActiveAt, revokedAt). NextAuth `jwt` callback records on first mint; touches throttled to 5min; refuses revoked + expired sessions by throwing `SessionRevokedError`, which makes `getServerSession` return `null`. | `src/lib/security/session-tracker.ts` |
 | C.3 — Concurrent-session + max-duration policy | `TenantSecuritySettings.maxConcurrentSessions` (revoke-oldest on overflow); `sessionMaxAgeMinutes` caps `expiresAt` at insert. | same module + `prisma/schema.prisma` |
 | C.3 — Admin sessions UI | Sessions column + modal on `/admin/members`. Uses `GET /admin/sessions[?userId=]` + `DELETE /admin/sessions`. | `src/app/t/[tenantSlug]/(app)/admin/members/page.tsx` |
 | C.4 — Audit event streaming | Best-effort outbound stream of every committed audit row to a tenant-configured webhook. Per-tenant buffer, 100-event / 5-second flush, HMAC-SHA256 signed, fail-safe. | `src/app-layer/events/audit-webhook.ts` |

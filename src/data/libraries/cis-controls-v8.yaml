@@ -34,6 +34,7 @@ copyright: >
   identifiers, titles, and IG structure; all descriptive text is original.
   The full CIS Controls are available at https://www.cisecurity.org/controls
 version: 1
+text_hash: ef64d71c3fc3645e9bf951218f04d7def695e9c4626cb5c7a15a6b0b3b03bce6
 publication_date: "2021-05-18"
 provider: Center for Internet Security
 packager: inflect

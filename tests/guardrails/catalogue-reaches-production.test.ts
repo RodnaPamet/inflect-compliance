@@ -78,6 +78,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { REPO_ROOT } from '../helpers/repo-files';
 import { callExpressionOf, declarationOf } from '../helpers/source-blocks';
+import { computeLibraryTextHash, parseLibraryFile, scanLibraryDirectory } from '@/app-layer/libraries';
 
 const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
 const CATALOG_SEEDER = path.join(REPO_ROOT, 'scripts/seed-framework-catalogs.ts');
@@ -284,5 +285,62 @@ describe('the framework libraries reach production', () => {
         const sync = entrypoint.indexOf(RUN_LIBRARY_SYNC);
         expect(catalogue).toBeGreaterThanOrEqual(0);
         expect(sync).toBeGreaterThan(catalogue);
+    });
+});
+
+/**
+ * ═══ A LIBRARY'S TEXT CHANGE REACHES A DATABASE THAT ALREADY HAS IT ═══
+ *
+ * The library import skips a library whose content hash matches the stored
+ * one, and that hash covers the urn, the version and the node urns. Not the
+ * text: a reworded title or description, or a corrected copyright line, under
+ * the same version is skipped by every database already holding the library.
+ * Nothing fails. The edit simply never arrives, which since the container-start
+ * sync is production.
+ *
+ * Folding the text into that hash would deliver it, but under the same version
+ * the importer would record a `vN -> vN` diff, and a second such edit would
+ * upsert onto that row (`@@unique([frameworkKey, fromVersion, toVersion])`)
+ * instead of getting its own, so the tenants notified of the first change
+ * would not hear of the second. The version is the right signal; this makes it
+ * move.
+ *
+ * Each library records `text_hash`, `computeLibraryTextHash` of its content as
+ * of its version. When the content changes, this fails and names both values
+ * to write. CI checks out one commit, so this cannot see the version the file
+ * had on the base, and an edit that rewrites `text_hash` without bumping
+ * `version` gets past it. That edit is a deliberate change to the line beside
+ * the version, in the diff a reviewer reads. A forgotten bump, the case that
+ * happens, is caught.
+ *
+ * Mapping sets need no equivalent: they record no diff, so their own hash
+ * covers their text (`computeMappingSetHash`).
+ */
+const LIBRARIES_DIR = path.join(REPO_ROOT, 'src/data/libraries');
+
+describe("a library's text change reaches a database that already holds it", () => {
+    const libraries = scanLibraryDirectory(LIBRARIES_DIR).map((e) => ({
+        file: path.basename(e.filePath),
+        stored: parseLibraryFile(e.filePath),
+    }));
+
+    it('the scan sees the shipped libraries (denominator, not findings)', () => {
+        expect(libraries.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it('every library records the fingerprint of its content as of its version', () => {
+        const stale = libraries.flatMap(({ file, stored }) => {
+            const actual = computeLibraryTextHash(stored);
+            if (stored.text_hash === actual) return [];
+            const v = stored.version;
+            return [
+                stored.text_hash === undefined
+                    ? `${file}: records no text_hash. Add "text_hash: ${actual}" under "version: ${v}".`
+                    : `${file}: its content changed since version ${v} was recorded. ` +
+                      `Bump to "version: ${v + 1}" and set "text_hash: ${actual}", ` +
+                      `or the change reaches no database that already holds the library.`,
+            ];
+        });
+        expect(stale).toEqual([]);
     });
 });

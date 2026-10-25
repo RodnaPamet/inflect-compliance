@@ -74,11 +74,15 @@ describe('MFA gate — class 1: tenant paths', () => {
         await expect(res.json()).resolves.toEqual({ error: 'MFA verification required' });
     });
 
-    it('redirects a tenant page to the challenge, carrying `next`', async () => {
+    it("redirects a tenant page to the primary workspace's challenge, carrying `next`", async () => {
+        // `mfaPending` is the PRIMARY workspace's, and the challenge verifies a
+        // code for the workspace in its URL, so the redirect names the
+        // primary's slug whichever workspace was opened. Sent to the URL's
+        // workspace, a code checked there could never clear the primary.
         const res = await middleware(req('GET', '/t/acme/dashboard'), {} as any);
         expect(res.status).toBe(307);
         const loc = new URL(res.headers.get('location')!);
-        expect(loc.pathname).toBe('/t/acme/auth/mfa');
+        expect(loc.pathname).toBe('/t/primary/auth/mfa');
         expect(loc.searchParams.get('next')).toBe('/t/acme/dashboard');
     });
 });

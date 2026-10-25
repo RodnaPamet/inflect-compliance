@@ -14,6 +14,7 @@ copyright: >
   This is a structural outline of ISO 27001:2022. The full standard can
   be purchased from https://www.iso.org/standard/27001
 version: 3
+text_hash: 024a3c449187276635e7810596e2e7ef18a82df4409c7d1271ecafa03b393e77
 publication_date: "2022-10-25"
 provider: ISO/IEC
 packager: inflect

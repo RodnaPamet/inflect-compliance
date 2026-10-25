@@ -1174,7 +1174,7 @@
     },
     {
       "code": "NIS2-NS",
-      "title": "Network and information system security",
+      "title": "Security in network and information systems acquisition, development and maintenance",
       "description": "Register every application the organisation develops and every third-party component it acquires, and document the secure development lifecycle each passes through.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",

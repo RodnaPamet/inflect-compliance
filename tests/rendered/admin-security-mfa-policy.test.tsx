@@ -121,6 +121,21 @@ describe('admin Security & MFA page', () => {
         expect(screen.queryByText('[object Object]')).not.toBeInTheDocument();
     });
 
+    it('warns before Required that single sign-on does not skip the code, instead of promising break-glass through it', async () => {
+        // Every sign-in, SSO included, sets `mfaPending` under REQUIRED
+        // (src/auth.ts, the MFA enforcement block reads no sign-in method), and
+        // there are no backup codes. The notice used to say "Break-glass admin
+        // access is preserved via SSO if configured", which is the opposite.
+        mount();
+        await loaded();
+
+        fireEvent.click(screen.getByRole('radio', { name: /Required/ }));
+        const notice = (await screen.findByText('Before enabling Required MFA:')).parentElement as HTMLElement;
+
+        expect(notice).toHaveTextContent('Single sign-on does not skip the code, and there are no backup codes');
+        expect(notice).not.toHaveTextContent(/preserved via SSO/i);
+    });
+
     it('describes Disabled as no sign-in check, with enrolment still open', async () => {
         mount();
         await loaded();
