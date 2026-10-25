@@ -15,6 +15,9 @@
  *      template codes → CatalogValidationError with the precise path
  *   ✅ cross-validation: template.requirementCodes referencing
  *      unknown requirement codes → CatalogValidationError
+ *   ✅ `packs`: several packs over one framework — each names its
+ *      templates, keys are unique, `pack` and `packs` are exclusive, and
+ *      a template no pack names is refused
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -23,6 +26,7 @@ import {
     loadCatalogFile,
     loadAndValidateCatalogFile,
     assertCatalogConsistency,
+    catalogPacks,
     CatalogParseError,
     CatalogValidationError,
 } from '../../prisma/catalog-loader';
@@ -263,5 +267,97 @@ templates:
     requirementCodes: [A.999]
 `);
         expect(() => loadAndValidateCatalogFile(p)).toThrow(CatalogValidationError);
+    });
+});
+
+describe('packs — several packs over one framework', () => {
+    const BASE = `
+framework: { key: X, name: X }
+requirements:
+  - { code: A.1, title: T }
+templates:
+  - { code: CORE, title: Core, category: C, requirementCodes: [A.1] }
+  - { code: ONE, title: One, category: C, requirementCodes: [A.1] }
+  - { code: TWO, title: Two, category: C, requirementCodes: [A.1] }
+`;
+
+    it('reads them, sharing a template between packs, and catalogPacks returns them in order', () => {
+        const p = write('packs-ok.yaml', BASE + `
+packs:
+  - { key: P1, name: P1, templateCodes: [CORE, ONE] }
+  - { key: P2, name: P2, templateCodes: [CORE, TWO] }
+`);
+        const file = loadAndValidateCatalogFile(p);
+        expect(catalogPacks(file).map((pk) => [pk.key, pk.templateCodes])).toEqual([
+            ['P1', ['CORE', 'ONE']],
+            ['P2', ['CORE', 'TWO']],
+        ]);
+    });
+
+    it('returns the single pack, or none, for a file without `packs`', () => {
+        expect(catalogPacks(loadCatalogFile(write('single.yaml', VALID_YAML))).map((pk) => pk.key)).toEqual(['ISO27001_2022_BASE']);
+        const noPack = loadCatalogFile(write('nopack.yaml', BASE));
+        expect(catalogPacks(noPack)).toEqual([]);
+    });
+
+    it('refuses `pack` and `packs` together', () => {
+        const p = write('both.yaml', BASE + `
+pack: { key: P0, name: P0 }
+packs:
+  - { key: P1, name: P1, templateCodes: [CORE, ONE] }
+  - { key: P2, name: P2, templateCodes: [CORE, TWO] }
+`);
+        expect(() => loadCatalogFile(p)).toThrow(/either `pack` or `packs`/);
+    });
+
+    it('refuses a duplicated pack key', () => {
+        const p = write('dup.yaml', BASE + `
+packs:
+  - { key: P1, name: P1, templateCodes: [CORE, ONE] }
+  - { key: P1, name: again, templateCodes: [CORE, TWO] }
+`);
+        expect(() => loadCatalogFile(p)).toThrow(/declared twice/);
+    });
+
+    it('refuses a pack in `packs` that names no templates, rather than defaulting it to all', () => {
+        const p = write('implicit.yaml', BASE + `
+packs:
+  - { key: P1, name: P1, templateCodes: [CORE, ONE] }
+  - { key: P2, name: P2 }
+`);
+        expect(() => loadCatalogFile(p)).toThrow(CatalogValidationError);
+    });
+
+    it('refuses a template that no pack names, since no install would deliver it', () => {
+        const p = write('orphan.yaml', BASE + `
+packs:
+  - { key: P1, name: P1, templateCodes: [CORE, ONE] }
+  - { key: P2, name: P2, templateCodes: [CORE] }
+`);
+        const file = loadCatalogFile(p);
+        try {
+            assertCatalogConsistency(file, p);
+            fail('expected CatalogValidationError');
+        } catch (err) {
+            const issue = (err as CatalogValidationError).issues[0];
+            expect(issue.path).toBe('templates[2].code');
+            expect(issue.message).toMatch(/TWO.*no pack/);
+        }
+    });
+
+    it('names the pack index in a dangling-code issue', () => {
+        const p = write('dangling.yaml', BASE + `
+packs:
+  - { key: P1, name: P1, templateCodes: [CORE, ONE] }
+  - { key: P2, name: P2, templateCodes: [CORE, TWO, GONE] }
+`);
+        const file = loadCatalogFile(p);
+        try {
+            assertCatalogConsistency(file, p);
+            fail('expected CatalogValidationError');
+        } catch (err) {
+            const issue = (err as CatalogValidationError).issues[0];
+            expect(issue.path).toBe('packs[1].templateCodes[2]');
+        }
     });
 });

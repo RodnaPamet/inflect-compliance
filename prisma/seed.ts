@@ -1384,8 +1384,8 @@ Reviewed at least annually.` },
     }
     console.log(`✅ ISO 27701 privacy risk templates seeded (${iso27701RiskTemplates.length})`);
 
-    // ─── COSO ICF 2013 and AIUC-1 ───
-    // The two catalogues that declare the SAME framework key as their library
+    // ─── COSO ICF 2013, AIUC-1 and EU drone operations ───
+    // The catalogues that declare the SAME framework key as their library
     // file, so in production the catalogue writes the row and the library sync
     // below leaves it alone (scripts/seed-framework-catalogs.ts says why). This
     // file applied neither, so the sync used to find no catalogue row and import
@@ -1395,6 +1395,10 @@ Reviewed at least annually.` },
     for (const rel of [
         'prisma/fixtures/coso-icf-2013-control-templates.json',
         'prisma/fixtures/aiuc-1-control-templates.json',
+        // EU drone operations, for the same reason: its library declares the
+        // same key, so without the catalogue first the sync would import it as
+        // a library row with none of its seven subcategory packs.
+        'prisma/fixtures/eu-uas-ops-control-templates.json',
     ]) {
         const result = await applyCatalogFile(prisma, loadCatalogFile(rel), rel);
         console.log(
