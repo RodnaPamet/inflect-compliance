@@ -39,7 +39,9 @@ import {
     MAPPING_CONFIG_KEY,
     StoredMappingSchema,
     assertMappingUsable,
+    normaliseFoldKeys,
     projectedColumns,
+    type AccountType,
     type CanonicalStatus,
     type EntitlementLayout,
     type StoredMapping,
@@ -54,6 +56,7 @@ export interface SaveMappingInput {
     readonly fields: Readonly<Record<string, string>>;
     readonly entitlements: EntitlementLayout;
     readonly statusValues?: Readonly<Record<string, CanonicalStatus>>;
+    readonly accountTypeValues?: Readonly<Record<string, AccountType>>;
     /**
      * The column set the administrator confirmed this mapping against.
      *
@@ -128,7 +131,15 @@ export async function saveLegacyAccessMapping(
             ...(input.confirmedColumns ? { confirmedColumns: [...input.confirmedColumns] } : {}),
             fields: input.fields,
             entitlements: input.entitlements,
-            statusValues: input.statusValues,
+            // Fold keys are re-keyed HERE, the single write seam for this
+            // config key, so a map typed in lower case is not a DEAD fold: the
+            // raw cell is folded before lookup and the stored key never was, so
+            // `{ "locked": "LOCKED" }` missed and the row read UNKNOWN exactly
+            // as it would with no fold at all — identical outcomes, so nothing
+            // surfaced. Normalising on write keeps the per-row path a single
+            // property read and the stored value greppable in one spelling.
+            statusValues: normaliseFoldKeys(input.statusValues),
+            accountTypeValues: normaliseFoldKeys(input.accountTypeValues),
             // The request's own clock, not a fresh read inside the transaction, so
             // every row written by one request agrees about when it happened.
             confirmedAt: new Date().toISOString(),
@@ -170,6 +181,9 @@ export async function saveLegacyAccessMapping(
                 fields: { ...mapping.fields },
                 entitlements: mapping.entitlements,
                 ...(mapping.statusValues ? { statusValues: { ...mapping.statusValues } } : {}),
+                ...(mapping.accountTypeValues
+                    ? { accountTypeValues: { ...mapping.accountTypeValues } }
+                    : {}),
                 confirmedAt: mapping.confirmedAt,
                 confirmedByUserId: mapping.confirmedByUserId,
             },
@@ -235,6 +249,7 @@ function sameMapping(a: StoredMapping, b: StoredMapping): boolean {
         JSON.stringify(Object.entries(m ?? {}).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
     if (norm(a.fields) !== norm(b.fields)) return false;
     if (norm(a.statusValues) !== norm(b.statusValues)) return false;
+    if (norm(a.accountTypeValues) !== norm(b.accountTypeValues)) return false;
     return true;
 }
 
@@ -255,6 +270,8 @@ export interface MappingDiff {
     readonly layoutChanged: MappingFieldChange | null;
     /** Status folds, as a count of changed keys. The keys are the SOURCE values. */
     readonly statusValueKeysChanged: readonly string[];
+    /** Same shape, for the account-type folds. See `statusValueKeysChanged`. */
+    readonly accountTypeValueKeysChanged: readonly string[];
     readonly fingerprintChanged: MappingFieldChange | null;
 }
 
@@ -305,16 +322,28 @@ export function diffMappings(
             : null;
 
     // The union of both key sets, so a REMOVED fold is reported as loudly as an
-    // added one. Dropping a fold silently re-routes a status to UNKNOWN, which is
+    // added one. Dropping a fold silently re-routes a value to UNKNOWN, which is
     // the fail-closed direction but still a change somebody made.
-    const foldsBefore = previous?.statusValues ?? {};
-    const foldsAfter = next.statusValues ?? {};
-    const statusValueKeysChanged = [
-        ...new Set([...Object.keys(foldsBefore), ...Object.keys(foldsAfter)]),
-    ]
-        .filter((k) => (foldsBefore as Record<string, string | undefined>)[k]
-            !== (foldsAfter as Record<string, string | undefined>)[k])
-        .sort();
+    //
+    // Factored once and applied to both value maps rather than written twice: the
+    // account-type folds carry the same risk as the status folds and an audited
+    // diff that covered only one of them would report a mapping as unchanged
+    // while a reviewer's question about every service account had been altered.
+    const changedFoldKeys = (
+        before: Readonly<Record<string, string>> | undefined,
+        after: Readonly<Record<string, string>> | undefined,
+    ): readonly string[] => {
+        const b = (before ?? {}) as Record<string, string | undefined>;
+        const a = (after ?? {}) as Record<string, string | undefined>;
+        return [...new Set([...Object.keys(b), ...Object.keys(a)])]
+            .filter((k) => b[k] !== a[k])
+            .sort();
+    };
+    const statusValueKeysChanged = changedFoldKeys(previous?.statusValues, next.statusValues);
+    const accountTypeValueKeysChanged = changedFoldKeys(
+        previous?.accountTypeValues,
+        next.accountTypeValues,
+    );
 
     const fingerprintChanged =
         previous && previous.columnSetFingerprint !== next.columnSetFingerprint
@@ -327,6 +356,7 @@ export function diffMappings(
         fieldsChanged,
         layoutChanged,
         statusValueKeysChanged,
+        accountTypeValueKeysChanged,
         fingerprintChanged,
     };
 }
