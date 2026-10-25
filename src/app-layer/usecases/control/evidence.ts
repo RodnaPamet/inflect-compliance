@@ -12,9 +12,12 @@ import { ControlRepository } from '../../repositories/ControlRepository';
 import {
     assertCanReadControls, assertCanUpdateControl, assertCanLinkEvidence,
 } from '../../policies/control.policies';
+import { EvidenceRepository } from '../../repositories/EvidenceRepository';
 import { logEvent } from '../../events/audit';
-import { notFound } from '@/lib/errors/types';
+import { badRequest, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ─── Evidence Links ───
 
@@ -81,15 +84,28 @@ export async function getControlEvidenceTab(ctx: RequestContext, controlId: stri
 }
 
 /**
- * Writes a plain `ControlEvidenceLink` row: it never reaches the evidence
- * library and has no review status. The control's Evidence tab no longer
- * adds a web link through here — it creates a library LINK record through
- * `createEvidence` (`POST /evidence` with `controlIds`), exactly as the
- * library's own link dialog does, so the link can be reviewed (#4126).
- * This path stays for API callers and the controls list's edit panel.
+ * Attaches evidence to a control from `POST /controls/:id/evidence` — the
+ * API, and the URL box in the controls list's edit panel.
+ *
+ * A web link (`kind: LINK`) becomes a library record: a DRAFT `Evidence` of
+ * type LINK joined to the control by an `EvidenceControlLink`, exactly what the
+ * control's Evidence tab and the library's own link dialog create, so it can
+ * be submitted, approved and rejected (#4126). It used to be a plain
+ * `ControlEvidenceLink` row, which nothing in the library reads. The response
+ * is the new record.
+ *
+ * The record is written here, under the control's gate, rather than through
+ * `createEvidence`, whose `evidence.edit` gate would have refused an API key
+ * scoped `controls:write` that could add a link before (owner decision). Tasks,
+ * risks and assets attach their link records the same way. A link arrives
+ * with no title, so it is titled by its note, or by its address when there is
+ * none — the rule those paths already use.
+ *
+ * FILE and INTEGRATION_RESULT kinds still write a plain `ControlEvidenceLink`.
  */
 export async function linkEvidence(ctx: RequestContext, controlId: string, data: { kind: string; fileId?: string | null; url?: string | null; note?: string | null }) {
     assertCanLinkEvidence(ctx);
+    if (data.kind === 'LINK') return linkEvidenceRecord(ctx, controlId, data);
     return runInTenantContext(ctx, async (db) => {
         const link = await ControlRepository.linkEvidence(db, ctx, controlId, data);
         if (!link) throw notFound('Control not found');
@@ -103,6 +119,52 @@ export async function linkEvidence(ctx: RequestContext, controlId: string, data:
         });
         return link;
     });
+}
+
+async function linkEvidenceRecord(ctx: RequestContext, controlId: string, data: { url?: string | null; note?: string | null }) {
+    const url = data.url?.trim();
+    if (!url) throw badRequest('A link needs a url.');
+    const note = data.note ? sanitizePlainText(data.note).trim() : '';
+    const evidence = await runInTenantContext(ctx, async (db) => {
+        const control = await db.control.findFirst({
+            where: { id: controlId, tenantId: ctx.tenantId },
+            select: { id: true },
+        });
+        if (!control) throw notFound('Control not found');
+
+        const created = await EvidenceRepository.create(db, ctx, {
+            type: 'LINK',
+            title: note || url,
+            content: url,
+            status: 'DRAFT',
+        });
+        await EvidenceRepository.createControlLinks(db, ctx, created.id, [controlId]);
+
+        await logEvent(db, ctx, {
+            action: 'CREATE',
+            entityType: 'Evidence',
+            entityId: created.id,
+            details: `Created evidence: ${created.title}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Evidence',
+                operation: 'created',
+                after: { title: created.title, type: 'LINK' },
+                summary: `Created evidence: ${created.title}`,
+            },
+        });
+        await logEvent(db, ctx, {
+            action: 'CONTROL_EVIDENCE_LINKED',
+            entityType: 'Control',
+            entityId: controlId,
+            details: `Evidence linked: LINK (${url})`,
+            detailsJson: { category: 'relationship', operation: 'linked', sourceEntity: 'Control', sourceId: controlId, targetEntity: 'Evidence', targetId: created.id, relation: 'LINK' },
+        });
+        return created;
+    });
+    await bumpEntityCacheVersion(ctx, 'evidence');
+    await bumpEntityCacheVersion(ctx, 'control');
+    return evidence;
 }
 
 export async function unlinkEvidence(ctx: RequestContext, controlId: string, linkId: string) {
