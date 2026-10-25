@@ -1412,10 +1412,17 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
 }
 
 /**
+ * How many records holding one file the download reads. One file is held by
+ * one record, or a handful when the upload's SHA-256 dedup reused it.
+ */
+const OWNING_EVIDENCE_READ_CAP = 100;
+
+/**
  * STRICT DOWNLOAD POLICY (Option A):
  * - ADMIN/EDITOR: can download any tenant file evidence.
  * - READER/AUDITOR: can download ONLY if evidence is linked to a control (controlId not null).
  * - Soft-deleted evidence blocks download for all roles.
+ * - When several records hold the file, the gates are asked of a live one.
  */
 export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) {
     assertCanRead(ctx);
@@ -1464,7 +1471,17 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         // selecting `deletedAt` in a query that can only ever return null for
         // it is the tell. Fetching the deleted row is the only way the gate
         // can see what it exists to refuse.
-        const evidence = await db.evidence.findFirst(
+        //
+        // Several records can hold ONE file — `Evidence.fileRecordId` carries
+        // no unique key, and the upload's SHA-256 dedup points a new record at
+        // an existing FileRecord. This read used to be an unordered
+        // `findFirst`, so a deleted or archived sibling could answer for the
+        // file and refuse a download through the live record that holds the
+        // same bytes. Every holder is read, and the gate is asked of the one
+        // that can serve it: a live holder linked to a control, then any live
+        // holder, then an archived one (refused as archived), then a deleted
+        // one (refused as deleted).
+        const holders = await db.evidence.findMany(
             withDeleted({
                 where: { tenantId: ctx.tenantId, fileRecordId: headFileId },
                 select: {
@@ -1473,8 +1490,17 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
                     isArchived: true,
                     _count: { select: { evidenceControlLinks: true } },
                 },
+                orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
+                take: OWNING_EVIDENCE_READ_CAP,
             }),
         );
+        const live = holders.filter((h) => !h.deletedAt && !h.isArchived);
+        const evidence =
+            live.find((h) => h._count.evidenceControlLinks > 0)
+            ?? live[0]
+            ?? holders.find((h) => !h.deletedAt)
+            ?? holders[0]
+            ?? null;
 
         // No owning evidence at all — the file is an orphan. Today that means
         // the evidence was hard-purged (`purgeEntity` deletes the Evidence row
