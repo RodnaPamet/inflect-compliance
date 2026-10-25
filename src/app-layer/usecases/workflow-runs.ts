@@ -97,7 +97,7 @@ import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
 import { captureAuditNarrativeAfterRun } from './audit-workpaper-narrative';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
-import { isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
+import { isReasoningEngine, recordedModeOf, type AgentDriver } from '@/lib/agentic/agent-driver';
 import { readRecordedRunDriver, readRecordedRunDrivers } from '@/lib/agentic/agent-driver-stored-mode';
 import {
     estimateTokens,
@@ -1107,7 +1107,7 @@ async function executeFrom(
     // occurrence turns any whole-file `toMatch(/selectRunDriver/)` into a
     // needle that two positions satisfy.
     const { run, driver } = selectRunDriver(def, permittedDriver);
-    const driverLabel = driver === 'flue' ? 'FLUE' : 'STATIC';
+    const driverLabel = recordedModeOf(driver);
 
     // ── A RUN AN A2A PEER STARTED CARRIES THAT ON EVERY SEGMENT (#3679) ──────
     //
@@ -1316,7 +1316,7 @@ async function createSealedRun(
                     // …and on WHICH ENGINE. Written in the CREATE rather than
                     // updated after the walk: a run that crashes mid-step still
                     // has to be able to say what was executing it.
-                    driver: driver === 'flue' ? 'FLUE' : 'STATIC',
+                    driver: recordedModeOf(driver),
                     // …and, for a run an A2A peer's task started, WHICH peer
                     // and WHICH verified message (#3679). Write-once at the
                     // database; R17 and R14 are keyed on it.
