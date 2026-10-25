@@ -433,13 +433,16 @@ export function EvidenceDetailSheet({
                             {/* EP-2 — inline file preview (image / PDF /
                                 icon fallback), reusing the shared file-type
                                 resolver. Uses the existing tenant-scoped
-                                download route as the source URL. */}
+                                download route as the source URL, asked as a
+                                PREVIEW: it loads with no click, so it is
+                                recorded as EVIDENCE_PREVIEWED rather than as
+                                a download (#4277). */}
                             <EvidenceFilePreview
                                 evidence={evidence}
                                 fileUrl={
                                     evidence.fileRecordId && downloadAllowed
                                         ? tenantApiUrl(
-                                              `/evidence/files/${evidence.fileRecordId}/download`,
+                                              `/evidence/files/${evidence.fileRecordId}/download?purpose=preview`,
                                           )
                                         : null
                                 }

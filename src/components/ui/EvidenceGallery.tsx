@@ -98,6 +98,13 @@ export interface EvidenceGalleryProps<T extends EvidenceGalleryRow> {
      *  thumbnail/preview affordance (e.g. permissions filter). */
     fileUrl: (row: T) => string | null;
     /**
+     * The URL an image thumbnail loads from, when it should differ from the
+     * download URL — the evidence page asks its route for a PREVIEW, so a
+     * thumbnail shown while scrolling is not recorded as a download. Falls
+     * back to `fileUrl`. Only consulted where `fileUrl` is non-null.
+     */
+    previewUrl?: (row: T) => string | null;
+    /**
      * Optional click handler — passes the row. When omitted, image
      * cards are clickable links to `fileUrl(row)` and non-previewable
      * cards are static (the table view's actions remain the canonical
@@ -146,6 +153,7 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
     loading,
     emptyState,
     fileUrl,
+    previewUrl,
     onRowClick,
     statusBadgeVariant,
     statusLabel,
@@ -205,6 +213,7 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
                     row={row}
                     now={now}
                     fileUrl={fileUrl}
+                    previewUrl={previewUrl}
                     onRowClick={onRowClick}
                     statusBadgeVariant={statusBadgeVariant}
                     statusLabel={statusLabel}
@@ -227,6 +236,7 @@ interface GalleryCardProps<T extends EvidenceGalleryRow> {
     /** Shared hydration-safe clock for the freshness badge. */
     now?: Date;
     fileUrl: (row: T) => string | null;
+    previewUrl?: (row: T) => string | null;
     onRowClick?: (row: T) => void;
     statusBadgeVariant?: (status: string) => StatusBadgeVariant;
     statusLabel?: (status: string) => string;
@@ -242,6 +252,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
     row,
     now,
     fileUrl,
+    previewUrl,
     onRowClick,
     statusBadgeVariant,
     statusLabel,
@@ -259,6 +270,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
         null;
     const match = resolveFileTypeIcon(row.fileName, mime, row.type);
     const url = fileUrl(row);
+    const thumbUrl = url === null ? null : (previewUrl?.(row) ?? url);
     // R5-P2 #1 — never auto-fetch a thumbnail/PDF (or offer download) for a file
     // the AV gate would block; fall through to the file-type icon instead.
     const scanServable = isScanServable(row.fileRecord?.scanStatus);
@@ -337,7 +349,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
                 {isImage ? (
                     // eslint-disable-next-line @next/next/no-img-element -- The src is a runtime tenant-scoped /api download URL with auth cookies; next/image needs declared remote-pattern allowlists + known dimensions, neither of which fits a per-tenant evidence thumbnail. `loading="lazy" decoding="async"` provides the perf characteristics that matter.
                     <img
-                        src={url!}
+                        src={thumbUrl!}
                         alt={row.title}
                         loading="lazy"
                         decoding="async"

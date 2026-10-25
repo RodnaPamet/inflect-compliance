@@ -1967,6 +1967,13 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                                 ? apiUrl(`/evidence/files/${ev.fileRecordId}/download`)
                                 : null
                         }
+                        // A thumbnail loads while the user scrolls; it is a
+                        // preview, recorded as one rather than as a download.
+                        previewUrl={(ev) =>
+                            ev.fileRecordId
+                                ? apiUrl(`/evidence/files/${ev.fileRecordId}/download?purpose=preview`)
+                                : null
+                        }
                         statusBadgeVariant={(s) => STATUS_BADGE[s] ?? 'neutral'}
                         statusLabel={statusLabel}
                         retentionStatus={(ev) => {

@@ -299,3 +299,22 @@ describe('Evidence list — an unarchive the server refuses says why', () => {
         await waitFor(() => expect(toastError.mock.calls.map((c) => c[0])).toContain(message));
     });
 });
+
+describe('Evidence gallery — a thumbnail is a preview, not a download', () => {
+    it('loads the image with ?purpose=preview and keeps the download link a download', async () => {
+        window.history.replaceState({}, '', '/t/acme/evidence?view=gallery');
+        const image = evidenceRow({
+            id: 'ev-img',
+            title: 'Screenshot',
+            fileName: 'shot.png',
+            fileRecordId: 'fr-img',
+            fileRecord: { id: 'fr-img', mimeType: 'image/png', scanStatus: 'CLEAN' },
+        });
+        mount(makeServer({ rows: [image] }), { role: 'EDITOR' });
+        const thumb = await screen.findByTestId('evidence-gallery-thumb-ev-img');
+        expect(thumb.getAttribute('src')).toBe('/api/t/acme/evidence/files/fr-img/download?purpose=preview');
+        expect(screen.getByTestId('evidence-gallery-download-ev-img').getAttribute('href')).toBe(
+            '/api/t/acme/evidence/files/fr-img/download',
+        );
+    });
+});

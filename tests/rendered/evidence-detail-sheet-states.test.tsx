@@ -255,3 +255,15 @@ describe('Edit and Submit follow the evidence.edit grant', () => {
         expect(document.getElementById('evidence-sheet-submit-btn')).not.toBeNull();
     });
 });
+
+describe('the inline preview is asked for as a preview', () => {
+    it('the image loads with ?purpose=preview; the Download button is a plain download', () => {
+        swr.detail = { data: fileEvidence({ evidenceControlLinks: LINKED }), isLoading: false, error: undefined };
+        renderSheet();
+        const img = screen.getByTestId('evidence-sheet-preview-image') as HTMLImageElement;
+        expect(img.getAttribute('src')).toBe('/api/t/acme/evidence/files/fr_1/download?purpose=preview');
+        expect(document.getElementById('evidence-sheet-download-btn')!.getAttribute('href')).toBe(
+            '/api/t/acme/evidence/files/fr_1/download',
+        );
+    });
+});
