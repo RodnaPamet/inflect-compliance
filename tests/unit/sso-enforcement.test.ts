@@ -141,9 +141,10 @@ describe('SSO Enforcement Model', () => {
 // ─── JIT Provisioning Safety ────────────────────────────────────────
 
 describe('JIT Provisioning Safety', () => {
-    it('JIT is disabled by default in schema', () => {
-        // UpsertSsoConfigInput defaults allowJitProvisioning to false
-        // This ensures existing tenants are not affected
+    it('the schema leaves JIT unset when a save does not send it, so the stored setting is kept', () => {
+        // The admin page never sends JIT, and a default here turned JIT off on
+        // every save. The default for a NEW provider (off, READER) is applied
+        // by the usecase: tests/unit/sso-trust-anchor.test.ts.
         const { UpsertSsoConfigInput } = require('../../src/app-layer/schemas/sso-config.schemas');
         const result = UpsertSsoConfigInput.safeParse({
             name: 'Test OIDC',
@@ -156,7 +157,7 @@ describe('JIT Provisioning Safety', () => {
         });
         expect(result.success).toBe(true);
         if (result.success) {
-            expect(result.data.allowJitProvisioning).toBe(false);
+            expect(result.data.allowJitProvisioning).toBeUndefined();
         }
     });
 
@@ -192,7 +193,7 @@ describe('JIT Provisioning Safety', () => {
         expect(result.success).toBe(false);
     });
 
-    it('JIT defaults to READER when not specified', () => {
+    it('the schema leaves the JIT role unset when not specified', () => {
         const { UpsertSsoConfigInput } = require('../../src/app-layer/schemas/sso-config.schemas');
 
         const result = UpsertSsoConfigInput.parse({
@@ -200,7 +201,7 @@ describe('JIT Provisioning Safety', () => {
             config: { issuer: 'https://x.com', clientId: 'c', clientSecret: 's' },
             allowJitProvisioning: true,
         });
-        expect(result.jitDefaultRole).toBe('READER');
+        expect(result.jitDefaultRole).toBeUndefined();
     });
 });
 

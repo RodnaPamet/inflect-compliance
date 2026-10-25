@@ -20,6 +20,7 @@ jest.mock('@/app-layer/repositories/SsoConfigRepository', () => ({
     findById: (...a: unknown[]) => findById(...a),
     upsert: (...a: [string, Record<string, unknown>]) => upsert(...a),
 }));
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
 const breakGlassMembers: { role: string; user: { passwordHash: string | null } }[] = [];
 jest.mock('@/lib/prisma', () => {
     const prisma = {
@@ -88,8 +89,9 @@ describe('saving an SSO provider', () => {
     });
 
     it('refuses the mask on a new provider: nothing is stored to keep', async () => {
+        // Creating a provider is Owner-tier (tests/unit/sso-trust-anchor.test.ts).
         await expect(
-            upsertTenantSsoConfig(ctx(), UpsertSsoConfigInput.parse({
+            upsertTenantSsoConfig(makeRequestContext('OWNER', { tenantId: 't1' }), UpsertSsoConfigInput.parse({
                 name: 'Okta', type: 'OIDC',
                 config: { issuer: 'https://acme.okta.example', clientId: 'cid', clientSecret: SSO_SECRET_MASK },
             })),
