@@ -28,11 +28,23 @@ import {
     DOCUMENT_LOAD_MSG,
     documentLoadRoute,
     normalizeVitalRoute,
+    SOFT_NAVIGATION_MSG,
+    softNavigationRoute,
 } from '@/lib/observability/vital-route';
 import { codeOf } from '../../helpers/source-blocks';
 
 const doc = (pathname: string, over: Partial<Parameters<typeof documentLoadRoute>[0]> = {}) =>
     documentLoadRoute({ fetchDest: 'document', pathname, passedThrough: true, ...over });
+
+/** An RSC fetch that accompanies a real client-side navigation. */
+const soft = (pathname: string, over: Partial<Parameters<typeof softNavigationRoute>[0]> = {}) =>
+    softNavigationRoute({
+        rsc: '1',
+        routerPrefetch: null,
+        pathname,
+        passedThrough: true,
+        ...over,
+    });
 
 describe('documentLoadRoute — what counts as a page load', () => {
     it('counts a served top-level document', () => {
@@ -113,6 +125,103 @@ describe('documentLoadRoute — what counts as a page load', () => {
     });
 });
 
+describe('softNavigationRoute — what counts as a client-side navigation (#4195)', () => {
+    it('counts the RSC fetch that accompanies a navigation', () => {
+        expect(soft('/t/acme/controls')).toBe('/t/[tenant]/controls');
+    });
+
+    it('labels it with the SAME normaliser the beacons use', () => {
+        // The whole point of a denominator is that it is labelled identically
+        // to the numerator; two spellings of a route cannot be divided.
+        const pathname = '/t/acme/controls/clz9k3h2x0000abcdefghijkl';
+        expect(soft(pathname)).toBe(normalizeVitalRoute(pathname));
+    });
+
+    it('does NOT count a prefetch, which may never be followed', () => {
+        expect(soft('/t/acme/controls', { routerPrefetch: '1' })).toBeNull();
+    });
+
+    it('does NOT count a plain document request — that is the other counter', () => {
+        // No `rsc` header at all. Were this counted, a document load would be
+        // counted twice and the beacon ratio would read as dropped beacons.
+        expect(soft('/t/acme/controls', { rsc: null })).toBeNull();
+    });
+
+    it('does NOT count a request that was redirected rather than served', () => {
+        expect(soft('/t/acme/controls', { passedThrough: false })).toBeNull();
+    });
+
+    it('does NOT count an API path', () => {
+        expect(soft('/api/health')).toBeNull();
+    });
+
+    it('reads the rsc header as PRESENT, not as a particular value', () => {
+        // Next sends `rsc: 1` today. Pinning the value would make a future
+        // `rsc: 2` read as "no navigation happened", which is the silent
+        // direction — the denominator would shrink and dropped beacons would
+        // look like a quiet app.
+        expect(soft('/t/acme/controls', { rsc: '2' })).toBe('/t/[tenant]/controls');
+        expect(soft('/t/acme/controls', { rsc: '' })).toBe('/t/[tenant]/controls');
+    });
+
+    it('is a DIFFERENT message from the document counter', () => {
+        // Merging them would make every existing query of `document_load`
+        // silently mean something else.
+        expect(SOFT_NAVIGATION_MSG).not.toBe(DOCUMENT_LOAD_MSG);
+    });
+});
+
+describe('the denominator tracks what the client actually subscribes to (#4195)', () => {
+    /**
+     * THE ASSERTION THE ORIGINAL 15 COULD NOT MAKE.
+     *
+     * Every one of them asks "what counts as a document load", and every one is
+     * still correct. None asks whether document loads are the RIGHT
+     * denominator — so when `useReportWebVitals` started reporting soft
+     * navigations, the instrument stayed accurate and became aimed one level
+     * off, and no amount of reading the suite revealed it.
+     *
+     * This reads the INSTALLED Next client. It is the only thing in either file
+     * that can notice the premise moving again: if a future version drops
+     * `reportSoftNavs`, or extends it to TTFB, the denominator needs revisiting
+     * and this says so.
+     */
+    const nextClient = (() => {
+        for (const rel of [
+            '../../../node_modules/next/dist/client/web-vitals.js',
+            '../../../node_modules/next/dist/esm/client/web-vitals.js',
+        ]) {
+            const abs = path.resolve(__dirname, rel);
+            if (fs.existsSync(abs)) return fs.readFileSync(abs, 'utf-8');
+        }
+        return '';
+    })();
+
+    it('reads a real copy of the installed web-vitals client', () => {
+        // The denominator for the assertions below. An empty read would make
+        // the soft-nav count zero and pass the "then we need a counter" arm
+        // vacuously.
+        expect(nextClient.length).toBeGreaterThan(200);
+        expect(nextClient).toContain('onTTFB');
+    });
+
+    it('still reports soft navigations, which is WHY a second denominator exists', () => {
+        const softNavSubscriptions = nextClient.match(/reportSoftNavs/g)?.length ?? 0;
+
+        // Four today — CLS, LCP, INP, FCP — and TTFB alone without it.
+        // Asserted as a RANGE rather than exactly 4: the fix is required by
+        // there being ANY, and pinning the count would redden on a change that
+        // does not alter what this module must do.
+        expect(softNavSubscriptions).toBeGreaterThan(0);
+
+        // So the soft-navigation counter must exist. If this ever drops to
+        // zero, THIS is the test that should fail, and the right response is to
+        // revisit the two denominators rather than to delete the assertion.
+        expect(typeof softNavigationRoute).toBe('function');
+        expect(SOFT_NAVIGATION_MSG).toBeTruthy();
+    });
+});
+
 describe('the denominator is actually emitted (#3547)', () => {
     // STRUCTURAL, AND KEPT AS SMALL AS POSSIBLE. `src/middleware.ts` cannot be
     // imported here — it pulls the whole Edge auth path — so this is a source
@@ -172,6 +281,30 @@ describe('the denominator is actually emitted (#3547)', () => {
         // log into a PII store, and the route label is already collapsed to
         // fixed cardinality.
         expect(source).toContain('{ route: documentRoute }');
+    });
+
+    it('calls softNavigationRoute and logs its result too (#4195)', () => {
+        // The same "wired is not delivered" check the document counter gets.
+        // `softNavigationRoute` could be perfect and never invoked, and the
+        // beacon ratio would stay 50:1 with a correct unused function beside it.
+        expect(source).toContain('softNavigationRoute({');
+        expect(source).toContain('edgeLogger.info(SOFT_NAVIGATION_MSG');
+    });
+
+    it('reads BOTH router headers off the request, not one of them', () => {
+        // Each header carries half the decision, and dropping either fails
+        // silently in a different direction: without `rsc` nothing is counted,
+        // and without `next-router-prefetch` every hovered link is.
+        expect(source).toContain("req.headers.get('rsc')");
+        expect(source).toContain("req.headers.get('next-router-prefetch')");
+    });
+
+    it('passes the pass-through term to the soft counter as well', () => {
+        // A redirect renders no app and fires no vitals either way, so the
+        // second counter needs the same term — and a `true` literal here would
+        // count every redirected RSC fetch.
+        expect(source).not.toMatch(/softNavigationRoute\(\{[^}]*passedThrough:\s*true/);
+        expect(source).toMatch(/softNavigationRoute\(\{[^}]*passedThrough:\s*isPassThrough/);
     });
 
     it('names the message with the shared constant, not a literal', () => {
