@@ -62,9 +62,9 @@ export function InheritedEvidencePanel({
         PENDING_UPLOAD: tr('evidence.statusLabels.PENDING_UPLOAD'),
     }), [tr]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
         let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         (async () => {
             try {

@@ -150,8 +150,8 @@ export function AiGovSelfAssessmentStep({
         }
     }, [base, t]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         load(architecture);
     }, [load, architecture]);
 
