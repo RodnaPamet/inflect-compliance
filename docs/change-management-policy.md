@@ -6,16 +6,18 @@
 
 This policy describes how changes reach production. It captures the **rapid
 release model already in effect** — semantic-release auto-versions main (on
-each push that leaves the merge queue empty, plus a daily run), staging deploys
-automatically, production is gated by a GitHub Environment approval — and adds
+each push that adds a test, spec or registered primitive or leaves the merge
+queue empty, plus a daily run), staging deploys automatically, production is gated by a GitHub Environment approval — and adds
 the written contract (approver matrix, emergency bypass, audit trail) that the
 mechanism alone does not record.
 
 A release waits while the merge queue is still building other entries, because
 its commit, pushed straight to main, would invalidate every candidate in flight.
-So one release can carry several merges, and a version can trail a merge by up
-to a day. Deploys do not wait for it: images are published on every push to
-main. The rule is in `scripts/lib/release-queue-gate.js`.
+It never waits when it would raise a coverage floor: the release is what raises
+the floors, and the floor guard fails every build once they fall too far
+behind. So one release can carry several merges, and a version can trail a merge
+by up to a day. Deploys do not wait for it: images are published on every push
+to main. The rule is in `scripts/lib/release-queue-gate.js`.
 
 It is **not** an ITIL change-advisory-board process: the repository ships several
 production releases on a busy day (e.g. 2026-06-25 cut v1.585, v1.586, v1.587),
