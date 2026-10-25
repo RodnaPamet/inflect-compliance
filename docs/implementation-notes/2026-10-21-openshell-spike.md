@@ -49,7 +49,7 @@ found there is a question to re-ask, not a finding to carry forward.
 | 0.1d dropped-tool MCP defect | PENDING | Needs the issue tracker read at the pinned release |
 | 0.1e telemetry off | **VERIFIED** (v0.1.5 chart + binary) | One switch was named; there are **three independent channels**. See below |
 | 0.1f SDK module format | PENDING | Moot for now: the SDK is deferred. Still needed before it is ever taken |
-| 0.1g audit-log coverage | **PARTIAL** (mechanism verified, coverage not) | v0.1.5 ships a configurable gateway OCSF JSONL writer, **off by default**, default path non-persistent. What it records per decision kind still needs a running gateway |
+| 0.1g audit-log coverage | **PARTIAL** (mechanism verified, coverage not) | v0.1.5 ships a configurable gateway OCSF JSONL writer, **off by default**, default path non-persistent. What it records per decision kind still needs a running gateway, which this host cannot provide: snap Docker denies the driver's `no_new_privileges`, so no sandbox starts (root-caused 2026-10-25, Launchpad #1908448) |
 
 ### 0.1e — one switch was named; there are three independent channels
 
@@ -106,6 +106,81 @@ That is consistent with the v0.1.2 symptom being the feature's default state
 rather than a defect, but consistent is not the same as established, and
 nothing here says what the writer records per decision kind. Phase 5.1 still
 depends on that measurement.
+
+#### Why that measurement could not be taken on this host — root-caused 2026-10-25
+
+It needs a gateway that can actually start a sandbox, and on this host no
+sandbox ever reached a running state. Both containers died with `exit=255`
+inside a second, and no gateway log, retained container output or
+`openshell logs` ever carried a reason. Attaching `docker logs -f` on the
+container's `start` event — the stream survives the container, which the driver
+removes in under a second — captured one line:
+
+```
+exec /.openshell/runtime/openshell-sandbox: operation not permitted
+```
+
+**The cause is not OpenShell.** It is a known and permanent limitation of
+snap-packaged Docker, and it reduces to one command with nothing of ours in it:
+
+```
+$ docker run --rm --security-opt no-new-privileges busybox:latest echo RAN
+exec /bin/echo: operation not permitted
+$ docker run --rm busybox:latest echo RAN
+RAN
+```
+
+snapd's own AppArmor confinement denies `no_new_privs` transitions outright
+(Launchpad #1908448, open since 2020). It is not fixable in Docker and
+Canonical's position is that it cannot be supported until AppArmor itself
+supports it. OpenShell's Docker driver sets `no_new_privileges` on sandbox
+containers, which for a sandbox is exactly right — so the driver and the
+packaging are incompatible by design, not by accident, and waiting for a
+release does not help.
+
+What took four hours to find was hidden by two things worth recording, because
+both will mislead the next reader the same way:
+
+- **`EPERM` is not `EACCES`.** `man 2 execve` grants EPERM only for a
+  nosuid mount with a set-user-ID file, or an LSM denial. A missing exec bit, a
+  `noexec` mount or an untraversable directory all give EACCES. The binary is
+  static-PIE, mode `0555`, owner `0:0`, carries no file capabilities and no
+  setuid bit, so every filesystem explanation was excluded early — correctly,
+  and that is why the search went to the LSM.
+- **Container-level AppArmor options cannot see it.**
+  `--security-opt apparmor=unconfined` changes the profile applied to the
+  CONTAINER; the profile doing the denying is the snap's, confining `runc`
+  itself. So the one flag that looks like it tests the hypothesis reports that
+  the hypothesis is false:
+
+```
+nnp alone                                  exec /bin/echo: operation not permitted
+nnp + apparmor=unconfined                  exec /bin/echo: operation not permitted
+nnp + seccomp=unconfined                   exec /bin/echo: operation not permitted
+apparmor=unconfined alone                  RAN
+seccomp=unconfined alone                   RAN
+```
+
+An earlier round of four controls — exec from inside the image, from a named
+volume, from a dot-prefixed volume path, and from a `/tmp` bind mount — was read
+as DISPROVING a snap-AppArmor cause. It did not: none of those four set
+`no-new-privileges`, which is the only trigger. A control that does not vary the
+responsible term cannot clear it, and a set of four agreeing controls reads far
+more conclusive than one.
+
+The host kernel is not implicated: `setpriv --no-new-privs /bin/echo` runs
+normally, so `no_new_privs` works outside the snap's confinement.
+
+Measured on: snap `docker` 29.8.0 rev 3618 (publisher Canonical), containerd
+`db8809540e`, kernel `7.0.0-28-generic`, `docker info` reporting
+`name=apparmor,profile=default`.
+
+**Consequence for the roadmap.** 0.1g, R-OS1 and anything else needing a running
+sandbox cannot be measured on this host under snap Docker. The options are
+Docker from Docker's own apt repository (removes the snap confinement; untested
+here, and replacing the host's Docker affects every other container on it) or
+the VM the host section already contemplates. This is independent evidence for
+that section's conclusion rather than a new requirement.
 
 ### What a running v0.1.5 gateway looks like, observed
 
