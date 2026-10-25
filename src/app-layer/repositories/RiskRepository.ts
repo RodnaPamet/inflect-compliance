@@ -5,6 +5,7 @@ import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
 import { parseEnumListFilter } from '../domain/list-filter';
+import { withDeleted } from '@/lib/soft-delete';
 
 export interface RiskKpiCounts {
     total: number;
@@ -128,6 +129,34 @@ export class RiskRepository {
                 select: riskListSelect,
                 ...(options.take ? { take: options.take } : {}),
             });
+        });
+    }
+
+    /**
+     * The deleted-risks read (`GET /risks?includeDeleted=true`): ONLY
+     * soft-deleted rows, under the same filters and search as `list`, in the
+     * same row shape plus who deleted each and when. The Controls and Assets
+     * twins are `ControlRepository.listDeleted` / `AssetRepository.listDeleted`.
+     *
+     * `withDeleted` only opts OUT of the soft-delete read filter, so on its own
+     * it returns live and deleted rows alike — which is what this read
+     * returned until the explicit `deletedAt: { not: null }` below.
+     */
+    static async listDeleted(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters: RiskFilters = {},
+        options: { take: number },
+    ) {
+        return traceRepository('risk.listDeleted', ctx, async () => {
+            const where = RiskRepository._buildWhere(ctx, filters);
+            where.deletedAt = { not: null };
+            return db.risk.findMany(withDeleted({
+                where,
+                orderBy: { deletedAt: 'desc' as const },
+                select: { ...riskListSelect, deletedAt: true, deletedByUserId: true },
+                take: options.take,
+            }));
         });
     }
 

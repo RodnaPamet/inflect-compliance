@@ -53,6 +53,15 @@ export default async function AssetsPage({
                 initialFilters={filters}
                 tenantSlug={tenantSlug}
                 permissions={{ canWrite: ctx.permissions.canWrite, canAdmin: ctx.permissions.canAdmin }}
+                // The granular keys the asset routes' `requirePermission`
+                // checks. `ctx.permissions` above is resolved from a custom
+                // role's BASE role, so on its own it offered a custom role
+                // built on EDITOR without `assets.create` a create button the
+                // route then refused.
+                appPermissions={{
+                    assets: ctx.appPermissions.assets,
+                    admin: { manage: ctx.appPermissions.admin.manage },
+                }}
                 translations={{
                     title: t('title'),
                 listDescription: t('listDescription'),

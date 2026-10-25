@@ -52,7 +52,7 @@ Apart from {{ui:policies.list.kpiTotal}}, each count follows the search and the 
 - **{{ui:policies.list.addBtn}}**, the button with a plus sign, opens the new-policy dialog. Only roles that can create policies see it.
 - The **{{ui:common.ui.filter}}** button holds the search and the filters. Its search box, **{{ui:policies.list.searchPlaceholder}}**, filters the table as you type and matches the title and the description. The filters are:
     - **{{ui:policies.filters.status}}**: one or more statuses.
-    - **{{ui:policies.filters.category}}**: lists the categories of the policies the table has shown since you opened the page, so choosing one leaves the others on offer.
+    - **{{ui:policies.filters.category}}**: lists every category the workspace's policies use, so choosing one leaves the others on offer.
     - **{{ui:policies.filters.reviewBucket}}**: {{ui:policies.filterEnums.reviewBucket.overdue}} or {{ui:policies.filterEnums.reviewBucket.upcoming}}.
     - **{{ui:policies.filters.acknowledgement}}**: {{ui:policies.filterEnums.acknowledgement.outstanding}}.
 - Two settings buttons close the row. The first chooses which table columns are shown, the second which summary cards.

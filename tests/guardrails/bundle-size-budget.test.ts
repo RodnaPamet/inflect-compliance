@@ -192,7 +192,7 @@ const BUDGETS_KB: Record<string, number> = {
         They did rot a third time, and it isn't: #4041 deleted them and derives
         the headroom at run time instead.
 
-        ─── RAISED 2026-10-25 BY ONE KB EACH, FOR THE RETAINED FILTER OPTIONS (#4305) ───
+        ─── `dashboard` RAISED 2026-10-25 BY ONE KB, FOR THE RETAINED FILTER OPTIONS (#4305) ───
 
         Measured on CI's webpack build, main (a docs-only PR the same hour)
         against this branch:
@@ -201,16 +201,26 @@ const BUDGETS_KB: Record<string, number> = {
               controls/dashboard/page            615.8    616.1    +0.3
               risks/[riskId]/page                652.9    653.2    +0.3
 
+        `risks` is not raised here: #4300 raised it to 654 the same evening
+        for its own +0.3, which leaves room for this one.
+
         What grew: `useRetainedFilterOptions`, about 0.3 KB gzipped, which
         keeps a list filter's options from collapsing to the value just picked.
-        Five list pages use it, and webpack places it in a chunk the tenant
+        Four list pages use it, and webpack places it in a chunk the tenant
         layout loads: every tenant route grew by 0.3-0.4 KB in the same build.
         Neither of these two routes uses it. Importing it by its own module
-        path instead of the filter barrel was tried and measured the same. Main had 0.2 KB and 0.1 KB left in these
-        buckets, so no change to shared client code could pass. The raise is
-        the measured delta rounded up, not measured + 4.
+        path instead of the filter barrel was tried and measured the same.
+        Main had 0.2 KB left in `dashboard`, so no change to shared client
+        code could pass it. The raise is the measured delta rounded up, not
+        measured + 4.
     */
     'dashboard': 617,
+    // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
+    // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
+    // 653.2. The growth is in the task form and edit panel that the risk
+    // page's Linked tasks panel loads, and the people picker: refusals now
+    // show the server's reason, the reviewer picker asks for members who can
+    // sign a task off, and staged links show labels instead of raw codes.
     'risks': 654,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared

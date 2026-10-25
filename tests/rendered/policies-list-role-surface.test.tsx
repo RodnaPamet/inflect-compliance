@@ -125,6 +125,10 @@ function mountAs(role: 'ADMIN' | 'READER') {
                         canAudit: false,
                         canExport: true,
                     }}
+                    appPermissions={{
+                        policies: { create: admin, edit: admin },
+                        admin: { manage: admin },
+                    }}
                     translations={{ title: 'Policies', listDescription: '' }}
                 />
             </TooltipProvider>

@@ -496,7 +496,9 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         ? {
                               ...current,
                               rows: (current.rows ?? []).map((r) =>
-                                  r.id === id ? { ...r, isArchived } : r,
+                                  r.id === id
+                                      ? { ...r, isArchived, ...(isArchived ? {} : { expiredAt: null }) }
+                                      : r,
                               ),
                           }
                         : current,
@@ -1192,7 +1194,9 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             cell: ({ row }) => {
                 const ev = row.original;
                 if (!permissions.canWrite || ev.id?.startsWith('temp:')) return null;
-                const archived = !!ev.isArchived;
+                // An expired row is listed under Archived with or without the
+                // flag, and unarchiving clears both, so it offers Unarchive.
+                const archived = !!ev.isArchived || !!ev.expiredAt;
                 return (
                     <Tooltip content={archived ? tx('list.unarchiveEvidence') : tx('list.archiveEvidence')}>
                         <button

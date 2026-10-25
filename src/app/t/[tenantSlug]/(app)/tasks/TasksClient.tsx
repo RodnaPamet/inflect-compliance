@@ -70,6 +70,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // Status → badge tone AND label both come from the shared
 // `TASK_STATUS_BADGE` map (TP-1) — tone via `taskStatusVariant`, copy via the
@@ -80,6 +81,12 @@ const buildStatusLabels = (t: (k: string) => string): Record<string, string> =>
     Object.fromEntries(
         Object.entries(TASK_STATUS_BADGE).map(([status, spec]) => [status, t(spec.labelKey)]),
     );
+// The Assignee cell. An assigned person whose account carries no name
+// falls back to their email — the same fallback the Assignee FILTER uses
+// for the same row (`assigneeOptionsFromTasks`). `name || '—'` rendered
+// the dash an UNASSIGNED task shows, so the two were indistinguishable.
+const assigneeLabel = (task: Pick<TaskListItem, 'assignee'>): string =>
+    task.assignee?.name?.trim() || task.assignee?.email?.trim() || '—';
 // Severity → badge tone comes from the shared `TASK_SEVERITY_VARIANT`
 // (B2-6), the same map the task detail page reads. This file used to
 // keep its own copy that disagreed on LOW and HIGH, so one task looked
@@ -100,10 +107,14 @@ const buildSourceLabels = taskSourceLabels;
 // action via the task detail page. RESOLVED is omitted here because it
 // is retired from the PICKERS (CLOSED made it a redundant intermediate)
 // — it is still a live status on existing rows, which is why the status
-// FILTER continues to offer it. OPEN is omitted because no transition
-// leads to it (`TASK_TRANSITIONS`), so choosing it refused the whole
-// batch (#4278).
-const buildBulkStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => ['TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'].map(sv => ({ value: sv, label: statusLabels[sv] || sv }));
+// FILTER continues to offer it.
+//
+// OPEN is omitted because no status can move TO it: it is the initial
+// state only, absent from every `TASK_TRANSITIONS` target set, so
+// choosing it refused the whole batch (`OPEN → OPEN` is a no-op error,
+// anything else → OPEN is illegal).
+const BULK_STATUS_TARGETS = ['TRIAGED', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'];
+const buildBulkStatusCbOptions = (statusLabels: Record<string, string>): ComboboxOption[] => BULK_STATUS_TARGETS.map(sv => ({ value: sv, label: statusLabels[sv] || sv }));
 
 interface TaskListItem {
     id: string;
@@ -149,6 +160,16 @@ interface TaskListItem {
         annexId: string | null;
     } | null;
     /**
+     * Controls linked through Links (CONTROL TaskLinks), resolved by the
+     * list read — the Linked control filter offers them beside `control`.
+     */
+    linkedControls?: Array<{
+        id: string;
+        code: string | null;
+        name: string | null;
+        annexId: string | null;
+    }>;
+    /**
      * Only populated in the Deleted view — `listDeleted` selects these
      * two extra columns, the live list does not (they would be null on
      * every row). Optional rather than nullable so the live payload,
@@ -179,16 +200,24 @@ interface TasksClientProps {
     initialMetrics: TaskListMetrics;
     initialFilters?: Record<string, string>;
     tenantSlug: string;
+    /**
+     * Granular keys — the ones each write route's `requirePermission`
+     * names. `tasks.assign` gates bulk Assign (`bulk/assign`), and
+     * `admin.manage` gates bulk Delete (`bulk/delete`).
+     */
     appPermissions: {
-        tasks: { create: boolean; edit: boolean };
+        tasks: { create: boolean; edit: boolean; assign: boolean };
+        admin: { manage: boolean };
     };
     /**
-     * The admin tier the server asks for before it deletes, lists deleted
-     * tasks or restores one (`assertCanAdmin`; the bulk-delete route also
-     * requires `admin.manage`). Gating those on `tasks.edit` offered them to
-     * Editors, who were refused once the undo window ran out (#4278).
+     * Coarse tiers the usecases assert BEHIND those route keys
+     * (`assertCanWriteTasks` / `assertCanAssignTasks` read `canWrite`;
+     * bulk delete, the Deleted view and restore read `canAdmin`). A
+     * custom role can hold a granular key its base role's tier does not
+     * reach, so each affordance is gated on both — never on less than
+     * the server checks.
      */
-    canAdmin: boolean;
+    permissions: { canWrite: boolean; canAdmin: boolean };
 }
 
 /**
@@ -212,9 +241,20 @@ function TasksPageInner({
     initialFilters,
     tenantSlug,
     appPermissions,
-    canAdmin,
+    permissions,
 }: TasksClientProps) {
     const t = useTranslations('tasks');
+    // What the viewer may actually do, matched to the server: each is
+    // the coarse tier the usecase asserts AND the key the route names.
+    //   - bulk status / due: `tasks.edit` + `assertCanWriteTasks`
+    //   - bulk assign:       `tasks.assign` + `assertCanAssignTasks`
+    //   - bulk delete:       `admin.manage` + `assertCanAdmin`
+    //   - Deleted view:      its list asserts `assertCanAdmin`, and its only
+    //                        action, restore, is `tasks.edit` + `assertCanAdmin`
+    const canBulkEdit = permissions.canWrite && appPermissions.tasks.edit;
+    const canBulkAssign = permissions.canWrite && appPermissions.tasks.assign;
+    const canBulkDelete = permissions.canAdmin && appPermissions.admin.manage;
+    const canRestoreDeleted = permissions.canAdmin && appPermissions.tasks.edit;
     // Memoised on `t` so they keep a stable identity across renders —
     // `sortAccessors` below closes over them and needs them in its dep
     // array (see the note there). Rebuilding a fresh object every render
@@ -328,27 +368,41 @@ function TasksPageInner({
     const [showDeleted, setShowDeleted] = useState(false);
 
     const tasksKey = useMemo(() => {
-        const params = new URLSearchParams(fetchParams);
-        if (showDeleted) params.set('includeDeleted', 'true');
-        const qs = params.toString();
+        const qs = fetchParams.toString();
         return qs ? `${CACHE_KEYS.tasks.list()}?${qs}` : CACHE_KEYS.tasks.list();
-    }, [fetchParams, showDeleted]);
+    }, [fetchParams]);
+    const deletedTasksKey = useMemo(() => {
+        const params = new URLSearchParams(fetchParams);
+        params.set('includeDeleted', 'true');
+        return `${CACHE_KEYS.tasks.list()}?${params.toString()}`;
+    }, [fetchParams]);
 
     // PR-9 — API returns `{ rows, truncated }` (mirrors the seven
     // other list-page entities). SSR initial wraps with
     // `truncated: false` because the SSR cap (100) is well below
     // the backfill cap (5000) — the SSR slice never trips truncation
     // by itself.
-    const tasksQuery = useTenantSWR<CappedList<TaskListItem>>(tasksKey, {
-        // The SSR payload only ever contains LIVE rows, so the deleted
-        // view must always fetch — seeding it with `initialTasks` would
-        // briefly show active tasks under a "Deleted" heading.
-        fallbackData:
-            filtersMatchInitial && !showDeleted
-                ? { rows: initialTasks, truncated: false }
-                : undefined,
+    const liveQuery = useTenantSWR<CappedList<TaskListItem>>(tasksKey, {
+        fallbackData: filtersMatchInitial
+            ? { rows: initialTasks, truncated: false }
+            : undefined,
         dedupingInterval: 30_000,
     });
+    // The Deleted view reads its OWN query, never the live one under a
+    // different key. `useTenantSWR` defaults `keepPreviousData: true`, and
+    // on ONE query a key switch from live to deleted kept serving the live
+    // rows until the deleted fetch landed — and for ever if it failed,
+    // since a populated `data` also suppressed the error card. So active
+    // tasks sat under the deleted columns with Restore buttons that could
+    // only fail. Here the deleted query starts empty (loading skeleton),
+    // keeps nothing from another key, and a failed fetch shows its error.
+    // The SSR payload only ever contains LIVE rows, so it is never this
+    // query's fallback.
+    const deletedQuery = useTenantSWR<CappedList<TaskListItem>>(
+        showDeleted ? deletedTasksKey : null,
+        { dedupingInterval: 30_000, keepPreviousData: false },
+    );
+    const tasksQuery = showDeleted ? deletedQuery : liveQuery;
 
     const tasks = tasksQuery.data?.rows ?? [];
     const truncated = tasksQuery.data?.truncated ?? false;
@@ -389,7 +443,7 @@ function TasksPageInner({
             severity: (t) => SEVERITY_LABELS[t.severity] || t.severity || '',
             status: (t) => STATUS_LABELS[t.status] || t.status,
             source: (t) => SOURCE_LABELS[t.source] || t.source,
-            assignee: (t) => t.assignee?.name || '—',
+            assignee: (t) => assigneeLabel(t),
             dueAt: (t) => t.dueAt || '',
             updatedAt: (t) => t.updatedAt || '',
         }),
@@ -615,12 +669,11 @@ function TasksPageInner({
                 // Surface the server's reason where it gave one (403
                 // four-eyes / plan-limit / validation all carry a
                 // message); fall back to the generic string so the
-                // toast is never blank.
-                const detail = await res
-                    .json()
-                    .then((b) => (typeof b?.error === 'string' ? b.error : null))
-                    .catch(() => null);
-                throw new Error(detail || t('bulk.failed'));
+                // toast is never blank. The reason sits at
+                // `error.message` in the API envelope — reading only a
+                // string `error` dropped it on every real refusal.
+                const body = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(body, t('bulk.failed')));
             }
             return res.json();
         },
@@ -671,8 +724,8 @@ function TasksPageInner({
      */
     const restoreTask = useCallback(
         async (taskId: string) => {
-            const previous = tasksQuery.data;
-            void tasksQuery.mutate(
+            const previous = deletedQuery.data;
+            void deletedQuery.mutate(
                 (cur) => {
                     if (!cur) return cur;
                     // guardrail-ignore: drops the just-restored row from the DELETED list, where it no longer belongs. Not a re-filter of server data for display — the server still owns the list query.
@@ -686,18 +739,15 @@ function TasksPageInner({
                     method: 'POST',
                 });
                 if (!res.ok) {
-                    const detail = await res
-                        .json()
-                        .then((b) => (typeof b?.error === 'string' ? b.error : null))
-                        .catch(() => null);
-                    throw new Error(detail || t('bulk.restoreFailed'));
+                    const body = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(body, t('bulk.restoreFailed')));
                 }
                 toast.success(t('bulk.restoredToast', { count: 1 }));
                 // The restored row rejoins the LIVE list, so refresh both
                 // that and the KPI counters, not just the deleted view.
                 await invalidateAllTasks();
             } catch (err: unknown) {
-                void tasksQuery.mutate(previous, { revalidate: false });
+                void deletedQuery.mutate(previous, { revalidate: false });
                 toast.error(
                     err instanceof Error && err.message
                         ? err.message
@@ -705,7 +755,7 @@ function TasksPageInner({
                 );
             }
         },
-        [apiUrl, tasksQuery, toast, t, invalidateAllTasks],
+        [apiUrl, deletedQuery, toast, t, invalidateAllTasks],
     );
 
     // BulkActionBar.onApply — fire the bulk mutation; the bar clears its own
@@ -723,7 +773,7 @@ function TasksPageInner({
         if (action === 'delete') {
             const idSet = new Set(requested);
             setSelected(new Set());
-            void tasksQuery.mutate(
+            void liveQuery.mutate(
                 (cur) => {
                     if (!cur) return cur;
                     // guardrail-ignore: optimistic-delete cache update (drops the just-deleted rows for the undo window), NOT display refiltering — the server still owns the list filter and mutate() restores on Undo/failure.
@@ -741,15 +791,22 @@ function TasksPageInner({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ taskIds: requested }),
                     });
-                    if (!res.ok) throw new Error(t('bulk.failed'));
+                    if (!res.ok) {
+                        const body = await res.json().catch(() => null);
+                        throw new Error(apiErrorMessage(body, t('bulk.failed')));
+                    }
                     await invalidateAllTasks();
                 },
                 undoAction: () => {
-                    void tasksQuery.mutate();
+                    void liveQuery.mutate();
                 },
-                onError: () => {
-                    toast.error(t('bulk.failed'));
-                    void tasksQuery.mutate();
+                onError: (err: unknown) => {
+                    toast.error(
+                        err instanceof Error && err.message
+                            ? err.message
+                            : t('bulk.failed'),
+                    );
+                    void liveQuery.mutate();
                 },
             });
             return;
@@ -791,9 +848,14 @@ function TasksPageInner({
     };
 
     // Canonical bulk actions for the Tasks table — Assign (people-picker),
-    // Change Status (active transitions), Set Due Date.
-    const taskBulkActions: BulkActionDef[] = useMemo(
-        () => [
+    // Change Status (active transitions), Set Due Date, Delete. Each is
+    // offered only to a viewer its route would accept (see the `canBulk*`
+    // gates at the top): an action the server refuses used to be shown,
+    // and bulk Delete in particular looked like it worked — rows gone, undo
+    // toast up — until the undo window ended and the call came back 403.
+    const taskBulkActions: BulkActionDef[] = useMemo(() => {
+        const actions: BulkActionDef[] = [];
+        if (canBulkAssign) actions.push(
             {
                 value: 'assign',
                 label: t('bulk.assign'),
@@ -813,6 +875,8 @@ function TasksPageInner({
                     />
                 ),
             },
+        );
+        if (canBulkEdit) actions.push(
             {
                 value: 'status',
                 label: t('bulk.changeStatus'),
@@ -850,14 +914,13 @@ function TasksPageInner({
                     />
                 ),
             },
-            // No `confirm: true` — bulk delete routes through the Epic 67
-            // undo-toast in handleBulkApply (soft delete, recoverable),
-            // not a blocking confirm dialog. Admin tier only: the server
-            // refuses anyone else (see `canAdmin`).
-            ...(canAdmin ? [{ value: 'delete', label: t('bulk.delete') }] : []),
-        ],
-        [tenantSlug, t, canAdmin],
-    );
+        );
+        // No `confirm: true` — bulk delete routes through the Epic 67
+        // undo-toast in handleBulkApply (soft delete, recoverable),
+        // not a blocking confirm dialog.
+        if (canBulkDelete) actions.push({ value: 'delete', label: t('bulk.delete') });
+        return actions;
+    }, [tenantSlug, t, canBulkAssign, canBulkEdit, canBulkDelete]);
 
     // R10-PR7 — column-visibility gear.
     const taskColumnList = useMemo(
@@ -959,7 +1022,7 @@ function TasksPageInner({
             {
                 id: 'assignee',
                 header: t('colHeaders.assignee'),
-                accessorFn: (task) => task.assignee?.name || '—',
+                accessorFn: (task) => assigneeLabel(task),
                 cell: ({ getValue }) => <span className="text-xs text-content-muted">{getValue<string>()}</span>,
             },
             {
@@ -1033,7 +1096,24 @@ function TasksPageInner({
      */
     const deletedTaskColumns = useMemo(
         () => [
-            ...orderedTaskColumns,
+            // A deleted task cannot be OPENED: the detail page and the
+            // quick-view both read it through `findFirst`, which the
+            // soft-delete extension narrows to live rows, so either one
+            // showed "Task not found" (or a Retry that could never
+            // succeed). The title is plain text here and the quick-edit
+            // pencil is dropped; the row click is unbound below.
+            ...orderedTaskColumns.flatMap((col) => {
+                if (col.id === 'quick-edit') return [];
+                if (col.id !== 'title') return [col];
+                return [{
+                    ...col,
+                    cell: ({ row }: { row: { original: TaskListItem } }) => (
+                        <span data-testid={`task-title-${row.original.id}`}>
+                            <TableTitleCell tintOn="self">{row.original.title}</TableTitleCell>
+                        </span>
+                    ),
+                }];
+            }),
             {
                 id: 'deletedAt',
                 header: t('list.colDeletedAt'),
@@ -1263,10 +1343,12 @@ function TasksPageInner({
                                 The dashboard nav icon is gone with it. */}
                             {/* Recycle-bin view, folded into the labelled
                                 Views menu with every other secondary view.
-                                Only offered to the admin tier — listing deleted
-                                tasks and restoring one are admin-gated
-                                server-side, so showing it to anyone else
-                                would advertise an action they'd be refused.
+                                Only offered to users who can RESTORE: the
+                                deleted list and restore are both
+                                admin-gated server-side (`assertCanAdmin`),
+                                so offering the view on `tasks.edit` alone
+                                showed an Editor a view the server refused,
+                                with Restore buttons that could only fail.
 
                                 The label is stateful where assets/controls
                                 are static — it names the destination, so the
@@ -1277,7 +1359,7 @@ function TasksPageInner({
                                     {
                                         id: 'views',
                                         items: [
-                                            canAdmin && {
+                                            canRestoreDeleted && {
                                                 id: 'show-deleted-toggle',
                                                 label: showDeleted ? t('list.showLive') : t('list.showDeleted'),
                                                 icon: <Trash className="size-4" />,
@@ -1356,7 +1438,7 @@ function TasksPageInner({
                         setSelected(new Set(rows.map((r) => r.original.id)))
                     }
                     selectionControls={() => (
-                        !appPermissions.tasks.edit ? null : <BulkActionBar
+                        taskBulkActions.length === 0 ? null : <BulkActionBar
                             actions={taskBulkActions}
                             onApply={handleBulkApply}
                             applying={bulkMutation.isMutating}
@@ -1364,8 +1446,8 @@ function TasksPageInner({
                             entityLabel={t('list.entityLabel')}
                         />
                     )}
-                    onRowClick={handleTaskRowClick}
-                    onRowPrefetch={handleTaskRowPrefetch}
+                    onRowClick={showDeleted ? undefined : handleTaskRowClick}
+                    onRowPrefetch={showDeleted ? undefined : handleTaskRowPrefetch}
                     error={listError}
                     emptyState={
                         showDeleted ? (

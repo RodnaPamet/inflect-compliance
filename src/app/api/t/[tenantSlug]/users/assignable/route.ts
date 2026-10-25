@@ -8,6 +8,10 @@
  * member can read this roster — gated by the usecase's
  * `assertCanRead`.
  *
+ * `?audience=task-reviewer` narrows the roster to the members a task's
+ * reviewer may be — those whose role can edit tasks (#4278). Any other
+ * `audience` value is a 400, not a silently full roster.
+ *
  * Cache: edge read-tier rate-limit applies automatically (GAP-17 —
  * every tenant-scoped GET).
  */
@@ -16,6 +20,11 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { z } from 'zod';
+
+const AssignableQuerySchema = z
+    .object({ audience: z.enum(['task-reviewer']).optional() })
+    .strip();
 
 export const GET = withApiErrorHandling(
     async (
@@ -24,7 +33,12 @@ export const GET = withApiErrorHandling(
     ) => {
         const params = await paramsPromise;
         const ctx = await getTenantCtx(params, req);
-        const users = await listAssignableUsers(ctx);
+        const query = AssignableQuerySchema.parse(
+            Object.fromEntries(req.nextUrl.searchParams.entries()),
+        );
+        const users = await listAssignableUsers(ctx, {
+            taskReviewersOnly: query.audience === 'task-reviewer',
+        });
         return jsonResponse(users);
     },
 );

@@ -2,9 +2,9 @@
  * Render coverage for the new policy list columns — Epic 45.1.
  *
  * Exercises the cell renderers in isolation against representative
- * row fixtures (owned + unowned, with + without currentVersion,
- * overdue + future review). Mounting the full PoliciesClient pulls
- * the React Query + Filter context layers along; the cell tests
+ * row fixtures (owned + unowned, overdue + future review). Mounting
+ * the full PoliciesClient pulls the React Query + Filter context
+ * layers along; the cell tests
  * stay focused by calling the columns' `cell` functions directly
  * with synthesised `row.original` values.
  */
@@ -82,24 +82,6 @@ function OwnerCell({ row }: { row: { original: OwnerRow } }) {
                 )}
             </span>
         </span>
-    );
-}
-
-function VersionCell({
-    id,
-    currentVersion,
-    lifecycleVersion,
-}: {
-    id: string;
-    currentVersion?: { versionNumber: number } | null;
-    lifecycleVersion?: number | null;
-}) {
-    const v = currentVersion?.versionNumber ?? lifecycleVersion ?? null;
-    if (v == null) {
-        return <span className="text-xs text-content-subtle">—</span>;
-    }
-    return (
-        <span data-testid={`policy-version-${id}`}>v{v}</span>
     );
 }
 
@@ -203,44 +185,9 @@ describe('Policy list — column cells', () => {
         });
     });
 
-    describe('Version', () => {
-        it('prefers currentVersion.versionNumber when present', () => {
-            render(
-                withTooltip(
-                    <VersionCell
-                        id="p1"
-                        currentVersion={{ versionNumber: 5 }}
-                        lifecycleVersion={1}
-                    />,
-                ),
-            );
-            expect(
-                screen.getByTestId('policy-version-p1').textContent,
-            ).toBe('v5');
-        });
-
-        it('falls back to lifecycleVersion when no currentVersion', () => {
-            render(
-                withTooltip(
-                    <VersionCell
-                        id="p2"
-                        currentVersion={null}
-                        lifecycleVersion={3}
-                    />,
-                ),
-            );
-            expect(
-                screen.getByTestId('policy-version-p2').textContent,
-            ).toBe('v3');
-        });
-
-        it('renders an em-dash when no version info exists', () => {
-            render(
-                withTooltip(
-                    <VersionCell id="p3" currentVersion={null} lifecycleVersion={null} />,
-                ),
-            );
-            expect(screen.queryByTestId('policy-version-p3')).toBeNull();
-        });
-    });
+    // The Version cell is not mirrored here: its rule (live while PUBLISHED,
+    // else newest, a dash with none) is driven through the real page in
+    // tests/rendered/policies-list-page.test.tsx. The mirror that stood here
+    // asserted the old `currentVersion ?? lifecycleVersion` fallback, which
+    // read "v1" for every never-published policy (#4279).
 });

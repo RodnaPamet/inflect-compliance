@@ -46,6 +46,8 @@ const GATED: Record<string, string> = {
     'controls/[controlId]/restore/route.ts': 'admin.manage',
     'risks/[id]/purge/route.ts': 'admin.manage',
     'risks/[id]/restore/route.ts': 'admin.manage',
+    // Declared assets.edit until #4276 — a gate weaker than its assert.
+    'assets/[id]/restore/route.ts': 'admin.manage',
     // assertCanUpdateControl / assertCanWrite — genuinely EDITOR-tier.
     'controls/bulk/status/route.ts': 'controls.edit',
     'controls/bulk/assign/route.ts': 'controls.edit',

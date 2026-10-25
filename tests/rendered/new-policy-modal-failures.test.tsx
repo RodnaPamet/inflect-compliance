@@ -7,16 +7,29 @@
  *      (`JSON.stringify(data.error)`) instead of its message.
  *   2. Linking the suggested controls ignored the response and navigated to
  *      the new policy anyway, so a refused link looked like a success.
+ *
+ * And what it does not know yet (#4279):
+ *
+ *   3. The template picker said "No templates available." while the list was
+ *      still loading, and again when the load failed.
+ *   4. The category options and the create-failure fallback were hard-coded
+ *      English.
  */
 import * as React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+
+// Which catalogue the mocked next-intl reads. Hoisted, read lazily.
+const mockLocale = { current: 'en' as 'en' | 'bg' };
 
 jest.mock('next-intl', () => {
-    const en = jest.requireActual('../../messages/en.json') as Record<string, Record<string, unknown>>;
+    const catalogs = {
+        en: jest.requireActual('../../messages/en.json') as Record<string, Record<string, unknown>>,
+        bg: jest.requireActual('../../messages/bg.json') as Record<string, Record<string, unknown>>,
+    };
     const resolve = (ns: string, key: string): unknown =>
         key.split('.').reduce<unknown>(
             (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
-            en[ns],
+            catalogs[mockLocale.current][ns],
         );
     const cache = new Map<string, unknown>();
     const make = (ns: string) => {
@@ -37,10 +50,11 @@ jest.mock('next-intl', () => {
     };
     return {
         useTranslations: (ns: string) => {
-            if (!cache.has(ns)) cache.set(ns, make(ns));
-            return cache.get(ns);
+            const key = `${mockLocale.current}:${ns}`;
+            if (!cache.has(key)) cache.set(key, make(ns));
+            return cache.get(key);
         },
-        useLocale: () => 'en',
+        useLocale: () => mockLocale.current,
     };
 });
 
@@ -68,9 +82,13 @@ jest.mock('next/dynamic', () => () => function DynamicStub() {
 import { NewPolicyModal } from '@/app/t/[tenantSlug]/(app)/policies/NewPolicyModal';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-const EN = (jest.requireActual('../../messages/en.json') as {
-    policies: { createPolicy: string; templates: Record<string, string> };
-}).policies;
+type PolicyMessages = {
+    createPolicy: string;
+    templates: Record<string, string>;
+    new: Record<string, string> & { categories: Record<string, string> };
+};
+const EN = (jest.requireActual('../../messages/en.json') as { policies: PolicyMessages }).policies;
+const BG = (jest.requireActual('../../messages/bg.json') as { policies: PolicyMessages }).policies;
 
 const fetchMock = jest.fn();
 const json = (body: unknown, status = 200) =>
@@ -97,10 +115,10 @@ const SUGGESTIONS = {
     ],
 };
 
-function renderModal() {
+function renderModal(props: { isTemplateMode?: boolean } = {}) {
     render(
         <TooltipProvider>
-            <NewPolicyModal open setOpen={jest.fn()} />
+            <NewPolicyModal open setOpen={jest.fn()} {...props} />
         </TooltipProvider>,
     );
 }
@@ -113,6 +131,7 @@ async function submitTitle(title: string) {
 beforeEach(() => {
     fetchMock.mockReset();
     mockPush.mockReset();
+    mockLocale.current = 'en';
     global.fetch = fetchMock as unknown as typeof fetch;
 });
 
@@ -152,4 +171,68 @@ it('a refused control link keeps the dialog open and says why; Skip still goes o
 
     fireEvent.click(document.getElementById('suggest-skip')!);
     expect(mockPush).toHaveBeenCalledWith('/t/acme/policies/p1');
+});
+
+describe('the template picker says what it knows', () => {
+    it('says it is loading while the templates are on their way — not "No templates available."', async () => {
+        fetchMock.mockReturnValue(new Promise(() => {})); // never settles
+        renderModal({ isTemplateMode: true });
+        expect(await screen.findByText(EN.new.templatesLoading)).toBeInTheDocument();
+        expect(screen.queryByText(EN.new.templatesEmpty)).toBeNull();
+    });
+
+    it('a refused load shows the server\'s reason', async () => {
+        fetchMock.mockResolvedValue(json({ error: { code: 'FORBIDDEN', message: 'Templates are not enabled.' } }, 403));
+        renderModal({ isTemplateMode: true });
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('Templates are not enabled.');
+        expect(screen.queryByText(EN.new.templatesEmpty)).toBeNull();
+    });
+
+    it('a network failure says the load failed', async () => {
+        fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+        renderModal({ isTemplateMode: true });
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent(EN.new.templatesLoadFailed);
+        expect(screen.queryByText(EN.new.templatesEmpty)).toBeNull();
+    });
+
+    it('an empty library, and only that, reads "No templates available."', async () => {
+        fetchMock.mockResolvedValue(json([]));
+        renderModal({ isTemplateMode: true });
+        expect(await screen.findByText(EN.new.templatesEmpty)).toBeInTheDocument();
+        expect(screen.queryByText(EN.new.templatesLoading)).toBeNull();
+    });
+});
+
+describe('the create path speaks the user\'s language', () => {
+    it('the category options are translated, while the stored value stays the same', async () => {
+        mockLocale.current = 'bg';
+        fetchMock.mockResolvedValue(json({ id: 'p1', title: 'X' }, 201));
+        renderModal();
+        fireEvent.click(document.getElementById('policy-category-select')!);
+        const listbox = await screen.findByRole('listbox');
+        const labels = within(listbox).getAllByRole('option').map((o) => o.textContent?.trim());
+        expect(labels).toEqual(Object.values(BG.new.categories));
+        expect(labels).not.toContain('Information Security');
+
+        // Picking the translated label still stores the canonical value.
+        fireEvent.click(within(listbox).getByRole('option', { name: BG.new.categories.informationSecurity }));
+        fireEvent.change(document.getElementById('policy-title-input')!, { target: { value: 'Политика' } });
+        fireEvent.click(screen.getByRole('button', { name: BG.createPolicy }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/t/acme/policies', expect.anything()));
+        const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+        expect(body.category).toBe('Information Security');
+    });
+
+    it('a refusal with no message falls back to a translated sentence', async () => {
+        mockLocale.current = 'bg';
+        fetchMock.mockResolvedValue(json({}, 500));
+        renderModal();
+        fireEvent.change(document.getElementById('policy-title-input')!, { target: { value: 'Политика' } });
+        fireEvent.click(screen.getByRole('button', { name: BG.createPolicy }));
+        const error = await screen.findByRole('alert');
+        expect(error).toHaveTextContent(BG.new.createFailed);
+        expect(error).not.toHaveTextContent('Failed to create policy');
+    });
 });

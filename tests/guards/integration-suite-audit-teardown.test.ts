@@ -158,7 +158,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'agent-monthly-budget-enforcement.test.ts',
     'agentic-art14-run-closes-the-loop.test.ts',
     'agentic-engine.test.ts',
-    'asset-update-round-trip.test.ts',
     'auth-signin-no-auto-join.test.ts',
     'bowtie-api.test.ts',
     'canned-workflows.test.ts',
@@ -177,15 +176,12 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'kri-readings.test.ts',
     'last-owner-usecase-guard.test.ts',
     'loss-event.test.ts',
-    'mcp-propose.test.ts',
     'monte-carlo-job.test.ts',
     'multi-tenant-jwt.test.ts',
     'org-dashboard-widget.test.ts',
-    'org-lifecycle.test.ts',
     'org-maturity-threat-branches.test.ts',
     'org-members-list.test.ts',
     'org-provisioning.test.ts',
-    'org-role-change.test.ts',
     'per-tenant-role-resolution.test.ts',
     'portfolio-drilldown-pagination.test.ts',
     'portfolio-drilldown.test.ts',
@@ -199,7 +195,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'risk-hierarchy-crud.test.ts',
     'risk-matrix-config.test.ts',
     'risk-snapshot-job.test.ts',
-    'risk-update-round-trip.test.ts',
     'risks-list-owner-attach.test.ts',
     'rls-middleware.test.ts',
     'scenario-simulation.test.ts',
@@ -325,9 +320,34 @@ describe('integration suites clear audit rows before deleting their parents', ()
  * the handler was the only reason nobody knew. Those ten keep their handlers
  * for now — each needs its own teardown completed, which is three different
  * fixes, not one — and they are listed with their constraints on #3343.
+ *
+ * 10 -> 0 files and 14 -> 0 sites, same day: the ten were fixed by RUNNING them
+ * wall by wall, which is the only way this came out. Two had THREE walls in one
+ * teardown, each hidden by the same handler:
+ *
+ *   mcp-propose             memberships before the user
+ *   org-lifecycle           memberships -> tenant audit -> org audit -> user audit
+ *   org-role-change         the same four
+ *   risk-update-round-trip  Risk rows -> audit rows
+ *   asset-update-round-trip Asset rows -> audit rows
+ *
+ * The membership ones needed `session_replication_role = 'replica'`: a plain
+ * `tenantMembership.deleteMany` raises P0001 from
+ * `tenant_membership_last_owner_guard`, so one handler was hiding two distinct
+ * failures stacked on each other.
+ *
+ * AND THE FIVE USER-DELETE HANDLERS TRANCHE 2 LEFT WERE DEAD — all five suites
+ * pass without them. That was not knowable without removing them, which is
+ * exactly why tranche 2 left them rather than guessing: a user delete fails on
+ * different constraints than the tenant one, and `deleteAuditRowsForUsers` did
+ * not exist yet to fix it with if it had failed.
+ *
+ * BOTH CAPS ARE NOW 0, which changes what they mean. They stop being a drain
+ * and become a floor: `toBe(0)` fails CI on the next `.catch(() => {})` added
+ * to a teardown parent delete, rather than tolerating it under a budget.
  */
-const SWALLOWED_FILES_BASELINE = 10;
-const SWALLOWED_SITES_BASELINE = 14;
+const SWALLOWED_FILES_BASELINE = 0;
+const SWALLOWED_SITES_BASELINE = 0;
 
 /**
  * A `.catch(` attached to THIS delete's own statement.

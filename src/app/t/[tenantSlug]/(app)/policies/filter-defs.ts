@@ -52,7 +52,7 @@ function policyFilterDefsInput(t: T, tGroup: TGroup) {
             description: t('filters.categoryDesc'),
             group: tGroup('attributes'),
             icon: Tag,
-            options: null, // derived from loaded rows
+            options: null, // the tenant's categories + loaded rows (buildPolicyFilters)
             multiple: true,
             resetBehavior: 'clearable',
         },
@@ -102,10 +102,20 @@ interface PolicyLike {
     category?: string | null;
 }
 
+/**
+ * Category facet options: `knownCategories` (every category in the tenant,
+ * from the server) plus any carried by the loaded rows — the rows alone are
+ * the current-filter result, so with one category chosen they offer only it.
+ */
 export function categoryOptionsFromPolicies(
     policies: ReadonlyArray<PolicyLike>,
+    knownCategories: ReadonlyArray<string> = [],
 ): FilterOption[] {
     const seen = new Set<string>();
+    for (const c of knownCategories) {
+        const v = c.trim();
+        if (v) seen.add(v);
+    }
     for (const p of policies) {
         const c = p.category?.trim();
         if (c) seen.add(c);
@@ -115,15 +125,13 @@ export function categoryOptionsFromPolicies(
         .map((value) => ({ value, label: value }));
 }
 
-/** The facets whose options are built from loaded rows, so can shrink with them. */
-export const POLICY_ROW_DERIVED_FILTER_KEYS = ['category'] as const;
-
 export function buildPolicyFilters(
     policies: ReadonlyArray<PolicyLike>,
     t: T = (k) => k,
     tGroup: TGroup = (k) => k,
+    knownCategories: ReadonlyArray<string> = [],
 ) {
-    const categoryOpts = categoryOptionsFromPolicies(policies);
+    const categoryOpts = categoryOptionsFromPolicies(policies, knownCategories);
     return buildPolicyFilterDefs(t, tGroup).filters.map((f) =>
         f.key === 'category' ? { ...f, options: categoryOpts } : f,
     );
