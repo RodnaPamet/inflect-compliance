@@ -186,6 +186,31 @@ export interface FlueRunBinding {
      */
     currentLedgerSeq?: () => number;
 
+    /**
+     * ASKED BEFORE EVERY MODEL CALL, and it THROWS to stop the run (#4196).
+     *
+     * The kill switch was consulted in exactly two places: once before boot,
+     * and at the tool boundary through the funnel's `assertNotKilled`. A
+     * refusal there becomes an `isError` tool result, so the model is called
+     * AGAIN and the run settles `COMPLETED` — measured at three model calls
+     * for a switch engaged after the first, all of them to the external
+     * provider. A killed run that makes no further tool call was never stopped
+     * at all, which is the case the pre-boot check's own comment says it
+     * closed. `docs/claude-agent-sdk-design.md` lists "Kill switch asked per
+     * turn, not only at start" as a safety property of this engine; this is
+     * what makes that true.
+     *
+     * Resolved on the driver's side because it reads Prisma, which the
+     * interceptor's ESM graph cannot load — the same reason `tools`,
+     * `guardDelegateOutput` and the fan-out cap are built there.
+     *
+     * It also reports a cap halt that has already latched, for the second
+     * symptom of the same root cause: with a TOOL_CALLS cap of 1 the model was
+     * called four times, two of them after the halt. Both are "this run must
+     * stop", and the model call is the thing that must not happen next.
+     */
+    assertMayCallModel?: () => Promise<void>;
+
     onDelegationComplete?: (delegation: {
         /** The specialist the model selected, from the runtime's own result. */
         agent: string;

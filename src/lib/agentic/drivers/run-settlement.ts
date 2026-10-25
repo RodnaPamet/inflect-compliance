@@ -165,13 +165,64 @@ export async function haltRunAtKill(
     runId: string,
     kill: { scope: string; switchId: string; engagedAt: Date },
     reason: string,
+    /**
+     * A cap that had ALREADY latched when the kill stopped the run (#4196).
+     *
+     * Both facts are kept, and that is the requirement rather than a courtesy.
+     * The STATUS and the reason name the kill, because an operator who pressed
+     * stop looks for their act in the record and concluding the switch did
+     * nothing erodes a safety control. But settling as a kill alone would
+     * never call `recordAgentRunCapHalt` and never write the
+     * `WORKFLOW_RUN_CAP_HALTED` facts — so an instance of an automated budget
+     * ceiling DOING ITS JOB would be silently deleted from the evidence, which
+     * is precisely what an auditor asks us to show. A figure that quietly
+     * loses instances is worse than one that is visibly wrong.
+     *
+     * Ordering the two by which latched first would be the better answer and
+     * is not available: `RunCapHalt` carries no timestamp, and a kill's
+     * `engagedAt` is the operator's clock rather than our observation, so
+     * comparing them would be false precision. Keeping both facts makes the
+     * precedence a display choice instead of a causal claim.
+     */
+    alsoCapped?: { kind: string; source: string; limit: number; used: number } | null,
 ): Promise<string> {
     const message = `flue_run_agent_killed: ${reason}`;
+    // The automated control's own instance, counted even though the run is
+    // reported as a kill. Same call `haltRunAtCap` makes.
+    if (alsoCapped) {
+        recordAgentRunCapHalt({ cap: alsoCapped.kind, source: alsoCapped.source });
+    }
     await updateRun(ctx, runId, {
         status: 'ABORTED',
         completedAt: new Date(),
         errorMessage: message,
     });
+    // NAMED INDIVIDUALLY, NEVER SPREAD — the rule
+    // `WORKFLOW_RUN_CAP_HALTED` already states, and the reason it is written
+    // this way rather than as a conditional spread of four keys. Every field
+    // is a structural fact about a ceiling, none can become content when the
+    // halt type grows one, and `no-raw-prompt-logging` cannot JUDGE a spread:
+    // it counts one as a hole in its own coverage, which is how it caught the
+    // first draft of this contradicting the comment directly above it.
+    //
+    // Assigned rather than always-present-as-undefined, because a key holding
+    // `undefined` still EXISTS on the object — so "no cap latched" and "a cap
+    // whose kind we failed to read" would be the same row.
+    const details: Record<string, unknown> = {
+        category: 'access',
+        reason: message,
+        killScope: kill.scope,
+        killSwitchId: kill.switchId,
+        killEngagedAt: kill.engagedAt.toISOString(),
+        escalate: true,
+    };
+    if (alsoCapped) {
+        details.cap = alsoCapped.kind;
+        details.capSource = alsoCapped.source;
+        details.capLimit = alsoCapped.limit;
+        details.capUsed = alsoCapped.used;
+    }
+
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -180,14 +231,7 @@ export async function haltRunAtKill(
         entityId: runId,
         action: 'WORKFLOW_RUN_AGENT_KILLED',
         requestId: ctx.requestId,
-        detailsJson: {
-            category: 'access',
-            reason: message,
-            killScope: kill.scope,
-            killSwitchId: kill.switchId,
-            killEngagedAt: kill.engagedAt.toISOString(),
-            escalate: true,
-        },
+        detailsJson: details,
     }).catch(() => undefined);
     return 'ABORTED';
 }

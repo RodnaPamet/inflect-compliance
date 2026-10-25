@@ -61,6 +61,8 @@ interface Recorded {
         fromSeq: number | null;
     }>;
     ledgerSeqReads: number;
+    /** How many times the interceptor asked `assertMayCallModel` (#4196). */
+    modelGateAsks: number;
 }
 
 interface Outcome {
@@ -86,6 +88,12 @@ async function runThroughProductionInterceptor(opts: {
     /** Make the answer guard throw, as a content refusal would. */
     guardThrows?: boolean;
     ledgerSeq?: number;
+    /**
+     * Refuse the model gate once this many calls have been allowed, as a kill
+     * switch engaged mid-run does (#4196). `undefined` supplies NO gate at all,
+     * which is the pre-fix behaviour and the control for every assertion below.
+     */
+    killAfterModelCalls?: number;
 }): Promise<Outcome> {
     const exporter = new InMemorySpanExporter();
     const provider = new TracerProvider({
@@ -94,7 +102,7 @@ async function runThroughProductionInterceptor(opts: {
     trace.disable();
     trace.setGlobalTracerProvider(provider);
 
-    const rec: Recorded = { guarded: [], completed: [], ledgerSeqReads: 0 };
+    const rec: Recorded = { guarded: [], completed: [], ledgerSeqReads: 0, modelGateAsks: 0 };
 
     // THE REAL INSTALL. Everything below observes what it did.
     const dispose = installFlueTelemetry();
@@ -129,6 +137,20 @@ async function runThroughProductionInterceptor(opts: {
             rec.ledgerSeqReads += 1;
             return opts.ledgerSeq ?? 7;
         },
+        // SUPPLIED ONLY WHEN THE TEST ASKS. An absent callback is exactly the
+        // pre-#4196 engine — the interceptor's `binding?.assertMayCallModel?.()`
+        // is a no-op — so the same harness produces both worlds and the
+        // comparison is a measurement rather than two different setups.
+        ...(opts.killAfterModelCalls === undefined
+            ? {}
+            : {
+                assertMayCallModel: async () => {
+                    rec.modelGateAsks += 1;
+                    if (rec.modelGateAsks > opts.killAfterModelCalls!) {
+                        throw new Error('Agent tool calls are stopped by an operator kill switch.');
+                    }
+                },
+            }),
         guardDelegateOutput: async (text, taskId) => {
             rec.guarded.push({ text, taskId });
             if (opts.guardThrows) throw new Error('egress_refused: the delegate leaked');
@@ -184,7 +206,7 @@ async function runThroughProductionInterceptor(opts: {
     // with "expected length 1, received 0" — which reads as the interceptor not
     // calling its hooks. That cost a debugging cycle when the tool shape used
     // `parameters`/`execute` instead of `input`/`run`.
-    if (!opts.guardThrows && threw !== null) {
+    if (!opts.guardThrows && opts.killAfterModelCalls === undefined && threw !== null) {
         throw new Error(`harness: the dispatch threw unexpectedly — ${threw}`);
     }
 
@@ -288,6 +310,96 @@ describe('the production interceptor runs, and its hooks receive the real call',
         // deliberately not used.
         expect(failed.some((s) => typeof s.attrs['flue.error_kind'] === 'string')).toBe(true);
         expect(failed.every((s) => !('exception.message' in s.attrs))).toBe(true);
+    });
+
+    /**
+     * THE KILL SWITCH, PER MODEL CALL (#4196).
+     *
+     * It was asked in exactly two places: once before boot, and at the tool
+     * boundary through the funnel's `assertNotKilled`. A refusal there becomes
+     * an `isError` tool result, so the model is called AGAIN — measured on the
+     * driver conformance suite at three model calls for a switch engaged after
+     * the first, all to the external provider, with the run settling
+     * `COMPLETED`. A killed run that makes no further tool call was never
+     * stopped at all, which is the case the pre-boot check's own comment claims
+     * to have closed.
+     *
+     * `docs/claude-agent-sdk-design.md` lists "Kill switch asked per turn, not
+     * only at start" as a property of this engine, and that table is the bar
+     * every new engine is held to — so the bar was set above what its reference
+     * engine met.
+     *
+     * The count is read off the NON-ERROR `chat` spans rather than off the faux
+     * provider, because the gate runs INSIDE the span (like the delegation
+     * gate): a refused call still opens a span and marks it `error`, so total
+     * spans count ATTEMPTS and the un-errored ones count calls that reached a
+     * provider. That distinction is the whole measurement here.
+     */
+    const modelCallsReaching = (
+        spans: Array<{ name: string; error: boolean }>,
+    ): number => spans.filter((sp) => sp.name === 'chat' && !sp.error).length;
+
+    it('with NO gate the model is called more than once — the control', async () => {
+        // Without this the assertion below is vacuous: a harness that only ever
+        // makes one model call would "prove" the gate works while doing nothing.
+        const { spans } = await runThroughProductionInterceptor({
+            runId: 'tel-kill-control',
+            taskCalls: 0,
+            callTool: true,
+        });
+
+        expect(modelCallsReaching(spans)).toBeGreaterThan(1);
+    });
+
+    it('stops at the first refusal, so no further call reaches the provider', async () => {
+        const { spans, rec, threw } = await runThroughProductionInterceptor({
+            runId: 'tel-kill-stops',
+            taskCalls: 0,
+            callTool: true,
+            killAfterModelCalls: 1,
+        });
+
+        // ONE call reached the provider. The control above makes this a
+        // reduction rather than a coincidence.
+        expect(modelCallsReaching(spans)).toBe(1);
+        // Asked more than once, so the gate is consulted PER CALL and not only
+        // at the start — a gate asked once would allow its one call and never
+        // be heard from again, which is the defect.
+        expect(rec.modelGateAsks).toBeGreaterThan(1);
+        // And it leaves by THROWING. A refusal that returned a value would
+        // reach the model as a tool error and buy another call, which is the
+        // original bug.
+        //
+        // NOT matched on the message, and that is a finding rather than a
+        // concession: the runtime WRAPS it, so what arrives is
+        // `[flue] Agent run failed (submission sub_…)` and the kill reason is
+        // gone by the time anything downstream sees it. Measured here — the
+        // first version of this assertion looked for /kill switch/ and failed.
+        //
+        // That is exactly why `executeFlueRun` carries a KillLatch and settles
+        // from the verdict rather than parsing this string: a message-based
+        // arm would have reported every killed run as `flue_run_failed`, which
+        // is an operator's deliberate stop recorded as a crash.
+        expect(threw).not.toBeNull();
+    });
+
+    it('does NOT ask the gate for a tool call, which the funnel already gates', async () => {
+        // Asking here as well would double every tool call's kill read for no
+        // additional guarantee — `assertNotKilled` already refuses at the
+        // funnel. The gate is keyed on `operation.type === 'model'`, and this
+        // is what holds it there: a check moved above that branch would ask on
+        // every operation and this count would exceed the model-call count.
+        const { spans, rec } = await runThroughProductionInterceptor({
+            runId: 'tel-kill-tools',
+            taskCalls: 0,
+            callTool: true,
+            killAfterModelCalls: 99,
+        });
+
+        const chats = spans.filter((sp) => sp.name === 'chat').length;
+        const tools = spans.filter((sp) => sp.name === 'execute_tool').length;
+        expect(tools).toBeGreaterThan(0);
+        expect(rec.modelGateAsks).toBe(chats);
     });
 
     it('refuses the delegation at a cap of zero, through the real interceptor', async () => {

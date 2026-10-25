@@ -136,6 +136,24 @@ export function installFlueTelemetry(): () => Promise<void> {
                         const binding = ctx.instanceId
                             ? readRunBinding(ctx.instanceId)
                             : undefined;
+                        // THE KILL SWITCH AND THE CAP HALT, PER MODEL CALL
+                        // (#4196). Before `next()`, so a killed run sends
+                        // nothing further to the model provider — the tool
+                        // boundary was the only other place this was asked,
+                        // and a refusal there returns to the model as an error
+                        // result and buys another call.
+                        //
+                        // Inside the span, like the delegation gate and for
+                        // the same reason: a stopped call is traced as an
+                        // attempt that was refused rather than vanishing.
+                        //
+                        // `model` only. A tool call already has the funnel's
+                        // `assertNotKilled`, and asking here as well would
+                        // double every tool call's kill read for no additional
+                        // guarantee.
+                        if (operation.type === 'model') {
+                            await binding?.assertMayCallModel?.();
+                        }
                         // THE SPAN'S LOWER BOUND, held in THIS frame (#3473
                         // part 3). Two delegations in one turn are two
                         // interceptor invocations, so each keeps its own —

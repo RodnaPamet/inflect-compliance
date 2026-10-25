@@ -31,6 +31,7 @@ import { bindRun, releaseRun } from './run-binding';
 import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
 import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate';
 import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
+import type { KillVerdict } from '@/lib/agentic/kill-switch';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
 import { openDeclaredRunInput, runMessage } from './run-message';
@@ -103,6 +104,21 @@ const RANK: Record<StepGuardObservation['verdict'], number> = {
  */
 interface CapLatch {
     halt: RunCapHalt | null;
+}
+
+/**
+ * The kill that stopped a model call, so the catch can settle it as a KILL
+ * rather than as a crash (#4196).
+ *
+ * `assertMayCallModel` throws from inside the runtime's interceptor, and a
+ * throw out of there arrives in the catch below indistinguishable from any
+ * other failure — it would settle `flue_run_failed: <message>`, reporting an
+ * operator's deliberate stop as a crash. Exactly the defect the cap latch
+ * exists to avoid one arm down, and the same remedy: latch the reason where it
+ * is known, read it where the outcome is written.
+ */
+interface KillLatch {
+    verdict: KillVerdict | null;
 }
 
 // MOVED to a leaf module (#3869). This file imports `@flue/runtime`, an
@@ -451,6 +467,7 @@ export async function executeFlueRun(
         { readOnly: def.readOnly === true },
     );
     const latch: CapLatch = { halt: null };
+    const killLatch: KillLatch = { verdict: null };
     let seq = fromSeq;
     let stepFailures = 0;
 
@@ -527,6 +544,34 @@ export async function executeFlueRun(
         // bookkeeping. `toolCalled: 'task'` because that is the tool the model
         // called; the specialist is the LABEL, which is what the timeline
         // shows and what the grouping keys on.
+        // THE KILL SWITCH AND THE CAP HALT, ASKED PER MODEL CALL (#4196).
+        //
+        // Resolved here because it reads Prisma, which the interceptor's ESM
+        // graph cannot load — the same reason the tools and the fan-out cap are
+        // built on this side.
+        //
+        // UNCACHED, for the reason `kill-switch.ts` gives: a kill state that
+        // lags by one execution cycle is this control failing at the moment it
+        // matters. One query per model call is the price of the guarantee, and
+        // a dispatch makes a handful of calls, not thousands.
+        //
+        // The cap halt is checked FIRST because it needs no round trip, so a
+        // run already halting does not pay for a kill read it cannot act on.
+        assertMayCallModel: async () => {
+            if (latch.halt) throw new Error(latch.halt.message);
+            const live = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
+            if (!live) return;
+            // Counted exactly as the pre-boot refusal is, including the drill
+            // derivation — a refusal here is the same control acting, one turn
+            // later, and splitting the metric would hide how often the per-turn
+            // check is the one that fires.
+            recordAgentKillRefusal({
+                scope: live.scope,
+                drill: ctx.agentId === KILL_SWITCH_DRILL_AGENT_ID,
+            });
+            killLatch.verdict = live;
+            throw new Error(killRefusalMessage(live.scope));
+        },
         // THE COUNTER, read-only. The gate takes the span's lower bound from
         // it before `next()`; only the driver allocates.
         currentLedgerSeq: () => seq,
@@ -762,6 +807,29 @@ export async function executeFlueRun(
         // response never settled, and inventing one from a throw would put
         // text in the regulator's record that the model did not finish saying.
         await settleTurns(null);
+
+        // A KILL latched before the throw outranks every other explanation,
+        // and sits above the cap deliberately. A kill is an operator's
+        // deliberate act and the thing they will look for in the record; a cap
+        // is the system's own ceiling. A run that was capped AND then killed is
+        // a run somebody stopped, and reporting it as a cap would tell that
+        // operator their switch did nothing. The pre-boot path settles
+        // `haltRunAtKill` the same way, so the two agree on what a killed run
+        // looks like however far in it was stopped.
+        if (killLatch.verdict) {
+            const status = await haltRunAtKill(
+                ctx,
+                runId,
+                killLatch.verdict,
+                killRefusalMessage(killLatch.verdict.scope),
+                // BOTH FACTS. The run is reported as a kill because that is the
+                // act an operator will look for, and the cap is carried so an
+                // instance of the ceiling working is not deleted from the
+                // evidence. See the parameter's docblock.
+                latch.halt,
+            );
+            return { status, stepFailures };
+        }
 
         // A cap latched before the throw explains the throw: the tool refusals
         // are what the submission failed on. Report the ceiling, not the
