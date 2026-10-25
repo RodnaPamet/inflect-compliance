@@ -35,7 +35,7 @@ Give each system its own key, with only the access that system needs, and revoke
 | Field | What it sets |
 | --- | --- |
 | {{ui:admin.apiKeys.nameLabel}} | A name that says what uses the key, up to 100 characters. Required |
-| {{ui:admin.apiKeys.expiryLabel}} | **30 days**, **90 days**, **180 days** or **1 year**, counted from the moment you create the key. With nothing chosen, the key has {{ui:admin.apiKeys.noExpiry}}. To go back to that after choosing one, click the chosen option again |
+| {{ui:admin.apiKeys.expiryLabel}} | {{ui:admin.apiKeys.noExpiry}}, {{ui:admin.apiKeys.expiry30Days}}, {{ui:admin.apiKeys.expiry90Days}}, {{ui:admin.apiKeys.expiry180Days}} or {{ui:admin.apiKeys.expiry1Year}}, counted from the moment you create the key. The form starts on {{ui:admin.apiKeys.noExpiry}} |
 | {{ui:admin.apiKeys.bindingLabel}} | The registered agent the key acts as. The list offers the workspace's active agents and starts at {{ui:admin.apiKeys.agentPlaceholder}}. The agent can be chosen only now, when the key is created, never afterwards |
 | {{ui:admin.apiKeys.autonomyLabel}} | Appears once an agent is chosen. {{ui:admin.apiKeys.autonomyNone}}, or a level from **L0** up to the agent's own level. It can only lower what the agent may do with this key |
 | {{ui:admin.apiKeys.scopesLabel}} | What the key may do. Required: at least one scope |
@@ -107,8 +107,8 @@ A key cannot be edited once it exists, and its agent can be chosen only when it 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
-| **{{ui:admin.apiKeys.emptyActive}}** | No key is live: none was created, or every key was revoked or has expired. The same message shows when the list fails to load | Create a key. If you expected keys here, reload the page |
-| **{{ui:admin.apiKeys.loadFailed}}** | The page could not reach Inflect | Check your connection and reload the page |
+| **{{ui:admin.apiKeys.emptyActive}}** | No key is live: none was created, or every key was revoked or has expired | Create a key |
+| **{{ui:admin.apiKeys.loadFailed}}** in place of the tables, with the reason below it | The list of keys did not load | Click **{{ui:common.error.tryAgain}}**, or reload the page |
 | A note in place of the agent list says you do not have permission to read the agent register | Your role cannot see the workspace's agents | For a key an agent will use, ask an Owner or an Admin who can read the agent register to create it |
 | A note in place of the agent list says the agent register could not be loaded | The list of agents did not load | Reload the page before you create a key that an agent will use |
 | A message saying only an active agent can be bound to a key | The agent was suspended or retired after the page loaded | Reload the page and choose an active agent |
@@ -116,7 +116,7 @@ A key cannot be edited once it exists, and its agent can be chosen only when it 
 | **{{ui:admin.apiKeys.copyFailedToast}}** | Your browser blocked the copy | Click **{{ui:admin.apiKeys.showKey}}**, then select the key and copy it by hand |
 | You dismissed the key before copying it | The full key is never shown again | Create a new key, then revoke the one you could not copy |
 | **API key is already revoked.** | Someone revoked the key since the page loaded | Reload the page |
-| **{{ui:admin.apiKeys.createFailed}}** or **{{ui:admin.apiKeys.revokeFailed}}** | The action did not go through | Reload the page and try again |
+| **{{ui:admin.apiKeys.createFailed}}** or **{{ui:admin.apiKeys.revokeFailed}}** | The action did not go through, and Inflect gave no reason. After a failed revoke, the dialog stays open | Reload the page and try again |
 
 The how-to [Create an API key](../../how-to/set-up/create-an-api-key.md) covers what to do when the other system's requests are refused.
 

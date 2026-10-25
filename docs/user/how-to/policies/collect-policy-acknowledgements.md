@@ -4,7 +4,8 @@ Ask staff to confirm they have read a published policy, then track who has. Each
 
 ## Before you start
 
-- To ask people and to see who has acknowledged, you need the Owner or Admin role. With a custom role, you need one whose base role is Admin.
+- To ask people, you need the Owner or Admin role. With a custom role, you need one whose base role is Admin.
+- To see who has acknowledged, you need the Owner, Admin or Auditor role. With a custom role, you need one whose base role is Admin or Auditor. Auditors see the roster and the attestation log but cannot ask people.
 - Anyone in the workspace can acknowledge a published policy, whatever their role, whether or not they were asked.
 - The policy must be published. See [Publish a policy](publish-a-policy.md).
 - Decide who must acknowledge it: everyone, everyone with a particular role, or named people.
@@ -37,7 +38,7 @@ Every member does this for themselves.
 
 ### See who has acknowledged
 
-On the policy's **{{ui:policies.detail.tabAcknowledgements}}** tab, the {{ui:policies.ack.rosterTitle}} shows which version it is for, the share of people who have acknowledged, and a progress bar. Below that, people who still owe an acknowledgement come first. Each person who was asked shows who asked them and when. Everyone shows one of these:
+Owners, Admins and Auditors can do this. On the policy's **{{ui:policies.detail.tabAcknowledgements}}** tab, the {{ui:policies.ack.rosterTitle}} shows which version it is for, the share of people who have acknowledged, and a progress bar. Below that, people who still owe an acknowledgement come first. Each person who was asked shows who asked them and when. Everyone shows one of these:
 
 | Badge | Meaning |
 | --- | --- |
@@ -51,8 +52,8 @@ On the {{ui:policies.title}} page, the {{ui:policies.colHeaders.acknowledgement}
 
 ## What happens next
 
-- Each person you ask gets a notification in Inflect, under the bell at the top of the page, that starts **Action required: acknowledge**. Nobody is notified twice for the same version.
-- When a later version of the policy is published, or an Owner or Admin rolls the policy back to an earlier version, everyone who was asked is asked again for the version that is now live. Their earlier acknowledgement shows as {{ui:policies.ack.statusSuperseded}} until they acknowledge again. After a new version is published, they get a notification that starts **Re-acknowledgement required**.
+- Each person you ask gets a notification in Inflect, under the bell at the top of the page, that starts **Action required: acknowledge**. Clicking it opens the policy. Asking again does not notify anyone twice for the same version.
+- When a later version of the policy is published, or an Owner or Admin rolls the policy back to an earlier version, everyone who was asked is asked again for the version that is now live. Their earlier acknowledgement shows as {{ui:policies.ack.statusSuperseded}} until they acknowledge again. They get a notification that starts **Re-acknowledgement required**. A rollback notifies them again even if they were already notified about the version it brings back.
 - Only acknowledgements of the live version count towards the roster's figures.
 - Each request and each acknowledgement is listed on the policy's **{{ui:policies.detail.tabActivity}}** tab, as {{ui:policies.detail.event.ackRequested}} and {{ui:policies.detail.event.attested}}, and recorded in the workspace's audit log.
 - While a policy is not published, for example after it is archived, nobody can acknowledge it. The roster then describes the last published version and is marked {{ui:policies.ack.rosterNotLive}}.
@@ -63,7 +64,7 @@ On the {{ui:policies.title}} page, the {{ui:policies.colHeaders.acknowledgement}
 | --- | --- | --- |
 | {{ui:policies.ack.notPublished}} | The policy is not published, so there is nothing to acknowledge yet | Publish it first. See [Publish a policy](publish-a-policy.md) |
 | There is no **{{ui:policies.ack.requestAck}}** button | The policy is not published, or your role cannot ask people | Publish the policy, or ask an Owner or Admin |
-| There is no {{ui:policies.ack.rosterTitle}} on the tab | Your role cannot see who has acknowledged | Ask an Owner or Admin |
+| There is no {{ui:policies.ack.rosterTitle}} on the tab | Your role cannot see who has acknowledged. Only Owners, Admins and Auditors can | Ask an Owner, Admin or Auditor |
 | {{ui:policies.ack.requestFailed}} | The request did not go through. Often the role you chose has no active members | Choose another audience, or reload the page and try again |
 | {{ui:policies.ack.noneRequired}} | Nobody has been asked to acknowledge the live version | Click **{{ui:policies.ack.requestAck}}** |
 | {{ui:policies.ack.acknowledgeFailed}} | Your acknowledgement was not saved. The policy may have stopped being live | Reload the page. If the policy is still published, try again |

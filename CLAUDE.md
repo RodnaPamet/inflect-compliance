@@ -859,9 +859,10 @@ new tenant-membership creation path).
   `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`), as does a REVOKE
   or MODIFY of a LIVE AI_ADMIN (`AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER`, matching
   the members page, where only an OWNER moves one out of the role or deactivates
-  it); the last-OWNER guard still applies to that closer. Each refusal is the WHOLE close, before any
-  row executes, so a decision stored before the rule is never applied and never
-  dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` / `_CLOSE_REFUSED`.
+  it); the last-OWNER guard still applies to that closer. Each refusal is the
+  WHOLE close, before any row executes, so a decision stored before the rule is
+  never applied and never dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` /
+  `_CLOSE_REFUSED`.
   Reasons live in `src/lib/access-review/member-decision-rules.ts`.
 
 ### Observability
@@ -2730,6 +2731,19 @@ next engine is vouched, pinned and kept off the web tier without anybody
 remembering those lines. A comparison that genuinely means Flue (the
 `FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
 stays a comparison.
+
+**The engine choice has one control: the "Agent engines" section on Admin → AI
+features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
+`GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and
+the `PUT` stays `admin.tenant_lifecycle`. The page gates each section, not the
+whole page. The six-term `flue-wiring` checklist stays OWNER-only. The section
+requests it only for a viewer who can change the engine, so an admin's visit
+writes no `AUTHZ_DENIED` row. Do not put a second engine control anywhere
+else: the Flue card on Integrations was that, and it was removed. A new engine
+is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
+description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
+a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
+until it does.
 
 ## Testing Conventions
 

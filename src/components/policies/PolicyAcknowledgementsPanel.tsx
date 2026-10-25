@@ -5,8 +5,12 @@
  *
  * Three surfaces in one panel:
  *   • the current user's own acknowledge button (when the policy is PUBLISHED);
- *   • an admin roster — required vs acknowledged, % complete, timestamps;
- *   • an admin "Request acknowledgement" action (audience: all members / a role).
+ *   • the roster — required vs acknowledged, % complete, timestamps, and the
+ *     attestation log. Read-only for an AUDITOR: OWNER, ADMIN and AUDITOR may
+ *     see it (`canViewRoster`, matching the server's `assertCanAudit`; owner
+ *     decision, #4128);
+ *   • an admin "Request acknowledgement" action (audience: all members / a
+ *     role) — OWNER / ADMIN only (`canAdmin`).
  *
  * All copy is localized under `policies.ack.*`. Self-contained data fetching
  * against the attestation API added in Prompt-1.1/1.2.
@@ -60,12 +64,19 @@ const ROLE_VALUES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR'] as const;
 export function PolicyAcknowledgementsPanel({
     policyId,
     canAdmin,
+    canViewRoster,
     isPublished,
     refreshToken = 0,
     currentVersionNumber = null,
 }: {
     policyId: string;
+    /** May REQUEST acknowledgements (OWNER / ADMIN — the server's `assertCanAdmin`). */
     canAdmin: boolean;
+    /**
+     * May SEE the roster and attestation log (OWNER / ADMIN / AUDITOR — the
+     * server's `assertCanAudit`). An AUDITOR sees it without the request action.
+     */
+    canViewRoster: boolean;
     isPublished: boolean;
     /**
      * Bumped by the parent after publish / rollback.
@@ -112,10 +123,10 @@ export function PolicyAcknowledgementsPanel({
     }, [apiUrl, policyId]);
 
     const loadRoster = useCallback(async () => {
-        if (!canAdmin) return;
+        if (!canViewRoster) return;
         const res = await fetch(apiUrl(`/policies/${policyId}/attestations`));
         if (res.ok) setRoster((await res.json()) as Roster);
-    }, [apiUrl, policyId, canAdmin]);
+    }, [apiUrl, policyId, canViewRoster]);
 
     useEffect(() => {
         void loadOwn();
@@ -192,7 +203,7 @@ export function PolicyAcknowledgementsPanel({
                     // as a contradiction; name the reason instead.
                     <p className="text-sm text-content-muted">
                         {t('ack.notPublished')}
-                        {canAdmin && roster && roster.assignedCount > 0
+                        {canViewRoster && roster && roster.assignedCount > 0
                             ? ` ${t('ack.notPublishedRosterHint')}`
                             : ''}
                     </p>
@@ -210,12 +221,12 @@ export function PolicyAcknowledgementsPanel({
                 )}
             </div>
 
-            {/* Admin roster */}
-            {canAdmin && (
-                <div className="rounded-lg border border-border-subtle p-4 space-y-default">
+            {/* Roster — OWNER / ADMIN / AUDITOR; the request action is admin-only. */}
+            {canViewRoster && (
+                <div className="rounded-lg border border-border-subtle p-4 space-y-default" data-testid="policy-ack-roster">
                     <div className="flex items-center justify-between">
                         <Heading level={3} className="text-sm font-semibold text-content-emphasis">{t('ack.rosterTitle')}</Heading>
-                        {isPublished && (
+                        {canAdmin && isPublished && (
                             <Button variant="secondary" size="sm" onClick={() => setRequestOpen(true)} data-testid="policy-request-ack-button">
                                 {t('ack.requestAck')}
                             </Button>
@@ -300,7 +311,7 @@ export function PolicyAcknowledgementsPanel({
                 </div>
             )}
 
-            {requestOpen && (
+            {canAdmin && requestOpen && (
                 <Modal showModal={requestOpen} setShowModal={setRequestOpen}>
                     <Modal.Header title={t('ack.requestTitle')} />
                     <Modal.Body>

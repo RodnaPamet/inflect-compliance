@@ -21,7 +21,7 @@ The {{ui:admin.nav.scim}}, {{ui:admin.nav.entra}} and {{ui:admin.nav.integration
 | Rename a configuration, change its other settings, test it and delete it | Owner, Admin |
 | Make single sign-on the only way in | Owner, Admin, once at least one active Owner or Admin of the workspace has an Inflect password |
 
-Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. If your workspace uses custom roles, what you can do depends on the permissions your role was given.
+Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}** instead of the page. If your workspace uses custom roles, what you can do depends on the permissions your role was given. A role that opens the admin pages but does not manage the workspace sees a note saying that only an Owner or an Admin can see and change single sign-on, and no settings.
 
 ## What it is for
 
@@ -38,9 +38,9 @@ Single sign-on never creates accounts and never adds anyone to the workspace. Ea
 | Badge | What it means |
 | --- | --- |
 | {{ui:admin.sso.notConfigured}} | Nothing is saved for this protocol |
-| {{ui:admin.sso.disabled}} | A configuration is saved, but **{{ui:admin.sso.enableSso}}** is unticked, so nobody can sign in with it |
+| {{ui:admin.sso.disabled}} | A configuration is saved, but **{{ui:admin.sso.enableSso}}** is unticked, so nobody can sign in with it. This is the badge even when **{{ui:admin.sso.enforceSso}}** is saved ticked, because enforcement applies only while the configuration is enabled |
 | {{ui:admin.sso.enabled}} | Members can sign in with it |
-| {{ui:admin.sso.enforced}} | **{{ui:admin.sso.enforceSso}}** is saved ticked. It is in force only while **{{ui:admin.sso.enableSso}}** is ticked too. With that unticked, the badge still reads {{ui:admin.sso.enforced}}, but nothing is enforced |
+| {{ui:admin.sso.enforced}} | Members can sign in with it, and it is the only way into the workspace: **{{ui:admin.sso.enableSso}}** and **{{ui:admin.sso.enforceSso}}** are both saved ticked |
 
 **The configuration card**, headed **OIDC Configuration** or **SAML Configuration**. Two fields are the same for both protocols:
 
@@ -118,7 +118,8 @@ To delete the configuration, click **{{ui:admin.sso.delete}}**, then **{{ui:admi
 | --- | --- | --- |
 | **{{ui:admin.sso.loading}}**, with grey bars | The page is loading the saved configurations | Wait a moment |
 | {{ui:admin.sso.notConfigured}}, with an empty card | Nothing is saved for this protocol | Fill in the card and save, or switch protocol to see the other configuration |
-| {{ui:admin.sso.notConfigured}}, although you know a configuration was saved | The page could not load the saved configurations. It shows an empty card instead of an error | Reload the page before you change anything |
+| **{{ui:admin.sso.loadFailed}}**, with a reason below it | The page could not load the saved configurations. It shows no card, so nothing can be saved over them | Click **{{ui:common.error.tryAgain}}**, or reload the page |
+| **{{ui:admin.sso.manageOnly}}** | Your role opens the admin pages but does not manage the workspace, so the page shows no settings | Ask an Owner or an Admin to make the change |
 | **Only an Owner can set up single sign-on or change whom it trusts…** when you save | You are not an Owner, and the save would set up single sign-on or change which identity provider it trusts | Ask an Owner to make that change. You can still save the other settings |
 | **Invalid request payload** when you save | A required field is empty, or a value is not in the expected form | Fill in every field for the protocol. URLs must be full web addresses, and domains look like `acme.com` |
 | **Enter the client secret for this provider.** or **Enter the certificate for this provider.** when you save | The dots have no stored value to keep | Paste the real value into the field and save |
@@ -127,7 +128,7 @@ To delete the configuration, click **{{ui:admin.sso.delete}}**, then **{{ui:admi
 | **{{ui:admin.sso.saveFailed}}** or **{{ui:admin.sso.unknownError}}** when you save | The save did not go through, and the reason was not given | Reload the page and try again |
 | No **{{ui:admin.sso.testLogin}}** button | The saved configuration is not enabled | Tick **{{ui:admin.sso.enableSso}}** and save |
 | The test tab shows the Inflect sign-in page with a message | The test sign-in failed | Look the message up in [Set up single sign-on](../../how-to/set-up/set-up-single-sign-on.md) |
-| After you confirm **{{ui:admin.sso.deleteConfirm}}**, the dialog closes but the configuration is still there, with no message | The deletion did not go through | Reload the page and try again |
+| A message in red after you confirm **{{ui:admin.sso.deleteConfirm}}**, such as **{{ui:admin.sso.deleteFailed}}** | The deletion did not go through, and the configuration is still saved. The message gives the reason | Reload the page and try again |
 
 ## Related
 

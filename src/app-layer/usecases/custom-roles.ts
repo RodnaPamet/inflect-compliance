@@ -14,7 +14,7 @@
 import { RequestContext } from '../types';
 import { assertCanManageMembers } from '../policies/admin.policies';
 import { logEvent } from '../events/audit';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
 import {
     validatePermissionsJson,
@@ -363,6 +363,11 @@ function assertGrantWithinOwnAuthority(
  * The database holds the first rule too (CHECK
  * `TenantMembership_built_in_scope_role_no_custom_role`); the usecase is the
  * front door with the named reason.
+ *
+ * Its three parts are exported for the members page's Save, which sends a role
+ * and a custom role together (`updateTenantMemberRoleAndCustomRole`): every
+ * check of both halves runs before either write, so a refused custom role
+ * leaves the role unchanged (#4118).
  */
 export async function assignCustomRole(
     ctx: RequestContext,
@@ -386,75 +391,112 @@ export async function assignCustomRole(
             throw notFound('Membership not found or not active.');
         }
 
-        // An OWNER's or an AI_ADMIN's scope is always the built-in one (#3720,
-        // #3699): a custom role would replace it at resolution. Refused for
-        // every caller — this is a rule about the membership, not the caller.
-        if (customRoleId && !mayCarryCustomRole(membership.role)) {
-            throw new ConflictError(builtInScopeRoleMessage(membership.role, 'assign-custom-role'), {
-                reason: BUILT_IN_SCOPE_REFUSAL,
-            });
-        }
-        // Clearing one from an OWNER (legacy data only) restores full OWNER
-        // authority, so it is an OWNER's change (#3720). Refused whether or not
-        // there is anything to clear: an ADMIN does not modify an OWNER
-        // membership. Clearing on every other role stays open, AI_ADMIN included.
-        if (
-            customRoleId === null &&
-            clearingCustomRoleIsOwnerTier(membership.role) &&
-            !ctx.appPermissions.admin.owner_management
-        ) {
-            throw forbidden(ownerTierClearMessage(), { reason: OWNER_TIER_CLEAR_REFUSAL });
-        }
-
-        // If assigning, verify the custom role exists and belongs to this tenant
-        if (customRoleId) {
-            const customRole = await db.tenantCustomRole.findFirst({
-                where: {
-                    id: customRoleId,
-                    tenantId: ctx.tenantId,
-                    isActive: true,
-                },
-            });
-            if (!customRole) {
-                throw notFound('Custom role not found or inactive.');
-            }
-            // Handing an existing role to someone is a grant too. Without
-            // this, an ADMIN blocked from AUTHORING an over-privileged
-            // role could still assign one that already exists (seeded,
-            // or created by an OWNER) — including to themselves.
-            assertGrantWithinOwnAuthority(
-                ctx,
-                customRole.permissionsJson,
-                customRole.baseRole,
-            );
-        }
-
-        const oldCustomRoleId = membership.customRoleId;
-
-        const updated = await db.tenantMembership.update({
-            where: { id: membershipId },
-            data: { customRoleId },
-            include: {
-                user: { select: { id: true, name: true, email: true } },
-                customRole: { select: { id: true, name: true } },
-            },
-        });
-
-        await logEvent(db, ctx, {
-            action: 'MEMBER_CUSTOM_ROLE_CHANGED',
-            entityType: 'TenantMembership',
-            entityId: updated.id,
-            details: customRoleId
-                ? `Assigned custom role "${updated.customRole?.name}" to ${membership.user.email}`
-                : `Removed custom role from ${membership.user.email} (fallback to ${membership.role})`,
-            detailsJson: {
-                category: 'status_change',
-                entityName: 'TenantMembership',
-                fromStatus: oldCustomRoleId ?? 'none',
-                toStatus: customRoleId ?? 'none',
-            },
-        });
-
+        await assertCustomRoleAssignableInTx(db, ctx, membership.role, customRoleId);
+        const updated = await writeCustomRoleInTx(db, membership.id, customRoleId);
+        await logCustomRoleChange(db, ctx, { membership, updated, customRoleId });
         return updated;
+    });
+}
+
+/**
+ * Every refusal `assignCustomRole` can give, asked of a membership that holds
+ * (or, in a combined change, is about to hold) `membershipRole`. Throws the
+ * refusal; writes nothing.
+ */
+export async function assertCustomRoleAssignableInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    membershipRole: Role,
+    customRoleId: string | null,
+): Promise<void> {
+    // An OWNER's or an AI_ADMIN's scope is always the built-in one (#3720,
+    // #3699): a custom role would replace it at resolution. Refused for
+    // every caller — this is a rule about the membership, not the caller.
+    if (customRoleId && !mayCarryCustomRole(membershipRole)) {
+        throw new ConflictError(builtInScopeRoleMessage(membershipRole, 'assign-custom-role'), {
+            reason: BUILT_IN_SCOPE_REFUSAL,
+        });
+    }
+    // Clearing one from an OWNER (legacy data only) restores full OWNER
+    // authority, so it is an OWNER's change (#3720). Refused whether or not
+    // there is anything to clear: an ADMIN does not modify an OWNER
+    // membership. Clearing on every other role stays open, AI_ADMIN included.
+    if (
+        customRoleId === null &&
+        clearingCustomRoleIsOwnerTier(membershipRole) &&
+        !ctx.appPermissions.admin.owner_management
+    ) {
+        throw forbidden(ownerTierClearMessage(), { reason: OWNER_TIER_CLEAR_REFUSAL });
+    }
+
+    // If assigning, verify the custom role exists and belongs to this tenant
+    if (customRoleId) {
+        const customRole = await db.tenantCustomRole.findFirst({
+            where: {
+                id: customRoleId,
+                tenantId: ctx.tenantId,
+                isActive: true,
+            },
+        });
+        if (!customRole) {
+            throw notFound('Custom role not found or inactive.');
+        }
+        // Handing an existing role to someone is a grant too. Without
+        // this, an ADMIN blocked from AUTHORING an over-privileged
+        // role could still assign one that already exists (seeded,
+        // or created by an OWNER) — including to themselves.
+        assertGrantWithinOwnAuthority(
+            ctx,
+            customRole.permissionsJson,
+            customRole.baseRole,
+        );
+    }
+}
+
+/** The write of `customRoleId`, after `assertCustomRoleAssignableInTx` has passed. */
+export async function writeCustomRoleInTx(
+    db: PrismaTx,
+    membershipId: string,
+    customRoleId: string | null,
+) {
+    return db.tenantMembership.update({
+        where: { id: membershipId },
+        data: { customRoleId },
+        include: {
+            user: { select: { id: true, name: true, email: true } },
+            customRole: { select: { id: true, name: true } },
+        },
+    });
+}
+
+/**
+ * The audit row for a custom-role change. Written after every write of the
+ * request: `logEvent` appends on its own connection, so a row written before a
+ * later write failed would narrate a change that rolled back.
+ */
+export async function logCustomRoleChange(
+    db: PrismaTx,
+    ctx: RequestContext,
+    change: {
+        /** The membership as read, with the role it holds once the request applies. */
+        membership: { role: Role; customRoleId: string | null; user: { email: string } };
+        updated: { id: string; customRole: { name: string } | null };
+        customRoleId: string | null;
+    },
+): Promise<void> {
+    const { membership, updated, customRoleId } = change;
+    await logEvent(db, ctx, {
+        action: 'MEMBER_CUSTOM_ROLE_CHANGED',
+        entityType: 'TenantMembership',
+        entityId: updated.id,
+        details: customRoleId
+            ? `Assigned custom role "${updated.customRole?.name}" to ${membership.user.email}`
+            : `Removed custom role from ${membership.user.email} (fallback to ${membership.role})`,
+        detailsJson: {
+            category: 'status_change',
+            entityName: 'TenantMembership',
+            fromStatus: membership.customRoleId ?? 'none',
+            toStatus: customRoleId ?? 'none',
+        },
     });
 }

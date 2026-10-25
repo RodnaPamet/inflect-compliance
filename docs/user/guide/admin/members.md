@@ -19,8 +19,8 @@ Click **{{ui:nav.admin}}**, the gear icon at the bottom of the sidebar. The {{ui
 | Change the role of an Admin, Editor, Auditor or Reader, and give or remove a custom role | Owner, Admin |
 | Make a member an AI admin, or change an AI admin's role | Owner |
 | Change an Owner's role | Owner |
-| Deactivate or remove a member who is not an Owner | Owner, Admin |
-| Deactivate or remove an Owner | Owner |
+| Deactivate or remove a member who is not an Owner or an AI admin | Owner, Admin |
+| Deactivate or remove an Owner or an AI admin | Owner |
 | See a member's sessions and sign them out of a device | Owner, Admin |
 | Set a member's line of defence | Owner, on every row except their own |
 
@@ -30,7 +30,7 @@ A few rules hold whatever your role:
 
 - A workspace always keeps at least one active Owner. The last one cannot be moved to another role, deactivated or removed.
 - You cannot change your own role, with one exception: an Owner can move to Admin while another active Owner remains. You cannot deactivate or remove yourself.
-- The workspace's only Admin cannot be moved to another role or deactivated.
+- The workspace's only Admin cannot be moved to another role, deactivated or removed.
 - This page never makes anyone an Owner. Owner is not offered in either list of roles.
 - An Owner or an AI admin never carries a custom role.
 - You can give a member a custom role only if you hold every permission it grants.
@@ -64,6 +64,8 @@ The three-dot menu at the end of a row lists only the actions you can apply to t
 - **{{ui:admin.members.deactivate}}** ends the member's access and keeps their row. Active members only.
 - **{{ui:admin.members.remove}}** takes the member out of the workspace. Active and deactivated members.
 
+Your own row never offers {{ui:admin.members.deactivate}} or {{ui:admin.members.remove}}. A row with nothing you can apply to it has no three-dot menu, such as a deactivated Owner's row when you are an Admin.
+
 Tick rows to act on several members at once. The selection bar offers **{{ui:admin.members.deactivate}}** and **{{ui:admin.members.remove}}**.
 
 **{{ui:admin.members.pendingInvitationsTitle}}.** This table appears below the members table while any invite is waiting to be accepted. It shows each invite's {{ui:admin.members.colEmail}}, {{ui:admin.members.colRole}}, {{ui:admin.members.colInvitedBy}} and {{ui:admin.members.colExpires}} date. An invite leaves the list once it is accepted, revoked or expired.
@@ -76,7 +78,7 @@ Tick rows to act on several members at once. The selection bar offers **{{ui:adm
 
 Click **{{ui:admin.members.inviteMember}}**. The {{ui:admin.members.inviteFormTitle}} form asks for an {{ui:admin.members.emailLabel}} and a {{ui:admin.members.roleLabel}}: {{ui:roles.ADMIN}}, {{ui:roles.EDITOR}}, {{ui:roles.AUDITOR}} or {{ui:roles.READER}}, starting on {{ui:roles.READER}}. Click **{{ui:admin.members.sendInvite}}**.
 
-The confirmation says whether Inflect emailed the invite, and shows the invite link either way. Click the link to copy it. The page does not show the link again after you close the message. Inviting the same address again replaces the earlier invite, and the old link stops working.
+The confirmation names the role and says when your colleague gets access: the next time they sign in with Google or Microsoft using the invited address, or, if they sign in any other way, once they open the invite link and accept the invite. It also says whether Inflect emailed the invite, and shows the invite link either way. Click the link to copy it. The page does not show the link again after you close the message. Inviting the same address again replaces the earlier invite, and the old link stops working.
 
 The form does not offer Owner or AI admin. An Owner can make a member an AI admin once they have joined.
 
@@ -89,6 +91,8 @@ Under {{ui:admin.members.pendingInvitationsTitle}}, tick the invites. Choose **{
 Click the member's role, or **{{ui:admin.members.changeRole}}** in the row's menu. Choose the new role. An Admin is offered {{ui:roles.ADMIN}}, {{ui:roles.EDITOR}}, {{ui:roles.AUDITOR}} and {{ui:roles.READER}}; an Owner is also offered {{ui:roles.AI_ADMIN}}. Click **{{ui:admin.members.save}}**, or the cross beside it to close without saving. Only active members' roles can be changed.
 
 If your workspace has custom roles, a second list appears below the first. A custom role gives the member its own permissions in place of the built-in role's. To take one away, click the selected custom role again; the list then reads {{ui:admin.members.customRolePlaceholder}}. The second list does not appear when the role is Owner or AI admin.
+
+When you change both the role and the custom role, they are saved together. If either is refused, neither changes: the red message gives the reason, and the row shows what the member holds.
 
 If the member carries a custom role and you choose {{ui:roles.AI_ADMIN}}, a note says that role cannot carry a custom role and **{{ui:admin.members.save}}** is greyed out. Remove the custom role and save first, then change the role. An Owner or AI admin who was given a custom role before that rule applied shows a note and a **{{ui:admin.members.removeCustomRole}}** button. Click it to restore the full built-in role.
 
@@ -110,13 +114,13 @@ Revoking a session does not stop the member signing in again. To end their acces
 
 Choose **{{ui:admin.members.deactivate}}** or **{{ui:admin.members.remove}}** in the row's menu, then confirm. For several members, tick their rows, choose the action from **{{ui:common.table.chooseAction}}**, click **{{ui:common.table.apply}}**, then confirm. Members that cannot be changed are listed in the red message with the reason, and the others go ahead.
 
-Deactivating keeps the member's row, marked **DEACTIVATED**. Removing takes the row off the page. An Admin is not offered either action on an Owner's row.
+Deactivating keeps the member's row, marked **DEACTIVATED**. Removing takes the row off the page. An Admin is not offered either action on an Owner's or an AI admin's row, and nobody is offered them on their own row. When you deactivate several members at once, the confirmation says they lose access and keep their records.
 
 ## What happens next
 
 - Every invite, revoked invite, role change, custom-role change, line-of-defence change, deactivation, removal and revoked session is recorded in the workspace's audit log, naming who made it. Open it from **{{ui:admin.auditLog}}** on the {{ui:admin.title}} page.
 - An invite lasts 7 days and works once. When your colleague accepts it, they appear in the members table as **ACTIVE** with the invite's role.
-- A deactivated member loses access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite, and with any custom role they carried before.
+- A deactivated member loses access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite, and with any custom role they carried before. That custom role, not the invite's role, then decides what they can do.
 - A removed member's Inflect account is not deleted, only their place in this workspace. To bring them back, invite them again.
 - Deactivating or removing a member does not revoke the API keys they created. A key of theirs that is bound to an agent stops working. Their other keys keep working until someone revokes them on the {{ui:admin.nav.apiKeys}} page.
 
@@ -125,11 +129,11 @@ Deactivating keeps the member's row, marked **DEACTIVATED**. Removing takes the 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
-| **{{ui:admin.members.noMembersTitle}}** | The member list came back empty. You are a member yourself, so this means the list did not load | Reload the page |
-| **{{ui:admin.members.failedLoadMembers}}** | The page could not reach Inflect | Check your connection and reload the page |
+| **{{ui:admin.members.failedLoadMembers}}** in place of the members table, with the reason below it | The member list did not load | Click **{{ui:common.error.tryAgain}}**, or reload the page |
 | **Cannot demote the last OWNER. Promote another OWNER first.**, **Cannot deactivate the last OWNER.** or **Cannot remove the last OWNER. Promote another OWNER first.** | This member is the workspace's only active Owner | Keep them as an active Owner |
 | **Cannot remove the last admin. Promote another member first.** or **Cannot deactivate the last admin.** | This member is the workspace's only Admin | Make another member an Admin first |
-| **Cannot demote yourself. Ask another admin to change your role.**, **Cannot deactivate your own membership. Ask another admin.** or **Cannot remove your own membership. Ask another admin.** | You chose your own row | Ask another Owner or Admin |
+| **Cannot demote yourself. Ask another admin to change your role.**, **Cannot deactivate your own membership. Ask another admin.** or **Cannot remove your own membership. Ask another admin.** | You changed your own role, or ticked your own row among several members | Ask another Owner or Admin |
+| **Only OWNERs can deactivate an OWNER membership.**, **Only OWNERs can remove an OWNER membership.**, **Only an OWNER can deactivate an AI_ADMIN membership.** or **Only an OWNER can remove an AI_ADMIN membership.** | You ticked an Owner or an AI admin among several members | Ask an Owner |
 | A message that starts **Cannot grant permissions you do not hold** | The custom role grants permissions you do not have | Ask someone who holds those permissions to assign it |
 | **User is already a member of this tenant** | That address belongs to an active member | Change their role in the members table instead |
 | A message starting **Too many requests** after an invite | You tried to send more than 20 invites for this workspace from your network within an hour | Wait for the time the message gives |

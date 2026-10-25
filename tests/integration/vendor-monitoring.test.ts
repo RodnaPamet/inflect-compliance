@@ -55,6 +55,7 @@ const cleanTls = { source: 'stub', grade: 'A', checkedAt: NOW.toISOString(), pre
 describeFn('vendor continuous-monitoring (integration)', () => {
     let prisma: PrismaClient;
     let tenantId: string;
+    let tenantSlug: string;
     let userId: string;
     let ctx: RequestContext;
     let vendorId: string;
@@ -65,6 +66,7 @@ describeFn('vendor continuous-monitoring (integration)', () => {
         const suffix = `vmon-${Date.now()}`;
         const tenant = await createTenantWithDek({ name: 'VMon Co', slug: suffix });
         tenantId = tenant.id;
+        tenantSlug = tenant.slug;
         const user = await prisma.user.create({ data: { email: `u-${suffix}@example.com`, name: 'Owner' } });
         userId = user.id;
         ctx = ctxFor(tenantId, userId);
@@ -133,6 +135,11 @@ describeFn('vendor continuous-monitoring (integration)', () => {
 
         const notifs = await prisma.notification.count({ where: { tenantId, userId, type: 'VENDOR_POSTURE_ALERT' } });
         expect(notifs).toBeGreaterThan(0);
+
+        // Inside the workspace (#4128). `ctx` carries no slug, like the sweep's
+        // system context, so this also covers the slug lookup.
+        const alert = await prisma.notification.findFirst({ where: { tenantId, userId, type: 'VENDOR_POSTURE_ALERT' } });
+        expect(alert?.linkUrl).toBe(`/t/${tenantSlug}/vendors/${vendorId}`);
     });
 
     it('re-running the monitor is idempotent (no duplicate events / findings / notifications)', async () => {
