@@ -69,13 +69,20 @@ export class AssetRepository {
      * then narrows to just the deleted set (opting out alone would return
      * everything). Includes the who/when lifecycle columns.
      */
-    static async listDeleted(db: PrismaTx, ctx: RequestContext, filters?: AssetFilters) {
+    static async listDeleted(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters?: AssetFilters,
+        options: { take?: number } = {},
+    ) {
         const where = AssetRepository._buildWhere(ctx, filters);
         where.deletedAt = { not: null };
         return db.asset.findMany(withDeleted({
             where,
             orderBy: { deletedAt: 'desc' as const },
-            take: FLAT_LIST_CAP,
+            // Same opt-in as `list`, for the same reason: the route asks for
+            // one past its cap so a clipped deleted view says so.
+            take: options.take ?? FLAT_LIST_CAP,
             include: {
                 _count: { select: { controls: true } },
                 ownerUser: { select: { id: true, name: true, email: true } },
