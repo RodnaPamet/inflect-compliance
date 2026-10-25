@@ -97,7 +97,9 @@ With the gate skipped, `unresolvable` is still refused, by
 
 ## Production evidence
 
-**Phase 0 is not in production yet, so it cannot be observed there.**
+**Phase 0 has been in production since 19:04:37 UTC.** Its `/api/mcp` limiting has
+been observed there. A Flue run has not, because the image did not carry the skill
+corpus (#4301). The three reads, in order:
 
 **Access.** This session's `gcloud` credentials were refused, and so were a
 fresh session's at 14:04 UTC. The owner then ran the read-only block from Cloud
@@ -146,10 +148,19 @@ Shell after #4284 un-stuck the publish:
 and no `MODEL_CALL` step. It predates the conformance suite, and today's
 `ledger-accounts-for-every-call` scenario would fail such a run.
 
-**Still to do.** The two hardening items that need production stay open until
-Phase 0 is deployed:
-- a Flue run after 0a, with its step counts against the baseline above;
-- an `/api/mcp` limit observed under `mcp-api-key` or `mcp-ip`.
+**The first Flue run start after the deploy answered 500 (#4301).** The owner
+started one Flue run through `POST /api/t/:slug/agent-runs` with a key
+bound to the registered agent. The answer was 500 `INTERNAL`. The log held
+`ENOENT: no such file or directory, scandir '/app/src/lib/agentic/flue/skills'`.
+`loadSkillCorpus` reads the skills from the working directory, and the runtime
+stage of the `Dockerfile` did not copy them. So every Flue run start in
+production fails before a run row is written, and so does the repository section
+of the Skills tab. Nothing in CI could see it, because the suite runs from a
+checkout. It is fixed in its own pull request, with a guardrail that derives every
+`process.cwd()` read and fails when its directory is not in the image.
+
+**Still to do.** A Flue run after 0a, with its step counts against the baseline
+above, once #4301 is deployed.
 
 Nothing here is filled from a test.
 

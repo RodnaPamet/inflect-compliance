@@ -709,7 +709,7 @@ Each phase's hardening step fills its row.
 
 | Phase | Has it run in production? | Evidence |
 | --- | --- | --- |
-| 0 — Foundations | not yet deployed | Read on the VM on 2026-10-25. Production ran an image built at 04:56 UTC, before 0a, because every image publish after 04:28 was cancelled by the next push (#4280). The last Flue run was on 2026-09-27: `cmujpuc84000001pgl3rdy9ud`, 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. That is the baseline. There were zero `rate-limit.blocked` lines since #4111. To be re-read once Phase 0 is deployed. |
+| 0 — Foundations | deployed; no Flue run yet (#4301) | Read on the VM on 2026-10-25. Phase 0 reached production at 19:04:37 UTC, when Watchtower rolled the `ced48e0` publish. Before that, every image publish after 04:28 had been cancelled by the next push (#4280). `/api/mcp` limiting was observed at about 19:25 UTC: a probe of 610 unauthenticated requests drew 600 `401` and 10 `429`, and exactly 10 `rate-limit.blocked` lines, all `mcp-ip`, none `api-mutation`. The first Flue run start after the deploy answered 500, because the image did not carry the skill corpus (#4301). The last Flue run is still `cmujpuc84000001pgl3rdy9ud` (2026-09-27): 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. That is the baseline. |
 | 1 — Agent builder | no | — |
 | 2 — Tool Runner engine | no | — |
 | 3 — Connect agents customers run | no | — |
@@ -725,8 +725,9 @@ Make the engine seam ready for more than Flue. #4111 closed the two gaps on
 `/api/mcp` first (Step 0d). #4176 then delivered the engine-neutral tool core
 (Step 0a), #4220 the driver conformance suite (Step 0b), and #4181 the Agent
 engines section (Step 0c). #4248 hardened the phase (Step 0H). **Phase 0 is
-built and mutation-proved.** It has not yet been observed in production. See the
-Operational evidence table.
+built and mutation-proved.** It is deployed, and its `/api/mcp` limiting has been
+observed in production. A Flue run after it has not been, because the image did
+not carry the skill corpus (#4301). See the Operational evidence table.
 
 #### Step 0a — Engine-neutral tool core
 
