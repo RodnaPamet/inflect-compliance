@@ -268,6 +268,9 @@ export function controlOptionsFromTasks(
     return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** The facets whose options are built from loaded rows, so can shrink with them. */
+export const TASK_ROW_DERIVED_FILTER_KEYS = ['assigneeUserId', 'controlId'] as const;
+
 export function buildTaskFilters(
     tasks: ReadonlyArray<TaskAssigneeLike & TaskControlLike>,
     t: T,

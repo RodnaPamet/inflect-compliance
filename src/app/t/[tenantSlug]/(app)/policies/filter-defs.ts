@@ -115,6 +115,9 @@ export function categoryOptionsFromPolicies(
         .map((value) => ({ value, label: value }));
 }
 
+/** The facets whose options are built from loaded rows, so can shrink with them. */
+export const POLICY_ROW_DERIVED_FILTER_KEYS = ['category'] as const;
+
 export function buildPolicyFilters(
     policies: ReadonlyArray<PolicyLike>,
     t: T = (k) => k,

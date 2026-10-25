@@ -27,6 +27,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
@@ -38,6 +39,7 @@ import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildPolicyFilters,
+    POLICY_ROW_DERIVED_FILTER_KEYS,
     POLICY_FILTER_KEYS,
     buildPolicyStatusLabels,
 } from './filter-defs';
@@ -477,10 +479,13 @@ function PoliciesPageInner({
         return defs;
     }, [tenantSlug, permissions.canAdmin, tx]);
 
-    const liveFilters = useMemo(
+    const builtFilters = useMemo(
         () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0])),
         [policies, tx, tGroup],
     );
+    // `policies` comes back filtered by Category, so the options built from
+    // it would offer only the category just picked (#4279).
+    const liveFilters = useRetainedFilterOptions(builtFilters, POLICY_ROW_DERIVED_FILTER_KEYS);
 
     // R-filter-gear (#3) — the gear controls the quantifiable KPI CARDS
     // (Total / Draft / In review / Approved / Overdue review / Outstanding

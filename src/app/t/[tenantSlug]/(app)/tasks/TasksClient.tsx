@@ -31,6 +31,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
 } from '@/components/ui/filter';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
@@ -42,6 +43,7 @@ import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     AWAITING_REVIEW_FILTER_KEY,
     buildTaskFilters,
+    TASK_ROW_DERIVED_FILTER_KEYS,
     TASK_FILTER_KEYS,
     taskSeverityLabels,
     taskSourceLabels,
@@ -415,7 +417,7 @@ function TasksPageInner({
         loadMore: loadMoreTasks,
     } = useThresholdLoadMore(sortedTasks);
     const tGroup = useTranslations('common.filterGroups');
-    const liveFilters = useMemo(
+    const builtFilters = useMemo(
         () =>
             buildTaskFilters(
                 tasks,
@@ -426,6 +428,8 @@ function TasksPageInner({
             ),
         [tasks, t, tGroup, currentUserId],
     );
+    // The options are built from the tasks loaded, which the filters narrow.
+    const liveFilters = useRetainedFilterOptions(builtFilters, TASK_ROW_DERIVED_FILTER_KEYS);
     // R-filter-gear — the gear edits the quantifiable KPI CARDS
     // (Total / Open / Overdue / Due this week), not the filter
     // categories (which stay in the Filter dropdown). Every card here

@@ -44,6 +44,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
     type FilterType,
 } from '@/components/ui/filter';
@@ -56,6 +57,7 @@ import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildRiskFilters,
+    RISK_ROW_DERIVED_FILTER_KEYS,
     RISK_API_TRANSFORMS,
     RISK_FILTER_KEYS,
 } from './filter-defs';
@@ -1517,7 +1519,7 @@ function RisksFilterToolbar({
     // next-intl's scoped Translator types the key as a narrow union; the
     // filter-defs factory takes a plain (key: string) resolver. Adapt with a
     // thin arrow — the runtime accepts any dotted key in the namespace.
-    const filters: FilterType[] = useMemo(
+    const builtFilters: FilterType[] = useMemo(
         () =>
             buildRiskFilters(
                 risks,
@@ -1526,6 +1528,8 @@ function RisksFilterToolbar({
             ),
         [risks, tx, tGroup],
     );
+    // The options are built from the risks loaded, which the filters narrow.
+    const filters = useRetainedFilterOptions(builtFilters, RISK_ROW_DERIVED_FILTER_KEYS);
     return (
         <FilterToolbar
             filters={filters}
