@@ -122,8 +122,8 @@ describeFn('a run records which engine walked it (real DB, real engine)', () => 
                     TENANT,
                 );
             }).catch(() => {});
-            await prisma.tenant.deleteMany({ where: { id: TENANT } }).catch(() => {});
-            await prisma.user.deleteMany({ where: { id: USER } }).catch(() => {});
+            await prisma.tenant.deleteMany({ where: { id: TENANT } });
+            await prisma.user.deleteMany({ where: { id: USER } });
         }
         await prisma.$disconnect();
     });

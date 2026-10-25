@@ -237,9 +237,9 @@ describeFn('admin.agent_registry_view, end to end', () => {
             await prisma.agentHarnessScannerKey.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.registeredAgent.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.aiSystem.deleteMany({ where: { tenantId: t } }).catch(() => {});
-            await prisma.tenant.deleteMany({ where: { id: t } }).catch(() => {});
+            await prisma.tenant.deleteMany({ where: { id: t } });
         }
-        await prisma.user.deleteMany({ where: { id: { contains: SUITE } } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: { contains: SUITE } } });
         await prisma.$disconnect();
     });
 

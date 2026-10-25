@@ -87,8 +87,8 @@ describeFn('the concurrent-run cap (real DB, real start path)', () => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
         }).catch(() => {});
-        await prisma.tenant.deleteMany({ where: { id: TENANT } }).catch(() => {});
-        await prisma.user.deleteMany({ where: { id: USER } }).catch(() => {});
+        await prisma.tenant.deleteMany({ where: { id: TENANT } });
+        await prisma.user.deleteMany({ where: { id: USER } });
         await prisma.$disconnect();
     });
 
@@ -189,7 +189,7 @@ describeFn('the concurrent-run cap (real DB, real start path)', () => {
             await expect(startWorkflowRun(ctx(), WF, {})).resolves.toBeDefined();
         } finally {
             await prisma.workflowRun.deleteMany({ where: { tenantId: other } }).catch(() => {});
-            await prisma.tenant.deleteMany({ where: { id: other } }).catch(() => {});
+            await prisma.tenant.deleteMany({ where: { id: other } });
         }
     });
 });
