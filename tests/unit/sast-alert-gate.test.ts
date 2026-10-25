@@ -83,6 +83,9 @@ function runGate(answers: Array<CheckRun[] | number>, queueRef = QUEUE_REF) {
             [GATE],
             {
                 env: {
+                    // `NODE_ENV` because this repo's `ProcessEnv` declares it
+                    // required, so an env without it matches no overload.
+                    NODE_ENV: 'test',
                     PATH: process.env.PATH,
                     GITHUB_API_URL: api,
                     GITHUB_REPOSITORY: REPO,
