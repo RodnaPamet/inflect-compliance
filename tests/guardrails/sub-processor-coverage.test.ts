@@ -63,6 +63,34 @@ function headingLines(md: string, level: number): string {
  * a sub-processor" decision.
  */
 const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
+    // #3995 — the sandbox runtime's DECLARED configuration. None of these four
+    // names an external service, and the triage is worth stating precisely
+    // because one of them is about egress.
+    //
+    // `SANDBOX_RUNTIME_CHANNELS` lists which reporting channels a SEPARATE
+    // process was told to use. The endpoints themselves are that process's own
+    // environment (`OPENSHELL_OTLP_ENDPOINT` and friends), never this
+    // application's, and nothing leaves this application through any of them.
+    // The sub-processor question those channels DO raise — a runtime whose
+    // anonymous telemetry defaults to ON reports to its maintainers — is a
+    // property of deploying a runtime, not of this variable, and is recorded as
+    // a note in docs/sub-processors.md where a reader of the inventory will
+    // meet it.
+    SANDBOX_RUNTIME_CHANNELS:
+        'Records which reporting channels a separate sandbox runtime was ' +
+        'declared with (#3995). The endpoints live in THAT process\'s own ' +
+        'environment; no data leaves this application through this variable. ' +
+        'The runtime\'s own telemetry default is covered by a note in the inventory.',
+    SANDBOX_RUNTIME_CONFIG_DIGEST:
+        'A sha256 digest of the configuration this deploy applied (#3995). ' +
+        'An identifier, not an endpoint — nothing is sent anywhere.',
+    SANDBOX_RUNTIME_APPLIED_AT:
+        'Timestamp recording when that configuration was applied (#3995). ' +
+        'Local provenance only; names no service.',
+    SANDBOX_EXECUTION_ENABLED:
+        'Deployment feature flag for whether agent tool calls run inside the ' +
+        'sandbox runtime (#3995/#3996). Chooses a LOCAL execution path; no ' +
+        'data leaves and there is no processor either way.',
     // #3861 — A2A host consumers. NEITHER names an external service.
     // `A2A_HOST_CONSUMERS` is a deployment feature flag, and the direction of
     // travel is INBOUND: a host calls us. Nothing is sent anywhere by either.

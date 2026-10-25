@@ -135,6 +135,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/admin/risk-appetite': { href: '/admin', label: 'Admin' },
     '/admin/risk-matrix': { href: '/admin', label: 'Admin' },
     '/admin/roles': { href: '/admin', label: 'Admin' },
+    '/admin/sandbox-runtime': { href: '/admin', label: 'Admin' },
     '/admin/scim': { href: '/admin', label: 'Admin' },
     '/admin/security': { href: '/admin', label: 'Admin' },
     '/admin/sso': { href: '/admin', label: 'Admin' },

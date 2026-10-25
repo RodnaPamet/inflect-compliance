@@ -549,6 +549,18 @@ describe('epic-named ratchets are not added back', () => {
         // ceiling: main raised 798 -> 799 for `docs-site-publication` while
         // this change was in flight, and two branches each raising "to 799"
         // is how a shared floor lands one short.
+        //
+        // RAISED 800 -> 801 on 2026-10-25, for ONE file:
+        // `sandbox-runtime-channels-match-the-runtime.test.ts` (#4001). It
+        // holds the admin page's reporting-channel list against the gateway's
+        // own committed vocabulary, in BOTH directions — the dangerous one
+        // being a real egress path that no channel claims, because an
+        // incomplete enumeration of where data can go reads exactly like a
+        // complete one.
+        //
+        // Not folded in: nothing in guards or guardrails ranges over
+        // `src/app-layer/usecases/sandbox-runtime-config.ts`, and the figure is
+        // this branch's live count plus one rather than a remembered ceiling.
         // `scanner-never-reads-credential-values.test.ts` (#3936's hardening
         // gate). It asserts that no file in the scanner package names
         // `ProviderClient` or any gateway RPC that returns credential MATERIAL
@@ -570,7 +582,34 @@ describe('epic-named ratchets are not added back', () => {
         // right in isolation: each added ONE file to a tree of 799. Together
         // they add two, so 800 would have landed one short and the next guard
         // file would have failed for no reason anybody could see in the diff.
-        expect(guardFiles().length).toBeLessThan(801);
+        //
+        // RE-DERIVED AGAIN AT THIS MERGE (2026-10-25), 801 -> 802. #4100 landed
+        // its raise to 801 against a tree that did not yet contain this
+        // branch's `sandbox-runtime-channels-match-the-runtime.test.ts`, and
+        // this branch raised to 801 against a tree without #4100's two. The
+        // post-merge live count is 801 EXACTLY, and `toBeLessThan` fails AT its
+        // argument — so 801 left headroom ZERO and the next guard file from
+        // any peer would have reddened main with nothing in its diff to explain
+        // why. Measured post-merge, not reasoned: 575 in tests/guards + 226 in
+        // tests/guardrails.
+        //
+        // AND RAISED TO 812, NOT 802, which is a change of practice and so
+        // needs its reason written down. +1 per file keeps headroom at exactly
+        // ZERO by construction: this line has now conflicted in four
+        // consecutive PRs (#3968, #4058, #4100, #4001), and each time the
+        // branch that merged second was correct in isolation. The next peer to
+        // add a guard file would hit 802 and go red for a reason invisible in
+        // its own diff — which is verbatim the 2026-09-19 condition above,
+        // where the answer was to raise WITH headroom (700 -> 725) rather than
+        // to the live count.
+        //
+        // What this does NOT give up: the backstop. Restoring the 153 retired
+        // epic-named files would reach 954, so it remains unlandable, and the
+        // named-file assertion above still fails with the LIST rather than with
+        // a number. What it gives up is ten slots of per-file justification
+        // prose — the convention continues, it is simply no longer enforced by
+        // a tripwire that fires on whoever merges second.
+        expect(guardFiles().length).toBeLessThan(812);
     });
 
     /**

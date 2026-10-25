@@ -6300,7 +6300,8 @@
       "theme": "Theme",
       "privacy": "Privacy & data protection",
       "dsarRequests": "Data subject requests",
-      "agentCredentials": "Agent credentials"
+      "agentCredentials": "Agent credentials",
+      "sandboxRuntime": "Sandbox runtime"
     },
     "resourceLabels": {
       "controls": "Controls",
@@ -6807,6 +6808,70 @@
       "reports": "Reports",
       "admin": "Admin",
       "mcp": "Agent runtime"
+    },
+    "sandboxRuntime": {
+      "heading": "Sandbox runtime",
+      "breadcrumb": "Sandbox runtime",
+      "intro": "What this deployment declared to its sandbox runtime. These are the deployment's own records, not readings taken from the running sandbox.",
+      "noReadApiHeading": "These values are declarations, not readings",
+      "noReadApiBody": "The sandbox runtime reads its configuration once at startup and offers no way to ask it what it is using. Every row below is what this deployment declared; none of it has been confirmed by the running sandbox.",
+      "notConfiguredHeading": "No sandbox runtime on this deployment",
+      "notConfiguredBody": "This deployment has not declared a sandbox runtime, so nothing below is in force. The rows are listed so the settings are known before one is installed.",
+      "digestLabel": "Configuration digest",
+      "appliedAtLabel": "Applied",
+      "sectionChannels": "Reporting channels",
+      "chartKeyLabel": "Chart key",
+      "noChartKey": "No chart key - environment variable only",
+      "envVarsLabel": "Environment variables",
+      "defaultLabel": "When unset",
+      "defaultsOn": "Sends data",
+      "defaultsOff": "Sends nothing",
+      "sectionEnforcement": "Enforcement",
+      "requiredLabel": "Required value",
+      "policyPathLabel": "Policy path",
+      "sectionExecution": "Sandboxed execution",
+      "executionPendingHeading": "Not switchable from this page",
+      "executionPendingBody": "This switch is installed with the sandbox runtime itself. Until then the row reports what the deployment permits and offers no control.",
+      "status": {
+        "not-configured": "Not installed",
+        "set-in-code": "Set in code",
+        "unreachable": "No answer",
+        "declared-not-observed": "Declared",
+        "tenant-switch": "Available"
+      },
+      "execution": {
+        "name": "Run agent tools in a sandbox",
+        "description": "Whether this deployment runs agent tool calls inside the sandbox runtime rather than in the application process."
+      },
+      "channel": {
+        "anonymous-telemetry": {
+          "name": "Anonymous usage telemetry",
+          "description": "Usage counts sent to the sandbox runtime's maintainers. This is the one channel that sends data when nothing is configured."
+        },
+        "otlp-traces": {
+          "name": "Traces (OTLP)",
+          "description": "Execution traces sent to a collector you choose. Sends nothing unless an endpoint is set."
+        },
+        "ocsf-file": {
+          "name": "Security events to a file (OCSF)",
+          "description": "Security events written as OCSF records to a directory on the sandbox host."
+        },
+        "ocsf-over-otlp": {
+          "name": "Security events to a collector (OCSF over OTLP)",
+          "description": "The same security events sent to a collector instead of a file. Configurable only by environment variable, so a reader auditing the Helm chart would not find it."
+        }
+      },
+      "enforcement": {
+        "enforcement": {
+          "name": "Network rules are enforced",
+          "description": "Every endpoint in a committed policy must enforce rather than log. A policy that only logs allows the traffic it reports."
+        },
+        "landlock-compatibility": {
+          "name": "Filesystem isolation is required",
+          "description": "Landlock must be a hard requirement rather than best effort. Best effort means a host without Landlock runs the sandbox with no filesystem isolation and still reports success."
+        }
+      },
+      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below."
     }
   },
   "riskManager": {
