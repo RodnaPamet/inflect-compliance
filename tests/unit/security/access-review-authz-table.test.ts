@@ -84,6 +84,9 @@ jest.mock('@/app-layer/usecases/access-review', () => ({
     getAccessReview: () => { ran('getAccessReview'); return Promise.resolve({ id: 'r1', scope: 'ALL_USERS' }); },
     closeAccessReview: () => { ran('closeAccessReview'); return Promise.resolve({ accessReviewId: 'r1' }); },
     submitDecision: () => { ran('submitDecision'); return Promise.resolve({ decisionId: 'd1' }); },
+    // #4130 — the reviewer/due-date change and the evidence regeneration.
+    updateAccessReviewSettings: () => { ran('updateAccessReviewSettings'); return Promise.resolve({ accessReviewId: 'r1', changed: [] }); },
+    regenerateAccessReviewEvidence: () => { ran('regenerateAccessReviewEvidence'); return Promise.resolve({ accessReviewId: 'r1', evidenceFileRecordId: 'f1' }); },
 }));
 jest.mock('@/app-layer/usecases/access-review-connected', () => ({
     createConnectedAccessReview: () => { ran('createConnectedAccessReview'); return Promise.resolve({ accessReviewId: 'r1', snapshotCount: 2 }); },
@@ -117,7 +120,8 @@ import type { RequestContext } from '@/app-layer/types';
 
 import { GET as LIST, POST as CREATE } from '@/app/api/t/[tenantSlug]/access-reviews/route';
 import { POST as CREATE_CONNECTED } from '@/app/api/t/[tenantSlug]/access-reviews/connected/route';
-import { GET as DETAIL } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/route';
+import { GET as DETAIL, PATCH as UPDATE_SETTINGS } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/route';
+import { POST as REGENERATE_EVIDENCE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/evidence/regenerate/route';
 import { POST as CLOSE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/close/route';
 import { PUT as DECIDE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/decisions/[decisionId]/route';
 import { GET as LIST_CONNECTED } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/connected-decisions/route';
@@ -204,6 +208,10 @@ describe('Step 5a — every access-review route resolves to its intended key', (
         ['GET', `${T}/r1/connected-decisions`, 'access_reviews.view'],
         ['POST', `${T}/r1/connected-decisions/d1`, 'access_reviews.decide'],
         ['GET', `${T}/r1/evidence`, 'access_reviews.view'],
+        // #4130 — changing the reviewer/due date names them as creation does;
+        // producing a failed PDF again is the second half of closing.
+        ['PATCH', `${T}/r1`, 'access_reviews.create'],
+        ['POST', `${T}/r1/evidence/regenerate`, 'access_reviews.close'],
         // #3674 — the agent campaign's leaves (the roadmap's 3a keys).
         ['POST', `${T}/agents`, 'access_reviews.create'],
         ['GET', `${T}/r1/agent-packs`, 'access_reviews.view'],
@@ -293,6 +301,8 @@ function cases(): Case[] {
         { name: 'POST /access-reviews', key: 'create', call: () => CREATE(makeReq('POST', T, { name: 'Q4', reviewerUserId: 'u1' }), { params: Promise.resolve({ tenantSlug: 'acme' }) } as never) },
         { name: 'POST /access-reviews/connected', key: 'create', call: () => CREATE_CONNECTED(makeReq('POST', `${T}/connected`, { name: 'Q4', reviewerUserId: 'u1' }), { params: Promise.resolve({ tenantSlug: 'acme' }) } as never) },
         { name: 'GET /access-reviews/:id', key: 'view', call: () => DETAIL(makeReq('GET', `${T}/r1`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
+        { name: 'PATCH /access-reviews/:id', key: 'create', call: () => UPDATE_SETTINGS(makeReq('PATCH', `${T}/r1`, { dueAt: null }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
+        { name: 'POST /access-reviews/:id/evidence/regenerate', key: 'close', call: () => REGENERATE_EVIDENCE(makeReq('POST', `${T}/r1/evidence/regenerate`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
         { name: 'POST /access-reviews/:id/close', key: 'close', call: () => CLOSE(makeReq('POST', `${T}/r1/close`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
         { name: 'PUT /access-reviews/:id/decisions/:did', key: 'decide', call: () => DECIDE(makeReq('PUT', `${T}/r1/decisions/d1`, { decision: 'CONFIRM' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', decisionId: 'd1' }) } as never) },
         { name: 'GET /access-reviews/:id/connected-decisions', key: 'view', call: () => LIST_CONNECTED(makeReq('GET', `${T}/r1/connected-decisions`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
@@ -346,10 +356,11 @@ describe('Step 5a — the real routes allow and deny exactly as the ladder did',
 
     it('denials really did occur for the non-admin roles — a count, not a vibe', () => {
         // Guards against the whole block above silently becoming all-allow:
-        // 3 non-admin roles x 5 admin-gated cases (4 create + 1 close) = 15.
+        // 3 non-admin roles x 7 admin-gated cases (5 create + 2 close) = 21.
+        // #4130 added one of each: the settings PATCH and the regeneration.
         const denied = ROLES.flatMap((role) =>
             cases().filter((c) => !getPermissionsForRole(role).access_reviews[c.key]),
         );
-        expect(denied).toHaveLength(15);
+        expect(denied).toHaveLength(21);
     });
 });

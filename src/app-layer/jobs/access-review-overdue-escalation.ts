@@ -10,8 +10,11 @@
  * What's missing: when the campaign goes past the grace tail (more
  * than `ESCALATION_DAYS` overdue) AND still has pending decisions,
  * the tenant ADMIN/OWNERs need a separate nudge so they can
- * intervene — reassign the campaign to a different reviewer,
- * force-close it, or chase the reviewer outside the system.
+ * intervene — change the campaign's reviewer or due date on its page
+ * (not for an agent recertification, #4130), record the pending
+ * decisions themselves, or chase the reviewer outside the system.
+ * There is no force-close: a campaign closes only when every subject
+ * has a verdict.
  *
  * Why a second job rather than folding into G-4:
  *   - Different recipient set (tenant ADMIN/OWNERs, not the
@@ -36,6 +39,7 @@ import type { PrismaClient } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { enqueueEmail } from '../notifications/enqueue';
 import { daysUntilDue } from './access-review-reminder';
+import { campaignSettingsEditable } from '@/lib/access-review/scope';
 
 export const ESCALATION_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -75,6 +79,8 @@ interface EscalationCandidate {
     pendingCount: number;
     totalCount: number;
     daysOverdue: number;
+    /** The campaign page can change its reviewer and due date. */
+    canReassign: boolean;
 }
 
 interface AdminRecipient {
@@ -181,6 +187,9 @@ export async function processAccessReviewOverdueEscalation(
             tenantId: true,
             name: true,
             dueAt: true,
+            // Read so the email offers a reassignment only where the
+            // campaign page can make one (#4130).
+            scope: true,
             reviewer: { select: { email: true, name: true } },
             tenant: { select: { slug: true } },
             decisions: { select: { id: true, decision: true } },
@@ -214,6 +223,7 @@ export async function processAccessReviewOverdueEscalation(
             // daysUntilDue returns negative for overdue — flip the sign
             // so the email body's `daysOverdue` reads naturally.
             daysOverdue: -daysUntilDue(dueAt, now),
+            canReassign: campaignSettingsEditable(r.scope),
         };
     });
 
@@ -266,6 +276,7 @@ export async function processAccessReviewOverdueEscalation(
                     accessReviewId: c.id,
                     reviewerName: c.reviewerName ?? c.reviewerEmail ?? 'the assigned reviewer',
                     reviewerEmail: c.reviewerEmail,
+                    canReassign: c.canReassign,
                 },
             });
 

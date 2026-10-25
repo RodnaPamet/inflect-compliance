@@ -15,10 +15,14 @@
  *
  * Permission gating in this component:
  *   - Only the assigned reviewer (ctx.userId === review.reviewerUserId)
- *     OR an admin can submit decisions.
- *   - Only an admin can press "Close campaign".
+ *     OR an admin can submit decisions — and nobody on the row whose
+ *     subject is themselves (#4130); that row says why instead.
+ *   - Only an admin can press "Close campaign", or produce a closed
+ *     campaign's evidence PDF again when it failed at close (#4130).
+ *   - Only a caller who may create campaigns can change an open
+ *     campaign's reviewer or due date (#4130).
  *   - Anyone with read can browse + download the evidence PDF when
- *     the campaign is CLOSED.
+ *     the campaign is CLOSED, and read each decision's justification.
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -33,6 +37,8 @@ import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
+import { UserCombobox } from '@/components/ui/user-combobox';
+import { DatePicker } from '@/components/ui/date-picker';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
@@ -41,6 +47,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { Heading } from '@/components/ui/typography';
 import {
     AGENT_CAMPAIGNS_IMPLEMENTED,
+    campaignSettingsEditable,
     readAgentSubjectSnapshot,
     scopeLabelKey,
     subjectTableOf,
@@ -302,6 +309,18 @@ interface Props {
     initialReview: ReviewDetail;
     currentUserId: string;
     isAdmin: boolean;
+    /**
+     * May change an open campaign's reviewer and due date: the PATCH route's
+     * `access_reviews.create` AND the usecase's `canAdmin`, computed on the
+     * server. Defaults to `isAdmin`, which is the same answer for every
+     * built-in role.
+     */
+    canManage?: boolean;
+    /**
+     * May produce a closed campaign's evidence PDF again: the regenerate
+     * route's `access_reviews.close` AND `canAdmin`. Defaults to `isAdmin`.
+     */
+    canRegenerateEvidence?: boolean;
 }
 
 const STATUS_VARIANT: Record<Status, 'warning' | 'info' | 'success'> = {
@@ -321,8 +340,15 @@ export function AccessReviewDetailClient({
     initialReview,
     currentUserId,
     isAdmin,
+    canManage = isAdmin,
+    canRegenerateEvidence = isAdmin,
 }: Props) {
     const t = useTranslations('accessReviews');
+    // Roles, statuses and verdicts render through their labels (#4130), never
+    // as the raw enum value (`IN_REVIEW`, `ADMIN`, `CONFIRM`): `statusLabels`,
+    // `roleLabels` and `verdictLabels`. The role labels live under this
+    // namespace rather than `roles`, so the file keeps the one translator
+    // namespace the key guard can read.
     const { mutate: swrMutate } = useSWRConfig();
     const router = useRouter();
     const apiBase = `/api/t/${tenantSlug}/access-reviews/${initialReview.id}`;
@@ -344,6 +370,18 @@ export function AccessReviewDetailClient({
     const agentActionsAvailable = !isAgent || AGENT_CAMPAIGNS_IMPLEMENTED;
     const canDecide = (isReviewer || isAdmin) && review.status !== 'CLOSED' && agentActionsAvailable;
     const canClose = isAdmin && review.status !== 'CLOSED' && agentActionsAvailable;
+    // #4130 — the reviewer and the due date of an OPEN or IN_REVIEW campaign,
+    // for every scope `campaignSettingsEditable` admits (not AGENT).
+    const canEditSettings = canManage && review.status !== 'CLOSED' && campaignSettingsEditable(review.scope);
+    // #4130 — a member campaign closed without its PDF (the close commits
+    // before it renders the PDF, so a storage failure left none and nothing
+    // could produce it). The member flow only: connected campaigns build theirs
+    // in their own close.
+    const canRegenerate =
+        canRegenerateEvidence &&
+        review.status === 'CLOSED' &&
+        !review.evidenceFileRecordId &&
+        subjectTableOf(review.scope) === 'MEMBER';
 
     // #107 READ side. The register publishes what it rendered; the fallback
     // to the list cache is left ENABLED here (a real `listKey`, not the
@@ -358,11 +396,14 @@ export function AccessReviewDetailClient({
 
     const [undoTarget, setUndoTarget] = useState<DecisionRow | null>(null);
     const [activeDecision, setActiveDecision] = useState<{
-        row: DecisionRow;
+        target: DecisionTarget;
         type: DecisionType;
     } | null>(null);
     const [closing, setClosing] = useState(false);
     const [connectedError, setConnectedError] = useState<string | null>(null);
+    const [editingSettings, setEditingSettings] = useState(false);
+    const [regenerating, setRegenerating] = useState(false);
+    const [regenerateError, setRegenerateError] = useState<string | null>(null);
 
     // ─── Progress over the subjects this campaign ACTUALLY has ──────────
     //
@@ -469,7 +510,7 @@ export function AccessReviewDetailClient({
                 id: 'snapshotRole',
                 header: t('colSnapshotRole'),
                 cell: ({ row }) => (
-                    <span className="text-sm">{row.original.snapshotRole}</span>
+                    <span className="text-sm">{t(`roleLabels.${row.original.snapshotRole}`)}</span>
                 ),
             },
             {
@@ -477,7 +518,7 @@ export function AccessReviewDetailClient({
                 header: t('colLiveRole'),
                 cell: ({ row }) =>
                     row.original.membership ? (
-                        <span className="text-sm">{row.original.membership.role}</span>
+                        <span className="text-sm">{t(`roleLabels.${row.original.membership.role}`)}</span>
                     ) : (
                         <span className="text-sm text-content-muted italic">{t('deleted')}</span>
                     ),
@@ -500,13 +541,17 @@ export function AccessReviewDetailClient({
                 header: t('colDecision'),
                 cell: ({ row }) => {
                     const d = row.original;
+                    // #4130 — nobody decides, changes or discards the verdict on
+                    // their own access, and the server refuses it by name. The
+                    // row says so rather than offering a control that fails.
+                    const ownRow = d.subjectUserId === currentUserId;
                     if (d.decision) {
                         return (
                             <div className="flex items-center gap-tight">
                                 <StatusBadge variant={DECISION_VARIANT[d.decision]}>
-                                    {d.decision}
+                                    {t(`verdictLabels.${d.decision}`)}
                                     {d.decision === 'MODIFY' && d.modifiedToRole
-                                        ? ` → ${d.modifiedToRole}`
+                                        ? ` → ${t(`roleLabels.${d.modifiedToRole}`)}`
                                         : ''}
                                 </StatusBadge>
                                 {/*
@@ -526,16 +571,35 @@ export function AccessReviewDetailClient({
                                   always fails is worse than showing none.
                                 */}
                                 {canDecide && !d.executedAt ? (
-                                    <button
-                                        type="button"
-                                        className="text-xs text-content-muted underline hover:text-content"
-                                        data-testid={`undo-decision-${d.id}`}
-                                        onClick={() => setUndoTarget(d)}
-                                    >
-                                        {t('undoVerdict')}
-                                    </button>
+                                    ownRow ? (
+                                        <span
+                                            className="text-xs text-content-muted"
+                                            data-testid={`own-row-cannot-decide-${d.id}`}
+                                        >
+                                            {t('ownRowCannotDecide')}
+                                        </span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="text-xs text-content-muted underline hover:text-content"
+                                            data-testid={`undo-decision-${d.id}`}
+                                            onClick={() => setUndoTarget(d)}
+                                        >
+                                            {t('undoVerdict')}
+                                        </button>
+                                    )
                                 ) : null}
                             </div>
+                        );
+                    }
+                    if (canDecide && ownRow) {
+                        return (
+                            <span
+                                className="text-xs text-content-muted"
+                                data-testid={`own-row-cannot-decide-${d.id}`}
+                            >
+                                {t('ownRowCannotDecide')}
+                            </span>
                         );
                     }
                     if (canDecide) {
@@ -546,7 +610,7 @@ export function AccessReviewDetailClient({
                                 data-testid={`decision-select-${d.id}`}
                                 onChange={(e) => {
                                     const v = e.target.value as DecisionType | '';
-                                    if (v) setActiveDecision({ row: d, type: v });
+                                    if (v) setActiveDecision({ target: { kind: 'member', row: d }, type: v });
                                     e.target.value = '';
                                 }}
                             >
@@ -562,35 +626,52 @@ export function AccessReviewDetailClient({
                     );
                 },
             },
+            {
+                // #4130 — the reviewer's justification. Recorded with every
+                // verdict and shown nowhere until now; it is also in the
+                // evidence PDF.
+                id: 'notes',
+                header: t('colNotes'),
+                cell: ({ row }) => (
+                    <NotesCell id={row.original.id} notes={row.original.notes} />
+                ),
+            },
         ]),
-        [canDecide, review.lastActivityByUser, t],
+        [canDecide, currentUserId, review.lastActivityByUser, t],
     );
 
 
     /**
-     * Record a verdict on a connected subject.
+     * Record a verdict on a connected subject, through a dialog that collects
+     * the justification (#4130).
      *
-     * Posted straight from the row rather than through a modal: unlike the
-     * member MODIFY path there is no target role to collect — a directory
-     * account has no tenant role, and MODIFY here means "adjust this account
-     * in the identity provider", which `closeConnectedAccessReview` turns into
-     * a remediation task. Nothing to ask, so nothing to ask it with.
+     * It used to post straight from the row: there is no target role to
+     * collect — a directory account has no tenant role, and MODIFY here means
+     * "adjust this account in the identity provider", which
+     * `closeConnectedAccessReview` turns into a remediation task. But there IS
+     * a justification, which the API accepts and the evidence PDF prints, and
+     * posting from the row meant no connected verdict could ever carry one.
      */
-    const submitConnected = async (decisionId: string, decision: DecisionType) => {
+    const openConnectedDecision = (row: ConnectedDecisionRow, type: DecisionType) => {
         setConnectedError(null);
+        const snap = readSnapshot(row.snapshotJson);
+        setActiveDecision({
+            target: { kind: 'connected', row, label: snap.displayName || snap.email || row.subjectRef },
+            type,
+        });
+    };
+
+    /** Produce a closed member campaign's missing evidence PDF (#4130). */
+    const regenerateEvidence = async () => {
+        setRegenerating(true);
+        setRegenerateError(null);
         try {
-            const res = await fetch(`${apiBase}/connected-decisions/${decisionId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ decision }),
-            });
-            if (!res.ok) {
-                throw new Error((await res.text()) || t('submitFailed'));
-            }
+            await postJson(`${apiBase}/evidence/regenerate`);
             await reviewQuery.mutate();
-            void swrMutate(CACHE_KEYS.accessReviews.list());
         } catch (err) {
-            setConnectedError(err instanceof Error ? err.message : t('unknownError'));
+            setRegenerateError(err instanceof Error ? err.message : t('unknownError'));
+        } finally {
+            setRegenerating(false);
         }
     };
 
@@ -703,7 +784,7 @@ export function AccessReviewDetailClient({
                     if (d.decision) {
                         return (
                             <StatusBadge variant={DECISION_VARIANT[d.decision]}>
-                                {d.decision}
+                                {t(`verdictLabels.${d.decision}`)}
                             </StatusBadge>
                         );
                     }
@@ -715,7 +796,7 @@ export function AccessReviewDetailClient({
                                 data-testid={`connected-decision-select-${d.id}`}
                                 onChange={(e) => {
                                     const v = e.target.value as DecisionType | '';
-                                    if (v) void submitConnected(d.id, v);
+                                    if (v) openConnectedDecision(d, v);
                                     e.target.value = '';
                                 }}
                             >
@@ -731,8 +812,14 @@ export function AccessReviewDetailClient({
                     );
                 },
             },
+            {
+                id: 'notes',
+                header: t('colNotes'),
+                cell: ({ row }) => (
+                    <NotesCell id={row.original.id} notes={row.original.notes} />
+                ),
+            },
         ]),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         [canDecide, isLegacy, t],
     );
 
@@ -824,7 +911,7 @@ export function AccessReviewDetailClient({
                     if (d.decision) {
                         return (
                             <StatusBadge variant={DECISION_VARIANT[d.decision]}>
-                                {d.decision}
+                                {t(`verdictLabels.${d.decision}`)}
                             </StatusBadge>
                         );
                     }
@@ -961,7 +1048,7 @@ export function AccessReviewDetailClient({
                 header: t('colSampleDecision'),
                 cell: ({ row }) => {
                     const decision = agentRowById.get(row.original.decisionId)?.decision ?? null;
-                    return <span className="text-sm">{decision ?? '—'}</span>;
+                    return <span className="text-sm">{decision ? t(`verdictLabels.${decision}`) : '—'}</span>;
                 },
             },
             {
@@ -1048,7 +1135,7 @@ export function AccessReviewDetailClient({
                         {
                             kind: 'status',
                             label: t('metaStatus'),
-                            value: review.status,
+                            value: t(`statusLabels.${review.status}`),
                             variant:
                                 STATUS_VARIANT[review.status] ?? 'neutral',
                         },
@@ -1078,8 +1165,23 @@ export function AccessReviewDetailClient({
                                 data-testid="access-review-download-evidence"
                             >{t('downloadEvidence')}</Button>
                         ) : null}
-                        {canClose ? (
+                        {canRegenerate ? (
                             <Button
+                                variant="secondary"
+                                onClick={() => void regenerateEvidence()}
+                                disabled={regenerating}
+                                data-testid="access-review-regenerate-evidence"
+                            >{regenerating ? t('regenerating') : t('regenerateEvidence')}</Button>
+                        ) : null}
+                        {canClose ? (
+                            // Secondary (#4130): it only OPENS the close dialog,
+                            // whose "Close + generate evidence" is this region's
+                            // primary — the trigger precedent of #3687/#3807. That
+                            // demotion pays for the settings dialog's save, which
+                            // `modal-action-order` requires to be primary, so the
+                            // product-wide primary count is unchanged.
+                            <Button
+                                variant="secondary"
                                 onClick={() => setClosing(true)}
                                 disabled={!everySubjectDecided || !agentCloseReady}
                                 data-testid="access-review-close-button"
@@ -1101,15 +1203,53 @@ export function AccessReviewDetailClient({
                 <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-content-muted">
                     <div>
                         <dt className="font-semibold uppercase">{t('dlReviewer')}</dt>
-                        <dd>{review.reviewer.email}</dd>
+                        <dd data-testid="access-review-reviewer">
+                            {review.reviewer.email}
+                            {canEditSettings ? (
+                                <>
+                                    {' '}
+                                    <button
+                                        type="button"
+                                        className="underline hover:text-content"
+                                        data-testid="access-review-change-reviewer"
+                                        onClick={() => setEditingSettings(true)}
+                                    >
+                                        {t('changeReviewer')}
+                                    </button>
+                                </>
+                            ) : null}
+                        </dd>
                     </div>
                     <div>
                         <dt className="font-semibold uppercase">{t('dlScope')}</dt>
                         <dd data-testid="access-review-scope">{t(`scopeLabels.${scopeLabelKey(review.scope)}`)}</dd>
                     </div>
                     <div>
+                        <dt className="font-semibold uppercase">{t('dlPeriod')}</dt>
+                        <dd data-testid="access-review-period">
+                            {review.periodStartAt && review.periodEndAt
+                                ? `${formatDate(review.periodStartAt)} → ${formatDate(review.periodEndAt)}`
+                                : '—'}
+                        </dd>
+                    </div>
+                    <div>
                         <dt className="font-semibold uppercase">{t('dlDue')}</dt>
-                        <dd>{review.dueAt ? formatDate(review.dueAt) : '—'}</dd>
+                        <dd data-testid="access-review-due">
+                            {review.dueAt ? formatDate(review.dueAt) : '—'}
+                            {canEditSettings ? (
+                                <>
+                                    {' '}
+                                    <button
+                                        type="button"
+                                        className="underline hover:text-content"
+                                        data-testid="access-review-change-due"
+                                        onClick={() => setEditingSettings(true)}
+                                    >
+                                        {t('changeDueDate')}
+                                    </button>
+                                </>
+                            ) : null}
+                        </dd>
                     </div>
                     {review.closedAt ? (
                         <div>
@@ -1131,6 +1271,28 @@ export function AccessReviewDetailClient({
                 >
                     <strong className="font-semibold">{t('truncatedTitle')}</strong>{' '}
                     {t('truncatedBody', { count: subjectCount })}
+                </div>
+            ) : null}
+
+            {/* #4130 — a member campaign closed without its PDF. It used to say
+                nothing: the download button was simply absent, and nothing on
+                the page could produce the file. */}
+            {review.status === 'CLOSED' && !review.evidenceFileRecordId && subjectTableOf(review.scope) === 'MEMBER' ? (
+                <div
+                    role="status"
+                    data-testid="access-review-evidence-missing"
+                    className="rounded-md border border-border-warning bg-bg-warning p-3 text-sm text-content-warning"
+                >
+                    {canRegenerate ? t('evidenceMissingCanRegenerate') : t('evidenceMissingAskAdmin')}
+                </div>
+            ) : null}
+            {regenerateError ? (
+                <div
+                    role="alert"
+                    data-testid="access-review-regenerate-error"
+                    className="rounded-md border border-border-error bg-bg-error p-3 text-sm text-content-error"
+                >
+                    {regenerateError}
                 </div>
             ) : null}
 
@@ -1271,6 +1433,22 @@ export function AccessReviewDetailClient({
                     onSuccess={() => {
                         setActiveDecision(null);
                         reviewQuery.mutate();
+                        void swrMutate(CACHE_KEYS.accessReviews.list());
+                    }}
+                />
+            ) : null}
+
+            {editingSettings ? (
+                <CampaignSettingsDialog
+                    apiBase={apiBase}
+                    tenantSlug={tenantSlug}
+                    reviewerUserId={review.reviewerUserId}
+                    dueAt={review.dueAt}
+                    onClose={() => setEditingSettings(false)}
+                    onSuccess={() => {
+                        setEditingSettings(false);
+                        reviewQuery.mutate();
+                        void swrMutate(CACHE_KEYS.accessReviews.list());
                     }}
                 />
             ) : null}
@@ -1364,8 +1542,9 @@ function UndoVerdictDialog({
                 body: JSON.stringify({ reason }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('submitFailed'));
+                // The server's message, not its envelope (#4130): `res.text()`
+                // rendered the raw JSON — braces, code and requestId — here.
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('submitFailed')));
             }
             onSuccess();
         } catch (err) {
@@ -1383,7 +1562,7 @@ function UndoVerdictDialog({
             <Modal.Body>
                 <div className="space-y-default">
                     <p className="text-sm text-content-muted">
-                        {t('undoExplainer', { verdict: row.decision ?? '' })}
+                        {t('undoExplainer', { verdict: row.decision ? t(`verdictLabels.${row.decision}`) : '' })}
                     </p>
                     <FormField label={t('undoReasonLabel')} required>
                         <textarea
@@ -1420,6 +1599,15 @@ function UndoVerdictDialog({
     );
 }
 
+/**
+ * What a decision dialog records a verdict on: a member row (which also
+ * carries a role and may be MODIFIED to another), or a connected row, which
+ * has no tenant role — its MODIFY becomes a remediation task at close.
+ */
+type DecisionTarget =
+    | { kind: 'member'; row: DecisionRow }
+    | { kind: 'connected'; row: ConnectedDecisionRow; label: string };
+
 function DecisionDialog({
     apiBase,
     decision,
@@ -1427,40 +1615,52 @@ function DecisionDialog({
     onSuccess,
 }: {
     apiBase: string;
-    decision: { row: DecisionRow; type: DecisionType };
+    decision: { target: DecisionTarget; type: DecisionType };
     onClose: () => void;
     onSuccess: () => void;
 }) {
     const t = useTranslations('accessReviews');
+    const roleLabel = (role: string) => t(`roleLabels.${role}`);
+    const { target } = decision;
+    const member = target.kind === 'member' ? target.row : null;
     const [notes, setNotes] = useState('');
-    const [modifiedToRole, setModifiedToRole] = useState<ModifyTargetRole>('READER');
     const [error, setError] = useState<string | null>(null);
 
+    // The roles a MODIFY may set, minus the one the member holds NOW — the
+    // role the close would write over. A MODIFY to it changes nothing (#4130).
+    // It falls back to the snapshot role for a membership that is gone.
+    const currentRole = member ? (member.membership?.role ?? member.snapshotRole) : null;
     const targetRoles = useMemo(
-        () => MODIFY_TARGET_ROLES.filter((r) => r !== decision.row.snapshotRole),
-        [decision.row.snapshotRole],
+        () => MODIFY_TARGET_ROLES.filter((r) => r !== currentRole),
+        [currentRole],
     );
+    // The selected role starts as the FIRST role offered (#4130). It started as
+    // READER, which a Reader's list leaves out — so the select showed ADMIN
+    // while the state, and the submission, said READER: a MODIFY that changed
+    // nothing except clearing any custom role.
+    const [modifiedToRole, setModifiedToRole] = useState<ModifyTargetRole | undefined>(targetRoles[0]);
 
     const [submitting, setSubmitting] = useState(false);
     const handleSubmit = async () => {
         setSubmitting(true);
         setError(null);
         try {
+            const url =
+                target.kind === 'member'
+                    ? `${apiBase}/decisions/${target.row.id}`
+                    : `${apiBase}/connected-decisions/${target.row.id}`;
             const body =
-                decision.type === 'MODIFY'
+                target.kind === 'member' && decision.type === 'MODIFY'
                     ? { decision: 'MODIFY', modifiedToRole, notes: notes || undefined }
                     : { decision: decision.type, notes: notes || undefined };
-            const res = await fetch(
-                `${apiBase}/decisions/${decision.row.id}`,
-                {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                },
-            );
+            const res = await fetch(url, {
+                method: target.kind === 'member' ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('submitFailed'));
+                // The server's message, not its envelope (#4130).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('submitFailed')));
             }
             onSuccess();
         } catch (err) {
@@ -1481,23 +1681,25 @@ function DecisionDialog({
             <Modal.Header
                 title={t('dialogTitle', {
                     type: titleByType[decision.type],
-                    email: decision.row.subjectUser.email,
+                    email: target.kind === 'member' ? target.row.subjectUser.email : target.label,
                 })}
             />
             <Modal.Body>
                 <div className="space-y-default">
-                    <p className="text-sm text-content-muted">
-                        {t('snapshotRoleLabel')}{' '}
-                        <strong>{decision.row.snapshotRole}</strong>
-                        {decision.row.membership &&
-                        decision.row.membership.role !== decision.row.snapshotRole ? (
-                            <>
-                                {' '}
-                                ({t('liveNow')} <strong>{decision.row.membership.role}</strong>)
-                            </>
-                        ) : null}
-                    </p>
-                    {decision.type === 'MODIFY' ? (
+                    {member ? (
+                        <p className="text-sm text-content-muted">
+                            {t('snapshotRoleLabel')}{' '}
+                            <strong>{roleLabel(member.snapshotRole)}</strong>
+                            {member.membership &&
+                            member.membership.role !== member.snapshotRole ? (
+                                <>
+                                    {' '}
+                                    ({t('liveNow')} <strong>{roleLabel(member.membership.role)}</strong>)
+                                </>
+                            ) : null}
+                        </p>
+                    ) : null}
+                    {member && decision.type === 'MODIFY' ? (
                         <FormField label={t('targetRole')} required>
                             <select
                                 className="input"
@@ -1507,7 +1709,7 @@ function DecisionDialog({
                             >
                                 {targetRoles.map((r) => (
                                     <option key={r} value={r}>
-                                        {r}
+                                        {roleLabel(r)}
                                     </option>
                                 ))}
                             </select>
@@ -1543,10 +1745,131 @@ function DecisionDialog({
                 <Button variant="secondary" onClick={onClose}>{t('cancel')}</Button>
                 <Button
                     onClick={() => void handleSubmit()}
-                    disabled={submitting}
+                    disabled={submitting || (member !== null && decision.type === 'MODIFY' && !modifiedToRole)}
                     data-testid="decision-modal-submit"
                 >
                     {submitting ? t('submitting') : t('submitDecision')}
+                </Button>
+            </Modal.Footer>
+        </Modal>
+    );
+}
+
+/** A decision's justification, or a dash. Plain text: notes are sanitised on write. */
+function NotesCell({ id, notes }: { id: string; notes: string | null }) {
+    return (
+        <span
+            className="block max-w-xs whitespace-pre-wrap break-words text-xs text-content-muted"
+            data-testid={`decision-notes-${id}`}
+        >
+            {notes && notes.trim() ? notes : '—'}
+        </span>
+    );
+}
+
+// ─── Campaign settings dialog (#4130) ────────────────────────────────
+
+/**
+ * Change an open campaign's reviewer and due date — and nothing else; the
+ * server refuses any other field. Sends only what changed, and a cleared due
+ * date as `null`.
+ */
+function CampaignSettingsDialog({
+    apiBase,
+    tenantSlug,
+    reviewerUserId: initialReviewerUserId,
+    dueAt: initialDueAt,
+    onClose,
+    onSuccess,
+}: {
+    apiBase: string;
+    tenantSlug: string;
+    reviewerUserId: string;
+    dueAt: string | Date | null;
+    onClose: () => void;
+    onSuccess: () => void;
+}) {
+    const t = useTranslations('accessReviews');
+    const [reviewerUserId, setReviewerUserId] = useState(initialReviewerUserId);
+    const [dueAt, setDueAt] = useState<Date | null>(initialDueAt ? new Date(initialDueAt) : null);
+    const [error, setError] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSave = async () => {
+        const body: { reviewerUserId?: string; dueAt?: string | null } = {};
+        if (reviewerUserId && reviewerUserId !== initialReviewerUserId) body.reviewerUserId = reviewerUserId;
+        const before = initialDueAt ? new Date(initialDueAt).getTime() : null;
+        const after = dueAt ? dueAt.getTime() : null;
+        if (before !== after) body.dueAt = dueAt ? dueAt.toISOString() : null;
+        if (Object.keys(body).length === 0) {
+            onClose();
+            return;
+        }
+        setSubmitting(true);
+        setError(null);
+        try {
+            const res = await fetch(apiBase, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('settingsFailed')));
+            }
+            onSuccess();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : t('unknownError'));
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <Modal showModal={true} setShowModal={(v) => !v && onClose()}>
+            <Modal.Header title={t('settingsTitle')} />
+            <Modal.Body>
+                <div className="space-y-default">
+                    <p className="text-sm text-content-muted">{t('settingsExplainer')}</p>
+                    <FormField label={t('fieldReviewer')} required>
+                        <div data-testid="access-review-settings-reviewer">
+                            <UserCombobox
+                                tenantSlug={tenantSlug}
+                                selectedId={reviewerUserId || null}
+                                onChange={(userId) => setReviewerUserId(userId ?? '')}
+                                placeholder={t('reviewerPlaceholder')}
+                                searchPlaceholder={t('searchMembers')}
+                                forceDropdown
+                                matchTriggerWidth
+                                id="access-review-settings-reviewer-select"
+                            />
+                        </div>
+                    </FormField>
+                    <FormField label={t('fieldDue')}>
+                        <DatePicker
+                            id="access-review-settings-due"
+                            value={dueAt}
+                            onChange={setDueAt}
+                            clearable
+                        />
+                    </FormField>
+                    {error ? (
+                        <p
+                            className="text-sm text-content-error"
+                            data-testid="access-review-settings-error"
+                        >
+                            {error}
+                        </p>
+                    ) : null}
+                </div>
+            </Modal.Body>
+            <Modal.Footer>
+                <Button variant="secondary" onClick={onClose}>{t('cancel')}</Button>
+                <Button
+                    onClick={() => void handleSave()}
+                    disabled={submitting || !reviewerUserId}
+                    data-testid="access-review-settings-save"
+                >
+                    {submitting ? t('saving') : t('saveSettings')}
                 </Button>
             </Modal.Footer>
         </Modal>
@@ -1577,8 +1900,7 @@ function CloseDialog({
                 headers: { 'Content-Type': 'application/json' },
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('closeFailed'));
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('closeFailed')));
             }
             onSuccess();
         } catch (err) {

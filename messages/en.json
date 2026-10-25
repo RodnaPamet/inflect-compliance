@@ -10411,7 +10411,7 @@
     "submitting": "Submitting…",
     "submitDecision": "Submit decision",
     "closeTitle": "Close access review campaign",
-    "closeBody": "Closing executes every <b>REVOKE</b> and <b>MODIFY</b> decision against the live tenant memberships. <b>CONFIRM</b> decisions stay untouched. A signed PDF evidence artifact will be generated and linked to the campaign. This cannot be undone.",
+    "closeBody": "Closing carries out every <b>Revoked</b> and <b>Modified</b> decision against the live workspace memberships. <b>Confirmed</b> decisions change nothing. An evidence PDF is then produced and linked to the campaign. It carries a SHA-256 hash of its contents; it is not digitally signed. This cannot be undone.",
     "closeFailed": "Failed to close campaign",
     "closing": "Closing…",
     "closeGenerate": "Close + generate evidence",
@@ -10434,7 +10434,7 @@
     "crumbTests": "Tests",
     "undoVerdict": "Discard",
     "undoDialogTitle": "Discard the verdict on {email}",
-    "undoExplainer": "The recorded {verdict} will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
+    "undoExplainer": "The recorded verdict ({verdict}) will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
     "undoReasonLabel": "Why are you discarding this verdict?",
     "undoReasonPlaceholder": "Recorded against the wrong person, wrong verdict chosen, …",
     "undoConfirm": "Discard verdict",
@@ -10507,7 +10507,43 @@
     "fieldCrossPreparer": "Second preparing agent",
     "crossPreparerHint": "Optional. Prepares the first agent's own pack — an agent never prepares the pack it is reviewed by. Left empty, a person prepares that one pack when the packs are prepared.",
     "agentPackPreparedBy": "Prepared by {agent}",
-    "agentPackPreparedByPerson": "Prepared by a person — the preparing agent's own pack"
+    "agentPackPreparedByPerson": "Prepared by a person — the preparing agent's own pack",
+    "statusLabels": {
+      "OPEN": "Open",
+      "IN_REVIEW": "In review",
+      "CLOSED": "Closed"
+    },
+    "verdictLabels": {
+      "CONFIRM": "Confirmed",
+      "REVOKE": "Revoked",
+      "MODIFY": "Modified"
+    },
+    "emptyListReadOnly": "No access reviews yet.",
+    "fieldPeriod": "Audit period (optional)",
+    "periodHint": "The period this review covers. It is shown in the Period column and printed on the evidence PDF.",
+    "periodPlaceholder": "Select the period",
+    "dlPeriod": "Period",
+    "colNotes": "Justification",
+    "ownRowCannotDecide": "Your own access — someone else decides it",
+    "regenerateEvidence": "Produce evidence PDF",
+    "regenerating": "Producing…",
+    "evidenceMissingCanRegenerate": "The decisions were carried out, but the evidence PDF could not be produced when the campaign closed. Click Produce evidence PDF to produce it from the recorded decisions.",
+    "evidenceMissingAskAdmin": "The decisions were carried out, but the evidence PDF could not be produced when the campaign closed. An Owner or Admin can produce it again from this page.",
+    "changeReviewer": "Change reviewer",
+    "changeDueDate": "Change due date",
+    "settingsTitle": "Change reviewer or due date",
+    "settingsExplainer": "Decisions already recorded stay as they are. The new reviewer records the rest, and gets the reminder emails from now on.",
+    "settingsFailed": "Failed to save the change",
+    "saving": "Saving…",
+    "saveSettings": "Save changes",
+    "roleLabels": {
+      "OWNER": "Owner",
+      "ADMIN": "Admin",
+      "EDITOR": "Editor",
+      "READER": "Reader",
+      "AUDITOR": "Auditor",
+      "AI_ADMIN": "AI admin"
+    }
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

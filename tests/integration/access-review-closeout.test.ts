@@ -37,6 +37,7 @@ import {
     createAccessReview,
     submitDecision,
     closeAccessReview,
+    regenerateAccessReviewEvidence,
 } from '@/app-layer/usecases/access-review';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
@@ -400,6 +401,43 @@ describeFn('Epic G-4 — closeAccessReview executes decisions + emits evidence',
         expect(file.sizeBytes).toBeGreaterThan(0);
         expect(file.sha256).toMatch(/^[a-f0-9]{64}$/);
         expect(file.pathKey.startsWith(`tenants/${TENANT_ID}/evidence/`)).toBe(true);
+    });
+
+    // ── 7b. A PDF that failed at close is produced again (#4130) ──
+
+    it('regenerates a failed PDF from the stored decisions, without rewriting the closer', async () => {
+        const reviewId = await createCampaignAndDecideAll({
+            [editor.userId]: { decision: 'CONFIRM', notes: 'still needs it' },
+            [reader.userId]: { decision: 'REVOKE', notes: 'left' },
+        });
+        await closeAccessReview(ctxAs(Role.ADMIN, admin.userId), reviewId);
+        // The close committed and the PDF did not: the state a storage
+        // failure in phase 2 leaves behind.
+        await globalPrisma.accessReview.update({
+            where: { id: reviewId },
+            data: { evidenceFileRecordId: null },
+        });
+        const closedBefore = await globalPrisma.accessReview.findUniqueOrThrow({ where: { id: reviewId } });
+
+        // Produced by a DIFFERENT person than the closer.
+        const result = await regenerateAccessReviewEvidence(ctxAs(Role.OWNER, ownerA.userId), reviewId);
+
+        const after = await globalPrisma.accessReview.findUniqueOrThrow({ where: { id: reviewId } });
+        expect(after.evidenceFileRecordId).toBe(result.evidenceFileRecordId);
+        expect(after.closedByUserId).toBe(closedBefore.closedByUserId);
+        expect(after.closedAt?.toISOString()).toBe(closedBefore.closedAt?.toISOString());
+        const file = await globalPrisma.fileRecord.findUniqueOrThrow({ where: { id: result.evidenceFileRecordId } });
+        expect(file.mimeType).toBe('application/pdf');
+        expect(file.sizeBytes).toBeGreaterThan(0);
+        const regenerated = await globalPrisma.auditLog.count({
+            where: { tenantId: TENANT_ID, action: 'ACCESS_REVIEW_EVIDENCE_REGENERATED', entityId: reviewId },
+        });
+        expect(regenerated).toBe(1);
+
+        // A second regeneration is refused: the campaign has its PDF now.
+        await expect(
+            regenerateAccessReviewEvidence(ctxAs(Role.ADMIN, admin.userId), reviewId),
+        ).rejects.toThrow(/already has its evidence/);
     });
 
     // ── 8. Stale subject ───────────────────────────────────────────

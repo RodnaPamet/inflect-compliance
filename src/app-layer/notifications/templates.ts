@@ -1,7 +1,11 @@
 /**
  * Email template builders for each EmailNotificationType.
  * Returns { subject, bodyText, bodyHtml } for each type.
+ *
+ * Every link into the app goes through `appLink`, which makes it absolute
+ * against `APP_URL` (#4130): a relative href does not open from a mail client.
  */
+import { appLink } from './app-link';
 
 export interface EmailTemplateResult {
     subject: string;
@@ -24,7 +28,7 @@ export function buildTaskAssignedEmail(payload: TaskAssignedPayload): EmailTempl
     const { taskTitle, taskKey, taskType, assigneeName, assignerName, tenantSlug } = payload;
     const keyLabel = taskKey ? `[${taskKey}] ` : '';
     const byLine = assignerName ? ` by ${assignerName}` : '';
-    const link = `/t/${tenantSlug}/tasks`;
+    const link = appLink(`/t/${tenantSlug}/tasks`);
 
     return {
         subject: `Task assigned to you: ${keyLabel}${taskTitle}`,
@@ -47,7 +51,7 @@ export function buildTaskAssignedEmail(payload: TaskAssignedPayload): EmailTempl
   <div style="background: #f4f6fa; border-left: 4px solid #4f46e5; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
     <strong>${escapeHtml(keyLabel)}${escapeHtml(taskTitle)}</strong>
   </div>
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Tasks</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
 </div>`.trim(),
     };
@@ -67,7 +71,7 @@ export interface EvidenceExpiringPayload {
 export function buildEvidenceExpiringEmail(payload: EvidenceExpiringPayload): EmailTemplateResult {
     const { evidenceTitle, daysRemaining, retentionUntil, controlName, recipientName, tenantSlug } = payload;
     const urgency = daysRemaining <= 7 ? '⚠️ ' : '';
-    const link = `/t/${tenantSlug}/evidence`;
+    const link = appLink(`/t/${tenantSlug}/evidence`);
 
     return {
         subject: `${urgency}Evidence expiring in ${daysRemaining} day(s): ${evidenceTitle}`,
@@ -90,7 +94,7 @@ export function buildEvidenceExpiringEmail(payload: EvidenceExpiringPayload): Em
   <p style="color: #444; line-height: 1.5;">Evidence <strong>"${escapeHtml(evidenceTitle)}"</strong> is expiring in <strong>${daysRemaining} day(s)</strong> (${escapeHtml(retentionUntil)}).</p>
   ${controlName ? `<p style="color: #666; line-height: 1.5;">Control: <strong>${escapeHtml(controlName)}</strong></p>` : ''}
   <p style="color: #444; line-height: 1.5;">Please upload refreshed evidence or extend the retention date.</p>
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Evidence</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Evidence</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
 </div>`.trim(),
     };
@@ -109,7 +113,7 @@ export interface PolicyApprovalRequestedPayload {
 export function buildPolicyApprovalRequestedEmail(payload: PolicyApprovalRequestedPayload): EmailTemplateResult {
     const { policyTitle, requesterName, approverName, versionNumber, tenantSlug } = payload;
     const versionLabel = versionNumber ? ` (v${versionNumber})` : '';
-    const link = `/t/${tenantSlug}/policies`;
+    const link = appLink(`/t/${tenantSlug}/policies`);
 
     return {
         subject: `Policy approval requested: ${policyTitle}${versionLabel}`,
@@ -134,7 +138,7 @@ export function buildPolicyApprovalRequestedEmail(payload: PolicyApprovalRequest
   <div style="background: #f4f6fa; border-left: 4px solid #f59e0b; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
     <strong>${escapeHtml(policyTitle)}${escapeHtml(versionLabel)}</strong>
   </div>
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">Review Policy</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">Review Policy</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
 </div>`.trim(),
     };
@@ -156,7 +160,7 @@ export function buildPolicyDecisionEmail(payload: PolicyDecisionPayload): EmailT
     const isApproved = decision === 'APPROVED';
     const emoji = isApproved ? '✅' : '❌';
     const word = isApproved ? 'approved' : 'rejected';
-    const link = `/t/${tenantSlug}/policies`;
+    const link = appLink(`/t/${tenantSlug}/policies`);
 
     return {
         subject: `${emoji} Policy ${word}: ${policyTitle}`,
@@ -176,7 +180,7 @@ export function buildPolicyDecisionEmail(payload: PolicyDecisionPayload): EmailT
   <p style="color: #444; line-height: 1.5;">Hi ${escapeHtml(requesterName)},</p>
   <p style="color: #444; line-height: 1.5;">Your policy <strong>"${escapeHtml(policyTitle)}"</strong> has been <strong>${word}</strong> by ${escapeHtml(deciderName)}.</p>
   ${comment ? `<div style="background: #f4f6fa; border-left: 4px solid ${isApproved ? '#10b981' : '#ef4444'}; padding: 12px 16px; margin: 16px 0; border-radius: 4px;"><em>${escapeHtml(comment)}</em></div>` : ''}
-  <a href="${link}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Policies</a>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">View Policies</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">— Inflect Compliance</p>
 </div>`.trim(),
     };
@@ -448,7 +452,7 @@ export function buildAccessReviewReminderEmail(
         accessReviewId,
     } = payload;
 
-    const link = `/t/${tenantSlug}/access-reviews/${accessReviewId}`;
+    const link = appLink(`/t/${tenantSlug}/access-reviews/${accessReviewId}`);
     const dueLabel =
         daysUntilDue < 0
             ? `overdue by ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) === 1 ? '' : 's'}`
@@ -507,6 +511,12 @@ export interface AccessReviewOverdueEscalationPayload {
     /// Null when the assigned reviewer was an offboarded user
     /// whose email is no longer resolvable.
     reviewerEmail: string | null;
+    /// Whether the campaign page can change this campaign's reviewer and
+    /// due date (`campaignSettingsEditable` — every scope but an agent
+    /// recertification). Absent reads as true: a payload queued before the
+    /// field existed was for a campaign the page can reassign or not, and
+    /// the line it gates is the one fact the reader most needs.
+    canReassign?: boolean;
 }
 
 export function buildAccessReviewOverdueEscalationEmail(
@@ -522,12 +532,24 @@ export function buildAccessReviewOverdueEscalationEmail(
         accessReviewId,
         reviewerName,
         reviewerEmail,
+        canReassign = true,
     } = payload;
 
-    const link = `/t/${tenantSlug}/access-reviews/${accessReviewId}`;
+    const link = appLink(`/t/${tenantSlug}/access-reviews/${accessReviewId}`);
     const reviewerLine = reviewerEmail
         ? `${reviewerName} (${reviewerEmail})`
         : reviewerName;
+    // What an admin can actually do (#4130). This used to offer a "force-close
+    // that skips pending verdicts", which never existed — a campaign closes
+    // only when every subject has a verdict — and a reassignment, which did
+    // not exist either until the campaign page could change the reviewer.
+    const options = [
+        ...(canReassign
+            ? ['Change the reviewer, or the due date, on the campaign page.']
+            : []),
+        "Record the pending decisions yourself: an admin may decide on the reviewer's behalf, though never on their own access.",
+        'Chase the reviewer through other channels.',
+    ];
 
     return {
         subject: `⚠️ Access review ${daysOverdue} days overdue: ${campaignName}`,
@@ -542,9 +564,7 @@ export function buildAccessReviewOverdueEscalationEmail(
             `  Days overdue: ${daysOverdue}`,
             '',
             'As a tenant admin you can:',
-            '  - Reassign the campaign to a different reviewer.',
-            '  - Force-close the campaign (this will skip pending verdicts).',
-            '  - Chase the reviewer through other channels.',
+            ...options.map((o) => `  - ${o}`),
             '',
             `Open the campaign: ${link}`,
             '',
@@ -563,6 +583,8 @@ export function buildAccessReviewOverdueEscalationEmail(
     <tr><td style="color: #888; padding: 4px 0;">Pending decisions</td><td style="color: #444;"><strong>${pendingDecisions}</strong> of ${totalDecisions}</td></tr>
     <tr><td style="color: #888; padding: 4px 0;">Days overdue</td><td style="color: #b91c1c;"><strong>${daysOverdue}</strong></td></tr>
   </table>
+  <p style="color: #444; line-height: 1.5;">As a tenant admin you can:</p>
+  <ul style="color: #444; line-height: 1.5; padding-left: 20px;">${options.map((o) => `<li>${escapeHtml(o)}</li>`).join('')}</ul>
   <a href="${escapeHtml(link)}" style="display: inline-block; background: #b91c1c; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">Open campaign</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">Severely overdue campaigns appear in SOC 2 evidence reviews as control failures.</p>
   <p style="color: #999; font-size: 12px; margin-top: 8px;">— Inflect Compliance</p>
@@ -600,7 +622,7 @@ export function buildExceptionExpiringEmail(
         exceptionId,
         controlId,
     } = payload;
-    const link = `/t/${tenantSlug}/controls/${controlId}#exceptions`;
+    const link = appLink(`/t/${tenantSlug}/controls/${controlId}#exceptions`);
     const controlLabel = controlCode
         ? `${controlCode} — ${controlName}`
         : controlName;
