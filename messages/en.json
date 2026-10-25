@@ -9226,7 +9226,8 @@
       "abortConfirmBody": "This stops the {workflow} run mid-execution. Work already completed is not rolled back, and the run cannot be resumed afterwards — a new run starts from the beginning.",
       "driver": {
         "STATIC": "Static engine",
-        "FLUE": "Flue engine"
+        "FLUE": "Flue engine",
+        "UNRECOGNISED": "Unrecognised engine"
       },
       "detail": {
         "delegation": {

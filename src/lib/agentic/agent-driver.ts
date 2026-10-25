@@ -115,6 +115,46 @@ export function coerceStoredDriverMode(
 }
 
 /**
+ * What a run's `WorkflowRun.driver` reads as when this build does not know the
+ * value it holds (#4241).
+ *
+ * NOT `STATIC`, and the difference from `coerceStoredDriverMode` above is the
+ * whole point. The settings column is a PERMISSION: reading a value this build
+ * does not know as `STATIC` narrows what the tenant gets, which is the safe
+ * direction for a permission. `WorkflowRun.driver` is a FACT about a run that
+ * already happened — the engine `selectRunDriver` actually chose at its start.
+ * Reading an unknown value as `STATIC` there would put a fiction in the
+ * register (the column's own docblock uses that word for exactly this), and
+ * would pass a run walked by an engine this build has never heard of off as
+ * one the static engine walked — the answer an incident review gets at the
+ * moment it asks.
+ *
+ * So an unknown value reads as this marker, which is neither engine, and every
+ * reader that decides something from the column compares against a NAMED
+ * engine — `=== 'FLUE'` — so the marker refuses there rather than passing.
+ */
+export const RUN_DRIVER_UNRECOGNISED = 'UNRECOGNISED' as const;
+
+/**
+ * A run's recorded engine as this build can state it: one of the modes it was
+ * built with, or {@link RUN_DRIVER_UNRECOGNISED}.
+ */
+export type RecordedRunDriver = AgentDriverMode | typeof RUN_DRIVER_UNRECOGNISED;
+
+/**
+ * Coerce the bytes `WorkflowRun.driver` holds into a {@link RecordedRunDriver}.
+ *
+ * Applied at the READ boundary (`readRecordedRunDrivers`), for the reason
+ * `coerceStoredDriverMode` gives: a value that reaches a comparison uncoerced is
+ * a value some branch treats as "not the one I am looking for". The column is
+ * NOT NULL, so `null` and `undefined` mean the run was not read at all — and an
+ * engine nobody read is not one this build can name either.
+ */
+export function coerceRecordedRunDriver(stored: string | null | undefined): RecordedRunDriver {
+    return stored && isAgentDriverMode(stored) ? stored : RUN_DRIVER_UNRECOGNISED;
+}
+
+/**
  * WHICH DRIVERS THIS BUILD CAN ACTUALLY EXECUTE.
  *
  * The same shape as `DIRECTION_IMPLEMENTED` in `src/lib/identity/write-ladder.ts`,

@@ -50,6 +50,8 @@ import { logger } from '@/lib/observability/logger';
 import { recordAuditNarrativeCapture } from '@/lib/observability/integration-metrics';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ContextIntegrityError, openSealedContext } from '@/lib/agentic/context-integrity';
+import { readRecordedRunDriver } from '@/lib/agentic/agent-driver-stored-mode';
+import { RUN_DRIVER_UNRECOGNISED } from '@/lib/agentic/agent-driver';
 import { PERIOD_LABEL } from '@/lib/agentic/audit-workpaper';
 import { recordedCodes } from '@/lib/agentic/audit-workpaper-view';
 import {
@@ -80,6 +82,14 @@ export type NarrativeCaptureOutcome =
     | 'RUN_NOT_COMPLETED'
     /** The static engine: no model, no answer. */
     | 'NOT_A_MODEL_RUN'
+    /**
+     * The run records an engine this build does not know (#4241) — a later
+     * image started it and production rolled back. Not captured: this build
+     * cannot say the run had a model, or what shape its answer takes. Its own
+     * outcome rather than `NOT_A_MODEL_RUN`, which would say the static engine
+     * walked it.
+     */
+    | 'UNRECOGNISED_ENGINE'
     /** The run was not taught the skill, so its answer is not one. */
     | 'SKILL_NOT_MOUNTED'
     /** The sealed context would not open, or names no period. */
@@ -140,11 +150,16 @@ export async function captureAuditNarrative(ctx: RequestContext, runId: string):
 async function capture(db: PrismaTx, ctx: RequestContext, runId: string): Promise<NarrativeCaptureResult> {
     const run = await db.workflowRun.findFirst({
         where: { id: runId, tenantId: ctx.tenantId, workflowKey: NARRATIVE_WORKFLOW_KEY },
-        select: { id: true, status: true, driver: true, mountedSkills: true, contextJson: true, contextHash: true },
+        // No `driver` here: it is read below AS TEXT (#4241), because a value
+        // this build's enum does not know fails a typed read of it outright —
+        // the capture would throw rather than refuse.
+        select: { id: true, status: true, mountedSkills: true, contextJson: true, contextHash: true },
     });
     if (!run) return done('NOT_A_NARRATIVE_RUN');
     if (run.status !== 'COMPLETED') return done('RUN_NOT_COMPLETED');
-    if (run.driver !== 'FLUE') return done('NOT_A_MODEL_RUN');
+    const driver = await readRecordedRunDriver(db, ctx.tenantId, run.id);
+    if (driver === RUN_DRIVER_UNRECOGNISED) return done('UNRECOGNISED_ENGINE');
+    if (driver !== 'FLUE') return done('NOT_A_MODEL_RUN');
     if (!mountedNames(run.mountedSkills).includes(NARRATIVE_SKILL)) return done('SKILL_NOT_MOUNTED');
 
     // WHICH PERIOD — from the sealed context, opened under verification. The
