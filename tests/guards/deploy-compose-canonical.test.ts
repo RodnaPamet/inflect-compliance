@@ -209,9 +209,9 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
         // RAM and ~5% of two vCPUs continuously while serving nothing —
         // `LegacyMatchVerdict` was 0 rows in production for its entire life,
         // because no evaluation record was ever committed and the adjudication
-        // gate refuses `NO_EVALUATION`. Its image, Dockerfile, build workflow
-        // and pinning guard all stay in the repository, so restoring it is an
-        // entry here rather than a rebuild.
+        // gate refuses `NO_EVALUATION`. Its Dockerfile and build workflow were
+        // deleted the same day, and the root and staging stacks dropped the
+        // service in #4178, so restoring it is a rebuild, not just an entry here.
         //
         // NOTE FOR WHOEVER RESTORES IT: the 6.68 GB pull is why it was named
         // here in the first place, and that cost returns with it.
