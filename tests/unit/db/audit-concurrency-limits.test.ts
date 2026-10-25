@@ -285,11 +285,23 @@ describe('#3266 — the tenant-context transaction declares its budget too', () 
     });
 
     it('`timeout` is STATED at Prisma’s default rather than inherited from it', () => {
-        // Deliberately equal. The observed failure was at ACQUISITION, so
-        // nothing measured argues for a longer body, and a longer body would
-        // raise the worst-case time one caller holds a pooled connection —
-        // the resource that was scarce. Stating it stops the value moving
-        // when Prisma changes its mind.
+        // Deliberately equal, and the reason is NOT that the body has
+        // headroom — that clause was here and in the constant's own docblock,
+        // and #4079 retired it from both. Three body overshoots have been
+        // observed (5105 ms against 5000 on run 40089033553, plus an expiry at
+        // COMMIT and one on a `db.risk.update`), all under a six-shard CI run.
+        //
+        // The value stays because every one of them was CI contention and
+        // nothing measures these bodies in production: a constant raised on
+        // that evidence would be a production budget set by test parallelism.
+        // And a longer body raises the worst-case time one caller holds a
+        // pooled connection — the resource that was scarce.
+        //
+        // The duplication is the lesson. This comment and the docblock made
+        // the same stale claim, so correcting one would have left the other
+        // telling the next reader the opposite. A justification has no test,
+        // which is exactly why it has to be written in as few places as
+        // possible — see #4079.
         expect(TENANT_TX_TIMEOUT_MS).toBe(PRISMA_DEFAULT_TX_TIMEOUT_MS);
     });
 
