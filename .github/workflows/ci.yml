@@ -531,6 +531,42 @@ jobs:
         # workflow-level note describes, a day after the fifth leg. This is the
         # sixth leg that note named, with `check-merged-coverage.ts`'s count
         # raised by one. A seventh is the next step.
+        #
+        # ─── MEASURED 2026-10-25 (#3977), SO A SEVENTH ARRIVES WITH A REASON ──
+        #
+        # Four bumps had been made without anyone measuring what consumes the
+        # heap. One hash-shuffled 1/50 slice of the suite (61 files), run
+        # in-band as these shards are:
+        #
+        #   heap cap 8192   peak rss 1925 MB   16 of 60 steps receded   69 s
+        #   heap cap 4096   peak rss 1809 MB                            74 s
+        #   heap cap 2048   peak rss 1840 MB                            63 s
+        #   + forced GC     peak rss 1553 MB   28 of 60 steps receded  123 s
+        #
+        # Three things follow, and they rule out the cheap fixes:
+        #
+        #   · IT IS NOT A LEAK. Post-GC retained heap over those 61 files rises
+        #     and then PLATEAUS — quartile means 365, 753, 935, 851 MB. A
+        #     retained reference climbs monotonically; this saturates. So more
+        #     shards are not buying days against a leak.
+        #   · THE CAP IS NOT THE CONSUMER. Quartering it (8192 -> 2048) moves
+        #     peak rss by 4%, so there is no large collectible pool waiting on a
+        #     tighter GC schedule. Peak rss is about twice post-GC heap, which
+        #     is ordinary V8 overhead.
+        #   · FORCING GC IS NOT AFFORDABLE. `--expose-gc` plus `--logHeapUsage`
+        #     (jest-runner calls `globalThis.gc?.()` only on that path) buys 19%
+        #     peak for 79% wall clock. That does not fit the 35-minute budget.
+        #
+        # So the growth is what the note above already says it is — cumulative
+        # module-graph weight, held once per in-band shard — and a smaller share
+        # per shard is the right lever. A seventh leg is therefore legitimate
+        # rather than another increment, and it is sublinear: 8.3x the files
+        # (61 -> ~506 per shard) against roughly 5x the memory.
+        #
+        # Whoever takes it: `tests/reporters/heap-summary-reporter.js` prints
+        # the block these numbers came from, and its `shape` verdict is only
+        # trustworthy in-band — in workers mode it samples the parent, which
+        # runs no tests and therefore never recedes.
         shard: [1, 2, 3, 4, 5, 6]
         total: [6]
 
