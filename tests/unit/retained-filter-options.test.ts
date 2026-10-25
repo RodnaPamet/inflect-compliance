@@ -3,11 +3,11 @@
  * loaded rows are kept when those rows are filtered (#4275, #4279). The page
  * behaviour is in `tests/rendered/controls-owner-filter-keeps-options.test.tsx`.
  */
+import type { FilterType } from '@/components/ui/filter';
 import {
     mergeRetainedOptions,
     withRetainedOptions,
-    type FilterType,
-} from '@/components/ui/filter';
+} from '@/components/ui/filter/use-retained-filter-options';
 
 const facet = (key: string, options: Array<{ value: string; label: string }> | null): FilterType =>
     ({ key, label: key, icon: null, options }) as unknown as FilterType;

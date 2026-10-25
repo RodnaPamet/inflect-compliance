@@ -56,10 +56,12 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
-    useRetainedFilterOptions,
     type CardDefinition,
     type FilterType,
 } from '@/components/ui/filter';
+// Imported from its module, not the barrel: every route that imports the barrel
+// would otherwise carry it (bundle-size-budget).
+import { useRetainedFilterOptions } from '@/components/ui/filter/use-retained-filter-options';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { useThresholdLoadMore, useKeyboardShortcut, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { AsidePanel } from '@/components/ui/aside-panel';

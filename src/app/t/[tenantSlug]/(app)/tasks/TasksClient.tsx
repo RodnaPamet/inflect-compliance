@@ -31,9 +31,11 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
-    useRetainedFilterOptions,
     type CardDefinition,
 } from '@/components/ui/filter';
+// Imported from its module, not the barrel: every route that imports the barrel
+// would otherwise carry it (bundle-size-budget).
+import { useRetainedFilterOptions } from '@/components/ui/filter/use-retained-filter-options';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { Button } from '@/components/ui/button';
