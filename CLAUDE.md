@@ -2729,6 +2729,19 @@ remembering those lines. A comparison that genuinely means Flue (the
 `FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
 stays a comparison.
 
+**The engine choice has one control: the "Agent engines" section on Admin → AI
+features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
+`GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and
+the `PUT` stays `admin.tenant_lifecycle`. The page gates each section, not the
+whole page. The six-term `flue-wiring` checklist stays OWNER-only. The section
+requests it only for a viewer who can change the engine, so an admin's visit
+writes no `AUTHZ_DENIED` row. Do not put a second engine control anywhere
+else: the Flue card on Integrations was that, and it was removed. A new engine
+is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
+description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
+a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
+until it does.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

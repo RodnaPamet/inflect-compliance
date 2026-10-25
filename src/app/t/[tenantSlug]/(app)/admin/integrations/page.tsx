@@ -30,7 +30,6 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { cn } from '@inflect/ui/lib/cn';
 import { useTranslations } from 'next-intl';
 import { SharePointCard } from './SharePointCard';
-import { FlueEngineCard } from './FlueEngineCard';
 import { ConnectionHealthPanel } from './ConnectionHealthPanel';
 
 interface ConnectionDTO {
@@ -442,14 +441,16 @@ export default function AdminIntegrationsPage() {
                     from the generic config-field connections below). */}
                 <SharePointCard />
 
-                {/* The Flue agent engine's six wiring terms. OWNER-only: the
-                    card reads and writes what `admin/agent-driver` guards, and
-                    that key is tenant-lifecycle class deliberately — switching
-                    to FLUE hands an external runtime the decision of what to
-                    TRY against this tenant's compliance data. */}
-                <RequirePermission resource="admin" action="tenant_lifecycle">
-                    <FlueEngineCard />
-                </RequirePermission>
+                {/* The agent engine setting used to be a card here. It moved to
+                    AI features (owner decision 2026-10-25, #4139), so the
+                    column has one control. The link stays because this is
+                    where people learned to look for it. */}
+                <p className="text-sm text-content-muted" data-testid="agent-engines-moved">
+                    {t('integrations.agentEnginesMoved')}{' '}
+                    <Link href={tenantHref('/admin/ai-features#agent-engines')} className="text-content-link">
+                        {t('integrations.agentEnginesLink')}
+                    </Link>
+                </p>
 
                 {/* Available-integrations catalog — every registered external
                     provider (AWS / GCP / Okta / Azure / HRIS / GitHub, …) shown
