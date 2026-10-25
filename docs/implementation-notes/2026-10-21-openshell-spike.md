@@ -49,7 +49,7 @@ found there is a question to re-ask, not a finding to carry forward.
 | 0.1d dropped-tool MCP defect | PENDING | Needs the issue tracker read at the pinned release |
 | 0.1e telemetry off | **VERIFIED** (v0.1.5 chart + binary) | One switch was named; there are **three independent channels**. See below |
 | 0.1f SDK module format | PENDING | Moot for now: the SDK is deferred. Still needed before it is ever taken |
-| 0.1g audit-log coverage | **PARTIAL** (mechanism verified, coverage not) | v0.1.5 ships a configurable gateway OCSF JSONL writer, **off by default**, default path non-persistent. What it records per decision kind still needs a running gateway |
+| 0.1g audit-log coverage | **MEASURED 2026-10-25 — coverage is ABSENT** | The TOML `ocsf_log` table is SILENTLY IGNORED (preflight passes it, nothing is written). Enablement is `OPENSHELL_OCSF_JSON` + `OPENSHELL_OCSF_LOG_DIR` only; retention defaults to 3 days. With the writer verifiably enabled, SIX operations — including two auth rejections and a blocked egress — produced ZERO records. OCSF events exist only as text on per-container stdout, which the driver deletes with the container |
 
 ### 0.1e — one switch was named; there are three independent channels
 
@@ -92,7 +92,99 @@ but it is NOT among the gateway's 33 long options and does not appear in
 environment is the only route, and the tool's own self-documentation does not
 say the control exists.
 
-### 0.1g — the mechanism is there; the coverage is still unmeasured
+### 0.1g — MEASURED 2026-10-25. The coverage is not there.
+
+Measured on a clean Ubuntu 26.04 VM with Docker from Docker's apt repository, a
+v0.1.5 gateway with mTLS, and sandboxes that actually reach `Ready` — the
+configuration this host cannot run (see the snap `no_new_privs` section below).
+Three claims in the rest of this note are **wrong** and are corrected here.
+
+**The TOML table does nothing.** This note previously said `ocsf_log` has no
+`enabled` key because the table's presence enables the writer. It does not. A
+config carrying
+
+```toml
+[openshell.gateway.ocsf_log]
+path = "/home/lab/openshell/ocsf/gateway-ocsf.jsonl"
+```
+
+passes `openshell-gateway config preflight` with exit 0, and the gateway then
+never mentions OCSF, registers no `openshell_ocsf_log_*` metric, and writes no
+file at that path or anywhere else on the filesystem. Silently ignored.
+
+**What actually enables it is two environment variables**, the pair the admin
+page's channel list already names:
+
+```
+OPENSHELL_OCSF_JSON=true
+OPENSHELL_OCSF_LOG_DIR=/home/lab/openshell/ocsf
+```
+
+→ `OCSF JSONL audit log enabled (openshell-ocsf.<date>.log, daily rotation, keep 3)`
+
+Note what that line also settles: the `path` key is not merely ignored, it is
+the wrong SHAPE. The env var takes a DIRECTORY and the filename is generated.
+And the default retention is **three days** — a compliance artefact that
+deletes itself before most review cycles.
+
+**With the writer verifiably enabled, it recorded nothing.** Six operations
+against a gateway whose `readyz` was confirmed healthy first:
+
+| operation | outcome | OCSF records |
+|---|---|---|
+| `sandbox list` | succeeded | 0 |
+| `sandbox create` | reached `Ready`, containers healthy | 0 |
+| connect with no client certificate | rejected | 0 |
+| client certificate from an untrusted CA | rejected, `unknown ca` | 0 |
+| authenticated read | succeeded | 0 |
+| blocked egress from inside a sandbox | `Network is unreachable` | 0 |
+
+Zero bytes, through a 45-second wait and a clean shutdown, so buffering is
+excluded. The gateway logged the TLS rejection to its own journal
+(`ERROR TLS handshake failed error=invalid peer certificate`) and not to the
+audit log, which is the distinction that matters: the events are observed, and
+they do not reach the artefact a compliance reader would be pointed at.
+
+**OCSF events DO exist — as text on container stdout.** This is the
+architectural finding, and it is why "the OCSF export wrote no file" has looked
+like a defect since v0.1.2 without being one:
+
+```
+supervisor container (7 events, all startup)
+  CONFIG:CONFIGURED   OPA runtime binary identity mode [require_binary_identity:true]
+  CONFIG:ENABLED      TLS termination enabled: ephemeral CA generated
+  CONFIG:READY        Policy DNS connected to isolation boundary
+  CONFIG:LOADED       initial policy revision loaded [version:1] [hash:a45a8ff3…]
+  NET:LISTEN 127.0.0.1:3128 · SSH:LISTEN · NET:OPEN 127.0.0.1:17670
+
+workload container (42 events)
+  36 CONFIG:UNKNOWN · 2 PROC:LAUNCH · 2 CONFIG:PROBED · 2 CONFIG:BUILT · 2 CONFIG:APPLYING
+```
+
+So the audit trail for sandbox-level activity is **per-container stdout**, not a
+gateway file. Two consequences the roadmap has to absorb. It is ephemeral: the
+Docker driver removes a container within a second of exit, which took an
+event-driven `docker logs -f` to capture at all. And 36 of the 42 workload
+events are a kind literally named `CONFIG:UNKNOWN`, so even the stream that
+exists is mostly uncategorised.
+
+**No decision event was recorded for the one thing phase 5.1 needs.** Egress was
+genuinely enforced — a raw `/dev/tcp` connect from inside the sandbox returned
+`Network is unreachable` — and produced no OCSF event in either container or in
+the gateway file. Worth stating the limit of that: the mode documented to log
+violations is `NETWORK_ENFORCEMENT_MODE_UNSPECIFIED`, "log violations and allow
+traffic", and traffic here was BLOCKED rather than allowed, so the policy in
+force was not that mode. A deployment that deliberately selected audit mode
+remains untested, and it is the one case that might record a denial.
+
+**What this means for 5.1.** A compliance claim of the form "the sandbox runtime
+produces an audit trail of its enforcement decisions" is not supportable on
+v0.1.5 as configured. What is supportable is narrower and should be written
+narrowly: the runtime enforces, the enforcement is observable in container
+logs, and the enforcement decisions are not individually recorded in any
+durable artefact.
+
+### Superseded: the mechanism is there; the coverage is still unmeasured
 
 The symptom this note inherited from the v0.1.2 testing was that "the OCSF JSON
 export wrote no file". On v0.1.5 the gateway's OCSF writer is a first-class
