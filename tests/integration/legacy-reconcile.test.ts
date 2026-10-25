@@ -18,7 +18,7 @@ import {
 
 const prisma: PrismaClient = prismaTestClient();
 const TENANT = 'lgrc-tenant';
-const ctx = () => makeRequestContext('OWNER', { tenantId: TENANT });
+const ctx = () => makeRequestContext('OWNER', { userId: 'lgrc-user-1', tenantId: TENANT });
 
 let connectionId: string;
 let snapshotId: string;

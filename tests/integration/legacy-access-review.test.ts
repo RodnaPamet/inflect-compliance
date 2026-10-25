@@ -23,7 +23,7 @@ import { computePayloadHash } from '@/lib/legacy-access/canonical';
 
 const prisma: PrismaClient = prismaTestClient();
 const T = 'lar-tenant';
-const ctx = (role = 'ADMIN') => makeRequestContext(role, { tenantId: T });
+const ctx = (role = 'ADMIN') => makeRequestContext(role, { userId: 'lar-user-1', tenantId: T });
 
 let connectionId = '';
 let reviewerId = '';

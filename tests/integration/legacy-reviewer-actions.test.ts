@@ -37,7 +37,7 @@ const prisma: PrismaClient = prismaTestClient();
 
 const T1 = 'lra-tenant';
 const T2 = 'lra-other';
-const ctx = (role = 'ADMIN') => makeRequestContext(role, { tenantId: T1 });
+const ctx = (role = 'ADMIN') => makeRequestContext(role, { userId: 'lra-user-1', tenantId: T1 });
 
 let connectionId = '';
 let snapshotId = '';
@@ -163,8 +163,7 @@ describe('authorisation', () => {
         // `canAdmin`: a custom role can grant confirm on a READER base, whose
         // `canAdmin` is false. A coarse check would refuse what the route
         // allowed, and the custom role would be unusable.
-        const custom = makeRequestContext('READER', {
-            tenantId: T1,
+        const custom = makeRequestContext('READER', { userId: 'lra-user-1', tenantId: T1,
             appPermissions: {
                 ...getPermissionsForRole('READER'),
                 identity_reconciliation: { view: true, confirm: true },

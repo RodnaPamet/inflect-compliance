@@ -40,7 +40,7 @@ import { isDeniedColumn } from '@/lib/legacy-access/canonical';
 
 const prisma: PrismaClient = prismaTestClient();
 const TENANT = 'lgpr-tenant';
-const ctx = () => makeRequestContext('OWNER', { tenantId: TENANT });
+const ctx = () => makeRequestContext('OWNER', { userId: 'lgpr-user-1', tenantId: TENANT });
 
 let connectionId: string;
 
