@@ -1039,7 +1039,31 @@ jobs:
     timeout-minutes: 25
 
     steps:
+      # FULL HISTORY, FOR THE BUNDLE-BUDGET TREND (#4044).
+      #
+      # `bundle-size-budget` reports each bucket's budget TRAJECTORY beside its
+      # headroom, so the fourth consecutive bump to eat the headroom does not
+      # read like the first — three crossed these budgets inside two days, each
+      # consuming what the last left, and two sessions read their own encounter
+      # as a one-off because nothing could show a trend. The history comes from
+      # git rather than a generated file, because a stored number beside its own
+      # source is what rotted the `measured max` comments three times.
+      #
+      # This is the ONLY job where that guardrail does real work: it skips
+      # unless a production `.next` is present, and this job builds one.
+      #
+      # DEPTH 0 RATHER THAN A NUMBER, measured 2026-10-25: the raises of
+      # #4003/#4020/#4025 sit 185-230 commits behind a main that moves ~58
+      # commits a day. Any depth chosen today would quietly stop covering the
+      # window it was picked for — the same rot, relocated into this file.
+      # History is ~5,600 commits, which is cheap beside the `next build` below.
+      #
+      # If this ever goes back to a shallow checkout, the trend does not break
+      # the gate: `budgetTrendLines` prints that it has no history and names
+      # this setting. `tests/unit/bundle-budget-history.test.ts` asserts that.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Node + Prisma client
         uses: ./.github/actions/setup-node-prisma
