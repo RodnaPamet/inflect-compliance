@@ -22,7 +22,7 @@ Open **{{ui:nav.controls}}** under **{{ui:nav.govern}}** in the sidebar. The bre
 | Delete in bulk | Owner, Admin |
 | Open **{{ui:controls.deleted.toggle}}**, restore and purge | Owner, Admin |
 
-Readers, Auditors and AI admins see the quick view with its fields greyed out. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply, and a role that can apply none of them sees no actions there. The **{{ui:controls.list.aiAssist}}** panel is shown only to roles that can edit controls.
+Readers, Auditors and AI admins see the quick view with its fields greyed out, and cannot tick rows. The selection bar offers only the bulk actions your role can apply. The **{{ui:controls.list.aiAssist}}** panel is shown only to roles that can edit controls.
 
 If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page decides some buttons from your role's base role, so a custom role can be offered an action that it is then refused. If a change fails that way, ask an Owner or Admin.
 
@@ -53,7 +53,7 @@ The three status cards count within your search and your other filters, except {
 
 Filters and the search are kept in the page address, so a filtered view can be bookmarked or shared with a colleague who has access to the workspace.
 
-**The table.** Each row is one control. Click a row to tick it, and double-click it to open the control's own page. Click a column heading to sort by {{ui:controls.colHeaders.code}}, {{ui:controls.colHeaders.title}}, {{ui:controls.colHeaders.category}}, {{ui:controls.colHeaders.status}}, {{ui:controls.colHeaders.owner}} or {{ui:controls.colHeaders.frequency}}. A long list loads more rows as you scroll.
+**The table.** Each row is one control. If your role can edit controls, click a row to tick it and double-click it to open the control's own page. Otherwise a click opens the page. Click a column heading to sort by {{ui:controls.colHeaders.code}}, {{ui:controls.colHeaders.title}}, {{ui:controls.colHeaders.category}}, {{ui:controls.colHeaders.status}}, {{ui:controls.colHeaders.owner}} or {{ui:controls.colHeaders.frequency}}. A long list loads more rows as you scroll.
 
 | Column | What it shows |
 | --- | --- |

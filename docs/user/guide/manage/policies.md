@@ -22,7 +22,7 @@ Older links to a separate new-policy page or policy-templates page still work: t
 | Assign an owner to many policies at once | Owner, Admin, Editor |
 | Archive or delete many policies at once | Owner, Admin |
 
-Every role can tick rows. Owners and Admins get three actions in the selection bar, Editors get only **{{ui:policies.bulk.assignOwner}}**, and the other roles get none.
+Owners and Admins get three actions in the selection bar, and Editors get only **{{ui:policies.bulk.assignOwner}}**. The other roles cannot tick rows.
 
 If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page chooses its buttons from the built-in role your custom role is based on, so it can offer an action that then fails.
 
@@ -80,7 +80,7 @@ The statuses are:
 - **{{ui:policies.filterEnums.status.published}}**: live. Staff follow it and can acknowledge it. A published policy keeps this status while a new version of it goes through approval, so a pending revision shows only on the policy's page.
 - **{{ui:policies.filterEnums.status.archived}}**: taken out of use. Its text cannot be changed and it cannot be sent for approval until an Owner or Admin restores it.
 
-Click a policy's title to open it, or double-click its row. A single click on a row ticks it. On a policy's page, the arrows at the top step to the previous or next policy in the order this list showed them.
+Click a policy's title to open it. For roles that can tick rows, a single click on a row ticks it and a double-click opens the policy; for the others, a single click opens it. On a policy's page, the arrows at the top step to the previous or next policy in the order this list showed them.
 
 ## What you can do
 
@@ -98,7 +98,7 @@ Tick the rows, up to 100 at a time. In the selection bar, choose **{{ui:policies
 
 ### Archive many policies
 
-Owners and Admins only. Tick the rows, choose **{{ui:policies.bulk.archive}}**, click **{{ui:common.table.apply}}**, then confirm. The confirmation is worded as a deletion and its button reads **{{ui:common.table.confirmVerbDelete}}**, but it archives: the policies stay on the list as {{ui:policies.filterEnums.status.archived}}.
+Owners and Admins only. Tick the rows, choose **{{ui:policies.bulk.archive}}**, click **{{ui:common.table.apply}}**, then confirm with **{{ui:policies.bulk.archiveConfirmLabel}}**. The policies stay on the list as {{ui:policies.filterEnums.status.archived}}.
 
 ### Delete many policies
 
