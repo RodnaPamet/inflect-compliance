@@ -6857,14 +6857,12 @@
       "requiredLabel": "Required value",
       "policyPathLabel": "Policy path",
       "sectionExecution": "Sandboxed execution",
-      "executionPendingHeading": "Not switchable from this page",
-      "executionPendingBody": "This switch is installed with the sandbox runtime itself. Until then the row reports what the deployment permits and offers no control.",
       "status": {
         "not-configured": "Not installed",
         "set-in-code": "Set in code",
         "unreachable": "No answer",
         "declared-not-observed": "Declared",
-        "tenant-switch": "Available"
+        "unconfirmable": "Cannot be confirmed"
       },
       "execution": {
         "name": "Run agent tools in a sandbox",
@@ -6898,7 +6896,11 @@
           "description": "Landlock must be a hard requirement rather than best effort. Best effort means a host without Landlock runs the sandbox with no filesystem isolation and still reports success."
         }
       },
-      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below."
+      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below.",
+      "executionUnconfirmableHeading": "Turned on, with no runtime declared",
+      "executionUnconfirmableBody": "This deployment says agent tools run in a sandbox, but it has declared no sandbox runtime for them to run in. Sandboxed execution is therefore not available, and this is not the same as the setting being off - someone turned it on and it cannot work.",
+      "executionPlatformHeading": "Not switchable from this page",
+      "executionPlatformBody": "Whether agent tools run in a sandbox is set for the whole deployment, not per workspace. The row reports what the deployment permits."
     }
   },
   "riskManager": {

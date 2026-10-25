@@ -81,3 +81,59 @@ export function readSandboxRuntimeDeclaration(): SandboxRuntimeDeclaration {
 export function readSandboxExecutionPlatformEnabled(): boolean {
     return env.SANDBOX_EXECUTION_ENABLED === '1';
 }
+
+/**
+ * Whether sandboxed execution is actually AVAILABLE, and when it is not, which
+ * of the two reasons applies — #3996, under the owner ruling of 2026-10-25 that
+ * this switch is platform-only.
+ *
+ * ═══ ENTIRELY SYNCHRONOUS, WHICH IS STRONGER THAN THE PRECEDENT ═══
+ *
+ * #3996 asks that "the gate's prologue stays synchronous, so a forgotten
+ * `await` cannot weaken it". `ai/risk-assessment/feature-gate.ts` can only
+ * manage a synchronous PROLOGUE, because its fourth gate needs the tenant's
+ * billing plan and that is a database read — so it carries an advisory
+ * `checkFeatureGate` beside an authoritative `enforceFeatureGate`, and calling
+ * the wrong one is a real hazard there.
+ *
+ * Platform-only needs no tenant read, so this function is synchronous all the
+ * way down. There is no async tier for a missing `await` to skip and no
+ * advisory twin to call by mistake. That is the ruling paying a dividend rather
+ * than a limitation of it.
+ *
+ * ═══ THE TWO FALSE REASONS ARE NOT THE SAME ANSWER ═══
+ *
+ * #3996 also asks that a failure report "availability could not be confirmed
+ * rather than that the feature is off". An environment read cannot fail, so
+ * taken literally that requirement has no referent here — but the state it
+ * exists to describe is reachable, and reachable by the likeliest operator
+ * mistake:
+ *
+ *     SANDBOX_EXECUTION_ENABLED=1   and   SANDBOX_RUNTIME_CONFIG_DIGEST unset
+ *
+ * a deploy that believes it runs sandboxed and has declared no runtime to run
+ * in. Collapsing that into `not-enabled` would tell an operator the feature is
+ * off when what is true is that they turned it on and it cannot work — the
+ * single most expensive thing this surface could get wrong, because the
+ * reassuring half of a contradiction is the half they would act on.
+ *
+ * So it fails CLOSED — `available: false`, never a hopeful true — while
+ * reporting a reason that distinguishes the two.
+ */
+export type SandboxExecutionAvailability =
+    | { readonly available: true; readonly reason: null }
+    | { readonly available: false; readonly reason: 'not-enabled' | 'no-runtime-declared' };
+
+export function sandboxedExecutionAvailability(): SandboxExecutionAvailability {
+    if (!readSandboxExecutionPlatformEnabled()) {
+        return { available: false, reason: 'not-enabled' };
+    }
+    // Deliberately the DIGEST rather than the channel list, matching
+    // `readSandboxRuntimeDeclaration`: a deploy that named channels but
+    // recorded no digest has not said which configuration they belong to.
+    const declaration = readSandboxRuntimeDeclaration();
+    if (!declaration.configured) {
+        return { available: false, reason: 'no-runtime-declared' };
+    }
+    return { available: true, reason: null };
+}
