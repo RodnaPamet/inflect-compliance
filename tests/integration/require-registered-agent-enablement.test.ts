@@ -132,10 +132,14 @@ beforeAll(async () => {
         },
     });
     agentId = agent.id;
+    // A registered agent's AI-system entry is its own (`RegisteredAgent_aiSystemId_key`).
+    const suspendedHost = await prisma.aiSystem.create({
+        data: { tenantId: TENANT, name: 'rra suspended host', ownerUserId: userId },
+    });
     const suspended = await prisma.registeredAgent.create({
         data: {
             tenantId: TENANT,
-            aiSystemId: aiSystem.id,
+            aiSystemId: suspendedHost.id,
             name: 'rra suspended agent',
             autonomyLevel: 2,
             dataAccessScope: 'READ_TENANT_DATA',
