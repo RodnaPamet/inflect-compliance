@@ -96,10 +96,10 @@ describeFn('Portfolio overview orchestrator — single-fetch (DB-backed)', () =>
 
     afterAll(async () => {
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
-        await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
+        await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });
         await prisma.orgMembership.deleteMany({ where: { organizationId: orgId } }).catch(() => {});
         await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
-        await prisma.user.delete({ where: { id: cisoUserId } }).catch(() => {});
+        await prisma.user.delete({ where: { id: cisoUserId } });
         await prisma.$disconnect();
     });
 
