@@ -155,7 +155,7 @@ Click **{{ui:evidence.list.downloadFile}}** on a row, the download button on a g
 | **{{ui:evidence.edit.retentionFailed}}** | Your other changes were saved, but the retention date was not | Click **{{ui:evidence.edit.save}}** again |
 | **{{ui:evidence.edit.updateFailed}}**, **{{ui:evidence.edit.replaceFailed}}** or **{{ui:evidence.detail.linkControlFailed}}** | The change was not saved | Reload the page and try again |
 | A control you unlinked comes back in the details panel | The unlink did not go through | Reload the page and try again |
-| The details panel stays on **{{ui:evidence.detail.loadingBody}}** | The record could not be loaded, for example because it was deleted | Close the panel and reload the page |
+| **{{ui:evidence.detail.loadFailed}}** in the details panel | The record could not be loaded, for example because it was deleted | Close the panel and reload the page |
 | A download gives no file | The evidence is archived, or your role needs it linked to a control first | Unarchive it, or ask an Owner, Admin or Editor to link it to a control |
 
 ## Related

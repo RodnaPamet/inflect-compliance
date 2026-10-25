@@ -12,6 +12,7 @@
  * consumes the same hook + fields.
  */
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
@@ -42,6 +43,12 @@ export interface NewPolicyFormReturn {
     ) => void;
     /** Templates loaded when `isTemplateMode` is true. Empty otherwise. */
     templates: PolicyTemplate[];
+    /**
+     * Where the template fetch stands. The picker said "No templates
+     * available" while they loaded and when the fetch failed, because both
+     * left the list empty.
+     */
+    templatesStatus: 'loading' | 'ready' | 'failed';
     /** Selects a template — assigns templateId and pre-fills title/category. */
     selectTemplate: (tpl: PolicyTemplate) => void;
     isTemplateMode: boolean;
@@ -78,6 +85,7 @@ export function useNewPolicyForm({
 }: UseNewPolicyFormOptions): NewPolicyFormReturn {
     const apiUrl = useTenantApiUrl();
     const telemetry = useFormTelemetry('NewPolicyPage');
+    const t = useTranslations('policies');
 
     const [fields, setFields] = useState<NewPolicyFormFields>({
         title: '',
@@ -88,6 +96,7 @@ export function useNewPolicyForm({
         templateId: '',
     });
     const [templates, setTemplates] = useState<PolicyTemplate[]>([]);
+    const [templatesStatus, setTemplatesStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
@@ -96,12 +105,17 @@ export function useNewPolicyForm({
         if (!isTemplateMode) return;
         let cancelled = false;
         fetch(apiUrl('/policies/templates'))
-            .then((r) => (r.ok ? r.json() : []))
+            .then((r) => {
+                if (!r.ok) throw new Error(`templates ${r.status}`);
+                return r.json();
+            })
             .then((data) => {
-                if (!cancelled) setTemplates(data);
+                if (cancelled) return;
+                setTemplates(Array.isArray(data) ? data : []);
+                setTemplatesStatus('ready');
             })
             .catch(() => {
-                /* swallow — empty list is the right fallback */
+                if (!cancelled) setTemplatesStatus('failed');
             });
         return () => {
             cancelled = true;
@@ -162,7 +176,7 @@ export function useNewPolicyForm({
                 // The server's own message — this used to fall back to
                 // `JSON.stringify(data.error)`, so the canonical
                 // `{ error: { code, message } }` envelope showed as raw JSON.
-                throw new Error(apiErrorMessage(data, 'Failed to create policy'));
+                throw new Error(apiErrorMessage(data, t('new.createFailed')));
             }
 
             const policy = await res.json();
@@ -173,7 +187,7 @@ export function useNewPolicyForm({
             onSuccess(policy);
         } catch (err) {
             telemetry.trackError(err);
-            setError(err instanceof Error ? err.message : 'Failed to create policy');
+            setError(err instanceof Error ? err.message : t('new.createFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -183,6 +197,7 @@ export function useNewPolicyForm({
         fields,
         setField,
         templates,
+        templatesStatus,
         selectTemplate,
         isTemplateMode,
         submitting,

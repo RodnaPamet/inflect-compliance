@@ -53,6 +53,7 @@ import type { StatusBadgeVariant } from '@/components/ui/status-badge';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
+import { ListRefreshFailedBanner } from '@/components/ui/ListRefreshFailedBanner';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 
@@ -143,6 +144,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // pattern). `tx` is the live next-intl translator for the strings this
     // island localizes directly under the `assets` namespace.
     const tx = useTranslations('assets');
+    const tCommon = useTranslations('common');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // Modal-form follow-up — create-asset modal mounted off the list,
@@ -238,6 +240,11 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     });
     const assets = assetsQuery.data?.rows ?? [];
     const truncated = assetsQuery.data?.truncated ?? false;
+    // A failed load with nothing to show is an error, not "No assets match
+    // your filters". A failed load with older rows still on screen says those
+    // rows may be stale (SWR keeps the previous key's data).
+    const listLoadFailed = !!assetsQuery.error && !assetsQuery.data;
+    const listRefreshFailed = !!assetsQuery.error && !!assetsQuery.data;
 
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     // Clicking a sortable header re-orders the in-memory rows; sort runs
@@ -1068,8 +1075,10 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
 
             <ListPageShell.Body aside={assetQuickViewAside}>
                 <TruncationBanner truncated={truncated} />
+                <ListRefreshFailedBanner show={listRefreshFailed} onRetry={() => void assetsQuery.mutate()} />
                 <DataTable
                     fillBody
+                    error={listLoadFailed ? tCommon('ui.listLoadFailed') : undefined}
                     onReachEnd={hasMoreAssets ? loadMoreAssets : undefined}
                     data={visibleAssets}
                     columns={orderedAssetColumns}

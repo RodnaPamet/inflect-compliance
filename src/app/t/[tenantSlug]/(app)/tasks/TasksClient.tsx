@@ -22,6 +22,7 @@ import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
+import { ListRefreshFailedBanner } from '@/components/ui/ListRefreshFailedBanner';
 import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -359,6 +360,10 @@ function TasksPageInner({
     // readable table with an error card would be a downgrade.
     const listError =
         tasksQuery.error && !tasksQuery.data ? t('list.loadError') : undefined;
+    // The stale data kept on screen is not always this view's: `useTenantSWR`
+    // keeps the PREVIOUS key's rows, so a failed fetch after a filter or view
+    // change left the old rows under the new heading with nothing said.
+    const listRefreshFailed = !!tasksQuery.error && !!tasksQuery.data;
 
     // ─── Sortable headers (parity with the Controls table) ───
     // Clicking a sortable header re-orders the in-memory rows; `sortBy`
@@ -1302,6 +1307,7 @@ function TasksPageInner({
 
             <ListPageShell.Body aside={taskQuickViewAside}>
                 <TruncationBanner truncated={truncated} />
+                <ListRefreshFailedBanner show={listRefreshFailed} onRetry={() => void tasksQuery.mutate()} />
                 <DataTable<TaskListItem>
                     fillBody
                     onReachEnd={hasMoreTasks ? loadMoreTasks : undefined}

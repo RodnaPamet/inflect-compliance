@@ -141,6 +141,7 @@ Owners and Admins: open **{{ui:common.ui.viewsMenu}}** › **{{ui:tasks.list.sho
 | **{{ui:tasks.list.filterEmptyTitle}}** | Tasks exist, but none match the search and filters | Click **{{ui:tasks.list.clearFilters}}** |
 | **{{ui:tasks.list.deletedEmptyTitle}}** | No deleted task matches the search and filters, or none was deleted in the last 90 days | Choose **{{ui:tasks.list.showLive}}** to go back |
 | **{{ui:tasks.list.loadError}}** | The list did not load | Reload the page |
+| **{{ui:common.ui.listRefreshFailed}}** above the table | The list could not be refreshed after a change, so the rows shown may be from before it | Click **{{ui:common.retry}}** |
 | **{{ui:tasks.bulk.failed}}** | A bulk action was refused: for example more than 100 rows were selected, one task cannot make the status move, or the assignee reviews one of the tasks | Check the selection and try again |
 | **{{ui:tasks.bulk.restoreFailed}}** | The task was not restored, often because its control is deleted | Restore the control first, or ask an Owner or Admin |
 | **{{ui:tasks.new.createFailed}}** in the dialog | The task was refused, for example because the assignee is also the reviewer | Change the fields and try again |

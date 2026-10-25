@@ -52,7 +52,15 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                     )}
                 >
                     <Heading level={3}>{t('new.chooseTemplate')}</Heading>
-                    {form.templates.length === 0 ? (
+                    {form.templatesStatus === 'loading' ? (
+                        <p className="text-sm text-content-subtle">
+                            {t('new.templatesLoading')}
+                        </p>
+                    ) : form.templatesStatus === 'failed' ? (
+                        <p className="text-sm text-content-error" role="alert">
+                            {t('new.templatesFailed')}
+                        </p>
+                    ) : form.templates.length === 0 ? (
                         <p className="text-sm text-content-subtle">
                             {t('new.templatesEmpty')}
                         </p>

@@ -16,6 +16,7 @@ import { UserCombobox } from '@/components/ui/user-combobox';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
+import { ListRefreshFailedBanner } from '@/components/ui/ListRefreshFailedBanner';
 import {
     createColumns,
     useColumnsDropdown,
@@ -151,6 +152,7 @@ function PoliciesPageInner({
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     const tGroup = useTranslations('common.filterGroups');
+    const tCommon = useTranslations('common');
     const policyStatusLabels = useMemo(
         () => buildPolicyStatusLabels((k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1])),
         [tx],
@@ -304,6 +306,10 @@ function PoliciesPageInner({
         loadMore: loadMorePolicies,
     } = useThresholdLoadMore(sortedPolicies);
     const loading = policiesQuery.isLoading && !policiesQuery.data;
+    // SWR keeps the previous key's rows when a filtered fetch fails, so the
+    // table went on showing the old result under the new filters, silently.
+    const listLoadFailed = !!policiesQuery.error && !policiesQuery.data;
+    const listRefreshFailed = !!policiesQuery.error && !!policiesQuery.data;
 
     // ─── Bulk actions (canonical BulkActionBar — assign + archive) ───
     // Policy status is approval-gated, so the bar carries Assign owner
@@ -849,7 +855,12 @@ function PoliciesPageInner({
     return (
         <EntityListPage<PolicyRow>
             className="animate-fadeIn gap-section"
-            banner={<TruncationBanner truncated={truncated} />}
+            banner={
+                <>
+                    <TruncationBanner truncated={truncated} />
+                    <ListRefreshFailedBanner show={listRefreshFailed} onRetry={() => void policiesQuery.mutate()} />
+                </>
+            }
             header={{
                 breadcrumbs: [
                     { label: tx('list.dashboard'), href: tenantHref('/dashboard') },
@@ -960,6 +971,7 @@ function PoliciesPageInner({
                 onReachEnd: hasMorePolicies ? loadMorePolicies : undefined,
                 columns: orderedPolicyColumns,
                 loading,
+                error: listLoadFailed ? tCommon('ui.listLoadFailed') : undefined,
                 sortableColumns,
                 sortBy,
                 sortOrder,

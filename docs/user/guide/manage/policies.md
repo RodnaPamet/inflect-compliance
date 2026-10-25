@@ -119,10 +119,12 @@ A failed owner change or archive leaves the rows selected, so you can try again 
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
+| **{{ui:common.ui.listLoadFailed}}** | The list could not be loaded | Reload the page |
+| **{{ui:common.ui.listRefreshFailed}}** above the table | The list could not be refreshed after a change, so the rows shown may be from before it | Click **{{ui:common.retry}}** |
 | **{{ui:policies.noPolicies}}** | The workspace has no policies | Click **{{ui:policies.list.addBtn}}**, or ask an Owner, Admin or Editor |
-| **{{ui:policies.list.emptyFilterTitle}}** | Policies exist, but none match the search and filters | Click **{{ui:policies.list.clearFilters}}**. If you chose two categories, keep one |
-| The table does not change after you set a filter | The list could not be reloaded. The page shows no message and keeps the rows it showed before | Reload the page |
-| **{{ui:policies.new.templatesEmpty}}** in the dialog | The templates have not loaded, could not load, or your workspace has none | Wait a moment. If it stays, choose **{{ui:policies.new.modeNew}}** and write the policy yourself |
+| **{{ui:policies.list.emptyFilterTitle}}** | Policies exist, but none match the search and filters | Click **{{ui:policies.list.clearFilters}}** |
+| **{{ui:policies.new.templatesEmpty}}** in the dialog | Your workspace has no policy templates | Choose **{{ui:policies.new.modeNew}}** and write the policy yourself |
+| **{{ui:policies.new.templatesFailed}}** in the dialog | The templates could not be loaded | Close the dialog and open it again |
 | A red message at the top of the dialog after **{{ui:policies.createPolicy}}** | Inflect did not create the policy. The message says why | Fix what it names, then try again |
 | **{{ui:policies.templates.linkFailed}}** or another red message in the suggested-controls dialog | The policy was created, but the controls were not linked | Try again, or click **{{ui:policies.templates.skip}}** and link them later on the policy's **{{ui:policies.detail.tabTraceability}}** tab |
 | **{{ui:policies.bulk.failed}}** | A bulk change did not go through, for example because more than 100 rows were selected or your role cannot apply it. The message gives no reason | Select fewer rows, reload the page and try again |

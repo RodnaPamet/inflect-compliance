@@ -209,6 +209,11 @@
   "derivation": "audited",
   "reason": "Executive KPI stat card over MetricCard/AnimatedNumber/MiniAreaChart. Its trend math is correctly extracted to src/lib/kpi-trend.ts (a flat generic helper, not a domain module, so NOT a domain-import). Two removable couplings."
  },
+ "src/components/ui/ListRefreshFailedBanner.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A warning banner with a `show` flag and an optional retry callback. Both visible strings go through next-intl (`common.ui.listRefreshFailed`, `common.retry`), and its only other import is the shared Nucleo icon set, so it has no domain import, storage key or brand token. Which list it sits above and how that list refetches are the caller's business."
+ },
  "src/components/ui/MetadataBar.tsx": {
   "classification": "MIXED",
   "derivation": "audited",

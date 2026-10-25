@@ -352,16 +352,11 @@ export function EvidenceDetailSheet({
             size="md"
             title={evidence?.title ?? t('detail.sheetTitle')}
         >
-            {detailQuery.isLoading || !evidence ? (
-                <>
-                    <Sheet.Header title={t('detail.loadingTitle')} />
-                    <Sheet.Body>
-                        <div className="flex h-40 items-center justify-center text-sm text-content-muted">
-                            {t('detail.loadingBody')}
-                        </div>
-                    </Sheet.Body>
-                </>
-            ) : detailQuery.error ? (
+            {/* The error branch comes first. A failed first load leaves
+                `evidence` undefined, so with the loading branch ahead of it
+                the panel said "Loading…" for ever, as it did for a `?ev=`
+                link to a deleted record. */}
+            {detailQuery.error && !evidence ? (
                 <>
                     <Sheet.Header title={t('detail.errorTitle')} />
                     <Sheet.Body>
@@ -370,9 +365,16 @@ export function EvidenceDetailSheet({
                             role="alert"
                             data-testid="evidence-sheet-error"
                         >
-                            {detailQuery.error instanceof Error
-                                ? detailQuery.error.message
-                                : t('detail.loadFailed')}
+                            {t('detail.loadFailed')}
+                        </div>
+                    </Sheet.Body>
+                </>
+            ) : detailQuery.isLoading || !evidence ? (
+                <>
+                    <Sheet.Header title={t('detail.loadingTitle')} />
+                    <Sheet.Body>
+                        <div className="flex h-40 items-center justify-center text-sm text-content-muted">
+                            {t('detail.loadingBody')}
                         </div>
                     </Sheet.Body>
                 </>

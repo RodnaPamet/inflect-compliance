@@ -136,7 +136,9 @@ At present the view always reads **{{ui:assets.deleted.emptyTitle}}**, even when
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:assets.noAssets}}** | The workspace has no assets | Click **{{ui:assets.empty.addAssetAction}}**, or import assets |
-| **{{ui:assets.empty.noResultsTitle}}** | No asset matches the search and filters. A list that failed to load after you changed a filter shows the same message | Click **{{ui:assets.empty.clearFilters}}**, or reload the page |
+| **{{ui:assets.empty.noResultsTitle}}** | No asset matches the search and filters | Click **{{ui:assets.empty.clearFilters}}** |
+| **{{ui:common.ui.listLoadFailed}}** | The list could not be loaded | Reload the page |
+| **{{ui:common.ui.listRefreshFailed}}** above the table | The list could not be refreshed after a change, so the rows shown may be from before it | Click **{{ui:common.retry}}** |
 | **{{ui:assets.deleted.emptyTitle}}** | No asset is deleted | Nothing to restore |
 | **{{ui:assets.bulk.actionFailed}}** | A bulk action did not go through, for example because more than 100 rows were selected | Select fewer rows and try again |
 | A banner saying only the first 5,000 results are shown | More than 5,000 assets match the search and filters | Narrow the list with a filter or the search |
