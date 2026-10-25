@@ -3024,6 +3024,8 @@
       "assignOwner": "Assign owner",
       "ownerBlank": "Owner (blank = unassign)",
       "archive": "Archive",
+      "archiveConfirmLabel": "Archive",
+      "archiveConfirmDesc": "They stay on the list as Archived. While a policy is archived it cannot get a new version, an approval request or a rollback. You can restore each one from its page; it comes back as a draft.",
       "delete": "Delete",
       "failed": "Bulk action failed",
       "deletedToast": "{count, plural, one {# policy deleted} other {# policies deleted}}",
@@ -3031,7 +3033,6 @@
       "appliedReconciled": "{count, plural, one {# policy updated} other {# policies updated}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
       "undo": "Undo",
       "archivedToast": "{count, plural, one {# policy archived} other {# policies archived}}",
-      "archiveConfirmBody": "They stay on the list as Archived. While a policy is archived it cannot get a new version, an approval request or a rollback. You can restore each one from its page; it comes back as a draft.",
       "assignedToast": "{count, plural, one {# policy updated} other {# policies updated}}"
     },
     "new": {

@@ -295,7 +295,7 @@ describe('Policies list — bulk actions say what they do and why they failed', 
 
         const dialog = await screen.findByRole('dialog');
         expect(dialog).toHaveTextContent(`${P.bulk.archive} 1 ${P.list.entityLabel}?`);
-        expect(dialog).toHaveTextContent(P.bulk.archiveConfirmBody);
+        expect(dialog).toHaveTextContent(P.bulk.archiveConfirmDesc);
         expect(dialog).not.toHaveTextContent(TABLE.confirmDescription.replace('{noun}', P.list.entityLabel));
         expect(within(dialog).queryByRole('button', { name: TABLE.confirmVerbDelete })).toBeNull();
         expect(within(dialog).getByRole('button', { name: P.bulk.archive })).toBeInTheDocument();

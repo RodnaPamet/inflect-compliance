@@ -540,8 +540,8 @@ function PoliciesPageInner({
                 label: tx('bulk.archive'),
                 confirm: {
                     tone: 'warning',
-                    confirmLabel: tx('bulk.archive'),
-                    description: tx('bulk.archiveConfirmBody'),
+                    confirmLabel: tx('bulk.archiveConfirmLabel'),
+                    description: tx('bulk.archiveConfirmDesc'),
                 },
             });
             defs.push({ value: 'delete', label: tx('bulk.delete') });
