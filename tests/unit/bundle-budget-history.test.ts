@@ -24,6 +24,7 @@ import {
     BUDGET_FILE,
     budgetHistory,
     budgetTrendLines,
+    parseBudgets,
 } from '../helpers/bundle-budget-history';
 
 describe('budgetHistory — reading past budgets out of git', () => {
@@ -60,6 +61,31 @@ describe('budgetHistory — reading past budgets out of git', () => {
         // so this is the normal state in every job but Build.
         const history = budgetHistory(12, path.join(__dirname, 'no-such-file-ever.ts'));
         expect(history).toEqual([]);
+    });
+});
+
+describe('parseBudgets — a comment must not be read as a budget', () => {
+    it('reads the real map', () => {
+        const src = `const BUDGETS_KB: Record<string, number> = {\n    'dashboard': 616,\n    'risks': 653,\n};`;
+        expect(parseBudgets(src)).toEqual({ dashboard: 616, risks: 653 });
+    });
+
+    it('IGNORES a budget quoted in a comment, which is this file\'s own habit', () => {
+        // The assertion `budgetHistory` cannot make, because its source comes
+        // from git and the decoy has to be inside it. Dropping `codeOf` passed
+        // all seven other tests; this is the one that fails for it.
+        const src = [
+            'const BUDGETS_KB: Record<string, number> = {',
+            "    // was 'dashboard': 610 before #4025 raised it",
+            "    /* and 'risks': 999 in an older draft */",
+            "    'dashboard': 616,",
+            '};',
+        ].join('\n');
+        expect(parseBudgets(src)).toEqual({ dashboard: 616 });
+    });
+
+    it('reads nothing from a file with no such map', () => {
+        expect(parseBudgets('const SOMETHING_ELSE = 1;')).toEqual({});
     });
 });
 

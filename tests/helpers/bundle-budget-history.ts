@@ -16,6 +16,31 @@ const ROOT = path.resolve(__dirname, '../..');
 export const BUDGET_FILE = path.join(ROOT, 'tests/guardrails/bundle-size-budget.test.ts');
 
 /**
+ * `BUDGETS_KB` out of one version of the file's source.
+ *
+ * COMMENTS STRIPPED FIRST, and that is load-bearing rather than tidy. This
+ * file documents every past budget in prose — "the dashboard one read 574.4 KB
+ * against a main that measured 603.7" — and its convention is to quote the
+ * values it is replacing. A regex over raw source would read a comment's
+ * `'dashboard': 610` as the budget and report a trend that never happened.
+ *
+ * Exported because that cannot be shown through `budgetHistory`: the decoy has
+ * to be IN the source being parsed, and `budgetHistory` reads its source from
+ * git. Dropping `codeOf` passed all seven tests until this was split out.
+ */
+export function parseBudgets(content: string): Record<string, number> {
+    const code = codeOf(content);
+    const at = code.indexOf('BUDGETS_KB');
+    if (at === -1) return {};
+    const block = code.slice(at);
+    const budgets: Record<string, number> = {};
+    for (const m of block.slice(0, block.indexOf('};') + 1).matchAll(/'([^']+)'\s*:\s*(\d+)/g)) {
+        budgets[m[1]] = Number(m[2]);
+    }
+    return budgets;
+}
+
+/**
  * EVERY PAST VALUE OF `BUDGETS_KB`, OLDEST FIRST, FROM GIT (#4044).
  *
  * The derived headroom (#4041) fixed the rot but not the comparability: one
@@ -77,15 +102,7 @@ export function budgetHistory(limit = 12, file: string = BUDGET_FILE): Array<{ s
         } catch {
             continue; // the file did not exist, or was named differently, at that commit
         }
-        // COMMENTS STRIPPED FIRST. This file's prose is full of figures like
-        // "read 574.4 KB" and "measured 603.7", and a regex over raw source
-        // would read them as budgets.
-        const code = codeOf(content);
-        const block = code.slice(code.indexOf('BUDGETS_KB'));
-        const budgets: Record<string, number> = {};
-        for (const m of block.slice(0, block.indexOf('};') + 1).matchAll(/'([^']+)'\s*:\s*(\d+)/g)) {
-            budgets[m[1]] = Number(m[2]);
-        }
+        const budgets = parseBudgets(content);
         if (Object.keys(budgets).length > 0) out.push({ sha: sha.slice(0, 9), date, budgets });
     }
     return out.reverse(); // oldest first, so a trend reads left to right
