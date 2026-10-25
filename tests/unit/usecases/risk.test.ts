@@ -27,6 +27,7 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/app-layer/repositories/RiskRepository', () => ({
     RiskRepository: {
         list: jest.fn(),
+        listDeleted: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
         create: jest.fn(),

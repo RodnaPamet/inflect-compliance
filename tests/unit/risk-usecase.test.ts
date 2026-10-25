@@ -58,6 +58,7 @@ jest.mock('@/lib/cache/list-cache', () => ({
 jest.mock('@/app-layer/repositories/RiskRepository', () => ({
     RiskRepository: {
         list: jest.fn(),
+        listDeleted: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
         create: jest.fn(),
@@ -467,11 +468,34 @@ describe('purgeRisk', () => {
 });
 
 describe('listRisksWithDeleted', () => {
-    it('admin-gated and uses the withDeleted wrapper', async () => {
-        (mockDb.risk.findMany as jest.Mock).mockResolvedValue([{ id: 'r-1' }]);
-        await listRisksWithDeleted(adminCtx);
-        const args = (mockDb.risk.findMany as jest.Mock).mock.calls[0][0];
-        expect(args._withDeleted).toBe(true);
+    it('reads the deleted-only repository read, capped, with the filters it was given', async () => {
+        // It was a raw `withDeleted({ where: { tenantId } })` findMany: every
+        // risk, live and deleted, with no filter and full rows.
+        (RiskRepository.listDeleted as jest.Mock).mockResolvedValue([]);
+        await listRisksWithDeleted(adminCtx, { status: 'OPEN', q: 'phishing', ownerUserId: 'u-owner' });
+        expect(mockDb.risk.findMany).not.toHaveBeenCalled();
+        const [, , filters, options] = (RiskRepository.listDeleted as jest.Mock).mock.calls[0];
+        expect(filters).toEqual({ status: 'OPEN', q: 'phishing', ownerUserId: 'u-owner' });
+        expect(options).toEqual({ take: 5000 });
+    });
+
+    it('returns the live list\'s row shape: linked-task counts and the owner', async () => {
+        (RiskRepository.listDeleted as jest.Mock).mockResolvedValue([
+            { id: 'r-1', ownerUserId: 'u-owner', deletedAt: new Date('2026-10-01'), deletedByUserId: 'u-admin' },
+        ]);
+        (mockDb.user.findMany as jest.Mock).mockResolvedValueOnce([
+            { id: 'u-owner', name: 'Owen', email: 'owen@acme.test' },
+        ]);
+        const rows = await listRisksWithDeleted(adminCtx);
+        expect(rows).toEqual([
+            expect.objectContaining({
+                id: 'r-1',
+                deletedByUserId: 'u-admin',
+                taskTotal: 0,
+                taskDone: 0,
+                owner: { id: 'u-owner', name: 'Owen', email: 'owen@acme.test' },
+            }),
+        ]);
     });
 
     it('rejects AUDITOR', async () => {
