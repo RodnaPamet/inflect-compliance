@@ -25,6 +25,7 @@ import { registry } from '../integrations/registry';
 import { isScheduledCheckProvider } from '../integrations/types';
 import { isPostureProvider } from '../integrations/posture-providers';
 import type { CheckResult, EvidencePayload, ConnectionValidationResult } from '../integrations/types';
+import { integrationEvidenceText } from '../integrations/evidence-text';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
@@ -730,6 +731,10 @@ export async function runAutomationForControl(
             );
 
             if (evidencePayload) {
+                // The payload carries the provider's own text (repository and
+                // branch names, change numbers, check names); it is sanitised
+                // before it is stored. See `integrations/evidence-text`.
+                const text = integrationEvidenceText(evidencePayload);
                 const evidence = await db.evidence.create({
                     data: {
                         tenantId: ctx.tenantId,
@@ -738,9 +743,9 @@ export async function runAutomationForControl(
                         // Prisma EvidenceType enum (FILE/LINK/TEXT). Integration-created
                         // evidence is always text-based content; map to TEXT.
                         type: EvidenceType.TEXT,
-                        title: evidencePayload.title,
-                        content: evidencePayload.content,
-                        category: evidencePayload.category ?? 'integration',
+                        title: text.title,
+                        content: text.content,
+                        category: text.category,
                         status: 'APPROVED',
                     },
                 });

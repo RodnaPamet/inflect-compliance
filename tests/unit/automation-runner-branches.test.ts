@@ -354,6 +354,44 @@ describe('executeControlAutomation', () => {
         expect(mPrisma.evidence.create.mock.calls[0][0].data.category).toBe('integration');
     });
 
+    test("stores the provider's text sanitised, as the manual run does", async () => {
+        // Branch class: the scheduled writer composes the same row as the manual
+        // one, from the same third-party answer, and must sanitise it the same
+        // way — title, body, category, and the JSON block value by value.
+        const provider = makeProvider({
+            runCheck: jest.fn().mockResolvedValue({ status: 'FAILED', summary: 'x', details: {}, durationMs: 1 }),
+            mapResultToEvidence: jest.fn().mockReturnValue({
+                title: 'Branch Protection: acme/repo:<img src=x onerror=alert(1)>main',
+                content: 'Status checks: <script>alert(1)</script>Build, Lint',
+                contentJson: {
+                    examples: [{ number: 'CHG<b>7</b> a<b' }],
+                    link: 'https://acme.example/change?a=1&region=us',
+                },
+                type: 'CONFIGURATION',
+                category: '<i>integration</i>',
+            }),
+        });
+        mRegistry.resolveByAutomationKey.mockReturnValue({ provider });
+        mPrisma.integrationConnection.findFirst.mockResolvedValue({ id: 'conn-1', secretEncrypted: null, configJson: {} });
+        mPrisma.integrationExecution.create.mockResolvedValue({ id: 'exec-s' });
+        mPrisma.integrationExecution.update.mockResolvedValue({});
+        mPrisma.evidence.create.mockResolvedValue({ id: 'ev-s' });
+        mPrisma.control.update.mockResolvedValue({});
+        mPrisma.finding.findFirst.mockResolvedValue({ id: 'open-finding' });
+
+        await executeControlAutomation(makeDueControl(), 'job-1', NOW);
+
+        const data = mPrisma.evidence.create.mock.calls[0][0].data;
+        expect(data.title).toBe('Branch Protection: acme/repo:main');
+        expect(data.category).toBe('integration');
+        const head = 'Status checks: Build, Lint\n\n';
+        expect(data.content.startsWith(head)).toBe(true);
+        expect(JSON.parse(data.content.slice(head.length))).toEqual({
+            examples: [{ number: 'CHG7 a' }],
+            link: 'https://acme.example/change?a=1&region=us',
+        });
+    });
+
     test('decryptSecrets swallows malformed JSON and returns {}', async () => {
         // Branch: JSON.parse throws → catch → {}
         mDecrypt.mockReturnValue('not-json{');
@@ -522,6 +560,22 @@ describe('reconcileFindingForCheck (via executeControlAutomation)', () => {
             sourceRef: 'ctrl-1:github.branch_protection',
         });
         expect(data.description).toBe('sum-FAILED');
+    });
+
+    test('FAILED stores the provider summary as plain text on the Finding', async () => {
+        const provider = wire('FAILED');
+        provider.runCheck.mockResolvedValue({
+            status: 'FAILED',
+            summary: 'Branch <img src=x onerror=alert(1)>main is unprotected',
+            details: {},
+        });
+        mPrisma.finding.findFirst.mockResolvedValue(null);
+        mPrisma.finding.create.mockResolvedValue({ id: 'find-1' });
+
+        await executeControlAutomation(makeDueControl(), 'job-1', NOW);
+
+        const data = mPrisma.finding.create.mock.calls[0][0].data;
+        expect(data.description).toBe('Branch main is unprotected');
     });
 
     test('FAILED with an existing open Finding does NOT create a duplicate', async () => {
