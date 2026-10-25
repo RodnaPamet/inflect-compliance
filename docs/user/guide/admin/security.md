@@ -48,11 +48,11 @@ Picking {{ui:admin.security.policy.REQUIRED.label}} shows a notice, **{{ui:admin
 
 **{{ui:admin.security.saveSettings}}** sits below these two cards and saves both of them, and nothing else. The cards below it have buttons of their own.
 
-**{{ui:admin.security.agentEnforcement.title}}.** Whether Inflect's agent tools accept only API keys that are bound to a registered agent. A badge reads {{ui:admin.security.agentEnforcement.on}} or {{ui:admin.security.agentEnforcement.off}}, and a sentence below it says what that means today. When some active API keys are bound to no agent, a list names each one, with the first characters of the key. The button reads **{{ui:admin.security.agentEnforcement.enableAction}}** or **{{ui:admin.security.agentEnforcement.disableAction}}**. A new workspace starts with enforcement on.
+**{{ui:admin.security.agentEnforcement.title}}.** Whether Inflect's agent tools accept only API keys that are bound to a registered agent. A badge reads {{ui:admin.security.agentEnforcement.on}} or {{ui:admin.security.agentEnforcement.off}}, and a sentence below it says what that means today. When some active API keys can use the agent tools but are not bound to an active registered agent, a list names each one, with the first characters of the key. The button reads **{{ui:admin.security.agentEnforcement.enableAction}}** or **{{ui:admin.security.agentEnforcement.disableAction}}**. A new workspace starts with enforcement on.
 
 **{{ui:admin.security.apiKeyRotation.title}}.** The age at which the daily key check raises a finding for an API key an agent could use. A badge shows where the age comes from: {{ui:admin.security.apiKeyRotation.defaultBadge}}, which is 90 days, or {{ui:admin.security.apiKeyRotation.customBadge}}. Below it you choose between the product default and **{{ui:admin.security.apiKeyRotation.useCustom}}**. The second choice opens a field for a whole number of days, from 7 to 730, with buttons to step it down and up.
 
-**{{ui:admin.security.sessionMgmtTitle}}.** Two buttons, **{{ui:admin.security.signOutOthers}}** and **{{ui:admin.security.revokeAll}}**. Below them, under {{ui:admin.security.revokeSpecificLabel}}, a **{{ui:admin.security.userIdPlaceholder}}** field and a **{{ui:admin.security.revoke}}** button.
+**{{ui:admin.security.sessionMgmtTitle}}.** Two buttons, **{{ui:admin.security.signOutOthers}}** and **{{ui:admin.security.revokeAll}}**. Below them, under {{ui:admin.security.revokeSpecificLabel}}, a list of members that starts at **{{ui:admin.security.pickMemberPlaceholder}}**, and a **{{ui:admin.security.revoke}}** button.
 
 ## What you can do
 
@@ -68,7 +68,7 @@ Type a number of minutes in **{{ui:admin.security.maxSessionAgeLabel}}** and cli
 
 ### Enforce agent registration
 
-Read the list on the card first. Once enforcement is on, Inflect's agent tools accept only API keys bound to an active registered agent, so they refuse every key on the list. An API key cannot be edited. To keep a listed integration working, create a new key bound to its agent and revoke the old key. [Create an API key](../../how-to/set-up/create-an-api-key.md) shows how.
+Read the list on the card first. Once enforcement is on, Inflect's agent tools accept only API keys bound to an active registered agent, so they refuse every key on the list. The list names each active key that has a scope for the agent tools and is not bound to an active agent: keys bound to no agent, and keys bound to an agent that is a draft, suspended, retired or deleted. Keys without an agent-tool scope are not listed, because the agent tools refuse them whatever this setting says. An API key cannot be edited. To keep a listed integration working, create a new key bound to its agent and revoke the old key. [Create an API key](../../how-to/set-up/create-an-api-key.md) shows how.
 
 Then click **{{ui:admin.security.agentEnforcement.enableAction}}**. The dialog **{{ui:admin.security.agentEnforcement.enableTitle}}** shows the list again and asks you to type the workspace's short name, the part of its address after `/t/`. The button in the dialog works only once the name matches exactly. To back out, click **{{ui:common.cancel}}**. The change applies to the whole workspace at once.
 
@@ -82,13 +82,13 @@ The age only decides when a finding is raised. No key is ever rotated, revoked o
 
 ### Revoke sessions
 
-Each of these asks you to confirm in a browser dialog first.
+Each of these opens a dialog that says what will happen. Nothing is revoked until you click the dialog's button.
 
-- **{{ui:admin.security.signOutOthers}}** revokes all of your own sessions, on every device. Despite its name, that includes the browser you are using. The page then takes you to the sign-in page.
-- **{{ui:admin.security.revokeAll}}** revokes the sessions of every member of the workspace, you included. Keep it for a security incident. The page then says how many members it covered.
-- To revoke one person's sessions, type their user ID in the **{{ui:admin.security.userIdPlaceholder}}** field and click **{{ui:admin.security.revoke}}**. This page cannot look the ID up for you. When you know who it is but not their ID, use the {{ui:admin.members.colSessions}} column on the **{{ui:admin.nav.members}}** page instead, which revokes a member's sessions one device at a time.
+- **{{ui:admin.security.signOutOthers}}** revokes your sessions on every other device and browser. You stay signed in on the browser you are using. Click **{{ui:admin.security.signOutOthersConfirmLabel}}** in the dialog. If Inflect cannot tell the session you are using apart from your others, it revokes all of them, this one included, and the page takes you to the sign-in page.
+- **{{ui:admin.security.revokeAll}}** revokes the sessions of every active member of the workspace, on every device. Deactivated members are not affected. You stay signed in on the browser you are using, and your other sessions are revoked. Keep it for a security incident. Click **{{ui:admin.security.revokeAllConfirmLabel}}** in the dialog. The page then says how many members it covered.
+- To revoke one member's sessions, pick them in the list under {{ui:admin.security.revokeSpecificLabel}} and click **{{ui:admin.security.revoke}}**, then **{{ui:admin.security.revokeUserConfirmLabel}}** in the dialog. The list shows the workspace's active members, without you: use **{{ui:admin.security.signOutOthers}}** for your own sessions. To revoke a member's sessions one device at a time, use the {{ui:admin.members.colSessions}} column on the **{{ui:admin.nav.members}}** page instead.
 
-A session belongs to the person, not to the workspace. Revoking someone's sessions here also revokes the ones they use for other workspaces.
+A session belongs to the person, not to the workspace. Revoking someone's sessions here also signs them out of every other workspace they belong to, and the dialogs say so.
 
 ## What happens next
 
@@ -96,23 +96,23 @@ A session belongs to the person, not to the workspace. Revoking someone's sessio
 - **Each workspace's MFA policy applies to that workspace.** Someone who belongs to more than one workspace is asked at sign-in for the code of the first workspace they joined. Another workspace whose policy asks for a code asks for its own the first time they open it, and until they enter it, its pages and the organisation pages take them to its code page. The session age is always that of the first workspace they joined, except after a sign-in through this workspace's single sign-on, which gets this workspace's.
 - **Agent registration enforcement applies at once.** Each request it refuses adds an entry to the workspace's audit log.
 - **The rotation age applies from the next daily key check.**
-- **The audit log records who did what.** Turning agent registration enforcement on or off, changing the rotation age and every revocation of sessions each add an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it.
+- **The audit log records who did what.** Changing the MFA policy or the session age, turning agent registration enforcement on or off, changing the rotation age and every revocation of sessions each add an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it. The entries for the MFA policy and the session age give the old value and the new one.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:admin.security.loadingTitle}}**, with grey bars | The page is loading the settings | Wait a moment |
-| **{{ui:admin.security.failedLoadSettings}}** | The page could not reach Inflect to load the settings | Reload the page |
-| {{ui:admin.security.policy.DISABLED.label}} selected and the session age empty, although you know they were set | The page could not load the saved settings. It shows the defaults instead of an error | Reload the page. Do not save first: saving stores what the page shows |
+| **{{ui:admin.security.failedLoadSettings}}**, or another message, above **{{ui:admin.security.saveBlockedUntilLoaded}}** | The page could not load the saved settings. No option is selected, and **{{ui:admin.security.saveSettings}}** stays greyed out so nothing can overwrite them | Reload the page |
 | **Cannot enable REQUIRED MFA: at least one active owner or admin must be enrolled in MFA first. Please set up MFA for your account before enabling this policy.** | No active Owner or Admin has set up MFA in this workspace | Set up MFA for your own account, then save again |
 | **Session max age must be at least 5 minutes** or **Session max age cannot exceed 30 days** | The session age is outside the range the field takes | Enter 5 to 43,200 minutes, or leave the field empty |
 | **{{ui:admin.security.failedSave}}** | The save did not go through, and the reason was not given | Reload the page and try again |
-| The {{ui:admin.security.agentEnforcement.title}} card says you do not have permission to read the agent register | Your role cannot read the agent register, or the card could not load | Reload the page. If the note stays, ask an Owner |
+| The {{ui:admin.security.agentEnforcement.title}} card says you do not have permission to read the agent register | Your role cannot read the agent register | Ask an Owner |
+| **{{ui:admin.security.agentEnforcement.loadFailed}}**, or another message, on the {{ui:admin.security.agentEnforcement.title}} card | The card could not load | Reload the page |
 | **{{ui:admin.security.apiKeyRotation.unavailable}}** | The card could not load the rotation age | Reload the page. If the note stays, ask an Owner |
 | The button in the agent registration dialog stays greyed out | What you typed does not match the workspace's short name exactly | Type the name exactly as the field's label shows it |
-| **Invalid cuid** after you click **{{ui:admin.security.revoke}}** | What you typed is not a user ID | Check the ID, or use the {{ui:admin.nav.members}} page |
-| **Target user is not a member of this tenant** | No member of this workspace has that ID | Check the ID |
+| **Target user is not a member of this tenant** | The person stopped being a member after the page loaded | Reload the page |
+| **{{ui:admin.security.mySessionsRevoked}}** | Inflect could not tell the session you are using apart from your others, so it revoked all of them | Sign in again |
 | **{{ui:admin.security.failedRevokeSessions}}** | Your own sessions could not be revoked | Try again |
 | **{{ui:admin.security.failedRevoke}}** or **{{ui:admin.security.failedRevokeUser}}** | The revocation did not go through, and the reason was not given | Reload the page and try again |
 

@@ -13,6 +13,7 @@ import {
     MIN_KEY_ROTATION_DAYS,
     resolveRotationAge,
 } from '@/lib/agentic/credential-hygiene';
+import { keysRefusedWhenEnforcing } from '@/lib/agentic/agent-registration-gate';
 import type { AiGuardMode, AiResidency, LegacyMatchAiMode } from '@prisma/client';
 
 /**
@@ -95,8 +96,8 @@ export interface AgentEnforcementPreflight {
     /** What the tenant does TODAY. */
     enforcing: boolean;
     /**
-     * The credentials that would be refused at the tool boundary the moment
-     * enforcement is switched on — every ACTIVE key with no agent binding.
+     * The credentials the tool boundary refuses while enforcement is on — the
+     * live keys that can reach it and are not bound to an ACTIVE agent.
      */
     breaking: BreakingCredential[];
 }
@@ -118,10 +119,19 @@ export interface AgentEnforcementPreflight {
  *
  * ── WHAT COUNTS AS "WOULD BREAK" ────────────────────────────────────
  *
- * ACTIVE and UNBOUND. Revoked and expired keys are excluded deliberately —
- * they do not work now, so calling them casualties of a change that has not
- * happened would pad the list with rows an operator cannot act on, and a list
- * you cannot act on is a list people learn to skip.
+ * A LIVE key the agent tool boundary refuses under enforcement, decided by the
+ * gate's own code (`keysRefusedWhenEnforcing`), never by a second predicate
+ * here (#4117). That is a key the `/api/mcp` capability gate admits — one
+ * carrying `mcp:read`, `mcp:propose`, `mcp:*` or `*` — and that is not bound to
+ * an ACTIVE registered agent: unbound, or bound to a DRAFT, SUSPENDED or RETIRED
+ * agent, or to one the register no longer holds. This list used to be "every
+ * live key with no binding", which named integration keys enforcement never
+ * touches and left out keys bound to a stopped agent, which it refuses.
+ *
+ * Revoked and expired keys are excluded deliberately — they do not work now,
+ * so calling them casualties of a change that has not happened would pad the
+ * list with rows an operator cannot act on, and a list you cannot act on is a
+ * list people learn to skip.
  */
 export async function previewAgentEnforcement(
     ctx: RequestContext,
@@ -134,16 +144,31 @@ export async function previewAgentEnforcement(
             select: { requireRegisteredAgent: true },
         });
 
-        const breaking = await db.tenantApiKey.findMany({
+        // Every LIVE key, bound or not: whether one is refused is the gate's
+        // decision, made below by the gate's own code.
+        const live = await db.tenantApiKey.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                agentId: null,
                 revokedAt: null,
                 OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
             },
-            select: { id: true, name: true, keyPrefix: true, lastUsedAt: true },
+            select: {
+                id: true,
+                name: true,
+                keyPrefix: true,
+                lastUsedAt: true,
+                agentId: true,
+                scopes: true,
+            },
             orderBy: [{ lastUsedAt: 'desc' }, { name: 'asc' }],
         });
+        const refused = await keysRefusedWhenEnforcing(db, ctx.tenantId, live);
+        const breaking = refused.map(({ id, name, keyPrefix, lastUsedAt }) => ({
+            id,
+            name,
+            keyPrefix,
+            lastUsedAt,
+        }));
 
         return {
             // An ABSENT row reads as ENFORCING — the column defaults true, and a

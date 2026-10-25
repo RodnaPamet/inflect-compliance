@@ -129,7 +129,10 @@ describe('Epic 64 — window.confirm() ceiling', () => {
     // same page (both native confirms; the bulk top-action-row already routes
     // through <Modal.Confirm>). A full page migration to modal confirms is a
     // separate follow-up.
-    const CONFIRM_CALL_CEILING = 18;
+    //
+    // 2026-10-25 — −3 (15): the Security & MFA page's three session
+    // revocations moved to <ConfirmDialog> (#4117).
+    const CONFIRM_CALL_CEILING = 15;
 
     it(`has at most ${CONFIRM_CALL_CEILING} native-confirm call sites under the tenant app`, () => {
         const offenders: string[] = [];

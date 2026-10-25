@@ -13,8 +13,12 @@
  *   2. The membership lookup keys on `tenantId_userId` — a refactor
  *      that lookups by `userId` alone would let admin in tenant A
  *      revoke admin in tenant B.
- *   3. revokeAllTenantSessions is canAdmin-only and bulk-increments
- *      every member's sessionVersion.
+ *   3. revokeAllTenantSessions is canAdmin-only and revokes every
+ *      ACTIVE member's sessions — never a deactivated member's — keeping
+ *      the caller's current session (#4117).
+ *   3b. revokeOtherSessions ("Sign Out Other Sessions") revokes every
+ *      session of the caller's EXCEPT the one making the request, and
+ *      bumps no sessionVersion, which would sign that one out too (#4117).
  *   4. Audit emit is best-effort (failure NEVER blocks the revoke).
  *   5. getUserSessionVersion returns 0 when the user row is absent
  *      (safe default — auth callback treats this as "no session has
@@ -28,10 +32,16 @@ jest.mock('@/lib/prisma', () => ({
             update: jest.fn(),
             updateMany: jest.fn(),
         },
+        userSession: {
+            findUnique: jest.fn(),
+            updateMany: jest.fn(),
+        },
         tenantMembership: {
             findUnique: jest.fn(),
             findMany: jest.fn(),
         },
+        // The array form: every op is already a (mocked) promise.
+        $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
     },
 }));
 
@@ -41,7 +51,7 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
 
 import {
     revokeUserSessions,
-    revokeCurrentSession,
+    revokeOtherSessions,
     revokeAllTenantSessions,
     getUserSessionVersion,
 } from '@/app-layer/usecases/session-security';
@@ -54,11 +64,27 @@ const mockUserUpdate = prisma.user.update as jest.MockedFunction<typeof prisma.u
 const mockUserUpdateMany = prisma.user.updateMany as jest.MockedFunction<typeof prisma.user.updateMany>;
 const mockMembershipFindUnique = prisma.tenantMembership.findUnique as jest.MockedFunction<typeof prisma.tenantMembership.findUnique>;
 const mockMembershipFindMany = prisma.tenantMembership.findMany as jest.MockedFunction<typeof prisma.tenantMembership.findMany>;
+const mockSessionFindUnique = prisma.userSession.findUnique as jest.MockedFunction<typeof prisma.userSession.findUnique>;
+const mockSessionUpdateMany = prisma.userSession.updateMany as jest.MockedFunction<typeof prisma.userSession.updateMany>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
+
+/** A live session row of the caller's (`makeRequestContext` userId is `user-1`). */
+const liveOwnRow = (overrides: Record<string, unknown> = {}) =>
+    ({
+        userId: 'user-1',
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 3_600_000),
+        ...overrides,
+    }) as never;
 
 beforeEach(() => {
     jest.clearAllMocks();
     mockUserUpdate.mockResolvedValue({ id: 'user-1', sessionVersion: 2 } as never);
+    mockUserUpdateMany.mockResolvedValue({ count: 0 } as never);
+    mockSessionUpdateMany.mockResolvedValue({ count: 0 } as never);
+    // RESET, not clear: a `…Once` value a test queued and the code never read
+    // (no session id → no lookup) would otherwise leak into the next test.
+    mockSessionFindUnique.mockReset().mockResolvedValue(null);
 });
 
 describe('revokeUserSessions — self vs other', () => {
@@ -125,48 +151,139 @@ describe('revokeUserSessions — self vs other', () => {
     });
 });
 
-describe('revokeCurrentSession', () => {
-    it('delegates to revokeUserSessions with the caller userId', async () => {
-        const ctx = makeRequestContext('EDITOR');
+describe('revokeOtherSessions — "Sign Out Other Sessions" keeps this session', () => {
+    it('revokes every OTHER row of the caller and bumps no sessionVersion', async () => {
+        // #4117: this used to delegate to revokeUserSessions, whose version bump
+        // invalidates EVERY JWT the person holds — the one making the request
+        // included — so the button signed its own user out.
+        mockSessionFindUnique.mockResolvedValueOnce(liveOwnRow());
+        mockSessionUpdateMany.mockResolvedValueOnce({ count: 3 } as never);
+        const ctx = makeRequestContext('READER');
 
-        const result = await revokeCurrentSession(ctx);
+        const result = await revokeOtherSessions(ctx, 'sess-current');
 
-        expect(mockUserUpdate).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { id: ctx.userId } }),
+        expect(result).toEqual({ userId: ctx.userId, currentSessionKept: true, sessionsRevoked: 3 });
+        expect(mockSessionUpdateMany).toHaveBeenCalledTimes(1);
+        expect(mockSessionUpdateMany).toHaveBeenCalledWith({
+            where: { userId: ctx.userId, revokedAt: null, sessionId: { not: 'sess-current' } },
+            data: expect.objectContaining({ revokedAt: expect.any(Date), revokedReason: 'user:sign-out-others' }),
+        });
+        expect(mockUserUpdate).not.toHaveBeenCalled();
+        expect(mockUserUpdateMany).not.toHaveBeenCalled();
+        expect(mockLog).toHaveBeenCalledWith(
+            expect.anything(),
+            ctx,
+            expect.objectContaining({ action: 'OTHER_SESSIONS_REVOKED', entityId: ctx.userId }),
         );
-        expect(result.userId).toBe('user-1');
+    });
+
+    it.each([
+        ['no session id on the token', null, null],
+        ['no row for the id', 'sess-x', null],
+        ["someone else's row", 'sess-x', liveOwnRow({ userId: 'other-user' })],
+        ['a revoked row', 'sess-x', liveOwnRow({ revokedAt: new Date() })],
+        ['an expired row', 'sess-x', liveOwnRow({ expiresAt: new Date(Date.now() - 1000) })],
+    ])('with %s, revokes everything, this session included, and says so', async (_label, id, row) => {
+        // The others cannot be told apart from this one, so the fail direction
+        // is the one that still signs a stolen session out.
+        mockSessionFindUnique.mockResolvedValueOnce(row);
+        const ctx = makeRequestContext('READER');
+
+        const result = await revokeOtherSessions(ctx, id);
+
+        expect(result.currentSessionKept).toBe(false);
+        expect(mockUserUpdateMany).toHaveBeenCalledWith({
+            where: { id: { in: [ctx.userId] } },
+            data: { sessionVersion: { increment: 1 } },
+        });
+        expect(mockSessionUpdateMany).toHaveBeenCalledWith({
+            where: { userId: { in: [ctx.userId] }, revokedAt: null },
+            data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+        });
     });
 });
 
 describe('revokeAllTenantSessions', () => {
     it('rejects EDITOR (admin-only)', async () => {
         await expect(
-            revokeAllTenantSessions(makeRequestContext('EDITOR')),
+            revokeAllTenantSessions(makeRequestContext('EDITOR'), 'sess-current'),
         ).rejects.toThrow(/Only admins/);
     });
 
-    it('returns {usersAffected: 0} when the tenant has no memberships', async () => {
+    it('returns {usersAffected: 0} when the tenant has no active memberships', async () => {
         mockMembershipFindMany.mockResolvedValueOnce([] as never);
 
-        const result = await revokeAllTenantSessions(makeRequestContext('ADMIN'));
+        const result = await revokeAllTenantSessions(makeRequestContext('ADMIN'), 'sess-current');
 
         expect(result.usersAffected).toBe(0);
         expect(mockUserUpdateMany).not.toHaveBeenCalled();
+        expect(mockSessionUpdateMany).not.toHaveBeenCalled();
     });
 
-    it('bulk-increments sessionVersion for every member of the tenant', async () => {
+    it('reads ACTIVE members only — a deactivated member is left alone', async () => {
+        // #4117 (owner decision): a session belongs to the person, so revoking a
+        // deactivated member's sessions would only sign them out of the OTHER
+        // workspaces they still work in. The query used to carry no status.
+        mockMembershipFindMany.mockResolvedValueOnce([] as never);
+
+        await revokeAllTenantSessions(makeRequestContext('ADMIN', { tenantId: 'tenant-A' }), null);
+
+        expect(mockMembershipFindMany).toHaveBeenCalledWith({
+            where: { tenantId: 'tenant-A', status: 'ACTIVE' },
+            select: { userId: true },
+        });
+    });
+
+    it("revokes every other member's sessions and the caller's OTHER sessions, keeping this one", async () => {
         mockMembershipFindMany.mockResolvedValueOnce([
-            { userId: 'u1' }, { userId: 'u2' }, { userId: 'u3' },
+            { userId: 'u1' }, { userId: 'user-1' }, { userId: 'u3' },
         ] as never);
-        mockUserUpdateMany.mockResolvedValueOnce({ count: 3 } as never);
+        mockSessionFindUnique.mockResolvedValueOnce(liveOwnRow());
+        const ctx = makeRequestContext('ADMIN');
 
-        const result = await revokeAllTenantSessions(makeRequestContext('ADMIN'));
+        const result = await revokeAllTenantSessions(ctx, 'sess-current');
 
+        expect(result).toEqual({ usersAffected: 3, currentSessionKept: true });
+        // The caller is NOT in the version bump: it would end this session too.
         expect(mockUserUpdateMany).toHaveBeenCalledWith({
-            where: { id: { in: ['u1', 'u2', 'u3'] } },
+            where: { id: { in: ['u1', 'u3'] } },
             data: { sessionVersion: { increment: 1 } },
         });
-        expect(result.usersAffected).toBe(3);
+        expect(mockSessionUpdateMany).toHaveBeenCalledWith({
+            where: { userId: { in: ['u1', 'u3'] }, revokedAt: null },
+            data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+        });
+        expect(mockSessionUpdateMany).toHaveBeenCalledWith({
+            where: { userId: ctx.userId, revokedAt: null, sessionId: { not: 'sess-current' } },
+            data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+        });
+    });
+
+    it("leaves the caller's sessions alone when the caller is not an ACTIVE member here", async () => {
+        mockMembershipFindMany.mockResolvedValueOnce([{ userId: 'u1' }, { userId: 'u2' }] as never);
+
+        const result = await revokeAllTenantSessions(makeRequestContext('ADMIN'), 'sess-current');
+
+        expect(result).toEqual({ usersAffected: 2, currentSessionKept: true });
+        expect(mockUserUpdateMany).toHaveBeenCalledWith({
+            where: { id: { in: ['u1', 'u2'] } },
+            data: { sessionVersion: { increment: 1 } },
+        });
+        expect(mockSessionFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('signs the caller out with everyone when the current session cannot be identified', async () => {
+        mockMembershipFindMany.mockResolvedValueOnce([
+            { userId: 'u1' }, { userId: 'user-1' },
+        ] as never);
+
+        const result = await revokeAllTenantSessions(makeRequestContext('ADMIN'), null);
+
+        expect(result).toEqual({ usersAffected: 2, currentSessionKept: false });
+        expect(mockUserUpdateMany).toHaveBeenCalledWith({
+            where: { id: { in: ['u1', 'user-1'] } },
+            data: { sessionVersion: { increment: 1 } },
+        });
     });
 });
 

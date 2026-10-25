@@ -13,9 +13,13 @@
  * callback sets `mfaPending = false` for everyone (src/auth.ts), and nothing on
  * the enrolment path reads the policy (`startMfaEnrollment`, the personal MFA
  * page), so users can still enrol and are simply never asked for a code.
+ *
+ * A failed settings read used to leave the page on its starting values —
+ * Disabled and no session age — with no error, and Save then wrote those over
+ * the real settings (#4117). It now shows the server's sentence and Save is off.
  */
 import * as React from 'react';
-import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor, within } from '@testing-library/react';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
@@ -42,6 +46,10 @@ const refusal = (status: number, code: string, message: string) =>
     }) as unknown as Response;
 
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+
+const SECURITY = (
+    require('../../messages/en.json') as { admin: { security: Record<string, string> } }
+).admin.security;
 
 function mount(overrides: Record<string, (init?: RequestInit) => Response> = {}) {
     global.fetch = jest.fn(async (url: unknown, init?: RequestInit) => {
@@ -99,26 +107,35 @@ describe('admin Security & MFA page', () => {
     });
 
     it('shows the server sentence when revoking every session is refused', async () => {
-        jest.spyOn(window, 'confirm').mockReturnValue(true);
+        // Confirmed in the product's dialog now, not the browser's `confirm()` (#4117).
         mount({ 'POST /security/sessions/revoke-all': () => refusal(403, 'FORBIDDEN', 'You do not have permission to revoke sessions.') });
         await loaded();
 
         fireEvent.click(document.getElementById('revoke-all-sessions-btn') as HTMLElement);
+        const dialog = await screen.findByRole('dialog');
+        fireEvent.click(within(dialog).getByRole('button', { name: SECURITY.revokeAllConfirmLabel }));
 
         expect(await screen.findByText('You do not have permission to revoke sessions.')).toBeInTheDocument();
         expect(screen.queryByText('[object Object]')).not.toBeInTheDocument();
     });
 
-    it("shows the server sentence when revoking one user's sessions is refused", async () => {
-        jest.spyOn(window, 'confirm').mockReturnValue(true);
-        mount({ 'POST /security/sessions/revoke-user': () => refusal(400, 'BAD_REQUEST', 'targetUserId is required') });
-        await loaded();
+    // The one-member refusal moved to admin-security-sessions.test.tsx with the
+    // people picker that replaced the user-id box (#4117).
 
-        fireEvent.change(document.getElementById('revoke-user-id-input') as HTMLElement, { target: { value: 'user-9' } });
-        fireEvent.click(document.getElementById('revoke-user-btn') as HTMLElement);
+    it('a failed settings load shows the server sentence and turns Save off, instead of showing Disabled', async () => {
+        mount({ 'GET /security/mfa/policy': () => refusal(500, 'INTERNAL', 'The settings store is unavailable.') });
+        const save = await loaded();
 
-        expect(await screen.findByText('targetUserId is required')).toBeInTheDocument();
-        expect(screen.queryByText('[object Object]')).not.toBeInTheDocument();
+        const notice = await screen.findByTestId('security-settings-load-error');
+        expect(notice).toHaveTextContent('The settings store is unavailable.');
+        expect(notice).toHaveTextContent(SECURITY.saveBlockedUntilLoaded);
+        // Saving from here would write the starting values over the real ones.
+        expect(save).toBeDisabled();
+        // And the page does not claim a policy it never read.
+        expect(screen.getAllByRole('radio')).toHaveLength(3);
+        for (const radio of screen.getAllByRole('radio')) {
+            expect(radio).not.toBeChecked();
+        }
     });
 
     it('warns before Required that single sign-on does not skip the code, instead of promising break-glass through it', async () => {

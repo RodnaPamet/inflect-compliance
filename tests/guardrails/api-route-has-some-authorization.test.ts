@@ -321,6 +321,12 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       note: 'Start MY MFA enrolment (Epic D.3 self-service carve-out).' },
     { handler: 'api/t/[tenantSlug]/security/mfa/enroll/verify/route.ts#POST', klass: 'SESSION_SELF_SERVICE',
       note: 'Verify MY MFA enrolment (Epic D.3 self-service carve-out).' },
+    { handler: 'api/t/[tenantSlug]/security/sessions/revoke-current/route.ts#POST', klass: 'SESSION_SELF_SERVICE',
+      note:
+          'Sign out MY other sessions (#4117; the Epic D.3 own-session carve-out). Acts on ctx.userId only, ' +
+          'and the session it keeps is read from the verified JWT, never from the body. It used to reach ' +
+          'revokeUserSessions, whose canAdmin check guarded only the OTHER-user branch: the graph found a ' +
+          'decision that never applied to this route.' },
 
     // ── CAPABILITY_TOKEN ─────────────────────────────────────────────
     //
