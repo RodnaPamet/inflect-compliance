@@ -38,6 +38,7 @@ jest.mock('@/app-layer/policies/common', () => ({
 jest.mock('@/app-layer/repositories/ControlRepository', () => ({
     ControlRepository: {
         list: jest.fn(),
+        listDeleted: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
         getHeaderById: jest.fn(),
@@ -425,18 +426,26 @@ describe('runConsistencyCheck', () => {
 // listControlsWithDeleted — admin-only gate
 // ──────────────────────────────────────────────────────────────────────
 describe('listControlsWithDeleted', () => {
+    // The deleted-only narrowing itself lives in `ControlRepository.listDeleted`
+    // and is exercised against Postgres in
+    // tests/integration/list-multi-select-and-deleted-views.test.ts.
     it('asserts admin permission', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([]);
+        (ControlRepository.listDeleted as jest.Mock).mockResolvedValueOnce([]);
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValueOnce(new Map());
         await listControlsWithDeleted(ctx);
         expect(policyCalls).toEqual(['admin']);
     });
 
-    it('includes soft-deleted rows via withDeleted wrapper', async () => {
-        tenantDb.control.findMany.mockResolvedValueOnce([{ id: 'c-1' }]);
-        await listControlsWithDeleted(ctx);
+    it('passes the page filters to the deleted read and attaches task counts', async () => {
+        (ControlRepository.listDeleted as jest.Mock).mockResolvedValueOnce([{ id: 'c-1' }]);
+        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValueOnce(
+            new Map([['c-1', { total: 3, done: 1 }]]),
+        );
+        const rows = await listControlsWithDeleted(ctx, { q: 'mfa', ownerUserId: 'u-1,u-2' }, { take: 7 });
 
-        // The withDeleted mock decorates the query with includeDeleted:true.
-        const args = tenantDb.control.findMany.mock.calls[0][0];
-        expect(args.includeDeleted).toBe(true);
+        const [, , filters, options] = (ControlRepository.listDeleted as jest.Mock).mock.lastCall;
+        expect(filters).toMatchObject({ q: 'mfa', ownerUserId: 'u-1,u-2' });
+        expect(options).toEqual({ take: 7 });
+        expect(rows).toEqual([{ id: 'c-1', taskTotal: 3, taskDone: 1 }]);
     });
 });
