@@ -58,6 +58,7 @@ import {
     type ScimAssignableRole,
 } from '@/lib/scim/roles';
 import { SCIM_SCHEMAS, type ScimUser } from '@/lib/scim/types';
+import { notifyOwnersOfScimAiAdminDeprovision } from '../notifications/scim-deprovision';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -142,6 +143,35 @@ function assertScimMayWrite(
     throw new ScimForbiddenError(
         `SCIM cannot modify a ${membership.role} membership; change it in the admin UI`,
     );
+}
+
+/**
+ * After a SCIM write took an AI_ADMIN membership from ACTIVE to DEACTIVATED,
+ * tell the workspace's Owners (owner decision, 2026-10-25). AI_ADMIN is the
+ * one owner-managed role SCIM may switch off (`isScimStatusProtectedRole`).
+ *
+ * Best-effort: the deprovision is committed, and a SCIM response that failed
+ * over a notification would tell the IdP the user is still active.
+ */
+async function noticeAiAdminDeprovision(
+    tenantId: string,
+    before: { id: string; role: string; status: string; userId: string },
+    deactivatedAt: Date,
+): Promise<void> {
+    if (before.role !== 'AI_ADMIN' || before.status !== 'ACTIVE') return;
+    try {
+        await notifyOwnersOfScimAiAdminDeprovision(prisma, {
+            tenantId,
+            userId: before.userId,
+            membershipId: before.id,
+            deactivatedAt,
+        });
+    } catch (err) {
+        logger.warn('SCIM AI-admin deprovision notice failed', {
+            component: 'scim', tenantId, userId: before.userId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
 }
 
 // ─── Role Resolution ─────────────────────────────────────────────────
@@ -526,13 +556,17 @@ export async function scimPatchUser(
         if (statusUpdate !== membership.status) {
             assertScimMayWrite(membership, 'patch:active', userId, ctx.tenantId);
         }
+        const deactivatedAt = new Date();
         await prisma.tenantMembership.update({
             where: { id: membership.id },
             data: {
                 status: statusUpdate,
-                ...(statusUpdate === 'DEACTIVATED' ? { deactivatedAt: new Date() } : { deactivatedAt: null }),
+                ...(statusUpdate === 'DEACTIVATED' ? { deactivatedAt } : { deactivatedAt: null }),
             },
         });
+        if (statusUpdate === 'DEACTIVATED') {
+            await noticeAiAdminDeprovision(ctx.tenantId, membership, deactivatedAt);
+        }
     }
 
     // Apply safe role update (never against a protected membership)
@@ -682,13 +716,17 @@ export async function scimPutUser(
     const newStatus = input.active === false ? 'DEACTIVATED' : 'ACTIVE';
     if (membership.status !== newStatus) {
         assertScimMayWrite(membership, 'put:active', userId, ctx.tenantId);
+        const deactivatedAt = new Date();
         await prisma.tenantMembership.update({
             where: { id: membership.id },
             data: {
                 status: newStatus,
-                ...(newStatus === 'DEACTIVATED' ? { deactivatedAt: new Date() } : { deactivatedAt: null }),
+                ...(newStatus === 'DEACTIVATED' ? { deactivatedAt } : { deactivatedAt: null }),
             },
         });
+        if (newStatus === 'DEACTIVATED') {
+            await noticeAiAdminDeprovision(ctx.tenantId, membership, deactivatedAt);
+        }
     }
 
     // Safe role mapping for PUT
@@ -723,10 +761,12 @@ export async function scimDeleteUser(ctx: ScimContext, userId: string): Promise<
 
     assertScimMayWrite(membership, 'delete', userId, ctx.tenantId);
 
+    const deactivatedAt = new Date();
     await prisma.tenantMembership.update({
         where: { id: membership.id },
-        data: { status: 'DEACTIVATED', deactivatedAt: new Date() },
+        data: { status: 'DEACTIVATED', deactivatedAt },
     });
+    await noticeAiAdminDeprovision(ctx.tenantId, membership, deactivatedAt);
 
     await emitScimAudit(ctx.tenantId, 'SCIM_USER_DEACTIVATED', userId, {
         email: membership.user.email,
