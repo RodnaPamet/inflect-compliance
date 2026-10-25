@@ -104,7 +104,9 @@ describe('which is the only reason the one-argument call is safe', () => {
     it('and the adapter that offers tools to an agent passes it too', () => {
         // The third consumer, added with the Flue surface. Three readers, two
         // of which honour an override and one of which cannot see it.
-        expect(read('src/lib/agentic/flue/tools-adapter.ts')).toContain(
+        // The narrowing moved with the engine-neutral core (Step 0a), so it
+        // now serves every engine, not Flue alone.
+        expect(read('src/lib/agentic/engine-tools/offer-tools.ts')).toContain(
             'requiredAutonomyFor(capability, tool.authorize.autonomy)',
         );
     });

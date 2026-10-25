@@ -2682,8 +2682,49 @@ tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
   `TenantMembership.role` ascending to find the most senior member; an AI_ADMIN
   must never sort ahead of ADMIN. The migration is a plain `ADD VALUE`.
 
+### Claude agent engines
 
+An agent builder that lets a customer set up their own agent with no CLI, and
+the engines that run what it builds: the Tool Runner first, the Agent SDK if a
+profile ever needs it, and Managed Agents for profiles that need a container.
+**The three design documents are the source of truth for intent**:
+`docs/claude-agent-sdk-design.md` (the builder, Phases 0, 1, 3 and 4, and the
+global rules every step obeys), `docs/claude-tool-runner-design.md` (Phase 2)
+and `docs/claude-managed-agents-design.md` (Phases 5 and 6). The work is the
+step issues under #4135, one pull request each.
 
+Three of the global rules, because they are the ones a careless edit undoes:
+
+- **The engine decides what to try; the funnel decides what is permitted.**
+  Every tool call any engine makes goes through `runGuardedTool` →
+  `runReadTool` / `runProposeTool`. An engine module holds no permission check,
+  no usecase call and no Prisma call.
+- **Authority only narrows.** A profile's tools are a subset of the agent's
+  grants, instructions teach and never grant, and nothing a tenant writes can
+  widen a grant, a ceiling or a scope.
+- **Nothing new is stored at Anthropic without the sub-processor step.** The
+  hosted engines send Messages API calls only (`thread: false`,
+  `persistSession: false`); Managed Agents stores data by design and is gated in
+  its own phases.
+
+**The tool core is engine-neutral** (`src/lib/agentic/engine-tools/`, Step 0a).
+The scope / autonomy / read-only narrowing (`offerToolSet`), the review latch and
+the guarded call live there, and `eslint.config.mjs` refuses any import of
+`@flue/*`, `valibot` or `@earendil-works/*` under it. An engine supplies only its
+tool shape (a `ToolBuilder`) and its guard source prefix; `runGuardedTool` takes
+the prefix with no default, so a new engine names its own audit rows. Flue's
+prefix is `'flue'`, which keeps every guard source byte-identical to what it was
+before the move.
+
+**"Is this a reasoning engine" is `isReasoningEngine(driver)`**
+(`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
+backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
+without a classification fails `tsc`. The registration gate, the skill pin and
+the worker hand-off in `startWorkflowRun` and `resumeWorkflowRun` ask it, so the
+next engine is vouched, pinned and kept off the web tier without anybody
+remembering those lines. A comparison that genuinely means Flue (the
+`FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
+stays a comparison.
 
 ## Testing Conventions
 

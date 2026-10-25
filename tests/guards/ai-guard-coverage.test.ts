@@ -130,7 +130,7 @@ const AI_GUARD_EXEMPT: Readonly<Record<string, string>> = {
         'Act Art 14) and assembles no prompt of its own. The run engines do ' +
         'that: the static driver has no model call at all, and the Flue ' +
         "driver's ingestion is guarded at the tool boundary in " +
-        '`flue/tools-adapter.ts`, whose own tests assert both slices.',
+        '`engine-tools/run-guarded-tool.ts`, whose tests assert both slices.',
     'src/app-layer/usecases/ai-feature-toggles.ts':
         'Imports `ai/risk-assessment/feature-gate` for `isAIRiskEnabled` and ' +
         '`isAiFeatureEnabled` — two reads of process constants, used to report ' +
