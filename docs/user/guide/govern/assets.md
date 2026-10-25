@@ -137,7 +137,7 @@ At present the view always reads **{{ui:assets.deleted.emptyTitle}}**, even when
 | --- | --- | --- |
 | **{{ui:assets.noAssets}}** | The workspace has no assets | Click **{{ui:assets.empty.addAssetAction}}**, or import assets |
 | **{{ui:assets.empty.noResultsTitle}}** | No asset matches the search and filters. A list that failed to load after you changed a filter shows the same message | Click **{{ui:assets.empty.clearFilters}}**, or reload the page |
-| **{{ui:assets.deleted.emptyTitle}}** | Shown in the deleted view whether or not assets have been deleted | See [Restore or purge deleted assets](#restore-or-purge-deleted-assets) |
+| **{{ui:assets.deleted.emptyTitle}}** | No asset is deleted | Nothing to restore |
 | **{{ui:assets.bulk.actionFailed}}** | A bulk action did not go through, because more than 100 rows were selected or your role cannot delete | Select fewer rows, or ask an Owner or Admin to delete |
 | A banner saying only the first 5,000 results are shown | More than 5,000 assets match the search and filters | Narrow the list with a filter or the search |
 | **A resource with that unique constraint already exists** in the new-asset dialog | Another asset already has that name | Choose a different name |

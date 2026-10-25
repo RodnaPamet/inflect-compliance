@@ -136,15 +136,17 @@ describe('ControlRepository list `_count` projection', () => {
         expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
-    test('list-shape constant is referenced by list() and listPaginated()', () => {
-        // The performance fix only sticks if both list paths actually
-        // reach the trimmed shape. PR-3 introduced a shared constant —
-        // pin its name so a future refactor can't drop one reference.
+    test('list-shape constant is referenced by list(), listDeleted() and listPaginated()', () => {
+        // The performance fix only sticks if every list path actually
+        // reaches the trimmed shape. PR-3 introduced a shared constant —
+        // pin its name so a future refactor can't drop one reference. The
+        // "Deleted controls" view is the third path (#4275): it shows the
+        // same columns, so it reads the same shape.
         const listFnIndex = repo.indexOf('static async list(');
         const detailIndex = repo.indexOf('static async getById(');
         const listSection = repo.slice(listFnIndex, detailIndex);
         const refs = listSection.match(/controlListSelect/g) ?? [];
-        expect(refs.length).toBe(2);
+        expect(refs.length).toBe(3);
     });
 
     test('no list-shape _count includes the unused four keys', () => {
