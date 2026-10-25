@@ -200,7 +200,7 @@ COPY --from=builder /app/src/data/libraries ./src/data/libraries
 # start, in the web tier and the worker alike. Without them every start fails
 # with ENOENT and answers 500 (#4301). Each skill's SKILL.md, evaluation set
 # and evaluation-record.json travel together; the mount gate reads all three.
-# tests/guardrails/cwd-reads-reach-the-image.test.ts holds every such read.
+# tests/guardrails/catalogue-reaches-production.test.ts holds every such read.
 COPY --from=builder /app/src/lib/agentic/flue/skills ./src/lib/agentic/flue/skills
 # Prisma 7 — connection URL config moved out of `datasource db {}`
 # in `prisma/schema/base.prisma` into `prisma.config.ts`. The CLI
