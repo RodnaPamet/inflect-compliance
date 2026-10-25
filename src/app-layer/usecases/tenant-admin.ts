@@ -20,6 +20,7 @@ import {
     assertNotSelfDeactivation,
 } from '../policies/admin.policies';
 import { assertCanRead } from '../policies/common';
+import { memberCanSignOffTasks, REVIEWER_ELIGIBILITY_SELECT } from './task-reviewer-eligibility';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
@@ -130,6 +131,16 @@ export interface AssignableUser {
 
 export async function listAssignableUsers(
     ctx: RequestContext,
+    options: {
+        /**
+         * #4278 — only the members a task's reviewer may be: those whose
+         * role can edit tasks, and so can sign one off. The same rule the
+         * task write paths enforce (`memberCanSignOffTasks`), so the
+         * reviewer picker offers exactly the people the write accepts.
+         * The roster shape is unchanged — no role leaves the server.
+         */
+        taskReviewersOnly?: boolean;
+    } = {},
 ): Promise<AssignableUser[]> {
     assertCanRead(ctx);
     const memberships = await runInTenantContext(ctx, (db) =>
@@ -139,6 +150,7 @@ export async function listAssignableUsers(
                 status: 'ACTIVE',
             },
             select: {
+                ...REVIEWER_ELIGIBILITY_SELECT,
                 user: {
                     select: {
                         id: true,
@@ -152,7 +164,10 @@ export async function listAssignableUsers(
             take: MEMBERSHIP_SCAN_CAP,
         }),
     );
-    return memberships.map((m) => ({
+    const eligible = options.taskReviewersOnly
+        ? memberships.filter((m) => memberCanSignOffTasks(m))
+        : memberships;
+    return eligible.map((m) => ({
         id: m.user.id,
         name: m.user.name,
         email: m.user.email,

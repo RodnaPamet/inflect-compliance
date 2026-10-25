@@ -7911,7 +7911,8 @@
       "linksFailedDetail": "Task created, but {count, plural, one {# link} other {# links}} failed to attach: {detail}. Add them from the task page.",
       "linksFailed": "Task created, but {count, plural, one {# link} other {# links}} failed to attach.",
       "requiresControlOrLink": "Audit Finding / Control Gap requires a control or framework requirement link.",
-      "requiresAssetOrControl": "Incident requires an asset or control link."
+      "requiresAssetOrControl": "Incident requires an asset or control link.",
+      "linkedRecord": "Linked record"
     },
     "detail": {
       "notFound": "Task not found",
@@ -7997,6 +7998,7 @@
       "reviewerLabel": "Reviewer:",
       "noReviewer": "No reviewer",
       "setReviewer": "Set reviewer",
+      "reviewerCannotSignOff": "This reviewer cannot sign the task off — only an active member whose role can edit tasks can. Choose another reviewer.",
       "reviewerFailed": "Failed to set reviewer",
       "watchersLabel": "Watchers:",
       "noWatchers": "No watchers",
