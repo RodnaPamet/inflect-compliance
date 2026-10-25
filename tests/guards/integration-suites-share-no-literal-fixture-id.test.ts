@@ -66,9 +66,27 @@ const stripComments = (s: string): string =>
 
 const CREATE = /\b(?:prisma|db|tx|client)\s*\.\s*(user|tenant)\s*\.\s*(?:create|createMany|upsert)\s*\(/g;
 const LITERAL_ID = /\bid:\s*'([A-Za-z0-9][A-Za-z0-9._-]{1,60})'/g;
+/**
+ * A literal email in the same call.
+ *
+ * `User.email` is NOT unique — it is `@map("emailEncrypted")` — but `emailHash`
+ * IS, and it is derived on write rather than left null. So two suites that pick
+ * different ids and the SAME address still collide, on a constraint neither
+ * mentions.
+ *
+ * This is not a hypothetical. It is what tranche 1 hit: giving
+ * `legacy-reviewer-actions` a suite-unique id turned its `upsert` from an
+ * adoption into an INSERT, and `reviewer@lra.test`'s hash already existed on the
+ * row left behind under the old shared id. 66 of 66 tests failed on
+ * `User_emailHash_key`. Fixing the id without moving the address is a change
+ * that passes review and fails CI.
+ */
+const LITERAL_EMAIL = /\bemail:\s*'([^'\s]+@[^'\s]+)'/g;
 
 /** model:id → the suites that create it. */
 const owners = new Map<string, Set<string>>();
+/** email → the suites that create a user with it. */
+const addresses = new Map<string, Set<string>>();
 /** Suites that create a `User`/`Tenant` AT ALL — the population that could collide. */
 let creatingSuites = 0;
 
@@ -86,6 +104,12 @@ for (const file of repoFiles({ under: 'tests/integration', extensions: ['.ts'] }
             const key = `${model}:${id}`;
             if (!owners.has(key)) owners.set(key, new Set());
             owners.get(key)!.add(rel);
+        }
+        if (model === 'user') {
+            for (const email of [...args.matchAll(LITERAL_EMAIL)].map((x) => x[1].toLowerCase())) {
+                if (!addresses.has(email)) addresses.set(email, new Set());
+                addresses.get(email)!.add(rel);
+            }
         }
     }
     if (creates) creatingSuites += 1;
@@ -111,6 +135,10 @@ describe('integration suites do not share a literal fixture id', () => {
         // independently of CREATE; without it, a dead id regex and a clean
         // codebase are the same green.
         expect(owners.size).toBeGreaterThanOrEqual(5);
+
+        // And the same for the email detector, which has its own regex and can
+        // therefore break on its own. Measured: 9 suites, 10 distinct addresses.
+        expect(addresses.size).toBeGreaterThanOrEqual(5);
     });
 
     it('no User or Tenant literal id is created by two different suites', () => {
@@ -123,6 +151,19 @@ describe('integration suites do not share a literal fixture id', () => {
         // entry here is new. The fix is a suite-unique id -- and note the EMAIL
         // must move with it, because `emailHash` carries User's only unique
         // index and a row left under the old id still holds the old address.
+        expect(shared).toEqual([]);
+    });
+
+    it('no literal email is used by two different suites', () => {
+        const shared = [...addresses]
+            .filter(([, suites]) => suites.size > 1)
+            .map(([email, suites]) => `${email} used by ${[...suites].sort().join(', ')}`)
+            .sort();
+
+        // Zero today, so this is a prohibition rather than a ratchet — and it
+        // guards the OTHER half of a suite-unique fixture. A unique id with a
+        // shared address fails on `User_emailHash_key`, which names neither the
+        // suite nor the field a reader would look at.
         expect(shared).toEqual([]);
     });
 });
