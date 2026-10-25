@@ -34,6 +34,16 @@
 
 Navigate to: `/t/<your-tenant>/admin` → click **SSO & Identity** pill button.
 
+**Who may change what.** Creating a provider, or changing one of its trust
+fields, is OWNER-tier (`admin.owner_management`; 403 `SSO_TRUST_IS_OWNER_TIER`).
+The trust fields are the OIDC issuer, client ID and discovery URL, the SAML
+entity ID, SSO URL and certificate, the protocol, the email domains and the
+JIT settings (`src/lib/auth/sso-trust-fields.ts`). A trust change removes every
+identity link to the provider in the same transaction; members re-link by
+email on their next sign-in. An ADMIN keeps every other field, the enable and
+enforce switches, and delete. A save that omits the JIT settings keeps the
+stored ones.
+
 ### OIDC Configuration Fields
 
 | Field | Required | Description |
@@ -99,7 +109,8 @@ This prevents tenant admin lockout while maintaining enforcement for all other u
 
 ## JIT Provisioning
 
-When enabled per provider:
+When enabled per provider (set through the API — the admin page has no JIT
+control, and an OWNER-tier change):
 - Users whose email domain matches are auto-created on first SSO login
 - Default role: **READER** (configurable to EDITOR)
 - **ADMIN role is never auto-provisioned** — this is enforced at schema level

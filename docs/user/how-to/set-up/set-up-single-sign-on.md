@@ -4,7 +4,7 @@ Connect your workspace to your company's identity provider over OIDC or SAML 2.0
 
 ## Before you start
 
-- You need the Owner or Admin role.
+- You need the Owner role. Once single sign-on is set up, an Admin can rename the configuration, change its other settings and switch it on, off or to enforced. Only an Owner can change which identity provider it trusts.
 - Agree with your IT team which protocol to use, OIDC or SAML 2.0. The page keeps one configuration of each.
 - For OIDC, IT gives you an issuer URL, a client ID and a client secret.
 - For SAML 2.0, IT gives you the identity provider's entity ID, its sign-in URL and its signing certificate. Inflect does not read a metadata file, so ask for these three values one by one.
@@ -49,7 +49,7 @@ A test that passes signs your browser in through single sign-on, for this worksp
 
 - Set its ACS URL to the {{ui:admin.sso.acsUrl}} value on the page. Some providers call it the single sign-on URL or the reply URL.
 - Set its audience to `https://<your Inflect address>/saml/metadata/<workspace>`. Some providers call this the SP entity ID. The page does not show this value.
-- Sign the whole SAML response, not only the assertion inside it.
+- Sign the whole SAML response, not only the assertion inside it, with SHA-256 or SHA-512. A response signed with SHA-1 is refused.
 - Send the person's email address as the NameID, or in an attribute named `email` or `mail`.
 
 **On the page:**
@@ -65,6 +65,8 @@ The entity ID, the SSO URL and the certificate are all required.
 ### Changing the settings later
 
 Once saved, the page shows the {{ui:admin.sso.clientSecret}} and the {{ui:admin.sso.certificate}} as dots. Leave the dots as they are to keep the stored value, or type a new value to replace it. Either way, click **{{ui:admin.sso.saveConfig}}**.
+
+Only an Owner can change the values that say which identity provider to trust: the {{ui:admin.sso.issuerUrl}} and {{ui:admin.sso.clientId}}, or the {{ui:admin.sso.entityId}}, {{ui:admin.sso.ssoUrl}} and {{ui:admin.sso.certificate}}, and the {{ui:admin.sso.emailDomains}}. Admins see these fields greyed out. Saving a change to any of them unlinks every member from the configuration. Nobody is signed out, and each member's next single sign-on sign-in links their account again by email.
 
 ## Make single sign-on the only way in
 
@@ -101,6 +103,7 @@ When a sign-in fails, the Inflect sign-in page opens with a message. The message
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
+| **Only an Owner can set up single sign-on or change whom it trusts…** when you save | You are not an Owner, and the save would create the configuration or change which identity provider it trusts | Ask an Owner to make that change. You can still save the other settings |
 | **Invalid request payload** when you save | A required field is empty, or a value is not in the expected form | Fill in every field for your protocol. URLs must be full web addresses. Domains look like `acme.com` |
 | **Enter the client secret for this provider.** or **Enter the certificate for this provider.** when you save | There is no stored value to keep: the configuration is new, or an earlier save lost it | Paste the real value into the field and save |
 | **Cannot enforce SSO: at least one admin must have a local password for break-glass access** when you save | No active Owner or Admin of this workspace has a password | Set a password on one of those accounts, then save again |
@@ -117,7 +120,7 @@ When a sign-in fails, the Inflect sign-in page opens with a message. The message
 | **{{ui:login.errors.ssoIncomplete}}**, with `token_error` in the address | Your identity provider refused the client ID or secret | Type the client secret again and save. Check that the app accepts the secret in the request body |
 | The same message, with `id_token_invalid` | Inflect could not verify the identity provider's ID token | Check that the {{ui:admin.sso.issuerUrl}} is exactly the issuer the provider names, that tokens are issued to this client ID, and that they are signed with the provider's own keys. For Microsoft Entra ID, use your directory's own address |
 | The same message, with `no_email` | The identity provider sent no email address | For OIDC, keep `email` in {{ui:admin.sso.scopes}}. For SAML, send the email as the NameID or in an `email` attribute |
-| The same message, with `validation_failed` | Inflect cannot verify the identity provider's SAML response | Check that the certificate is current, the whole response is signed, and the entity ID and audience match |
+| The same message, with `validation_failed` | Inflect cannot verify the identity provider's SAML response | Check that the certificate is current, the whole response is signed with SHA-256 or SHA-512, the response comes from the entity ID on the page, and the audience matches |
 | The same message, with `subject_conflict` | This Inflect account is already linked to a different account at your identity provider | Sign in with the identity provider account that was used the first time |
 | The same message, with `missing_relay` | A SAML sign-in started from your identity provider's app dashboard | Start the sign-in from the Inflect sign-in page instead |
 | The same message, with `invalid_state` (OIDC) or `invalid_relay` (SAML) | The sign-in did not start on the Inflect sign-in page in this browser, or took more than 10 minutes | Start again from the Inflect sign-in page, and finish in the same browser |
