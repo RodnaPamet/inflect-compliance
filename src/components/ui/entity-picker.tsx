@@ -268,8 +268,11 @@ export interface EntityPickerProps {
      * type.
      */
     value: string;
-    /** Fires on selection. `''` when the user clears the picker. */
-    onChange: (entityId: string) => void;
+    /**
+     * Fires on selection. `''` when the user clears the picker. `label` is the
+     * option's text, for a caller that shows the choice somewhere else.
+     */
+    onChange: (entityId: string, label?: string) => void;
     /** Stable id for the trigger (used by tests + a11y). */
     id?: string;
     /** Stable testid prefix. Defaults to "entity-picker". */
@@ -347,7 +350,7 @@ export function EntityPicker({
             id={id}
             options={options}
             selected={options.find((o) => o.value === value) ?? null}
-            setSelected={(opt) => onChange(opt?.value ?? '')}
+            setSelected={(opt) => onChange(opt?.value ?? '', typeof opt?.label === 'string' ? opt.label : undefined)}
             placeholder={
                 loading
                     ? t('ui.loading')

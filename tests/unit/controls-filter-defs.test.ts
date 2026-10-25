@@ -31,6 +31,7 @@ import {
     buildControlFilters,
     categoryOptionsFromControls,
     CONTROL_FILTER_KEYS,
+    controlCategoryLabel,
     ownerOptionsFromControls,
 } from '../../src/app/t/[tenantSlug]/(app)/controls/filter-defs';
 
@@ -175,6 +176,22 @@ describe('categoryOptionsFromControls', () => {
                 { category: undefined as unknown as null },
             ]),
         ).toEqual([]);
+    });
+});
+
+describe('a theme-constant category reads as its label (#4275)', () => {
+    // A control created on the Controls page stores `TECHNOLOGICAL`; with no
+    // framework code to group by, the derived category IS that constant.
+    const t = (k: string) => (k === 'categoryLabels.TECHNOLOGICAL' ? 'Technological' : k);
+
+    it('controlCategoryLabel translates a theme and leaves any other category alone', () => {
+        expect(controlCategoryLabel('TECHNOLOGICAL', t)).toBe('Technological');
+        expect(controlCategoryLabel('Access control', t)).toBe('Access control');
+    });
+
+    it('the Category filter offers the label, keeping the stored value as the value', () => {
+        const opts = categoryOptionsFromControls([{ category: 'TECHNOLOGICAL' }], (c) => controlCategoryLabel(c, t));
+        expect(opts).toEqual([{ value: 'TECHNOLOGICAL', label: 'Technological' }]);
     });
 });
 

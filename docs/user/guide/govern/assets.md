@@ -56,7 +56,7 @@ Filters and the search are kept in the page address, so a filtered view can be b
 | --- | --- |
 | {{ui:assets.colHeaders.code}} | The asset's short reference, such as AST-12. Hidden until you turn it on |
 | {{ui:assets.name}} | The asset's name. Click it to open the preview |
-| {{ui:assets.type}} | The kind of asset, in capitals, such as SYSTEM or DATA STORE |
+| {{ui:assets.type}} | The kind of asset, such as {{ui:assets.filterEnums.type.SYSTEM}} or {{ui:assets.filterEnums.type.DATA_STORE}} |
 | {{ui:assets.colHeaders.criticality}} | {{ui:assets.filterEnums.criticality.LOW}}, {{ui:assets.filterEnums.criticality.MEDIUM}}, {{ui:assets.filterEnums.criticality.HIGH}} or {{ui:assets.filterEnums.criticality.CRITICAL}} |
 | {{ui:assets.classification}} | The data classification. Hidden until you turn it on |
 | {{ui:assets.owner}} | The member who owns the asset. A name followed by ({{ui:assets.list.ownerImported}}) came from a CSV import and matched no member |
@@ -74,7 +74,7 @@ An asset's criticality comes from its three scores. Any score of 5 makes it {{ui
 - Click anywhere else on the row to tick it.
 - Double-click the row to open the asset's own page.
 
-**The preview.** It shows the asset's code and type, its criticality and score, its status as ACTIVE or RETIRED, its owner, classification and three scores, and its open vulnerabilities. Location, external reference, data residency, retention and notes appear when they are filled in. While it is open, the ↑ and ↓ keys move to the previous or next asset. They follow the newest-first order even when you have sorted the table. **{{ui:assets.detail.fullView}}** opens the asset's own page.
+**The preview.** It shows the asset's code and type, its criticality and score, its status as {{ui:assets.filterEnums.status.ACTIVE}} or {{ui:assets.filterEnums.status.RETIRED}}, its owner, classification and three scores, and its open vulnerabilities. Location, external reference, data residency, retention and notes appear when they are filled in. While it is open, the ↑ and ↓ keys move to the previous or next asset. They follow the newest-first order even when you have sorted the table. **{{ui:assets.detail.fullView}}** opens the asset's own page.
 
 ## What you can do
 
@@ -83,7 +83,7 @@ An asset's criticality comes from its three scores. Any score of 5 makes it {{ui
 Click **{{ui:assets.addAsset}}**. A dialog opens with these fields:
 
 - **{{ui:assets.name}}**, the only required field. Another asset with exactly the same name is refused.
-- **{{ui:assets.type}}**, one of ten kinds, starting on SYSTEM. The list spells them in capitals.
+- **{{ui:assets.type}}**, one of ten kinds, starting on {{ui:assets.filterEnums.type.SYSTEM}}.
 - **{{ui:assets.classification}}**: {{ui:assets.formOptions.classification.Public}}, {{ui:assets.formOptions.classification.Internal}}, {{ui:assets.formOptions.classification.Confidential}} or {{ui:assets.formOptions.classification.Restricted}}.
 - **{{ui:assets.owner}}**, a member of the workspace, starting on {{ui:assets.form.unassigned}}. Also **{{ui:assets.location}}**, **{{ui:assets.form.status}}** (starting on {{ui:assets.formOptions.status.ACTIVE}}) and **{{ui:assets.dataResidency}}**.
 - **{{ui:assets.crit.heading}}**: sliders for {{ui:assets.confidentiality}}, {{ui:assets.integrity}} and {{ui:assets.availability}}, each starting at 3. The resulting criticality shows beside them.

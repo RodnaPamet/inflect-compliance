@@ -334,10 +334,10 @@ export function NewTaskFields({
                                 className="flex items-center gap-tight text-sm text-content-default bg-bg-default/50 rounded px-3 py-1.5"
                             >
                                 <StatusBadge variant="info">
-                                    {l.entityType}
+                                    {LINK_ENTITY_OPTIONS.find((o) => o.value === l.entityType)?.label ?? l.entityType}
                                 </StatusBadge>
-                                <span className="font-mono text-xs flex-1">
-                                    {l.entityId}
+                                <span className="text-xs flex-1">
+                                    {l.label ?? t('new.linkPresetName')}
                                 </span>
                                 <Tooltip content={t('new.removeTooltip')}>
                                     <button

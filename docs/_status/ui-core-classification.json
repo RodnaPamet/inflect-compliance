@@ -277,7 +277,7 @@
  "src/components/ui/TruncationBanner.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A 52-line warning banner; shape is generic (truncated + cap). Both visible strings are hardcoded English. The import is this app's list-API envelope module."
+  "reason": "A warning banner whose shape is generic (truncated + cap). Both visible strings go through next-intl (`common.ui.truncationTitle`, `common.ui.truncationHint`), so copy is no longer the coupling. What keeps it MIXED is the import of this app's list-API envelope module, `@/lib/list-backfill-cap`, for the default cap."
  },
  "src/components/ui/VersionDiff.tsx": {
   "classification": "MIXED",

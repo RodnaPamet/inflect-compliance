@@ -58,6 +58,7 @@ import {
     categorizeControl,
     type CategorizableControl,
 } from '@/lib/controls/control-taxonomy';
+import { isControlCategoryTheme } from '@/lib/controls/control-categories';
 
 /** Surface-namespace resolver (`useTranslations('controls')`). */
 type T = (key: string, values?: Record<string, unknown>) => string;
@@ -225,6 +226,7 @@ export function ownerOptionsFromControls(
  */
 export function categoryOptionsFromControls(
     controls: ReadonlyArray<CategorizableControl>,
+    labelFor: (category: string) => string = (c) => c,
 ): FilterOption[] {
     const seen = new Set<string>();
     for (const c of controls) {
@@ -232,8 +234,18 @@ export function categoryOptionsFromControls(
         if (cat) seen.add(cat);
     }
     return Array.from(seen)
-        .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value, label: value }));
+        .map((value) => ({ value, label: labelFor(value) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * The text a derived category is shown as. A control created on the Controls
+ * page stores one of the four ISO 27002 theme constants (`TECHNOLOGICAL`), and
+ * with no framework code to group by, `categorizeControl` hands that constant
+ * back, so it is translated here. Any other category is already readable.
+ */
+export function controlCategoryLabel(category: string, t: T): string {
+    return isControlCategoryTheme(category) ? t(`categoryLabels.${category}`) : category;
 }
 
 /**
@@ -247,7 +259,7 @@ export function buildControlFilters(
     tGroup: TGroup,
 ): FilterDef[] {
     const ownerOpts = ownerOptionsFromControls(loaded);
-    const categoryOpts = categoryOptionsFromControls(loaded);
+    const categoryOpts = categoryOptionsFromControls(loaded, (c) => controlCategoryLabel(c, t));
     return buildControlFilterDefs(t, tGroup).filters.map((f) => {
         if (f.key === 'ownerUserId') return { ...f, options: ownerOpts };
         if (f.key === 'category') return { ...f, options: categoryOpts };

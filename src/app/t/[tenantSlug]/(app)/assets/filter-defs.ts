@@ -49,6 +49,19 @@ function assetStatusLabels(t: T): Record<string, string> {
     };
 }
 
+/**
+ * A stored asset type or status as the label the filter shows. The table, the
+ * preview panel and the form printed the enum itself ("DATA STORE"). A value
+ * the map does not know is shown as stored, with its underscores spaced.
+ */
+export function assetTypeLabel(value: string, t: T): string {
+    return assetTypeLabels(t)[value] ?? value.replace(/_/g, ' ');
+}
+
+export function assetStatusLabel(value: string, t: T): string {
+    return assetStatusLabels(t)[value] ?? value.replace(/_/g, ' ');
+}
+
 function assetCriticalityLabels(t: T): Record<string, string> {
     return {
         LOW: t('filterEnums.criticality.LOW'),

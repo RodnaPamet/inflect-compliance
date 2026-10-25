@@ -36,7 +36,15 @@ export type TaskType = NewTaskFormValues['type'];
 export interface PendingLink {
     entityType: string;
     entityId: string;
+    /**
+     * The record's name, as the entity picker showed it. Absent for the link a
+     * control, risk or asset page stages for itself, which has only the id.
+     */
+    label?: string;
 }
+
+/** The link types `tasks.linkEntity` labels. */
+export const TASK_LINK_ENTITY_TYPES = ['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'RISK', 'EVIDENCE'] as const;
 
 // Extra type-conditional fields kept outside Zod (see file
 // header). Combined with NewTaskFormValues for the field surface.
@@ -59,7 +67,8 @@ export interface NewTaskFormReturn {
     linkEntityType: string;
     setLinkEntityType: (entityType: string) => void;
     linkEntityId: string;
-    setLinkEntityId: (entityId: string) => void;
+    /** The picker's selection; `label` is the record's name as it showed it. */
+    setLinkEntityId: (entityId: string, label?: string) => void;
     addPendingLink: () => void;
     removePendingLink: (index: number) => void;
     submitting: boolean;
@@ -117,8 +126,19 @@ export function useNewTaskForm({
         initialPendingLinks ?? [],
     );
     const [linkEntityType, setLinkEntityType] = useState('CONTROL');
-    const [linkEntityId, setLinkEntityId] = useState('');
+    const [linkEntityId, setLinkEntityIdState] = useState('');
+    const [linkEntityLabel, setLinkEntityLabel] = useState<string | undefined>(undefined);
+    const setLinkEntityId = (entityId: string, label?: string) => {
+        setLinkEntityIdState(entityId);
+        setLinkEntityLabel(entityId ? label : undefined);
+    };
     const [extrasDirty, setExtrasDirty] = useState(false);
+    // A staged link reads as its type's label and the record's name. It used
+    // to read as the enum and the cuid ("FRAMEWORK_REQUIREMENT cm3x…").
+    const linkTypeLabel = (type: string) =>
+        (TASK_LINK_ENTITY_TYPES as readonly string[]).includes(type)
+            ? t(`linkEntity.${type as (typeof TASK_LINK_ENTITY_TYPES)[number]}`)
+            : type;
 
     const zod = useZodForm({
         schema: NewTaskFormSchema,
@@ -201,7 +221,7 @@ export function useNewTaskForm({
 
                 if (failedLinks.length > 0) {
                     const detail = failedLinks
-                        .map((l) => `${l.entityType} ${l.entityId}`)
+                        .map((l) => (l.label ? `${linkTypeLabel(l.entityType)} ${l.label}` : linkTypeLabel(l.entityType)))
                         .join(', ');
                     // PARTIAL SUCCESS — the task row exists; only some of
                     // the staged links failed to attach.
@@ -286,7 +306,7 @@ export function useNewTaskForm({
         if (!linkEntityId.trim()) return;
         setPendingLinks((prev) => [
             ...prev,
-            { entityType: linkEntityType, entityId: linkEntityId.trim() },
+            { entityType: linkEntityType, entityId: linkEntityId.trim(), label: linkEntityLabel },
         ]);
         setLinkEntityId('');
         setExtrasDirty(true);

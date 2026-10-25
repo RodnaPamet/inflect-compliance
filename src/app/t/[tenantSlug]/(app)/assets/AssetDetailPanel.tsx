@@ -19,6 +19,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { ownerDisplayName } from '@/lib/owner-display';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { AssetCriticalityBadge } from './_form/AssetCriticalityFields';
+import { assetStatusLabel, assetTypeLabel } from './filter-defs';
 
 export interface AssetPanelRow {
     id: string;
@@ -67,6 +68,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     );
 }
 
+/** The severities `vulnerabilities.filterEnums.severity` labels. */
+const VULN_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
+
 export function AssetDetailPanel({
     asset,
     tenantHref,
@@ -75,9 +79,17 @@ export function AssetDetailPanel({
     tenantHref: (path: string) => string;
 }) {
     const t = useTranslations('assets');
+    const tSeverity = useTranslations('vulnerabilities.filterEnums.severity');
+    const tKey = (k: string) => t(k as Parameters<typeof t>[0]);
     const statusVariant: StatusBadgeVariant =
         asset.status === 'RETIRED' ? 'neutral' : 'success';
-    const subtitle = [asset.key, asset.type?.replace(/_/g, ' ')]
+    const typeLabel = asset.type ? assetTypeLabel(asset.type, tKey) : null;
+    const severity = asset.maxVulnSeverity;
+    const severityLabel =
+        severity && (VULN_SEVERITIES as readonly string[]).includes(severity)
+            ? tSeverity(severity as (typeof VULN_SEVERITIES)[number])
+            : severity;
+    const subtitle = [asset.key, typeLabel]
         .filter(Boolean)
         .join(' · ');
 
@@ -96,11 +108,11 @@ export function AssetDetailPanel({
             <div className="mt-2">
                 <Row label={t('detail.status')}>
                     <StatusBadge variant={statusVariant} size="sm">
-                        {asset.status || 'ACTIVE'}
+                        {assetStatusLabel(asset.status || 'ACTIVE', tKey)}
                     </StatusBadge>
                 </Row>
                 <Row label={t('detail.type')}>
-                    {asset.type ? asset.type.replace(/_/g, ' ') : '—'}
+                    {typeLabel ?? '—'}
                 </Row>
                 <Row label={t('detail.owner')}>
                     {ownerDisplayName(asset.ownerUser?.name, asset.ownerUser?.email) ??
@@ -117,8 +129,8 @@ export function AssetDetailPanel({
                 <Row label={t('colHeaders.vulnerabilities')}>
                     {asset.openVulnCount && asset.openVulnCount > 0 ? (
                         <StatusBadge variant={vulnSeverityVariant(asset.maxVulnSeverity)} size="sm">
-                            {asset.maxVulnSeverity
-                                ? `${asset.openVulnCount} · ${asset.maxVulnSeverity}`
+                            {severityLabel
+                                ? `${asset.openVulnCount} · ${severityLabel}`
                                 : String(asset.openVulnCount)}
                         </StatusBadge>
                     ) : (

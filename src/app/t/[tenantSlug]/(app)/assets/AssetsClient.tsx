@@ -22,7 +22,7 @@ import { AppIcon } from '@/components/icons/AppIcon';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
-import { buildAssetFilters, ASSET_FILTER_KEYS } from './filter-defs';
+import { buildAssetFilters, ASSET_FILTER_KEYS, assetTypeLabel } from './filter-defs';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
@@ -744,7 +744,11 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         {
             accessorKey: 'type',
             header: t.type,
-            cell: ({ getValue }) => <StatusBadge variant="info" size="sm">{String(getValue()).replace(/_/g, ' ')}</StatusBadge>,
+            cell: ({ getValue }) => (
+                <StatusBadge variant="info" size="sm">
+                    {assetTypeLabel(String(getValue()), (k) => tx(k as Parameters<typeof tx>[0]))}
+                </StatusBadge>
+            ),
         },
         {
             // Shows the STORED `Asset.criticality`, which is derived on write

@@ -26,6 +26,7 @@ import { EvidenceUploadSection } from "@/components/evidence/EvidenceUploadSecti
 import { PanelTabs } from "@/components/controls-shared/PanelTabs";
 import { PanelActivityFeed } from "@/components/controls-shared/PanelActivityFeed";
 import { choiceOrNull, textOrNull } from './_lib/control-write-values';
+import { buildControlStatusLabels } from './filter-defs';
 
 /** The subset of control row fields the panel needs to seed + display. */
 export interface PanelControl {
@@ -122,6 +123,11 @@ export function ControlEditPanel({
     // Canonical ISO 27002 themes + the current value preserved as an option
     // when it's a legacy/granular/custom string, so a non-theme category shows
     // honestly and round-trips instead of reading as "—".
+    // The same labels the table's Status column shows.
+    const statusLabels = useMemo(
+        () => buildControlStatusLabels((k) => tx(k as Parameters<typeof tx>[0])),
+        [tx],
+    );
     const CATEGORY_OPTIONS = useMemo(
         () => buildCategoryOptions(category, (theme) => tx(`categoryLabels.${theme}`)),
         [category, tx],
@@ -163,7 +169,7 @@ export function ControlEditPanel({
                     </span>
                 )}
                 {control.status && (
-                    <StatusBadge size="sm">{control.status.replace(/_/g, " ")}</StatusBadge>
+                    <StatusBadge size="sm">{statusLabels[control.status] ?? control.status.replace(/_/g, " ")}</StatusBadge>
                 )}
             </div>
 

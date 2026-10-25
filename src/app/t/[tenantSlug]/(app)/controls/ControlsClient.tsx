@@ -83,6 +83,7 @@ import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import {
     buildControlFilters,
+    controlCategoryLabel,
     buildControlStatusLabels,
     CONTROL_FILTER_KEYS,
 } from './filter-defs';
@@ -1205,7 +1206,7 @@ function ControlsPageInner({
                 if (!cat) {
                     return <span className="text-xs text-content-subtle">—</span>;
                 }
-                return <StatusBadge size="sm">{cat.category}</StatusBadge>;
+                return <StatusBadge size="sm">{controlCategoryLabel(cat.category, tAdapter)}</StatusBadge>;
             },
         },
         {
@@ -1439,7 +1440,7 @@ function ControlsPageInner({
     // `canEditControls` and the already-memoised callbacks, not those props
     // directly. They were in the array while the file-wide
     // `react-hooks/exhaustive-deps` disable hid the rule's opinion either way.
-    ]), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors]);
+    ]), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, tAdapter, FREQ_LABELS, STATUS_LABELS, sortAccessors]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call — calling it inline in the `table` object would undo the memo
@@ -1584,7 +1585,7 @@ function ControlsPageInner({
                                     <span className="flex min-w-0 flex-1 items-center justify-between gap-tight pr-2">
                                         <span className="flex min-w-0 flex-col items-start gap-0.5">
                                             <span className="truncate font-medium text-content-default">
-                                                {g.category}
+                                                {controlCategoryLabel(g.category, tAdapter)}
                                             </span>
                                             {g.frameworkLabel && (
                                                 <span

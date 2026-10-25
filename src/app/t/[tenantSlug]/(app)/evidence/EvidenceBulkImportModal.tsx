@@ -374,9 +374,10 @@ export function EvidenceBulkImportModal({
                             className="mt-4 p-3 text-sm"
                             data-testid="evidence-bulk-import-status"
                         >
+                            {/* The job's state as words. It printed the internal
+                                job id and BullMQ's own state ("Job 42 — active"). */}
                             <p className="text-content-emphasis">
-                                {tx('bulkImport.jobLabel')} <span className="font-mono">{jobId}</span>{' '}
-                                — {status?.state ?? tx('bulkImport.queued')}
+                                {tx(`bulkImport.states.${status?.state ?? 'waiting'}`)}
                             </p>
                             {progress && (
                                 <p className="mt-1 text-xs text-content-muted">
