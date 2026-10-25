@@ -1236,12 +1236,13 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Bulk asset CSV import — creates assets, so gated on assets.create.',
     },
     {
-        path: new RegExp(`^${T}\\/assets\\/[^/]+\\/purge$`),
+        path: new RegExp(`^${T}\\/assets\\/[^/]+\\/(purge|restore)$`),
         methods: ['POST'],
         permission: 'admin.manage',
         note:
-            'IRREVERSIBLE hard delete of a soft-deleted asset — the usecase ' +
-            'asserts canAdmin, so the route gate matches at admin.manage ' +
+            'IRREVERSIBLE hard delete of a soft-deleted asset, and its restore ' +
+            'counterpart — both usecases assert canAdmin (via purgeEntity / ' +
+            'restoreEntity), so the route gate matches at admin.manage ' +
             '(OWNER/ADMIN), not the assets.edit an EDITOR holds.',
     },
 

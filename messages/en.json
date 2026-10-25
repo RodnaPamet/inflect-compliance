@@ -671,10 +671,10 @@
       "businessProcessesPlaceholder": "Processes this asset supports",
       "dependenciesNote": "Free-text notes — not linked to assets or controls.",
       "businessProcessesNote": "Free-text notes. Use the process-map canvas for actual linkage.",
-      "retentionNote": "Human-readable policy note (e.g. “7 years”). The structured date below decides when the asset is deleted automatically.",
+      "retentionNote": "Human-readable policy note (e.g. “7 years”). The structured date below drives automatic deletion.",
       "retentionUntil": "Retention until",
       "retentionUntilPlaceholder": "Select a date…",
-      "retentionUntilNote": "Structured expiry date — after it, the asset is deleted automatically and can be restored for 90 days.",
+      "retentionUntilNote": "Structured expiry date — once it passes, the asset is deleted automatically. It can be restored from Deleted assets for 90 days, then it is purged permanently.",
       "saveFailed": "Couldn't save the asset. Please try again.",
       "createFailed": "Couldn't create the asset. Please try again."
     },
@@ -875,16 +875,16 @@
       }
     },
     "assetTypes": {
-      "INFORMATION": "INFORMATION",
-      "APPLICATION": "APPLICATION",
-      "SYSTEM": "SYSTEM",
-      "SERVICE": "SERVICE",
-      "DATA_STORE": "DATA STORE",
-      "INFRASTRUCTURE": "INFRASTRUCTURE",
-      "VENDOR": "VENDOR",
-      "PROCESS": "PROCESS",
-      "PEOPLE_PROCESS": "PEOPLE PROCESS",
-      "OTHER": "OTHER"
+      "INFORMATION": "Information",
+      "APPLICATION": "Application",
+      "SYSTEM": "System",
+      "SERVICE": "Service",
+      "DATA_STORE": "Data Store",
+      "INFRASTRUCTURE": "Infrastructure",
+      "VENDOR": "Vendor",
+      "PROCESS": "Process",
+      "PEOPLE_PROCESS": "People / Process",
+      "OTHER": "Other"
     },
     "rowInteractionHint": "Click to preview · double-click the row to open the full page",
     "importAssets": "Import assets",
@@ -908,6 +908,7 @@
       "moreRows": "+{count} more…",
       "invalidCsv": "No valid rows found. Ensure the CSV has a \"Name\" column header.",
       "importComplete": "Import complete — {created} of {total} assets created",
+      "importFailed": "Import failed — no assets were created",
       "errors": "Errors",
       "viewRegister": "View asset register →",
       "importMore": "Import more",
@@ -926,7 +927,14 @@
       }
     },
     "list": {
-      "ownerImported": "imported"
+      "ownerImported": "imported",
+      "loadError": "Couldn't load assets. Reload the page to try again."
+    },
+    "vulnSeverity": {
+      "CRITICAL": "Critical",
+      "HIGH": "High",
+      "MEDIUM": "Medium",
+      "LOW": "Low"
     },
     "viewVulnerabilities": "View vulnerabilities",
     "openVulnsAria": "{count} open vulnerabilities",
