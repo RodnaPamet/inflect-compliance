@@ -156,6 +156,21 @@ export function ownerManagedMembershipEndMessage(role: string, verb: 'deactivate
 }
 
 /**
+ * The named reason revoking another person's sessions is refused with when
+ * that person holds an OWNER-managed role and the caller lacks
+ * `admin.owner_management` (`ForbiddenError.details`; owner decision,
+ * 2026-10-25). Signing one person out is a targeted act, so it follows the
+ * deactivation rule above. "Revoke All" is the incident lever and still signs
+ * everyone out, Owners included.
+ */
+export const OWNER_MANAGED_SESSION_REVOKE_REFUSAL = 'REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER' as const;
+
+/** The refusal for revoking an owner-managed member's sessions without the key. */
+export function ownerManagedSessionRevokeMessage(role: string): string {
+    return `Only an OWNER can revoke an ${role}'s sessions.`;
+}
+
+/**
  * Roles whose scope is always the reviewed built-in set: a membership holding
  * one never carries a custom role. A custom role REPLACES the built-in role's
  * permissions and coarse tier at resolution (`resolveTenantContext` reads
