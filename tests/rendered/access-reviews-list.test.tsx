@@ -119,6 +119,7 @@ describe('AccessReviewsClient', () => {
             withClient(
                 <AccessReviewsClient
                     tenantSlug="acme"
+                    canCreate
                     initialReviews={[
                         sample({ id: 'rev_1', name: 'Q1' }),
                         sample({ id: 'rev_2', name: 'Q2', status: 'IN_REVIEW' }),
@@ -140,7 +141,7 @@ describe('AccessReviewsClient', () => {
     it('renders empty state when there are no campaigns', () => {
         render(
             withClient(
-                <AccessReviewsClient tenantSlug="acme" initialReviews={[]} />,
+                <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={[]} />,
             ),
         );
         expect(screen.getByTestId('access-reviews-empty')).toBeTruthy();
@@ -149,7 +150,7 @@ describe('AccessReviewsClient', () => {
     it('clicking New campaign opens the create modal', () => {
         render(
             withClient(
-                <AccessReviewsClient tenantSlug="acme" initialReviews={[]} />,
+                <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={[]} />,
             ),
         );
         fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
@@ -161,7 +162,7 @@ describe('AccessReviewsClient', () => {
     it('scope radios: default is checked and clicking a label switches selection', () => {
         render(
             withClient(
-                <AccessReviewsClient tenantSlug="acme" initialReviews={[]} />,
+                <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={[]} />,
             ),
         );
         fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
@@ -180,10 +181,57 @@ describe('AccessReviewsClient', () => {
         expect(allUsers.getAttribute('data-state')).toBe('unchecked');
     });
 
+    it('Progress reads the decided count the list sends — a closed campaign is not 0 of N (#4130)', () => {
+        render(
+            withClient(
+                <AccessReviewsClient
+                    tenantSlug="acme"
+                    canCreate
+                    initialReviews={[
+                        sample({ id: 'rev_1', status: 'CLOSED', _count: { decisions: 4, connectedDecisions: 0 }, decidedCount: 4 }),
+                        sample({ id: 'rev_2', status: 'IN_REVIEW', _count: { decisions: 0, connectedDecisions: 5 }, decidedCount: 2 }),
+                    ]}
+                />,
+            ),
+        );
+        expect(screen.getByText('4/4')).toBeInTheDocument();
+        expect(screen.getByText('2/5')).toBeInTheDocument();
+        expect(screen.getByRole('progressbar', { name: '2 of 5 decisions made' })).toBeInTheDocument();
+    });
+
+    it('shows each status by its label, never the raw value (#4130)', () => {
+        render(
+            withClient(
+                <AccessReviewsClient
+                    tenantSlug="acme"
+                    canCreate
+                    initialReviews={[
+                        sample({ id: 'rev_1', status: 'IN_REVIEW' }),
+                        sample({ id: 'rev_2', status: 'CLOSED' }),
+                    ]}
+                />,
+            ),
+        );
+        expect(screen.getByText('In review')).toBeInTheDocument();
+        expect(screen.getByText('Closed')).toBeInTheDocument();
+        expect(screen.queryByText('IN_REVIEW')).toBeNull();
+    });
+
+    it('offers New campaign only to a caller who may create one (#4130)', () => {
+        render(
+            withClient(
+                <AccessReviewsClient tenantSlug="acme" canCreate={false} initialReviews={[]} />,
+            ),
+        );
+        expect(screen.queryByTestId('access-review-new-campaign-button')).toBeNull();
+        // The empty state does not tell them to click a button they do not have.
+        expect(screen.getByTestId('access-reviews-empty').textContent).toBe('No access reviews yet.');
+    });
+
     it('create-modal shows error when name + reviewer are missing', () => {
         render(
             withClient(
-                <AccessReviewsClient tenantSlug="acme" initialReviews={[]} />,
+                <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={[]} />,
             ),
         );
         fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
@@ -222,7 +270,7 @@ describe('AccessReviewsClient — windowing (#105)', () => {
     it('caps rendered rows at the load-more threshold', () => {
         const { container } = render(
             withClient(
-                <AccessReviewsClient tenantSlug="acme" initialReviews={many(120)} />,
+                <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={many(120)} />,
             ),
         );
 
@@ -243,7 +291,7 @@ describe('AccessReviewsClient — windowing (#105)', () => {
     it('renders every row when the set is under the threshold', () => {
         const { container } = render(
             withClient(
-                <AccessReviewsClient tenantSlug="acme" initialReviews={many(7)} />,
+                <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={many(7)} />,
             ),
         );
         expect(container.querySelectorAll('tbody tr').length).toBe(7);

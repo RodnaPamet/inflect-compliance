@@ -20,6 +20,7 @@ export {
     getAuditPack,
     updateAuditPack,
     addAuditPackItems,
+    removeAuditPackItem,
     freezeAuditPack,
     exportAuditPack,
     previewDefaultPack,

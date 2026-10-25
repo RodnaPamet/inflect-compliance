@@ -3440,16 +3440,16 @@
       "cancel": "Cancel",
       "cycle": "Cycle",
       "frameworkLabel": "Framework",
-      "frameworkHint": "The compliance framework this audit cycle tracks (ISO 27001, SOC 2, NIS2…). Controls and evidence are filtered by this on the cycle dashboard.",
+      "frameworkHint": "The compliance framework this audit cycle tracks. Only frameworks in use in this workspace are listed, that is, frameworks with at least one control mapped to their requirements.",
       "selectFramework": "Select framework…",
       "searchFrameworks": "Search frameworks…",
       "cycleName": "Cycle name",
       "cycleNamePlaceholder": "e.g. ISO27001 Recertification 2025",
       "auditPeriod": "Audit period",
-      "auditPeriodHint": "The reporting window the cycle evidences. Pick a preset for the usual quarterly / annual audits, or choose a custom range on the calendar. Optional — you can set this later.",
+      "auditPeriodHint": "The reporting window the cycle evidences. Pick a preset for the usual quarterly / annual audits, or choose a custom range on the calendar. Optional, but set it now if the audit has one: the page cannot change it after the cycle is created.",
       "selectAuditPeriod": "Select audit period",
       "emptyTitle": "No audit cycles yet",
-      "emptyDesc": "Create your first audit cycle for ISO 27001 or NIS2.",
+      "emptyDesc": "Create an audit cycle for a framework in use in this workspace.",
       "addCycle": "Add Audit Cycle",
       "packCount": "{count, plural, one {# pack} other {# packs}}",
       "openCycle": "Open cycle",
@@ -3463,7 +3463,12 @@
       "newCycleTitle": "New audit cycle",
       "newCycleDesc": "Start a new audit cycle for a compliance framework. Controls, evidence, and readiness are tracked against it.",
       "createCycle": "Create cycle",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "emptyDescReadOnly": "Owners, Admins and Editors can create audit cycles.",
+      "frameworksLoading": "Loading frameworks…",
+      "noFrameworkInUseHint": "No framework is in use in this workspace yet. A framework is in use once at least one control is mapped to its requirements.",
+      "openFrameworks": "Open Frameworks to install one.",
+      "frameworksLoadError": "Could not load the frameworks in use. Close the form and open it again."
     },
     "cycleDetail": {
       "cycleFallback": "Cycle",
@@ -3506,13 +3511,13 @@
       "reqCoverage": "Requirement Coverage",
       "controlsImplemented": "Controls Implemented",
       "evidenceCompleteness": "Evidence Completeness",
-      "keyPolicies": "Key Policies",
+      "keyPolicies": "Linked Policies",
       "taskCompletion": "Task Completion",
       "openIssues": "Open Issues",
       "reqMappedDetail": "{mapped}/{total} requirements mapped",
       "controlsImplDetail": "{implemented}/{total} controls IMPLEMENTED",
       "evidenceDetail": "{withEvidence}/{total} controls with evidence",
-      "policiesDetail": "{found}/{expected} key policies found",
+      "policiesDetail": "{withPolicy}/{total} controls with a linked policy",
       "tasksDetail": "{overdue} overdue task(s)",
       "issuesDetail": "{open} open issue(s)",
       "recommendedActions": "Recommended Next Actions",
@@ -3546,7 +3551,7 @@
       "copyShareLink": "Copy share link",
       "shareLinkCopied": "Share link copied",
       "itemsEmptyTitle": "No items in this pack yet",
-      "itemsEmptyDesc": "Add evidence, controls, or risks to this audit pack from the source pages.",
+      "itemsEmptyDesc": "Add controls, policies or evidence to this draft pack with Add items.",
       "tasks": "Tasks: {done}/{total}",
       "evidence": "Evidence: {count}",
       "exports": "Exports",
@@ -3572,8 +3577,9 @@
         "statusRESOLVED": "Resolved",
         "createFinding": "Create finding",
         "createObservation": "Create observation",
-        "findingCreated": "Finding created and linked to the cycle.",
-        "materializeError": "Failed to create finding from this entry."
+        "findingCreated": "Finding created and attached to this cycle's fieldwork audit.",
+        "materializeError": "Failed to create finding from this entry.",
+        "findingCreatedNoAudit": "Finding created. This cycle has no fieldwork audit, so the finding is not attached to the cycle."
       },
       "shareCreated": "Share link created",
       "shareError": "Could not create the share link. Please try again.",
@@ -3662,7 +3668,17 @@
         "confirm": "Freeze pack"
       },
       "shareLinkOnceWarning": "This link is shown only once and can't be retrieved again. Copy it now — if you lose it, revoke the link and generate a new one.",
-      "sharesOnceNote": "Share URLs are shown only once when created and can't be copied again from here. If a link is lost, revoke it and generate a new one."
+      "sharesOnceNote": "Share URLs are shown only once when created and can't be copied again from here. If a link is lost, revoke it and generate a new one.",
+      "itemsEmptyDescReadOnly": "Owners, Admins and Editors can add controls, policies and evidence to a draft pack.",
+      "sharesRestricted": "Only Owners and Admins can see this pack's share links.",
+      "sharesLoadError": "Could not load the share links.",
+      "soaItemName": "Statement of Applicability — {framework}",
+      "removeItem": {
+        "aria": "Remove {item} from the pack",
+        "removed": "Item removed from the pack",
+        "undo": "Undo",
+        "error": "Could not remove the item. Please try again."
+      }
     },
     "auditor": {
       "portalCrumb": "Auditor Portal",
@@ -3887,10 +3903,10 @@
     "auditorsAdmin": {
       "crumb": "Auditor management",
       "title": "Auditor management",
-      "subtitle": "Invite named auditors and control which packs each can access.",
+      "subtitle": "Keep a list of the named external auditors and the packs each one is meant to see. The list gives them no access: to let an auditor read a pack, send them a share link.",
       "inviteAuditor": "Invite auditor",
       "emptyTitle": "No auditors yet",
-      "emptyDesc": "Invite an external auditor to give them access to frozen audit packs.",
+      "emptyDesc": "Record the external auditors who review your packs. To let one read a pack, send them a share link from the pack's page.",
       "statusINVITED": "Invited",
       "statusACTIVE": "Active",
       "statusREVOKED": "Revoked",
@@ -3911,7 +3927,7 @@
       "revokeSuccess": "Access revoked",
       "revokeError": "Could not revoke access. Please try again.",
       "inviteTitle": "Invite auditor",
-      "inviteDesc": "The auditor is added to this tenant. Grant them access to specific packs afterwards.",
+      "inviteDesc": "The auditor is added to this workspace's list. No invitation is sent, and nothing recorded here lets them into Inflect.",
       "emailLabel": "Email",
       "emailPlaceholder": "auditor@example.com",
       "nameLabel": "Name",
@@ -3924,14 +3940,18 @@
       "revokeAccessConfirm": "Revoke access",
       "revokeAccount": "Revoke account",
       "revokeAccountTitle": "Revoke auditor account?",
-      "revokeAccountDesc": "{name} will lose access to every pack and can no longer sign in. Inviting them again reactivates the account.",
+      "revokeAccountDesc": "{name} is marked revoked and loses every pack grant recorded here. Share links are not affected: revoke those on each pack's page. Inviting them again reactivates the account.",
       "undo": "Undo",
       "revokeAccountTypeToConfirm": "Type {name} to confirm",
       "revokeAccountConfirm": "Revoke account",
       "revokeAccountSuccess": "Auditor account revoked",
       "revokeAccountError": "Could not revoke the auditor account. Please try again.",
       "grantRevokedError": "Cannot grant pack access to a revoked auditor. Re-invite them first.",
-      "grantRevokedNote": "Access is revoked. Re-invite this auditor to grant pack access again."
+      "grantRevokedNote": "Access is revoked. Re-invite this auditor to grant pack access again.",
+      "restrictedTitle": "Auditor management is for Owners and Admins",
+      "restrictedDesc": "Only Owners and Admins can see and change the list of named auditors.",
+      "loadErrorTitle": "Couldn't load auditors",
+      "retry": "Retry"
     },
     "cycleStatus": {
       "PLANNING": "Planning",
@@ -10416,7 +10436,7 @@
     "submitting": "Submitting…",
     "submitDecision": "Submit decision",
     "closeTitle": "Close access review campaign",
-    "closeBody": "Closing executes every <b>REVOKE</b> and <b>MODIFY</b> decision against the live tenant memberships. <b>CONFIRM</b> decisions stay untouched. A signed PDF evidence artifact will be generated and linked to the campaign. This cannot be undone.",
+    "closeBody": "Closing carries out every <b>Revoked</b> and <b>Modified</b> decision against the live workspace memberships. <b>Confirmed</b> decisions change nothing. An evidence PDF is then produced and linked to the campaign. It carries a SHA-256 hash of its contents; it is not digitally signed. This cannot be undone.",
     "closeFailed": "Failed to close campaign",
     "closing": "Closing…",
     "closeGenerate": "Close + generate evidence",
@@ -10439,7 +10459,7 @@
     "crumbTests": "Tests",
     "undoVerdict": "Discard",
     "undoDialogTitle": "Discard the verdict on {email}",
-    "undoExplainer": "The recorded {verdict} will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
+    "undoExplainer": "The recorded verdict ({verdict}) will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
     "undoReasonLabel": "Why are you discarding this verdict?",
     "undoReasonPlaceholder": "Recorded against the wrong person, wrong verdict chosen, …",
     "undoConfirm": "Discard verdict",
@@ -10512,7 +10532,43 @@
     "fieldCrossPreparer": "Second preparing agent",
     "crossPreparerHint": "Optional. Prepares the first agent's own pack — an agent never prepares the pack it is reviewed by. Left empty, a person prepares that one pack when the packs are prepared.",
     "agentPackPreparedBy": "Prepared by {agent}",
-    "agentPackPreparedByPerson": "Prepared by a person — the preparing agent's own pack"
+    "agentPackPreparedByPerson": "Prepared by a person — the preparing agent's own pack",
+    "statusLabels": {
+      "OPEN": "Open",
+      "IN_REVIEW": "In review",
+      "CLOSED": "Closed"
+    },
+    "verdictLabels": {
+      "CONFIRM": "Confirmed",
+      "REVOKE": "Revoked",
+      "MODIFY": "Modified"
+    },
+    "emptyListReadOnly": "No access reviews yet.",
+    "fieldPeriod": "Audit period (optional)",
+    "periodHint": "The period this review covers. It is shown in the Period column and printed on the evidence PDF.",
+    "periodPlaceholder": "Select the period",
+    "dlPeriod": "Period",
+    "colNotes": "Justification",
+    "ownRowCannotDecide": "Your own access — someone else decides it",
+    "regenerateEvidence": "Produce evidence PDF",
+    "regenerating": "Producing…",
+    "evidenceMissingCanRegenerate": "The decisions were carried out, but the evidence PDF could not be produced when the campaign closed. Click Produce evidence PDF to produce it from the recorded decisions.",
+    "evidenceMissingAskAdmin": "The decisions were carried out, but the evidence PDF could not be produced when the campaign closed. An Owner or Admin can produce it again from this page.",
+    "changeReviewer": "Change reviewer",
+    "changeDueDate": "Change due date",
+    "settingsTitle": "Change reviewer or due date",
+    "settingsExplainer": "Decisions already recorded stay as they are. The new reviewer records the rest, and gets the reminder emails from now on.",
+    "settingsFailed": "Failed to save the change",
+    "saving": "Saving…",
+    "saveSettings": "Save changes",
+    "roleLabels": {
+      "OWNER": "Owner",
+      "ADMIN": "Admin",
+      "EDITOR": "Editor",
+      "READER": "Reader",
+      "AUDITOR": "Auditor",
+      "AI_ADMIN": "AI admin"
+    }
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",
@@ -12615,7 +12671,7 @@
       },
       "returnChannel": {
         "title": "Send feedback to the team",
-        "subtitle": "Comment, request more evidence, or raise a finding or question. The team is notified.",
+        "subtitle": "Comment, request more evidence, or raise a finding or question. Your message appears on the pack's page for the team.",
         "kindLabel": "Type",
         "kind": {
           "COMMENT": "Comment",
@@ -12667,6 +12723,12 @@
           "DISSENTED": "dissented",
           "INDETERMINATE": "indeterminate"
         }
+      },
+      "soaItemName": "Statement of Applicability — {framework}",
+      "packStatus": {
+        "DRAFT": "Draft",
+        "FROZEN": "Frozen",
+        "EXPORTED": "Exported"
       }
     }
   },

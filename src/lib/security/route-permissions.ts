@@ -1782,6 +1782,16 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'roles, which is what reading a campaign has always required.',
     },
     {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/evidence\\/regenerate$`),
+        methods: ['POST'],
+        permission: 'access_reviews.close',
+        note:
+            'Producing a CLOSED member campaign\'s evidence PDF again when it ' +
+            'failed at close (#4130). The second half of closing, so the close ' +
+            'key: OWNER + ADMIN, mirroring the assertCanAdmin in ' +
+            'regenerateAccessReviewEvidence. It executes no decision.',
+    },
+    {
         path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/evidence$`),
         methods: ['GET'],
         permission: 'access_reviews.view',
@@ -1859,6 +1869,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'Reading one campaign and its activity. Mirrors the ' +
             'assertCanRead in getAccessReview / getAccessReviewWithActivity.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+$`),
+        methods: ['PATCH'],
+        permission: 'access_reviews.create',
+        note:
+            'Changing an open campaign\'s reviewer or due date (#4130), and ' +
+            'nothing else. The key that names them at creation: OWNER + ADMIN, ' +
+            'mirroring the assertCanAdmin in updateAccessReviewSettings. After ' +
+            'every leaf above, like the GET: `[^/]+$` would swallow ' +
+            '`/connected` and `/agents`, whose only method is POST.',
     },
     {
         path: new RegExp(`^${T}\\/access-reviews$`),

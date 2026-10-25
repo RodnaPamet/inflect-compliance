@@ -11,6 +11,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { recordAuditCycleStarted } from '@/lib/observability/business-metrics';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
+import { isFrameworkInUse } from '../framework/coverage';
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Audit Cycles РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
@@ -19,17 +20,21 @@ export async function createAuditCycle(
     data: { frameworkKey: string; frameworkVersion: string; name: string; periodStartAt?: string; periodEndAt?: string }
 ) {
     assertCanManageAuditCycles(ctx);
-    // PR-O — a cycle can be created for ANY installed framework, not just
-    // ISO27001 / NIS2. The scorer already dispatches non-ISO/NIS2 keys to
-    // computeGenericReadiness (coverage + evidence + issues), so the only
-    // thing that gated custom frameworks was this allowlist. We still require
-    // the framework to be installed for the tenant so a cycle can't reference
-    // a key with no requirements to score.
-    const installed = await runInTenantContext(ctx, (tdb) =>
-        tdb.framework.findFirst({ where: { key: data.frameworkKey }, select: { key: true } }),
-    );
-    if (!data.frameworkKey || !installed) {
-        throw badRequest('frameworkKey must be an installed framework');
+    // PR-O — a cycle can be created for ANY framework, not just ISO27001 /
+    // NIS2: the scorer dispatches other keys to computeGenericReadiness.
+    //
+    // #4129 — but only for a framework IN USE in this workspace. The check
+    // used to be `framework.findFirst({ key })`, a lookup in the GLOBAL
+    // catalogue, so any framework the product ships passed it — including one
+    // this workspace has never mapped a control to, whose cycle then scores
+    // against nothing. "In use" is the Frameworks page's rule (a live control
+    // mapped to one of the framework's requirements), and the cycle form's
+    // picker offers exactly the frameworks that pass it.
+    if (!data.frameworkKey || !(await isFrameworkInUse(ctx, data.frameworkKey))) {
+        throw badRequest(
+            'This framework is not in use in this workspace: none of your controls is mapped to its requirements. ' +
+                'Install it from the Frameworks page first, then create the cycle.',
+        );
     }
 
     const cycle = await runInTenantContext(ctx, async (tdb) => {

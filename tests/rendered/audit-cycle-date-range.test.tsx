@@ -116,6 +116,14 @@ function installFetchStub(cycleResponse: { ok: boolean; body?: unknown } = { ok:
                     json: async () => ({ cycles: [] as unknown[], scoresByCycleId: {} }),
                 };
             }
+            // #4129 — the picker offers only the frameworks in use, read when
+            // the form opens; it no longer seeds ISO 27001 before the read.
+            if (url.endsWith('/frameworks?inUse=true')) {
+                return {
+                    ok: true,
+                    json: async () => [{ key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022' }],
+                };
+            }
             if (url.endsWith('/audits/cycles') && (!init || init.method === undefined || init.method === 'GET')) {
                 return {
                     ok: true,
@@ -171,6 +179,10 @@ async function mountAndOpenForm() {
     // `document` for that reason; only the page-level trigger is in `container`.
     await waitFor(() => {
         expect(document.querySelector('#cycle-form')).not.toBeNull();
+    });
+    // The framework picker fills once the in-use read lands.
+    await waitFor(() => {
+        expect(document.querySelector('#fw-select')?.textContent).toContain('ISO/IEC 27001');
     });
     return utils;
 }

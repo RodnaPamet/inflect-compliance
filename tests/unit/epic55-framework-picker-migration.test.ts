@@ -141,23 +141,17 @@ describe('Epic 55 — framework + taxonomy picker migration', () => {
 
 // ─── audits/cycles framework options ─────────────────────────────
 
-describe('audits/cycles — FW_OPTIONS shape', () => {
-    it('exposes a FW_OPTIONS constant typed as ComboboxOption<{ version: string }>[]', () => {
-        expect(CYCLES_SRC).toMatch(/FW_OPTIONS:\s*ComboboxOption<\{\s*version:\s*string\s*\}>\[\]/);
-    });
-
-    it('carries ISO27001 and NIS2 entries with full-text labels', () => {
-        expect(CYCLES_SRC).toMatch(/value:\s*['"]ISO27001['"]/);
-        expect(CYCLES_SRC).toMatch(/value:\s*['"]NIS2['"]/);
-        expect(CYCLES_SRC).toMatch(/ISO\/IEC 27001:2022/);
-        expect(CYCLES_SRC).toMatch(/NIS2 Directive \(EU 2022\/2555\)/);
-    });
-
-    it('passes meta.version through for downstream payload shaping', () => {
-        expect(CYCLES_SRC).toMatch(/meta:\s*\{\s*version:\s*['"]2022['"]/);
-        expect(CYCLES_SRC).toMatch(
-            /meta:\s*\{\s*version:\s*['"]EU_2022_2555['"]/,
-        );
+describe('audits/cycles — framework options', () => {
+    // #4129 — this block used to pin FW_OPTIONS (later DEFAULT_FW_OPTIONS):
+    // ISO 27001 and NIS2 options written into the page, offered before the
+    // real list loaded and in its place when the read failed — whether or not
+    // the workspace used either framework. They were the defect, so they are
+    // gone, and the picker is the in-use read alone.
+    // tests/rendered/audits-role-gates.test.tsx drives the form against it.
+    it('reads the frameworks in use and carries each one’s version as meta', () => {
+        expect(CYCLES_SRC).toMatch(/CACHE_KEYS\.frameworks\.inUse\(\)/);
+        expect(CYCLES_SRC).toMatch(/meta:\s*\{\s*version:\s*f\.version \?\? ''\s*\}/);
+        expect(CYCLES_SRC).not.toMatch(/value:\s*['"]ISO27001['"]/);
     });
 });
 

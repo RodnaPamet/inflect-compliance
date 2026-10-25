@@ -5,7 +5,9 @@
  *
  * Renders the campaign roster with status badges, deadline,
  * reviewer, and a progress bar (% decided). Admin actions:
- *   • New campaign — modal that submits to POST /access-reviews
+ *   • New campaign — modal that submits to POST /access-reviews. Shown
+ *     only to a caller holding `access_reviews.create` (#4130): every other
+ *     role used to fill the form in and then meet "Permission denied".
  *   • Row click → /t/:slug/access-reviews/:id (detail page)
  */
 import { useMemo, useState } from 'react';
@@ -28,6 +30,8 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { DatePicker } from '@/components/ui/date-picker';
+import { DateRangePicker } from '@/components/ui/date-picker/date-range-picker';
+import type { DateRangeValue } from '@/components/ui/date-picker/types';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
@@ -59,8 +63,11 @@ interface AccessReviewSummary {
      * because a row cached before the count carried it has none.
      */
     _count: { decisions: number; connectedDecisions?: number };
-    /** Filled by the detail-page hydration; the list endpoint keeps
-     *  the response small. */
+    /**
+     * Subjects with a verdict, across both subject tables. Sent by
+     * `listAccessReviews` (#4130); optional because a row cached before it
+     * was sent has none, and such a row reads as zero until it refetches.
+     */
     decidedCount?: number;
 }
 
@@ -76,9 +83,15 @@ const STATUS_VARIANT: Record<
 interface Props {
     tenantSlug: string;
     initialReviews: AccessReviewSummary[];
+    /**
+     * The caller holds `access_reviews.create` — the key `POST /access-reviews`
+     * and its connected and agent siblings take. The New campaign button
+     * follows it, so it is offered only to those the server will let create.
+     */
+    canCreate: boolean;
 }
 
-export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
+export function AccessReviewsClient({ tenantSlug, initialReviews, canCreate }: Props) {
     const t = useTranslations('accessReviews');
     const router = useRouter();
 
@@ -131,7 +144,7 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                     header: t('colStatus'),
                     cell: ({ row }) => (
                         <StatusBadge variant={STATUS_VARIANT[row.original.status]}>
-                            {row.original.status}
+                            {t(`statusLabels.${row.original.status}`)}
                         </StatusBadge>
                     ),
                 },
@@ -222,15 +235,17 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                             {t('campaignsCount', { count: reviews.length })}
                         </p>
                     </div>
-                    <CreateCampaignButton
-                        tenantSlug={tenantSlug}
-                        onCreated={(reviewId) => {
-                            reviewsQuery.mutate();
-                            router.push(
-                                `/t/${tenantSlug}/access-reviews/${reviewId}`,
-                            );
-                        }}
-                    />
+                    {canCreate ? (
+                        <CreateCampaignButton
+                            tenantSlug={tenantSlug}
+                            onCreated={(reviewId) => {
+                                reviewsQuery.mutate();
+                                router.push(
+                                    `/t/${tenantSlug}/access-reviews/${reviewId}`,
+                                );
+                            }}
+                        />
+                    ) : null}
                 </div>
                 {truncated ? <TruncationBanner truncated /> : null}
             </ListPageShell.Header>
@@ -241,7 +256,9 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                         data-testid="access-reviews-empty"
                     >
                         <p className="text-content-muted">
-                            {t.rich('emptyList', { b: (c) => <strong>{c}</strong> })}
+                            {canCreate
+                                ? t.rich('emptyList', { b: (c) => <strong>{c}</strong> })
+                                : t('emptyListReadOnly')}
                         </p>
                     </div>
                 ) : (
@@ -433,6 +450,10 @@ function CreateCampaignButton({
         ];
     }, [directoryStatusKnown, syncedProviders, t]);
     const [dueAt, setDueAt] = useState<Date | null>(null);
+    // The audit period the campaign covers (#4130). Every create schema takes
+    // `periodStartAt` / `periodEndAt` and the evidence PDF prints them, but the
+    // form never sent one, so the register's Period column always read "—".
+    const [period, setPeriod] = useState<DateRangeValue>({ from: null, to: null });
     const [error, setError] = useState<string | null>(null);
 
     const apiUrl = `/api/t/${tenantSlug}/access-reviews`;
@@ -454,6 +475,12 @@ function CreateCampaignButton({
             // does not undo the campaign — the detail page offers it again.
             const isConnected = scope === 'CONNECTED_APP';
             const isAgent = scope === 'AGENT';
+            // A period is sent only when both ends are set: the picker
+            // commits a range as a pair, and half a period is not one.
+            const periodFields =
+                period.from && period.to
+                    ? { periodStartAt: period.from.toISOString(), periodEndAt: period.to.toISOString() }
+                    : {};
             const body = isConnected || isAgent
                 ? {
                       name,
@@ -464,6 +491,7 @@ function CreateCampaignButton({
                           : {}),
                       reviewerUserId,
                       dueAt: dueAt ? dueAt.toISOString() : undefined,
+                      ...periodFields,
                   }
                 : {
                       name,
@@ -471,6 +499,7 @@ function CreateCampaignButton({
                       scope,
                       reviewerUserId,
                       dueAt: dueAt ? dueAt.toISOString() : undefined,
+                      ...periodFields,
                   };
             const res = await fetch(isConnected ? `${apiUrl}/connected` : isAgent ? `${apiUrl}/agents` : apiUrl, {
                 method: 'POST',
@@ -499,6 +528,7 @@ function CreateCampaignButton({
             setCrossPreparerAgentId('');
             setScope('ALL_USERS');
             setDueAt(null);
+            setPeriod({ from: null, to: null });
             onCreated(data.accessReviewId);
         } catch (err) {
             setError(err instanceof Error ? err.message : t('unknownError'));
@@ -674,6 +704,19 @@ function CreateCampaignButton({
                                         forceDropdown
                                         matchTriggerWidth
                                         id="access-review-reviewer-select"
+                                    />
+                                </div>
+                            </FormField>
+                            <FormField label={t('fieldPeriod')} hint={t('periodHint')}>
+                                <div data-testid="access-review-new-period">
+                                    <DateRangePicker
+                                        id="access-review-period-range"
+                                        className="w-full"
+                                        align="start"
+                                        placeholder={t('periodPlaceholder')}
+                                        value={period}
+                                        onChange={setPeriod}
+                                        showYearNavigation
                                     />
                                 </div>
                             </FormField>

@@ -136,6 +136,38 @@ export class AccessReviewRepository {
         });
     }
 
+    /**
+     * How many subjects of each campaign carry a verdict, keyed by campaign id
+     * (#4130). The register's Progress column showed `0/N` for every campaign,
+     * closed ones included, because the list select carries only the TOTALS
+     * and nothing sent the decided count. Both subject tables, as the totals
+     * are; a campaign with no decided row is absent from the map, which the
+     * caller reads as zero.
+     */
+    static async countDecidedByReview(
+        db: PrismaTx,
+        ctx: RequestContext,
+        accessReviewIds: readonly string[],
+    ): Promise<Map<string, number>> {
+        const decided = new Map<string, number>();
+        if (accessReviewIds.length === 0) return decided;
+        const ids = [...accessReviewIds];
+        const member = await db.accessReviewDecision.groupBy({
+            by: ['accessReviewId'],
+            where: { tenantId: ctx.tenantId, accessReviewId: { in: ids }, decision: { not: null } },
+            _count: { _all: true },
+        });
+        const connected = await db.accessReviewConnectedDecision.groupBy({
+            by: ['accessReviewId'],
+            where: { tenantId: ctx.tenantId, accessReviewId: { in: ids }, decision: { not: null } },
+            _count: { _all: true },
+        });
+        for (const g of [...member, ...connected]) {
+            decided.set(g.accessReviewId, (decided.get(g.accessReviewId) ?? 0) + g._count._all);
+        }
+        return decided;
+    }
+
     static async getById(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.accessReview.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
@@ -430,6 +462,54 @@ export class AccessReviewRepository {
     }
 
     /**
+     * Link the evidence PDF to a CLOSED campaign that has none yet, and touch
+     * nothing else (#4130). Conditional on both, so the closer and the close
+     * time recorded at close are never rewritten by whoever produces the PDF
+     * — the regeneration path runs under a different person than the close —
+     * and two producers racing cannot both attach: the loser gets 0.
+     */
+    static async attachEvidence(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        evidenceFileRecordId: string,
+    ) {
+        const r = await db.accessReview.updateMany({
+            where: {
+                id,
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                status: 'CLOSED',
+                evidenceFileRecordId: null,
+            },
+            data: { evidenceFileRecordId },
+        });
+        return r.count;
+    }
+
+    /**
+     * Change the reviewer and/or the due date of a campaign that is not
+     * CLOSED (#4130). Conditional on the status, so a close that lands
+     * between the usecase's read and this write leaves the closed campaign
+     * untouched (count 0). Never writes `scope`, `name` or the period.
+     */
+    static async updateSettings(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        data: { reviewerUserId?: string; dueAt?: Date | null },
+    ) {
+        const r = await db.accessReview.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, status: { not: 'CLOSED' } },
+            data: {
+                ...(data.reviewerUserId !== undefined ? { reviewerUserId: data.reviewerUserId } : {}),
+                ...(data.dueAt !== undefined ? { dueAt: data.dueAt } : {}),
+            },
+        });
+        return r.count;
+    }
+
+    /**
      * Mark a single decision row as executed. Both fields are set
      * together so the `_executed_pair` CHECK constraint is satisfied.
      */
@@ -471,6 +551,16 @@ export class AccessReviewRepository {
                 modifiedToRole: true,
                 modifiedToCustomRoleId: true,
                 executedAt: true,
+                /// Who recorded the verdict, and when: the close refuses a
+                /// verdict its subject recorded on themselves (#4130), and the
+                /// evidence PDF prints the date.
+                decidedAt: true,
+                decidedByUserId: true,
+                /// The reviewer's justification, decrypted by the field-
+                /// encryption extension on read. Printed in the evidence PDF
+                /// (#4130 — it used to be left out, so an auditor reading the
+                /// artefact could not see why any access was kept or removed).
+                notes: true,
                 /// Joined live membership state. SetNull cascade means
                 /// this can be `null` if the user has been offboarded
                 /// outside the campaign — the executor skips with a

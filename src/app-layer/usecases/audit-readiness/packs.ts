@@ -8,12 +8,74 @@ import {
     assertCanManageAuditPacks, assertCanFreezePack, assertCanViewPack,
 } from '../../policies/audit-readiness.policies';
 import { logEvent } from '../../events/audit';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { TERMINAL_TASK_STATUSES } from '../../domain/task-status';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
+import { frameworkHasStatementOfApplicability } from '@/lib/compliance/statement-of-applicability';
 import { toCsv } from '@/lib/csv/format-csv';
+import { logger } from '@/lib/observability/logger';
+
+/**
+ * The item types that reference ONE owned row (ISSUE → Task). Their snapshot is
+ * that row as it stood at freeze, built by `freezeAuditPack` and by nothing
+ * else; the other types (READINESS_REPORT, FRAMEWORK_COVERAGE, FILE, TEST_RUN)
+ * carry a computed artefact whose snapshot IS the content, written when the
+ * item is attached.
+ */
+const ROW_BACKED_ITEM_TYPES: ReadonlySet<string> = new Set(['CONTROL', 'POLICY', 'EVIDENCE', 'ISSUE']);
+
+/** The name a stored snapshot carries, the same fields every pack view reads. */
+function snapshotName(snapshotJson: string | null | undefined): string | null {
+    try {
+        const snap = JSON.parse(snapshotJson || '{}') as { code?: unknown; title?: unknown; name?: unknown };
+        const name = snap.code || snap.title || snap.name;
+        return typeof name === 'string' && name.trim() !== '' ? name : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * #4129 — the live names of a pack's row-backed items that carry no name of
+ * their own yet: a draft's items are stored with an empty snapshot until the
+ * freeze, so the page listed them by raw id. One batched read per type, inside
+ * the caller's transaction. Soft-deleted rows still answer: the name is a label
+ * for the reader, and the freeze reports the missing source separately.
+ */
+async function resolveItemNames(
+    tdb: PrismaTx,
+    tenantId: string,
+    items: ReadonlyArray<{ id: string; entityType: string; entityId: string; snapshotJson: string | null }>,
+): Promise<Map<string, string>> {
+    const unnamed = items.filter((it) => ROW_BACKED_ITEM_TYPES.has(it.entityType) && snapshotName(it.snapshotJson) === null);
+    const idsOf = (t: string) => [...new Set(unnamed.filter((it) => it.entityType === t).map((it) => it.entityId))];
+    const controlIds = idsOf('CONTROL');
+    const policyIds = idsOf('POLICY');
+    const evidenceIds = idsOf('EVIDENCE');
+    const issueIds = idsOf('ISSUE');
+    const [controls, policies, evidence, tasks] = await Promise.all([
+        controlIds.length ? tdb.control.findMany({ where: { id: { in: controlIds }, tenantId }, select: { id: true, code: true, name: true }, take: controlIds.length }) : [],
+        policyIds.length ? tdb.policy.findMany({ where: { id: { in: policyIds }, tenantId }, select: { id: true, title: true }, take: policyIds.length }) : [],
+        evidenceIds.length ? tdb.evidence.findMany({ where: { id: { in: evidenceIds }, tenantId }, select: { id: true, title: true }, take: evidenceIds.length }) : [],
+        issueIds.length ? tdb.task.findMany({ where: { id: { in: issueIds }, tenantId }, select: { id: true, title: true }, take: issueIds.length }) : [],
+    ]);
+    // The same field a frozen snapshot is read by: a control's code where it
+    // has one, so a draft row and its frozen row read alike.
+    const byType: Record<string, Map<string, string>> = {
+        CONTROL: new Map(controls.map((c) => [c.id, c.code || c.name])),
+        POLICY: new Map(policies.map((p) => [p.id, p.title])),
+        EVIDENCE: new Map(evidence.map((e) => [e.id, e.title])),
+        ISSUE: new Map(tasks.map((t) => [t.id, t.title])),
+    };
+    const names = new Map<string, string>();
+    for (const it of unnamed) {
+        const name = byType[it.entityType]?.get(it.entityId);
+        if (name) names.set(it.id, name);
+    }
+    return names;
+}
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Audit Packs РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
@@ -50,8 +112,8 @@ export async function listAuditPacks(ctx: RequestContext, cycleId?: string) {
 
 export async function getAuditPack(ctx: RequestContext, packId: string) {
     assertCanViewPack(ctx);
-    const pack = await runInTenantContext(ctx, (tdb) =>
-        tdb.auditPack.findFirst({
+    const pack = await runInTenantContext(ctx, async (tdb) => {
+        const row = await tdb.auditPack.findFirst({
             where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
             include: {
                 // Safety ceiling far above any realistic pack (the add-items
@@ -62,8 +124,14 @@ export async function getAuditPack(ctx: RequestContext, packId: string) {
                 frozenBy: { select: { id: true, name: true, email: true } },
                 _count: { select: { items: true, shares: true } },
             },
-        })
-    );
+        });
+        if (!row) return null;
+        // `displayName` — the live name of an item whose snapshot names
+        // nothing yet (every row-backed item of a draft). A frozen item's
+        // snapshot is the record and is read first; this is the fallback.
+        const names = await resolveItemNames(tdb, ctx.tenantId, row.items ?? []);
+        return { ...row, items: (row.items ?? []).map((it) => ({ ...it, displayName: names.get(it.id) ?? null })) };
+    });
     if (!pack) throw notFound('Audit pack not found');
     return pack;
 }
@@ -137,7 +205,13 @@ export async function addAuditPackItems(
             auditPackId: packId,
             entityType: item.entityType as AuditPackItemEntityType,
             entityId: item.entityId,
-            snapshotJson: item.snapshotJson || '{}',
+            // #4129 — a row-backed item's snapshot is built by the freeze from
+            // the source row, never taken from the caller. The pack page used
+            // to send `{ title }` here, and because the freeze kept any
+            // non-empty snapshot, the frozen item carried its title and
+            // nothing else — and a caller could have put any content in front
+            // of the auditor under a real control's id.
+            snapshotJson: ROW_BACKED_ITEM_TYPES.has(item.entityType) ? '{}' : (item.snapshotJson || '{}'),
             sortOrder: item.sortOrder ?? 0,
         }));
 
@@ -156,6 +230,59 @@ export async function addAuditPackItems(
     return outcome;
 }
 
+/**
+ * #4129 — take one item out of a DRAFT pack. Same writers as adding (OWNER,
+ * ADMIN, EDITOR); a frozen or exported pack is immutable and refuses.
+ *
+ * The DRAFT check is re-asserted by a predicated `updateMany` on the pack row
+ * in the same transaction as the delete, the interlock `storeExportArtifact`
+ * uses: it takes the pack's row lock, so a freeze committing in between makes
+ * it match nothing and refuse, and a freeze that has not yet flipped the status
+ * waits for this transaction rather than snapshotting an item that is leaving.
+ */
+export async function removeAuditPackItem(ctx: RequestContext, packId: string, itemId: string) {
+    assertCanManageAuditPacks(ctx);
+    const outcome = await runInTenantContext(ctx, async (tdb) => {
+        const pack = await tdb.auditPack.findFirst({
+            where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, status: true },
+        });
+        if (!pack) throw notFound('Audit pack not found');
+        if (pack.status !== 'DRAFT') throw badRequest('Cannot remove items from a frozen or exported pack');
+        const item = await tdb.auditPackItem.findFirst({
+            where: { id: itemId, auditPackId: packId, tenantId: ctx.tenantId },
+            select: { id: true, entityType: true, entityId: true },
+        });
+        if (!item) throw notFound('Pack item not found');
+
+        const stillDraft = await tdb.auditPack.updateMany({
+            where: { id: packId, tenantId: ctx.tenantId, status: 'DRAFT' },
+            data: { updatedAt: new Date() },
+        });
+        if (stillDraft.count === 0) throw badRequest('Cannot remove items from a frozen or exported pack');
+        await tdb.auditPackItem.delete({ where: { id: item.id } });
+
+        await logEvent(tdb, ctx, {
+            action: 'AUDIT_PACK_ITEM_REMOVED',
+            entityType: 'AuditPack',
+            entityId: packId,
+            details: JSON.stringify({ itemId: item.id, entityType: item.entityType, entityId: item.entityId }),
+            detailsJson: {
+                category: 'relationship',
+                operation: 'unlinked',
+                sourceEntity: 'AuditPack',
+                sourceId: packId,
+                targetEntity: item.entityType,
+                targetId: item.entityId,
+                relation: 'pack_item',
+            },
+        });
+        return { removed: true, itemId: item.id };
+    });
+    await bumpEntityCacheVersion(ctx, 'audit');
+    return outcome;
+}
+
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Snapshot Creation РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
 // Snapshot serialisation is inlined into freezeAuditPack below. The
@@ -167,29 +294,73 @@ export async function addAuditPackItems(
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Freeze Pack РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
-export async function freezeAuditPack(ctx: RequestContext, packId: string) {
-    assertCanFreezePack(ctx);
+/** Options for {@link freezeAuditPack}. */
+export interface FreezeAuditPackOptions {
+    /**
+     * Attach the cycle framework's Statement of Applicability before freezing.
+     * Default true. The reliance pack passes false: what it holds is decided by
+     * its planner alone (`agent-audit-reliance.ts`).
+     */
+    readonly attachStatementOfApplicability?: boolean;
+}
 
-    // ── Phase 1 (#2): attach the SoA snapshot as an EXPORT_ARTIFACT item
-    // WHILE THE PACK IS STILL DRAFT — before the status flip in Phase 2. It
-    // used to run AFTER the freeze, writing to an already-FROZEN pack.
-    // `getSoA` opens its own tenant transactions, so it cannot run inside an
-    // interactive transaction; the append therefore lands in a short,
-    // ISOLATED transaction. Best-effort by design: a SoA failure (or the
-    // not-yet-migrated EXPORT_ARTIFACT enum value, which the DB rejects) must
-    // never abort the freeze — keeping it in its own try-caught transaction
-    // is what guarantees that. The DRAFT + non-empty guards mirror Phase 2 so
-    // nothing is ever written to a frozen or empty pack.
+/** `AuditPackItem.entityId` of the Statement of Applicability a freeze attaches. */
+export function soaItemEntityId(frameworkKey: string): string {
+    return `soa-${frameworkKey}`;
+}
+
+/**
+ * Attach the Statement of Applicability of the pack's cycle framework as an
+ * item, WHILE THE PACK IS STILL DRAFT (Phase 1 of the freeze).
+ *
+ * #4129 — this used to insert an item of type `EXPORT_ARTIFACT`, a value
+ * `AuditPackItemEntityType` has never had, inside a `catch {}`, so the database
+ * refused it on every freeze and nothing said so: no pack ever carried its SoA.
+ * Adding the value would be a two-deploy enum migration (a running container
+ * whose client predates a value fails every read of a row carrying it), and an
+ * existing value already says what this is: `FRAMEWORK_COVERAGE`. A Statement
+ * of Applicability is the framework's coverage, requirement by requirement —
+ * whether it applies, how far it is implemented, which controls cover it. The
+ * snapshot's `type: 'SOA_REPORT'` tells it apart from the reliance pack's
+ * summary item, which shares the type.
+ *
+ * Two more corrections: the SoA is now the CYCLE's framework (`getSoA` with no
+ * `framework` reports on whatever the workspace installed, ISO 27001 first,
+ * whatever the cycle is about), and only for a framework that has one
+ * (`frameworkHasStatementOfApplicability`). It is an upsert on the item's
+ * unique key, so a pack cloned for retest, which carries the old SoA item
+ * forward, gets it refreshed rather than a duplicate refused.
+ *
+ * Still best-effort — an SoA that cannot be built must not stop the freeze —
+ * but a failure is now logged with the pack and the framework.
+ */
+async function attachStatementOfApplicability(ctx: RequestContext, packId: string): Promise<void> {
+    let frameworkKey: string | undefined;
     try {
+        const pack = await runInTenantContext(ctx, (tdb) =>
+            tdb.auditPack.findFirst({
+                where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
+                select: { status: true, _count: { select: { items: true } }, cycle: { select: { frameworkKey: true } } },
+            }),
+        );
+        // Only a still-DRAFT, non-empty pack; Phase 2 is the authority that
+        // raises the real not-found / already-frozen / empty error.
+        if (!pack || pack.status !== 'DRAFT' || !pack._count?.items) return;
+        frameworkKey = pack.cycle?.frameworkKey;
+        if (!frameworkKey || !frameworkHasStatementOfApplicability(frameworkKey)) return;
+
         const { getSoA } = await import('../soa');
         const soaReport = await getSoA(ctx, {
+            framework: frameworkKey,
             includeEvidence: true,
             includeTasks: true,
             includeTests: true,
         });
-        const soaSnapshot = JSON.stringify({
+        const snapshotJson = JSON.stringify({
             type: 'SOA_REPORT',
+            title: `Statement of Applicability — ${soaReport.frameworkName || soaReport.framework}`,
             framework: soaReport.framework,
+            frameworkName: soaReport.frameworkName,
             generatedAt: soaReport.generatedAt,
             summary: soaReport.summary,
             entries: soaReport.entries.map((e) => ({
@@ -204,28 +375,68 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
             })),
             snapshotAt: new Date().toISOString(),
         });
+        const entityId = soaItemEntityId(frameworkKey);
+        const sortOrder = pack._count.items + 1;
         await runInTenantContext(ctx, async (tdb) => {
-            const pack = await tdb.auditPack.findFirst({
-                where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
-                select: { status: true, _count: { select: { items: true } } },
+            // The predicated write takes the pack's row lock, so a freeze that
+            // committed meanwhile makes this match nothing and attach nothing.
+            const stillDraft = await tdb.auditPack.updateMany({
+                where: { id: packId, tenantId: ctx.tenantId, status: 'DRAFT' },
+                data: { updatedAt: new Date() },
             });
-            // Only append to a still-DRAFT, non-empty pack; Phase 2 is the
-            // authority that raises the real not-found / already-frozen /
-            // empty error to the caller.
-            if (!pack || pack.status !== 'DRAFT' || pack._count.items === 0) return;
-            await tdb.auditPackItem.create({
-                data: {
+            if (stillDraft.count === 0) return;
+            await tdb.auditPackItem.upsert({
+                where: { auditPackId_entityType_entityId: { auditPackId: packId, entityType: 'FRAMEWORK_COVERAGE', entityId } },
+                create: {
                     tenantId: ctx.tenantId,
                     auditPackId: packId,
-                    // EXPORT_ARTIFACT not yet in AuditPackItemEntityType enum; pending schema migration
-                    entityType: 'EXPORT_ARTIFACT' as AuditPackItemEntityType,
-                    entityId: `soa-${soaReport.framework}`,
-                    snapshotJson: soaSnapshot,
-                    sortOrder: pack._count.items + 1,
+                    entityType: 'FRAMEWORK_COVERAGE',
+                    entityId,
+                    snapshotJson,
+                    sortOrder,
                 },
+                update: { snapshotJson },
             });
         });
-    } catch { /* SoA attachment is best-effort */ }
+    } catch (err) {
+        logger.warn('audit pack freeze: Statement of Applicability not attached', {
+            component: 'audit-pack-freeze',
+            packId,
+            frameworkKey,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
+/**
+ * Whether the freeze must (re)build this item's snapshot. Any item with none;
+ * and a row-backed item whose snapshot the server did not build — every
+ * builder below stamps `snapshotAt`, and a caller-supplied one (the `{ title }`
+ * the pack page used to send, still stored on drafts made before #4129) lacks
+ * it. A computed artefact's snapshot is its content and is kept.
+ */
+function needsSnapshot(item: { entityType: string; snapshotJson: string | null }): boolean {
+    if (!item.snapshotJson || item.snapshotJson === '{}') return true;
+    if (!ROW_BACKED_ITEM_TYPES.has(item.entityType)) return false;
+    try {
+        const parsed: unknown = JSON.parse(item.snapshotJson);
+        return !(parsed && typeof parsed === 'object' && typeof (parsed as { snapshotAt?: unknown }).snapshotAt === 'string');
+    } catch {
+        return true;
+    }
+}
+
+export async function freezeAuditPack(ctx: RequestContext, packId: string, opts: FreezeAuditPackOptions = {}) {
+    assertCanFreezePack(ctx);
+
+    // ── Phase 1 (#2, #4129): attach the cycle framework's Statement of
+    // Applicability WHILE THE PACK IS STILL DRAFT — before the status flip in
+    // Phase 2. `getSoA` opens its own tenant transactions, so it cannot run
+    // inside an interactive transaction; the append lands in a short,
+    // isolated one. See `attachStatementOfApplicability`.
+    if (opts.attachStatementOfApplicability !== false) {
+        await attachStatementOfApplicability(ctx, packId);
+    }
 
     // ── Phase 2: snapshot every item + flip status → FROZEN in one transaction.
     // Extended 60s timeout because large packs (500+ items) need a snapshot
@@ -243,9 +454,9 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string) {
         if (pack.status !== 'DRAFT') throw badRequest('Pack is already frozen or exported');
         if (pack.items.length === 0) throw badRequest('Cannot freeze an empty pack');
 
-        // Items still lacking a snapshot ('{}' or empty) need one built. Batch
-        // one findMany per concrete entity type, then serialise from a map.
-        const needing = pack.items.filter((it) => !it.snapshotJson || it.snapshotJson === '{}');
+        // Items still lacking a server-built snapshot need one (`needsSnapshot`).
+        // Batch one findMany per concrete entity type, then serialise from a map.
+        const needing = pack.items.filter(needsSnapshot);
         const idsFor = (t: string) => needing.filter((it) => it.entityType === t).map((it) => it.entityId);
         const controlIds = idsFor('CONTROL');
         const policyIds = idsFor('POLICY');
@@ -415,20 +626,34 @@ export async function previewDefaultPack(ctx: RequestContext, cycleId: string) {
     );
     if (!cycle) throw notFound('Audit cycle not found');
 
-    if (cycle.frameworkKey === 'ISO27001') {
-        return buildCuratedDefaultPack(ctx, 'ISO27001', ['security', 'information security', 'access control']);
-    } else if (cycle.frameworkKey === 'NIS2') {
-        return buildCuratedDefaultPack(ctx, 'NIS2', ['incident', 'business continuity', 'disaster recovery', 'access control', 'supplier', 'supply chain']);
-    }
-    throw badRequest(`No default pack template for framework: ${cycle.frameworkKey}`);
+    // #4129 — every framework a cycle can be on has a default pack. This used
+    // to refuse anything but ISO27001 and NIS2, and nothing else in the page
+    // builds a pack, so a cycle on any other framework could never get one.
+    // The selection is framework-neutral (mapped controls, their evidence,
+    // open tasks); only the policy keyword bias is framework-specific.
+    return buildCuratedDefaultPack(
+        ctx,
+        cycle.frameworkKey,
+        DEFAULT_PACK_POLICY_KEYWORDS.get(cycle.frameworkKey) ?? null,
+    );
 }
 
 /**
- * Curated default-pack selection shared by every framework template.
- * `policyKeywords` biases policy selection toward framework-relevant
- * titles/categories among the APPROVED/PUBLISHED set.
+ * The frameworks whose default pack prefers policies by keyword. Any other
+ * framework takes every published policy: there is no keyword list that is
+ * right for a framework nobody has written one for.
  */
-async function buildCuratedDefaultPack(ctx: RequestContext, frameworkKey: string, policyKeywords: string[]) {
+const DEFAULT_PACK_POLICY_KEYWORDS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['ISO27001', ['security', 'information security', 'access control']],
+    ['NIS2', ['incident', 'business continuity', 'disaster recovery', 'access control', 'supplier', 'supply chain']],
+]);
+
+/**
+ * Curated default-pack selection shared by every framework.
+ * `policyKeywords` biases policy selection toward framework-relevant
+ * titles/categories among the PUBLISHED set; `null` takes them all.
+ */
+async function buildCuratedDefaultPack(ctx: RequestContext, frameworkKey: string, policyKeywords: readonly string[] | null) {
     const fw = await runInTenantContext(ctx, (tdb) => tdb.framework.findFirst({ where: { key: frameworkKey } }));
 
     // Controls mapped to the framework's requirements…
@@ -473,7 +698,7 @@ async function buildCuratedDefaultPack(ctx: RequestContext, frameworkKey: string
             take: 2000,
         })
     );
-    const relevantPolicies = policies.filter((p) => {
+    const relevantPolicies = policyKeywords === null ? policies : policies.filter((p) => {
         const text = `${p.title} ${p.category || ''}`.toLowerCase();
         return policyKeywords.some((kw) => text.includes(kw));
     });

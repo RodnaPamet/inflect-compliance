@@ -717,6 +717,7 @@ describe('materializeShareCommentFinding — auditor FINDING → real Finding+Ta
         const result = await materializeShareCommentFinding(ctx, 'p-1', 'c-1');
 
         expect(result.findingId).toBe('find-new');
+        expect(result.attachedToAudit).toBe(true);
         // Finding is tied to the cycle's fieldwork audit + the control the item targets.
         expect(createFindingMock).toHaveBeenCalledWith(
             ctx,
@@ -743,7 +744,23 @@ describe('materializeShareCommentFinding — auditor FINDING → real Finding+Ta
 
         const result = await materializeShareCommentFinding(ctx, 'p-1', 'c-1');
 
-        expect(result).toEqual({ findingId: 'find-existing', alreadyExisted: true });
+        // `attachedToAudit` (#4129): the existing finding carries no audit, so
+        // the page must not claim it reached the cycle.
+        expect(result).toEqual({ findingId: 'find-existing', alreadyExisted: true, attachedToAudit: false });
         expect(createFindingMock).not.toHaveBeenCalled();
+    });
+
+    it('reports whether the new finding reached the cycle (#4129)', async () => {
+        // A finding links to the cycle only through a fieldwork audit. With
+        // none, the toast "Finding created and linked to the cycle" was false.
+        tenantDb.auditPackShareComment.findFirst.mockResolvedValueOnce({ id: 'c-1', kind: 'FINDING', status: 'OPEN', body: 'x', auditPackItemId: null });
+        tenantDb.finding.findFirst.mockResolvedValueOnce(null);
+        tenantDb.auditPack.findFirst.mockResolvedValueOnce({ auditCycleId: 'cyc-1' });
+        tenantDb.audit.findFirst.mockResolvedValueOnce(null); // no fieldwork audit
+
+        const result = await materializeShareCommentFinding(ctx, 'p-1', 'c-1');
+
+        expect(result).toEqual({ findingId: 'find-new', alreadyExisted: false, attachedToAudit: false });
+        expect(createFindingMock).toHaveBeenCalledWith(ctx, expect.objectContaining({ auditId: null }));
     });
 });

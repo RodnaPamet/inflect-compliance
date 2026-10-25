@@ -56,6 +56,14 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['revokeAccess'],
     },
     {
+        // #4129 — a draft pack had no way to drop an item at all. Removing one
+        // is a routine, reversible removal, so it takes the undo window: the
+        // POST is sent only when the window closes.
+        file: 'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx',
+        name: 'Audit pack item removal (pack detail)',
+        handlers: ['removeItem'],
+    },
+    {
         file: 'src/app/t/[tenantSlug]/(app)/audits/business-continuity/[id]/BiaDetailClient.tsx',
         name: 'BIA dependency removal (BIA detail)',
         handlers: ['removeDependency'],
