@@ -17,11 +17,12 @@ volumes, its own internal network, and its own lifecycle.
 This is the right shape for inflect-compliance for three concrete
 reasons:
 
-1. **The primary deployment is already a single VM running compose.**
-   `docker-compose.prod.yml` runs Caddy, the `app` container,
-   Postgres 16, PgBouncer, Redis 7, ClamAV, and Watchtower on one
-   host. The observability stack adds four more containers
-   (collector, Prometheus, Tempo, Grafana) to the same host. There
+1. **The production deployment is a single VM running compose.**
+   `deploy/docker-compose.prod.yml` runs Caddy, the `app` and
+   `worker` containers, Postgres 16, PgBouncer, Redis 7, ClamAV, and
+   Watchtower on one host. The observability stack adds four more
+   containers (collector, Prometheus, Tempo, Grafana) to the same
+   host. There
    is no second machine to provision, no orchestrator to learn, and
    no network hop off the box for the hot ingestion path.
 
@@ -55,27 +56,9 @@ the Grafana dashboards are unchanged — co-located vs dedicated-VM is
 a placement decision, not an architecture decision. That is the
 point of keeping it a separate project from day one.
 
-**For the Kubernetes secondary deployment (Helm chart at
-`infra/helm/inflect/`): do not hand-write manifests.** A
-hand-rolled collector Deployment and a hand-rolled Prometheus
-StatefulSet are a maintenance liability the moment they drift from
-upstream. The recommendation is the community Helm charts:
-
-- `open-telemetry/opentelemetry-collector` — fed *our* collector
-  config from `infra/observability/otel-collector/config.yaml` as a
-  ConfigMap value, deployed in `mode: deployment` (gateway pattern,
-  see `02-otel-collector.md`).
-- `prometheus-community/kube-prometheus-stack` — fed *our* scrape
-  config, *our* recording and alerting rules from
-  `infra/observability/prometheus/rules/`, and *our* dashboards
-  from `infra/observability/grafana/dashboards/` as sidecar-loaded
-  ConfigMaps.
-
-The collector config, the alert rules, and the dashboard JSON are
-**portable between the compose deployment and the Helm deployment**.
-Only the *packaging* differs. The compose stack is the primary,
-fully-deployable artifact; the Helm path is documented configuration
-re-use, not a second product.
+There is no Kubernetes deployment of the app or of this stack, and
+no Helm chart or Terraform module for either. The compose project in
+`infra/observability/` is the only packaging the stack has.
 
 # Component Placement
 
@@ -96,9 +79,13 @@ Two networks:
   four stack services talk to each other here. Nothing on this
   network is published to the host.
 - **`app`** — the application compose project's pre-existing bridge
-  network, joined as `external`. In `docker-compose.prod.yml` it is
-  named `internal`; the observability compose declares it via
-  `APP_NETWORK_NAME` in `.env` (default `inflect_internal`). Only
+  network, joined as `external`. The observability compose names it
+  through `APP_NETWORK_NAME` in `.env` (default `inflect_internal`,
+  which matches the network the root `docker-compose.prod.yml`
+  declares). `deploy/docker-compose.prod.yml`, which production runs,
+  declares no networks, so its services are on the compose project's
+  default network: `inflect_default` for the project in
+  `/opt/inflect/`. Confirm the name with `docker network ls`. Only
   the **collector** joins this network — it is the single bridge
   between the two compose projects. Prometheus, Tempo, and Grafana
   never touch the app network.
@@ -333,10 +320,10 @@ instruments when the SDK cannot reach a collector. The stack is an
 
 **Scale-out path, in order:** (1) raise retention or enable
 remote-write within the single-VM stack; (2) move the compose
-project to a dedicated monitoring VM (env var change only); (3) on
-Kubernetes, adopt `kube-prometheus-stack` + the collector Helm
-chart with our config. Each step is a placement or config change —
-none re-opens the architecture.
+project to a dedicated monitoring VM (env var change only). Both
+are a placement or config change, and neither re-opens the
+architecture. See
+[Scale-Out Provisioning](#scale-out-provisioning-beyond-the-single-vm).
 
 # Risks and Tradeoffs
 
@@ -346,10 +333,10 @@ none re-opens the architecture.
 | **Observability containers compete with Postgres/Redis for VM CPU, memory, and disk I/O.** Prometheus TSDB compaction is I/O-heavy. | Each observability container has explicit `mem_limit` / `cpus` caps in the compose file (collector 512m/1.0, Prometheus 1g/1.0, Tempo 1g/1.0, Grafana 512m/0.75). Prometheus retention is bounded (30d) and the volume is sized small (10–20Gi). If contention appears, the dedicated-monitoring-VM step is the answer. |
 | **Single-instance components have no failover.** A collector or Prometheus restart is a telemetry gap. | Accepted: telemetry is fire-and-forget; a gap is not an outage. `restart: unless-stopped` + healthchecks bound the gap to seconds. HA would cost more than the gap it prevents. |
 | **20% production trace sampling means 4 of 5 traces do not exist.** A specific failing request may have no trace. | Accepted: RED metrics (`api_request_*`) are **unsampled** and remain exact — they answer "is something wrong". Sampling only affects traces ("why"). 20% is enough to characterise behaviour; raise it temporarily during an incident via the collector env var + redeploy. |
-| **Logs are out of scope.** No Loki, no log search in Grafana. | Deliberate. The app emits Pino JSON to stdout, captured by the docker log driver; `docker logs` and `journalctl` remain the log surface. Adding Loki is a separate, bounded initiative — not folded into this stack to keep the component count down. |
+| **Logs are out of scope.** No Loki, no log search in Grafana. | Deliberate. The app emits Pino JSON to stdout, captured by the docker log driver; `docker logs` and `journalctl` remain the log surface. Adding Loki is a separate, bounded initiative — not folded into this stack to keep the component count down. Separately, the Google Cloud Ops Agent on the VM ships the app container's log lines to Cloud Logging (`deploy/ops-agent-config.yaml`, pushed by `deploy/apply.sh`) without changing the docker log driver. |
 | **The compose stack joins the app's docker network.** A misconfigured `APP_NETWORK_NAME` silently breaks app→collector resolution. | The `.env.example` documents how to find the real network name (`docker network ls`); the deadman's switch and the collector `up==0` alert catch a broken link within one scrape interval. |
 | **Grafana SSO depends on the Google OAuth app already used by the product.** A misconfigured redirect URI locks operators out of Grafana. | Mitigation: the admin password login remains enabled as the break-glass path; SSO is additive. Document the Grafana redirect URI in the OAuth app config. |
-| **Watchtower auto-updates the app image; the observability stack is on pinned tags.** A divergence: the app moves, the stack does not. | Intentional — the stack must be upgraded deliberately, staging-first (see `04`). Watchtower is scoped to the app compose project and does not see the observability project. |
+| **Watchtower auto-updates the app image; the observability stack is on pinned tags.** A divergence: the app moves, the stack does not. | Intentional — the stack must be upgraded deliberately, staging-first (see `04`). Watchtower updates only containers labelled `com.centurylinklabs.watchtower.enable=true` — `app` and `worker` — so it leaves the observability containers alone. |
 
 # Implementation Phases
 
@@ -398,13 +385,6 @@ working state.
 - Exit criteria: production dashboards render; a sev-1 test alert
   pages on-call; the acceptance checklist below passes.
 
-**Phase 5 — Kubernetes parity (when/if the Helm deployment is in
-use).**
-- Adopt the `opentelemetry-collector` and `kube-prometheus-stack`
-  Helm charts, fed our config / rules / dashboards.
-- Out of scope for the compose deliverable; documented so it is not
-  reinvented.
-
 # Acceptance Criteria
 
 - [ ] `infra/observability/docker-compose.observability.yml` exists
@@ -448,50 +428,29 @@ use).**
 
 # Scale-Out Provisioning (beyond the single VM)
 
-The topology above is the **single-VM + docker-compose** deployment
-(today's production): the stack is co-located on the app VM via
-`infra/observability/docker-compose.observability.yml`. That stack is
-invisible to `infra/terraform/modules/*` and has no Helm chart, so a
-Kubernetes deployment of the app would have nowhere to point its OTLP
-exporter. Two complementary provisioning paths close that gap so the
-**same telemetry shape (OTLP/HTTP)** works in every deploy target.
+The topology above is the only one deployed: the stack is co-located
+on the app VM through
+`infra/observability/docker-compose.observability.yml`. The app emits
+OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT`, so moving the telemetry
+backend changes that variable, and the auth header a backend needs,
+and nothing else in the app.
 
-## The three paths
+## The shapes
 
-| Path | How | When |
-|------|-----|------|
-| **1. Single VM + compose** *(today)* | `docker compose -f infra/observability/docker-compose.observability.yml up -d` (co-located on the app VM) | Single-VM production; unchanged. |
-| **2. K8s + self-hosted stack** | `helm install obs infra/helm/observability` (OTel+Prom+Tempo+Grafana, same component versions as compose) | Air-gapped / on-prem / regulated — telemetry must not leave the cluster. |
-| **3. K8s + Grafana Cloud (managed)** | `terraform apply infra/terraform/modules/observability` → set the app's `OTEL_EXPORTER_OTLP_ENDPOINT` to the module's `grafana_otlp_endpoint` (+ `OTEL_EXPORTER_OTLP_HEADERS` from `grafana_otlp_basic_auth_token`); deploy the app via `infra/helm/inflect`. | Most production — lowest operational burden. |
+| Shape | How | When |
+|-------|-----|------|
+| **1. Co-located on the app VM** *(today)* | `docker compose -f infra/observability/docker-compose.observability.yml up -d` on the app VM | Today's production. |
+| **2. Dedicated monitoring VM** | The same compose project on a second VM. The app's `OTEL_EXPORTER_OTLP_ENDPOINT` points at it over a private link. | Prometheus I/O competes with Postgres for the disk, or a host failure must not take the telemetry with it. |
+| **3. Managed OTLP backend** | `OTEL_EXPORTER_OTLP_ENDPOINT` points at the vendor's OTLP endpoint, with its auth header. | The operator would rather not run the stack. The vendor then receives telemetry and must be registered as a sub-processor (`docs/sub-processors.md`). |
 
-The app emits OTLP/HTTP regardless; only the **endpoint + auth** differ
-across paths. Moving off the single VM does not strand the observability
-surface — pick path 2 or 3 and re-point one env var.
-
-## Trade-off matrix (the decision is the operator's)
-
-| Dimension | Path 1 — VM+compose | Path 2 — K8s self-hosted | Path 3 — Grafana Cloud |
-|-----------|--------------------|--------------------------|------------------------|
-| **Operational burden** | Medium (one VM, manual upgrades) | High (run + scale + back up 4 stateful services) | **Lowest** (vendor-run) |
-| **Cost shape** | VM compute only | Cluster compute + storage (PVs) | Per-ingest/retention billing |
-| **Data residency** | Full control (on the VM) | **Full control (in-cluster)** | Egresses to Grafana Cloud region (pick `stack_region` for residency) |
-| **Retention/scale ceiling** | Single-node disk | Cluster storage | Effectively unbounded |
-| **Air-gap capable** | Yes | **Yes** | No (SaaS egress) |
-
-Recommendation: **Path 3 (Grafana Cloud)** for production unless a
-procurement or data-residency constraint forbids SaaS egress, in which
-case **Path 2 (self-hosted Helm)**. (Provider note: if Grafana Cloud is
-off the table, the Terraform module's resources can be swapped for AWS
-Managed Prometheus + AWS Managed Grafana for the same telemetry shape at
-the cost of vendor lock-in — see the implementation note.)
-
-See `docs/implementation-notes/2026-06-25-observability-provisioning.md`
-for the Grafana-Cloud-vs-AWS-managed rationale and the dashboard
-single-source-of-truth migration.
+Shapes 2 and 3 are not provisioned anywhere, and the repository holds
+no Helm chart, Terraform module or other tooling for them.
+`docs/implementation-notes/2026-06-25-observability-provisioning.md`
+records an earlier design that added both; the Helm chart and
+Terraform module it describes are not in the tree.
 
 ## Out of scope (follow-ups)
 
-- Migrating prod off compose to k8s — this ships the *option*, not the switch.
 - Wiring `docs/slos.md` SLOs as Grafana SLO objects.
 - On-call routing (PagerDuty/Opsgenie) for the alerting rules in
   `infra/observability/prometheus/rules/alerting-rules.yml` (per-customer).
