@@ -44,6 +44,7 @@
  */
 
 import { useCallback, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Check, ChevronsUpDown } from 'lucide-react';
 
@@ -122,6 +123,7 @@ export function TenantSwitcher({
     memberships,
     orgMemberships,
 }: TenantSwitcherProps) {
+    const t = useTranslations('common.ui');
     const { tenantName, tenantSlug } = useTenantContext();
     const [open, setOpen] = useState(false);
     const close = useCallback(() => setOpen(false), []);
@@ -136,7 +138,7 @@ export function TenantSwitcher({
             sideOffset={6}
             popoverContentClassName="w-[240px] p-1"
             content={
-                <Popover.Menu aria-label="Switch context">
+                <Popover.Menu aria-label={t('switchContext')}>
                     {/* B4 — organizations section appears above
                         workspaces when the user belongs to one or
                         more orgs. The header copy + popover aria-
