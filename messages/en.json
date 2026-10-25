@@ -2687,6 +2687,8 @@
       "discardConfirm": "Discard changes? Any edits you made will be lost.",
       "titleLabel": "Title",
       "descriptionLabel": "Description",
+      "addressLabel": "Address",
+      "linkNeedsUrl": "A link needs its address.",
       "ownerLabel": "Owner",
       "unassigned": "Unassigned",
       "controlLabel": "Control (optional)",

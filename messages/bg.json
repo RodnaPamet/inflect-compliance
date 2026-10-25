@@ -2687,6 +2687,8 @@
       "discardConfirm": "Да се отхвърлят промените? Всички направени редакции ще бъдат загубени.",
       "titleLabel": "Заглавие",
       "descriptionLabel": "Описание",
+      "addressLabel": "Адрес",
+      "linkNeedsUrl": "Връзката трябва да има адрес.",
       "ownerLabel": "Отговорник",
       "unassigned": "Без възложен",
       "controlLabel": "Контрол (по избор)",
