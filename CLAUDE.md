@@ -144,7 +144,12 @@ Trivy blocks on `CRITICAL,HIGH` (container scan). The structural
 ratchet at `tests/guardrails/security-gate-strictness.test.ts` fails
 CI if either gate is silently re-lowered (`moderate` → `high` /
 `critical`, or `CRITICAL,HIGH` → `CRITICAL`) or `next` is downgraded
-back to 14.x.
+back to 14.x. SAST is the third gate (#4047): neither CodeQL context
+can be required, so a step of the required `Security` job fails a
+merge-queue candidate unless the PR's own `CodeQL` check (GitHub's
+new-alert comparison) succeeded. It fails closed, waiting up to 10
+minutes for a missing or unfinished check (`scripts/sast-alert-gate.mjs`),
+and the same ratchet pins it.
 
 Async-request-API: this migration is COMPLETE. Every dynamic route
 handler types `params` as `Promise<…>` and awaits it itself (354 of
@@ -999,11 +1004,9 @@ Adding a new model ⇒ classify it in the doc's inventory table (the
 **See `docs/change-management-policy.md`** — the written contract over the
 existing rapid-release pipeline (semantic-release auto-versions main on each push
 that leaves the merge queue empty, plus a daily run, so its commit does not
-invalidate queue candidates in flight — except a push that adds a test, spec or
-registered primitive, which releases at once because only a release raises the
-coverage floors; a merge reaches production with no further approval, through
-`ghcr-publish.yml` and Watchtower — there is no staging stage and no
-deployment approval yet built, #4056).
+invalidate queue candidates in flight; a merge reaches production with no further
+approval, through `ghcr-publish.yml` and Watchtower — there is no staging stage
+and no deployment approval yet built, #4056).
 It defines the three change classes (STANDARD / SIGNIFICANT / EMERGENCY), the
 approval matrix (who is the required second approver for migrations, infra, secret
 rotations, SSO/SCIM changes), the emergency-bypass + retrospective procedure, the

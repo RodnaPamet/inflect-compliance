@@ -1,9 +1,8 @@
 # ───────────────────────────────────────────────────────────────
 #  Release — semantic versioning + changelog generation
 #
-#  Trigger: push to main, while the merge queue has nothing else waiting
-#           or a coverage floor would rise; plus a daily run, and
-#           workflow_dispatch, that release regardless
+#  Trigger: push to main, while the merge queue has nothing else waiting;
+#           plus a daily run, and workflow_dispatch, that release regardless
 #  Tool: semantic-release (conventional commits → SemVer)
 #
 #  What it does:
@@ -147,9 +146,9 @@ jobs:
       #  that was 121 of the 171 cancelled queue runs, and a rebuilt PR waited a
       #  median 61 minutes against 16. So a push releases only when no other
       #  entry is waiting; the merge that empties the queue releases everything
-      #  since the last version in one go. A release that would raise a
-      #  coverage floor never waits, because nothing else raises them and a
-      #  floor that lags the live count is a weaker floor.
+      #  since the last version in one go. That holds for a release that would
+      #  raise a coverage floor too: the floor guard holds each change to its
+      #  base commit, so a floor that trails the live count fails nothing.
       #  Scheduled and manual runs release regardless. The rule and its edge
       #  cases live in scripts/lib/release-queue-gate.js.
       #

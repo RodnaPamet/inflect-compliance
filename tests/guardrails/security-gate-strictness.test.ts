@@ -34,6 +34,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import yaml from 'js-yaml';
+
 import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -244,6 +246,64 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // re-introducing the lower gate.
         expect(ci).not.toMatch(/Lowered gate from CRITICAL,HIGH/);
         expect(ci).not.toMatch(/Gate was lowered from high → critical/);
+    });
+});
+
+describe('the SAST gate blocks a merge on alerts the PR introduces (#4047)', () => {
+    /**
+     * The third static gate. npm audit and Trivy blocked and were pinned here;
+     * CodeQL blocked nothing, because neither CodeQL context can be required.
+     * The gate is a step of the REQUIRED `Security` job, run in the merge queue,
+     * that fails unless the PR's `CodeQL` check from GitHub's code-scanning app
+     * succeeded. Each assertion pins one way it could quietly stop gating. The
+     * script's behaviour (fail closed on a missing, unfinished or non-success
+     * check) is run for real in `tests/unit/sast-alert-gate.test.ts`.
+     */
+    type Step = { name?: string; if?: string; run?: string; env?: Record<string, string>; 'continue-on-error'?: unknown };
+    type Job = { if?: string; permissions?: Record<string, string>; steps?: Step[] };
+    const workflowsDir = path.join(REPO_ROOT, '.github', 'workflows');
+    const parsed = (rel: string) => yaml.load(readRepoFile(rel)) as { jobs: Record<string, Job> };
+    const security = parsed('.github/workflows/ci.yml').jobs.security;
+    const gateStep = (security.steps ?? []).find((s) => s.run === 'node scripts/sast-alert-gate.mjs');
+    const script = codeOf(readRepoFile('scripts/sast-alert-gate.mjs'));
+
+    it('runs in the required Security job, which itself has no condition', () => {
+        expect(gateStep).toBeDefined();
+        // A job-level `if` could leave the required context skipped or
+        // pending; the queue-trigger guardrail holds that for the job, and
+        // this keeps the gate inside the job it holds it for.
+        expect(security.if).toBeUndefined();
+    });
+
+    it('runs on merge_group, and can fail its job', () => {
+        expect(gateStep?.if).toMatch(/github\.event_name == 'merge_group'/);
+        expect(gateStep?.['continue-on-error']).toBeUndefined();
+    });
+
+    it('can read the PR and its checks', () => {
+        // A job-level `permissions` block replaces the workflow's; without
+        // `checks: read` every read fails, and the gate fails closed on
+        // every merge rather than gating.
+        expect(security.permissions?.checks).toBe('read');
+        expect(['read', 'write']).toContain(security.permissions?.['pull-requests']);
+    });
+
+    it('no workflow sets the test-only wait knobs', () => {
+        const setters = fs
+            .readdirSync(workflowsDir)
+            .filter((f) => /\.ya?ml$/.test(f))
+            .filter((f) => /\bSAST_GATE_(?:DEADLINE|POLL)_MS\b/.test(readRepoFile(`.github/workflows/${f}`)));
+        expect(setters).toEqual([]);
+    });
+
+    it('reads the code-scanning app\'s CodeQL check, passes only success, and waits 10 minutes', () => {
+        expect(script).toMatch(/CHECK_APP = 'github-advanced-security'/);
+        expect(script).toMatch(/CHECK_NAME = 'CodeQL'/);
+        // Widening this to admit `neutral` or `skipped` would let a check
+        // that compared nothing through.
+        expect(script).toMatch(/run\.conclusion !== 'success'/);
+        expect(script).toMatch(/\|\| 10 \* 60_000;/);
+        expect(braceBlockAfter(script, String.raw`function fail\(message\)`)).toMatch(/process\.exit\(1\)/);
     });
 });
 
