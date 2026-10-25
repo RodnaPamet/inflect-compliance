@@ -153,14 +153,19 @@ function accessFor(role: Role, customRoleJson?: unknown): Pick<Props, 'permissio
     };
 }
 
-function mount(access: Pick<Props, 'permissions' | 'appPermissions'>, rows: PolicyRow[] = ALL_ROWS) {
+function mount(
+    access: Pick<Props, 'permissions' | 'appPermissions'>,
+    rows: PolicyRow[] = ALL_ROWS,
+    extra: Partial<Pick<Props, 'initialFilters' | 'initialCategoryOptions'>> = {},
+) {
     return render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
             <TooltipProvider>
                 <PoliciesClient
                     initialPolicies={rows}
                     initialKpiCounts={KPI}
-                    initialFilters={{}}
+                    initialFilters={extra.initialFilters ?? {}}
+                    initialCategoryOptions={extra.initialCategoryOptions}
                     tenantSlug="acme"
                     {...access}
                     translations={{ title: P.title, listDescription: P.listDescription }}
@@ -424,5 +429,36 @@ describe('Policies list — a failed load says so', () => {
 
         expect(await screen.findByText(P.list.loadError)).toBeInTheDocument();
         expect(screen.queryByText(P.list.emptyFilterTitle)).toBeNull();
+    });
+});
+
+describe('Policies list — the Category facet', () => {
+    it('with one category chosen, the facet still offers the tenant\'s other categories', async () => {
+        // The rows are the FILTERED result — only HR policies — so options
+        // derived from them alone offered only "HR", and a second category
+        // could never be added.
+        window.history.replaceState({}, '', '/t/acme/policies?category=HR');
+        const categories = ['Compliance', 'HR', 'Operations'];
+        respond = (url) =>
+            url.pathname === '/api/t/acme/policies'
+                ? { status: 200, body: { rows: ALL_ROWS, truncated: false, kpiCounts: KPI, categoryOptions: categories } }
+                : undefined;
+        mount(accessFor('READER'), ALL_ROWS, {
+            initialFilters: { category: 'HR' },
+            initialCategoryOptions: categories,
+        });
+        await screen.findByText(DRAFT_POLICY.title);
+
+        // The active filter's pill — not the table's Category cell.
+        const pill = await waitFor(() => {
+            const el = screen.getAllByText('HR').find((n) => !n.closest('table'));
+            expect(el).toBeDefined();
+            return el as HTMLElement;
+        });
+        act(() => {
+            fireEvent.click(pill);
+        });
+        expect(await screen.findByText('Compliance')).toBeInTheDocument();
+        expect(screen.getByText('Operations')).toBeInTheDocument();
     });
 });

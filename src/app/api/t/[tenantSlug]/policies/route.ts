@@ -77,6 +77,9 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     reviewBucket: query.reviewBucket,
     outstandingAck: query.outstanding === 'true',
   });
+  // The Category facet's options: every category in the tenant, unfiltered,
+  // so picking one does not hide the others.
+  const categoryOptions = await policyUsecases.listPolicyCategories(ctx);
   // PR-6 — row-count observability.
   recordListPageRowCount({
     entity: 'policies',
@@ -84,7 +87,7 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     truncated: result.truncated,
     tenantId: ctx.tenantId,
   });
-  return jsonResponse({ ...result, kpiCounts });
+  return jsonResponse({ ...result, kpiCounts, categoryOptions });
 }));
 
 // POST /api/t/[tenantSlug]/policies — create (blank or from template)

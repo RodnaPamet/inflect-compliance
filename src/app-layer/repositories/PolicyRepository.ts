@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { Prisma, PolicyStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
-import { parseEnumListFilter } from '../domain/list-filter';
+import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 
 /** Counts backing the six KPI filter cards on the Policies list page. */
 export interface PolicyKpiCounts {
@@ -17,6 +17,7 @@ export interface PolicyKpiCounts {
 
 export interface PolicyFilters {
     status?: string;
+    /** One category, or several comma-joined (the list's multi-select facet). */
     category?: string;
     language?: string;
     q?: string;
@@ -190,32 +191,38 @@ export class PolicyRepository {
      *
      * The shapes below mirror each def's `apply` in PoliciesClient — change
      * one and you must change the other, which is why the mapping is spelled
-     * out rather than inferred:
-     *   total          clearAll()                  -> tenant, no filters
+     * out rather than inferred.
+     *
+     * A card's click first CLEARS every other card's filter key
+     * (`useKpiFilter` makes the cards mutually exclusive), so each count drops
+     * all three card-owned dimensions — status, reviewBucket, outstanding —
+     * whatever set them (a card or the Filter dropdown), and then applies its
+     * own. Only the filters no card owns (category, q, language) survive:
+     *   total          clearAll()                    -> tenant, no filters
      *   draft/inReview/approved
-     *                  set('status', X)            -> current filters, status replaced
-     *   overdueReview  set('reviewBucket','overdue')
-     *   outstandingAck set('outstanding','true')
+     *                  set('status', X)              -> card keys cleared, status = X
+     *   overdueReview  set('reviewBucket','overdue') -> card keys cleared, overdue
+     *   outstandingAck set('outstanding','true')     -> card keys cleared, outstanding
+     * Keeping the other card keys (as this did) made the Draft card count
+     * drafts due within 30 days while its click showed every draft.
      */
     static async kpiCounts(
         db: PrismaTx,
         ctx: RequestContext,
         filters?: PolicyFilters,
     ): Promise<PolicyKpiCounts> {
-        // Status is replaced (not intersected) by the status cards, so the
-        // groupBy runs over the other active filters only.
-        const withoutStatus: PolicyFilters | undefined = filters
-            ? { ...filters, status: undefined }
-            : undefined;
-        const statusWhere = await PolicyRepository._applyOutstandingAck(
-            db,
-            ctx,
-            PolicyRepository._buildWhere(ctx, withoutStatus),
-            withoutStatus,
-        );
+        const withoutCardKeys: PolicyFilters = {
+            ...(filters ?? {}),
+            status: undefined,
+            reviewBucket: undefined,
+            outstandingAck: undefined,
+        };
+        // Status is replaced by the status cards, so the groupBy splits the
+        // card-free set by status.
+        const statusWhere = PolicyRepository._buildWhere(ctx, withoutCardKeys);
 
-        const overdueFilters: PolicyFilters = { ...(filters ?? {}), reviewBucket: 'overdue' };
-        const ackFilters: PolicyFilters = { ...(filters ?? {}), outstandingAck: true };
+        const overdueFilters: PolicyFilters = { ...withoutCardKeys, reviewBucket: 'overdue' };
+        const ackFilters: PolicyFilters = { ...withoutCardKeys, outstandingAck: true };
 
         const [byStatus, total, overdueReview, outstandingAck] = await Promise.all([
             db.policy.groupBy({
@@ -261,6 +268,25 @@ export class PolicyRepository {
         };
     }
 
+    /**
+     * Every category in use in the tenant, for the list's Category facet.
+     *
+     * NOT derived from the loaded rows: those are the current-filter result,
+     * so once one category was chosen the facet offered only that one and a
+     * second could never be added. Independent of every filter for the same
+     * reason. Soft-deleted policies are excluded by the soft-delete extension.
+     */
+    static async distinctCategories(db: PrismaTx, ctx: RequestContext): Promise<string[]> {
+        const groups = await db.policy.groupBy({
+            by: ['category'],
+            where: { tenantId: ctx.tenantId, category: { not: null } },
+            orderBy: { category: 'asc' },
+        });
+        return groups
+            .map((g) => g.category?.trim() ?? '')
+            .filter((c) => c !== '');
+    }
+
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: PolicyListParams): Promise<PaginatedResponse<unknown>> {
         const limit = clampLimit(params.limit);
         const where = await PolicyRepository._applyOutstandingAck(
@@ -301,7 +327,11 @@ export class PolicyRepository {
             Object.values(PolicyStatus),
             'policy status',
         );
-        if (filters?.category) where.category = filters.category;
+        // Comma-split like every other multi-select facet: the client joins
+        // two picks as `HR,Compliance`, and comparing that string for
+        // equality matched no policy at all.
+        const category = parseIdListFilter(filters?.category);
+        if (category !== undefined) where.category = category;
         if (filters?.language) where.language = filters.language;
         if (filters?.q) {
             where.OR = [

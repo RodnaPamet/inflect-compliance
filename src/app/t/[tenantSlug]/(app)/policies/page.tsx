@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listPolicyKpiCounts, listPolicies } from '@/app-layer/usecases/policy';
+import { listPolicyCategories, listPolicyKpiCounts, listPolicies } from '@/app-layer/usecases/policy';
 import type { PolicyFilters } from '@/app-layer/repositories/PolicyRepository';
 import { cachedSsrPayload } from '@/lib/cache/ssr-cache';
 import { PoliciesClient } from './PoliciesClient';
@@ -71,10 +71,13 @@ export default async function PoliciesPage({
         ctx,
         Object.keys(queryFilters).length > 0 ? queryFilters : undefined,
     );
+    // Tenant-wide, unfiltered — see listPolicyCategories.
+    const initialCategoryOptions = await listPolicyCategories(ctx);
 
     return (
         <PoliciesClient
             initialKpiCounts={initialKpiCounts}
+            initialCategoryOptions={initialCategoryOptions}
             initialPolicies={JSON.parse(JSON.stringify(policies))}
             initialFilters={filters}
             tenantSlug={tenantSlug}

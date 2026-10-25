@@ -92,6 +92,8 @@ interface PolicyRow {
 interface PoliciesClientProps {
     /** Server-computed KPI counts for the first paint (see page.tsx). */
     initialKpiCounts: PolicyKpiCounts;
+    /** Every category in the tenant, for the Category facet (see page.tsx). */
+    initialCategoryOptions?: string[];
     initialPolicies: PolicyRow[];
     initialFilters?: Record<string, string>;
     tenantSlug: string;
@@ -140,7 +142,11 @@ type PolicyKpiCounts = {
     overdueReview: number;
     outstandingAck: number;
 };
-type PolicyListResponse = CappedList<PolicyRow> & { kpiCounts?: PolicyKpiCounts };
+type PolicyListResponse = CappedList<PolicyRow> & {
+    kpiCounts?: PolicyKpiCounts;
+    /** Every category in the tenant — unfiltered, so a pick cannot hide the rest. */
+    categoryOptions?: string[];
+};
 
 /**
  * The version number the Version column shows — the same version the detail
@@ -173,6 +179,7 @@ export function PoliciesClient(props: PoliciesClientProps) {
 function PoliciesPageInner({
     initialPolicies,
     initialKpiCounts,
+    initialCategoryOptions,
     initialFilters,
     tenantSlug,
     permissions,
@@ -273,7 +280,12 @@ function PoliciesPageInner({
     // hydration is a worse lie than one reading the page count.
     const policiesQuery = useTenantSWR<PolicyListResponse>(policiesKey, {
         fallbackData: filtersMatchInitial
-            ? { rows: initialPolicies, truncated: false, kpiCounts: initialKpiCounts }
+            ? {
+                  rows: initialPolicies,
+                  truncated: false,
+                  kpiCounts: initialKpiCounts,
+                  categoryOptions: initialCategoryOptions,
+              }
             : undefined,
     });
 
@@ -537,9 +549,13 @@ function PoliciesPageInner({
         return defs;
     }, [tenantSlug, canManageLifecycle, tx]);
 
+    // Category options are the tenant's categories from the server, not just
+    // the loaded rows' — those are already filtered, so once one category was
+    // chosen the facet offered only that one.
+    const knownCategories = policiesData?.categoryOptions ?? initialCategoryOptions;
     const liveFilters = useMemo(
-        () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0])),
-        [policies, tx, tGroup],
+        () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0]), knownCategories),
+        [policies, tx, tGroup, knownCategories],
     );
 
     // R-filter-gear (#3) — the gear controls the quantifiable KPI CARDS

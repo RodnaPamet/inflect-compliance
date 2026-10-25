@@ -120,6 +120,16 @@ export async function listPolicyKpiCounts(ctx: RequestContext, filters?: PolicyF
     return runInTenantContext(ctx, (db) => PolicyRepository.kpiCounts(db, ctx, filters));
 }
 
+/**
+ * Every category in use in the tenant — the Category facet's options. Kept
+ * apart from the rows for the same reason as the KPI counts: the rows are the
+ * current-filter result, so options taken from them shrink to the selection.
+ */
+export async function listPolicyCategories(ctx: RequestContext) {
+    assertCanReadPolicies(ctx);
+    return runInTenantContext(ctx, (db) => PolicyRepository.distinctCategories(db, ctx));
+}
+
 export async function listPoliciesPaginated(ctx: RequestContext, params: PolicyListParams) {
     assertCanReadPolicies(ctx);
     return runInTenantContext(ctx, async (db) => {
