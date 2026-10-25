@@ -101,9 +101,9 @@ driver would have to reproduce:
 
 | Control | Where it lives for Flue |
 | --- | --- |
-| Tools reach the funnel and nothing else | `flueToolsFor` → `runGuardedTool` → `runReadTool` / `runProposeTool` (`flue/tools-adapter.ts`) |
+| Tools reach the funnel and nothing else | `flueToolsFor` → `offerToolSet` → `runGuardedTool` → `runReadTool` / `runProposeTool`. The core is in `engine-tools/` and is shared by every engine; `flue/tools-adapter.ts` supplies only Flue's tool shape |
 | AI Guard on the model's arguments (egress) and on tool results (untrusted input) | `runGuardedTool`, steps 1 and 3 |
-| The advertised tool set is the grant ∩ card ∩ scope ∩ autonomy ceiling | `offerTools` |
+| The advertised tool set is the grant ∩ card ∩ scope ∩ autonomy ceiling | `offerToolSet` (`engine-tools/offer-tools.ts`) |
 | Sandboxes, bash, file write/edit and channels are refused | `flue/refused-capabilities.ts` + `tests/guards/flue-refused-capabilities.test.ts` |
 | Runtime-supplied tools are reported, not hidden | `flue/runtime-tools.ts` (`task`, `activate_skill`) |
 | Kill switch asked per turn, not only at start | `flue/execute.ts` |
@@ -113,7 +113,7 @@ driver would have to reproduce:
 | Residency: a `LOCAL_ONLY` tenant never reaches an external model | `flue/model-selection.ts`, which picks a model specifier per run, and never `setProvider` per run (module singleton, cross-tenant race) |
 | Delegation is capped and narrows | `flue/delegation-gate.ts` (fan-out), `flue/subagents/` (subset of the parent's tools, depth 1) |
 | Skills mount only through the gate, and the run pins their hashes | `flue/skills/mount-gate.ts`, `WorkflowRun.mountedSkills` |
-| A reasoning run must be vouched for by the register | `startWorkflowRun`: `chosenDriver === 'flue'` requires `standing === 'vouched'` |
+| A reasoning run must be vouched for by the register | `startWorkflowRun`: `isReasoningEngine(chosenDriver)` requires `standing === 'vouched'` |
 | Per-run state is in memory, and `WorkflowRun` is the system of record | `flue/run-binding.ts`, ratified in `docs/implementation-notes/2026-09-23-flue-session-state-deviation.md` |
 
 Flue's known limits are worth recording, because two of them are where the
@@ -129,6 +129,25 @@ workflow description, the declared input and the read-tool output. Anthropic is
 reached with the deployment's `ANTHROPIC_API_KEY` and `AGENT_FLUE_MODEL`
 (default `claude-sonnet-5-5`). The owner decided on 2026-10-18 that naming a new
 data category on the existing row is sufficient for the agent runtime.
+
+### The engine-neutral tool core
+
+Since Step 0a (#4176), what an engine is offered and how its calls are guarded
+live in `src/lib/agentic/engine-tools/`, which imports no engine. ESLint refuses
+`@flue/*`, `valibot` and `@earendil-works/*` there.
+
+- `offerToolSet(inv, build, { sourcePrefix, … })` runs the scope, autonomy and
+  read-only narrowing once per run, in a single loop. It hands the engine's
+  `ToolBuilder` only the tools that passed, each with a `run` that is already
+  bound to the guarded call. A builder that cannot convert a schema returns
+  `null`, and the tool is reported as `UNCONVERTIBLE_SCHEMA`.
+- `runGuardedTool` takes the guard source prefix from the engine, with no
+  default. A second engine's guard audit rows therefore carry its own name.
+  Flue passes `'flue'`, so its sources (`flue-tool-args:<name>:<id>`, and the
+  rest) are unchanged.
+- `isReasoningEngine(driver)` in `agent-driver.ts` is the single question
+  `startWorkflowRun` asks for the registration gate, the skill pin and the
+  worker hand-off. A driver missing from its record fails `tsc`.
 
 ### What the harness scanner recognises
 
@@ -329,7 +348,7 @@ refuse-not-downgrade rule `flue/model-selection.ts` applies.
 | Inflect control | Mechanism in this driver |
 | --- | --- |
 | The funnel decides | each in-process tool's handler is `runGuardedTool(inv, name, args, toolUseID, review, origin)`, exactly as Flue's are |
-| Advertised set = grant ∩ card ∩ scope ∩ ceiling | `offerTools` output becomes the SDK server's tool list. Tool search should be off for it (`alwaysLoad: true`), so the model sees the whole bounded set |
+| Advertised set = grant ∩ card ∩ scope ∩ ceiling | `offerToolSet` output, with a builder that hands each tool over as a Zod raw shape, becomes the SDK server's tool list. Tool search should be off for it (`alwaysLoad: true`), so the model sees the whole bounded set |
 | Kill switch every turn | the `PreToolUse` hook calls `resolveKillState` and denies. The stream loop also checks on every `assistant` message and aborts |
 | Run caps | charged in the `PreToolUse` hook through `createRunBudget`. `maxTurns` / `maxBudgetUsd` sit behind it |
 | `MODEL_CALL` step + Art 12 decision row | one per `assistant` message from the stream. `result.modelUsage` reconciles the totals at the end |
@@ -350,14 +369,16 @@ refuse-not-downgrade rule `flue/model-selection.ts` applies.
   readers and writes nothing, because a Prisma client meeting an enum value it
   was not generated with fails the whole read. `AI_ADMIN` and `AccessReviewScope`
   were added the same way.
-- `startWorkflowRun` tests `chosenDriver === 'flue'` for the registration gate and
-  for skill pinning. Both become `isReasoningEngine(chosenDriver)`. A third
-  engine left out of either check would start unvouched, with no allowlist.
-- `flue/tools-adapter.ts` splits into an engine-neutral core (`offerTools`,
-  `runGuardedTool`, `ReviewLatch`, the guard observers) and two thin shims. The
-  core is reused as is. Only the shape conversion is per engine (valibot for
-  Flue, a Zod raw shape for the SDK; each MCP tool already carries
-  `argsSchema: ZodType`).
+- **Done in Step 0a.** `startWorkflowRun` and `resumeWorkflowRun` ask
+  `isReasoningEngine(driver)` for the registration gate, the skill pin and the
+  worker hand-off. The new engine only has to be classified in its record, which
+  `tsc` enforces.
+- **Done in Step 0a.** The engine-neutral core is `src/lib/agentic/engine-tools/`:
+  `offerToolSet`, `runGuardedTool`, `ReviewLatch` and the guard observers. The
+  SDK reuses it as it is and supplies two things of its own:
+  - a `ToolBuilder` that hands each tool over as a Zod raw shape (each MCP tool
+    already carries `argsSchema: ZodType`);
+  - a guard source prefix.
 - `src/lib/agentic/claude-sdk/` mirrors `flue/`: `driver.ts` (plan or refuse,
   no SDK import), `execute.ts` (reached by dynamic `import()` only),
   `options.ts`, `tools.ts`, `hooks.ts`, `ledger.ts`.
@@ -504,7 +525,7 @@ Phases 2 and 3 can run in parallel: 3 depends only on Phase 0.
 
 | Step | Title | Depends on | Change class |
 | --- | --- | --- | --- |
-| 0a | Engine-neutral tool core | — | Standard |
+| 0a | Engine-neutral tool core | — | Standard (delivered by #4176) |
 | 0b | Driver conformance suite | 0a | Standard |
 | 0c | Agent engines settings page | — | Standard |
 | 0d | `/api/mcp` per-key budget and argument guard | — | Significant — security middleware (delivered by #4111) |
@@ -640,67 +661,26 @@ Each phase's hardening step fills its row.
 
 ### Phase 0 — Foundations
 
-Make the engine seam ready for more than Flue. The two gaps on `/api/mcp`
-were closed first, by #4111 (Step 0d).
+Make the engine seam ready for more than Flue. #4111 closed the two gaps on
+`/api/mcp` first (Step 0d). #4176 then delivered the engine-neutral tool core
+(Step 0a).
 
 #### Step 0a — Engine-neutral tool core
 
-**Goal.** Move the parts of the Flue tool adapter that every engine needs into a
-module with no Flue import, and stop `startWorkflowRun` from naming Flue where it
-means "a reasoning engine". No behaviour changes.
+Delivered by #4176 (#4137). The work done:
 
-```text
-You are implementing Step 0a of the roadmap in docs/claude-agent-sdk-design.md.
-Before writing code, read that roadmap's "Global rules", "Definition of done" and
-all of "Step 0a", then the document's section "How Flue was made safe, which is
-the template", then src/lib/agentic/flue/tools-adapter.ts and
-src/lib/agentic/agent-driver.ts in full.
+- The scope, autonomy and read-only narrowing (`offerToolSet`), the review
+  latch and the guarded call (`runGuardedTool`) moved to
+  `src/lib/agentic/engine-tools/`. ESLint refuses any engine import there.
+- An engine now supplies only a `ToolBuilder` and its guard source prefix.
+- Flue passes `'flue'`, so its guard sources are byte-identical to before.
+- `startWorkflowRun` and `resumeWorkflowRun` ask `isReasoningEngine(driver)`
+  for the registration gate, the skill pin and the worker hand-off.
 
-Goal: an engine-neutral tool core that any run driver can use, and a single
-predicate for "this driver is a reasoning engine". Flue behaves exactly as before.
-
-1. Create src/lib/agentic/engine-tools/ and move into it the engine-neutral parts
-   of flue/tools-adapter.ts: offerTools and its narrowing (scope, autonomy,
-   read-only), runGuardedTool, ReviewLatch, the guard observer types, ReviewFlag,
-   StepGuardObservation and ToolOmissionReason. Nothing in engine-tools/ may import
-   @flue/*, valibot or any ESM-only package. flue/tools-adapter.ts keeps only the
-   Flue-shaped parts (FlueToolDefinition, the valibot conversion, flueToolsFor) and
-   imports the rest.
-2. runGuardedTool writes guard sources such as `flue-tool-args:<name>:<id>`. Make
-   the prefix a parameter that the engine supplies. Flue passes exactly the strings
-   it passes today, so no audit row changes shape.
-3. In src/lib/agentic/agent-driver.ts add
-   `isReasoningEngine(driver: AgentDriver): boolean`, backed by a
-   `Readonly<Record<AgentDriver, boolean>>` so that a new driver added to
-   AGENT_DRIVERS without a classification is a compile error.
-4. Find every comparison against the literal 'flue' outside src/lib/agentic/flue/
-   and agent-driver.ts. Each one that asks "is this a reasoning engine" (at least
-   the registration gate and the skill pinning in startWorkflowRun) becomes
-   isReasoningEngine. Any that genuinely means Flue stays, and the pull request
-   lists it with the reason.
-5. Add a section "Claude agent engines" to CLAUDE.md, after "Agentic AI for IAM
-   roadmap". State that the three design documents are the source of truth, and
-   restate global rules 2, 3 and 6 in one line each. Keep it short; later steps
-   extend it.
-
-Tests: the existing Flue suites (tests/flue, tests/unit/agentic, the adapter and
-gate tests) pass unchanged; a unit test pins isReasoningEngine for every driver; a
-structural test (git-sourced population) fails if engine-tools/ imports @flue/* or
-valibot.
-
-Deliver per the Definition of done.
-```
-
-**Hardening**
-
-- [ ] Every existing Flue test passes with no edit to its assertions. Any test file that had to change is listed in the pull request with the reason.
-- [ ] Guard sources and audit `entityId`s written for a Flue run are byte-identical before and after, proven by a test over a fixed run.
-- [ ] `engine-tools/` has no import of `@flue/*`, `valibot` or `@earendil-works/*`, enforced by a test or an ESLint `no-restricted-imports` block, and proven by planting one import.
-- [ ] `isReasoningEngine` is total over `AGENT_DRIVERS` at compile time; adding a driver without classifying it fails `tsc` (shown in the pull request).
-- [ ] Mutation: making `isReasoningEngine('flue')` return false fails the registration-gate test and the skill-pin test.
-- [ ] `flue-esm-modules-stay-off-the-static-graph` and `flue-refused-capabilities` stay green.
-
-**Exit.** A second engine can import the tool core without importing Flue, and nothing in `startWorkflowRun` names Flue to mean "a reasoning engine".
+The Current state section "The engine-neutral tool core" describes the result.
+The design and the decisions are in
+`docs/implementation-notes/2026-10-25-engine-neutral-tool-core.md`. The step has
+no prompt, and 0H checks it together with the rest of the phase.
 
 #### Step 0b — Driver conformance suite
 

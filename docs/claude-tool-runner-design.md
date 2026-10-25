@@ -152,7 +152,7 @@ step with its own preserved-thinking checks.
 | Inflect control | Mechanism in this driver |
 | --- | --- |
 | The funnel decides | each tool's `run` validates with the MCP tool's own `argsSchema` (one catalogue; `betaTool` does not validate), then calls `runGuardedTool` |
-| Advertised set | `offerTools` output, the engine-neutral core shared with Flue |
+| Advertised set | `offerToolSet` output (`src/lib/agentic/engine-tools/`, the engine-neutral core shared with Flue since Step 0a), with a builder that hands each tool over as JSON schema |
 | Kill switch every turn | checked in the loop body on every yielded message, and again inside each `run` (step 0 of `authorizeToolCall` already does) |
 | Run caps | charged inside each `run`; `max_iterations` and the signal are backstops. A tool must honour `signal`, because the runner waits for it |
 | `MODEL_CALL` + Art 12 | one per yielded message: digest from `runner.params`, usage from `msg.usage` |
