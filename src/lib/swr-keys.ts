@@ -351,6 +351,11 @@ export const CACHE_KEYS = {
     coverage: {
         home: () => '/coverage' as const,
     },
+    // The dashboard's "Complete your setup" card reads the wizard's stored
+    // status here, so it can hide once setup is finished.
+    onboarding: {
+        metrics: () => '/onboarding/metrics' as const,
+    },
     // Control test plans / runs — the tenant-wide /tests surfaces (PR-Q SWR
     // migration). `detail` is the tenant-wide plan-detail key the leaf
     // /controls/{id}/tests/{planId} page already reads.

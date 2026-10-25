@@ -7574,7 +7574,8 @@
       "description": "Browse standards, install control packs, and track requirement coverage",
       "createFramework": "Create framework",
       "importFramework": "Import framework",
-      "installed": "Installed",
+      "installed": "In use",
+      "inUseHint": "At least one of this framework's requirements has a mapped control",
       "available": "Available",
       "requirements": "Requirements",
       "packs": "Packs",
@@ -7690,7 +7691,9 @@
       "mappingsCreated": "Mappings Created",
       "viewControls": "View Controls →",
       "backToFramework": "Back to Framework",
-      "packsEmpty": "No packs available for this framework."
+      "packsEmpty": "No packs available for this framework.",
+      "restrictedTitle": "You cannot install frameworks",
+      "restricted": "Only an Owner or Admin can install a framework pack, or a member whose custom role allows installing frameworks. Ask one of them to install it. You can still read this framework's requirements."
     },
     "templates": {
       "loading": "Loading template library...",
@@ -7712,7 +7715,8 @@
       "requirementsCount": "{count} requirements",
       "mappedRequirements": "Mapped Requirements",
       "defaultTasks": "Default Tasks",
-      "suggestedEvidence": "Suggested Evidence Types",
+      "suggestedEvidence": "Suggested Evidence",
+      "installFailed": "The install did not finish. Reload the page to see what was added.",
       "emptyFilter": "No templates match your filters."
     },
     "loadingAria": "Loading frameworks",
@@ -12604,7 +12608,11 @@
         "selected": "Selected",
         "selectAtLeastOne": "Select at least one framework to continue.",
         "badgeMostPopular": "Most Popular",
-        "badgeEu": "EU"
+        "badgeEu": "EU",
+        "installFailedTitle": "Some frameworks were not installed",
+        "installFailedItem": "{framework}: {message}",
+        "installFailedFallback": "The install did not finish.",
+        "installFailedHint": "You can install a framework later from the Frameworks page."
       },
       "assets": {
         "intro": "Add your key information assets. These are the systems, databases, and services you need to protect.",

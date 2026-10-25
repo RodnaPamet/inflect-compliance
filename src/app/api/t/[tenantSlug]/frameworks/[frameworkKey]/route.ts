@@ -6,7 +6,6 @@ import {
     listTemplates, installSingleTemplate, bulkMapControls,
     bulkInstallTemplates, exportCoverageData,
     computeRequirementsDiff, exportReadinessReport,
-    upsertRequirements,
 } from '@/app-layer/usecases/framework';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
@@ -30,20 +29,6 @@ const BulkMapSchema = z.object({
 
 const BulkInstallSchema = z.object({
     templateCodes: z.array(z.string().min(1)).min(1).max(100),
-}).strip();
-
-const UpsertRequirementsSchema = z.object({
-    requirements: z.array(z.object({
-        code: z.string().min(1),
-        title: z.string().min(1),
-        description: z.string().optional(),
-        section: z.string().optional(),
-        category: z.string().optional(),
-        theme: z.string().optional(),
-        themeNumber: z.number().int().optional(),
-        sortOrder: z.number().int().optional(),
-    })).min(1),
-    deprecateMissing: z.boolean().optional(),
 }).strip();
 
 // GET /api/t/[tenantSlug]/frameworks/[frameworkKey]?action=...
@@ -135,10 +120,13 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         const body = BulkInstallSchema.parse(raw);
         return jsonResponse(await bulkInstallTemplates(ctx, body.templateCodes), { status: 201 });
     }
-    if (action === 'upsert-requirements') {
-        const body = UpsertRequirementsSchema.parse(raw);
-        return jsonResponse(await upsertRequirements(ctx, params.frameworkKey, body.requirements, { deprecateMissing: body.deprecateMissing }), { status: 200 });
-    }
+    // There is no action that edits a framework's requirements. They are one
+    // catalogue every workspace reads, kept by the deploy-time seeding and
+    // import scripts (`scripts/seed-framework-catalogs.ts`,
+    // `scripts/framework-import.ts`). `?action=upsert-requirements` let any
+    // workspace's Owner or Admin rewrite, add or retire requirements of any
+    // framework for every other workspace, unaudited, and no screen called it
+    // (#4125 follow-up). It now falls through like any unknown action.
 
     // Default: install full pack
     const body = InstallSchema.parse(raw);
