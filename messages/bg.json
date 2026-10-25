@@ -156,7 +156,10 @@
       "treeExpansionControls": "Контроли за разгъване на дървото",
       "kpiTrend30Day": "{label} — тенденция за 30 дни",
       "kpiTrend": "{label} — тенденция",
-      "trend": "Тенденция"
+      "trend": "Тенденция",
+      "devtoolsClose": "Затвори панела с инструменти за разработка",
+      "devtoolsHits": "Попълвания на кеша от зареждането на панела (ключ излязъл от валидиране с данни и без грешка)",
+      "devtoolsErrors": "Грешки в кеша от зареждането на панела"
     },
     "calendar": {
       "prevYear": "Към предходната година",
@@ -216,7 +219,9 @@
       "lineChartAria": "Линейна диаграма",
       "radarChartAria": "Радарна диаграма",
       "lossExceedanceAria": "Крива на превишаване на загубите",
-      "lossBucketsAria": "Интервали на загубите"
+      "lossBucketsAria": "Интервали на загубите",
+      "rangeAria": "{label}: {start} → {end}",
+      "pointAria": "{label}: {value}"
     },
     "sections": {
       "accessReviews": "Прегледи на достъпа",

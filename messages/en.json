@@ -156,7 +156,10 @@
       "treeExpansionControls": "Tree expansion controls",
       "kpiTrend30Day": "{label} 30-day trend",
       "kpiTrend": "{label} trend",
-      "trend": "Trend"
+      "trend": "Trend",
+      "devtoolsClose": "Close devtools panel",
+      "devtoolsHits": "Cache fills since panel mount (a key transitioned out of validating with data and no error)",
+      "devtoolsErrors": "Cache errors since panel mount"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -216,7 +219,9 @@
       "lineChartAria": "Line chart",
       "radarChartAria": "Radar chart",
       "lossExceedanceAria": "Loss exceedance curve",
-      "lossBucketsAria": "Loss buckets"
+      "lossBucketsAria": "Loss buckets",
+      "rangeAria": "{label}: {start} → {end}",
+      "pointAria": "{label}: {value}"
     },
     "sections": {
       "accessReviews": "Access reviews",
