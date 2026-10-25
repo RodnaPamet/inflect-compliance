@@ -21,13 +21,13 @@ A policy sets out how your organisation works, such as who may access what or ho
 
 The policy's page opens.
 
-**Suggested controls.** Some templates are mapped to framework requirements. If your workspace already has controls for those requirements, a dialog first suggests linking the new policy to them. Some suggestions may be ticked already. Tick the controls the policy supports and click the link button, or click **{{ui:policies.templates.skip}}**. The suggestions are a starting point to check, not a compliance claim. You can link controls later from the policy's **{{ui:policies.detail.tabTraceability}}** tab.
+**Suggested controls.** Some templates are mapped to framework requirements. If your workspace already has controls for those requirements, a dialog first suggests linking the new policy to them. Some suggestions may be ticked already. Tick the controls the policy supports and click the link button, or click **{{ui:policies.templates.skip}}**. If the controls cannot be linked, the dialog stays open and says why. The suggestions are a starting point to check, not a compliance claim. You can link controls later from the policy's **{{ui:policies.detail.tabTraceability}}** tab.
 
 ## Write or change the content
 
-Each save creates a new version of the policy. A blank policy needs one before it can be sent for approval. Use these steps while the policy is a draft; this guide does not cover changing a published policy.
+Each save creates a new version of the policy. A blank policy needs one before it can be sent for approval. Use these steps while the policy is a draft. To change a policy that is already published, see [Revise a published policy](publish-a-policy.md#revise-a-published-policy).
 
-1. On the policy's page, click **{{ui:policies.detail.version}}**, the button with a plus sign at the top, or open the **{{ui:policies.detail.tabEditor}}** tab. The form opens under {{ui:policies.detail.createNewVersion}}.
+1. On the policy's page, click **{{ui:policies.detail.version}}**, the button with a plus sign at the top, or open the **{{ui:policies.detail.tabEditor}}** tab. The form opens under {{ui:policies.detail.createNewVersion}}, filled in with the newest version's content, so you start from the latest wording.
 2. Choose how to provide the content:
     - **{{ui:policies.detail.modeMarkdown}}**: write the text in the editor.
     - **{{ui:policies.detail.externalLink}}**: the policy lives in another system, such as Google Docs or Confluence. Paste its address in {{ui:policies.detail.externalUrlLabel}}.
@@ -35,7 +35,7 @@ Each save creates a new version of the policy. A blank policy needs one before i
 4. Click **{{ui:policies.detail.version}}** below the form. It reads {{ui:policies.detail.saving}} while it works.
 5. A message reads {{ui:policies.detail.versionCreatedToast}}, and the **{{ui:policies.detail.tabVersions}}** tab opens with the new version at the top.
 
-Before you save, check the editor's starting text. If the policy already has more than one version and has never been published, the editor can start from an older version rather than the newest one. Compare it with the newest version on the {{ui:policies.detail.tabVersions}} tab, under **{{ui:policies.detail.showContent}}**.
+The {{ui:policies.detail.tabCurrent}} tab shows the newest version until the policy is published.
 
 ## What happens next
 
@@ -55,7 +55,8 @@ Before you save, check the editor's starting text. If the policy already has mor
 | {{ui:policies.new.titleEmpty}} | The title holds only spaces | Type a real title |
 | {{ui:policies.new.templatesEmpty}} | Your workspace has no policy templates | Choose **{{ui:policies.new.modeNew}}** and write the policy yourself |
 | {{ui:policies.new.discard}} | You are closing the dialog with details filled in | Cancel to keep editing, or confirm to throw the details away |
+| A red message at the top of the dialog after you click **{{ui:policies.createPolicy}}** | Inflect did not create the policy. The message says why | Fix what the message names, then try again |
+| A red message in the suggested-controls dialog, such as {{ui:policies.templates.linkFailed}} | The policy was created, but the controls were not linked | Try the link button again, or click **{{ui:policies.templates.skip}}** and link the controls later from the **{{ui:policies.detail.tabTraceability}}** tab |
 | The policy page reads {{ui:policies.detail.versionEmpty}} | The policy has no content yet | Add a version, as described under "Write or change the content" above |
 | Clicking **{{ui:policies.detail.version}}** in the editor does nothing | The editor or the address field is empty | Write some text, or paste the document's address |
-| {{ui:policies.detail.errFileUpload}} | The editor's **{{ui:policies.detail.modeFileUpload}}** option did not save the file, and no version was created | Put the document where colleagues can open it, such as a shared drive, and add it with **{{ui:policies.detail.externalLink}}** instead |
 | There is no **{{ui:policies.detail.tabEditor}}** tab | Your role cannot change policies | Ask an Owner, Admin or Editor |

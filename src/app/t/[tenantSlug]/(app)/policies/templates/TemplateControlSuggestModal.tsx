@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
+import { InlineNotice } from '@/components/ui/inline-notice';
 
 // Mirror of the server SuggestionResult shape (policy-template-mapping.ts).
 export interface SuggestedControlDTO {
@@ -30,7 +31,10 @@ export interface SuggestionResultDTO {
 interface Props {
     policyTitle: string;
     result: SuggestionResultDTO;
-    /** Called with the chosen controlIds → caller POSTs the link + navigates. */
+    /**
+     * Called with the chosen controlIds → caller POSTs the link + navigates.
+     * A rejection keeps the dialog open and shows the error's message.
+     */
     onConfirm: (controlIds: string[]) => Promise<void>;
     /** Skip linking → navigate to the new policy. */
     onSkip: () => void;
@@ -48,6 +52,7 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
         return init;
     });
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const selectedIds = useMemo(
         () => Object.entries(checked).filter(([, v]) => v).map(([id]) => id),
@@ -60,8 +65,11 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
     const handleConfirm = async () => {
         if (!selectedIds.length) { onSkip(); return; }
         setSubmitting(true);
+        setError(null);
         try {
             await onConfirm(selectedIds);
+        } catch (err: unknown) {
+            setError(err instanceof Error && err.message ? err.message : t('templates.linkFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -72,6 +80,11 @@ export function TemplateControlSuggestModal({ policyTitle, result, onConfirm, on
             <Modal.Header title={t('templates.suggestTitle', { title: policyTitle })} />
             <Modal.Body>
                 <div className="space-y-default">
+                    {error && (
+                        <InlineNotice variant="error" icon={null} id="suggest-error">
+                            {error}
+                        </InlineNotice>
+                    )}
                     <p className="text-sm text-content-muted">
                         {t.rich('templates.suggestBody', {
                             count: result.totalSuggested,

@@ -18,6 +18,7 @@ import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { hasOutstandingAcknowledgement } from '@/lib/policy/coverage-predicate';
 import { sanitizePolicyContent, sanitizePlainText } from '@/lib/security/sanitize';
+import { isRevisionOf, publishableVersionId } from '@/lib/policy/publication-state';
 import { parseReviewCadenceDays, parseEvidenceToRetain } from '@/lib/policy/template-skeleton';
 import { logger } from '@/lib/observability/logger';
 import { recordPolicyPublished } from '@/lib/observability/business-metrics';
@@ -620,13 +621,24 @@ export async function requestPolicyApproval(ctx: RequestContext, policyId: strin
         // administrator involved. `createPolicyVersion` already guards
         // ARCHIVED for the same reason; this path simply never did.
         //
-        // PUBLISHED is refused rather than silently allowed: the way to
-        // revise a live policy is to draft a new version (which carries its
-        // own explicit demotion), not to withdraw the current one as a
-        // side effect of asking for review.
-        if (policy.status === 'PUBLISHED') {
+        // A PUBLISHED policy is therefore never moved to IN_REVIEW. What it
+        // CAN do is put a REVISION — a version newer than the live one — up
+        // for approval while it stays PUBLISHED (#4127). The live version
+        // keeps serving acknowledgements; the revision replaces it only when
+        // it is approved and then published. Before this, the editor saved a
+        // revision as a proposal and every route onward from it was refused,
+        // so the only way to change a live policy was to archive it.
+        //
+        // Asking for approval of the live version itself, or of an older
+        // one, is still refused: the first has nothing to review, and going
+        // back to an earlier version is what rollback is for.
+        const liveVersion = policy.status === 'PUBLISHED' ? policy.currentVersion ?? null : null;
+        const isRevision = isRevisionOf(liveVersion, version);
+        if (policy.status === 'PUBLISHED' && !isRevision) {
             throw conflict(
-                'This policy is published. Create a new version to propose changes — requesting approval on the live policy would withdraw it from acknowledgement.',
+                version.id === policy.currentVersionId
+                    ? 'This version is already published. To change the policy, save a new version and request approval for that one.'
+                    : 'While the policy is published, only a version newer than the published one can be sent for approval. To go back to an earlier version, roll back instead.',
             );
         }
         if (policy.status === 'ARCHIVED') {
@@ -650,8 +662,12 @@ export async function requestPolicyApproval(ctx: RequestContext, policyId: strin
             );
         }
 
-        // Move policy to IN_REVIEW
-        await PolicyRepository.updateStatus(db, ctx, policyId, 'IN_REVIEW');
+        // Move policy to IN_REVIEW — unless this is a revision of a live
+        // policy, which stays PUBLISHED while the revision is reviewed.
+        const toStatus = isRevision ? policy.status : 'IN_REVIEW';
+        if (!isRevision) {
+            await PolicyRepository.updateStatus(db, ctx, policyId, 'IN_REVIEW');
+        }
 
         const approval = await PolicyApprovalRepository.request(db, ctx, policyId, versionId);
 
@@ -664,20 +680,24 @@ export async function requestPolicyApproval(ctx: RequestContext, policyId: strin
                 category: 'status_change',
                 entityName: 'Policy',
                 fromStatus: policy.status,
-                toStatus: 'IN_REVIEW',
-                reason: `Approval requested for version ${version.versionNumber}`,
+                toStatus,
+                reason: isRevision
+                    ? `Approval requested for version ${version.versionNumber}, a revision of published version ${liveVersion?.versionNumber}`
+                    : `Approval requested for version ${version.versionNumber}`,
             },
-            metadata: { versionId, approvalId: approval.id },
+            metadata: { versionId, approvalId: approval.id, ...(isRevision ? { revisionOfVersionId: liveVersion?.id } : {}) },
         });
 
-        // Notify admin users with POLICY_APPROVAL_REQUESTED email
+        // Notify the people who can decide it — every ACTIVE Owner and Admin.
+        // This read `role: 'ADMIN'` alone, so Owners (who approve too) were
+        // never told, and a deactivated Admin still was (#4127).
         try {
             const requester = await db.user.findUnique({
                 where: { id: ctx.userId },
                 select: { name: true },
             });
             const admins = await db.tenantMembership.findMany({
-                where: { tenantId: ctx.tenantId, role: 'ADMIN' },
+                where: { tenantId: ctx.tenantId, role: { in: ['OWNER', 'ADMIN'] }, status: 'ACTIVE' },
                 include: { user: { select: { email: true, name: true } } },
             });
             for (const m of admins) {
@@ -753,12 +773,29 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
         // (The audit entry below also hardcoded `fromStatus: 'IN_REVIEW'`,
         // which was false in exactly this case — it now reports the real
         // prior status.)
-        if (approval.policy.status !== 'IN_REVIEW') {
+        //
+        // The one exception is a REVISION of a live policy (#4127): the policy
+        // stays PUBLISHED while a newer version is reviewed, so a PENDING row
+        // asking about a version newer than the live one is still the open
+        // question. Deciding it changes no status; the live version stays live
+        // until the revision is published.
+        const isRevisionReview =
+            approval.policy.status === 'PUBLISHED' &&
+            isRevisionOf(approval.policy.currentVersion ?? null, {
+                id: approval.policyVersionId,
+                versionNumber: approval.policyVersion?.versionNumber ?? -1,
+            });
+        if (approval.policy.status !== 'IN_REVIEW' && !isRevisionReview) {
             throw conflict(
                 `This approval is no longer current — the policy has since moved to ${approval.policy.status}. ` +
                     `Deciding it now would overwrite that state.`,
             );
         }
+
+        // The reviewer's comment is free text that is stored, shown on the
+        // policy page and sent in the decision email — sanitised like every
+        // other comment write path. Blank is no comment.
+        const comment = decision.comment ? sanitizePlainText(decision.comment).trim() : '';
 
         // Segregation of duties — the requester of a policy change may not
         // APPROVE their own request. No per-tenant toggle exists today, so this
@@ -787,7 +824,7 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
         }
 
         const result = await PolicyApprovalRepository.decide(
-            db, ctx, approvalId, decision.decision, decision.comment || undefined
+            db, ctx, approvalId, decision.decision, comment || undefined
         );
         // `decide` claims the row with a `status: 'PENDING'` predicate and
         // returns null when the claim was LOST — i.e. a concurrent request
@@ -798,11 +835,14 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
             throw conflict('This approval request was decided by someone else just now.');
         }
 
-        // Update policy status based on decision
-        if (decision.decision === 'APPROVED') {
-            await PolicyRepository.updateStatus(db, ctx, approval.policyId, 'APPROVED');
-        } else {
-            await PolicyRepository.updateStatus(db, ctx, approval.policyId, 'DRAFT');
+        // Update policy status based on decision. A revision review leaves
+        // the policy PUBLISHED either way: approving makes the revision
+        // publishable, rejecting leaves the live version as it was.
+        const toStatus = isRevisionReview
+            ? approval.policy.status
+            : decision.decision === 'APPROVED' ? 'APPROVED' : 'DRAFT';
+        if (!isRevisionReview) {
+            await PolicyRepository.updateStatus(db, ctx, approval.policyId, toStatus);
         }
 
         const action = decision.decision === 'APPROVED' ? 'POLICY_APPROVED' : 'POLICY_REJECTED';
@@ -818,10 +858,10 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
                 // guard above means it IS IN_REVIEW today, but reading it
                 // from the row keeps the audit honest if that ever widens.
                 fromStatus: approval.policy.status,
-                toStatus: decision.decision === 'APPROVED' ? 'APPROVED' : 'DRAFT',
-                reason: decision.comment || undefined,
+                toStatus,
+                reason: comment || undefined,
             },
-            metadata: { approvalId, decision: decision.decision, comment: decision.comment },
+            metadata: { approvalId, decision: decision.decision, comment: comment || null, ...(isRevisionReview ? { revisionReview: true } : {}) },
         });
 
         // Notify the requester about the decision
@@ -847,7 +887,7 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
                         decision: decision.decision,
                         deciderName: decider?.name || 'An administrator',
                         requesterName: requester.name || requester.email,
-                        comment: decision.comment,
+                        comment: comment || null,
                         tenantSlug: ctx.tenantSlug || '',
                     },
                 });
@@ -1037,9 +1077,25 @@ export async function publishPolicy(
 
         // Audit S4 — approval gate. Default refuses non-APPROVED;
         // `bypassApprovalReason` opens the door but logs the bypass.
-        const isApproved = policy.status === 'APPROVED';
+        //
+        // The second approved state is a REVISION of a live policy (#4127):
+        // the policy stays PUBLISHED while a newer version is reviewed, so its
+        // approval is not a status but the policy's latest approval cycle —
+        // `publishableVersionId` holds that rule, and the detail page offers
+        // Publish from the same function.
+        const statusApproved = policy.status === 'APPROVED';
+        const approvedRevisionId = policy.status === 'PUBLISHED' ? publishableVersionId(policy) : null;
+        const publishesApprovedRevision = approvedRevisionId !== null && approvedRevisionId === versionId;
+        const isApproved = statusApproved || publishesApprovedRevision;
         const bypassReason = options.bypassApprovalReason?.trim() ?? '';
         if (!isApproved && bypassReason.length === 0) {
+            if (policy.status === 'PUBLISHED') {
+                throw badRequest(
+                    approvedRevisionId
+                        ? 'This is not the version that was approved. Publish the approved version, or request approval for this one.'
+                        : 'This version has not been approved. Request approval for it, and publish it once it is approved.',
+                );
+            }
             throw badRequest(
                 `Policy ${policyId} is ${policy.status}; cannot publish without going through APPROVED. ` +
                     `If this is an emergency override, supply bypassApprovalReason to record the bypass.`,
@@ -1065,8 +1121,9 @@ export async function publishPolicy(
         // reason is supplied: the bypass exists to publish something that was
         // never approved, not to publish a different version than the one that
         // was. On the genuine bypass path (status DRAFT, no approval) there is
-        // nothing to bind to and this is skipped.
-        if (isApproved) {
+        // nothing to bind to and this is skipped. (An approved revision is
+        // bound by `publishableVersionId` above.)
+        if (statusApproved) {
             const approval = await PolicyApprovalRepository.latestApproved(db, ctx, policyId);
             if (!approval) {
                 throw badRequest(
@@ -1335,6 +1392,37 @@ export async function rollbackPolicy(ctx: RequestContext, policyId: string) {
                 lifecycleHistoryJson: nextHistory as unknown as Prisma.InputJsonValue,
             },
         });
+
+        // An open approval request survives a rollback only while it still
+        // asks about a revision — a version NEWER than the one now live. A
+        // request about the restored version, or an older one, can no longer
+        // be decided (`decidePolicyApproval` refuses it as stale), and an open
+        // request blocks every new one, so leaving it PENDING would strand the
+        // policy's approval workflow (#4127).
+        const staleVersionIds = (policy.versions ?? [])
+            .filter((v) => v.versionNumber <= targetVersion.versionNumber)
+            .map((v) => v.id);
+        const superseded = await PolicyApprovalRepository.supersedePending(
+            db,
+            ctx,
+            policyId,
+            'Superseded — the policy was rolled back.',
+            staleVersionIds,
+        );
+        if (superseded.count > 0) {
+            await logEvent(db, ctx, {
+                action: 'POLICY_APPROVAL_SUPERSEDED',
+                entityType: 'Policy',
+                entityId: policyId,
+                details: `Superseded ${superseded.count} outstanding approval request(s) on rollback`,
+                detailsJson: {
+                    category: 'status_change',
+                    entityName: 'Policy',
+                    summary: `${superseded.count} outstanding approval request(s) superseded by rollback`,
+                    after: { supersededCount: superseded.count, versionId: target.versionId },
+                },
+            });
+        }
 
         // A rollback changes which version is LIVE just as a publish does, so it
         // carries the acknowledgement campaign with it. Without this, rolling

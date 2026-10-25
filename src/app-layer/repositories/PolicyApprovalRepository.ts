@@ -69,7 +69,19 @@ export class PolicyApprovalRepository {
             include: {
                 // `status` is selected because the caller must refuse to decide
                 // an approval whose policy has already moved on (a stale row).
-                policy: { select: { id: true, tenantId: true, title: true, status: true } },
+                // The live version is selected because a PENDING row on a
+                // PUBLISHED policy is still decidable when it asks about a
+                // revision — a version newer than the live one (#4127).
+                policy: {
+                    select: {
+                        id: true,
+                        tenantId: true,
+                        title: true,
+                        status: true,
+                        currentVersionId: true,
+                        currentVersion: { select: { id: true, versionNumber: true } },
+                    },
+                },
                 policyVersion: { select: { versionNumber: true } },
             },
         });
@@ -102,10 +114,24 @@ export class PolicyApprovalRepository {
      * publish settles the question by other means (an emergency bypass, or a
      * republish). Without this the row stays PENDING forever and a later
      * Reject on it would drop a LIVE policy back to DRAFT.
+     *
+     * `versionIds`, when given, narrows it to requests about those versions
+     * (rollback closes only the requests the restored version made stale).
      */
-    static async supersedePending(db: PrismaTx, ctx: RequestContext, policyId: string, comment: string) {
+    static async supersedePending(
+        db: PrismaTx,
+        ctx: RequestContext,
+        policyId: string,
+        comment: string,
+        versionIds?: readonly string[],
+    ) {
         return db.policyApproval.updateMany({
-            where: { tenantId: ctx.tenantId, policyId, status: 'PENDING' },
+            where: {
+                tenantId: ctx.tenantId,
+                policyId,
+                status: 'PENDING',
+                ...(versionIds ? { policyVersionId: { in: [...versionIds] } } : {}),
+            },
             data: {
                 status: 'REJECTED',
                 approvedByUserId: ctx.userId,
