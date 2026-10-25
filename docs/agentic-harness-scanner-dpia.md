@@ -675,7 +675,7 @@ not in the sandbox's environment, not in any file inside the sandbox, and not in
 the supervisor's environment. The gateway carries `envelope` and `chacha20`
 symbols, consistent with envelope encryption at rest.
 
-**But the control failed, so this is not yet evidence of redaction.** A sentinel
+**But the control failed, so this is no evidence of redaction either way.** A sentinel
 that appears nowhere is equally consistent with two different worlds: the value
 was stored and is never exposed, or the value was never stored and there was
 nothing to expose. `--credential` accepts `KEY=VALUE` *or* a bare `KEY` treated
