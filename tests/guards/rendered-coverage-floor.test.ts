@@ -14,10 +14,10 @@
  *   1. The count of rendered behavioural tests, E2E specs, and
  *      registered high-risk primitives must each stay AT OR ABOVE a
  *      floor. Deleting verification trips CI.
- *   2. A slack sentinel: when the live count runs well above its
- *      floor, the floor has fallen behind. That is the "staged" part —
- *      added verification is locked in as the new minimum, so a later
- *      PR cannot silently spend the surplus.
+ *   2. No change removes verification: each count must be at least
+ *      what it was at the change's BASE commit. That is the "staged"
+ *      part — what has merged is the new minimum for the next change,
+ *      whether or not a release has raised the stored floor yet.
  *
  * Floors only ever move UP, and since 2026-10-24 nobody raises them by
  * hand. They live in `tests/guards/coverage-floors.json`, and every
@@ -26,16 +26,44 @@
  * prepare step; the release commit carries the file to main). A pull
  * request that adds a test therefore never edits a floor, so two of them
  * can no longer conflict on the same line in the merge queue, which they
- * did four times on 2026-10-24 alone. The slack sentinel is now the
- * backstop: it fails only when more tests have merged since the last
- * release than the slack allows.
+ * did four times on 2026-10-24 alone.
+ *
+ * Check 2 replaced a SLACK SENTINEL (2026-10-25), which failed a build
+ * whose count ran more than 8 rendered tests, 4 E2E specs or 3 primitives
+ * above the floor. Once the floors were raised by the release rather than
+ * by each PR, that measured release lag rather than anyone's mistake: a
+ * merge-queue candidate carries every entry ahead of it, so several PRs
+ * that each added a test went over the slack together and were all
+ * ejected. Over 2026-10-18..25 it failed 14 candidates of 9 PRs, every one
+ * for tests ADDED, none for tests removed. The base comparison asks the
+ * question the sentinel stood in for, about this change alone.
+ *
+ * The base is the first parent of the commit under test. In CI that is
+ * exact for every event: a pull request's test-merge commit has the base
+ * branch as its first parent, a merge-queue candidate is one squash on
+ * top of the candidates ahead of it, and a push has the previous main.
+ * The Ratchets job checks out two commits so that parent is present.
+ * Locally the base is the merge-base with origin/main, and the working
+ * tree is what is counted, so an uncommitted deletion fails too.
+ *
+ * A deliberate removal lowers the floor by the same amount in
+ * `coverage-floors.json` in the same change, so the removal is a line a
+ * reviewer sees, and check 2 allows exactly that much.
  *
  * See docs/verification-policy.md and docs/frontend-assurance-model.md.
  */
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { FLOORS_FILE, FLOOR_KEYS, countCoverage, readFloors } from '../../scripts/lib/coverage-floors.js';
+import {
+    FLOORS_FILE,
+    FLOOR_KEYS,
+    countCoverage,
+    countCoverageAt,
+    readFloors,
+    readFloorsAt,
+} from '../../scripts/lib/coverage-floors.js';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -399,8 +427,56 @@ const RENDERED_TEST_FLOOR = FLOORS.rendered;
 const E2E_SPEC_FLOOR = FLOORS.e2e;
 const REGISTRY_FLOOR = FLOORS.registry;
 
-/** Max a live count may exceed its floor before the floor must rise. */
-const SLACK = { rendered: 8, e2e: 4, registry: 3 } as const;
+type FloorKey = 'rendered' | 'e2e' | 'registry';
+
+const revision = (ref: string): string | null => {
+    try {
+        return execFileSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim() || null;
+    } catch {
+        return null;
+    }
+};
+
+const mergeBase = (ref: string): string | null => {
+    try {
+        return execFileSync('git', ['merge-base', 'HEAD', ref], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim() || null;
+    } catch {
+        return null;
+    }
+};
+
+/** The commit this change is measured against, and how it was found. */
+function changeBase(): { rev: string; how: string } {
+    if (process.env.GITHUB_ACTIONS === 'true') {
+        const rev = revision('HEAD^1');
+        if (rev) return { rev, how: `${rev.slice(0, 9)}, the first parent of the commit CI checked out` };
+        throw new Error(
+            'The commit CI checked out has no parent in this clone, so this change cannot be ' +
+                'measured against its base. The Ratchets job in .github/workflows/ci.yml checks ' +
+                'out with `fetch-depth: 2` for exactly this; restore it.',
+        );
+    }
+    const base = mergeBase('origin/main') ?? revision('HEAD^1');
+    if (base) return { rev: base, how: `${base.slice(0, 9)}, the merge-base with origin/main` };
+    throw new Error(
+        'Found neither a merge-base with origin/main nor a parent of HEAD, so this change ' +
+            'cannot be measured against its base. Fetch origin/main.',
+    );
+}
+
+const LABEL: Record<FloorKey, string> = {
+    rendered: 'rendered behavioural tests',
+    e2e: 'E2E specs',
+    registry: 'registered high-risk primitives',
+};
 
 describe('rendered / browser coverage floor — staged upward ratchet', () => {
     const { rendered, e2e, registry } = countCoverage(ROOT);
@@ -415,28 +491,46 @@ describe('rendered / browser coverage floor — staged upward ratchet', () => {
                 `${label}: count ${count} fell below the floor ${floor}. ` +
                     `Real-behaviour verification must not shrink — restore ` +
                     `the deleted test(s), or, if a test was legitimately ` +
-                    `merged/renamed, account for it. This floor only moves up.`,
+                    `merged/renamed, lower the floor in ${FLOORS_FILE} by ` +
+                    `the same amount in this change. Releases only raise it.`,
             );
         }
         expect(count).toBeGreaterThanOrEqual(floor);
     });
 
-    it.each([
-        ['RENDERED_TEST_FLOOR', rendered, RENDERED_TEST_FLOOR, SLACK.rendered],
-        ['E2E_SPEC_FLOOR', e2e, E2E_SPEC_FLOOR, SLACK.e2e],
-        ['REGISTRY_FLOOR', registry, REGISTRY_FLOOR, SLACK.registry],
-    ])('%s has no accumulated slack — raise it as coverage grows', (name, count, floor, slack) => {
-        if (count - floor > slack) {
-            throw new Error(
-                `${name} is ${floor} but the live count is ${count} ` +
-                    `(slack ${count - floor} > ${slack}). Each release raises ` +
-                    `the floors in ${FLOORS_FILE}, so more tests have merged ` +
-                    `since the last release than the slack allows. Raise it to ` +
-                    `${count} there in this PR, or check that releases are ` +
-                    `still running scripts/raise-coverage-floors.mjs.`,
-            );
-        }
-        expect(count - floor).toBeLessThanOrEqual(slack);
+    describe('no change removes verification', () => {
+        const live: Record<FloorKey, number> = { rendered, e2e, registry };
+        const base = changeBase();
+        const before = countCoverageAt(ROOT, base.rev) as Record<FloorKey, number>;
+        const floorsBefore = readFloorsAt(ROOT, base.rev) as Record<FloorKey, number> | null;
+
+        it.each(FLOOR_KEYS as FloorKey[])('%s: no fewer than at the base, unless its floor came down by as much', (key) => {
+            // A floor lowered in this change is the reviewed way to remove
+            // verification on purpose; it allows exactly that many fewer.
+            const lowered = floorsBefore ? Math.max(0, floorsBefore[key] - FLOORS[key]) : 0;
+            const allowed = before[key] - lowered;
+            if (live[key] < allowed) {
+                throw new Error(
+                    `${LABEL[key]}: ${live[key]} in this change against ${before[key]} at its base ` +
+                        `(${base.how}), so it removes ${before[key] - live[key]}` +
+                        (lowered > 0 ? ` and lowers the floor by only ${lowered}` : '') +
+                        `. Restore the removed verification, or, if the removal is deliberate, ` +
+                        `lower "${key}" in ${FLOORS_FILE} by the same amount in this change, so ` +
+                        `the removal is a line a reviewer sees.`,
+                );
+            }
+            expect(live[key]).toBeGreaterThanOrEqual(allowed);
+        });
+
+        it('measures against a real base, not the commit under test', () => {
+            // A base that resolved to HEAD itself would make every change
+            // pass. Locally on main that is the truth (there is no change);
+            // in CI the checked-out commit always has a distinct parent.
+            if (process.env.GITHUB_ACTIONS === 'true') {
+                expect(base.rev).not.toBe(revision('HEAD'));
+            }
+            expect(base.rev).toMatch(/^[0-9a-f]{40}$/);
+        });
     });
 
     it('the floors file holds exactly the three floors, as integers', () => {
