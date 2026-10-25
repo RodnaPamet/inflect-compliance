@@ -914,23 +914,25 @@ export async function closeAccessReview(
             );
         }
 
-        // 3b. Changing an AI admin's role is OWNER-tier too (#4130): on the
+        // 3b. Changing or revoking an AI admin is OWNER-tier too: on the
         //     members page only a holder of `admin.owner_management` moves a
-        //     member out of an owner-managed role (`isOwnerManagedRole`), so a
-        //     campaign closed by an ADMIN must not either. Judged on the LIVE
-        //     role, as rule 3 is. An OWNER subject has already refused above,
-        //     so what reaches this filter is the AI-admin half. A REVOKE of an
-        //     AI admin is NOT refused: the members page lets an ADMIN
-        //     deactivate one, and a campaign may do what that page does.
-        const changesAnOwnerManagedRole = modifies.filter(
-            (d) => d.membership !== null && isOwnerManagedRole(d.membership.role),
+        //     member out of an owner-managed role (`isOwnerManagedRole`, #4130)
+        //     or deactivates one (#4118), so a campaign closed by an ADMIN must
+        //     do neither. Judged on the LIVE role, as rule 3 is. An OWNER
+        //     subject has already refused above, so what reaches this filter
+        //     is the AI-admin half.
+        const endsAnOwnerManagedRole = decisions.filter(
+            (d) =>
+                (d.decision === 'REVOKE' || d.decision === 'MODIFY') &&
+                d.membership !== null &&
+                isOwnerManagedRole(d.membership.role),
         );
-        if (changesAnOwnerManagedRole.length > 0 && !ctx.appPermissions.admin.owner_management) {
+        if (endsAnOwnerManagedRole.length > 0 && !ctx.appPermissions.admin.owner_management) {
             throw closeRefusal(
                 'forbidden',
                 MEMBER_DECISION_REFUSAL.AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER,
                 MEMBER_DECISION_REFUSAL_MESSAGE.AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER,
-                changesAnOwnerManagedRole.map((d) => d.id),
+                endsAnOwnerManagedRole.map((d) => d.id),
                 'Ask an OWNER to close it, or revoke those decisions and record them again.',
             );
         }
