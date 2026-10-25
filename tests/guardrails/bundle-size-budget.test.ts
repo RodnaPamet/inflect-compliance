@@ -192,7 +192,12 @@ const BUDGETS_KB: Record<string, number> = {
         They did rot a third time, and it isn't: #4041 deleted them and derives
         the headroom at run time instead.
     */
-    'dashboard': 616,
+    // Raised 616 → 617 in the Controls list fixes (#4298, #4275; owner
+    // decision). Main measured this route at 615.8 KB (0.2 KB left); the PR
+    // measured 616.5. The growth is in the Control health card, whose hint
+    // now states the verdict rule in full, and the truncation banner every
+    // list shares, now translated into en and bg.
+    'dashboard': 617,
     'risks': 653,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
