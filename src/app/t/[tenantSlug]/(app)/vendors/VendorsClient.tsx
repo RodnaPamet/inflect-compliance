@@ -485,7 +485,6 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
         };
     }, [trendsQuery.data]);
     // Distinct sparkline colour per card (canonical allocator).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'active', 'critical', 'reviewOverdue']),
         [],

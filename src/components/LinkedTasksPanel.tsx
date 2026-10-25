@@ -22,7 +22,6 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 // back to this entity via TaskLink.
 import { NewTaskModal } from '@/app/t/[tenantSlug]/(app)/tasks/NewTaskModal';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Status → badge is the shared `TASK_STATUS_BADGE` map (TP-1); severity
 // → badge is the shared `TASK_SEVERITY_VARIANT` (B2-6). Neither is

@@ -17,7 +17,6 @@ describe('pipelock strict receipt guard', () => {
     const loadWith = (value: string) => {
         jest.resetModules();
         jest.doMock('@/env', () => ({ env: { PIPELOCK_STRICT_MODE: value } }));
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         return require('@/lib/mcp/strict-receipt-guard') as typeof import('@/lib/mcp/strict-receipt-guard');
     };
 

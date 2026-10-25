@@ -133,7 +133,6 @@ describe("Epic P6-PR-A — sub-flow drill-down", () => {
 
         it("wraps the trail in a nav landmark labelled 'Drill-down trail'", () => {
             // "Drill-down trail" is localized — assert catalog value + key ref.
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const en = require('../../messages/en.json');
             expect(en.automation.breadcrumb.trailAria).toBe('Drill-down trail');
             expect(src).toMatch(/aria-label=\{t\("trailAria"\)\}/);

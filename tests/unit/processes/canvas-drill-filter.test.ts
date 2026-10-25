@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Wave coverage — drill-scoped graph filter (previously 0% branches).
  *

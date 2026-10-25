@@ -99,7 +99,6 @@ describe("a common.ui t() call passes exactly its key's placeholders (#3209)", (
         // reads this suite as covering it.
         expect(Array.isArray(skipped)).toBe(true);
         if (skipped.length) {
-            // eslint-disable-next-line no-console
             console.info(`[#3209] not attributed (multiple namespaces): ${skipped.join(', ')}`);
         }
     });

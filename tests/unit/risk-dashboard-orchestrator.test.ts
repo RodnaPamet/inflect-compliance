@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- standard
- * test-mock pattern; per-line typing has poor cost/benefit ratio. */
 
 /**
  * RQ3-9 — risk-dashboard orchestrator suite. Pins the contract

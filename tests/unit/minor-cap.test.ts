@@ -98,7 +98,6 @@ describe('capMinor — minor-version cap decision', () => {
  * enforcement, and a wrong release type is only visible once a tag exists.
  */
 function releaseTypeFor(messages: string[], lastVersion: string): string {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const releaserc = JSON.parse(readFileSync(path.join(ROOT, '.releaserc.json'), 'utf8'));
     const [pluginPath, pluginConfig] = releaserc.plugins[0];
     expect(pluginPath).toBe('./scripts/semrel-minor-cap.mjs');

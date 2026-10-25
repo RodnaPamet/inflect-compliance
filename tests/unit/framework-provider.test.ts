@@ -414,7 +414,6 @@ describe('legacy fallback branches (loader yields no libraries)', () => {
         }));
         let mod: typeof import('@/app-layer/libraries/framework-provider');
         jest.isolateModules(() => {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             mod = require('@/app-layer/libraries/framework-provider');
         });
         return mod!;

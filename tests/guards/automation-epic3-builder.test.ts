@@ -38,7 +38,6 @@ describe('Automation Epic 3 — visual rule builder', () => {
         expect(src).toMatch(/UserCombobox/);
         // three steps — the step-indicator copy is now localized; assert the
         // English catalog value + that the source references the i18n key.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const en = require('../../messages/en.json');
         expect(en.automation.ruleBuilder.stepIndicator).toMatch(/Step \{step\} of 3/);
         expect(src).toMatch(/t\('stepIndicator'/);

@@ -102,6 +102,16 @@ const HARNESS_SCANNER_IMPORT_PATTERNS = [
 const config = [
     ...nextCoreWebVitals,
     {
+        // A suppression comment that suppresses nothing is an error, not a
+        // warning. It was a warning, and over a hundred built up: some for rules
+        // switched off for the file, some a line away from the finding they
+        // were written for, which left that finding live and the comment
+        // claiming otherwise (#4228 found ten). An unused one is also a
+        // standing licence for whatever lands on that line next. Delete it,
+        // or move it onto the line the rule reports.
+        linterOptions: { reportUnusedDisableDirectives: 'error' },
+    },
+    {
         ignores: [
             '.next/**',
             // Local E2E (`scripts/e2e-local.mjs`) writes a Next build

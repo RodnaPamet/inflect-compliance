@@ -107,7 +107,6 @@ describe('CI timeout ceilings', () => {
      * pass for a job that declares none.
      */
     function ciJobs(): Record<string, { name?: string; 'timeout-minutes'?: number }> {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const yaml = require('js-yaml');
         const doc = yaml.load(CI) as {
             jobs: Record<string, { name?: string; 'timeout-minutes'?: number }>;
