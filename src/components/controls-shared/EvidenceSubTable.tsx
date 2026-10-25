@@ -38,6 +38,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { textLinkVariants } from '@/components/ui/typography';
+import { normaliseHref } from '@/lib/security/safe-url';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import type { EvidenceLinkDTO } from '@/lib/dto';
 import {
@@ -205,15 +206,22 @@ export function EvidenceSubTable({
                     header: t('evidenceTab.colTitle'),
                     cell: ({ row }) => {
                         const r = row.original;
+                        // Followable only when safe (`normaliseHref`); an unsafe
+                        // address is still shown, as text.
+                        const safeHref = normaliseHref(r.href);
                         const external = r.href ? (
-                            <a
-                                href={r.href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={textLinkVariants({ tone: 'link' })}
-                            >
-                                {r.href}
-                            </a>
+                            safeHref ? (
+                                <a
+                                    href={safeHref}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={textLinkVariants({ tone: 'link' })}
+                                >
+                                    {r.href}
+                                </a>
+                            ) : (
+                                <span className="break-all text-content-default">{r.href}</span>
+                            )
                         ) : null;
                         if (!r.evidenceId) {
                             // A plain link: its address, then its note. The

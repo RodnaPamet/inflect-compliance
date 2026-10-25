@@ -4,6 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
+import { normaliseHref } from '@/lib/security/safe-url';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
@@ -471,8 +472,12 @@ export default function PolicyDetailPage() {
 
     const renderVersionContent = (v: PolicyVersionDTO) => {
         if (v.contentType === 'EXTERNAL_LINK' && v.externalUrl) {
+            // Followable only when safe; an unsafe address is shown as text.
+            if (!normaliseHref(v.externalUrl)) {
+                return <p className="text-sm text-content-default break-all">{v.externalUrl}</p>;
+            }
             return (
-                <a href={v.externalUrl} target="_blank" rel="noopener noreferrer"
+                <a href={normaliseHref(v.externalUrl)!} target="_blank" rel="noopener noreferrer"
                     className="text-[var(--brand-default)] hover:text-[var(--brand-muted)] underline flex items-center gap-1">
                     {v.externalUrl}
                 </a>

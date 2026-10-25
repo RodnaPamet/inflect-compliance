@@ -12,6 +12,7 @@ import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
 import { Paperclip } from 'lucide-react';
 import { textLinkVariants } from '@/components/ui/typography';
+import { normaliseHref } from '@/lib/security/safe-url';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
@@ -752,11 +753,13 @@ export default function TestRunPage() {
                                         {ev.evidence && (
                                             <span className="text-sm text-content-default">{ev.evidence.title}</span>
                                         )}
-                                        {ev.url && (
-                                            <a href={ev.url} target="_blank" rel="noopener noreferrer" className={`${textLinkVariants({ tone: 'link' })} text-sm truncate`}>
+                                        {ev.url && (normaliseHref(ev.url) ? (
+                                            <a href={normaliseHref(ev.url)!} target="_blank" rel="noopener noreferrer" className={`${textLinkVariants({ tone: 'link' })} text-sm truncate`}>
                                                 {ev.url}
                                             </a>
-                                        )}
+                                        ) : (
+                                            <span className="text-sm truncate text-content-default">{ev.url}</span>
+                                        ))}
                                     </div>
                                     {ev.note && <p className="text-xs text-content-subtle mt-0.5">{ev.note}</p>}
                                     <p className="text-xs text-content-subtle mt-0.5">
