@@ -2753,8 +2753,11 @@ without a classification fails `tsc`. The registration gate, the skill pin and
 the worker hand-off in `startWorkflowRun` and `resumeWorkflowRun` ask it, so the
 next engine is vouched, pinned and kept off the web tier without anybody
 remembering those lines. A comparison that genuinely means Flue (the
-`FLUE`/`STATIC` run label, the Flue-specific gate in `agent-driver-policy.ts`)
-stays a comparison.
+Flue-specific gate in `agent-driver-policy.ts`) stays a comparison. Which engine
+a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — is
+`recordedModeOf(driver)`, a `Record<AgentDriver, AgentDriverMode>`, never a
+`'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
+every run it walks as STATIC (#4270).
 
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
