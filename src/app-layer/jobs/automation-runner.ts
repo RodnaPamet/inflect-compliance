@@ -57,6 +57,7 @@ import { isScheduledCheckProvider, parseAutomationKey } from '../integrations/ty
 import { recordCheckOutcome } from '@/lib/observability/integration-metrics';
 import type { CheckInput, CheckResult } from '../integrations/types';
 import { integrationEvidenceText } from '../integrations/evidence-text';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import { decryptField } from '@/lib/security/encryption';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -523,7 +524,9 @@ async function reconcileFindingForCheck(
                     severity: 'MEDIUM',
                     type: 'NONCONFORMITY',
                     title: `Automated check failed: ${control.name}`.slice(0, 250),
-                    description: (result.summary || `Check ${control.automationKey} failed.`).slice(0, 2000),
+                    // The summary is the provider's own text, as the evidence
+                    // body is; it is sanitised before it is stored.
+                    description: sanitizePlainText(result.summary || `Check ${control.automationKey} failed.`).slice(0, 2000),
                     status: 'OPEN',
                     sourceKind: INTEGRATION_CHECK_SOURCE_KIND,
                     sourceRef,

@@ -562,6 +562,22 @@ describe('reconcileFindingForCheck (via executeControlAutomation)', () => {
         expect(data.description).toBe('sum-FAILED');
     });
 
+    test('FAILED stores the provider summary as plain text on the Finding', async () => {
+        const provider = wire('FAILED');
+        provider.runCheck.mockResolvedValue({
+            status: 'FAILED',
+            summary: 'Branch <img src=x onerror=alert(1)>main is unprotected',
+            details: {},
+        });
+        mPrisma.finding.findFirst.mockResolvedValue(null);
+        mPrisma.finding.create.mockResolvedValue({ id: 'find-1' });
+
+        await executeControlAutomation(makeDueControl(), 'job-1', NOW);
+
+        const data = mPrisma.finding.create.mock.calls[0][0].data;
+        expect(data.description).toBe('Branch main is unprotected');
+    });
+
     test('FAILED with an existing open Finding does NOT create a duplicate', async () => {
         wire('FAILED');
         mPrisma.finding.findFirst.mockResolvedValue({ id: 'existing-find' });

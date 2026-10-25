@@ -38,7 +38,8 @@ Existing rows are not backfilled.
 | `src/app-layer/integrations/evidence-text.ts` | `integrationEvidenceText` and `sanitizeJsonStringValues` |
 | `src/app-layer/integrations/types.ts` | `EvidencePayload.contentJson` |
 | `src/app-layer/integrations/providers/servicenow/index.ts` | passes its details as `contentJson` rather than serialising them into `content` |
-| `src/app-layer/usecases/integrations.ts`, `src/app-layer/jobs/automation-runner.ts` | store the payload through the helper |
+| `src/app-layer/usecases/integrations.ts`, `src/app-layer/jobs/automation-runner.ts` | store the payload through the helper; the scheduled runner also sanitises its Finding description |
+| `src/app-layer/jobs/control-test-runner.ts` | the `AutomationHandlerResult` comment now says what is true |
 | `src/app-layer/usecases/webhook-processor.ts` | sanitises the event type and the automation key |
 
 ## Decisions
@@ -82,9 +83,10 @@ Existing rows are not backfilled.
     scan type and threshold are enums.
   - The control-test runner stores what its handlers compose from Inflect's own
     records (audit procedures, agentic checks) and the plan's name, which is
-    sanitised at its own write. Its `AutomationHandlerResult` comment says
-    `evidenceContent` is "sanitised at the Evidence persistence boundary"; it is
-    not, and the comment was left for a separate change.
+    sanitised at its own write. Its `AutomationHandlerResult` comment said
+    `evidenceContent` was "sanitised at the Evidence persistence boundary"; it
+    was not, and the comment now says it is stored as given and that a handler
+    adding a third party's text sanitises it itself.
   - The kill-switch drill, governance pack, vendor assessment and the
     retention, status and date writers store constants, internal records or no
     free text. The SharePoint and ZIP imports go through `uploadEvidenceFile`,
@@ -92,8 +94,10 @@ Existing rows are not backfilled.
 - **Third-party text that is not Evidence stays as it was.**
   `IntegrationExecution.resultJson` keeps the raw details,
   `IntegrationWebhookEvent.eventType` keeps the raw value (it also routes the
-  sync orchestrator), and the scheduled runner's Finding description is the raw
-  summary.
+  sync orchestrator). The one exception is the scheduled runner's Finding: its
+  description is the provider's summary, written straight to an encrypted
+  business-content column that the finding usecase sanitises on every other
+  path, so it is sanitised too.
 - **Prose loses what plain text always loses.** As in the earlier change, a
   branch named `fix&reg` is stored `fix®` and text inside angle brackets is
   dropped. That is the product-wide plain-text behaviour.
