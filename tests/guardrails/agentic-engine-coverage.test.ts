@@ -23,7 +23,14 @@ import * as path from 'node:path';
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { mdSection } from '../helpers/markdown-regions';
-import { codeOf, declarationOf, sqlCodeOf, functionBodyOf } from '../helpers/source-blocks';
+import {
+    allCallExpressionsOf,
+    codeOf,
+    declarationOf,
+    sqlCodeOf,
+    functionBodyOf,
+} from '../helpers/source-blocks';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -207,6 +214,41 @@ describe('Agentic engine — scope + model hardening', () => {
     it('WorkflowRun + WorkflowStep free-text is encrypted at rest (Epic B)', () => {
         expect(ENCRYPTED_FIELDS.WorkflowRun).toEqual(expect.arrayContaining(['contextJson', 'summary']));
         expect(ENCRYPTED_FIELDS.WorkflowStep).toEqual(expect.arrayContaining(['inputJson', 'outputJson']));
+    });
+
+    it('WorkflowRun.summary stays UNPOPULATED, so its schema comment stays true (#3910)', () => {
+        // The column is in the manifest above and is written by nobody, so a
+        // reader reaching for "the run's answer" finds NULL and reads it as
+        // "this run produced none" rather than "nothing fills this in". The
+        // real output is the SYNTHESIS step's `outputJson`.
+        //
+        // POPULATION DERIVED FROM GIT, not a list of the four writers I happened
+        // to find — a fifth would otherwise be invisible to this.
+        const writes = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/') && f.endsWith('.ts'))
+            .flatMap((f) => {
+                const src = codeOf(fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf-8'));
+                if (!src.includes('workflowRun.')) return [];
+                return (['create', 'update', 'upsert', 'updateMany'] as const).flatMap((verb) =>
+                    allCallExpressionsOf(src, `workflowRun.${verb}`).map((call) => ({ f, verb, call })),
+                );
+            });
+
+        // THE DENOMINATOR. An extractor that matched nothing would satisfy the
+        // assertion below for the wrong reason — the shape that has cost this
+        // repo a green guard before.
+        expect(writes.length).toBeGreaterThanOrEqual(4);
+
+        // DEDUPED BY FILE for the message's sake. `allCallExpressionsOf`
+        // extractions overlap — four `workflowRun.update` extractions in
+        // `workflow-runs.ts` alone, and a single offending call falls inside
+        // three of them — so the raw list reported three sites for one defect.
+        // The verdict was right and the number was not, and a guard's count is
+        // read by whoever it fires on.
+        const setsSummary = [
+            ...new Set(writes.filter((w) => /\bsummary\s*:/.test(w.call)).map((w) => w.f)),
+        ].sort();
+        expect(setsSummary).toEqual([]);
     });
 
     it('WorkflowRun + WorkflowStep have RLS tenant-isolation in a migration', () => {
