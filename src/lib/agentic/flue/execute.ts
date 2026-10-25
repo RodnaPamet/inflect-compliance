@@ -30,7 +30,12 @@ import { resolveRunSkillMount } from './skills/tenant-mount';
 import { bindRun, releaseRun } from './run-binding';
 import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
 import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate';
-import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
+import {
+    resolveKillState,
+    killRefusalMessage,
+    KILL_SWITCH_DRILL_AGENT_ID,
+    type KillVerdict,
+} from '@/lib/agentic/kill-switch';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
 import { openDeclaredRunInput, runMessage } from './run-message';
@@ -97,12 +102,17 @@ const RANK: Record<StepGuardObservation['verdict'], number> = {
  *
  * Held rather than thrown out of the run, because a throw from inside a tool
  * is, to the runtime, a tool error the model may simply try around. The latch
- * refuses every SUBSEQUENT call outright and the run is settled at the cap
- * once the submission is done — so the ceiling is enforced immediately and
- * recorded honestly.
+ * refuses every SUBSEQUENT tool call outright, the next MODEL call is refused
+ * by `beforeModelCall` (#4196), and the run is settled at the cap — so the
+ * ceiling is enforced immediately and recorded honestly.
  */
 interface CapLatch {
     halt: RunCapHalt | null;
+}
+
+/** A kill switch found engaged before a model call, mid-dispatch (#4196). */
+interface KillLatch {
+    verdict: KillVerdict | null;
 }
 
 // MOVED to a leaf module (#3869). This file imports `@flue/runtime`, an
@@ -240,12 +250,12 @@ export async function executeFlueRun(
 
     // ── The wall clock, charged BEFORE dispatch ─────────────────────────────
     //
-    // A CEILING WORTH NAMING: this is the only place the runtime cap can be
-    // enforced on this engine. A submission is one call, and nothing here can
-    // interrupt a model mid-turn — so a run that starts inside its wall clock
-    // can finish outside it. The per-tool charge below bounds how far past,
-    // since every subsequent tool call re-checks. Upgrade path when that is
-    // not tight enough: pass an `AbortSignal` into the dispatch.
+    // A CEILING WORTH NAMING: nothing here can interrupt a model mid-turn, so
+    // a run that starts inside its wall clock can finish outside it. Every
+    // later tool call re-checks, and so does `beforeModelCall` before every
+    // later model call (#4196), so a run overshoots by at most the one call in
+    // flight. Upgrade path when that is not tight enough: pass an
+    // `AbortSignal` into the dispatch.
     const preflight = budget.charge('RUNTIME_MS', 0);
     if (preflight) {
         const status = await haltRunAtCap(ctx, runId, preflight, null);
@@ -451,8 +461,58 @@ export async function executeFlueRun(
         { readOnly: def.readOnly === true },
     );
     const latch: CapLatch = { halt: null };
+    const killed: KillLatch = { verdict: null };
     let seq = fromSeq;
     let stepFailures = 0;
+
+    /**
+     * ASKED BY THE INTERCEPTOR BEFORE EVERY MODEL CALL (#4196).
+     *
+     * The kill check before boot stops a run that is already killed. This one
+     * stops a run that is killed WHILE it runs. Before it existed, a kill
+     * engaged mid-run refused each tool call at the funnel, and the refusal
+     * reached the model as a tool error. The model was called again, and the
+     * run settled COMPLETED.
+     *
+     * In order:
+     *   1. A cap that latched at a tool call. Settled at that cap.
+     *   2. The kill switch, uncached, for the reason the boot check gives. A
+     *      read that throws refuses the call, as `assertNotKilled` does.
+     *   3. The wall clock, which was otherwise re-checked only at a tool call.
+     *   4. The tokens this dispatch has already spent, which were otherwise
+     *      charged only after the dispatch. `turns` holds each settled call's
+     *      usage, so this charges the calls made so far and the final charge
+     *      then adds only what is left.
+     *
+     * Each refusal is latched before the throw, so the settle names the kill
+     * or the cap and not the error the runtime turns the throw into.
+     */
+    const beforeModelCall = async (): Promise<void> => {
+        if (latch.halt) throw new Error(latch.halt.message);
+
+        const kill = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
+        if (kill) {
+            recordAgentKillRefusal({
+                scope: kill.scope,
+                drill: ctx.agentId === KILL_SWITCH_DRILL_AGENT_ID,
+            });
+            killed.verdict = kill;
+            throw new Error(killRefusalMessage(kill.scope));
+        }
+
+        const runtimeHalt = budget.charge('RUNTIME_MS', 0);
+        if (runtimeHalt) {
+            latch.halt = runtimeHalt;
+            throw new Error(runtimeHalt.message);
+        }
+
+        const spentSoFar = costTokens + turns.reduce((n, t) => n + t.totalTokens, 0);
+        const tokenHalt = budget.charge('TOKENS', spentSoFar - budget.used('TOKENS'));
+        if (tokenHalt) {
+            latch.halt = tokenHalt;
+            throw new Error(tokenHalt.message);
+        }
+    };
 
     const tools = offered.tools.map((tool) => wrapForLedger(ctx, runId, tool, latch, budget, {
         nextSeq: () => seq++,
@@ -515,6 +575,8 @@ export async function executeFlueRun(
         // settles the run `AWAITING_APPROVAL`.
         guardDelegateOutput: (text, taskId) =>
             guardDelegateAnswer(ctx, text, taskId, noteVerdict),
+        // THE KILL SWITCH AND THE CAPS, before every model call (#4196).
+        beforeModelCall,
         // THE DELEGATION, IN THE LEDGER (#3473 part 3).
         //
         // The seq is allocated HERE, from the same counter every other step
@@ -669,6 +731,15 @@ export async function executeFlueRun(
         // it.
         await settleTurns(reply.text ?? null);
 
+        // A KILL FOUND BEFORE A MODEL CALL wins over the reply (#4196). The
+        // runtime may turn the refusal into a tidy finish; reporting that as
+        // completed would hide that the run was stopped. First, before the cap:
+        // a run that was killed and also hit a cap is a run that was killed.
+        if (killed.verdict) {
+            const status = await haltRunAtKill(ctx, runId, killed.verdict, killRefusalMessage(killed.verdict.scope));
+            return { status, stepFailures };
+        }
+
         // A cap that fired mid-dispatch wins over the reply. The submission
         // may well have finished tidily after being refused its tools, and
         // reporting that as a completed run would hide the ceiling.
@@ -762,6 +833,14 @@ export async function executeFlueRun(
         // response never settled, and inventing one from a throw would put
         // text in the regulator's record that the model did not finish saying.
         await settleTurns(null);
+
+        // A kill found before a model call explains the throw (#4196): the
+        // interceptor refused the call. Before the cap, for the reason the
+        // success path gives.
+        if (killed.verdict) {
+            const status = await haltRunAtKill(ctx, runId, killed.verdict, killRefusalMessage(killed.verdict.scope));
+            return { status, stepFailures };
+        }
 
         // A cap latched before the throw explains the throw: the tool refusals
         // are what the submission failed on. Report the ceiling, not the

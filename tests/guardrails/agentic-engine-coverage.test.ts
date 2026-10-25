@@ -146,7 +146,11 @@ describe('Agentic engine — guardrails', () => {
         // Charged on the axes an agentic loop can actually spend: a tool call
         // is its unit of work, and tokens are what a reasoning loop burns.
         expect(flueRun).toMatch(/'TOOL_CALLS'/);
-        expect(flueRun).toMatch(/charge\('TOKENS'/);
+        // The charge after the dispatch, which is the one that settles the
+        // run's spend. A bare `charge('TOKENS'` also matches the check before
+        // each model call (#4196), so it would pass with either one deleted.
+        // That check is proven by `flue-kill-switch-stops-the-model-call`.
+        expect(flueRun).toMatch(/charge\('TOKENS', costTokens - budget\.used\('TOKENS'\)\)/);
         // And it halts through the shared path rather than settling its own
         // way, so a cap halt is the same row on both engines. Anchored on the
         // import for the reason above: the bare call needle matches five

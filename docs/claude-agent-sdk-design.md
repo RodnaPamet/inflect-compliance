@@ -125,8 +125,8 @@ driver would have to reproduce:
 | The advertised tool set is the grant ∩ card ∩ scope ∩ autonomy ceiling | `offerToolSet` (`engine-tools/offer-tools.ts`) |
 | Sandboxes, bash, file write/edit and channels are refused | `flue/refused-capabilities.ts` + `tests/guards/flue-refused-capabilities.test.ts` |
 | Runtime-supplied tools are reported, not hidden | `flue/runtime-tools.ts` (`task`, `activate_skill`) |
-| Kill switch asked per turn, not only at start | `flue/execute.ts` |
-| Run caps (wall clock, tool calls, tokens) charged per tool call | `createRunBudget` in `execute.ts` |
+| Kill switch asked per turn, not only at start | before boot in `flue/execute.ts`, then before every model call: the interceptor in `flue/telemetry.ts` awaits the run binding's `beforeModelCall` (#4196) |
+| Run caps (wall clock, tool calls, tokens) charged per tool call, and checked again before every model call | `createRunBudget` in `execute.ts`; `beforeModelCall` refuses the next model call once a cap has latched (#4196) |
 | Every model call and tool call is a hash-chained `WorkflowStep` | `MODEL_CALL` / `TOOL_CALL` through `recordStep` |
 | EU AI Act Art 12 decision row per model call | `flue/model-decision.ts` → `logAiDecision` |
 | Residency: a `LOCAL_ONLY` tenant never reaches an external model | `flue/model-selection.ts`, which picks a model specifier per run, and never `setProvider` per run (module singleton, cross-tenant race) |
