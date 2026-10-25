@@ -96,8 +96,21 @@ export interface KpiCardProps {
     trend?: ReadonlyArray<{ date: Date; value: number }>;
     /** Token-backed variant for the sparkline. Defaults to "brand". */
     trendVariant?: MiniAreaChartVariant;
-    /** Override the sparkline's accessible label. Defaults to `${label} 30-day trend`. */
+    /**
+     * Override the sparkline's accessible label.
+     *
+     * KpiCard IS NOT A TRANSLATION BOUNDARY. It takes no `useTranslations`, and
+     * both English fallbacks below are the last resort for a caller that
+     * forgot rather than the intended name —
+     * `tests/guards/kpi-card-callers-pass-accessible-names.test.ts` fails CI
+     * for a call site that renders a trend or a loading state without passing
+     * the matching label (#3209 tranche 3). The alternative was a hook in
+     * here, which would make every future server-side caller a client
+     * component for the sake of two strings.
+     */
     trendAriaLabel?: string;
+    /** Override the loading shimmer's accessible label. Same contract as the above. */
+    loadingAriaLabel?: string;
     /**
      * Epic 64 — show animated `<ShimmerDots>` in place of the
      * headline value (and suppress the trend indicator) while the
@@ -308,6 +321,7 @@ export default function KpiCard({
     trend,
     trendVariant = 'brand',
     trendAriaLabel,
+    loadingAriaLabel,
     loading = false,
     onClick,
     selected = false,
@@ -343,7 +357,7 @@ export default function KpiCard({
                 rows={2}
                 cols={20}
                 className="h-6"
-                aria-label={`${label} loading`}
+                aria-label={loadingAriaLabel ?? `${label} loading`}
             />
         </span>
     ) : numericValue === null ? (

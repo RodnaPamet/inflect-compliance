@@ -43,6 +43,8 @@ import {
 } from './filter-defs';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { apiErrorMessage } from '@/lib/api-error';
+import { ApiClientError } from '@/lib/api-client';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
@@ -68,6 +70,8 @@ interface PolicyRow {
     category: string | null;
     owner: { id: string; name: string | null; email: string | null } | null;
     currentVersion: { id: string; versionNumber: number } | null;
+    /** The newest version only (`take: 1`); empty when the policy has none. */
+    versions?: Array<{ versionNumber: number }>;
     lifecycleVersion: number;
     nextReviewAt: string | null;
     updatedAt: string;
@@ -88,15 +92,27 @@ interface PolicyRow {
 interface PoliciesClientProps {
     /** Server-computed KPI counts for the first paint (see page.tsx). */
     initialKpiCounts: PolicyKpiCounts;
+    /** Every category in the tenant, for the Category facet (see page.tsx). */
+    initialCategoryOptions?: string[];
     initialPolicies: PolicyRow[];
     initialFilters?: Record<string, string>;
     tenantSlug: string;
+    /** Coarse tier, resolved from the (custom role's base) role. */
     permissions: {
         canRead: boolean;
         canWrite: boolean;
         canAdmin: boolean;
         canAudit: boolean;
         canExport: boolean;
+    };
+    /**
+     * The granular keys the policy routes and usecases also check. A custom
+     * role narrows these without changing its base role, so the coarse tier
+     * alone offers buttons the server then refuses (#4279).
+     */
+    appPermissions: {
+        policies: { create: boolean; edit: boolean };
+        admin: { manage: boolean };
     };
     translations: {
         title: string;
@@ -126,7 +142,28 @@ type PolicyKpiCounts = {
     overdueReview: number;
     outstandingAck: number;
 };
-type PolicyListResponse = CappedList<PolicyRow> & { kpiCounts?: PolicyKpiCounts };
+type PolicyListResponse = CappedList<PolicyRow> & {
+    kpiCounts?: PolicyKpiCounts;
+    /** Every category in the tenant — unfiltered, so a pick cannot hide the rest. */
+    categoryOptions?: string[];
+};
+
+/**
+ * The version number the Version column shows — the same version the detail
+ * page's Current tab shows (`live ?? newest`, see publication-state): the
+ * live one while PUBLISHED, otherwise the newest. Null when the policy has no
+ * version at all, which renders as a dash.
+ *
+ * It used to read `currentVersion ?? lifecycleVersion`. `currentVersion` is
+ * the published pointer (seeded as v1 only when a policy is created with
+ * content, and not moved by new drafts) and `lifecycleVersion` defaults to 1,
+ * so every never-published policy read "v1" and the dash was unreachable.
+ */
+function displayedVersionNumber(p: PolicyRow): number | null {
+    if (p.status === 'PUBLISHED' && p.currentVersion) return p.currentVersion.versionNumber;
+    // `?? currentVersion` covers a payload cached before `versions` was selected.
+    return p.versions?.[0]?.versionNumber ?? p.currentVersion?.versionNumber ?? null;
+}
 
 export function PoliciesClient(props: PoliciesClientProps) {
     const filterCtx = useFilterContext([], POLICY_FILTER_KEYS, {
@@ -142,12 +179,24 @@ export function PoliciesClient(props: PoliciesClientProps) {
 function PoliciesPageInner({
     initialPolicies,
     initialKpiCounts,
+    initialCategoryOptions,
     initialFilters,
     tenantSlug,
     permissions,
+    appPermissions,
     translations: t,
 }: PoliciesClientProps) {
     const tx = useTranslations('policies');
+    // Each flag is the conjunction the server enforces for that action — the
+    // coarse tier AND the granular key — so the page never offers what the
+    // route refuses (and never more than the base role allows):
+    //   create         POST /policies           policies.create + assertCanCreatePolicy
+    //   bulk assign    bulkAssignPolicy         assertCanWritePolicies (policies.edit)
+    //   archive/delete bulk/{archive,delete}    admin.manage + policies.edit + assertCanAdminPolicies
+    const canCreate = permissions.canWrite && appPermissions.policies.create;
+    const canEdit = permissions.canWrite && appPermissions.policies.edit;
+    const canManageLifecycle =
+        permissions.canAdmin && appPermissions.admin.manage && appPermissions.policies.edit;
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     const tGroup = useTranslations('common.filterGroups');
@@ -180,7 +229,12 @@ function PoliciesPageInner({
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [createTemplateMode, setCreateTemplateMode] = useState(false);
     const searchParams = useSearchParams();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/policies`);
+    // `template` was assigned and never read, so `/policies/templates` and
+    // `/policies/new?template=1` opened the dialog on "New".
+    useCreateQueryParam(() => {
+        setCreateTemplateMode(searchParams?.get('template') === '1');
+        setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/policies`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;
@@ -226,7 +280,12 @@ function PoliciesPageInner({
     // hydration is a worse lie than one reading the page count.
     const policiesQuery = useTenantSWR<PolicyListResponse>(policiesKey, {
         fallbackData: filtersMatchInitial
-            ? { rows: initialPolicies, truncated: false, kpiCounts: initialKpiCounts }
+            ? {
+                  rows: initialPolicies,
+                  truncated: false,
+                  kpiCounts: initialKpiCounts,
+                  categoryOptions: initialCategoryOptions,
+              }
             : undefined,
     });
 
@@ -280,8 +339,7 @@ function PoliciesPageInner({
                 p.status,
             category: (p) => p.category || '—',
             owner: (p) => ownerDisplayName(p.owner?.name, p.owner?.email) ?? '—',
-            version: (p) =>
-                p.currentVersion?.versionNumber ?? p.lifecycleVersion ?? null,
+            version: (p) => displayedVersionNumber(p),
             nextReviewAt: (p) => p.nextReviewAt || '',
             updatedAt: (p) => p.updatedAt,
         }),
@@ -304,6 +362,16 @@ function PoliciesPageInner({
         loadMore: loadMorePolicies,
     } = useThresholdLoadMore(sortedPolicies);
     const loading = policiesQuery.isLoading && !policiesQuery.data;
+    // A failed fetch used to be invisible: `useTenantSWR` keeps the previous
+    // key's rows (keepPreviousData), so a failed FILTERED reload left the old
+    // result on screen under the new filters — and with nothing earlier, the
+    // table said "No policies match". With `error` set the table shows the
+    // error instead of either. The server's reason when it gave one.
+    const listError = policiesQuery.error
+        ? policiesQuery.error instanceof ApiClientError && policiesQuery.error.code !== 'UNKNOWN'
+            ? policiesQuery.error.message
+            : tx('list.loadError')
+        : undefined;
 
     // ─── Bulk actions (canonical BulkActionBar — assign + archive) ───
     // Policy status is approval-gated, so the bar carries Assign owner
@@ -336,7 +404,10 @@ function PoliciesPageInner({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ policyIds: ids }),
                     });
-                    if (!res.ok) throw new Error(tx('bulk.failed'));
+                    if (!res.ok) {
+                        const errBody = await res.json().catch(() => null);
+                        throw new Error(apiErrorMessage(errBody, tx('bulk.failed')));
+                    }
                     // The optimistic toast above necessarily says `ids.length`
                     // — it is composed BEFORE this request fires (Epic 67
                     // schedules the commit 5s later), so it structurally
@@ -364,8 +435,8 @@ function PoliciesPageInner({
                     await policiesQuery.mutate();
                 },
                 undoAction: () => { void policiesQuery.mutate(); },
-                onError: () => {
-                    toast.error(tx('bulk.failed'));
+                onError: (err) => {
+                    toast.error(err instanceof Error && err.message ? err.message : tx('bulk.failed'));
                     void policiesQuery.mutate();
                 },
             });
@@ -388,11 +459,11 @@ function PoliciesPageInner({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const detail = await res
-                    .json()
-                    .then((b) => (typeof b?.error === 'string' ? b.error : null))
-                    .catch(() => null);
-                throw new Error(detail || tx('bulk.failed'));
+                // The envelope is `{ error: { code, message } }` — an OBJECT,
+                // so reading `body.error` as a string dropped every reason the
+                // server gave ("owner is not an active member", a 403).
+                const errBody = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(errBody, tx('bulk.failed')));
             }
             // Report the SERVER's figure. bulkArchivePolicy and
             // bulkAssignPolicy both return { updated } from a tenant-scoped
@@ -456,13 +527,14 @@ function PoliciesPageInner({
         ];
         // Archive + Delete are admin-gated (mirror the OWNER/ADMIN guards on
         // archivePolicy / bulkDeletePolicy).
-        if (permissions.canAdmin) {
-            // Archive earns a confirm. Delete is a reversible SOFT delete and
-            // routes through the undo-toast instead — the confirm here was the
-            // inverse of the consequences. The confirm names the act: `true`
-            // takes the bar's defaults, which read "Delete N policies?" and
-            // "This removes the selected policies", in red, for an archive
-            // (#4279).
+        if (canManageLifecycle) {
+            // Archive refuses new versions and approval requests until the
+            // policy is restored, so it earns a confirm. Its OWN wording, in
+            // warning tone like the detail page's: `confirm: true` is the
+            // BulkActionBar's DELETE dialog ("Delete N policies?", "This
+            // removes…", a red Delete button), which described a different
+            // action. Delete is a reversible SOFT delete and routes through
+            // the undo-toast instead.
             defs.push({
                 value: 'archive',
                 label: tx('bulk.archive'),
@@ -475,11 +547,15 @@ function PoliciesPageInner({
             defs.push({ value: 'delete', label: tx('bulk.delete') });
         }
         return defs;
-    }, [tenantSlug, permissions.canAdmin, tx]);
+    }, [tenantSlug, canManageLifecycle, tx]);
 
+    // Category options are the tenant's categories from the server, not just
+    // the loaded rows' — those are already filtered, so once one category was
+    // chosen the facet offered only that one.
+    const knownCategories = policiesData?.categoryOptions ?? initialCategoryOptions;
     const liveFilters = useMemo(
-        () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0])),
-        [policies, tx, tGroup],
+        () => buildPolicyFilters(policies, (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]), (k) => tGroup(k as Parameters<typeof tGroup>[0]), knownCategories),
+        [policies, tx, tGroup, knownCategories],
     );
 
     // R-filter-gear (#3) — the gear controls the quantifiable KPI CARDS
@@ -748,16 +824,10 @@ function PoliciesPageInner({
         {
             id: 'version',
             header: tx('colHeaders.version'),
-            // Prefer the bound `currentVersion.versionNumber` (the
-            // operator-visible counter). Falls back to `lifecycleVersion`,
-            // which now reflects real published lineage — publishPolicy
-            // increments it and records prior published snapshots in
-            // lifecycleHistoryJson (Prompt-3.1), so it is no longer frozen
-            // at 1. Finally a dash for policies without any version row yet.
-            accessorFn: (p) =>
-                p.currentVersion?.versionNumber ??
-                p.lifecycleVersion ??
-                null,
+            // The live version while PUBLISHED, otherwise the newest — what
+            // the detail page shows; a dash for a policy with no version row
+            // yet. See `displayedVersionNumber`.
+            accessorFn: (p) => displayedVersionNumber(p),
             cell: ({ getValue, row }) => {
                 const v = getValue();
                 if (v == null) {
@@ -932,7 +1002,7 @@ function PoliciesPageInner({
                 defs: liveFilters,
                 searchId: 'policies-search',
                 searchPlaceholder: tx('list.searchPlaceholder'),
-                toolbarLeading: permissions.canWrite ? (
+                toolbarLeading: canCreate ? (
                     <Button
                         variant="primary"
                         icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -960,6 +1030,7 @@ function PoliciesPageInner({
                 onReachEnd: hasMorePolicies ? loadMorePolicies : undefined,
                 columns: orderedPolicyColumns,
                 loading,
+                error: listError,
                 sortableColumns,
                 sortBy,
                 sortOrder,
@@ -995,17 +1066,19 @@ function PoliciesPageInner({
                 'data-testid': 'policies-table',
                 className: 'hover:bg-bg-muted',
                 // Selection + canonical BulkActionBar; gated on edit so a
-                // READER sees neither checkboxes nor the bar. The select
-                // column is on by default, so `selectionEnabled` is what
-                // removes the checkboxes (#4279).
-                selectionEnabled: permissions.canWrite,
-                selectedRows: permissions.canWrite
+                // READER sees neither checkboxes nor the bar. `selectionEnabled`
+                // is what removes the checkbox column — DataTable turns it ON
+                // by default, and with it on a single click selects and only a
+                // double-click opens the policy. Leaving the three props below
+                // undefined was not enough.
+                selectionEnabled: canEdit,
+                selectedRows: canEdit
                     ? Object.fromEntries(Array.from(selected).map((id) => [id, true]))
                     : undefined,
-                onRowSelectionChange: permissions.canWrite
+                onRowSelectionChange: canEdit
                     ? (rows) => setSelected(new Set(rows.map((r) => r.original.id)))
                     : undefined,
-                selectionControls: permissions.canWrite
+                selectionControls: canEdit
                     ? () => (
                           <BulkActionBar
                               actions={policyBulkActions}
@@ -1018,7 +1091,7 @@ function PoliciesPageInner({
                     : undefined,
             }}
         >
-            {permissions.canWrite && (
+            {canCreate && (
                 <NewPolicyModal
                     open={isCreateOpen}
                     setOpen={setIsCreateOpen}

@@ -167,7 +167,7 @@ describeFn('task status change — one sequence for both entry points', () => {
 
             await expect(
                 bulkSetTaskStatus(ctx, [t.id], 'CLOSED', 'closed in bulk'),
-            ).rejects.toThrow(/controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT/);
+            ).rejects.toThrow(/Audit Finding tasks must have a control, or a link to a control or framework requirement/);
 
             // The refusal is a refusal, not a warning: the row is untouched
             // and no status audit row was written for it.
@@ -182,7 +182,7 @@ describeFn('task status change — one sequence for both entry points', () => {
 
             await expect(
                 setTaskStatus(ctx, t.id, 'CLOSED', 'closed singly'),
-            ).rejects.toThrow(/controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT/);
+            ).rejects.toThrow(/Audit Finding tasks must have a control, or a link to a control or framework requirement/);
 
             const after = await db.task.findUniqueOrThrow({ where: { id: t.id } });
             expect(after.status).toBe('OPEN');
@@ -194,7 +194,7 @@ describeFn('task status change — one sequence for both entry points', () => {
 
             await expect(
                 bulkSetTaskStatus(ctx, [good.id, bad.id], 'CLOSED', 'batch close'),
-            ).rejects.toThrow(/controlId or a link to CONTROL or FRAMEWORK_REQUIREMENT/);
+            ).rejects.toThrow(/Audit Finding tasks must have a control, or a link to a control or framework requirement/);
 
             // The good row must not have been closed on the way past the
             // bad one — the gate runs before any write.

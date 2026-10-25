@@ -41,7 +41,10 @@
  *   4. declared-not-observed — the normal state for a channel. Last of the
  *      un-actionable kinds because it is the least urgent: the declaration IS
  *      the best available answer.
- *   5. tenant-switch   — the one row this product owns and can flip.
+ *   5. unconfirmable   — the deploy says sandboxed execution is ON and has
+ *      declared no runtime for it to happen in. Last because it is the only
+ *      kind that reports an INCOHERENCE rather than a state: the other four
+ *      describe a deploy that is consistent with itself.
  */
 import type { ReportingChannelKey, SandboxRuntimeDeclaration } from '@/lib/sandbox-runtime/declarations';
 
@@ -54,8 +57,12 @@ export type RuntimeRowKind =
     | 'unreachable'
     /** Declared to the runtime; the runtime exposes no way to read back what it uses. */
     | 'declared-not-observed'
-    /** This product's own switch, and the only actionable kind. */
-    | 'tenant-switch';
+    /**
+     * The deploy claims sandboxed execution and declared no runtime. Availability
+     * could not be confirmed — which is NOT the same as the feature being off,
+     * and the distinction is the whole point of the kind.
+     */
+    | 'unconfirmable';
 
 export interface RuntimeRowDisplay {
     readonly kind: RuntimeRowKind;
@@ -95,13 +102,25 @@ export function displayForEnforcement(): RuntimeRowDisplay {
  * `platformEnabled` is what the deploy permits. False here cannot be changed
  * from any UI, exactly as `off-by-platform` works on the AI page.
  *
- * There is deliberately no tenant dimension. A tenant opting out of sandboxing
- * would be choosing to run its own cloud credentials less safely, which is not
- * a product choice the way "does this workspace get the AI assistant" is.
+ * There is deliberately no tenant dimension, and as of the owner ruling of
+ * 2026-10-25 there is no flippable control anywhere on this page. An earlier
+ * version of this function returned `tenant-switch` with `actionable: true`
+ * while this very docblock said the switch was platform-only — the code and
+ * the tests agreed with each other and the NAME disagreed with the design.
+ * Nothing caught it because `platformEnabled` is false in every environment
+ * today, so the misnamed branch was unreachable: a name that lies survives
+ * precisely where it is never exercised.
  */
-export function displayForExecutionSwitch(platformEnabled: boolean): RuntimeRowDisplay {
+export function displayForExecutionSwitch(
+    platformEnabled: boolean,
+    runtimeDeclared: boolean,
+): RuntimeRowDisplay {
     if (!platformEnabled) return { kind: 'not-configured', actionable: false };
-    return { kind: 'tenant-switch', actionable: true };
+    // ON, with nothing declared to run in. Reported BEFORE the declaration
+    // state, because a reader told "declared" about a deploy that named no
+    // runtime has been told the reassuring half of a contradiction.
+    if (!runtimeDeclared) return { kind: 'unconfirmable', actionable: false };
+    return { kind: 'declared-not-observed', actionable: false };
 }
 
 /**
@@ -114,5 +133,5 @@ export const RUNTIME_ROW_KINDS: readonly RuntimeRowKind[] = [
     'set-in-code',
     'unreachable',
     'declared-not-observed',
-    'tenant-switch',
+    'unconfirmable',
 ] as const;

@@ -115,13 +115,14 @@ describe('Policies list — Epic 45.1 shell + column wiring', () => {
         );
     });
 
-    it('exposes the new Version column with currentVersion → lifecycleVersion fallback', () => {
+    it('exposes the Version column, showing the live-or-newest version', () => {
         expect(clientSrc).toContain("id: 'version'");
         expect(clientSrc).toContain("header: tx('colHeaders.version')");
         expect(EN_POLICIES.colHeaders.version).toBe('Version');
-        expect(clientSrc).toMatch(
-            /p\.currentVersion\?\.versionNumber\s*\?\?\s*p\.lifecycleVersion/,
-        );
+        // The old `currentVersion ?? lifecycleVersion` fallback read "v1" for
+        // every never-published policy (#4279); what the cell shows is now
+        // driven through the page in tests/rendered/policies-list-page.test.tsx.
+        expect(clientSrc).toContain('accessorFn: (p) => displayedVersionNumber(p)');
         expect(clientSrc).toContain('data-testid={`policy-version-${row.original.id}`}');
     });
 

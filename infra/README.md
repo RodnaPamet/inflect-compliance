@@ -40,7 +40,7 @@ infra/
 ├── reporters/                         ← DEPLOYED: host scripts + systemd units
 ├── dashboards/
 │   └── grafana-api-slos.json          ← Grafana dashboard (importable)
-├── observability/                     ← compose/helm/terraform for the stack
+├── observability/                     ← the stack's compose project and config
 ├── scripts/
 └── otel-collector/
     └── config.yml                     ← OpenTelemetry Collector config
@@ -273,12 +273,12 @@ curl http://localhost:8888/metrics | grep otelcol_receiver
 npx jest tests/unit/observability --verbose
 ```
 
-## Observability provisioning (compose · Helm · Grafana Cloud)
+## Observability provisioning
 
-The OTel/Prometheus/Tempo/Grafana stack ships in three deploy shapes
-(same OTLP telemetry, different backend). See the trade-off matrix in
+The OTel/Prometheus/Tempo/Grafana stack runs as its own compose project,
+co-located on the app VM:
+[`observability/docker-compose.observability.yml`](observability/docker-compose.observability.yml).
+The app emits OTLP/HTTP, so moving the backend to a dedicated VM or a managed
+service changes only `OTEL_EXPORTER_OTLP_ENDPOINT` and its auth header. There
+is no Helm chart or Terraform module for the stack. See
 [`docs/observability/01-deployment-topology.md`](../docs/observability/01-deployment-topology.md#scale-out-provisioning-beyond-the-single-vm).
-
-- **Single VM + compose** (today's prod): [`observability/docker-compose.observability.yml`](observability/docker-compose.observability.yml)
-- **K8s, self-hosted** (air-gapped/on-prem): [`helm/observability/`](helm/observability/README.md) — `helm install obs infra/helm/observability`
-- **K8s, managed Grafana Cloud** (lowest ops burden): [`terraform/modules/observability/`](terraform/modules/observability) — `terraform apply`, then point the app's `OTEL_EXPORTER_OTLP_ENDPOINT` at the module's `grafana_otlp_endpoint`.

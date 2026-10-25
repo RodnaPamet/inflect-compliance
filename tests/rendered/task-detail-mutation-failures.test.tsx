@@ -115,6 +115,16 @@ const EN = (require('../../messages/en.json') as {
     tasks: { detail: Record<string, string> };
 }).tasks.detail;
 
+/**
+ * The API's real refusal envelope (`src/lib/errors/types.ts`). These tests
+ * used to stub a flat `{ error: 'string' }`, which the API never sends —
+ * and that hid the page reading only that shape, so every real refusal
+ * showed the generic fallback instead of the server's reason (#4278).
+ */
+function refusal(message: string, code = 'FORBIDDEN') {
+    return { error: { code, message, requestId: 'req-1' } };
+}
+
 /** Fetch stub: GETs succeed from a fixture map; writes are per-test. */
 const fetchMock = jest.fn();
 function json(body: unknown, status = 200): Response {
@@ -204,7 +214,7 @@ describe('task detail — mutation failures are surfaced, successes reach the li
     it('surfaces the server reason when the assign write is rejected', async () => {
         fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
             if (init?.method === 'POST' && url.endsWith('/tasks/task_1/assign')) {
-                return json({ error: 'Reviewer gate: assignee cannot be the reviewer' }, 403);
+                return json(refusal('Reviewer gate: assignee cannot be the reviewer'), 403);
             }
             return baseGet(url);
         });
@@ -224,7 +234,7 @@ describe('task detail — mutation failures are surfaced, successes reach the li
     it('keeps the comment text when the post is rejected (no false success)', async () => {
         fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
             if (init?.method === 'POST' && url.endsWith('/tasks/task_1/comments')) {
-                return json({ error: 'Comment rejected' }, 400);
+                return json(refusal('Comment rejected', 'BAD_REQUEST'), 400);
             }
             return baseGet(url);
         });
@@ -266,6 +276,55 @@ describe('task detail — mutation failures are surfaced, successes reach the li
             );
             expect(getCount('/api/t/acme/tasks/metrics')).toBeGreaterThan(metricsBefore);
         });
+    });
+});
+
+/**
+ * #4278 — a reviewer named before the reviewer rule, whose role cannot edit
+ * tasks (or who has left), can never sign the task off. Those tasks were not
+ * migrated; the task page says so beside the reviewer picker that fixes it.
+ */
+describe('task detail — a reviewer who cannot sign off is called out', () => {
+    beforeEach(() => {
+        fetchMock.mockReset();
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    function mountWith(reviewerCanSignOff: boolean) {
+        const task = {
+            ...TASK,
+            reviewerUserId: 'user-rex',
+            reviewer: { id: 'user-rex', name: 'Rex Reader', email: 'rex@example.com' },
+            reviewerCanSignOff,
+        };
+        fetchMock.mockImplementation(async (url: string) =>
+            url.split('?')[0] === '/api/t/acme/tasks/task_1' ? json(task) : baseGet(url),
+        );
+        renderPage();
+    }
+
+    it('shows the note when the server says the reviewer cannot sign off', async () => {
+        mountWith(false);
+        await waitForTaskLoaded();
+
+        const note = await waitFor(() => {
+            const el = document.getElementById('task-reviewer-cannot-sign-off');
+            if (!el) throw new Error('no note yet');
+            return el;
+        });
+        expect(note).toHaveTextContent(EN.reviewerCannotSignOff);
+        // …and the picker beside it offers only members who CAN sign off.
+        await waitFor(() =>
+            expect(fetchMock).toHaveBeenCalledWith('/api/t/acme/users/assignable?audience=task-reviewer'),
+        );
+    });
+
+    it('shows nothing when the reviewer can sign off', async () => {
+        mountWith(true);
+        await waitForTaskLoaded();
+        await screen.findByText('Rex Reader');
+
+        expect(document.getElementById('task-reviewer-cannot-sign-off')).toBeNull();
     });
 });
 

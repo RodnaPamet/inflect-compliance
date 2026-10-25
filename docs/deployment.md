@@ -604,8 +604,9 @@ a Compose stack co-located on the app VM:
 The app emits OTLP/HTTP, so pointing it at another backend changes only
 `OTEL_EXPORTER_OTLP_ENDPOINT` (and its auth header).
 [`docs/observability/01-deployment-topology.md`](observability/01-deployment-topology.md#scale-out-provisioning-beyond-the-single-vm)
-discusses the other shapes; neither the Helm chart nor the Terraform module it
-names exists in this repository.
+describes the two other shapes, a dedicated monitoring VM and a managed
+backend. Neither is provisioned, and the repository has no Helm chart or
+Terraform module for either.
 
 ## Registering a sub-processor
 

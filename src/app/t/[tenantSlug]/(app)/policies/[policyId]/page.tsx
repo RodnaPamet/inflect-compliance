@@ -1346,12 +1346,13 @@ export default function PolicyDetailPage() {
                 committing. tone="warning": rollback re-publishes a prior version,
                 it is not a destructive delete. */}
             {/* Archive confirmation.
-                Archiving withdraws the policy from the library and blocks
-                every edit path — createPolicyVersion and requestPolicyApproval
-                both refuse archived policies — so it is far more consequential
-                than the rollback below, which HAD a confirm while this had
-                none. `tone="warning"` rather than "danger" because it is now
-                genuinely reversible via Restore. */}
+                Archiving keeps the policy on the list as Archived and refuses
+                a new version, an approval request and a rollback
+                (createPolicyVersion, requestPolicyApproval, rollbackPolicy) —
+                consequential enough to confirm, as the rollback below already
+                did. The body says only that (#4279): metadata and the owner
+                stay editable. `tone="warning"` rather than "danger" because it
+                is reversible via Restore. */}
             <ConfirmDialog
                 showModal={archiveOpen}
                 setShowModal={setArchiveOpen}

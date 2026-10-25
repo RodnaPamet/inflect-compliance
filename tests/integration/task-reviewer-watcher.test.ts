@@ -69,7 +69,7 @@ describeFn('task reviewer gate + watcher fan-out (integration)', () => {
         const task = await createTask(ctxActor, { title: 'Reviewed task', type: 'TASK', reviewerUserId: reviewerId });
         await expect(
             setTaskStatus(ctxActor, task.id, 'CLOSED', 'done'),
-        ).rejects.toThrow(/IN_REVIEW/);
+        ).rejects.toThrow(/must be In review before it can be closed/);
     });
 
     it('only the reviewer can sign off an IN_REVIEW task to a terminal state', async () => {
@@ -104,7 +104,7 @@ describeFn('task reviewer gate + watcher fan-out (integration)', () => {
         // Straight to CLOSED via the bulk path — the hole this PR closes.
         await expect(
             bulkSetTaskStatus(ctxActor, [task.id], 'CLOSED', 'bulk done'),
-        ).rejects.toThrow(/IN_REVIEW/);
+        ).rejects.toThrow(/must be In review before it can be closed/);
         // …and even from IN_REVIEW, a NON-reviewer can't bulk-close it.
         await setTaskStatus(ctxActor, task.id, 'IN_REVIEW');
         await expect(
@@ -121,7 +121,7 @@ describeFn('task reviewer gate + watcher fan-out (integration)', () => {
         const ungated = await createTask(ctxActor, { title: 'Ungated row', type: 'TASK' });
         await expect(
             bulkSetTaskStatus(ctxActor, [ungated.id, gated.id], 'CLOSED', 'batch'),
-        ).rejects.toThrow(/IN_REVIEW/);
+        ).rejects.toThrow(/must be In review before it can be closed/);
         // The innocent row must NOT have been closed — all-or-nothing.
         const row = await db.task.findUnique({ where: { id: ungated.id }, select: { status: true } });
         expect(row?.status).not.toBe('CLOSED');

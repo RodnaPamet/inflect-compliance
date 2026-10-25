@@ -647,12 +647,47 @@ including its 30-day notice window, before that data moves.
 
 ## Gaps
 
-**R-OS1 — whether a `sandbox:read` token can read credential values is
-unverified.** The `Provider` message returned by `ListSandboxProviders` carries
-a `credentials` map annotated secret in the gateway's proto. Whether the gateway
-redacts it for a token holding only `sandbox:read`, or returns it populated, has
-not been measured: doing so needs a gateway with JWT signing configured, which
-needs PKI and a client identity, and that was not stood up for this assessment.
+**R-OS1 — whether a read identity can read credential values: NARROWED
+2026-10-25, still open.** The `Provider` message returned by
+`ListSandboxProviders` carries a `credentials` map annotated secret in the
+gateway's proto.
+
+The blocker recorded here — "needs a gateway with JWT signing configured, which
+needs PKI and a client identity" — has been removed. A v0.1.5 gateway now runs
+on mTLS with its four `gateway_jwt` keys, and the measurement was taken against
+it. Three things came out of it, and the third is why this gap stays open.
+
+**The scope premise does not hold for mTLS.** `openshell whoami` for a client
+certificate reports `Roles: openshell-user` and `Scopes:` **empty**. So an mTLS
+identity is authorised by ROLE, and `sandbox:read` — which this scanner declares
+as `OPENSHELL_READ_SCOPE` — is not what gates it. That does not make the
+constant wrong: the gateway also supports OIDC (`gateway login --oidc-issuer`),
+and scopes plausibly govern that path. It means the constant is **untested for
+the transport we actually use**, and the question "what can a `sandbox:read`
+token read" is not answerable by pointing a client certificate at the gateway.
+
+**Every read surface returned credential NAMES only.** With a provider created
+holding a sentinel value, five surfaces — `provider list`, `provider get`,
+`profile describe`, `profile export`, `provider list-profiles` — returned the
+key name and no value: `Credential keys: API_KEY`. The sentinel also appeared
+nowhere else: not in the SQLite store in plaintext, nowhere on the VM's disk,
+not in the sandbox's environment, not in any file inside the sandbox, and not in
+the supervisor's environment. The gateway carries `envelope` and `chacha20`
+symbols, consistent with envelope encryption at rest.
+
+**But the control failed, so this is no evidence of redaction either way.** A sentinel
+that appears nowhere is equally consistent with two different worlds: the value
+was stored and is never exposed, or the value was never stored and there was
+nothing to expose. `--credential` accepts `KEY=VALUE` *or* a bare `KEY` treated
+as an environment lookup, which makes the second genuinely plausible, and
+nothing available from outside the process distinguishes them. A negative result
+whose control cannot fire is not a measurement.
+
+So the upper bound remains unestablished, for a narrower reason than before:
+not "no gateway was stood up" but "no provider type was used whose credential
+is demonstrably resolved". Closing it needs either a provider the runtime
+actually consumes, so that a resolved value proves storage, or gateway-side
+instrumentation of the credential read path.
 
 The source is written for the worse case — the listing is opt-in and off by
 default, the member is never read, and the signing step refuses a report
