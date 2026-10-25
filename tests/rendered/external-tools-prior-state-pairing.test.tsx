@@ -271,9 +271,10 @@ describe('a refused pairing', () => {
 });
 
 describe('tools the reader refused for their name (#4238)', () => {
-    // The reader refuses a tool whose name is past the MCP limit. Unsaid, that
-    // tool would look like one the server never offered, so the page says how
-    // many were left out, and why, without quoting a name.
+    // The reader refuses a tool whose name is past the MCP limit, or carries a
+    // control, line-break or invisible character. Unsaid, that tool would look
+    // like one the server never offered, so the page says how many were left
+    // out, and why, without quoting a name.
     const notice = () => document.getElementById('external-tools-refused-names');
 
     it('says so, with the limit, when the catalogue left tools out', async () => {
@@ -281,6 +282,7 @@ describe('tools the reader refused for their name (#4238)', () => {
         await renderPage();
         expect(notice()).not.toBeNull();
         expect(notice()!.textContent).toContain('128');
+        expect(notice()!.textContent).toContain('invisible');
     });
 
     it('says nothing when none were left out', async () => {

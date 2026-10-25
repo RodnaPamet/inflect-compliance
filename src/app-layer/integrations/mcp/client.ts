@@ -343,24 +343,52 @@ export interface AdvertisedTools {
     tools: McpToolDescriptor[];
     /**
      * How many descriptors were refused for their name: not a string, empty,
-     * or longer than `MCP_TOOL_NAME_MAX_LENGTH`. A COUNT, never the names. A
-     * refused name is exactly the text this bound exists to keep out of our
-     * logs, audit rows and screens.
+     * longer than `MCP_TOOL_NAME_MAX_LENGTH`, or carrying an
+     * `UNSAFE_NAME_CHARACTER`. A COUNT, never the names. A refused name is
+     * exactly the text this bound exists to keep out of our logs, audit rows
+     * and screens.
      */
     refusedNames: number;
 }
 
 /**
- * A name this deployment will key on: a string of 1 to 128 UTF-16 units.
+ * A code point that changes how a name READS, or breaks it across lines,
+ * without being visible text:
+ *
+ *   - `Cc`  controls, C0 and C1 and DEL; `\n` `\r` `\t` `NUL` among them
+ *   - `Zl` `Zp`  U+2028 and U+2029, line breaks that are not `\n`
+ *   - `Cf`  format characters: bidi overrides and isolates, LRM/RLM, zero-width
+ *           space and joiners, BOM, soft hyphen, tag characters
+ *   - `Default_Ignorable_Code_Point`  what Unicode says renders as nothing,
+ *           which adds variation selectors, Hangul fillers and CGJ to `Cf`
+ *   - `Cs`  a lone surrogate: not a character, and UTF-8 encodes every one as
+ *           U+FFFD, so two different names would be stored as one
+ *
+ * Every other printable character is accepted, `/` `:` spaces and non-Latin
+ * scripts included (owner decision, 2026-10-25): refusing a name hides that
+ * tool and strands any grant or pin on it, and a real server may already use
+ * them. The specification's recommended set is narrower and was not adopted.
+ */
+const UNSAFE_NAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+
+/**
+ * A name this deployment will key on: a string of 1 to 128 UTF-16 units with no
+ * `UNSAFE_NAME_CHARACTER`.
  *
  * Nothing bounded an advertised name before #4238. The per-connection caps
  * bound how MANY tools are read and the byte cap bounds the whole response, so
  * one tool's name could be most of a megabyte. That text became the qualified
  * name everywhere downstream, including the `source` of a hash-chained audit
- * row that streams to the tenant's SIEM.
+ * row that streams to the tenant's SIEM, and every screen and export that
+ * prints it as text.
  */
 function isUsableToolName(name: unknown): name is string {
-    return typeof name === 'string' && name.length > 0 && name.length <= MCP_TOOL_NAME_MAX_LENGTH;
+    return (
+        typeof name === 'string' &&
+        name.length > 0 &&
+        name.length <= MCP_TOOL_NAME_MAX_LENGTH &&
+        !UNSAFE_NAME_CHARACTER.test(name)
+    );
 }
 
 /**
