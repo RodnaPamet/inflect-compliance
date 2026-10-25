@@ -86,7 +86,8 @@ export const MILESTONES: Record<MilestoneKey, MilestoneDefinition> = {
         key: 'evidence-all-current',
         preset: 'rain',
         message: 'All evidence is current ✨',
-        description: 'No evidence is overdue or expiring this week.',
+        // The window is EVIDENCE_EXPIRING_SOON_DAYS (30), not a week (#4277).
+        description: 'No evidence is overdue or expiring in the next 30 days.',
     },
     'audit-pack-complete': {
         key: 'audit-pack-complete',

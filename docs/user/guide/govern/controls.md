@@ -77,7 +77,7 @@ The health verdict looks at the control's status, its applicability, its next te
 4. **{{ui:controls.health.verdict.DEGRADED}}**: its next test is overdue, or fewer than 90% of its tests passed.
 5. **{{ui:controls.health.verdict.HEALTHY}}**: none of the above.
 
-An {{ui:controls.filterEnums.status.IMPLEMENTED}} control that has never been tested and is not overdue therefore reads {{ui:controls.health.verdict.HEALTHY}}, although the hint beside the column name says it reads {{ui:controls.health.verdict.UNKNOWN}}.
+An {{ui:controls.filterEnums.status.IMPLEMENTED}} control that has never been tested and is not overdue therefore reads {{ui:controls.health.verdict.HEALTHY}}.
 
 **A control's tasks.** A control with linked tasks has an arrow in its first column. Click the arrow, or the control's name, to list its tasks under the row with their status, assignee and evidence count. Click a task to open it in the **{{ui:controls.list.task}}** panel.
 
