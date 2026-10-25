@@ -5,27 +5,55 @@
 # ═══ SCOPE OF AUTHORED CONTENT — READ BEFORE ASSUMING THIS IS THE WHOLE TSC ═══
 #
 # The 2017 TSC runs to roughly 33 points of focus across the nine Common
-# Criteria series — CC6 alone is CC6.1 through CC6.8. THIS LIBRARY AUTHORS ONE
-# REPRESENTATIVE CRITERION PER SERIES (two for CC1), giving 10 CC leaves, plus
-# one node for each of the four non-security categories: A1, C1, PI1, P1.
-# Fourteen assessable nodes in total.
+# Criteria series. THIS LIBRARY AUTHORS ONE REPRESENTATIVE CRITERION PER SERIES
+# (two for CC1) — EXCEPT CC6, WHICH IS COMPLETE at CC6.1 through CC6.8. That is
+# 17 CC leaves, plus one node for each of the four non-security categories:
+# A1, C1, PI1, P1. Twenty-one assessable nodes in total.
 #
-# That is a DELIBERATE DEPTH DECISION and it was undocumented until #2625 found
-# it by audit. Recording it now rather than authoring the missing ~23 criteria,
-# for the reason docs/control-task-authoring.md gives about exactly this
-# situation: "Say so in the PR rather than synthesising from knowledge of the
-# standard." The AICPA criteria are licensed; the full points of focus are not
-# reproduced here, and inventing paraphrases of 23 criteria nobody has read
-# against the source would manufacture the appearance of coverage rather than
-# the substance of it.
+# CC6 WAS COMPLETED BY #3369, AND THAT REVERSED A DECISION RECORDED HERE.
+# This header previously declined to author the missing criteria, citing
+# docs/control-task-authoring.md — "Say so in the PR rather than synthesising
+# from knowledge of the standard" — on the grounds that the AICPA criteria are
+# licensed and that paraphrasing criteria nobody has read against the source
+# manufactures the appearance of coverage rather than its substance. That
+# argument still holds for the ~23 points of focus outside CC6, which remain
+# unauthored for exactly that reason.
 #
-# WHAT A READER SHOULD TAKE FROM THAT: a tenant tracking SOC 2 here is tracking
-# one criterion per series, not the full TSC. The series are all represented, so
-# nothing is invisible at the series level — but "CC6.1 Access Security" stands
-# in for eight points of focus and a SOC 2 auditor will ask about all eight.
+# What made CC6 different, and why the owner chose to complete it:
+#
+#   * The product's own access-recertification evidence keys on CC6.3
+#     ("periodically reviewing" access). With only CC6.1 present, that
+#     suggestion resolved to nothing for every tenant — a feature that looked
+#     like it worked and fired for nobody. The gap was in the product, not
+#     only in the catalogue.
+#   * Six of the eight sub-codes ALREADY had a written, grounded control in
+#     the delivered catalogue, filed under CC6.1 for want of a code to file it
+#     under: provisioning and revocation (CC6.2), periodic access review
+#     (CC6.3), physical access and media disposal (CC6.4 / CC6.5), network
+#     boundary protection (CC6.6), and encryption in transit (CC6.7). Most of
+#     the change was re-attributing those to the sub-code each implements.
+#     Only CC6.8 needed a new control (TSC-CC6-7, malicious software), because
+#     nothing in the catalogue covered it at all.
+#   * No tenant was affected. Measured on production before the change: zero
+#     tenants had mapped a single control to any SOC 2 requirement, so the
+#     readiness-percentage drop that makes this kind of edit expensive had a
+#     blast radius of nobody.
+#
+# PROVENANCE OF THE CC6 TEXT, STATED PLAINLY: the seven new summaries are
+# paraphrases written from the publicly documented TSC structure, marked
+# "(Paraphrase)" like every other node in this file, and NOT checked against a
+# licensed copy of the AICPA criteria. A reader relying on exact criterion
+# wording must go to the AICPA source. The sub-code NUMBERING and the series
+# shape are public; the official wording is not reproduced here.
+#
+# WHAT A READER SHOULD TAKE FROM THAT: a tenant tracking SOC 2 here now tracks
+# the whole of CC6, and one criterion per series everywhere else. The series
+# are all represented, so nothing is invisible at the series level — but
+# "CC7.1 Anomaly Detection" still stands in for several points of focus and a
+# SOC 2 auditor will ask about all of them.
 #
 # ALSO WORTH KNOWING, because the two do not match: the DELIVERED catalogue
-# (prisma/fixtures/soc2-control-templates.json) carries the 10 Common Criteria
+# (prisma/fixtures/soc2-control-templates.json) carries the 17 Common Criteria
 # ONLY. A1 / C1 / PI1 / P1 exist in this library and are not in the seeded
 # fixture, so an installed SOC 2 pack is Security-scoped even though this file
 # models all five categories.
@@ -209,6 +237,90 @@ objects:
         description: >
           The entity implements logical access security software, infrastructure,
           and architectures over protected assets. (Paraphrase)
+        parent_urn: urn:inflect:req:soc2-2017:cc6
+        depth: 2
+        assessable: true
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc6.2
+        ref_id: CC6.2
+        name: User Registration and Credential Removal
+        description: >
+          Before issuing credentials and granting access, the entity registers and
+          authorises new internal and external users whose access it
+          administers; when a user no longer requires access, their
+          credentials are removed. (Paraphrase)
+        parent_urn: urn:inflect:req:soc2-2017:cc6
+        depth: 2
+        assessable: true
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc6.3
+        ref_id: CC6.3
+        name: Least Privilege and Periodic Access Review
+        description: >
+          The entity authorises, modifies and removes access to data, software and
+          functions on the basis of roles and responsibilities, giving
+          consideration to least privilege and segregation of duties, and
+          reviews that access periodically. (Paraphrase)
+        parent_urn: urn:inflect:req:soc2-2017:cc6
+        depth: 2
+        assessable: true
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc6.4
+        ref_id: CC6.4
+        name: Physical Access Restriction
+        description: >
+          The entity restricts physical access to facilities and protected assets —
+          data centre space, back-up media storage and other sensitive
+          locations — to authorised personnel. (Paraphrase)
+        parent_urn: urn:inflect:req:soc2-2017:cc6
+        depth: 2
+        assessable: true
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc6.5
+        ref_id: CC6.5
+        name: Secure Asset and Media Disposal
+        description: >
+          The entity withdraws logical and physical protection from a physical
+          asset only once the ability to read or recover data and software
+          from it has been diminished and is no longer required. (Paraphrase)
+        parent_urn: urn:inflect:req:soc2-2017:cc6
+        depth: 2
+        assessable: true
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc6.6
+        ref_id: CC6.6
+        name: Boundary Protection
+        description: >
+          The entity implements logical access security measures to protect against
+          threats originating outside its system boundaries. (Paraphrase)
+        parent_urn: urn:inflect:req:soc2-2017:cc6
+        depth: 2
+        assessable: true
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc6.7
+        ref_id: CC6.7
+        name: Information Transmission and Movement
+        description: >
+          The entity restricts the transmission, movement and removal of information
+          to authorised users and processes, and protects it while it is in
+          transit, being moved or being removed. (Paraphrase)
+        parent_urn: urn:inflect:req:soc2-2017:cc6
+        depth: 2
+        assessable: true
+        category: Security
+
+      - urn: urn:inflect:req:soc2-2017:cc6.8
+        ref_id: CC6.8
+        name: Unauthorised and Malicious Software
+        description: >
+          The entity implements controls to prevent, or to detect and act upon, the
+          introduction of unauthorised or malicious software. (Paraphrase)
         parent_urn: urn:inflect:req:soc2-2017:cc6
         depth: 2
         assessable: true

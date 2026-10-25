@@ -93,27 +93,38 @@ afterAll(async () => {
 });
 
 describe('the requirement list is honest about the brief and the catalogue', () => {
-    it('names CC6.1 for SOC 2, and says why it is not CC6.2', () => {
-        // The brief names CC6.2 and CC6.3; this catalogue has neither. A
-        // suggestion keyed on them would return nothing for every tenant for
-        // ever while looking like a working feature.
+    it('names the brief\'s own CC6.2 and CC6.3 for SOC 2, the substitution retired', () => {
+        // This asserted `['CC6.1']` and a note explaining why it was not CC6.2,
+        // because the catalogue carried neither of the codes the brief named and
+        // a suggestion keyed on them would have returned nothing for every
+        // tenant for ever while looking like a working feature. #3369 completed
+        // CC6, so the brief's codes resolve and the substitution is gone.
         const soc2 = LEGACY_EVIDENCE_REQUIREMENTS.filter((r) => r.legacyKeys.includes('SOC2'));
-        expect(soc2.map((r) => r.requirementCode)).toEqual(['CC6.1']);
-        expect(soc2[0].note).toMatch(/CC6\.2/);
+        expect(soc2.map((r) => r.requirementCode)).toEqual(['CC6.2', 'CC6.3']);
+        expect(soc2.map((r) => r.requirementCode)).not.toContain('CC6.1');
     });
 
-    it('the seeded SOC 2 catalogue genuinely lacks CC6.2 and CC6.3 — asserted, not assumed', async () => {
-        // The premise of the substitution, read from the SEEDED row. The old
-        // version of this asked about `key: 'soc2'`, a key nothing seeds, so it
-        // was null for the wrong reason and could never fail.
+    it('the seeded SOC 2 catalogue genuinely carries the whole of CC6 — asserted, not assumed', async () => {
+        // The premise of the suggestion, read from the SEEDED row rather than
+        // from the fixture, because what a tenant can be matched against is
+        // what the seeder actually wrote. An earlier version asked about
+        // `key: 'soc2'`, a key nothing seeds, so it was null for the wrong
+        // reason and could never fail — hence reading the real key here.
+        //
+        // It asserted the ABSENCE of CC6.2 and CC6.3 until #3369 completed CC6.
         const soc2 = await prisma.framework.findUniqueOrThrow({ where: { key: 'SOC2' }, select: { id: true } });
         const codes = (await prisma.frameworkRequirement.findMany({
             where: { frameworkId: soc2.id },
             select: { code: true },
         })).map((r) => r.code);
-        expect(codes).toContain('CC6.1');
-        expect(codes).not.toContain('CC6.2');
-        expect(codes).not.toContain('CC6.3');
+        for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
+            expect(codes).toContain(`CC6.${n}`);
+        }
+        // Every code this module can suggest for SOC 2 resolves against that
+        // row — the check the substitution existed to avoid failing.
+        for (const r of LEGACY_EVIDENCE_REQUIREMENTS.filter((x) => x.legacyKeys.includes('SOC2'))) {
+            expect(codes).toContain(r.requirementCode);
+        }
     });
 
     it('every entry carries a substantive note', () => {

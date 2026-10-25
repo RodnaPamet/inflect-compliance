@@ -10,29 +10,34 @@
  * IS tenant-scoped, on `(tenantId, controlId, requirementId)`, and indexed on
  * `(tenantId, requirementId)`.
  *
- * So "the tenant has SOC 2 CC6.1" means exactly: some control of theirs is
- * linked to a requirement spelling `CC6.1` under a framework row of the SOC 2
+ * So "the tenant has SOC 2 CC6.3" means exactly: some control of theirs is
+ * linked to a requirement spelling `CC6.3` under a framework row of the SOC 2
  * family. That is the question this asks, against that index.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * CC6.1, NOT CC6.2 AND CC6.3 — AND WHY THAT IS WRITTEN DOWN HERE
+ * CC6.2 AND CC6.3 — THE SUBSTITUTION THIS FILE USED TO CARRY IS RETIRED
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Step 5b's brief names SOC 2 **CC6.2 and CC6.3**. This product's SOC 2
- * catalogue contains neither: it carries one sub-code per criterion — CC1.1,
- * CC2.1, CC3.1, CC4.1, CC5.1, CC6.1, CC7.1, CC8.1, CC9.1 — measured against
- * `prisma/fixtures/soc2-control-templates.json`, which is what production
- * seeds.
+ * Step 5b's brief names SOC 2 **CC6.2 and CC6.3**, and both now exist, so both
+ * are what this asks for.
  *
- * A suggestion keyed on CC6.2 would therefore return nothing, for every tenant,
- * for ever, while looking exactly like a feature that worked. So the SOC 2
- * suggestion is **CC6.1**, the logical-access criterion, which a recertification
- * artefact genuinely evidences.
+ * They did not exist when 5b shipped. The catalogue carried one sub-code per
+ * criterion — CC1.1, CC2.1, …, CC6.1, … — so a suggestion keyed on CC6.2
+ * returned nothing, for every tenant, for ever, while looking exactly like a
+ * feature that worked. The owner's decision on 2026-10-10 was to substitute
+ * **CC6.1** and file the gap rather than extend the catalogue inside a
+ * recertification PR, because adding requirements changes what every tenant's
+ * SOC 2 framework contains.
  *
- * Owner decision, 2026-10-10: substitute and file the gap rather than extend the
- * catalogue inside 5b — adding requirements changes what every tenant's SOC 2
- * framework contains, and that is not a recertification change. See the filed
- * issue.
+ * #3369 closed that gap: CC6 is complete at CC6.1-CC6.8, six of the eight
+ * sub-codes being re-attributions of controls the catalogue already carried
+ * under CC6.1. So the nearest-requirement substitution has nothing left to do
+ * and is gone — the brief's own codes resolve.
+ *
+ * The test that asserted CC6.2 and CC6.3 were ABSENT now asserts they are
+ * present and linked. That inversion is the point of having written it: it was
+ * put there so the substitution would be revisited if the catalogue changed,
+ * and the catalogue changed.
  *
  * ISO/IEC 27001 A.5.16 and A.5.18 and NIS2 Art. 21(2)(i) all exist.
  *
@@ -102,12 +107,20 @@ export const LEGACY_EVIDENCE_REQUIREMENTS: readonly {
     {
         familyUrn: SOC2_FAMILY_URN,
         legacyKeys: ['SOC2', 'soc2'],
-        requirementCode: 'CC6.1',
+        requirementCode: 'CC6.2',
         note:
-            'The brief names CC6.2 and CC6.3. Neither exists in this catalogue — '
-            + 'SOC 2 here carries one sub-code per criterion — so CC6.1, the '
-            + 'logical-access criterion, is the nearest requirement a '
-            + 'recertification actually evidences.',
+            'User registration, authorisation and credential removal. Named by the '
+            + 'brief and present since #3369 completed CC6; a recertification that '
+            + 'revokes access evidences the removal half directly.',
+    },
+    {
+        familyUrn: SOC2_FAMILY_URN,
+        legacyKeys: ['SOC2', 'soc2'],
+        requirementCode: 'CC6.3',
+        note:
+            'Role-based access, least privilege and PERIODIC REVIEW. Named by the '
+            + 'brief and present since #3369; this is the criterion a '
+            + 'recertification campaign is, almost word for word.',
     },
     {
         familyUrn: ISO27001_FAMILY_URN,

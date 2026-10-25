@@ -60,8 +60,12 @@ async function main() {
         update: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
         create: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
     });
-    // Keep in lockstep with `soc2Reqs` in prisma/seed.ts — the SOC 2 Starter
-    // Pack's control templates link against these criterion codes.
+    // Keep in lockstep with the criteria `prisma/fixtures/soc2-control-templates.json`
+    // declares and the assessable CC nodes in `src/data/libraries/soc2-2017.yaml` —
+    // the SOC 2 Starter Pack's control templates link against these criterion codes,
+    // and `tests/guardrails/soc2-starter-pack-coverage.test.ts` fails when the three
+    // declarations disagree. It named `soc2Reqs` in prisma/seed.ts until that row was
+    // removed for building SOC 2 twice; CC6 was completed to CC6.1-CC6.8 by #3369.
     const soc2Reqs = [
         { code: 'CC1.1', title: 'COSO principle 1 — Integrity and ethical values', category: 'Control Environment' },
         { code: 'CC1.2', title: 'Board independence and oversight', category: 'Control Environment' },
@@ -70,6 +74,13 @@ async function main() {
         { code: 'CC4.1', title: 'Evaluates and communicates control deficiencies', category: 'Monitoring Activities' },
         { code: 'CC5.1', title: 'Selects and develops control activities', category: 'Control Activities' },
         { code: 'CC6.1', title: 'Logical and physical access controls', category: 'Logical Access' },
+        { code: 'CC6.2', title: 'User registration, authorisation and credential removal', category: 'Logical Access' },
+        { code: 'CC6.3', title: 'Role-based access, least privilege and periodic review', category: 'Logical Access' },
+        { code: 'CC6.4', title: 'Physical access to facilities and protected assets', category: 'Logical Access' },
+        { code: 'CC6.5', title: 'Secure disposal of assets and media', category: 'Logical Access' },
+        { code: 'CC6.6', title: 'Protection against threats outside system boundaries', category: 'Logical Access' },
+        { code: 'CC6.7', title: 'Restriction and protection of information in transit and movement', category: 'Logical Access' },
+        { code: 'CC6.8', title: 'Prevention and detection of unauthorised or malicious software', category: 'Logical Access' },
         { code: 'CC7.1', title: 'System operations monitoring', category: 'System Operations' },
         { code: 'CC8.1', title: 'Change management', category: 'Change Management' },
         { code: 'CC9.1', title: 'Risk mitigation — business disruption and vendors', category: 'Risk Mitigation' },
