@@ -45,6 +45,16 @@ const GUARDED_BARRELS: Readonly<Record<string, GuardedBarrel>> = {
             'test still passes.',
         cap: 57,
     },
+    '@/lib/permissions': {
+        reason:
+            'exports `permissionsForMembership`, which `initiatorAuthority` calls to resolve a ' +
+            'custom role. Five suites supplied only `getPermissionsForRole`, so the moment a job ' +
+            'path reached that resolution it died naming a function nobody had touched (#4397). ' +
+            'Worse, a hand-rolled return value is role-INDEPENDENT: control-test-runner could drop ' +
+            'its granular narrowing entirely and no test moved (#4388), so the argument was ' +
+            'untestable as well as the omission unsafe.',
+        cap: 0,
+    },
 };
 
 /** Test files that name the barrel at all — the only ones worth parsing. */
