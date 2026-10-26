@@ -10,6 +10,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Heading } from '@/components/ui/typography';
@@ -40,8 +41,10 @@ interface InstallPreviewTemplate {
     alreadyInstalled: boolean;
 }
 interface InstallPreview {
-    packKey: string;
-    packName: string;
+    // previewPackInstall names one pack; previewPacksInstall lists the chosen ones.
+    packKey?: string;
+    packName?: string;
+    packKeys?: string[];
     framework: { key: string; name: string; version: string | null };
     totalTemplates: number;
     newControls: number;
@@ -49,7 +52,7 @@ interface InstallPreview {
     templates: InstallPreviewTemplate[];
 }
 interface InstallResult {
-    packKey: string;
+    packKey?: string;
     packName: string;
     framework: string;
     controlsCreated: number;
@@ -85,6 +88,12 @@ export default function InstallWizardPage() {
     const [framework, setFramework] = useState<InstallFramework | null>(null);
     const [packs, setPacks] = useState<FrameworkPackSummary[]>([]);
     const [selectedPack, setSelectedPack] = useState<string>('');
+    // A framework with several packs is installed by CHOOSING among them — the
+    // EU drone framework's packs are its operating subcategories — so they are
+    // checkboxes, at least one is required, and the shared controls install
+    // once. A single-pack framework keeps the one-click radio flow.
+    const multiPack = packs.length > 1;
+    const [chosenPacks, setChosenPacks] = useState<string[]>([]);
     const [preview, setPreview] = useState<InstallPreview | null>(null);
     const [loading, setLoading] = useState(true);
     const [installing, setInstalling] = useState(false);
@@ -105,8 +114,14 @@ export default function InstallWizardPage() {
                 if (packRes.ok) {
                     const ps = await packRes.json();
                     setPacks(ps);
-                    // Auto-select if only one pack or requested
-                    if (requestedPack) {
+                    // Auto-select if only one pack or requested. With several
+                    // packs a requested one is pre-ticked, never installed
+                    // without the tenant confirming the rest of the choice.
+                    if (ps.length > 1) {
+                        if (requestedPack && ps.some((p: FrameworkPackSummary) => p.key === requestedPack)) {
+                            setChosenPacks([requestedPack]);
+                        }
+                    } else if (requestedPack) {
                         setSelectedPack(requestedPack);
                     } else if (ps.length === 1) {
                         setSelectedPack(ps[0].key);
@@ -126,6 +141,23 @@ export default function InstallWizardPage() {
             .then(p => { setPreview(p); if (p) setStep('preview'); });
     }, [selectedPack, apiUrl, frameworkKey]);
 
+    const toggleChosen = (key: string) =>
+        setChosenPacks((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+
+    const previewChosen = async () => {
+        if (chosenPacks.length === 0) return;
+        setError('');
+        const keys = packs.map((p) => p.key).filter((k) => chosenPacks.includes(k));
+        const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=preview&packKeys=${keys.map(encodeURIComponent).join(',')}`));
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            setError(apiErrorMessage(err, tx('install.installFailed')));
+            return;
+        }
+        setPreview(await res.json());
+        setStep('preview');
+    };
+
     const handleInstall = async () => {
         setInstalling(true);
         setError('');
@@ -133,7 +165,11 @@ export default function InstallWizardPage() {
             const res = await fetch(apiUrl(`/frameworks/${frameworkKey}`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ packKey: selectedPack }),
+                body: JSON.stringify(
+                    multiPack
+                        ? { packKeys: packs.map((p) => p.key).filter((k) => chosenPacks.includes(k)) }
+                        : { packKey: selectedPack },
+                ),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ error: tx('install.installFailed') }));
@@ -190,8 +226,51 @@ export default function InstallWizardPage() {
                 </div>
             )}
 
+            {/* Step 1: Choose packs — several packs, at least one required */}
+            {canInstall && step === 'select' && multiPack && (
+                <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')} id="install-choose-packs">
+                    <Heading level={2}>{tx('install.choosePacks')}</Heading>
+                    <p className="text-sm text-content-muted">{tx('install.choosePacksHint')}</p>
+                    <div className="space-y-tight">
+                        {packs.map(p => {
+                            const checked = chosenPacks.includes(p.key);
+                            return (
+                                <label key={p.key} htmlFor={`pack-${p.key}`} className={`flex items-start gap-compact p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-[var(--brand-default)] bg-[var(--brand-subtle)]' : 'border-border-subtle hover:border-border-emphasis'
+                                    }`}>
+                                    <Checkbox
+                                        id={`pack-${p.key}`}
+                                        checked={checked}
+                                        onCheckedChange={() => toggleChosen(p.key)}
+                                        className="mt-0.5"
+                                    />
+                                    <div>
+                                        <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
+                                        {p.description && <div className="text-xs text-content-muted mt-0.5">{p.description}</div>}
+                                        <div className="text-xs text-content-subtle mt-0.5">{tx('install.packMeta', { count: p._count?.templateLinks || 0, version: p.version || tx('install.latest') })}</div>
+                                    </div>
+                                </label>
+                            );
+                        })}
+                    </div>
+                    {chosenPacks.length === 0 && (
+                        <p className="text-xs text-content-warning" id="install-choose-packs-required">{tx('install.choosePacksRequired')}</p>
+                    )}
+                    {error && (
+                        <div className="text-sm text-content-error">{error}</div>
+                    )}
+                    <Button
+                        variant="secondary"
+                        onClick={previewChosen}
+                        disabled={chosenPacks.length === 0}
+                        id="preview-chosen-packs-btn"
+                    >
+                        {tx('install.previewChosen', { count: chosenPacks.length })}
+                    </Button>
+                </div>
+            )}
+
             {/* Step 1: Select Pack */}
-            {canInstall && step === 'select' && (
+            {canInstall && step === 'select' && !multiPack && (
                 <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')}>
                     <Heading level={2}>{tx('install.selectAPack')}</Heading>
                     {packs.length === 0 ? (
@@ -256,7 +335,7 @@ export default function InstallWizardPage() {
                     )}
 
                     <div className="flex gap-compact">
-                        <Button variant="secondary" onClick={() => { setStep('select'); setSelectedPack(''); }}>
+                        <Button variant="secondary" onClick={() => { setStep('select'); setSelectedPack(''); setPreview(null); }}>
                             {tx('install.back')}
                         </Button>
                         <Button

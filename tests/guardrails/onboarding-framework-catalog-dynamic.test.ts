@@ -34,7 +34,7 @@ describe('onboarding framework catalog — usecase + route', () => {
         expect(src).toContain('export async function listInstallableFrameworks');
         // Only frameworks with at least one installable pack are returned.
         expect(src).toMatch(/packs:\s*\{\s*some:\s*\{\s*\}\s*\}/);
-        // Control count is summed from the packs' template links.
+        // Control count is the distinct templates the packs link.
         expect(src).toContain('templateLinks');
     });
 

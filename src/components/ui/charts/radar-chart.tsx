@@ -431,7 +431,7 @@ function RadarChartInner({
                             onBlur={() => setHoveredKey(null)}
                             tabIndex={0}
                             role="img"
-                            aria-label={`${p.label}: ${p.value}`}
+                            aria-label={t('pointAria', { label: p.label, value: p.value })}
                         />
                     );
                 })}

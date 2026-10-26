@@ -27,7 +27,7 @@ jest.mock('@/lib/db-context', () => ({
 
 jest.mock('@/lib/prisma', () => ({
     prisma: {
-        frameworkPack: { findUnique: jest.fn() },
+        frameworkPack: { findUnique: jest.fn(), findMany: jest.fn() },
         framework: { findFirst: jest.fn(), findUnique: jest.fn() },
         frameworkRequirement: { findMany: jest.fn() },
         controlTemplate: { findUnique: jest.fn(), findMany: jest.fn() },
@@ -40,7 +40,9 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
 
 import {
     previewPackInstall,
+    previewPacksInstall,
     installPack,
+    installPacks,
     installSingleTemplate,
     bulkMapControls,
     bulkInstallTemplates,
@@ -52,6 +54,7 @@ import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockPackFind = prisma.frameworkPack.findUnique as jest.MockedFunction<typeof prisma.frameworkPack.findUnique>;
+const mockPackFindMany = prisma.frameworkPack.findMany as jest.MockedFunction<typeof prisma.frameworkPack.findMany>;
 const mockFrameworkFindFirst = prisma.framework.findFirst as jest.MockedFunction<typeof prisma.framework.findFirst>;
 const mockFrameworkFindUnique = prisma.framework.findUnique as jest.MockedFunction<typeof prisma.framework.findUnique>;
 const mockReqFindMany = prisma.frameworkRequirement.findMany as jest.MockedFunction<typeof prisma.frameworkRequirement.findMany>;
@@ -254,6 +257,117 @@ describe('installPack — RBAC + idempotency + audit', () => {
             expect.anything(),
             expect.objectContaining({ action: 'FRAMEWORK_PACK_INSTALLED' }),
         );
+    });
+});
+
+describe('installPacks / previewPacksInstall — choosing several packs of one framework', () => {
+    // The EU drone framework ships one pack per operating subcategory, and
+    // the packs share their core controls. A tenant chooses the subcategories
+    // it flies; the install must refuse an empty choice and install a shared
+    // control once.
+    const tmpl = (code: string) => ({
+        code, title: code, description: null, category: 'EU UAS', defaultFrequency: 'QUARTERLY',
+        tasks: [{ title: `task ${code}`, description: 'd' }],
+        requirementLinks: [{ requirementId: `req-${code}`, requirement: { code: `R-${code}`, title: code } }],
+    });
+    const A2 = { key: 'EU_UAS_OPEN_A2', name: 'A2', frameworkId: 'fw-uas', framework: { key: 'EU-UAS-OPS', name: 'EU UAS', version: '2025-05' }, templateLinks: [{ template: tmpl('UAS-CORE-01') }, { template: tmpl('UAS-A2-01') }] };
+    const A3 = { key: 'EU_UAS_OPEN_A3', name: 'A3', frameworkId: 'fw-uas', framework: { key: 'EU-UAS-OPS', name: 'EU UAS', version: '2025-05' }, templateLinks: [{ template: tmpl('UAS-CORE-01') }, { template: tmpl('UAS-A3-01') }] };
+
+    function tenantDb() {
+        return {
+            control: {
+                findFirst: jest.fn().mockResolvedValue(null),
+                findMany: jest.fn().mockResolvedValue([]),
+                create: jest.fn(async ({ data }: { data: { code: string } }) => ({ id: `c-${data.code}` })),
+            },
+            task: { create: jest.fn() },
+            controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
+            policy: { findMany: jest.fn().mockResolvedValue([]) },
+            policyControlLink: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        };
+    }
+
+    it('refuses an empty choice before reading anything', async () => {
+        await expect(installPacks(makeRequestContext('ADMIN'), 'EU-UAS-OPS', [])).rejects.toThrow(/at least one pack/i);
+        await expect(installPacks(makeRequestContext('ADMIN'), 'EU-UAS-OPS', ['  '])).rejects.toThrow(/at least one pack/i);
+        await expect(previewPacksInstall(makeRequestContext('READER'), 'EU-UAS-OPS', [''])).rejects.toThrow(/at least one pack/i);
+        expect(mockPackFindMany).not.toHaveBeenCalled();
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('refuses a key that names no pack', async () => {
+        mockPackFindMany.mockResolvedValueOnce([{ key: 'EU_UAS_OPEN_A2', framework: { key: 'EU-UAS-OPS' } }] as never);
+        await expect(
+            installPacks(makeRequestContext('ADMIN'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2', 'EU_UAS_NOPE']),
+        ).rejects.toThrow(/Pack not found: EU_UAS_NOPE/);
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it("refuses a pack of another framework mixed into the choice", async () => {
+        mockPackFindMany.mockResolvedValueOnce([
+            { key: 'EU_UAS_OPEN_A2', framework: { key: 'EU-UAS-OPS' } },
+            { key: 'ISO27001_2022_BASE', framework: { key: 'ISO27001' } },
+        ] as never);
+        await expect(
+            installPacks(makeRequestContext('ADMIN'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2', 'ISO27001_2022_BASE']),
+        ).rejects.toThrow(/Not a pack of EU-UAS-OPS: ISO27001_2022_BASE/);
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('refuses a member without frameworks.install before any read', async () => {
+        await expect(installPacks(makeRequestContext('READER'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2'])).rejects.toThrow();
+        expect(mockPackFindMany).not.toHaveBeenCalled();
+    });
+
+    it('installs a control the chosen packs share once, in one transaction, with an audit row per pack', async () => {
+        mockPackFindMany
+            .mockResolvedValueOnce([
+                { key: 'EU_UAS_OPEN_A3', framework: { key: 'EU-UAS-OPS' } },
+                { key: 'EU_UAS_OPEN_A2', framework: { key: 'EU-UAS-OPS' } },
+            ] as never)
+            // Returned out of order on purpose: the install follows the order chosen.
+            .mockResolvedValueOnce([A3, A2] as never);
+        const db = tenantDb();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+
+        const result = await installPacks(makeRequestContext('ADMIN'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3', 'EU_UAS_OPEN_A2']);
+
+        expect(mockRunInTx).toHaveBeenCalledTimes(1);
+        const created = db.control.create.mock.calls.map((c) => (c[0] as { data: { code: string } }).data.code);
+        expect(created).toEqual(['UAS-CORE-01', 'UAS-A2-01', 'UAS-A3-01']);
+        expect(result.controlsCreated).toBe(3);
+        expect(result.tasksCreated).toBe(3);
+        expect(result.packKeys).toEqual(['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3']);
+        // The shared core counts towards the pack that installed it.
+        expect(result.packs.map((p) => [p.packKey, p.controlsCreated])).toEqual([
+            ['EU_UAS_OPEN_A2', 2],
+            ['EU_UAS_OPEN_A3', 1],
+        ]);
+        const audits = mockLog.mock.calls.map((c) => c[2] as unknown as { action: string; metadata: { packKey: string } });
+        expect(audits.map((a) => [a.action, a.metadata.packKey])).toEqual([
+            ['FRAMEWORK_PACK_INSTALLED', 'EU_UAS_OPEN_A2'],
+            ['FRAMEWORK_PACK_INSTALLED', 'EU_UAS_OPEN_A3'],
+        ]);
+    });
+
+    it('previews the union of the chosen packs, each control once', async () => {
+        mockPackFindMany
+            .mockResolvedValueOnce([
+                { key: 'EU_UAS_OPEN_A2', framework: { key: 'EU-UAS-OPS' } },
+                { key: 'EU_UAS_OPEN_A3', framework: { key: 'EU-UAS-OPS' } },
+            ] as never)
+            .mockResolvedValueOnce([A2, A3] as never);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ control: { findMany: jest.fn().mockResolvedValue([{ code: 'UAS-CORE-01' }]) } } as never),
+        );
+
+        const preview = await previewPacksInstall(makeRequestContext('READER'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3']);
+
+        expect(preview.templates.map((t) => t.code)).toEqual(['UAS-CORE-01', 'UAS-A2-01', 'UAS-A3-01']);
+        expect(preview.totalTemplates).toBe(3);
+        expect(preview.existingControls).toBe(1);
+        expect(preview.newControls).toBe(2);
+        expect(preview.packKeys).toEqual(['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3']);
     });
 });
 

@@ -46,6 +46,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
     type FilterType,
 } from '@/components/ui/filter';
@@ -66,6 +67,7 @@ import { celebrationDedupe, MILESTONES } from '@/lib/celebrations';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildEvidenceFilters,
+    EVIDENCE_ROW_DERIVED_FILTER_KEYS,
     EVIDENCE_FILTER_KEYS,
     evidenceFreshnessLabels,
 } from './filter-defs';
@@ -993,7 +995,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // the filter gear can ride the same toolbar `actions` slot as the
     // columns gear. The FilterProvider state (keyed by
     // EVIDENCE_FILTER_KEYS) is untouched — a hidden filter keeps its value.
-    const evidenceFilters: FilterType[] = useMemo(
+    const builtEvidenceFilters: FilterType[] = useMemo(
         () =>
             buildEvidenceFilters(
                 controls as Parameters<typeof buildEvidenceFilters>[0],
@@ -1003,6 +1005,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
             ),
         [controls, evidence, tx, tGroup],
     );
+    // The folder and category options are built from the evidence loaded,
+    // which the filters narrow.
+    const evidenceFilters = useRetainedFilterOptions(builtEvidenceFilters, EVIDENCE_ROW_DERIVED_FILTER_KEYS);
     // U1 (2026-08-13) — the gear edits the KPI CARDS, not the Filter
     // dropdown's categories. Registering the filter defs as cards meant
     // hiding a card removed a FILTER from the product while the KPI

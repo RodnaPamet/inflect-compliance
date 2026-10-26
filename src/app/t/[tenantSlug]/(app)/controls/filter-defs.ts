@@ -236,6 +236,9 @@ export function categoryOptionsFromControls(
         .map((value) => ({ value, label: value }));
 }
 
+/** The facets whose options are built from loaded rows, so can shrink with them. */
+export const CONTROL_ROW_DERIVED_FILTER_KEYS = ['ownerUserId', 'category'] as const;
+
 /**
  * Produce the Filter[] array that FilterSelect consumes, with `options` on
  * the owner/category defs replaced by the runtime-derived lists. Returns

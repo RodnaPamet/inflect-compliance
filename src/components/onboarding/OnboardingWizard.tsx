@@ -13,6 +13,7 @@ import { useTenantApiUrl, useTenantContext, useTenantHref } from '@/lib/tenant-c
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useEnterSubmit } from '@/components/ui/hooks';
 import {
     Building2,
@@ -457,9 +458,15 @@ export default function OnboardingWizard() {
     // #4125 — Continue on the framework step installs what is chosen, so it
     // needs a choice; the server refuses an empty one too. The wizard offers
     // no Skip for this step.
+    // A framework whose packs are its subcategories also needs at least one
+    // pack chosen; the step records an empty list for it until one is, and
+    // the server refuses the same gap.
     const noFrameworkChosen =
         currentStep.key === 'FRAMEWORK_SELECTION' &&
-        !(localData.FRAMEWORK_SELECTION?.selectedFrameworks?.length > 0);
+        (!(localData.FRAMEWORK_SELECTION?.selectedFrameworks?.length > 0) ||
+            Object.values((localData.FRAMEWORK_SELECTION?.selectedPacks ?? {}) as Record<string, unknown>).some(
+                (packs) => !Array.isArray(packs) || packs.length === 0,
+            ));
     // #4125 — framework install failures used to be stored and never read.
     const installRun = latestFrameworkInstall(state.stepData);
     const installFailures =
@@ -757,6 +764,8 @@ interface InstallableFramework {
     kind: string;
     requirementCount: number;
     controlCount: number;
+    /** More than one means the tenant chooses which to install (at least one). */
+    packs?: { key: string; name: string; description: string | null; controlCount: number }[];
 }
 
 /**
@@ -801,6 +810,12 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
     // still shows the conditional step — see the NIS2-step bug.
     const isSelected = (key: string) => selected.some(s => s.toLowerCase() === key.toLowerCase());
 
+    // Per framework whose packs are its subcategories: the packs chosen. A
+    // key with an empty list means "selected, nothing chosen yet", which the
+    // wizard and the server both refuse.
+    const selectedPacks: Record<string, string[]> = data.selectedPacks || {};
+    const choosesPacks = (fw: InstallableFramework) => (fw.packs?.length ?? 0) > 1;
+
     const toggle = (fw: InstallableFramework) => {
         const has = isSelected(fw.key);
         // Remove every case-variant on deselect (clears a legacy 'nis2'); on
@@ -815,7 +830,16 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
             if (k.toLowerCase() === fw.key.toLowerCase()) delete labels[k];
         }
         if (!has) labels[fw.key] = fw.name;
-        onUpdate({ selectedFrameworks: next, frameworkLabels: labels });
+        const packs: Record<string, string[]> = { ...selectedPacks };
+        delete packs[fw.key];
+        if (!has && choosesPacks(fw)) packs[fw.key] = [];
+        onUpdate({ selectedFrameworks: next, frameworkLabels: labels, selectedPacks: packs });
+    };
+
+    const togglePack = (fw: InstallableFramework, packKey: string) => {
+        const current = selectedPacks[fw.key] ?? [];
+        const nextList = current.includes(packKey) ? current.filter(k => k !== packKey) : [...current, packKey];
+        onUpdate({ selectedPacks: { ...selectedPacks, [fw.key]: nextList } });
     };
 
     return (
@@ -858,6 +882,36 @@ function FrameworkSelectionStep({ data, onUpdate }: { data: StepData; onUpdate: 
                     })}
                 </div>
             )}
+
+            {/* Frameworks whose packs are their subcategories: choose at least one. */}
+            {frameworks.filter(fw => isSelected(fw.key) && choosesPacks(fw)).map(fw => {
+                const chosen = selectedPacks[fw.key] ?? [];
+                return (
+                    <div key={fw.key} className="rounded-lg border border-border-subtle p-4 space-y-compact" data-testid={`fw-packs-${fw.key.toLowerCase()}`}>
+                        <p className="text-sm font-semibold text-content-emphasis">{t('wizard.frameworks.choosePacks', { name: fw.name })}</p>
+                        <p className="text-xs text-content-muted">{t('wizard.frameworks.choosePacksHint')}</p>
+                        <div className="space-y-tight">
+                            {(fw.packs ?? []).map(p => (
+                                <label key={p.key} htmlFor={`fw-pack-${p.key}`} className="flex items-start gap-compact cursor-pointer">
+                                    <Checkbox
+                                        id={`fw-pack-${p.key}`}
+                                        checked={chosen.includes(p.key)}
+                                        onCheckedChange={() => togglePack(fw, p.key)}
+                                        className="mt-0.5"
+                                    />
+                                    <span>
+                                        <span className="block text-sm text-content-emphasis">{p.name}</span>
+                                        {p.description && <span className="block text-xs text-content-muted">{p.description}</span>}
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        {chosen.length === 0 && (
+                            <p className="text-xs text-content-warning">{t('wizard.frameworks.choosePacksRequired', { name: fw.name })}</p>
+                        )}
+                    </div>
+                );
+            })}
 
             {!loading && !loadError && frameworks.length > 0 && selected.length === 0 && (
                 <p className="text-xs text-content-warning">{t('wizard.frameworks.selectAtLeastOne')}</p>

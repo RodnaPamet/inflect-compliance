@@ -23,7 +23,7 @@ const TENANT = 'lgm-tenant';
 const COLUMNS = ['LOGIN', 'EMAIL_ADDR', 'DISPLAY_NAME', 'STATUS', 'ROLE_1'];
 const FP = computeColumnSetFingerprint(COLUMNS);
 
-const ctx = () => makeRequestContext('OWNER', { tenantId: TENANT });
+const ctx = () => makeRequestContext('OWNER', { userId: 'lgm-user-1', tenantId: TENANT });
 
 let connectionId: string;
 
@@ -46,11 +46,14 @@ beforeAll(async () => {
     // The audit writer inserts `userId` with an FK to `User`, so a context with a
     // userId that has no row fails the write — not the usecase's fault, and the
     // reason the pull test did not hit it: a job context carries no user.
-    // `makeRequestContext` defaults to 'user-1'.
+    // `makeRequestContext` defaults `userId` to 'user-1' -- which is WHY six
+    // suites all created that exact row, and why #3336's shared id was a
+    // coupling rather than a coincidence. The context above pins its own id, so
+    // this suite's row and its context name the same user.
     await prisma.user.upsert({
-        where: { id: 'user-1' },
+        where: { id: 'lgm-user-1' },
         update: {},
-        create: { id: 'user-1', email: 'mapper@lgm.test', name: 'Mapper' },
+        create: { id: 'lgm-user-1', email: 'mapper@lgm.test', name: 'Mapper' },
     });
 });
 
