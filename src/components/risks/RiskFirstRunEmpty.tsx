@@ -53,7 +53,7 @@ export interface RiskFirstRunEmptyProps {
     onCreateClick?: () => void;
     /**
      * False hides the CTA, for a user the create route would refuse.
-     * Default: true. The risks list passes `riskCanCreate`.
+     * Default: true. The risks list, dashboard and board pass `riskCanCreate`.
      */
     canCreate?: boolean;
 }

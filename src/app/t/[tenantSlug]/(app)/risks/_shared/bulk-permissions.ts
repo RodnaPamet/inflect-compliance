@@ -38,8 +38,8 @@ export function riskBulkPermissions(ctx: {
 }
 
 /**
- * Whether the user can create risks: the list's button, its empty state and
- * the import page. Both ways in are gated twice, like the bulk actions: the
+ * Whether the user can create risks: the list's button, the import page, and
+ * the empty register's button on the list, the dashboard and the board. Both ways in are gated twice, like the bulk actions: the
  * create route and the import route check `risks.create`, and `createRisk` /
  * `bulkImportRisks` assert the coarse write tier. A custom role can hold one
  * without the other, so the page used to offer Create on the tier alone and
