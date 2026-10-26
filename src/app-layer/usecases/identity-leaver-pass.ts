@@ -984,8 +984,8 @@ export async function runIdentityLeaverPass(input: {
     // that would close it and refuse instead -- and refusing a leaver pass
     // leaves a departing employee's accounts enabled, which is the quiet
     // compliance miss this codebase treats as worse than the over-grant.
-    // Closing it properly needs the per-tenant SYSTEM `User` row (see
-    // `buildDelegatedJobContext`), so the borrow is unnecessary at all.
+    // Closing it properly needs the per-tenant SYSTEM `User` row (#4400), so
+    // the borrow is unnecessary at all and the refusal costs nothing.
     const ctx = input.requestedByUserId
         ? buildDelegatedJobContext({
               tenantId: input.tenantId,
