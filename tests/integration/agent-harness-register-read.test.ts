@@ -27,8 +27,9 @@ import { POST } from '@/app/api/mcp/route';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { readHarnessRegisterForScanner, type HarnessRegisterView } from '@/app-layer/usecases/agent-harness-register-read';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(120_000);
 

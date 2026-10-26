@@ -8,14 +8,18 @@
  *
  * ── LIBRARY v1 IS PROPOSED, NOT APPROVED ────────────────────────────────────
  *
- * The repository owner's merge adopted catalogue version 1 for this repository.
- * Internal audit's approval and the managed-service provider's agreement of it
- * are OPEN, and so is each procedure's provider methodology reference: each is
- * recorded on issue #3663 when given. `LIBRARY_V1_STATUS` says so in code, and every finding proposal and
- * every evidence row the handlers write carries that status, so nothing a
- * person reads presents the library as approved. Changing a value there is a
- * claim about an external party's act; it belongs in the pull request that
- * records the act on #3663, never in a tidy-up.
+ * "Library v1" names the SET, procedures 1 to 5. The catalogue that defines
+ * them is versioned on its own: version 1 (#3663), and version 2 (#4379), which
+ * changes procedure 2's R3 and not the set, so the set keeps its name. The
+ * repository owner's merge adopted each version for this repository. Internal
+ * audit's approval and the managed-service provider's agreement of each are
+ * OPEN, and so is each procedure's provider methodology reference: each is
+ * recorded on that version's issue when given. `CATALOGUE_VERSION_STATUS` says
+ * so per version, `LIBRARY_V1_STATUS` for the version in force, and every
+ * finding proposal and every evidence row the handlers write carries that
+ * status, so nothing a person reads presents the library as approved. Changing
+ * a value there is a claim about an external party's act; it belongs in the
+ * pull request that records the act on the version's issue, never in a tidy-up.
  *
  * ── FOUR RULES THE SHAPES CARRY ─────────────────────────────────────────────
  *
@@ -38,12 +42,12 @@ import { createHmac } from 'node:crypto';
 
 import { MCP_READ_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 
-import { PERIOD_LABEL, periodBounds } from './audit-workpaper';
+import { AUDIT_PROCEDURE_CATALOGUE_VERSION, PERIOD_LABEL, periodBounds } from './audit-workpaper';
 import { sampleSizeFor, selectSample } from './proposal-sampling';
 
 // ─── The library ────────────────────────────────────────────────────────────
 
-/** Procedures 1 to 5 of catalogue version 1: library v1. */
+/** Procedures 1 to 5 of the catalogue, versions 1 and 2 alike: library v1. */
 export const LIBRARY_V1_PROCEDURE_IDS = [
     'iam.leaver_timeliness',
     'iam.recertification_completeness',
@@ -58,26 +62,61 @@ export function isLibraryV1Procedure(id: string): id is LibraryV1ProcedureId {
 }
 
 /**
- * Where library v1 stands with the parties whose act it waits on. Every value
- * that names an external party is OPEN until that party's act is recorded on
- * #3663 — the merge of a pull request is the repository owner's sign-off and
- * supplies neither.
+ * Where each catalogue version stands with the parties whose act it waits on.
+ * Every value that names an external party is OPEN until that party's act is
+ * recorded on the version's own issue — #3663 for version 1, #4379 for version
+ * 2. The merge of a pull request is the repository owner's sign-off and
+ * supplies neither. A workpaper keeps the version it was written under, so a
+ * reader holding workpapers of both asks each version for its own standing
+ * (`catalogueVersionStatus`), never the version in force for all of them.
  */
-export const LIBRARY_V1_STATUS = {
-    catalogueVersion: 1,
-    /** Adopted for this repository by the owner's merge; proposed to the two parties below. */
-    status: 'PROPOSED',
-    internalAuditApproval: 'OPEN',
-    providerAgreement: 'OPEN',
-    providerMethodologyReference: 'OPEN',
-    recordedOn: '#3663',
+export const CATALOGUE_VERSION_STATUS = {
+    1: {
+        internalAuditApproval: 'OPEN',
+        providerAgreement: 'OPEN',
+        providerMethodologyReference: 'OPEN',
+        recordedOn: '#3663',
+    },
+    2: {
+        internalAuditApproval: 'OPEN',
+        providerAgreement: 'OPEN',
+        providerMethodologyReference: 'OPEN',
+        recordedOn: '#4379',
+    },
 } as const;
 
-/** One sentence every finding proposal and evidence row carries about the library's standing. */
+export type CatalogueVersionStanding = (typeof CATALOGUE_VERSION_STATUS)[keyof typeof CATALOGUE_VERSION_STATUS];
+
+/** One version's standing, or null for a version this build does not know — which a reader must fail closed on. */
+export function catalogueVersionStatus(version: number): CatalogueVersionStanding | null {
+    return Object.prototype.hasOwnProperty.call(CATALOGUE_VERSION_STATUS, version)
+        ? CATALOGUE_VERSION_STATUS[version as keyof typeof CATALOGUE_VERSION_STATUS]
+        : null;
+}
+
+/**
+ * Where library v1 stands under the catalogue version in force: the stamp every
+ * finding proposal and evidence row the handlers write carries. Derived from
+ * the table above, so the version a workpaper records and the standing its
+ * evidence states cannot disagree.
+ */
+export const LIBRARY_V1_STATUS = {
+    catalogueVersion: AUDIT_PROCEDURE_CATALOGUE_VERSION,
+    /** Adopted for this repository by the owner's merge; proposed to the two parties below. */
+    status: 'PROPOSED',
+    ...CATALOGUE_VERSION_STATUS[AUDIT_PROCEDURE_CATALOGUE_VERSION],
+} as const;
+
+/**
+ * One sentence every finding proposal and evidence row carries about the
+ * library's standing. It names both versions, because the reliance pack carries
+ * it beside workpapers written under either.
+ */
 export const LIBRARY_V1_STATUS_SENTENCE =
     'Audit procedure library v1 is proposed to internal audit and the managed-service provider: ' +
-    'their approval, their agreement and each procedure\'s provider methodology reference are ' +
-    'open on #3663, so this procedure is not an approved or agreed definition.';
+    'their approval and their agreement of catalogue version 2 are open on #4379, as they are of ' +
+    'version 1 on #3663, and each procedure\'s provider methodology reference is open, so this ' +
+    'procedure is not an approved or agreed definition.';
 
 export type PeriodKind = 'MONTH' | 'QUARTER';
 
@@ -504,6 +543,10 @@ type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
  * (owner decision 9, 2026-10-19). The account was live for a departed person
  * past the window, which is the exposure the procedure exists to find; that it
  * was closed afterwards does not undo the hours it was open.
+ *
+ * `POPULATION_COVERAGE_UNVERIFIED` (procedure 2, R3, a legacy application's
+ * campaign) sits with `CAMPAIGN_TRUNCATED`: both say the campaign may not have
+ * reached every account, and neither names an account that is live.
  */
 export const EXCEPTION_SEVERITY: Readonly<Record<string, Severity>> = {
     LEAVER_ACCOUNT_ACTIVE: 'HIGH',
@@ -512,6 +555,7 @@ export const EXCEPTION_SEVERITY: Readonly<Record<string, Severity>> = {
     NOT_RECERTIFIED_IN_PERIOD: 'HIGH',
     CAMPAIGN_INCOMPLETE: 'MEDIUM',
     CAMPAIGN_TRUNCATED: 'MEDIUM',
+    POPULATION_COVERAGE_UNVERIFIED: 'MEDIUM',
     CLOSED_AFTER_DUE: 'LOW',
     SELF_REVIEW: 'HIGH',
     REVOCATION_NOT_EXECUTED: 'HIGH',

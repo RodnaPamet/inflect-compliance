@@ -366,3 +366,33 @@ relation, are out of reach, because telling `runs` (WorkflowRun) from `runs`
 (ControlTestRun, ReportRun) needs the schema. The audit extension's prior-state
 reader reaches the delegate by computed name, so it is out of reach too. It
 catches its own failure and reports the write as undiffed.
+
+### `require-test-prisma-transaction-budget`
+
+Every `new PrismaClient({ … })` under `tests/` names a `transactionOptions`
+property. The remedy is `transactionOptions: TENANT_TX_OPTIONS` from
+`@/lib/db/concurrency-limits`, the budget the test helpers use. Scoped to
+`tests/` in `eslint.config.mjs`. The production client budgets each call
+instead.
+
+**Why.** A client with no default leaves every interactive `$transaction` on
+Prisma's 2000 ms `maxWait`. Under CI shard load the shared pool can take
+longer than that to free a connection, and the transaction throws
+`Unable to start a transaction in the given time`. When it is a suite's cleanup,
+every test in the file fails. That ejected #4355 from the merge queue (#4367),
+after the same failure in `tests/helpers/audit-cleanup.ts` (#3266). Measured
+against a two-connection pool held for 3 s, a transaction with no options of its
+own failed after 2005 ms on a client without the default, and succeeded after
+2860 ms on one with `TENANT_TX_OPTIONS`. When it landed (#4371) the rule found
+169 clients without a budget in 166 files, and all of them were given one in the
+same diff.
+
+**Why the client and not the call.** `transactionOptions` on the constructor is
+the default every transaction on that client inherits, so one property per file
+covers every call, including calls the rule could not attribute to a client. A
+call that needs a different budget still passes its own.
+
+**What it cannot see.** A client built by a helper outside `tests/`, or
+received from somewhere else, is not a `new PrismaClient` in the file and is
+not checked. An argument passed by name, or an object built only from a
+spread, is flagged rather than trusted, because the rule cannot see inside it.

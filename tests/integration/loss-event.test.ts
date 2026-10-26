@@ -16,8 +16,9 @@ import {
     getLossEventAggregate,
     deleteLossEvent,
 } from '@/app-layer/usecases/loss-event';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(30_000);
 

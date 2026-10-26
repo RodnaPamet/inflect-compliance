@@ -349,7 +349,8 @@ function refusedResult(
         evidenceTitle: `Audit procedure — ${procedure ?? 'unconfigured'} (INCONCLUSIVE, ${reason})`,
         evidenceContent: [
             `Audit procedure: ${procedure ?? 'unconfigured'}`,
-            `Library v1 status: ${LIBRARY_V1_STATUS.status} (internal audit approval ${LIBRARY_V1_STATUS.internalAuditApproval}, ` +
+            `Library v1 status: ${LIBRARY_V1_STATUS.status} (catalogue version ${LIBRARY_V1_STATUS.catalogueVersion}; ` +
+                `internal audit approval ${LIBRARY_V1_STATUS.internalAuditApproval}, ` +
                 `provider agreement ${LIBRARY_V1_STATUS.providerAgreement}; ${LIBRARY_V1_STATUS.recordedOn})`,
             '',
             'Verdict: INCONCLUSIVE',

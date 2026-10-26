@@ -21,8 +21,9 @@ import { DB_URL, DB_AVAILABLE } from './../db-helper';
 import { withTenantDb } from '@/lib/db-context';
 import { makeRequestContext } from '../../helpers/make-context';
 import { ClauseRepository } from '@/app-layer/repositories/ClauseRepository';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const rawPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const rawPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `clause-${randomUUID().slice(0, 8)}`;

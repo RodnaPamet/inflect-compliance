@@ -63,5 +63,6 @@ module.exports = {
         'regex-within-ts-target': require('./rules/regex-within-ts-target'),
         'no-typed-run-driver-read': require('./rules/no-typed-run-driver-read'),
         'observable-gauge-rebinds': require('./rules/observable-gauge-rebinds'),
+        'require-test-prisma-transaction-budget': require('./rules/require-test-prisma-transaction-budget'),
     },
 };

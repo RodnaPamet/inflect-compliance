@@ -57,8 +57,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(60_000);
 

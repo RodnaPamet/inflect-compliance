@@ -19,8 +19,9 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { importLibrary } from '@/app-layer/services/library-importer';
 import type { LoadedLibrary } from '@/app-layer/libraries';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const KEY = `LIBTEST-${randomUUID().slice(0, 8)}`;

@@ -29,9 +29,11 @@ import {
     processAccessReviewReminders,
 } from '@/app-layer/jobs/access-review-reminder';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;

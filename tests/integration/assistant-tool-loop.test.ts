@@ -36,6 +36,7 @@ import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { makeRequestContext } from '../helpers/make-context';
 import type { RequestContext } from '@/app-layer/types';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -55,7 +56,7 @@ function sessionCtx(tenantId: string, role: string): RequestContext {
 
 describeFn('the assistant is offered the funnel tools its asker could call', () => {
     beforeAll(async () => {
-        prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+        prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
     });
 
     afterAll(async () => {
@@ -151,7 +152,7 @@ describeFn('the assistant is offered the funnel tools its asker could call', () 
 
 describeFn('a session in one tenant cannot surface another tenant rows', () => {
     beforeAll(async () => {
-        prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+        prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
     });
 
     afterAll(async () => {

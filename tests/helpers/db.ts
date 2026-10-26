@@ -21,6 +21,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { execSync } from 'child_process';
+// Relative, not `@/`: Jest's globalSetup loads this file outside the module
+// mapper, where the alias does not resolve.
+import { TENANT_TX_OPTIONS } from '../../src/lib/db/concurrency-limits';
 
 /**
  * The base/template test database URL.
@@ -869,7 +872,7 @@ export function prismaTestClient(): any {
     if (!_client) {
         const url = getTestDatabaseUrl();
         const adapter = new PrismaPg({ connectionString: url });
-        const base = new PrismaClient({ adapter });
+        const base = new PrismaClient({ adapter, transactionOptions: TENANT_TX_OPTIONS });
         // GAP-21: wire the same PII middleware production uses so
         // integration tests that write to encrypted-only models
         // (User, AuditorAccount, UserIdentityLink) auto-populate the

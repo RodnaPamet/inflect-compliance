@@ -17,6 +17,8 @@ import {
     type AuditNarrativeAnswer,
     type WorkpaperRecordFacts,
 } from '@/lib/agentic/audit-narrative';
+import { EXCEPTION_SEVERITY } from '@/lib/agentic/audit-procedure-library';
+import { CODE } from '@/lib/agentic/audit-workpaper';
 import { MAX_ANSWER_CHARS } from '@/lib/agentic/review-attribution';
 import { summaryCapFor } from '@/app-layer/ai/decision-log';
 import { readFileSync } from 'node:fs';
@@ -180,6 +182,16 @@ describe('holding a narrative to the record', () => {
     it('lowercase prose is not a conclusion word', () => {
         const text = 'One leaver passed the first attribute and failed the window: LEAVER_DISABLED_LATE, FAIL.';
         expect(check(answer([narrative({ text })]))).toMatchObject({ ok: true });
+    });
+
+    // A code the library gains must be one a narrative can cite: a workpaper
+    // `CODE`, and a whole token to the text check — otherwise the narrative of
+    // every workpaper recording it is refused, or a part of it slips past.
+    it.each(Object.keys(EXCEPTION_SEVERITY))('a workpaper recording %s can be narrated citing it, in its list and its text', (code) => {
+        expect(CODE.test(code)).toBe(true);
+        const recorded: WorkpaperRecordFacts = { ...failing, exceptionCodes: [code], outcomeCodes: [code] };
+        const text = `One sampled unit raised ${code}, so the workpaper records FAIL.`;
+        expect(check(answer([narrative({ exceptionCodes: [code], text })]), [recorded])).toMatchObject({ ok: true });
     });
 });
 

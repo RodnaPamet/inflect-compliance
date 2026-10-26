@@ -250,6 +250,72 @@ describe('the summary states the scope, the catalogue’s standing and the defin
     });
 });
 
+describe('a pack holding workpapers of catalogue versions 1 and 2', () => {
+    const both = () =>
+        planOf(
+            input({
+                workpapers: [
+                    workpaper({ catalogueVersion: 1, periodLabel: '2026-07' }),
+                    workpaper({ catalogueVersion: 2, periodLabel: '2026-08' }),
+                ],
+            }),
+        );
+
+    it('lists both versions, and states each one\'s standing on its own issue', () => {
+        const { summary } = both();
+        expect(summary.schemaVersion).toBe(2);
+        expect(summary.catalogue.versions).toEqual([1, 2]);
+        expect(summary.catalogue.byVersion).toEqual([
+            { catalogueVersion: 1, internalAuditApproval: 'OPEN', providerAgreement: 'OPEN', providerMethodologyReference: 'OPEN', recordedOn: '#3663' },
+            { catalogueVersion: 2, internalAuditApproval: 'OPEN', providerAgreement: 'OPEN', providerMethodologyReference: 'OPEN', recordedOn: '#4379' },
+        ]);
+        // `status` is the version in force; the statement names both issues.
+        expect([summary.catalogue.status.catalogueVersion, summary.catalogue.status.recordedOn]).toEqual([2, '#4379']);
+        expect(summary.catalogue.statement).toContain('#3663');
+        expect(summary.catalogue.statement).toContain('#4379');
+        expect(summary.limits).toEqual(
+            expect.arrayContaining(['CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT', 'CATALOGUE_NOT_AGREED_BY_PROVIDER']),
+        );
+    });
+
+    it('keeps each workpaper\'s own version on its control entry', () => {
+        const { controlSnap } = both();
+        expect(controlSnap('c_leaver').reliance.workpapers.map((w) => [w.periodLabel, w.catalogueVersion])).toEqual([
+            ['2026-07', 1],
+            ['2026-08', 2],
+        ]);
+    });
+
+    it('a pack of version 1 workpapers alone states version 1\'s standing, not only the version in force', () => {
+        const { summary } = planOf(input({ workpapers: [workpaper({ catalogueVersion: 1 })] }));
+        expect(summary.catalogue.byVersion.map((v) => [v.catalogueVersion, v.recordedOn])).toEqual([[1, '#3663']]);
+    });
+
+    // The limit is judged per version the pack holds, never off the version in
+    // force alone: were version 2 approved and agreed while version 1 was not, a
+    // pack holding version 1 workpapers must still say so. And a version this
+    // build does not know fails closed. Proved by standing in a table where
+    // version 2 is approved and agreed, which no real value claims.
+    it('judges the limits per version held, and a version it does not know fails closed', () => {
+        jest.isolateModules(() => {
+            jest.doMock('@/lib/agentic/audit-procedure-library', () => {
+                const actual = jest.requireActual('@/lib/agentic/audit-procedure-library');
+                const settled = { internalAuditApproval: 'APPROVED', providerAgreement: 'AGREED', providerMethodologyReference: 'OPEN', recordedOn: '#4379' };
+                return { ...actual, catalogueVersionStatus: (v: number) => (v === 2 ? settled : actual.catalogueVersionStatus(v)) };
+            });
+            const isolated = require('@/lib/agentic/audit-reliance') as typeof import('@/lib/agentic/audit-reliance');
+            const limitsFor = (versions: number[]) => {
+                const r = isolated.planReliancePack(input({ workpapers: versions.map((v) => workpaper({ catalogueVersion: v })) }));
+                if (r.kind !== 'PLAN') throw new Error(r.reason);
+                return r.summary.limits.filter((l) => l.startsWith('CATALOGUE_'));
+            };
+            expect(limitsFor([2])).toEqual([]);
+            expect(limitsFor([1, 2])).toEqual(['CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT', 'CATALOGUE_NOT_AGREED_BY_PROVIDER']);
+            expect(limitsFor([2, 3])).toEqual(['CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT', 'CATALOGUE_NOT_AGREED_BY_PROVIDER']);
+        });
+    });
+});
+
 describe('refusals: zero is never reliance, and nothing is dropped', () => {
     const refusal = (i: RelianceInput) => {
         const r = planReliancePack(i);

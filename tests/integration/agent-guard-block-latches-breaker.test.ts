@@ -34,6 +34,7 @@ import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { recordAgentBreakerTrip } from '@/lib/observability/integration-metrics';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 // The trip counter. The AgenticCircuitBreakerTripped alert reads it, and for
 // as long as it existed nothing incremented it: the latch wrote its row and
@@ -44,7 +45,7 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
 }));
 const tripsCounted = recordAgentBreakerTrip as jest.MockedFunction<typeof recordAgentBreakerTrip>;
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(60_000);
 

@@ -25,9 +25,11 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { dispatchDigest } from '@/app-layer/notifications/digest-dispatcher';
 import type { DueItem } from '@/app-layer/jobs/types';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;

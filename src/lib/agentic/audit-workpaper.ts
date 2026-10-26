@@ -27,12 +27,18 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
-/** The catalogue version this build implements (docs/agentic-audit-procedures.md). */
-export const AUDIT_PROCEDURE_CATALOGUE_VERSION = 1;
+/**
+ * The catalogue version this build implements (docs/agentic-audit-procedures.md),
+ * and so the version every workpaper it writes records. Version 2 (#4379)
+ * changes one attribute, procedure 2's R3. A workpaper written under version 1
+ * keeps `catalogueVersion: 1`: the row is write-once, and every reader takes the
+ * version from the row, never from this constant.
+ */
+export const AUDIT_PROCEDURE_CATALOGUE_VERSION = 2;
 
 /**
- * The eight procedure ids of catalogue version 1. A procedure id is never
- * renamed and never reused, so this list only grows.
+ * The eight procedure ids of the catalogue, the same in versions 1 and 2. A
+ * procedure id is never renamed and never reused, so this list only grows.
  */
 export const AUDIT_PROCEDURE_IDS = [
     'iam.leaver_timeliness',

@@ -169,11 +169,13 @@ import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
 import type { ErasureDb, ErasureReceipt } from '@/app-layer/jobs/dsar-erasure';
 import { ERASURE_DISPOSITIONS } from '../helpers/dsar-erasure-probe';
 import { deleteAuditRowsForTenants, tamperAuditRow } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 
 const SUFFIX = randomUUID().slice(0, 8);

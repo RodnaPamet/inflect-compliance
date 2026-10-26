@@ -49,8 +49,9 @@ import {
 import { runAgentRunReaperJob, REAP_REASON } from '@/app-layer/jobs/agent-run-reaper';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { makeRequestContext } from '../helpers/make-context';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = randomUUID().slice(0, 8);

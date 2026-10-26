@@ -23,9 +23,11 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createTask, setTaskStatus, listTasks } from '@/app-layer/usecases/task';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(30_000);

@@ -45,8 +45,9 @@ import { getPermissionsForRole } from '@/lib/permissions';
 import { appendAuditEntry } from '@/lib/audit';
 import { POST } from '@/app/api/mcp/route';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `authz-${randomUUID().slice(0, 8)}`;
