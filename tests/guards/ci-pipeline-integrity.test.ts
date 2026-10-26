@@ -781,6 +781,7 @@ describe('the in-band shard is bounded by the V8 ceiling (#3320)', () => {
  */
 describe('queue failure attribution only comments (#3307)', () => {
     const WF = '.github/workflows/queue-failure-attribution.yml';
+    const ATTRIBUTION_LIB = 'scripts/lib/queue-failure-attribution.js';
     const wf = () => read(WF);
 
     it('triggers on workflow_run ONLY — never pull_request', () => {
@@ -842,7 +843,40 @@ describe('queue failure attribution only comments (#3307)', () => {
         // Saying "no failing file matched your diff" in that case would imply
         // the diff is clear when nothing was compared.
         const body = wf();
+        // The workflow still COMPUTES the flag — it is the only place that can,
+        // since only it reads the logs.
         expect(body).toContain('logsReadable');
-        expect(body).toContain('not evidence either way');
+        // The SENTENCE is NOT asserted here any more, and that is the point.
+        // It moved into the module when the decisions were extracted (#3307),
+        // and re-pointing this grep at the module made it a check on prose in a
+        // source file -- which `raw-source-assertion-ratchet` caught, correctly:
+        // greping a file for a sentence verifies MENTION, not behaviour.
+        //
+        // It is covered where it can actually fail instead:
+        // `tests/unit/queue-failure-attribution.test.ts` calls `attributionBody`
+        // with `logsReadable: false` and asserts the rendered output. That is
+        // the same claim, made against a return value rather than a file.
+    });
+
+    it('requires the extracted module, and checks it out so the require can resolve', () => {
+        // Extracting the logic bought testability and created a NEW failure
+        // mode: the script `require`s a path in the work tree, so dropping the
+        // checkout makes the step throw at runtime — on the one event it exists
+        // to handle, which has never yet occurred. The two must stay paired.
+        const doc = yaml.load(wf()) as {
+            jobs: Record<string, { steps: Array<{ uses?: string; with?: Record<string, unknown> }> }>;
+        };
+        const steps = doc.jobs.attribute.steps;
+        const checkout = steps.find((st) => (st.uses ?? '').startsWith('actions/checkout'));
+        expect(checkout).toBeDefined();
+        // It exists to read one file; a token left in the work tree is power,
+        // and this job's whole argument is that it has none.
+        expect(checkout!.with!['persist-credentials']).toBe(false);
+
+        const body = wf();
+        expect(body).toContain('scripts/lib/queue-failure-attribution.js');
+        // And the module is really there — a require of a path nothing provides
+        // fails identically to a dropped checkout.
+        expect(exists(ATTRIBUTION_LIB)).toBe(true);
     });
 });

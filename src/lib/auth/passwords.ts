@@ -1,21 +1,33 @@
 /**
- * Password hashing — production-grade primitives.
+ * Password hashing — production-grade primitives. The ONE place the app
+ * hashes or verifies a password; `src/lib/auth.ts` re-exports it.
  *
  * ## Algorithm
- * bcrypt via `bcryptjs` at work factor 12. Sits safely inside the
- * OWASP 2024 guidance (≥10 for bcrypt) and matches the existing prod
- * hashes already in the database, so rolling this out doesn't force a
- * user-visible password reset. The cost is centralised in `BCRYPT_COST`
- * so a future bump (11 → 12 → 14 as hardware improves) is a single
- * edit + a re-hash on next login via `needsRehash()`.
+ * bcrypt via the native `bcrypt` package at work factor 12. Sits safely
+ * inside the OWASP 2024 guidance (≥10 for bcrypt). The cost is
+ * centralised in `BCRYPT_COST` so a future bump is a single edit + a
+ * re-hash on next login via `needsRehash()`.
  *
- * ## Why bcryptjs and not argon2id / native bcrypt
- * - Already in `package.json` and in use on live prod hashes
- * - Pure-JS — runs in the edge runtime NextAuth uses without native
- *   module shenanigans
- * - Switching to argon2 later is an isolated change in this file;
- *   `needsRehash()` + the login flow's "rehash on successful verify"
- *   path (see `src/lib/auth/credentials.ts`) migrates users silently
+ * ## Why native bcrypt, not bcryptjs
+ * Until 2026-10-26 this used `bcryptjs`, which is pure JavaScript and so
+ * hashes on Node's ONE main thread. A check at cost 12 is ~300 ms of CPU,
+ * and concurrent logins took turns on that thread: 25 at once all finished
+ * together after ~7.8 s, while every other request on the process waited
+ * with them. That is the nightly k6 login p95 of 8.4 s.
+ *
+ * Native `bcrypt` runs each hash on libuv's thread pool, off the main
+ * thread and across cores (measured: 25 concurrent checks, p95 ~3 s on
+ * four cores, with the main thread free throughout). Its output is the
+ * same `$2b$` format, and it verifies the `$2a$`/`$2b$` hashes bcryptjs
+ * wrote, so no stored hash changes — `tests/unit/security/
+ * password-verify-bcrypt-interop.test.ts` holds that. It ships prebuilt
+ * binaries for glibc and musl (the node:24-alpine image); Next lists it
+ * in its default `serverExternalPackages`. Nothing on the edge runtime
+ * imports this file.
+ *
+ * Switching to argon2 later is an isolated change in this file;
+ * `needsRehash()` + the login flow's "rehash on successful verify" path
+ * (see `src/lib/auth/credentials.ts`) migrates users silently.
  *
  * ## What does NOT belong in this file
  * - User lookup, tenant resolution, lockout, rate limiting, audit
@@ -23,19 +35,29 @@
  *   is *pure crypto*: plaintext + hash in, boolean out.
  */
 
-// bcryptjs is published as CommonJS. Node.js's ESM-importing-CJS interop
+// `bcrypt` is published as CommonJS. Node.js's ESM-importing-CJS interop
 // in newer Node versions wraps the exports under `.default` on the
 // dynamic-import namespace; older Node spreads them to the top level.
 // Normalise here so callers can treat the result as the bcrypt module
 // regardless of the host Node's ESM/CJS interop behaviour.
 //
-// Without this fix, `(await import('bcryptjs')).compare` is undefined on
-// Node ≥ 22 when tsx / next compile this file as ESM, and verifyPassword
-// silently returns false for every login attempt — locking out every
-// credentials user.
-const bcryptModule = import('bcryptjs').then((m) => {
+// Without this, `(await import(…)).compare` is undefined on Node ≥ 22 when
+// tsx / next compile this file as ESM, and verifyPassword silently returns
+// false for every login attempt — locking out every credentials user. That
+// happened once with bcryptjs; the same normalisation applies here.
+const bcryptModule = import('bcrypt').then((m) => {
     return (m as unknown as { default?: typeof m }).default ?? m;
 });
+
+/**
+ * `$2y$` is PHP's name for the same algorithm as `$2b$`. bcryptjs accepted
+ * it; native bcrypt returns false for it, which would lock out a user whose
+ * stored hash was imported in that form. Compare it as `$2b$`, and
+ * `needsRehash` rewrites it on the next login.
+ */
+function comparableHash(hash: string): string {
+    return hash.startsWith('$2y$') ? `$2b$${hash.slice(4)}` : hash;
+}
 
 /** Current default bcrypt work factor. OWASP 2024 floor for bcrypt is 10. */
 export const BCRYPT_COST = 12;
@@ -91,7 +113,7 @@ export async function verifyPassword(
     if (plaintext.length > MAX_PASSWORD_LENGTH) return false;
     try {
         const bcrypt = await bcryptModule;
-        return await bcrypt.compare(plaintext, hash);
+        return await bcrypt.compare(plaintext, comparableHash(hash));
     } catch {
         // Malformed hash in the DB — treat as verification failure, don't
         // leak to callers that the record is corrupted.
@@ -155,10 +177,12 @@ export function needsRehash(hash: string | null | undefined): boolean {
     if (!hash) return false; // No hash to rehash; login will fail upstream
     // bcrypt hashes begin `$2a$<cost>$` / `$2b$<cost>$` / `$2y$<cost>$`.
     // Anything else is from a different algorithm and definitely needs
-    // re-hashing if we keep bcrypt as canonical.
-    const match = /^\$2[aby]\$(\d{2})\$/.exec(hash);
+    // re-hashing if we keep bcrypt as canonical. `$2y$` verifies only
+    // through `comparableHash`, so it is rewritten as `$2b$` too.
+    const match = /^\$2([aby])\$(\d{2})\$/.exec(hash);
     if (!match) return true;
-    const cost = Number(match[1]);
+    if (match[1] === 'y') return true;
+    const cost = Number(match[2]);
     return cost < BCRYPT_COST;
 }
 

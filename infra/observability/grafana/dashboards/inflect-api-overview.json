@@ -77,7 +77,8 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "API error % (5xx ratio)",
+      "title": "API 5xx %",
+      "description": "Responses with a 5xx status, thrown or returned, over all responses (api_request_count_total by http_status_code). 0 when there is traffic and no 5xx; empty when there is no traffic.",
       "gridPos": {
         "h": 6,
         "w": 8,
@@ -130,8 +131,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(job:api_request_errors:rate5m) / clamp_min(sum(job:api_request:rate5m), 1)",
-          "legendFormat": "error ratio"
+          "expr": "(sum(job:api_request_5xx:rate5m) or vector(0)) / (sum(job:api_request:rate5m) > 0)",
+          "legendFormat": "5xx ratio"
         }
       ]
     },
@@ -249,7 +250,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Latency percentiles (p95 / p99 / mean)",
-      "description": "A slow request's trace now includes its downstream BullMQ worker spans: any job the handler enqueues (e.g. policy publish \u2192 audit-pack rebuild) is a child of the request span. Hover a data point for the exemplar **View trace in Tempo** link, or open Explore \u2192 Tempo and search by request \u2014 see docs/observability/05-job-tracing.md.",
+      "description": "A slow request's trace now includes its downstream BullMQ worker spans: any job the handler enqueues (e.g. policy publish \u2192 audit-pack rebuild) is a child of the request span. Open Explore \u2192 Tempo and search by request \u2014 see docs/observability/05-job-tracing.md. This panel has no exemplar link to a trace: it plots a recording rule, and the app's metrics SDK records no exemplars.",
       "gridPos": {
         "h": 9,
         "w": 12,
@@ -316,7 +317,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Error ratio by service",
+      "title": "5xx ratio by service",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -357,71 +358,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "job:api_request:error_ratio5m",
+          "expr": "job:api_request:5xx_ratio5m",
           "legendFormat": "{{service_name}}"
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "type": "timeseries",
-      "title": "RDS read-replica lag (s)",
-      "description": "Replication lag of the read replica behind dashboard/reporting reads (docs/database-routing.md). Soft target <5s; **alert at >30s** \u2014 at that point read routing should back off (unset DATABASE_READ_URL to send all traffic to the primary). Requires the RDS CloudWatch `ReplicaLag` metric scraped into Prometheus (cloudwatch-exporter / YACE: `aws_rds_replica_lag_*`). No data = no replica provisioned or exporter not wired.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 23
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 10
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 30
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "max(aws_rds_replica_lag_average)",
-          "legendFormat": "replica lag (s)"
         }
       ]
     }

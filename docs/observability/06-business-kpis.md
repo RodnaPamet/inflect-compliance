@@ -104,7 +104,11 @@ the **value is distinct active *users*** (grouped by plan), not a tenant
 count. This is deliberate — `plan` is the only label permitted by the
 cardinality rules, and "active users by plan" is the engagement signal
 operators want. The dashboard panels are titled "Daily/Monthly Active
-Users" to match the value.
+Users" to match the value. In Prometheus the two gauges are
+`business_tenant_active_daily_ratio` and
+`business_tenant_active_monthly_ratio`: the collector's exporter adds
+`_ratio` to any gauge whose unit is `1`, whatever it counts. The
+counters end in `_total` (`business_tenant_created_total`).
 
 The aggregation runs in the `dau-mau-aggregator` job on a **5-minute**
 cadence. It computes the two `DISTINCT userId` counts per plan and calls

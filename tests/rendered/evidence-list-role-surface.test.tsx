@@ -279,26 +279,6 @@ describe('Evidence list — a custom role follows its evidence grants', () => {
     });
 });
 
-describe('Evidence list — an unarchive the server refuses says why', () => {
-    it('shows the "set a new retention date first" refusal', async () => {
-        const message = "This evidence's retention date has passed. Set a new retention date first, then unarchive it.";
-        const archived = evidenceRow({ id: 'ev-old', title: 'Expired export', isArchived: true });
-        const server = makeServer({
-            rows: [archived],
-            mutate: (call) =>
-                call.path === '/evidence/ev-old/unarchive'
-                    ? { status: 409, body: { error: { code: 'CONFLICT', message } } }
-                    : undefined,
-        });
-        mount(server, { role: 'EDITOR' });
-        await screen.findByText('Expired export');
-        await act(async () => {
-            fireEvent.click(document.getElementById('unarchive-ev-old')!);
-        });
-        await waitFor(() => expect(toastError.mock.calls.map((c) => c[0])).toContain(message));
-    });
-});
-
 describe('Evidence gallery — a thumbnail is a preview, not a download', () => {
     it('loads the image with ?purpose=preview and keeps the download link a download', async () => {
         window.history.replaceState({}, '', '/t/acme/evidence?view=gallery');

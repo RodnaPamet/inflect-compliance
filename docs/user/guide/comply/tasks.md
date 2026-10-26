@@ -24,7 +24,7 @@ Open **{{ui:nav.tasks}}** under **{{ui:nav.comply}}** in the sidebar. The breadc
 
 Every role can tick rows, but only roles that can edit tasks get actions in the selection bar. For the other roles the quick view is read-only. If your workspace uses custom roles, what you can do depends on the permissions your role was given.
 
-Any active member can be named a task's reviewer. A Reader, Auditor or AI admin cannot change a task's status, though, so a task whose reviewer has one of those roles can only be canceled, or given another reviewer on the task's own page.
+Only a member whose role can edit tasks can be named a task's reviewer, because signing a task off is a status change. An older task can still name a reviewer who cannot sign it off, for example one whose role has since changed. The task's own page says so beside the reviewer, and such a task can only be canceled, or given another reviewer there.
 
 ## What it is for
 
@@ -53,7 +53,7 @@ Some filters work differently from the others:
 
 - {{ui:tasks.filters.due}} offers {{ui:tasks.filterEnums.due.overdue}} or {{ui:tasks.filterEnums.due.next7d}}, one at a time. Unless you also pick a status, it leaves out finished tasks.
 - {{ui:tasks.filters.assignee}} and {{ui:tasks.filters.linkedControl}} offer the people and controls that have appeared on the tasks listed since you opened the page, so picking one leaves the others on offer, and {{ui:tasks.filters.awaitingReview}} offers only {{ui:tasks.list.awaitingMyReviewOption}}.
-- {{ui:tasks.filters.linkedControl}} matches the control set in a task's Control field. A control added to the task under Links does not count.
+- {{ui:tasks.filters.linkedControl}} matches a task whose Control field names the control, and a task linked to the control under Links.
 
 **The table.** Each row is one task. The list opens with the highest priority first, then the newest. Click a column heading to sort by it. The first 50 rows show at once, and more load as you scroll.
 
@@ -96,9 +96,9 @@ A few rules hold on every way of changing a status:
 
 ### Create a task
 
-Click **{{ui:tasks.list.addBtn}}**. The **{{ui:tasks.new.modalTitle}}** dialog asks for a **{{ui:tasks.new.title}}** and a **{{ui:tasks.new.type}}**, which starts on {{ui:tasks.typeLabels.TASK}}. The other fields are optional: **{{ui:tasks.new.description}}**, **{{ui:tasks.new.severity}}** (starts on {{ui:tasks.severityLabels.MEDIUM}}), **{{ui:tasks.new.priority}}** (starts on {{ui:tasks.priorityLabels.P2}}), **{{ui:tasks.new.dueDate}}**, **{{ui:tasks.new.assignee}}**, **{{ui:tasks.new.reviewer}}** and **{{ui:tasks.new.control}}**. A due date cannot be in the past, and the reviewer must be someone other than the assignee. For an audit finding or control gap, an **{{ui:tasks.new.auditDetails}}** section adds **{{ui:tasks.new.findingSource}}**, and for a control gap **{{ui:tasks.new.controlGapType}}**.
+Click **{{ui:tasks.list.addBtn}}**. The **{{ui:tasks.new.modalTitle}}** dialog asks for a **{{ui:tasks.new.title}}** and a **{{ui:tasks.new.type}}**, which starts on {{ui:tasks.typeLabels.TASK}}. The other fields are optional: **{{ui:tasks.new.description}}**, **{{ui:tasks.new.severity}}** (starts on {{ui:tasks.severityLabels.MEDIUM}}), **{{ui:tasks.new.priority}}** (starts on {{ui:tasks.priorityLabels.P2}}), **{{ui:tasks.new.dueDate}}**, **{{ui:tasks.new.assignee}}**, **{{ui:tasks.new.reviewer}}** and **{{ui:tasks.new.control}}**. A due date cannot be in the past. **{{ui:tasks.new.reviewer}}** lists only members whose role can edit tasks, and the reviewer must be someone other than the assignee. For an audit finding or control gap, an **{{ui:tasks.new.auditDetails}}** section adds **{{ui:tasks.new.findingSource}}**, and for a control gap **{{ui:tasks.new.controlGapType}}**.
 
-To link records, go to **{{ui:tasks.new.links}}**, pick an **{{ui:tasks.new.entityType}}** ({{ui:tasks.linkEntity.CONTROL}}, {{ui:tasks.linkEntity.FRAMEWORK_REQUIREMENT}}, {{ui:tasks.linkEntity.ASSET}}, {{ui:tasks.linkEntity.RISK}} or {{ui:tasks.linkEntity.EVIDENCE}}) and an **{{ui:tasks.new.entity}}**, then click **{{ui:tasks.new.add}}**. Each added link is listed by its type's internal name and the record's ID rather than its name; the cross beside it removes it. An audit finding or control gap needs a control, or a control or framework requirement link, and an incident needs a control, or a control or asset link. Until it has one, a note says so and **{{ui:tasks.new.create}}** is greyed out.
+To link records, go to **{{ui:tasks.new.links}}**, pick an **{{ui:tasks.new.entityType}}** ({{ui:tasks.linkEntity.CONTROL}}, {{ui:tasks.linkEntity.FRAMEWORK_REQUIREMENT}}, {{ui:tasks.linkEntity.ASSET}}, {{ui:tasks.linkEntity.RISK}} or {{ui:tasks.linkEntity.EVIDENCE}}) and an **{{ui:tasks.new.entity}}**, then click **{{ui:tasks.new.add}}**. Each added link is listed by its type and the record's name; the cross beside it removes it. An audit finding or control gap needs a control, or a control or framework requirement link, and an incident needs a control, or a control or asset link. Until it has one, a note says so and **{{ui:tasks.new.create}}** is greyed out.
 
 Click **{{ui:tasks.new.create}}**. The dialog closes and the new task's page opens. If a link could not be attached, a warning lists it, and you can add it from that page. Closing the dialog after typing asks **{{ui:tasks.new.discardTitle}}**; choose **{{ui:tasks.new.discardConfirmLabel}}** or **{{ui:tasks.new.discardCancelLabel}}**.
 
@@ -108,7 +108,7 @@ Click **{{ui:tasks.list.assignedToMe}}** to list only the tasks assigned to you.
 
 ### Update a task from the quick view
 
-Click the task's title, or the pencil at the end of its row, and change any field. To close or cancel the task, choose {{ui:tasks.statusLabels.CLOSED}} or {{ui:tasks.statusLabels.CANCELED}} under **{{ui:sharedPanels.detail.fields.status}}**, write a **{{ui:sharedPanels.detail.fields.resolution}}** and click **{{ui:sharedPanels.detail.status.apply}}**. The status list also offers {{ui:tasks.statusLabels.OPEN}}, which is refused for any task that has left it. A refused change reads **{{ui:sharedPanels.detail.errors.saveFailed}}**, without the reason. The reviewer is set on the task's own page, not here.
+Click the task's title, or the pencil at the end of its row, and change any field. To close or cancel the task, choose {{ui:tasks.statusLabels.CLOSED}} or {{ui:tasks.statusLabels.CANCELED}} under **{{ui:sharedPanels.detail.fields.status}}**, write a **{{ui:sharedPanels.detail.fields.resolution}}** and click **{{ui:sharedPanels.detail.status.apply}}**. The status list does not offer {{ui:tasks.statusLabels.OPEN}}, since no task can return to it, but an open task still shows it as its current status. A refused change shows its reason above the fields. The reviewer is set on the task's own page, not here.
 
 ### Change many tasks at once
 
@@ -119,16 +119,16 @@ Tick the rows you want, up to 100 at a time; the box in the header ticks every r
 - **{{ui:tasks.bulk.setDueDate}}** gives them all one due date. Leave the date empty to clear it.
 - **{{ui:tasks.bulk.delete}}**, for Owners and Admins, removes them from the list. For five seconds a message offers **{{ui:tasks.bulk.undo}}**; nothing is deleted until that time runs out.
 
-A status change goes through for every selected task or for none. Assigning is refused when the person is the reviewer of any selected task. Whenever a bulk action is refused, the message reads **{{ui:tasks.bulk.failed}}** without the reason, and the rows go back to how they were. If you assign or set a due date and some tasks were deleted in the meantime, a warning says how many were updated and how many skipped.
+A status change goes through for every selected task or for none. Assigning is refused when the person is the reviewer of any selected task. Whenever a bulk action is refused, a message gives the reason, and the rows go back to how they were. If you assign or set a due date and some tasks were deleted in the meantime, a warning says how many were updated and how many skipped.
 
 ### Restore a deleted task
 
-Owners and Admins: open **{{ui:common.ui.viewsMenu}}** › **{{ui:tasks.list.showDeleted}}**. The table lists the 200 most recently deleted tasks, newest first, with a **{{ui:tasks.list.colDeletedAt}}** column; the search and filters still apply. Click **{{ui:tasks.list.restore}}** on a row to return the task to the active list. A task whose control has been deleted cannot be restored until the control is. Choose **{{ui:tasks.list.showLive}}** from the same menu to go back. Clicking a deleted task opens its page or its quick view, and neither can load it.
+Owners and Admins: open **{{ui:common.ui.viewsMenu}}** › **{{ui:tasks.list.showDeleted}}**. The table lists the 200 most recently deleted tasks, newest first, with a **{{ui:tasks.list.colDeletedAt}}** column; the search and filters still apply. Click **{{ui:tasks.list.restore}}** on a row to return the task to the active list. A task whose control has been deleted cannot be restored until the control is. Choose **{{ui:tasks.list.showLive}}** from the same menu to go back. A deleted task cannot be opened from this view: its title is plain text, and clicking its row does nothing.
 
 ## What happens next
 
 - Every creation, status change, assignment, due-date change, deletion and restore is written to the workspace's audit log, naming who made it. A bulk action writes one entry per task.
-- Someone assigned a task when it is created, or one task at a time in the quick view, is sent an email and an in-app notification. Assigning from the selection bar notifies nobody.
+- Someone assigned a task when it is created, or one task at a time in the quick view, is sent an email and an in-app notification. Assigning from the selection bar sends the assignee one email listing the tasks newly assigned to them, and an in-app notification for each of those tasks. A task that already had that assignee is left out, and watchers are not notified.
 - Moving a task to {{ui:tasks.statusLabels.IN_REVIEW}} notifies its reviewer, unless the reviewer made the move. People watching a task are told when its status changes.
 - Closing a task that was raised automatically, for example by a finding, a vulnerability or a failed control test, also updates the record that raised it. Canceling does not.
 - A deleted task leaves the list at once and is removed for good after 90 days. Until then an Owner or Admin can restore it.
@@ -140,11 +140,11 @@ Owners and Admins: open **{{ui:common.ui.viewsMenu}}** › **{{ui:tasks.list.sho
 | **{{ui:tasks.list.emptyTitle}}** | The workspace has no tasks | Click **{{ui:tasks.list.addBtn}}**, if your role can create tasks |
 | **{{ui:tasks.list.filterEmptyTitle}}** | Tasks exist, but none match the search and filters | Click **{{ui:tasks.list.clearFilters}}** |
 | **{{ui:tasks.list.deletedEmptyTitle}}** | No deleted task matches the search and filters, or none was deleted in the last 90 days | Choose **{{ui:tasks.list.showLive}}** to go back |
-| **{{ui:tasks.list.loadError}}** | The list did not load | Reload the page |
-| **{{ui:tasks.bulk.failed}}** | A bulk action was refused: for example more than 100 rows were selected, one task cannot make the status move, or the assignee reviews one of the tasks | Check the selection and try again |
-| **{{ui:tasks.bulk.restoreFailed}}** | The task was not restored, often because its control is deleted | Restore the control first, or ask an Owner or Admin |
-| **{{ui:tasks.new.createFailed}}** in the dialog | The task was refused, for example because the assignee is also the reviewer | Change the fields and try again |
-| **{{ui:sharedPanels.detail.errors.loadFailed}}** in the quick view | The task did not load. A deleted task never loads | Click **{{ui:sharedPanels.detail.status.retry}}** |
+| **{{ui:tasks.list.loadError}}** | The list did not load, for example after you changed a filter | Reload the page |
+| A message after a bulk action, or **{{ui:tasks.bulk.failed}}** | A bulk action was refused, for example because more than 100 rows were selected, one task cannot make the status move, or the assignee reviews one of the tasks. The message gives the reason when Inflect sends one | Follow the reason, check the selection and try again |
+| A message after **{{ui:tasks.list.restore}}**, or **{{ui:tasks.bulk.restoreFailed}}** | The task was not restored. The message gives the reason, often that its control is deleted | Restore the control first, then try again |
+| A red message in the dialog, such as **{{ui:tasks.new.createFailed}}** | The task was refused, for example because the assignee is also the reviewer. The message gives the reason when Inflect sends one | Change the fields and try again |
+| **{{ui:sharedPanels.detail.errors.loadFailed}}** in the quick view | The task did not load, for example because someone deleted it | Click **{{ui:sharedPanels.detail.status.retry}}**. If the task was deleted, reload the page |
 | A banner saying the list is truncated | The workspace has more than 5,000 tasks, more than the page loads at once | Narrow the list with a filter or the search |
 
 ## Related

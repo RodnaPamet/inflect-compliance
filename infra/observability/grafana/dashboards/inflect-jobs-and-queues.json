@@ -144,33 +144,10 @@
       ]
     },
     {
-      "id": 5,
-      "type": "timeseries",
-      "title": "BullMQ queue depth by queue",
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15 } },
-        "overrides": []
-      },
-      "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] },
-        "tooltip": { "mode": "multi" }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "job:job_queue_depth:max",
-          "legendFormat": "{{queue}}"
-        }
-      ]
-    },
-    {
       "id": 6,
       "type": "timeseries",
       "title": "Job execution rate by service",
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 6 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
         "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } },
@@ -193,7 +170,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Job p95 duration over time",
-      "description": "Pivot a slow job to its trace in Tempo: hover a data point for the exemplar **View trace in Tempo** link (provisioned via `exemplarTraceIdDestinations`), or open Explore → Tempo and search `{ resource.service.name=\"inflect-compliance\" && name=~\"execute .*\" }`. Each execute-job span links back to the originating HTTP request — see docs/observability/05-job-tracing.md.",
+      "description": "Pivot a slow job to its trace in Tempo: open Explore → Tempo and search `{ resource.service.name=\"inflect-compliance\" && name=~\"execute .*\" }`. Each execute-job span links back to the originating HTTP request — see docs/observability/05-job-tracing.md. There is no exemplar link on this panel: it plots a recording rule, and the app's metrics SDK records no exemplars, so the provisioned `exemplarTraceIdDestinations` has nothing to follow.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
