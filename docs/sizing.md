@@ -168,13 +168,20 @@ Three things limit what it says about production:
   `ubuntu-latest` runner, against `next start`, with Postgres and Redis as
   service containers. There is no PgBouncer, worker, ClamAV or Caddy, and
   nothing else shares the machine.
-- **A green run proves nothing.** Each k6 step is `continue-on-error`, so the
-  run succeeds whatever the thresholds say. Read the results in the job log or
-  in the `k6-results-<run id>` artifact, which is kept for 7 days.
-- **It is failing its thresholds.** The runs of 2026-09-26, 2026-10-11 and
-  2026-10-25 all crossed them. The login step's p95 was 7.3 to 8.5 s against a
-  1.5 s threshold, and about 99.7% of the list requests in `lists.js` failed
-  (`list_success_rate` about 0.3%).
+- **A green run proves the scenarios measured something, not that they met
+  their budgets.** Each k6 step is `continue-on-error`, so latency thresholds
+  are reported, not enforced. A gate step (`scripts/k6-summary-gate.mjs`)
+  fails the run when under 95% of a scenario's checks or list requests
+  succeed, when a thresholded metric has no samples, or when k6 wrote no
+  summary. Read latency in the job log or in the `k6-results-<run id>`
+  artifact, which is kept for 7 days.
+- **Its list numbers before 2026-10-26 measured nothing.** About 99.7% of the
+  list requests in `lists.js` failed (`list_success_rate` about 0.3%) in the
+  runs of 2026-09-26, 2026-10-11 and 2026-10-25. k6 empties a virtual user's
+  cookie jar at the start of every iteration, so each one was signed out after
+  its first, and the list latencies from those runs are of 401 responses. That
+  is fixed (#4307). The login step was unaffected: its p95 in the same runs was
+  7.3 to 8.5 s, against a 1.5 s threshold.
 
 The smoke's thresholds are wider than the SLOs on purpose: `p(95)<800` ms for
 list reads, against the 500 ms read SLO. A capacity figure for the VM needs a

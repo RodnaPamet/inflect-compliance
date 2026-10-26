@@ -516,27 +516,32 @@ are deliberately not a substitute for the production SLO measurement.
 
 There are two performance gates with different jobs:
 
-#### CI smoke — runs on every PR
+#### CI smoke — runs on every push to main
 
 `Load Smoke (k6)` job in `.github/workflows/ci.yml`. **10 VUs × 30s**.
 Runs `tests/load/mutations.js` only — that's where regressions are most
 likely (RLS + audit + encryption + storage all interact on the write
 path). Auth and read-path baselines stay in the on-demand workflow.
 
-| Metric                                       | CI smoke gate    | Behavior on breach |
-|----------------------------------------------|------------------|--------------------|
-| `http_req_failed{op:create_control}`         | rate < 2%        | **PR CI fails**    |
-| `http_req_failed{op:upload_evidence}`        | rate < 2%        | **PR CI fails**    |
-| `http_req_duration{op:create_control}`       | p95 < 1500ms     | **PR CI fails**    |
-| `http_req_duration{op:create_control}`       | p99 < 3000ms     | **PR CI fails**    |
-| `http_req_duration{op:upload_evidence}`      | p95 < 2000ms     | **PR CI fails**    |
-| `http_req_duration{op:upload_evidence}`      | p99 < 4000ms     | **PR CI fails**    |
-| `mutation_loop_ms`                           | p95 < 3000ms     | **PR CI fails**    |
-| `checks{check:control_created}`              | rate > 98%       | **PR CI fails**    |
-| `checks{check:evidence_uploaded}`            | rate > 98%       | **PR CI fails**    |
+| Metric                                       | CI smoke gate    | Behavior on breach  |
+|----------------------------------------------|------------------|---------------------|
+| `http_req_failed{op:create_control}`         | rate < 20%       | **main's CI fails** |
+| `http_req_failed{op:upload_evidence}`        | rate < 20%       | **main's CI fails** |
+| `http_req_duration{op:create_control}`       | p95 < 5000ms     | **main's CI fails** |
+| `http_req_duration{op:create_control}`       | p99 < 8000ms     | **main's CI fails** |
+| `http_req_duration{op:upload_evidence}`      | p95 < 5000ms     | **main's CI fails** |
+| `http_req_duration{op:upload_evidence}`      | p99 < 8000ms     | **main's CI fails** |
+| `mutation_loop_ms`                           | p95 < 8000ms     | **main's CI fails** |
+| `checks{probe:create_control}`               | rate > 80%       | **main's CI fails** |
+| `checks{probe:upload_evidence}`              | rate > 80%       | **main's CI fails** |
+| any thresholded metric with no samples       | —                | **main's CI fails** |
 
-Sized for signal-per-dollar: ~5 minutes added to PR CI; ~200 samples
-per op (enough for p95 to be meaningful without flaking).
+The values are `tests/load/mutations.js`'s own thresholds, which that file
+explains. The last row is `scripts/k6-summary-gate.mjs`: k6 passes a threshold
+that no sample matched. The job runs on pushes to `main`, the weekly schedule
+and manual runs, not on pull requests (`ci.yml`'s `load-smoke` condition). It
+adds about 5 minutes and ~200 samples per op (enough for p95 to be meaningful
+without flaking).
 
 #### Full baselines — manual `workflow_dispatch` + nightly main smoke
 
@@ -557,7 +562,7 @@ they are tighter than the CI smoke because the sample size is larger.
 
 Run cadence:
 - **PR**: CI smoke (mutations only, 10 VUs × 30s) — automatic.
-- **Nightly main**: 25 VUs × 1m smoke across both auth + lists for trend tracking — automatic via cron in `load-test.yml`. Failures don't block deploys but populate the trend graph.
+- **Nightly main**: 25 VUs × 1m smoke across both auth + lists for trend tracking — automatic via cron in `load-test.yml`. Latency thresholds are reported, not enforced. The run fails when a scenario did not measure what it claims: under 95% of its checks or list requests succeeded, a thresholded metric has no samples, or k6 wrote no summary (`scripts/k6-summary-gate.mjs`). It blocks no deploy either way.
 - **On-demand**: 50/100/200 VU baselines via manual `workflow_dispatch`. Run before a release, after a major hot-path change, or when investigating a production p95 drift.
 
 ### How to read a k6 result
