@@ -886,6 +886,7 @@ executorRegistry.register('key-rotation', async (payload) => {
     const r = await runKeyRotation({
         tenantId: payload.tenantId,
         initiatedByUserId: payload.initiatedByUserId,
+        apiKeyId: payload.apiKeyId,
         requestId: payload.requestId,
     });
     return makeResult(

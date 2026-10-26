@@ -206,6 +206,27 @@ describe('POST /api/t/:tenantSlug/admin/key-rotation', () => {
         );
     });
 
+    test('a request made with an API key hands the job the key id (#4386)', async () => {
+        // The worker re-reads the key and refuses to start if it was revoked
+        // or expired while queued. The session payload above stays exactly
+        // the three members it always had.
+        getTenantCtxMock.mockResolvedValueOnce({
+            ...adminCtx(),
+            apiKeyId: 'key-1',
+            apiKeyScopes: ['admin:write'],
+        });
+        enqueueMock.mockResolvedValueOnce({ id: 'bullmq-job-43' });
+
+        const res = await POST(req('POST'), { params: { tenantSlug: 'acme' } });
+        expect(res.status).toBe(202);
+        expect(enqueueMock).toHaveBeenCalledWith('key-rotation', {
+            tenantId: 'tenant-A',
+            initiatedByUserId: 'admin-1',
+            apiKeyId: 'key-1',
+            requestId: 'req-1',
+        });
+    });
+
     test('applies API_KEY_CREATE_LIMIT (tighter than default)', async () => {
         getTenantCtxMock.mockImplementation(async () => adminCtx());
         enqueueMock.mockResolvedValue({ id: 'job-x' });

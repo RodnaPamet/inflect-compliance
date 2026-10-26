@@ -71,12 +71,18 @@ import {
 import { clearTenantDekCache } from '@/lib/security/tenant-key-manager';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import { resolveKeyInitiatorContext } from '@/app-layer/context-system';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 export interface KeyRotationOptions {
     tenantId: string;
     initiatedByUserId: string;
+    /**
+     * The API key the initiating request was made with, if any (#4386). See
+     * `assertInitiatingKeyStillAuthorises`.
+     */
+    apiKeyId?: string;
     requestId?: string;
     /** Override SELECT batch size per (model, field). Default 500. */
     batchSize?: number;
@@ -285,10 +291,51 @@ async function rewriteV1Field(
     return out;
 }
 
+// ─── The initiating key ─────────────────────────────────────────────
+
+/**
+ * Refuse a rotation whose initiating API key no longer authorises the route
+ * that queued it (#4386).
+ *
+ * `POST …/admin/key-rotation` accepts an `admin:write` key. The job runs as a
+ * system job and does only what was asked, so nothing it does depends on the
+ * key — but a key revoked or expired while the rotation sat in the queue had
+ * the rotation run anyway. So the key is read again the way a job a key queued
+ * reads it (`resolveKeyInitiatorContext`, #4382: the request's liveness
+ * checks, the key ∧ its user), and the route's own key, `admin.manage`, is
+ * asked of the result. Either refusal throws BEFORE the started row and before
+ * any key material is touched, and its message names the reason; the job's
+ * `failedReason` is what the route's GET reports.
+ *
+ * A rotation with no key id — a session request, or one queued before the
+ * route carried the id — is not asked anything, exactly as before.
+ */
+async function assertInitiatingKeyStillAuthorises(options: KeyRotationOptions): Promise<void> {
+    if (!options.apiKeyId) return;
+    const resolved = await resolveKeyInitiatorContext({
+        tenantId: options.tenantId,
+        userId: options.initiatedByUserId,
+        apiKeyId: options.apiKeyId,
+        requestId: options.requestId ?? `key-rotation-${options.tenantId}`,
+    });
+    if (!resolved.ok) {
+        throw new Error(
+            `key-rotation: API key ${options.apiKeyId} that started this rotation is refused (${resolved.reason}) on tenant ${options.tenantId}`,
+        );
+    }
+    if (!resolved.ctx.appPermissions.admin.manage) {
+        throw new Error(
+            `key-rotation: user ${options.initiatedByUserId} with API key ${options.apiKeyId} lacks admin.manage on tenant ${options.tenantId}`,
+        );
+    }
+}
+
 // ─── Public entry point ─────────────────────────────────────────────
 
 /**
  * Run the full rotation for one tenant. Structured as:
+ *   0. For a rotation an API key started, refuse unless the key still
+ *      authorises it (`assertInitiatingKeyStillAuthorises`).
  *   1. Audit-log "started" event.
  *   2. Re-wrap Tenant.encryptedDek.
  *   3. For each (model, field) in the manifest that has a tenantId
@@ -301,6 +348,7 @@ export async function runKeyRotation(
     return runJob(
         'key-rotation',
         async () => {
+            await assertInitiatingKeyStillAuthorises(options);
             const jobRunId = crypto.randomUUID();
             const started = Date.now();
             const batchSize = Math.max(1, options.batchSize ?? 500);

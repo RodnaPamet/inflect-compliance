@@ -463,6 +463,15 @@ export interface KeyRotationPayload {
     tenantId: string;
     /** User who initiated — attribution on audit-log entries. */
     initiatedByUserId: string;
+    /**
+     * The API key the initiating request was made with, when it was made with
+     * one (#4386). The worker re-reads the key before it starts and refuses,
+     * by name, when the key is revoked, expired, gone or another tenant's, or
+     * the key ∧ its user no longer holds `admin.manage`. Absent for a session
+     * request and on every payload queued before this member existed: both
+     * run exactly as before.
+     */
+    apiKeyId?: string;
     /** Upstream request id for log correlation. */
     requestId?: string;
 }

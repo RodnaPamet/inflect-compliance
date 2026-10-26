@@ -16,7 +16,9 @@
  * high-privilege operation that should not be hammered.
  *
  * The actual work runs in the BullMQ worker process; this endpoint
- * only enqueues + returns the handle.
+ * only enqueues + returns the handle. A request made with an API key
+ * passes the key's id, and the worker refuses to start if that key no
+ * longer authorises this route by then (#4386).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -35,6 +37,11 @@ export const POST = withApiErrorHandling(
         const job = await enqueue('key-rotation', {
             tenantId: ctx.tenantId,
             initiatedByUserId: ctx.userId,
+            // A request made with an API key hands the job the key's id, so a
+            // key revoked or expired while the rotation is queued stops it
+            // (#4386). Only when there is one, so a session request's payload
+            // is exactly the one this route always queued.
+            ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
             requestId: ctx.requestId,
         });
 
