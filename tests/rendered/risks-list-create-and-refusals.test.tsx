@@ -5,7 +5,9 @@
  * Create used to follow the coarse write tier alone, while the create and
  * import routes also check `risks.create`, so a custom role without that key
  * saw Create and Import and was refused. The empty state offered its Create
- * button to every role, a Reader included. Which users may create is decided
+ * button to every role, a Reader included. The AI Assist panel adds risks too,
+ * and its routes now take `risks.create` as well (#4327), so it follows the
+ * same rule. Which users may create is decided
  * server-side by `riskCanCreate` (tests/unit/risk-bulk-permissions.test.ts
  * maps every role); this file mounts the real client with each outcome.
  *
@@ -202,6 +204,24 @@ describe('Risks list — Create follows riskCanCreate', () => {
         mount({ canCreate: false });
         await screen.findByText(RISK.title);
         expect(document.getElementById('new-risk-btn')).toBeNull();
+    });
+
+    // AI Assist adds risks too: its generate and apply routes take
+    // `risks.create` (#4327). The mount keeps the write tier on throughout,
+    // which is what the panel used to be gated on.
+    it('a user who can create gets the AI Assist panel', async () => {
+        mount({ canCreate: true });
+        await screen.findByText(RISK.title);
+        expect(screen.getAllByText(EN.risks.aiAssist).length).toBeGreaterThan(0);
+        expect(screen.getAllByTestId('aside-panel-sheet-trigger').length).toBeGreaterThan(0);
+    });
+
+    it('a user the AI routes would refuse gets no AI Assist panel, even with the write tier', async () => {
+        mount({ canCreate: false });
+        await screen.findByText(RISK.title);
+        expect(screen.queryAllByText(EN.risks.aiAssist)).toHaveLength(0);
+        expect(screen.queryAllByTestId('aside-panel-sheet-trigger')).toHaveLength(0);
+        expect(screen.queryAllByTestId('aside-panel-spine')).toHaveLength(0);
     });
 
     it('the empty register offers its Create button only to a user who can create', async () => {

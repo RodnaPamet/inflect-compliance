@@ -79,6 +79,9 @@ export default async function ControlsPage({
                 // The quick views' upload boxes ask `evidence.upload`, which is
                 // what `assertCanUploadEvidence` checks.
                 evidence: { upload: ctx.appPermissions.evidence.upload },
+                // The AI Assist rail opens `/risks/ai`, which needs
+                // `risks.create`.
+                risks: { create: ctx.appPermissions.risks.create },
                 // Bulk delete and the Deleted view's Restore / Purge routes
                 // are `requirePermission('admin.manage')`.
                 admin: { manage: ctx.appPermissions.admin.manage },

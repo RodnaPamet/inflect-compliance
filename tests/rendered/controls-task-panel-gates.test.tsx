@@ -126,6 +126,7 @@ function slice(
         controls: p.controls,
         tasks: { edit: over.tasksEdit ?? p.tasks.edit, assign: over.tasksAssign ?? p.tasks.assign },
         evidence: { upload: over.evidenceUpload ?? p.evidence.upload },
+        risks: { create: p.risks.create },
         admin: { manage: p.admin.manage },
     };
 }
