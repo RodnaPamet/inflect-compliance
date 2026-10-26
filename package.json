@@ -227,7 +227,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^26.6.2",
     "@types/nodemailer": "^8.0.2",
-    "@types/pdfkit": "^0.17.6",
+    "@types/pdfkit": "^0.17.7",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
