@@ -72,7 +72,7 @@ import { getStorageProvider } from '@/lib/storage';
 import { logger } from '@/lib/observability/logger';
 import { runJob } from '@/lib/observability/job-runner';
 import { uploadEvidenceFile } from '@/app-layer/usecases/evidence';
-import { resolveInitiatorContext } from '@/app-layer/context-system';
+import { resolveInitiatorContext, resolveKeyInitiatorContext } from '@/app-layer/context-system';
 import type { RequestContext } from '@/app-layer/types';
 import type { EvidenceImportPayload } from './types';
 
@@ -249,12 +249,34 @@ function inferMimeType(name: string): string {
  * asks `evidence.upload` and, for a default control, `controls.edit` before it
  * enqueues; this asks them again when the job runs, so a role narrowed while
  * the import sat in the queue narrows the import with it.
+ *
+ * An import requested with an API key runs as that key AND its user
+ * (`resolveKeyInitiatorContext`, #4369): the key is read again, so one revoked
+ * or expired while the import was queued stops it before the archive is read,
+ * and a key without `controls:write` cannot have its import link a control
+ * because its user could. A payload with no key id — a session request, or
+ * one queued before the route carried the id — runs as the user, as before.
  */
 async function buildJobContext(payload: EvidenceImportPayload): Promise<RequestContext> {
+    const requestId = payload.requestId ?? `evidence-import-${payload.tenantId}`;
+    if (payload.apiKeyId) {
+        const resolved = await resolveKeyInitiatorContext({
+            tenantId: payload.tenantId,
+            userId: payload.initiatedByUserId,
+            apiKeyId: payload.apiKeyId,
+            requestId,
+        });
+        if (!resolved.ok) {
+            throw new Error(
+                `evidence-import: API key ${payload.apiKeyId} that started this import is refused (${resolved.reason}) on tenant ${payload.tenantId}`,
+            );
+        }
+        return resolved.ctx;
+    }
     const ctx = await resolveInitiatorContext({
         tenantId: payload.tenantId,
         userId: payload.initiatedByUserId,
-        requestId: payload.requestId ?? `evidence-import-${payload.tenantId}`,
+        requestId,
     });
     if (!ctx) {
         throw new Error(
@@ -276,9 +298,13 @@ export async function runEvidenceImport(
         // The key the route asks, not the coarse tier: a custom role holding
         // `evidence.upload` over a READER base is admitted there, and one
         // withholding it over an EDITOR base is refused there.
+        // For an import started with an API key, the flag needs the key's
+        // `evidence:write` as well as the user's role, so the refusal names
+        // the key.
         if (!ctx.appPermissions.evidence.upload) {
+            const via = payload.apiKeyId ? ` with API key ${payload.apiKeyId}` : '';
             throw new Error(
-                `evidence-import: user ${payload.initiatedByUserId} lacks evidence.upload permission on tenant ${payload.tenantId}`,
+                `evidence-import: user ${payload.initiatedByUserId}${via} lacks evidence.upload permission on tenant ${payload.tenantId}`,
             );
         }
 

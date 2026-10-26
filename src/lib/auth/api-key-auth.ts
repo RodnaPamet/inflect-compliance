@@ -546,10 +546,50 @@ export async function resolveApiKeyById(
     return finaliseApiKeyAuth(apiKey, clientIp);
 }
 
-/** The shared tail of both resolvers: liveness, tracking, context. */
+/**
+ * Why a queued job may not act on the key that started it: any reason a
+ * request carrying the key would be refused, or the key belonging to another
+ * tenant than the job.
+ */
+export type ApiKeyJobRefusal = ApiKeyAuthError['reason'] | 'other_tenant';
+
+/**
+ * Re-resolve, when a background job runs, the key the request that queued it
+ * was made with (#4369).
+ *
+ * A request's key is checked when the request arrives; the job it queues runs
+ * later, in the worker, with no token to present. This reads the key by id and
+ * runs the SAME tail a request runs — revocation, expiry, a deleted tenant,
+ * the scope-derived context and an agent-bound key's narrowing to its
+ * principal — so a key revoked or expired while the job sat in the queue stops
+ * the job, and the job holds no more than the key would on a request now.
+ *
+ * Two differences from a request, both because no client is calling:
+ *   - the tenant binding is checked FIRST, before the shared tail, so a key of
+ *     another tenant never has its agent principal resolved, nor a denial
+ *     written, in that tenant on this job's behalf;
+ *   - the key is not stamped as used. Its use was the request, which stamped
+ *     it; there is no client IP to record, and this re-read is not a use.
+ */
+export async function resolveApiKeyForJob(input: {
+    apiKeyId: string;
+    tenantId: string;
+}): Promise<ApiKeyAuthResult | { valid: false; reason: ApiKeyJobRefusal }> {
+    const apiKey = await prisma.tenantApiKey.findUnique({
+        where: { id: input.apiKeyId },
+        include: { tenant: true },
+    });
+    if (apiKey && apiKey.tenantId !== input.tenantId) {
+        return { valid: false, reason: 'other_tenant' };
+    }
+    return finaliseApiKeyAuth(apiKey, null, { recordUse: false });
+}
+
+/** The shared tail of every resolver: liveness, tracking, context. */
 async function finaliseApiKeyAuth(
     apiKey: (TenantApiKey & { tenant: Tenant }) | null,
     clientIp?: string | null,
+    options: { recordUse: boolean } = { recordUse: true },
 ): Promise<ApiKeyVerifyResult> {
     if (!apiKey) {
         return { valid: false, reason: 'not_found' };
@@ -581,10 +621,13 @@ async function finaliseApiKeyAuth(
         return { valid: false, reason: 'tenant_deleted' };
     }
 
-    // Update lastUsedAt (fire-and-forget — don't block auth)
-    updateLastUsed(apiKey.id, clientIp).catch(() => {
-        // Swallow errors — tracking failure must not break auth
-    });
+    // Update lastUsedAt (fire-and-forget — don't block auth). Not for a job's
+    // re-read of the key (`resolveApiKeyForJob`), which is not a use.
+    if (options.recordUse) {
+        updateLastUsed(apiKey.id, clientIp).catch(() => {
+            // Swallow errors — tracking failure must not break auth
+        });
+    }
 
     // Parse scopes from stored JSON
     const scopes = Array.isArray(apiKey.scopes) ? (apiKey.scopes as string[]) : [];

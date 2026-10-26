@@ -39,6 +39,12 @@
  *                             sync; a queued workflow run reads its
  *                             `initiatorAuthority`). Keeps the caller's
  *                             request id and sets no `tenantSlug`.
+ *
+ * And one that is the initiator's context narrowed by a credential:
+ *
+ *   resolveKeyInitiatorContext  for a job a request queued with an API KEY.
+ *                             The key's authority now AND the member's, never
+ *                             more than either. Refuses with a named reason.
  */
 import type { Role } from '@prisma/client';
 import { computePermissions, type Permissions } from '@/lib/tenant-context';
@@ -49,6 +55,12 @@ import {
     type PermissionSet,
 } from '@/lib/permissions';
 import prisma from '@/lib/prisma';
+import { resolveApiKeyForJob, type ApiKeyJobRefusal } from '@/lib/auth/api-key-auth';
+import {
+    intersectPermissionSets,
+    intersectPermissions,
+    lowerRole,
+} from '@/lib/agentic/agent-authority';
 import { RequestContext } from './types';
 
 /**
@@ -316,5 +328,84 @@ export async function resolveInitiatorContext(input: {
         userId: input.userId,
         tenantId: input.tenantId,
         ...initiatorAuthority(membership),
+    };
+}
+
+/**
+ * Why a job a key started may not run (`resolveKeyInitiatorContext`): a reason
+ * a request with the key would be refused (`revoked`, `expired`, `not_found`,
+ * `tenant_deleted`, `principal_unresolved`), the key belonging to another
+ * tenant (`other_tenant`) or to another user than the job names
+ * (`other_user`), or that user having no ACTIVE membership
+ * (`initiator_not_a_member`).
+ */
+export type KeyInitiatorRefusal = ApiKeyJobRefusal | 'other_user' | 'initiator_not_a_member';
+
+/**
+ * The context for a job that a request made with an API KEY queued (#4369).
+ *
+ * The request was checked against the key: its scopes, its tenant, its
+ * liveness. A job rebuilt from the initiating user alone
+ * (`resolveInitiatorContext`) would run with that user's whole membership — so
+ * a key that may upload evidence but not edit controls would have its import
+ * link records to a control anyway, and a key revoked while the job was
+ * queued would still have the job run. So the key is read again, by id, through
+ * the tail a request runs (`resolveApiKeyForJob`), and the job holds:
+ *
+ *     key now  ∧  the initiator's membership now
+ *
+ * — role the lower of the two, coarse flags and granular set field by field
+ * (`lowerRole`, `intersectPermissions`, `intersectPermissionSets`, the
+ * conjunction an agent-bound key is narrowed by). Never more than either.
+ *
+ * The membership term is the job's own (`resolveInitiatorContext`, the same
+ * lookup a session-started job makes), and it is applied to EVERY key, not only
+ * an agent-bound one. A request made with a key that is bound to no agent is
+ * authorised by the key's scopes alone; this job is narrower than that request
+ * when the key's creator holds less than the key. That is not a narrowing this
+ * change introduces: the job applied the membership before, and dropping it
+ * for such a key would let the job do what the member, today, may not.
+ *
+ * The key's IP is not a term: a key carries no IP allowlist, and the request's
+ * address is recorded only as the key's last use, which this re-read is not.
+ *
+ * Returns a refusal rather than `null`, because there are several and an
+ * operator needs to know which: the caller stops, does no work, and names it.
+ */
+export async function resolveKeyInitiatorContext(input: {
+    tenantId: string;
+    userId: string;
+    apiKeyId: string;
+    requestId: string;
+}): Promise<{ ok: true; ctx: RequestContext } | { ok: false; reason: KeyInitiatorRefusal }> {
+    const key = await resolveApiKeyForJob({ apiKeyId: input.apiKeyId, tenantId: input.tenantId });
+    if (!key.valid) return { ok: false, reason: key.reason };
+    // The key speaks for the user who created it, and the route names that
+    // user as the initiator. A payload naming somebody else is not this key's.
+    if (key.ctx.userId !== input.userId) return { ok: false, reason: 'other_user' };
+
+    const member = await resolveInitiatorContext({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        requestId: input.requestId,
+    });
+    if (!member) return { ok: false, reason: 'initiator_not_a_member' };
+
+    return {
+        ok: true,
+        ctx: {
+            requestId: input.requestId,
+            userId: input.userId,
+            tenantId: input.tenantId,
+            role: lowerRole(member.role, key.ctx.role),
+            permissions: intersectPermissions(member.permissions, key.ctx.permissions),
+            appPermissions: intersectPermissionSets(member.appPermissions, key.ctx.appPermissions),
+            // Carried as a request carries them, so anything downstream that
+            // asks "was this a key, and which?" gets the same answer.
+            apiKeyId: key.ctx.apiKeyId,
+            apiKeyScopes: key.ctx.apiKeyScopes,
+            ...(key.ctx.agentId ? { agentId: key.ctx.agentId } : {}),
+            apiKeyMaxAutonomy: key.ctx.apiKeyMaxAutonomy ?? null,
+        },
     };
 }

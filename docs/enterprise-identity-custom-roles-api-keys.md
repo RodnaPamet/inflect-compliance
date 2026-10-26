@@ -152,6 +152,7 @@ merged over the base role's defaults on read by `parsePermissionsJson()`.
 3. Admin revokes key
    → Sets revokedAt = now()
    → All future auth attempts fail immediately
+   → An evidence ZIP import the key queued is refused when the worker runs it
 ```
 
 ### Key Format

@@ -16,6 +16,11 @@
  * worker re-asserts the same permission when building its own
  * RequestContext, so a permission revocation between accept-time
  * and run-time still bounces the import.
+ *
+ * A request made with an API key hands the job the key's id. The
+ * worker then runs as the key AND its user rather than as the user
+ * alone, and refuses when the key was revoked or expired while the
+ * import was queued (#4369).
  */
 
 import { NextRequest } from 'next/server';
@@ -166,6 +171,9 @@ export const POST = withApiErrorHandling(
             category,
             folder,
             requestId: ctx.requestId,
+            // The key a key-authenticated request was made with, so the
+            // worker acts as the key and not as its user's whole membership.
+            ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
         });
 
         logger.info('evidence-import.enqueued', {

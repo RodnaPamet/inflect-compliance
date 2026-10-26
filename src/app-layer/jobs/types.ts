@@ -560,6 +560,14 @@ export interface EvidenceImportPayload {
     tenantId: string;
     /** User who uploaded the bundle — used for actor attribution + perm gate. */
     initiatedByUserId: string;
+    /**
+     * The API key the upload request was made with, when it was made with one
+     * (#4369). The worker re-reads the key and runs with its authority AND the
+     * initiator's, refusing when the key is revoked, expired, gone or another
+     * tenant's. Absent for a session request, and on every payload queued
+     * before this member existed: both run with the initiator's authority.
+     */
+    apiKeyId?: string;
     /** Storage key of the staged ZIP (under `evidence-import-staging`). */
     stagingPathKey: string;
     /** Storage `FileRecord.id` of the staging upload, deleted on success. */
