@@ -2807,7 +2807,15 @@ edit from being undone:
     `AGENT_DRIVER_FLUE`. Off, every profile route answers 404 before its
     permission check (`whenAgentProfilesEnabled`) and a profile key is refused
     at admission (`PROFILES_DISABLED`). Off, the agent page also renders no
-    Behaviour tab.
+    Behaviour tab. `AGENT_PROFILES_TENANTS` (comma-separated slugs, Step 1H)
+    opens the same surface to the tenants it names and to no other; the route
+    gate reads the URL's slug, the usecases `ctx.tenantSlug`, and a context
+    with no slug is never named. Every check goes through
+    `agentProfilesEnabledFor`; do not read either variable anywhere else.
+  - **Instructions never grant.** A version's text is scanned at save and at
+    approval, and a tool it names that the version does not declare is refused
+    (`skill.undeclared_tool`). What a run may call is the version's tools
+    intersected with the agent's grants at run time, whatever the text says.
   - **A rejection carries its reason** (Step 1b, #4144). `rejectionReason` is
     the version's second encrypted column. The trigger writes it only in the
     move from SUBMITTED to REJECTED, refuses that move without it
