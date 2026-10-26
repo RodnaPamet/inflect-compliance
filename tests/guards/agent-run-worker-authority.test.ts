@@ -52,16 +52,21 @@ describe('the worker rebuilds the run’s own principal', () => {
         // A queued job must not be a way for authority to outlive the grant
         // that created it.
         expect(rebuild).toContain("status: 'ACTIVE'");
-        expect(rebuild).toContain('return null');
+        expect(rebuild).toContain("if (!membership) return { ok: false, reason: 'principal_not_a_member' }");
     });
 
-    it('re-reads the key rather than trusting the enqueue', () => {
-        // Scopes are CURRENT authority. A key narrowed or revoked between
-        // enqueue and execution must narrow the run with it — and an expired
-        // key is as gone as a revoked one.
-        expect(rebuild).toContain('tenantApiKey');
-        expect(rebuild).toContain('revokedAt: null');
-        expect(rebuild).toContain('expiresAt');
+    it('re-reads the key through the request\'s own resolver rather than trusting the enqueue', () => {
+        // Authority is CURRENT. A key revoked or expired between enqueue and
+        // execution must stop the run, and the run must hold the key ∧ the
+        // member, not the member with the scopes beside it (#4386). The
+        // liveness rules and the scope derivation are a request's —
+        // `resolveKeyInitiatorContext` → `resolveApiKeyForJob` →
+        // `finaliseApiKeyAuth`, behaviourally held by
+        // `agent-run-api-key-authority.test.ts` — so this function must not
+        // grow a second reading of the key row.
+        expect(rebuild).toContain('resolveKeyInitiatorContext(');
+        expect(rebuild).toContain('apiKeyId: row.triggeredViaKeyId');
+        expect(rebuild).not.toContain('tenantApiKey');
     });
 
     it('carries the agent id through, so the register still binds', () => {

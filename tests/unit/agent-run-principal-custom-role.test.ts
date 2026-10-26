@@ -10,7 +10,6 @@
  */
 const db = {
     tenantMembership: { findFirst: jest.fn() },
-    tenantApiKey: { findFirst: jest.fn() },
 };
 jest.mock('@/lib/db/rls-middleware', () => ({
     ...jest.requireActual('@/lib/db/rls-middleware'),
@@ -25,6 +24,12 @@ const EDITOR = getPermissionsForRole('EDITOR');
 
 const RUN = { tenantId: 'tenant-A', startedByUserId: 'user-1', triggeredViaKeyId: null, agentId: 'agent-1' };
 
+/** The rebuilt context, or `undefined` when the rebuild refused. */
+async function rebuild(row: Parameters<typeof rebuildRunContext>[0]) {
+    const r = await rebuildRunContext(row);
+    return r.ok ? r.ctx : undefined;
+}
+
 beforeEach(() => jest.clearAllMocks());
 
 describe('the run carries the custom role a request from its principal carries', () => {
@@ -34,7 +39,7 @@ describe('the run carries the custom role a request from its principal carries',
             customRole: { baseRole: 'EDITOR', permissionsJson: { risks: { ...EDITOR.risks, edit: false } } },
         });
 
-        const ctx = await rebuildRunContext(RUN);
+        const ctx = await rebuild(RUN);
 
         expect(ctx?.appPermissions.risks.edit).toBe(false);
         expect(ctx?.appPermissions.risks.view).toBe(true);
@@ -49,7 +54,7 @@ describe('the run carries the custom role a request from its principal carries',
             customRole: { baseRole: 'READER', permissionsJson: {} },
         });
 
-        const ctx = await rebuildRunContext(RUN);
+        const ctx = await rebuild(RUN);
 
         expect(ctx?.role).toBe('READER');
         expect(ctx?.appPermissions).toEqual(getPermissionsForRole('READER'));
@@ -61,7 +66,7 @@ describe('a built-in role is rebuilt as a request resolves it', () => {
     it('EDITOR gets exactly what a request from it gets', async () => {
         db.tenantMembership.findFirst.mockResolvedValue({ role: 'EDITOR', customRole: null });
 
-        const ctx = await rebuildRunContext(RUN);
+        const ctx = await rebuild(RUN);
 
         expect(ctx).toEqual({
             requestId: 'agent-run-tenant-A-user-1',
@@ -81,15 +86,13 @@ describe('a built-in role is rebuilt as a request resolves it', () => {
 describe('the refusals are unchanged', () => {
     it('no ACTIVE membership, no context', async () => {
         db.tenantMembership.findFirst.mockResolvedValue(null);
-        await expect(rebuildRunContext(RUN)).resolves.toBeNull();
+        await expect(rebuildRunContext(RUN)).resolves.toEqual({ ok: false, reason: 'principal_not_a_member' });
         expect(db.tenantMembership.findFirst).toHaveBeenCalledWith(
             expect.objectContaining({ where: { tenantId: 'tenant-A', userId: 'user-1', status: 'ACTIVE' } }),
         );
     });
 
-    it('a revoked or lapsed key, no context', async () => {
-        db.tenantMembership.findFirst.mockResolvedValue({ role: 'EDITOR', customRole: null });
-        db.tenantApiKey.findFirst.mockResolvedValue(null);
-        await expect(rebuildRunContext({ ...RUN, triggeredViaKeyId: 'key-1' })).resolves.toBeNull();
-    });
+    // A revoked or lapsed key, and every other key refusal, is held in
+    // `agent-run-api-key-authority.test.ts`: since #4386 the key is resolved
+    // through the request's own tail rather than read here.
 });

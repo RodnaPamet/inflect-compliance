@@ -57,7 +57,11 @@ import { createHash } from 'node:crypto';
 import { WorkflowRunStatus } from '@prisma/client';
 
 import { runInTenantContext, runInGlobalContext } from '@/lib/db/rls-middleware';
-import { initiatorAuthority } from '@/app-layer/context-system';
+import {
+    initiatorAuthority,
+    resolveKeyInitiatorContext,
+    type KeyInitiatorRefusal,
+} from '@/app-layer/context-system';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { failRun } from '@/lib/agentic/drivers/run-settlement';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
@@ -1549,8 +1553,8 @@ export async function executeQueuedWorkflowRun(
         return { skipped: 'AGENT_NOT_ACTIVE' };
     }
 
-    const ctx = await rebuildRunContext(row);
-    if (!ctx) {
+    const rebuilt = await rebuildRunContext(row);
+    if (!rebuilt.ok && rebuilt.reason === 'principal_not_a_member') {
         await failRun(
             { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
             runId,
@@ -1559,6 +1563,21 @@ export async function executeQueuedWorkflowRun(
         );
         return { skipped: 'PRINCIPAL_REVOKED' };
     }
+    if (!rebuilt.ok) {
+        // The API key the run was started with would no longer authorise a
+        // request — revoked, expired, gone, or its agent's principal no longer
+        // resolving (#4386). Named, because "revoke the key" and "the key ran
+        // out" are different answers to an operator, and neither is the
+        // membership message above.
+        await failRun(
+            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
+            runId,
+            `run_api_key_no_longer_authorised: the API key this run was started with is ` +
+                `refused (${rebuilt.reason}), so the run does not continue on it.`,
+        );
+        return { skipped: `API_KEY_REFUSED:${rebuilt.reason}` };
+    }
+    const ctx = rebuilt.ctx;
 
     const permitted = (
         await resolveDriverForRun(ctx.tenantId, {
@@ -1592,25 +1611,83 @@ export async function executeQueuedWorkflowRun(
 /**
  * Rebuild the principal who started a run, from the row that recorded them.
  *
- * Returns `null` when that principal can no longer act — which is the whole
+ * Returns a refusal when that principal can no longer act — which is the whole
  * point of the function. A queued job must not be a way for authority to
  * outlive the grant that created it.
  *
  * The API key is re-read for the same reason: `triggeredViaKeyId` says which
- * key started the run, and the SCOPES it carries now are the ones it may use
- * now. A key that was narrowed, or revoked, between enqueue and execution
- * narrows the run with it.
+ * key started the run, and what that key would be authorised for on a request
+ * NOW is what the run may use now. A key revoked or expired between enqueue
+ * and execution stops the run.
  *
- * Exported for its unit test (`agent-run-principal-custom-role.test.ts`):
- * `executeQueuedWorkflowRun` needs a registered agent and a dispatch to reach.
+ * ── A KEY-STARTED RUN HOLDS THE KEY ∧ THE MEMBER (#4386) ─────────────────
+ *
+ * It used to hold the MEMBER's role and permissions, with the key's scopes
+ * carried beside them. The scopes bind only where something asks
+ * `enforceApiKeyScope`; every permission key, coarse-tier policy and
+ * redaction rule the tool funnel applies with basis `ctx`, and every usecase
+ * a tool calls, read the member's whole authority instead. The funnel did not
+ * narrow it either: `buildMcpInvocation` intersects with the principal, and
+ * the member intersected with the member is the member. Nor did the run carry
+ * `apiKeyMaxAutonomy`, so the key's own autonomy ceiling — a term every
+ * request with that key is capped by — did not cap the run at all.
+ *
+ * The key is now resolved through `resolveKeyInitiatorContext`: the tail a
+ * request runs (`resolveApiKeyForJob` → `finaliseApiKeyAuth`, so revocation,
+ * expiry, a deleted tenant, the tenant binding and an agent-bound key's
+ * `resolveAgentAuthority` narrowing are a request's, not a copy), intersected
+ * with the member's own authority. So the run holds no more than:
+ *
+ *   • a REST request with the key, which holds the key's scopes (∧ the
+ *     principal, for an agent-bound key) — the run's set is a subset;
+ *   • an `/api/mcp` request with the key, whose tool calls run on principal ∧
+ *     key — which is now exactly what the run's tool calls run on, since the
+ *     funnel intersects this context with the same principal again.
+ *
+ * The run's own `agentId` is kept, not the key's: it is the binding the run
+ * was authorised under, and the register's grants, card and ceiling key on it.
+ *
+ * Exported for its unit tests (`agent-run-principal-custom-role.test.ts`,
+ * `agent-run-api-key-authority.test.ts`): `executeQueuedWorkflowRun` needs a
+ * registered agent and a dispatch to reach.
  */
 export async function rebuildRunContext(row: {
     tenantId: string;
     startedByUserId: string | null;
     triggeredViaKeyId: string | null;
     agentId: string | null;
-}): Promise<RequestContext | null> {
-    if (!row.startedByUserId) return null;
+}): Promise<RunContextRebuild> {
+    if (!row.startedByUserId) return { ok: false, reason: 'principal_not_a_member' };
+
+    // Correlates every log line and audit row of this attempt back to the
+    // run, which is what an operator has when they open the page.
+    const requestId = `agent-run-${row.tenantId}-${row.startedByUserId}`;
+    // NOT `actorType: 'JOB'`, on either path. The worker is only where this
+    // runs; the run was asked for by a person or a key, and the audit trail
+    // must keep saying so or a review cannot tell an agent's work from a
+    // sweep's.
+    const binding = row.agentId ? { agentId: row.agentId } : {};
+
+    if (row.triggeredViaKeyId) {
+        const keyed = await resolveKeyInitiatorContext({
+            tenantId: row.tenantId,
+            userId: row.startedByUserId,
+            apiKeyId: row.triggeredViaKeyId,
+            requestId,
+        });
+        if (!keyed.ok) {
+            // The member half of the intersection refusing is the refusal this
+            // function always made, and keeps its message.
+            return {
+                ok: false,
+                reason: keyed.reason === 'initiator_not_a_member' ? 'principal_not_a_member' : keyed.reason,
+            };
+        }
+        // The key's agent binding is dropped in favour of the run's (above).
+        const authority: RequestContext = { ...keyed.ctx };
+        delete authority.agentId;
+        return { ok: true, ctx: { ...authority, ...binding } };
+    }
 
     const membership = await runInGlobalContext((db) =>
         db.tenantMembership.findFirst({
@@ -1621,54 +1698,41 @@ export async function rebuildRunContext(row: {
         }),
     );
     // FAIL CLOSED. No active membership, no context, no execution.
-    if (!membership) return null;
-
-    let apiKeyScopes: string[] | undefined;
-    if (row.triggeredViaKeyId) {
-        const now = new Date();
-        const key = await runInGlobalContext((db) =>
-            db.tenantApiKey.findFirst({
-                where: {
-                    id: row.triggeredViaKeyId as string,
-                    tenantId: row.tenantId,
-                    revokedAt: null,
-                    // EXPIRY COUNTS TOO. A key that lapsed while the job sat in
-                    // the queue is as gone as a revoked one; only `revokedAt`
-                    // would let a run continue on a credential that no live
-                    // request could use.
-                    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-                },
-                select: { scopes: true },
-            }),
-        );
-        // A revoked or lapsed key is the same answer as a revoked membership:
-        // the grant that authorised this run is gone, so the run does not
-        // continue on it.
-        if (!key) return null;
-        // `scopes` is a Json column holding an array of strings. Narrowed
-        // rather than asserted: a malformed value yields NO scopes, which
-        // fails closed, where a cast would hand the run whatever was there.
-        apiKeyScopes = Array.isArray(key.scopes)
-            ? key.scopes.filter((v): v is string => typeof v === 'string')
-            : [];
-    }
+    if (!membership) return { ok: false, reason: 'principal_not_a_member' };
 
     return {
-        // Correlates every log line and audit row of this attempt back to the
-        // run, which is what an operator has when they open the page.
-        requestId: `agent-run-${row.tenantId}-${row.startedByUserId}`,
-        userId: row.startedByUserId,
-        tenantId: row.tenantId,
-        // The principal's authority exactly as a request resolves it, custom
-        // role and coarse flags included (`initiatorAuthority`, #4362).
-        ...initiatorAuthority(membership),
-        // NOT `actorType: 'JOB'`. The worker is only where this runs; the run
-        // was asked for by a person or a key, and the audit trail must keep
-        // saying so or a review cannot tell an agent's work from a sweep's.
-        ...(row.triggeredViaKeyId ? { apiKeyId: row.triggeredViaKeyId, apiKeyScopes } : {}),
-        ...(row.agentId ? { agentId: row.agentId } : {}),
-    } as RequestContext;
+        ok: true,
+        ctx: {
+            requestId,
+            userId: row.startedByUserId,
+            tenantId: row.tenantId,
+            // The principal's authority exactly as a request resolves it, custom
+            // role and coarse flags included (`initiatorAuthority`, #4362).
+            ...initiatorAuthority(membership),
+            ...binding,
+        },
+    };
 }
+
+/**
+ * Why `rebuildRunContext` refused. `principal_not_a_member`: the member who
+ * started the run has no ACTIVE membership, the refusal it always made. Every
+ * other value is the API key the run was started with no longer authorising a
+ * request, in `resolveKeyInitiatorContext`'s words (#4386).
+ */
+export type RunPrincipalRefusal =
+    | 'principal_not_a_member'
+    | Exclude<KeyInitiatorRefusal, 'initiator_not_a_member'>;
+
+/**
+ * What `rebuildRunContext` returns. A named type rather than an inline one in
+ * the signature: `functionBodyOf` takes the first brace after the parameter
+ * list as the body, so an object type there would hand every structural guard
+ * on this function the return type instead of the function.
+ */
+export type RunContextRebuild =
+    | { ok: true; ctx: RequestContext }
+    | { ok: false; reason: RunPrincipalRefusal };
 
 /**
  * Is the agent this run was started by STILL in service?
