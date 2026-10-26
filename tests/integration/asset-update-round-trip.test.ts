@@ -138,4 +138,52 @@ describeFn('asset edit round-trip (write → read back)', () => {
         expect({ name: readBack.name, location: readBack.location })
             .toEqual({ name: 'Renamed asset', location: 'eu-west-1' });
     });
+
+    // #4361 — a rename is checked against the REAL partial unique index
+    // (`Asset_tenantId_name_key`, WHERE "deletedAt" IS NULL). The usecase's
+    // check must refuse what the index refuses, by name, and nothing the
+    // index admits: the last three cases would fail on a check stricter than
+    // the index (one that counted a deleted asset or folded case).
+    async function create(name: string) {
+        return createAsset(ctx, { name, type: 'APPLICATION' } as Parameters<typeof createAsset>[1]);
+    }
+
+    it("refuses a rename onto another live asset's name by name, and writes nothing", async () => {
+        await create('Rename target');
+        const mover = await create('Rename mover');
+
+        const err = await editViaRoutePath(ctx, mover.id, { name: 'Rename target' }).catch((e) => e);
+
+        expect(err).toMatchObject({ status: 409, details: { reason: 'ASSET_NAME_TAKEN' } });
+        expect((await getAsset(ctx, mover.id)).name).toBe('Rename mover');
+    });
+
+    it('lets a full edit keep the asset its own name', async () => {
+        const own = await create('Own name asset');
+
+        await editViaRoutePath(ctx, own.id, { name: 'Own name asset', location: 'eu-central-1' });
+
+        const readBack = await getAsset(ctx, own.id);
+        expect({ name: readBack.name, location: readBack.location })
+            .toEqual({ name: 'Own name asset', location: 'eu-central-1' });
+    });
+
+    it('takes a name only a deleted asset holds', async () => {
+        const gone = await create('Freed name');
+        const mover = await create('Freed name mover');
+        await testPrisma.asset.update({ where: { id: gone.id }, data: { deletedAt: new Date() } });
+
+        await editViaRoutePath(ctx, mover.id, { name: 'Freed name' });
+
+        expect((await getAsset(ctx, mover.id)).name).toBe('Freed name');
+    });
+
+    it('treats a case-only difference as a different name, as the index does', async () => {
+        await create('Case Holder');
+        const mover = await create('Case mover');
+
+        await editViaRoutePath(ctx, mover.id, { name: 'case holder' });
+
+        expect((await getAsset(ctx, mover.id)).name).toBe('case holder');
+    });
 });

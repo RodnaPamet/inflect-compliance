@@ -102,6 +102,7 @@ model Framework {
   requirements        FrameworkRequirement[]
   mappingSetsAsSource RequirementMappingSet[] @relation("MappingSetSource")
   mappingSetsAsTarget RequirementMappingSet[] @relation("MappingSetTarget")
+  tenantPacks         TenantFrameworkPack[]
 
   @@unique([key, version])
 }
@@ -165,6 +166,32 @@ model FrameworkPack {
   createdAt     DateTime           @default(now())
   framework     Framework          @relation(fields: [frameworkId], references: [id])
   templateLinks PackTemplateLink[]
+  tenantInstalls TenantFrameworkPack[]
+}
+
+/// A pack this workspace installed. For a framework that offers more than one
+/// pack (EU drone operations: one per operating subcategory), the packs a
+/// workspace installed are the SCOPE it chose: coverage, the readiness report,
+/// audit-cycle readiness and the framework tree count only the requirements
+/// those packs' templates cite, and list the rest as outside it
+/// (`usecases/framework/pack-scope.ts`). A single-pack framework is never
+/// narrowed, and a workspace with no row for a framework sees all of it.
+///
+/// One writer: the pack install (`installPacksInTenant`), in the same
+/// transaction as the controls it creates. Rows are only ever added, so
+/// installing another pack later widens the scope; nothing here removes one.
+model TenantFrameworkPack {
+  id          String        @id @default(cuid())
+  tenantId    String
+  frameworkId String
+  packId      String
+  createdAt   DateTime      @default(now())
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  framework   Framework     @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  pack        FrameworkPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, packId])
+  @@index([tenantId, frameworkId])
 }
 
 model PackTemplateLink {

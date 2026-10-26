@@ -303,6 +303,100 @@ describe('updateAsset — three-state ownerUserId', () => {
     });
 });
 
+describe('updateAsset — a rename to a taken name is refused by name (#4361)', () => {
+    // Left to the partial unique index, a rename onto another live asset's
+    // name was a bare P2002, which reached the edit dialog as a generic
+    // error. The usecase now refuses it as `createAsset` does.
+    //
+    // `findLiveByName` is reset around each case: an unconsumed
+    // `mockResolvedValueOnce` would otherwise leak a "holder" into the next
+    // test in the file.
+    beforeEach(() => (AssetRepository.findLiveByName as jest.Mock).mockReset());
+    afterEach(() => (AssetRepository.findLiveByName as jest.Mock).mockReset());
+
+    it('refuses a rename to a name another live asset holds with the named 409, before writing', async () => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Ledger' });
+        (AssetRepository.findLiveByName as jest.Mock).mockResolvedValue({ id: 'a-holder' });
+
+        const err = await updateAsset(editorCtx, 'a-1', { name: 'Payroll DB' }).catch((e) => e);
+
+        expect(err).toMatchObject({
+            status: 409,
+            code: 'CONFLICT',
+            details: { reason: 'ASSET_NAME_TAKEN' },
+        });
+        expect(AssetRepository.findLiveByName).toHaveBeenCalledWith(mockDb, editorCtx, 'Payroll DB');
+        expect(AssetRepository.update).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('lets an edit keep the asset its own name', async () => {
+        // The edit form sends `name` on every save. The index's own answer
+        // for an unchanged name is THIS asset, which is no conflict.
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Payroll DB' });
+        (AssetRepository.findLiveByName as jest.Mock).mockResolvedValue({ id: 'a-1' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Payroll DB' });
+
+        await expect(
+            updateAsset(editorCtx, 'a-1', { name: 'Payroll DB', location: 'Rack 4' }),
+        ).resolves.toMatchObject({ id: 'a-1' });
+
+        expect((AssetRepository.update as jest.Mock).mock.calls[0][3]).toMatchObject({
+            name: 'Payroll DB',
+            location: 'Rack 4',
+        });
+    });
+
+    it('allows a rename to a name no live asset holds (a deleted holder does not count)', async () => {
+        // `findLiveByName` excludes deleted assets, as the index does
+        // (tests/unit/repositories/AssetRepository.findLiveByName.test.ts),
+        // so a name only a deleted asset holds comes back free.
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Ledger' });
+        (AssetRepository.findLiveByName as jest.Mock).mockResolvedValue(null);
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Payroll DB' });
+
+        await updateAsset(editorCtx, 'a-1', { name: 'Payroll DB' });
+
+        expect(AssetRepository.findLiveByName).toHaveBeenCalledWith(mockDb, editorCtx, 'Payroll DB');
+        expect((AssetRepository.update as jest.Mock).mock.calls[0][3].name).toBe('Payroll DB');
+    });
+
+    it('asks about the name exactly as it will be written: no trimming, no case folding', async () => {
+        // The index compares the stored bytes; `createAsset` passes the name
+        // through untouched. A check on a folded name would refuse what the
+        // index admits ("payroll db" beside "Payroll DB") or miss what it
+        // refuses.
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Ledger' });
+        (AssetRepository.findLiveByName as jest.Mock).mockResolvedValue(null);
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1' });
+
+        await updateAsset(editorCtx, 'a-1', { name: ' payroll db ' });
+
+        expect(AssetRepository.findLiveByName).toHaveBeenCalledWith(mockDb, editorCtx, ' payroll db ');
+        expect((AssetRepository.update as jest.Mock).mock.calls[0][3].name).toBe(' payroll db ');
+    });
+
+    it('does not ask when the patch carries no name', async () => {
+        // The detail page's status control PATCHes `{ status }` alone.
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Ledger' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1' });
+
+        await updateAsset(editorCtx, 'a-1', { status: 'RETIRED' });
+
+        expect(AssetRepository.findLiveByName).not.toHaveBeenCalled();
+    });
+
+    it('still answers 404 for a missing asset, whatever the name', async () => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue(null);
+        (AssetRepository.findLiveByName as jest.Mock).mockResolvedValue({ id: 'a-holder' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue(null);
+
+        await expect(updateAsset(editorCtx, 'missing', { name: 'Payroll DB' })).rejects.toThrow(
+            /Asset not found/i,
+        );
+    });
+});
+
 describe('updateAsset — status reaches the repository', () => {
     // The regression this locks: `UpdateAssetSchema` accepted `status` and
     // the payload built for the repository omitted it, so the detail-page

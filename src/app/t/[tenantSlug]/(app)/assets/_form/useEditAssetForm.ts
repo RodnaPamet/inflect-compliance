@@ -18,6 +18,8 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { AssetDetail } from '@/lib/dto/asset.types';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
+import { isAssetNameTaken } from '@/lib/asset-name-taken';
 
 export interface EditAssetFormFields {
     name: string;
@@ -120,7 +122,18 @@ export function useEditAssetForm({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(fields),
             });
-            if (!res.ok) throw new Error(t('form.saveFailed'));
+            if (!res.ok) {
+                const err: unknown = await res.json().catch(() => ({}));
+                // A rename to a name another asset holds gets the page's own
+                // sentence, as the new-asset dialog does; any other refusal
+                // shows the server's reason, which this used to discard for
+                // "try again" (#4361).
+                throw new Error(
+                    isAssetNameTaken(err)
+                        ? t('form.nameTaken')
+                        : apiErrorMessage(err, t('form.saveFailed')),
+                );
+            }
             const payload = await res.json();
             // PATCH /assets/:id returns `{ success, asset }` while GET
             // returns the bare asset. Unwrap so the detail page's

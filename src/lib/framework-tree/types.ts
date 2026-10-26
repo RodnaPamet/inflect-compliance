@@ -110,6 +110,13 @@ export interface FrameworkTreeNode {
      */
     complianceStatus?: ComplianceStatus;
     /**
+     * Set on a requirement outside the packs this workspace chose, for a
+     * framework that offers several (`usecases/framework/pack-scope.ts`). Its
+     * `complianceStatus` is then `na`, which section roll-ups already treat as
+     * a deliberate scope-out, and the explorer labels it as out of scope.
+     */
+    outOfScope?: boolean;
+    /**
      * Per-status counts for descendant requirements. Sections use
      * this for the minimap mini-distribution bar; requirements
      * report their own one-element distribution. Only populated

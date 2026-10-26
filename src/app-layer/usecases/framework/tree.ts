@@ -40,6 +40,7 @@ import {
     resolveFamilyRequirementAliases,
 } from '../../services/framework-representation-aliases';
 import { logEvent } from '../../events/audit';
+import { partitionByScope, resolveRequirementScope } from './pack-scope';
 
 export async function getFrameworkTree(
     ctx: RequestContext,
@@ -107,8 +108,14 @@ export async function getFrameworkTree(
     // carry identical values — which is precisely why it is the seam's job and
     // not this file's assumption. See
     // `services/framework-representation-aliases.ts`.
-    const links = requirements.length
+    //
+    // A framework with several packs is scoped to the packs this workspace
+    // chose, as `computeCoverage` is (`pack-scope.ts`): its other requirements
+    // stay in the tree, so nothing disappears, but read as out of scope.
+    const { links, outOfScopeIds } = requirements.length
         ? await runInTenantContext(ctx, async (tdb) => {
+              const scope = await resolveRequirementScope(tdb, ctx.tenantId, fw.id);
+              const { outOfScope } = partitionByScope(scope, requirements);
               const aliases = await resolveFamilyRequirementAliases(tdb, fw, requirements);
               const rows = await tdb.controlRequirementLink.findMany({
                   where: { tenantId: ctx.tenantId, requirementId: { in: aliases.lookupIds } },
@@ -117,9 +124,12 @@ export async function getFrameworkTree(
                       control: { select: { id: true, status: true, applicability: true } },
                   },
               });
-              return collapseLinksToOwnRequirements(rows, aliases);
+              return {
+                  links: collapseLinksToOwnRequirements(rows, aliases),
+                  outOfScopeIds: new Set(outOfScope.map((r) => r.id)),
+              };
           })
-        : [];
+        : { links: [], outOfScopeIds: new Set<string>() };
 
     // Group by requirementId for the compliance decorator.
     const controlsByReqId = new Map<string, ControlForCompliance[]>();
@@ -146,6 +156,7 @@ export async function getFrameworkTree(
     const decoratedNodes = decorateTreeWithCompliance(
         baseTree.nodes,
         controlsByReqId,
+        outOfScopeIds,
     );
     return { ...baseTree, nodes: decoratedNodes };
 }

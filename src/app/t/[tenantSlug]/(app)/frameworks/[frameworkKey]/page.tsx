@@ -56,6 +56,9 @@ interface FrameworkCoverage {
     coveragePercent: number;
     bySection: FrameworkCoverageSection[];
     unmappedRequirements: FrameworkCoverageUnmapped[];
+    /** Requirements of packs this workspace did not install — never counted above. */
+    outOfScope?: number;
+    outOfScopeRequirements?: FrameworkCoverageUnmapped[];
     controlMappings: {
         requirementCode: string;
         requirementTitle: string;
@@ -298,7 +301,7 @@ export default function FrameworkDetailPage() {
             {activeTab === 'coverage' && coverage && (
                 <div className="space-y-default" id="coverage-panel">
                     {/* Summary cards — Polish PR-2: KPIStat primitive. */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-default">
+                    <div className={cn('grid grid-cols-1 gap-default', coverage.outOfScope ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
                         <div className={cardVariants({ density: 'none' })}>
                             <KPIStat value={coverage.total} label={t('detail.totalRequirements')} />
                         </div>
@@ -312,6 +315,11 @@ export default function FrameworkDetailPage() {
                                 tone={coverage.unmapped > 0 ? 'attention' : 'success'}
                             />
                         </div>
+                        {!!coverage.outOfScope && (
+                            <div className={cardVariants({ density: 'none' })}>
+                                <KPIStat value={coverage.outOfScope} label={t('detail.outOfScope')} />
+                            </div>
+                        )}
                     </div>
 
                     {/* Coverage donut */}
@@ -371,6 +379,26 @@ export default function FrameworkDetailPage() {
                                         <span className="w-2 h-2 rounded-full bg-border-emphasis flex-shrink-0" />
                                         <code className="text-xs text-content-subtle font-mono w-16 sm:w-28 flex-shrink-0 truncate">{r.code}</code>
                                         <span className="text-content-muted">{r.title}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Requirements of packs the workspace did not choose.
+                        Listed so nothing silently disappears, but they are not
+                        gaps and the figures above leave them out. */}
+                    {!!coverage.outOfScopeRequirements?.length && (
+                        <div className={cardVariants({ density: 'none' })} id="out-of-scope-requirements">
+                            <Heading level={3} className="mb-1">
+                                {t('detail.outOfScopeRequirements', { count: coverage.outOfScopeRequirements.length })}
+                            </Heading>
+                            <p className="text-sm text-content-muted mb-3">{t('detail.outOfScopeHint')}</p>
+                            <div className="space-y-1 max-h-64 overflow-y-auto">
+                                {coverage.outOfScopeRequirements.map((r) => (
+                                    <div key={r.code} className="flex items-center gap-compact px-3 py-1.5 rounded-md text-sm">
+                                        <code className="text-xs text-content-subtle font-mono w-16 sm:w-28 flex-shrink-0 truncate">{r.code}</code>
+                                        <span className="text-content-subtle">{r.title}</span>
                                     </div>
                                 ))}
                             </div>

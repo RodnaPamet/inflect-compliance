@@ -152,11 +152,33 @@ resolve_files() {
 # all of them at the end (rather than dumping mid-stream).
 findings=()
 
+# Lengths in the patterns (`{16,}`) are CHARACTERS, as they are in the CI
+# guardrail's JavaScript regexes. `grep -P` counts characters only in a UTF-8
+# locale; under POSIX or C it counts bytes, so a masked placeholder of eight
+# '•' (three bytes each) read as 24 and was refused here while CI accepted it.
+# So the matcher runs in a UTF-8 locale whatever the caller's is: the
+# caller's own if it is one, else the first the host has.
+utf8_locale() {
+    case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+        *[Uu][Tt][Ff]-8|*[Uu][Tt][Ff]8|*[Uu][Tt][Ff]-8@*|*[Uu][Tt][Ff]8@*)
+            echo "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"; return 0;;
+    esac
+    locale -a 2>/dev/null | grep -m1 -iE '^(c|en_us)\.utf-?8$'
+}
+MATCH_LOCALE=$(utf8_locale || true)
+if [[ -z "$MATCH_LOCALE" ]]; then
+    echo "${YELLOW}WARN${RESET}: no UTF-8 locale found; lengths are counted in bytes, so non-ASCII placeholders may be flagged." >&2
+    MATCH_LOCALE="${LC_ALL:-C}"
+fi
+
 # Bash 4 doesn't ship with PCRE, so the patterns above use an inline
 # `(?i)` that grep -P handles. Verify grep supports -P; fall back to
 # `pcre2grep` if available, else case-fold once via tr in a sub-shell.
+# `-a`: every file reaching the matcher passed the text check above, and a
+# UTF-8 locale must not turn one with a stray invalid byte into "Binary file
+# matches", which carries no line to report.
 if echo abc | grep -qP 'a' 2>/dev/null; then
-    GREP_CMD=(grep -nP)
+    GREP_CMD=(grep -anP)
 elif command -v pcre2grep >/dev/null 2>&1; then
     GREP_CMD=(pcre2grep -n)
 else
@@ -174,7 +196,7 @@ scan_file() {
         # `|| true` — `grep -P` exits 1 when no match; that's the
         # happy path here, so don't propagate the non-zero exit.
         local hits
-        hits=$("${GREP_CMD[@]}" -- "$regex" "$file" 2>/dev/null || true)
+        hits=$(LC_ALL="$MATCH_LOCALE" "${GREP_CMD[@]}" -- "$regex" "$file" 2>/dev/null || true)
         [[ -z "$hits" ]] && continue
         while IFS= read -r line; do
             # Allowlist: skip lines that explicitly opt out.

@@ -108,6 +108,9 @@ function buildDb(opts: {
         },
         framework: { findFirst: jest.fn().mockResolvedValue(opts.framework ?? null) },
         frameworkRequirement: { findMany: jest.fn().mockResolvedValue(opts.requirements ?? []) },
+        // pack-scope.ts: a single-pack framework is never narrowed.
+        frameworkPack: { count: jest.fn().mockResolvedValue(1) },
+        tenantFrameworkPack: { findMany: jest.fn().mockResolvedValue([]) },
         controlRequirementLink: { findMany: jest.fn().mockResolvedValue(opts.mappedLinks ?? []) },
         control: { findMany: controlFindMany },
         evidence: { findMany: jest.fn().mockResolvedValue(opts.genericEvidence ?? []) },

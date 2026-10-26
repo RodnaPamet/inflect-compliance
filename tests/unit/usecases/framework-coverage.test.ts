@@ -46,6 +46,9 @@ jest.mock('@/lib/prisma', () => ({
 const tenantDb: any = {
     controlRequirementLink: { findMany: jest.fn() },
     control: { findMany: jest.fn() },
+    // pack-scope.ts: one pack ⇒ every requirement is in scope.
+    frameworkPack: { count: jest.fn() },
+    tenantFrameworkPack: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => {
     const actual = jest.requireActual('@/lib/db-context');
@@ -76,6 +79,8 @@ beforeEach(() => {
         assertCanViewFrameworks as jest.Mock,
     ].forEach((m: any) => m.mockReset && m.mockReset());
     (assertCanViewFrameworks as jest.Mock).mockImplementation(() => policyCalls.push('view'));
+    tenantDb.frameworkPack.count.mockReset().mockResolvedValue(1);
+    tenantDb.tenantFrameworkPack.findMany.mockReset().mockResolvedValue([]);
 });
 
 const ctx = makeRequestContext('ADMIN');
