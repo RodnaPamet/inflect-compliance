@@ -12,6 +12,10 @@
  * On the control tab a link becomes a library record (#4126), so that
  * page passes `linkTitleRequired` and no note handlers: the link is named
  * by the Title field, as in the library's own link dialog.
+ *
+ * The two halves can be gated apart (`canUpload` / `canLink`, #4360): a
+ * file goes to `/evidence/uploads`, which asks `evidence.upload`, while a
+ * link goes to the parent entity's own route and asks that entity's key.
  */
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -41,6 +45,14 @@ export interface EvidenceAddFormIds {
 export interface EvidenceAddFormProps {
     ids: EvidenceAddFormIds;
     canWrite: boolean;
+    /**
+     * Whether the file half (title + file input) is offered. Defaults to
+     * `canWrite`; never offered without it. A caller whose upload gate
+     * differs from its link gate passes this and `canLink`.
+     */
+    canUpload?: boolean;
+    /** Whether the URL half (URL + note) is offered. Defaults to `canWrite`; never offered without it. */
+    canLink?: boolean;
     show: boolean;
     onToggleShow: () => void;
     file: File | null;
@@ -79,6 +91,8 @@ const formatSize = formatBytes;
 export function EvidenceAddForm({
     ids,
     canWrite,
+    canUpload = canWrite,
+    canLink = canWrite,
     show,
     onToggleShow,
     file,
@@ -100,9 +114,13 @@ export function EvidenceAddForm({
     // The server is the authority on what a link needs; this only keeps the
     // button from offering a submit the create path would refuse.
     const linkReady = !!url.trim() && (!linkTitleRequired || !!title.trim());
+    const mayUpload = canWrite && canUpload;
+    const mayLink = canWrite && canLink;
+    // No half offered, no trigger: a form with nothing to submit is not offered.
+    const mayAdd = mayUpload || mayLink;
     return (
         <>
-            {canWrite && (
+            {mayAdd && (
                 <div className="flex justify-end">
                     {/* Trigger: icon + bare noun, per the action-button
                         vocabulary — the Plus glyph carries the verb. The
@@ -120,69 +138,75 @@ export function EvidenceAddForm({
                     </Button>
                 </div>
             )}
-            {show && canWrite && (
+            {show && mayAdd && (
                 <form
                     onSubmit={onSubmit}
                     className={cn(cardVariants({ density: 'compact' }), 'space-y-default')}
                     id={ids.form}
                 >
-                    <div className="space-y-compact">
-                        <FormField label={t('labelTitle')}>
-                            <Input
-                                type="text"
-                                placeholder={t('placeholderTitle')}
-                                value={title}
-                                onChange={(e) => onTitleChange(e.target.value)}
-                                id={ids.title}
-                            />
-                        </FormField>
-                        <FormField label={t('uploadFile')}>
-                            {/* Still a raw <input type="file">: the Input
-                                primitive styles a text-shaped control, and the
-                                `file:*` utilities below target the browser's own
-                                file-picker button, which the primitive does not
-                                expose. Wrapped in FormField so the label,
-                                spacing, and htmlFor wiring are consistent. */}
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                className="input w-full file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-[var(--brand-default)] file:text-content-emphasis"
-                                onChange={(e) => onFileChange(e.target.files?.[0] || null)}
-                                id={ids.file}
-                                accept={FILE_ACCEPT}
-                            />
-                        </FormField>
+                    {(mayUpload || (mayLink && linkTitleRequired)) && (
+                        <div className="space-y-compact">
+                            <FormField label={t('labelTitle')}>
+                                <Input
+                                    type="text"
+                                    placeholder={t('placeholderTitle')}
+                                    value={title}
+                                    onChange={(e) => onTitleChange(e.target.value)}
+                                    id={ids.title}
+                                />
+                            </FormField>
+                            {mayUpload && (
+                                <FormField label={t('uploadFile')}>
+                                    {/* Still a raw <input type="file">: the Input
+                                        primitive styles a text-shaped control, and the
+                                        `file:*` utilities below target the browser's own
+                                        file-picker button, which the primitive does not
+                                        expose. Wrapped in FormField so the label,
+                                        spacing, and htmlFor wiring are consistent. */}
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        className="input w-full file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-[var(--brand-default)] file:text-content-emphasis"
+                                        onChange={(e) => onFileChange(e.target.files?.[0] || null)}
+                                        id={ids.file}
+                                        accept={FILE_ACCEPT}
+                                    />
+                                </FormField>
+                            )}
                             {file && (
                                 <p className="mt-1 text-xs text-content-muted">
                                     {file.name} ({formatSize(file.size)})
                                 </p>
                             )}
-                    </div>
-                    <div className="space-y-compact border-t border-border-subtle pt-3">
-                        <FormField
-                            label={t('orLinkUrl')}
-                            description={linkTitleRequired ? t('linkNeedsTitle') : undefined}
-                        >
-                            <Input
-                                type="url"
-                                placeholder={t('urlPlaceholder')}
-                                value={url}
-                                onChange={(e) => onUrlChange(e.target.value)}
-                                id={ids.url}
-                                disabled={!!file}
-                            />
-                        </FormField>
-                        {onNoteChange && (
-                            <Textarea
-                                rows={2}
-                                placeholder={t('noteOptional')}
-                                value={note ?? ''}
-                                onChange={(e) => onNoteChange(e.target.value)}
-                                id={ids.note}
-                                disabled={!!file}
-                            />
-                        )}
-                    </div>
+                        </div>
+                    )}
+                    {mayLink && (
+                        <div className={cn('space-y-compact', mayUpload && 'border-t border-border-subtle pt-3')}>
+                            <FormField
+                                label={mayUpload ? t('orLinkUrl') : t('linkUrl')}
+                                description={linkTitleRequired ? t('linkNeedsTitle') : undefined}
+                            >
+                                <Input
+                                    type="url"
+                                    placeholder={t('urlPlaceholder')}
+                                    value={url}
+                                    onChange={(e) => onUrlChange(e.target.value)}
+                                    id={ids.url}
+                                    disabled={!!file}
+                                />
+                            </FormField>
+                            {onNoteChange && (
+                                <Textarea
+                                    rows={2}
+                                    placeholder={t('noteOptional')}
+                                    value={note ?? ''}
+                                    onChange={(e) => onNoteChange(e.target.value)}
+                                    id={ids.note}
+                                    disabled={!!file}
+                                />
+                            )}
+                        </div>
+                    )}
                     {error && (
                         <div
                             className="text-content-error text-sm bg-bg-error rounded px-3 py-2"

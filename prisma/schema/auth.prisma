@@ -162,6 +162,7 @@ model Tenant {
   evidenceTags                      EvidenceTag[]
   controlRequirementLinks           ControlRequirementLink[]
   frameworkRequirementOrders        FrameworkRequirementOrder[]
+  frameworkPacks                    TenantFrameworkPack[]
   controlTestEvidenceLinks          ControlTestEvidenceLink[]
   controlTestPlans                  ControlTestPlan[]
   controlTestRuns                   ControlTestRun[]

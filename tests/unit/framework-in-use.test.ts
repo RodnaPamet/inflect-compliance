@@ -43,6 +43,9 @@ const tenantDb: any = {
         findMany: jest.fn(async ({ where }: any) => world.links.filter(matchLink(where))),
         findFirst: jest.fn(async ({ where }: any) => world.links.find(matchLink(where)) ?? null),
     },
+    // pack-scope.ts: a single-pack framework is never narrowed.
+    frameworkPack: { count: jest.fn(async () => 1) },
+    tenantFrameworkPack: { findMany: jest.fn(async () => []) },
 };
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: catalogue, default: catalogue }));

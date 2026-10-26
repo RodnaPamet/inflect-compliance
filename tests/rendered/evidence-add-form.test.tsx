@@ -133,3 +133,52 @@ describe('EvidenceAddForm — a link that becomes a library record', () => {
         expect(document.getElementById('t-submit')).not.toBeDisabled();
     });
 });
+
+// #4360 — a file goes to `/evidence/uploads` (`evidence.upload`) and a link
+// to the parent entity's own route (that entity's key), so a page whose two
+// gates differ offers each half on its own.
+describe('EvidenceAddForm — the file and link halves are gated apart', () => {
+    it('offers both halves by default, under the write gate', () => {
+        render(<Harness />);
+        expect(document.getElementById('t-file')).not.toBeNull();
+        expect(document.getElementById('t-url')).not.toBeNull();
+        expect(screen.getByText('…or link a URL')).not.toBeNull();
+    });
+
+    it('without the upload gate, offers the link alone: no file input, no title, and the link label stands on its own', () => {
+        render(<Harness canUpload={false} />);
+        expect(document.getElementById('t-trigger')).not.toBeNull();
+        expect(document.getElementById('t-file')).toBeNull();
+        expect(document.getElementById('t-title')).toBeNull();
+        expect(document.getElementById('t-url')).not.toBeNull();
+        expect(document.getElementById('t-note')).not.toBeNull();
+        expect(screen.getByText('Link a URL')).not.toBeNull();
+        expect(screen.queryByText('…or link a URL')).toBeNull();
+    });
+
+    it('without the upload gate, still asks for the title a library link needs', () => {
+        render(<Harness canUpload={false} linkTitleRequired />);
+        expect(document.getElementById('t-file')).toBeNull();
+        expect(document.getElementById('t-title')).not.toBeNull();
+    });
+
+    it('without the link gate, offers the file alone: no URL, no note', () => {
+        render(<Harness canLink={false} />);
+        expect(document.getElementById('t-file')).not.toBeNull();
+        expect(document.getElementById('t-title')).not.toBeNull();
+        expect(document.getElementById('t-url')).toBeNull();
+        expect(document.getElementById('t-note')).toBeNull();
+    });
+
+    it('with neither half, offers no trigger and no form', () => {
+        render(<Harness canUpload={false} canLink={false} />);
+        expect(document.getElementById('t-trigger')).toBeNull();
+        expect(document.getElementById('t-form')).toBeNull();
+    });
+
+    it('never offers a half without the write gate', () => {
+        render(<Harness canWrite={false} canUpload canLink />);
+        expect(document.getElementById('t-trigger')).toBeNull();
+        expect(document.getElementById('t-form')).toBeNull();
+    });
+});
