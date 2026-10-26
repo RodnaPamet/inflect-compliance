@@ -428,9 +428,11 @@ working state.
 
 # Scale-Out Provisioning (beyond the single VM)
 
-The topology above is the only one deployed: the stack is co-located
-on the app VM through
-`infra/observability/docker-compose.observability.yml`. The app emits
+The topology above is the only one this repository packages: the
+stack co-located on the app VM through
+`infra/observability/docker-compose.observability.yml`. Whether it runs
+on the production VM is not recorded here; see
+`03-prometheus-grafana.md`, "Where it runs". The app emits
 OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT`, so moving the telemetry
 backend changes that variable, and the auth header a backend needs,
 and nothing else in the app.
@@ -439,7 +441,7 @@ and nothing else in the app.
 
 | Shape | How | When |
 |-------|-----|------|
-| **1. Co-located on the app VM** *(today)* | `docker compose -f infra/observability/docker-compose.observability.yml up -d` on the app VM | Today's production. |
+| **1. Co-located on the app VM** | `docker compose -f infra/observability/docker-compose.observability.yml up -d` on the app VM | The shape this repository packages. |
 | **2. Dedicated monitoring VM** | The same compose project on a second VM. The app's `OTEL_EXPORTER_OTLP_ENDPOINT` points at it over a private link. | Prometheus I/O competes with Postgres for the disk, or a host failure must not take the telemetry with it. |
 | **3. Managed OTLP backend** | `OTEL_EXPORTER_OTLP_ENDPOINT` points at the vendor's OTLP endpoint, with its auth header. | The operator would rather not run the stack. The vendor then receives telemetry and must be registered as a sub-processor (`docs/sub-processors.md`). |
 

@@ -36,10 +36,12 @@ Four more things share the machine:
 - **No service sets `mem_limit`, `cpus` or `deploy.resources`.** Every
   container draws on the whole VM, so one busy container slows the others. When
   memory runs out, the kernel picks which process to kill.
-- **The observability stack** is a separate Compose project on the same VM
-  (`infra/observability/docker-compose.observability.yml`). Its four
-  containers do carry caps: collector 512 MB / 1 CPU, Prometheus 1 GB / 1 CPU,
-  Tempo 1 GB / 1 CPU, Grafana 512 MB / 0.75 CPU. See
+- **The observability stack** is packaged as a separate Compose project to
+  run on the same VM (`infra/observability/docker-compose.observability.yml`).
+  The repository's record of the running stack lists none of its containers
+  ([`docs/observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md#where-it-runs)).
+  Where it runs, its four containers carry caps: collector 512 MB / 1 CPU,
+  Prometheus 1 GB / 1 CPU, Tempo 1 GB / 1 CPU, Grafana 512 MB / 0.75 CPU. See
   `docs/observability/01-deployment-topology.md`.
 - **Opt-in overlays** in `deploy/` (`docker-compose.pipelock.yml`,
   `docker-compose.orangehrm-lab.yml`, `docker-compose.legacy-mcp-proving.yml`,
@@ -82,6 +84,9 @@ of shortage and does nothing for the others.
 The metric names come from `infra/observability/prometheus/rules/` and the
 dashboards from `infra/observability/grafana/dashboards/`. The alerts and
 dashboards are described in `docs/observability/03-prometheus-grafana.md`.
+They exist only where the observability stack runs, and the repository's
+record of production lists no such stack; production's alerts are the GCP
+Cloud Monitoring policies in `infra/alerts/policies/`.
 
 Every setting below is in `deploy/docker-compose.prod.yml` or in source. A
 change is a pull request, then `deploy/apply.sh` (`CONFIRM=1` applies) for a
