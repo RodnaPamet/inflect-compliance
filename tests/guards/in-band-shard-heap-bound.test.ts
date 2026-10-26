@@ -85,7 +85,6 @@ describe('the premise that makes workerIdleMemoryLimit inert still holds', () =>
     it('workerIdleMemoryLimit is configured, so the comment has a subject', () => {
         // Read as a VALUE off the loaded config, not as text: the point is that
         // jest is really given the option, not that the file mentions it.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const config = require('../../jest.config.js') as {
             projects?: Array<{ workerIdleMemoryLimit?: string }>;
             workerIdleMemoryLimit?: string;
