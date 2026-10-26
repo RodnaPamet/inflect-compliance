@@ -144,7 +144,7 @@ Owners and Admins only. Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:assets.
 | A message that another asset now has the same name, after **{{ui:assets.deleted.restore}}** | Since this asset was deleted, another asset took its name | Rename that other asset, then restore this one |
 | **{{ui:assets.deleted.restoreFailed}}**, or **{{ui:assets.deleted.purgeFailed}}** or another reason in the purge dialog | The restore or purge did not go through. When the server gives a reason, the message shows it | Reload the page and try again |
 | A banner saying only the first 5,000 results are shown | More than 5,000 assets match the search and filters | Narrow the list with a filter or the search |
-| **{{ui:assets.form.nameTaken}}** in the new-asset dialog | Another asset already has that name | Choose a different name |
+| **{{ui:assets.form.nameTaken}}** in the new-asset dialog, or in **{{ui:assets.modal.editTitle}}** on an asset's page | Another asset already has that name | Choose a different name |
 | **Owner must be an active member of this tenant** | The chosen owner is no longer an active member | Choose another owner |
 | **{{ui:assets.form.createFailed}}** | The asset was not created | Try again |
 | **{{ui:assets.import.invalidCsv}}** | The file has no Name header, or no data rows | Fix the header and choose the file again |
