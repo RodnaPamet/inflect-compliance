@@ -56,7 +56,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
 import { repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
 import {
-    agentProfilesEnabled,
+    agentProfilesEnabledFor,
     PROFILE_INSTRUCTIONS_MAX_CHARS,
     PROFILE_MAX_TURNS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
@@ -122,9 +122,13 @@ function refuse(reason: AgentProfileRefusal, message: string, extra: Record<stri
     return new AppError(message, 'NOT_FOUND', 404, true, details);
 }
 
-/** Is the profile surface on for this deployment? */
-export function agentProfilesOn(): boolean {
-    return agentProfilesEnabled(env.AGENT_PROFILES);
+/**
+ * Is the profile surface on for this tenant? The deployment's switch opens it to
+ * every tenant; `AGENT_PROFILES_TENANTS` opens it to the tenants it names
+ * (Step 1H, #4145). No slug is never named, so the answer fails closed.
+ */
+export function agentProfilesOn(tenantSlug: string | null | undefined): boolean {
+    return agentProfilesEnabledFor(env.AGENT_PROFILES, env.AGENT_PROFILES_TENANTS, tenantSlug);
 }
 
 /**
@@ -132,7 +136,7 @@ export function agentProfilesOn(): boolean {
  * answers every caller the same 404 and says nothing about who may act.
  */
 function assertMayManageProfiles(ctx: RequestContext): void {
-    if (!agentProfilesOn()) throw refuse('PROFILES_DISABLED', 'Not found.');
+    if (!agentProfilesOn(ctx.tenantSlug)) throw refuse('PROFILES_DISABLED', 'Not found.');
     if (ctx.permissions.canRead !== true || ctx.appPermissions?.admin?.agent_registry !== true) {
         throw new AppError('Agent profiles require admin.agent_registry.', 'FORBIDDEN', 403, true);
     }

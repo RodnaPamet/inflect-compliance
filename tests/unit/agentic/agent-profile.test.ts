@@ -8,12 +8,22 @@
  *      pinned for every driver there is.
  *   3. THE RUN KEY parses only in its one form, and the flag reads like
  *      `AGENT_DRIVER_FLUE`.
+ *   4. `AGENT_PROFILES_TENANTS` OPENS THE ROUTES TO THE TENANTS IT NAMES and to
+ *      no other (Step 1H, #4145): a named tenant's route reaches its
+ *      permission check, and every other tenant's still answers 404 first.
  */
+// The deployment switch stays unset throughout; the per-tenant allowlist
+// (Step 1H) is set per test.
+const mockAllowlist: { value: string | undefined } = { value: undefined };
 jest.mock('@/env', () => {
     const actual = jest.requireActual('@/env') as { env: Record<string, unknown> };
     return {
         env: new Proxy(actual.env, {
-            get: (target, key) => (key === 'AGENT_PROFILES' ? undefined : Reflect.get(target, key)),
+            get: (target, key) => {
+                if (key === 'AGENT_PROFILES') return undefined;
+                if (key === 'AGENT_PROFILES_TENANTS') return mockAllowlist.value;
+                return Reflect.get(target, key);
+            },
         }),
     };
 });
@@ -34,6 +44,7 @@ import { repoFiles, repoRelative } from '../../helpers/repo-files';
 import { AGENT_DRIVERS } from '@/lib/agentic/agent-driver';
 import {
     agentProfilesEnabled,
+    agentProfilesEnabledFor,
     isProfileRunKey,
     parseProfileRunKey,
     profileRunKey,
@@ -47,28 +58,63 @@ const PROFILE_ROUTES = repoFiles({ under: 'src/app/api/t/[tenantSlug]/admin/agen
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
+/** Call every method a profile route exports, for `tenantSlug`, and return each status. */
+async function callRoute(rel: string, tenantSlug: string): Promise<Array<{ method: string; status: number }>> {
+    const mod = (await import(path.join(process.cwd(), rel))) as Record<string, unknown>;
+    const handlers = METHODS.filter((m) => typeof mod[m] === 'function');
+    expect(handlers.length).toBeGreaterThan(0);
+    const out: Array<{ method: string; status: number }> = [];
+    for (const method of handlers) {
+        const req = new NextRequest(`http://localhost/api/t/${tenantSlug}/admin/agents/a1/profile`, {
+            method,
+            headers: { 'content-type': 'application/json' },
+            ...(method === 'GET' ? {} : { body: '{}' }),
+        });
+        const handler = mod[method] as (r: NextRequest, c: unknown) => Promise<Response>;
+        const res = await handler(req, { params: Promise.resolve({ tenantSlug, agentId: 'a1', version: '1' }) });
+        out.push({ method, status: res.status });
+    }
+    return out;
+}
+
+beforeEach(() => {
+    mockAllowlist.value = undefined;
+    mockRequirePermission.mockClear();
+});
+
 describe('1. with AGENT_PROFILES unset every profile route answers 404', () => {
     it('finds the profile routes (denominator, not findings)', () => {
         expect(PROFILE_ROUTES.length).toBeGreaterThanOrEqual(6);
     });
 
     it.each(PROFILE_ROUTES)('%s', async (rel) => {
-        const mod = (await import(path.join(process.cwd(), rel))) as Record<string, unknown>;
-        const handlers = METHODS.filter((m) => typeof mod[m] === 'function');
-        expect(handlers.length).toBeGreaterThan(0);
-        for (const method of handlers) {
-            const req = new NextRequest('http://localhost/api/t/acme/admin/agents/a1/profile', {
-                method,
-                headers: { 'content-type': 'application/json' },
-                ...(method === 'GET' ? {} : { body: '{}' }),
-            });
-            const handler = mod[method] as (r: NextRequest, c: unknown) => Promise<Response>;
-            const res = await handler(req, {
-                params: Promise.resolve({ tenantSlug: 'acme', agentId: 'a1', version: '1' }),
-            });
-            expect({ method, status: res.status }).toEqual({ method, status: 404 });
-        }
+        for (const r of await callRoute(rel, 'acme')) expect(r).toEqual({ method: r.method, status: 404 });
         expect(mockRequirePermission).not.toHaveBeenCalled();
+    });
+});
+
+describe('4. AGENT_PROFILES_TENANTS opens the routes to the tenants it names, and to no other', () => {
+    it.each(PROFILE_ROUTES)('%s', async (rel) => {
+        mockAllowlist.value = ' Proving-Tenant , ';
+        // Another tenant: still 404, before its permission check.
+        for (const r of await callRoute(rel, 'acme')) expect(r).toEqual({ method: r.method, status: 404 });
+        expect(mockRequirePermission).not.toHaveBeenCalled();
+        // The named tenant: past the gate, to the permission check.
+        const named = await callRoute(rel, 'proving-tenant');
+        expect(mockRequirePermission).toHaveBeenCalledTimes(named.length);
+        for (const r of named) expect(r.status).not.toBe(404);
+    });
+
+    it('reads the list like the switch: trimmed, case-insensitive, and closed without a slug', () => {
+        expect(agentProfilesEnabledFor(undefined, 'a, b ,c', 'B')).toBe(true);
+        expect(agentProfilesEnabledFor(undefined, 'a,b', 'ab')).toBe(false);
+        expect(agentProfilesEnabledFor(undefined, 'a,b', undefined)).toBe(false);
+        expect(agentProfilesEnabledFor(undefined, 'a,b', '')).toBe(false);
+        expect(agentProfilesEnabledFor(undefined, ',', '')).toBe(false);
+        expect(agentProfilesEnabledFor(undefined, undefined, 'a')).toBe(false);
+        // The deployment switch opens every tenant, named or not.
+        expect(agentProfilesEnabledFor('1', undefined, 'anyone')).toBe(true);
+        expect(agentProfilesEnabledFor('yes', 'a', 'b')).toBe(false);
     });
 });
 

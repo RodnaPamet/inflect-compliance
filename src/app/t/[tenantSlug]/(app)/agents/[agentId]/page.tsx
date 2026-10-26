@@ -166,9 +166,10 @@ export default async function AgentDetailPage({
                     ctx.appPermissions.admin.agent_ownership === true && ctx.permissions.canRead,
             }}
             viewerUserId={ctx.userId}
-            // The Behaviour tab exists only while the deployment has agent
-            // profiles on (Step 1b, #4144); its routes answer 404 otherwise.
-            profilesEnabled={agentProfilesOn()}
+            // The Behaviour tab exists only where agent profiles are on: the
+            // whole deployment, or this tenant by name (Steps 1b and 1H). Its
+            // routes answer 404 everywhere else.
+            profilesEnabled={agentProfilesOn(tenantSlug)}
         />
     );
 }

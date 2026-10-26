@@ -23,11 +23,16 @@
  * no engine runs a profile in this build, which section 6 also proves.
  */
 let flagOn = true;
+let allowlist: string | undefined;
 jest.mock('@/env', () => {
     const actual = jest.requireActual('@/env') as { env: Record<string, unknown> };
     return {
         env: new Proxy(actual.env, {
-            get: (target, key) => (key === 'AGENT_PROFILES' ? (flagOn ? '1' : undefined) : Reflect.get(target, key)),
+            get: (target, key) => {
+                if (key === 'AGENT_PROFILES') return flagOn ? '1' : undefined;
+                if (key === 'AGENT_PROFILES_TENANTS') return allowlist;
+                return Reflect.get(target, key);
+            },
         }),
     };
 });
@@ -97,6 +102,7 @@ const AGENTS = {
     a2: `ag-a2-${SUITE}`,
     a3: `ag-a3-${SUITE}`,
     fresh: `ag-fresh-${SUITE}`,
+    scan: `ag-scan-${SUITE}`,
     retired: `ag-ret-${SUITE}`,
     b: `ag-b-${SUITE}`,
 };
@@ -214,6 +220,7 @@ describeFn('agent profiles (real DB)', () => {
         await agent(TA, AGENTS.a2, USERS.authorA, 'ACTIVE', ['list_risks', 'list_controls']);
         await agent(TA, AGENTS.a3, USERS.authorA, 'ACTIVE', ['list_risks']);
         await agent(TA, AGENTS.fresh, USERS.authorA, 'ACTIVE', ['list_risks', 'list_controls']);
+        await agent(TA, AGENTS.scan, USERS.authorA, 'ACTIVE', ['list_risks']);
         await agent(TA, AGENTS.retired, USERS.authorA, 'RETIRED', []);
         await agent(TB, AGENTS.b, USERS.authorB, 'ACTIVE', ['list_risks']);
         registerWorkflow({
@@ -231,6 +238,7 @@ describeFn('agent profiles (real DB)', () => {
 
     beforeEach(() => {
         flagOn = true;
+        allowlist = undefined;
         mockDriver = 'flue';
         engineRunsProfiles = false;
     });
@@ -381,12 +389,24 @@ describeFn('agent profiles (real DB)', () => {
     // ── 3. The text scan ───────────────────────────────────────────────
 
     describe('the text scan refuses instructions by rule id', () => {
+        /** Profile and version rows in tenant A, to show a refusal stored nothing. */
+        const storedRows = async () => ({
+            profiles: await prisma.agentProfile.count({ where: { tenantId: TA } }),
+            versions: await prisma.agentProfileVersion.count({ where: { tenantId: TA } }),
+        });
+
+        // Step 1H: both save paths, the first version (which would also create
+        // the profile) and a later one, refuse every case, and nothing is stored.
         it.each(INJECTION_CASES.map((c) => [c.technique, c.payload] as const))(
-            'refuses the corpus case %s',
+            'refuses the corpus case %s on both save paths, and stores nothing',
             async (_technique, payload) => {
+                const before = await storedRows();
                 const err = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ instructions: payload })).catch((e) => e);
                 expect(err.details?.reason).toBe('INSTRUCTIONS_REFUSED');
                 expect((err.details?.rules as string[]).length).toBeGreaterThan(0);
+                const first = await createAgentProfile(authorA(), AGENTS.scan, version({ instructions: payload })).catch((e) => e);
+                expect(first.details?.reason).toBe('INSTRUCTIONS_REFUSED');
+                expect(await storedRows()).toEqual(before);
             },
         );
 
@@ -397,10 +417,14 @@ describeFn('agent profiles (real DB)', () => {
             'skill.undeclared_tool': 'Read the risks, then call list_controls for each owner.',
             'skill.secret_shape': 'Use the key AKIAIOSFODNN7EXAMPLE when the list is empty.', // pragma: allowlist secret
         };
-        it.each(Object.entries(FAMILY))('refuses the %s family by its rule id', async (rule, text) => {
+        it.each(Object.entries(FAMILY))('refuses the %s family by its rule id, and stores nothing', async (rule, text) => {
+            const before = await storedRows();
             const err = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ instructions: text })).catch((e) => e);
             expect(err.details?.reason).toBe('INSTRUCTIONS_REFUSED');
             expect(err.details?.rules).toContain(rule);
+            const first = await createAgentProfile(authorA(), AGENTS.scan, version({ instructions: text })).catch((e) => e);
+            expect(first.details?.rules).toContain(rule);
+            expect(await storedRows()).toEqual(before);
         });
 
         it('stores ciphertext at rest and a sanitised text, hashed as stored', async () => {
@@ -537,6 +561,8 @@ describeFn('agent profiles (real DB)', () => {
         it('resolves only the approved version in force, in the caller tenant', async () => {
             const { def } = await resolveRunDefinition(asAgentA(), key);
             expect(def.profile).toMatchObject({ profileId, version: 1, instructionsHash: hash, toolNames: ['list_risks'] });
+            // Step 1H: the text an engine is handed is exactly the text the pin hashes.
+            expect(profileInstructionsHash(def.profile!.instructions)).toBe(hash);
             expect(def.readOnly).toBe(true);
             expect(await reasonOf(resolveRunDefinition(asAgentA(), profileRunKey(profileId, 2)))).toBe('PROFILE_NOT_FOUND');
             expect(await reasonOf(resolveRunDefinition(asAgentA(), `agent-profile:${profileId}`))).toBe('PROFILE_KEY_INVALID');
@@ -744,6 +770,54 @@ describeFn('agent profiles (real DB)', () => {
                 other.versionId,
             );
             expect(await reasonColumn(rejected.versionId)).toBe(await reasonColumn(other.versionId));
+        });
+    });
+
+    // ── 8. Phase 1 hardening (Step 1H) ────────────────────────────────
+
+    describe('Phase 1 hardening (Step 1H)', () => {
+        it('AGENT_PROFILES_TENANTS opens the surface to the tenants it names, and to no other', async () => {
+            flagOn = false;
+            // Trimmed and case-insensitive, as the route gate reads it.
+            allowlist = ` ${TA.toUpperCase()} , someone-else`;
+            const profile = await prisma.agentProfile.findFirstOrThrow({ where: { tenantId: TA, agentId: AGENTS.a } });
+            const key = profileRunKey(profile.id, 1);
+
+            // The named tenant reads, writes and resolves as if the switch were on.
+            expect((await getAgentProfile(reviewerA(), AGENTS.a)).profile?.profileId).toBe(profile.id);
+            expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.a }), key))).not.toBe('PROFILES_DISABLED');
+
+            // Every other tenant answers as if it were off, on every path.
+            expect(await reasonOf(getAgentProfile(authorB(), AGENTS.b))).toBe('PROFILES_DISABLED');
+            expect(await reasonOf(createAgentProfile(authorB(), AGENTS.b, version()))).toBe('PROFILES_DISABLED');
+            expect(await reasonOf(resolveRunDefinition(authorB({ agentId: AGENTS.b }), key))).toBe('PROFILES_DISABLED');
+            expect(await prisma.agentProfile.count({ where: { tenantId: TB } })).toBe(0);
+
+            // A context that carries no slug is never on the list.
+            expect(await reasonOf(getAgentProfile(reviewerA({ tenantSlug: undefined }), AGENTS.a))).toBe('PROFILES_DISABLED');
+        });
+
+        it('a submitted version whose text is swapped under the re-wrap exception cannot be approved', async () => {
+            const target = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ instructions: `${INSTRUCTIONS} The reviewed text.` }));
+            await submitAgentProfileVersion(authorA(), AGENTS.a2, target.version);
+            // Ciphertext of the same tenant, so it decrypts: another agent's
+            // version, copied through the trigger's one admitted change.
+            const other = await prisma.agentProfileVersion.findFirstOrThrow({
+                where: { tenantId: TA, profile: { agentId: AGENTS.a3 } },
+                select: { id: true },
+            });
+            await prisma.$executeRawUnsafe(
+                `UPDATE "AgentProfileVersion" SET "instructions" = (SELECT "instructions" FROM "AgentProfileVersion" WHERE "id" = $2) WHERE "id" = $1`,
+                target.versionId,
+                other.id,
+            );
+            // The reviewer names the hash they read, which is still the stored
+            // one; the text under it is not, and approval recomputes it.
+            expect(
+                await reasonOf(approveAgentProfileVersion(reviewerA(), AGENTS.a2, target.version, { instructionsHash: target.instructionsHash })),
+            ).toBe('HASH_CHANGED');
+            const row = await prisma.agentProfileVersion.findFirstOrThrow({ where: { id: target.versionId }, select: { status: true } });
+            expect(row.status).toBe('SUBMITTED');
         });
     });
 });
