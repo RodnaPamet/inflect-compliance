@@ -84,7 +84,7 @@ beforeEach(() => {
 
 type Gates = Pick<
     React.ComponentProps<typeof TaskEditPanel>,
-    'canWrite' | 'canUploadEvidence' | 'canAssign'
+    'canWrite' | 'canUploadEvidence' | 'canAssign' | 'canWriteTier'
 >;
 
 /**
@@ -190,5 +190,48 @@ describe('TaskEditPanel — the two props default to canWrite and never exceed i
         expect(screen.queryByTestId('evidence-upload-dropzone')).not.toBeInTheDocument();
         expect(screen.getByTestId('evidence-attached-list')).toHaveTextContent(ATTACHED.title);
         expect(assignee()).toBeDisabled();
+    });
+});
+
+/**
+ * The dropzone follows the WRITE TIER, not this panel's task-edit gate
+ * (#4389, owner decision 2026-10-26).
+ *
+ * `canWrite` here is `write tier && tasks.edit`, and the dropzone was ANDed
+ * with it — so a custom role holding the tier and `evidence.upload` but not
+ * `tasks.edit` was refused a dropzone that `/evidence/uploads` would have
+ * accepted. `canWriteTier` separates the two, and defaults to `canWrite`, so
+ * the read-only guarantee above is unchanged for a caller that omits it.
+ */
+describe('TaskEditPanel — the dropzone follows the write tier, not tasks.edit', () => {
+    it('offers it to a write-tier viewer whose custom role withholds tasks.edit', async () => {
+        mount({ canWrite: false, canWriteTier: true, canUploadEvidence: true });
+        await loaded();
+
+        expect(screen.getByTestId('evidence-upload-dropzone')).toBeInTheDocument();
+        // And the task form itself stays read-only: the two are separate.
+        expect(title()).toBeDisabled();
+    });
+
+    it('withholds it from a viewer with no write tier at all', async () => {
+        mount({ canWrite: false, canWriteTier: false, canUploadEvidence: true });
+        await loaded();
+
+        expect(screen.queryByTestId('evidence-upload-dropzone')).not.toBeInTheDocument();
+    });
+
+    it('withholds it from a write-tier viewer without evidence.upload', async () => {
+        mount({ canWrite: false, canWriteTier: true, canUploadEvidence: false });
+        await loaded();
+
+        expect(screen.queryByTestId('evidence-upload-dropzone')).not.toBeInTheDocument();
+    });
+
+    it('the attached-evidence list shows in every one of those cases', async () => {
+        // The regression #4345 fixed: gating the whole section hid the list.
+        mount({ canWrite: false, canWriteTier: false, canUploadEvidence: false });
+        await loaded();
+
+        expect(screen.getByText(ATTACHED.title)).toBeInTheDocument();
     });
 });

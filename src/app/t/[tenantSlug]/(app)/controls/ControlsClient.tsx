@@ -367,9 +367,13 @@ function ControlsPageInner({
 
     // The upload box's own key: `assertCanUploadEvidence` checks
     // `evidence.upload`. A custom role with `controls.edit` and no
-    // `evidence.upload` was shown the dropzone and refused (#4325). The panel
-    // ANDs it with its edit gate and applies it to the dropzone only, so the
-    // attached-evidence list still shows for every role.
+    // `evidence.upload` was shown the dropzone and refused (#4325).
+    //
+    // The panels AND it with the WRITE TIER (`canWriteTier`), not with their
+    // own entity-edit gate. ANDing it with that gate made the dropzone require
+    // `controls.edit` or `tasks.edit`, neither of which `/evidence/uploads`
+    // asks for (#4389). It gates the dropzone only; the attached-evidence list
+    // shows for every role.
     const canUploadEvidence = appPermissions.evidence.upload;
     // Single source for "which bulk verbs may this viewer use" — see
     // _lib/bulk-action-policy.
@@ -1914,9 +1918,10 @@ function ControlsPageInner({
                 task={selectedTask}
                 canWrite={canEditTasks}
                 // Its evidence box and assignee picker ask their own keys
-                // (`evidence.upload`; `tasks.assign` + the write tier), inside
-                // the panel's task edit rights.
-                canUploadEvidence={canEditTasks && canUploadEvidence}
+                // (`evidence.upload`; `tasks.assign` + the write tier). The
+                // upload is NOT inside the panel's task-edit rights.
+                canUploadEvidence={canUploadEvidence}
+                canWriteTier={permissions.canWrite}
                 canAssign={canEditTasks && appPermissions.tasks.assign}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
@@ -1935,6 +1940,7 @@ function ControlsPageInner({
         >
             <ControlEditPanel
                 canUploadEvidence={canUploadEvidence}
+                canWriteTier={permissions.canWrite}
                 tenantSlug={tenantSlug}
                 control={selectedControl}
                 canWrite={canEditControls}

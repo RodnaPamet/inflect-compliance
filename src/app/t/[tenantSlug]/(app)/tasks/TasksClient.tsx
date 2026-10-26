@@ -256,7 +256,10 @@ function TasksPageInner({
     //   - bulk status / due: `tasks.edit` + `assertCanWriteTasks`
     //   - bulk assign, and the quick view's assignee picker:
     //                        `tasks.assign` + `assertCanAssignTasks`
-    //   - the quick view's evidence box: `evidence.upload` (`/evidence/uploads`)
+    //   - the quick view's evidence box: the write tier + `evidence.upload`
+    //                        (`/evidence/uploads`, `assertCanUploadEvidence`).
+    //                        NOT `tasks.edit`: the route never asks it, though
+    //                        the code ANDed it in until #4389.
     //   - bulk delete:       `admin.manage` + `assertCanAdmin`
     //   - Deleted view:      its list asserts `assertCanAdmin`, and its only
     //                        action, restore, is `tasks.edit` + `assertCanAdmin`
@@ -1211,7 +1214,8 @@ function TasksPageInner({
                     key: selectedTask.key ?? undefined,
                 }}
                 canWrite={canEdit}
-                canUploadEvidence={canEdit && appPermissions.evidence.upload}
+                canUploadEvidence={appPermissions.evidence.upload}
+                canWriteTier={permissions.canWrite}
                 canAssign={canEdit && appPermissions.tasks.assign}
                 onClose={() => setSelectedTask(null)}
                 onSaved={() => void invalidateAllTasks()}

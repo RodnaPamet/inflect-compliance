@@ -89,6 +89,7 @@ export function TaskEditPanel({
     task,
     canWrite,
     canUploadEvidence = canWrite,
+    canWriteTier = canWrite,
     canAssign = canWrite,
     onSaved,
     variant = "panel",
@@ -98,13 +99,26 @@ export function TaskEditPanel({
     /** The task's own edit rights: its fields and status (`tasks.edit`). */
     canWrite: boolean;
     /**
-     * Whether the file dropzone is offered. A file upload POSTs to
-     * `/evidence/uploads`, which asks `evidence.upload` rather than
-     * `tasks.edit`. The URL link stays on `canWrite`, because it posts to the
-     * task's own evidence route, and the attached list shows either way.
-     * Defaults to `canWrite`; never offered without it.
+     * The viewer's `evidence.upload`. A file upload POSTs to
+     * `/evidence/uploads`, which asks that key rather than `tasks.edit`. The
+     * URL link stays on `canWrite`, because it posts to the task's own
+     * evidence route, and the attached list shows either way.
+     *
+     * Defaults to `canWrite`; ANDed with `canWriteTier`, never offered
+     * without it.
      */
     canUploadEvidence?: boolean;
+    /**
+     * The viewer's COARSE write tier, which is not the same thing as
+     * `canWrite` here: callers pass `canWrite` as their task-edit gate
+     * (`write tier && tasks.edit`). The dropzone used to be ANDed with that,
+     * so it silently required `tasks.edit` — a key `/evidence/uploads` never
+     * asks for (#4389, owner decision 2026-10-26).
+     *
+     * Defaults to `canWrite`, so a caller that omits it is unchanged and a
+     * read-only panel still offers no dropzone.
+     */
+    canWriteTier?: boolean;
     /**
      * Whether the assignee picker is enabled. It POSTs to
      * `/tasks/:id/assign`, which asks `tasks.assign` (and the write tier)
@@ -128,7 +142,9 @@ export function TaskEditPanel({
     const tTask = useTranslations("tasks");
     // Each sits inside the task's edit rights: a read-only panel offers neither.
     const mayAssign = canWrite && canAssign;
-    const mayUploadEvidence = canWrite && canUploadEvidence;
+    // The write TIER, not this panel's task-edit gate: `/evidence/uploads`
+    // asks `evidence.upload` and the tier, and nothing about `tasks.edit`.
+    const mayUploadEvidence = canWriteTier && canUploadEvidence;
     const SEVERITY_OPTIONS = useMemo(() => buildSeverityOptions(tTask), [tTask]);
     const PRIORITY_OPTIONS = useMemo(() => buildPriorityOptions(tTask), [tTask]);
     const TYPE_OPTIONS = useMemo(() => buildTypeOptions(tTask), [tTask]);
