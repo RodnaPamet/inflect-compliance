@@ -156,3 +156,11 @@ complete. An account missing from a snapshot is an account nobody reviews.
   serve resources is a version 2 question, and version 2 does not exist.
 - **No push.** The server does not notify Inflect of changes; Inflect pulls on
   demand.
+- **No population claim.** Nothing here lets a server say it returned the whole
+  application rather than one of several stores, and `snapshot.rowCount` is the
+  server's own count. So every snapshot read through this contract is recorded with
+  its population coverage **unverified**, and a recertification built on it says so
+  on the campaign page and in its evidence. Serve one authoritative store per
+  server: an application whose accounts live in several unconnected stores — a
+  database file copied to each workstation — has no single population for one
+  connection to read.

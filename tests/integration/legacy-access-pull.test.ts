@@ -230,6 +230,98 @@ describe('a complete pull', () => {
     });
 });
 
+/**
+ * #3325 — COMPLETE is about OUR read; whether the rows are the application's
+ * whole population is a separate fact, and this transport cannot observe it.
+ *
+ * The owner's requirement is specific: UNKNOWN at the SCHEMA level, not set to
+ * UNKNOWN by today's callers, because a default claiming a whole population with
+ * every caller overriding it is one new transport away from a silent false
+ * claim. So the default is asserted at the database itself — a raw INSERT that
+ * does not name the column, which is also exactly what a still-running old
+ * container does mid-deploy — and separately through the Prisma client.
+ */
+describe('population coverage (#3325)', () => {
+    async function insertRawSnapshotWithoutCoverage(id: string): Promise<void> {
+        await prisma.$executeRaw`
+            INSERT INTO "LegacyAccessSnapshot"
+                ("id", "tenantId", "connectionId", "remoteSnapshotId", "mappingVersion",
+                 "columnSetFingerprint", "status", "updatedAt")
+            VALUES (${id}, ${TENANT}, ${connectionId}, 'raw-remote', 1, ${FINGERPRINT},
+                    'COMPLETE'::"LegacyAccessSnapshotStatus", NOW())`;
+    }
+
+    it('a row inserted WITHOUT naming the column reads UNKNOWN — the database default', async () => {
+        await insertRawSnapshotWithoutCoverage('lgp-raw-coverage');
+        const rows = await prisma.$queryRaw<{ populationCoverage: string }[]>`
+            SELECT "populationCoverage"::text AS "populationCoverage"
+            FROM "LegacyAccessSnapshot" WHERE "id" = 'lgp-raw-coverage'`;
+        expect(rows).toEqual([{ populationCoverage: 'UNKNOWN' }]);
+    });
+
+    it('so does a row the Prisma client writes without naming it', async () => {
+        const snap = await prisma.legacyAccessSnapshot.create({
+            data: {
+                tenantId: TENANT, connectionId, remoteSnapshotId: 'client-remote',
+                mappingVersion: 1, columnSetFingerprint: FINGERPRINT, status: 'COMPLETE',
+            },
+            select: { populationCoverage: true },
+        });
+        expect(snap.populationCoverage).toBe('UNKNOWN');
+    });
+
+    describe('through the real pull', () => {
+        beforeEach(() => {
+            pullSnapshotMock.mockResolvedValue({ manifest: manifest(), rows, complete: true });
+        });
+
+        it('a COMPLETE pull records UNKNOWN coverage — the two facts are held apart', async () => {
+            const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+            // The read was whole...
+            expect(result.status).toBe('COMPLETE');
+            // ...and nothing established that the rows are the whole application,
+            // however many the manifest claimed.
+            expect(result.populationCoverage).toBe('UNKNOWN');
+
+            const snap = await prisma.legacyAccessSnapshot.findUniqueOrThrow({
+                where: { id: result.snapshotId! },
+                select: { status: true, populationCoverage: true },
+            });
+            expect(snap).toEqual({ status: 'COMPLETE', populationCoverage: 'UNKNOWN' });
+        });
+
+        it('the hash-chained pull event carries the coverage beside the hash', async () => {
+            const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+            const row = await prisma.auditLog.findFirstOrThrow({
+                where: {
+                    tenantId: TENANT,
+                    action: 'LEGACY_ACCESS_SNAPSHOT_PULLED',
+                    entityId: result.snapshotId!,
+                },
+                select: { detailsJson: true },
+            });
+            expect(row.detailsJson).toMatchObject({
+                snapshotId: result.snapshotId,
+                payloadHash: result.payloadHash,
+                populationCoverage: 'UNKNOWN',
+            });
+        });
+
+        it('a manifest whose rowCount matches the rows exactly is still UNKNOWN — that count is the far end\'s claim', async () => {
+            // The one-of-twelve-workstations case is indistinguishable from this:
+            // the shim's rowCount agrees with the rows it chose to send.
+            pullSnapshotMock.mockResolvedValue({
+                manifest: manifest({ snapshot: { id: 'ws-1-of-12', generatedAt: '2026-10-09T00:00:00.000Z', rowCount: rows.length } }),
+                rows,
+                complete: true,
+            });
+            const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+            expect(result.status).toBe('COMPLETE');
+            expect(result.populationCoverage).toBe('UNKNOWN');
+        });
+    });
+});
+
 describe('oversharing', () => {
     it('a manifest declaring MORE columns than the projection does NOT flag the connection', async () => {
         // A manifest declares the whole table; a mapping names a subset. If that

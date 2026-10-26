@@ -39,6 +39,7 @@ import {
     addSpacer,
 } from '@/lib/pdf/sections';
 import { renderTable, autoColumnWidths } from '@/lib/pdf/table';
+import type { PopulationCoverage } from '@/lib/legacy-access/coverage';
 import type {
     ReportMeta,
     TableColumn,
@@ -114,8 +115,10 @@ export interface AccessReviewPdfInput {
      * the same bytes under a different mapping are a different claim about who
      * had access.
      *
-     * It also enters `computeContentHash(input)`, so the artefact's own hash
-     * covers the provenance rather than merely displaying it.
+     * It is NOT part of `computeContentHash(input)`, which hashes no provenance
+     * field: extending that canonical JSON would change the hash of every
+     * artefact already issued (see `legacyPopulationCoverage` below). The
+     * tamper-evident copies are the hash-chained audit rows.
      */
     legacyProvenance?: {
         snapshotId: string;
@@ -123,7 +126,36 @@ export interface AccessReviewPdfInput {
         mappingVersion: number;
         connectionId: string;
     } | null;
+    /**
+     * For a LEGACY_APP campaign: whether the certified snapshot is KNOWN to be
+     * the application's whole population (#3325). Absent for every other scope.
+     *
+     * Separate from `legacyProvenance` because the two answer different
+     * questions — the hash proves WHICH rows were certified, this says whether
+     * those rows were all of them — and because the caveat must render even
+     * for a legacy campaign whose subjects carry no readable provenance.
+     *
+     * Deliberately NOT in `computeContentHash`, for the reason the truncation
+     * caveat is not: that canonical JSON is a published evidence contract, and
+     * extending it would change the hash of every artefact already issued. The
+     * tamper-evident copy is the hash-chained close audit row, which records it.
+     */
+    legacyPopulationCoverage?: PopulationCoverage | null;
     watermark?: WatermarkMode;
+}
+
+/**
+ * The sentence the evidence prints about population coverage. Exported so the
+ * wording an auditor reads is asserted directly, not inferred from a render.
+ */
+export function populationCoverageStatement(coverage: PopulationCoverage): string {
+    return coverage === 'VERIFIED'
+        ? 'Population coverage: VERIFIED. The pull observed the application\'s whole account table '
+            + 'itself, so these subjects are every account the application held when it was read.'
+        : 'Population coverage: UNVERIFIED. Nothing established that this snapshot holds every account '
+            + 'the application has — a connector that reads one of several stores produces a snapshot '
+            + 'indistinguishable from one that reads them all. This artefact evidences that the accounts '
+            + 'listed were reviewed. It does not attest that they are the application\'s whole population.';
 }
 
 /**
@@ -240,19 +272,26 @@ export function generateAccessReviewPdf(
     //
     // Before the decisions, not after: an auditor reading this artefact needs to
     // know WHAT was certified before reading WHO certified it.
-    if (input.legacyProvenance) {
+    if (input.legacyProvenance || input.legacyPopulationCoverage) {
         addSectionTitle(doc, 'Source snapshot');
-        // A paragraph rather than `addSummaryMetrics`: that helper renders
-        // NUMBERS, and a 64-character hash is the one field here nobody should
-        // see abbreviated into a metric tile.
-        addParagraph(
-            doc,
-            `Certified against snapshot ${input.legacyProvenance.snapshotId} of connection `
-            + `${input.legacyProvenance.connectionId}, interpreted under mapping version `
-            + `${input.legacyProvenance.mappingVersion}. The application's reported rows hash to `
-            + `${input.legacyProvenance.payloadHash}. Re-deriving that hash from the stored rows `
-            + 'proves this certification was made against those rows and not a later state.'
-        );
+        if (input.legacyProvenance) {
+            // A paragraph rather than `addSummaryMetrics`: that helper renders
+            // NUMBERS, and a 64-character hash is the one field here nobody
+            // should see abbreviated into a metric tile.
+            addParagraph(
+                doc,
+                `Certified against snapshot ${input.legacyProvenance.snapshotId} of connection `
+                + `${input.legacyProvenance.connectionId}, interpreted under mapping version `
+                + `${input.legacyProvenance.mappingVersion}. The application's reported rows hash to `
+                + `${input.legacyProvenance.payloadHash}. Re-deriving that hash from the stored rows `
+                + 'proves this certification was made against those rows and not a later state.'
+            );
+        }
+        // Directly after the hash, because the hash is the sentence most easily
+        // misread as a whole-population claim: it proves WHICH rows, not ALL.
+        if (input.legacyPopulationCoverage) {
+            addParagraph(doc, populationCoverageStatement(input.legacyPopulationCoverage));
+        }
         addSpacer(doc);
     }
 

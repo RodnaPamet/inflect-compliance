@@ -11,6 +11,12 @@
 // every account in scope was reviewed, which would be true of its rows and
 // false of the application.
 //
+// COMPLETE is necessary for that claim and NOT sufficient (#3325). It says our
+// read was whole; it cannot say the far end handed us the whole application,
+// because a shim that sees one store of several produces an identical
+// manifest. That second fact is `populationCoverage`, UNKNOWN unless a
+// transport observed the whole table itself — which none does today.
+//
 // Canonical fields ONLY. Whatever else the legacy table carried was dropped at
 // the boundary by src/lib/legacy-access/ingest.ts. A column nobody mapped is a
 // column nobody classified, and the retention policy, the encryption manifest
@@ -60,6 +66,23 @@ model LegacyAccessSnapshot {
   rowsReceived Int @default(0)
 
   status        LegacyAccessSnapshotStatus  @default(PENDING)
+
+  /// Is this snapshot KNOWN to be the application's whole population? (#3325)
+  ///
+  /// Orthogonal to `status`. A COMPLETE snapshot read every row it was handed;
+  /// whether it was handed every row the application holds is this column, and
+  /// readers that gate on `status` keep gating on it. What reads this is every
+  /// surface that would otherwise imply a full population — a campaign freezes
+  /// it into each subject's provenance, and the campaign page and its evidence
+  /// say "coverage unverified" unless it is VERIFIED.
+  ///
+  /// UNKNOWN BY SCHEMA DEFAULT, and the pull does not name the column at all.
+  /// That is the owner's requirement, not an omission: a column that defaulted
+  /// to a full-population claim with every present caller overriding it would
+  /// be one new transport away from regressing silently. A writer that sets
+  /// VERIFIED must be a transport that observed the whole table ITSELF.
+  populationCoverage LegacyAccessPopulationCoverage @default(UNKNOWN)
+
   refusalReason LegacyAccessRefusalReason?
   /// Operator-facing explanation. System-generated and never a cell value —
   /// see the LegacyIngestError docblock, which is where that rule is enforced.

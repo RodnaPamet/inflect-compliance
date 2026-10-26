@@ -2,8 +2,9 @@
 #
 # Sibling of `external-uptime.yml`, and the same kind of file: a record of a
 # DEPLOYED GCP CONTRACT, not a rule for a stack we wish we had. `rules.yml` and
-# `receivers.yml` in this directory are the other kind — they describe a
-# Prometheus/Alertmanager deployment that has never existed here.
+# `receivers.yml` in this directory were the other kind — they described a
+# Prometheus/Alertmanager deployment that never existed here, and were deleted
+# on 2026-10-26.
 #
 # ─── WHY THIS FILE EXISTS AT ALL (#2842) ────────────────────────────────
 #

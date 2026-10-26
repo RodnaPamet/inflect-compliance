@@ -38,6 +38,21 @@
  * and reporting the later failure of an earlier cause sends somebody to fix the
  * wrong thing.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * COVERAGE IS LABELLED, NOT REFUSED (#3325)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A COMPLETE snapshot is one whose read was whole. Whether it holds the
+ * application's whole POPULATION is `populationCoverage`, which is UNKNOWN for
+ * every snapshot today: the transport cannot observe it. Refusing UNKNOWN here
+ * would refuse every legacy campaign there is, so the owner's decision
+ * (2026-10-09) is the other honest option — the campaign proceeds, and every
+ * surface that would otherwise imply a full population says "coverage
+ * unverified". This file's part is to FREEZE the snapshot's coverage into each
+ * subject's provenance beside the payload hash, so the page and the evidence
+ * read it from what was certified rather than from a snapshot row that may have
+ * been purged by then.
+ *
  * @module app-layer/usecases/access-review-legacy
  */
 
@@ -54,6 +69,7 @@ import {
     populationContext,
     type FindingSubject,
 } from '@/lib/legacy-access/findings';
+import type { PopulationCoverage } from '@/lib/legacy-access/coverage';
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
 import { assertCanAdmin } from '../policies/common';
@@ -112,6 +128,12 @@ export interface CreateLegacyResult {
     readonly executionId: string;
     readonly subjectCount: number;
     readonly snapshotTruncated: boolean;
+    /**
+     * Whether the snapshot is KNOWN to be the application's whole population.
+     * UNKNOWN for every campaign today (#3325) — the creator is told so at the
+     * moment they create it, as they are told about truncation.
+     */
+    readonly populationCoverage: PopulationCoverage;
     /** How many subjects carry each finding, for the creator's confirmation. */
     readonly findingCounts: Readonly<Record<string, number>>;
 }
@@ -144,6 +166,7 @@ export async function createLegacyAccessReview(
                 payloadHash: true,
                 mappingVersion: true,
                 rowCount: true,
+                populationCoverage: true,
             },
         });
 
@@ -187,6 +210,11 @@ export async function createLegacyAccessReview(
             );
         }
         const executionId = latestResolution.executionId;
+
+        // Typed against this module's union rather than the generated enum, so a
+        // value added to `LegacyAccessPopulationCoverage` fails to compile here
+        // until somebody decides what a campaign over it may claim.
+        const populationCoverage: PopulationCoverage = snapshot.populationCoverage;
 
         // ── The subjects ───────────────────────────────────────────────────
         const accounts = await db.legacyAccount.findMany({
@@ -385,6 +413,11 @@ export async function createLegacyAccessReview(
                             payloadHash: snapshot.payloadHash,
                             mappingVersion: snapshot.mappingVersion,
                             connectionId: parsed.connectionId,
+                            // Whether those rows are the WHOLE application —
+                            // a different question from whether the hash
+                            // re-derives. Frozen with the rest, so the page and
+                            // the evidence read what was certified (#3325).
+                            populationCoverage,
                         },
                     },
                 };
@@ -416,6 +449,7 @@ export async function createLegacyAccessReview(
                 executionId,
                 subjectCount: subjects.length,
                 snapshotTruncated,
+                populationCoverage,
                 findingCounts,
             },
         });
@@ -426,6 +460,7 @@ export async function createLegacyAccessReview(
             executionId,
             subjectCount: subjects.length,
             snapshotTruncated,
+            populationCoverage,
             findingCounts,
         };
     });
