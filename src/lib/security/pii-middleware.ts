@@ -39,6 +39,8 @@
  * with the same guard — only structural identifiers (model, field
  * names) may appear in log payloads.
  */
+import { Prisma } from '@prisma/client';
+
 import { encryptField, decryptField, hashForLookup, isEncryptedValue } from './encryption';
 import { logger } from '@/lib/observability/logger';
 
@@ -195,89 +197,73 @@ function decryptOnRead(
 }
 
 /**
- * Maps the Prisma relation key (lowerCamel) to the model name used as
- * the key in `PII_FIELD_MAP`. When a result row exposes a nested
- * relation (e.g. `OrgMembership.user`, `TenantMembership.user`,
- * `AuditLog.user`) the schema field name is the lowerCamel singular
- * of the model. We map back here so `decryptResultDeep` can locate
- * the right manifest entry.
+ * Every relation in the schema, read from Prisma's own data model:
+ * model → relation field → the model it points at.
  *
- * Add a row when you introduce a managed model with a different
- * relation key. Generic walking of every key is intentionally NOT
- * done — it would over-eagerly inspect non-PII relations on every
- * read, which is a perf regression for a tiny ergonomic gain.
+ * This replaced a hand-kept table of nine relation NAMES. A name list
+ * only decrypts the relations somebody remembered to add, and 29 of
+ * the 34 relations into a managed model were missing from it
+ * (`reviewer`, `createdBy`, `approvedBy`, `decidedBy`, …). A read
+ * through any of them handed the caller ciphertext: access-review
+ * reminders were queued to a `v1:…` address, and evidence PDFs
+ * printed one. Derived here, a relation added to the schema is walked
+ * the day it exists.
+ *
+ * Keyed by the PARENT model as well as the field, so the walk follows
+ * real relations only: a Json column whose payload happens to carry a
+ * `user` key is data, not a relation, and is never touched.
  */
-const RELATION_KEY_TO_MODEL: Record<string, string> = {
-    user: 'User',
-    inviter: 'User',
-    invitedBy: 'User',
-    invitedByUser: 'User',
-    creator: 'User',
-    owner: 'User',
-    assignee: 'User',
-    auditor: 'AuditorAccount',
-    identityLink: 'UserIdentityLink',
-};
+const RELATION_TARGETS: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map(
+    Prisma.dmmf.datamodel.models.map((m) => [
+        m.name,
+        new Map(m.fields.filter((f) => f.kind === 'object').map((f) => [f.name, f.type])),
+    ]),
+);
 
 /**
- * Walks a result tree and decrypts any embedded nested relation that
- * points at a managed model. Recurses through arrays + objects but
- * caps depth so an unbounded includes chain can't OOM us.
+ * How many relation hops below the queried model the walk follows.
+ * A Prisma result is a finite tree shaped by its own `include` /
+ * `select`, so this is a backstop, not a budget any real query meets.
  */
-function decryptNested(
-    record: unknown,
-    depth: number,
-): void {
-    if (depth >= 4 || !record || typeof record !== 'object') return;
-    if (Array.isArray(record)) {
-        for (const item of record) decryptNested(item, depth + 1);
-        return;
-    }
-    const obj = record as Record<string, unknown>;
-    for (const [key, value] of Object.entries(obj)) {
-        if (!value || typeof value !== 'object') continue;
-        const nestedModel = RELATION_KEY_TO_MODEL[key];
-        if (nestedModel) {
-            const nestedFields = PII_FIELD_MAP[nestedModel];
-            if (nestedFields) {
-                if (Array.isArray(value)) {
-                    for (const item of value) {
-                        if (item && typeof item === 'object') {
-                            decryptOnRead(item as Record<string, unknown>, nestedFields, nestedModel);
-                        }
-                    }
-                } else {
-                    decryptOnRead(value as Record<string, unknown>, nestedFields, nestedModel);
-                }
-            }
-        }
-        // Recurse — even non-PII relations may have PII relations
-        // beneath them (e.g. TenantMembership.tenant.someUser).
-        decryptNested(value, depth + 1);
+const MAX_RELATION_DEPTH = 8;
+
+/**
+ * Decrypts one object of `model` and walks its relations. `record` is
+ * a row (or the value of a to-one relation), never an array.
+ */
+function decryptRecord(record: Record<string, unknown>, model: string, depth: number): void {
+    const fields = PII_FIELD_MAP[model];
+    if (fields) decryptOnRead(record, fields, model);
+
+    if (depth >= MAX_RELATION_DEPTH) return;
+    const relations = RELATION_TARGETS.get(model);
+    if (!relations) return;
+    for (const [key, value] of Object.entries(record)) {
+        const target = relations.get(key);
+        if (!target || !value || typeof value !== 'object') continue;
+        decryptTree(value, target, depth + 1);
     }
 }
 
-function decryptResult(result: unknown, model: string): unknown {
-    const fields = PII_FIELD_MAP[model];
-
-    // Top-level decrypt for the queried model (when managed).
-    if (fields) {
-        if (Array.isArray(result)) {
-            for (const item of result) {
-                if (item && typeof item === 'object') {
-                    decryptOnRead(item as Record<string, unknown>, fields, model);
-                }
-            }
-        } else if (result && typeof result === 'object') {
-            decryptOnRead(result as Record<string, unknown>, fields, model);
+/** A query result, or a relation's value: one row, a list of rows, or null. */
+function decryptTree(value: unknown, model: string, depth: number): void {
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            if (item && typeof item === 'object') decryptRecord(item as Record<string, unknown>, model, depth);
         }
+    } else if (value && typeof value === 'object') {
+        decryptRecord(value as Record<string, unknown>, model, depth);
     }
+}
 
-    // Nested decrypt for relations into managed models, regardless of
-    // whether the top-level model is itself managed (e.g.
-    // OrgMembership.findMany({ include: { user: ... } })).
-    decryptNested(result, 0);
-
+/**
+ * Decrypts the queried model's managed fields and those of every
+ * managed model reached through the result's relations, whether or not
+ * the queried model is itself managed (e.g.
+ * `tenantMembership.findMany({ include: { user: … } })`).
+ */
+function decryptResult(result: unknown, model: string): unknown {
+    decryptTree(result, model, 0);
     return result;
 }
 

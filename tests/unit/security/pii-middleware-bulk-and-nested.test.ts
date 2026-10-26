@@ -215,26 +215,63 @@ describe('decryption — result shapes', () => {
         expect(tenant.memberships[1].user.email).toBe('nested@example.com');
     });
 
-    it('decrypts an aliased relation key (inviter → User)', async () => {
+    it('decrypts a relation whose name is not the model\'s (TenantInvite.invitedBy → User)', async () => {
         const { received } = await run(
             { model: 'TenantInvite', action: 'findFirst', args: {} },
-            { id: 'i1', inviter: { id: 'u1', email: cipherEmail } },
+            { id: 'i1', invitedBy: { id: 'u1', email: cipherEmail } },
         );
-        expect((received as { inviter: { email: string } }).inviter.email).toBe(
+        expect((received as { invitedBy: { email: string } }).invitedBy.email).toBe(
             'nested@example.com',
         );
     });
 
-    it('leaves an unmapped relation key alone (no over-eager walking)', async () => {
+    it('leaves a relation into a non-managed model alone', async () => {
         const { received } = await run(
             { model: 'Tenant', action: 'findUnique', args: {} },
             { id: 't1', billingAccount: { id: 'b1', email: cipherEmail } },
         );
-        // `billingAccount` is not in RELATION_KEY_TO_MODEL, so its `email`
-        // is not a managed field and must come back untouched.
+        // `Tenant.billingAccount` is a BillingAccount, which has no managed
+        // fields, so an `email` on it is not ours to decrypt.
         expect(
             (received as { billingAccount: { email: string } }).billingAccount.email,
         ).toBe(cipherEmail);
+    });
+
+    it('never walks a Json column, whatever keys its payload carries', async () => {
+        // `AuditLog.metadataJson` is data, not a relation. A payload that
+        // happens to hold a `user` object is returned exactly as stored.
+        const { received } = await run(
+            { model: 'AuditLog', action: 'findFirst', args: {} },
+            { id: 'a1', metadataJson: { user: { email: cipherEmail } } },
+        );
+        expect(
+            (received as { metadataJson: { user: { email: string } } }).metadataJson.user.email,
+        ).toBe(cipherEmail);
+    });
+
+    it('follows relations several hops down (Tenant → memberships → user → identityLinks)', async () => {
+        const cipherLinkEmail = encryptField('linked@example.com');
+        const { received } = await run(
+            { model: 'Tenant', action: 'findUnique', args: {} },
+            {
+                id: 't1',
+                memberships: [
+                    {
+                        id: 'm1',
+                        user: {
+                            id: 'u1',
+                            email: cipherEmail,
+                            identityLinks: [{ id: 'l1', emailAtLinkTime: cipherLinkEmail }],
+                        },
+                    },
+                ],
+            },
+        );
+        const user = (received as {
+            memberships: Array<{ user: { email: string; identityLinks: Array<{ emailAtLinkTime: string }> } }>;
+        }).memberships[0].user;
+        expect(user.email).toBe('nested@example.com');
+        expect(user.identityLinks[0].emailAtLinkTime).toBe('linked@example.com');
     });
 });
 
