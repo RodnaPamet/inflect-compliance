@@ -77,8 +77,9 @@ model Asset {
   ///
   /// Consequences for callers: the constraint is CASE-SENSITIVE and
   /// ignores soft-deleted rows. `bulkImportAssets` matches both of those
-  /// deliberately (see its dedupe pass); `createAsset` relies on the DB
-  /// and surfaces P2002 as a 409.
+  /// deliberately (see its dedupe pass); `createAsset`, a rename in
+  /// `updateAsset` and the Asset restore validator ask the index's exact
+  /// question first and refuse a taken name with a 409 `ASSET_NAME_TAKEN`.
   @@index([tenantId, name])
   @@index([tenantId])
   @@index([tenantId, createdAt])

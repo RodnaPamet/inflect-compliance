@@ -259,7 +259,8 @@ async function assertActiveOwner(db: PrismaTx, tenantId: string, ownerUserId: st
 }
 
 /**
- * Refuse a name another live asset already holds (#4324). The partial unique
+ * Refuse a name another live asset already holds (#4324, #4361 for a rename
+ * in `updateAsset`). The partial unique
  * index refuses it anyway, but as Prisma's P2002 — answered with the generic
  * "A resource with that unique constraint already exists", which does not say
  * the name is the problem. The reason lets the form say so in the user's
@@ -361,6 +362,17 @@ export async function updateAsset(ctx: RequestContext, id: string, data: UpdateA
         // member. `undefined` leaves it unchanged; `''`/null clears it — neither
         // needs a membership check.
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
+
+        // A rename to a name another live asset holds gets the same named 409
+        // as a create (#4361); left to the index it was a bare P2002. Only an
+        // actual rename is checked: the edit form sends `name` on every save,
+        // and an unchanged name is this asset's own, which the index already
+        // admits. The comparison is the index's — exact and case-sensitive,
+        // so `findLiveByName` gets the name verbatim, as the write does. A
+        // missing asset (`before` null) still answers 404 below.
+        if (before && data.name !== undefined && data.name !== before.name) {
+            await assertAssetNameFree(db, ctx, data.name);
+        }
 
         // Re-derive the stored criticality from the effective C/I/A triad
         // (this-edit value ?? prior value ?? default 3). Always recomputing

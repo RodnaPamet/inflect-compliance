@@ -44,6 +44,7 @@ import { AttachedEvidencePanel } from '@/components/AttachedEvidencePanel';
 import { Heading } from '@/components/ui/typography';
 import { InheritedTestPlansPanel } from '@/components/InheritedTestPlansPanel';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel'), {
     loading: () => <SkeletonCard lines={3} />,
@@ -52,6 +53,7 @@ const TraceabilityPanel = dynamic(() => import('@/components/TraceabilityPanel')
 
 // getAsset → AssetRepository.getById (the Asset model; controls relation
 // fetched but unread here).
+
 /**
  * `AssetDetail` and `AssetRollups` now live in `@/lib/dto/asset.types` —
  * this page is a route module, not a home for a domain type. They are
@@ -405,8 +407,10 @@ export default function AssetDetailPage() {
                 body: JSON.stringify({ status }),
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.message || t('detail.changeStatusFailed', { status: res.status }));
+                // The API's refusal is `{ error: { message } }`; reading a
+                // top-level `message` dropped the server's reason every time.
+                const data: unknown = await res.json().catch(() => ({}));
+                throw new Error(apiErrorMessage(data, t('detail.changeStatusFailed', { status: res.status })));
             }
             await assetQuery.mutate();
         } catch (err) {
