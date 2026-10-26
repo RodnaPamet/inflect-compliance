@@ -574,3 +574,91 @@ describe('#3716 — a LEGACY_APP campaign renders its subjects', () => {
         expect(screen.getByTestId('access-review-close-button')).not.toBeDisabled();
     });
 });
+
+// ─── #3325 — a legacy campaign does not imply a whole population ─────────
+
+describe('#3325 — a LEGACY_APP campaign says when its coverage is unverified', () => {
+    function renderLegacy(review: Record<string, unknown>) {
+        return render(
+            withClient(
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview({ scope: 'LEGACY_APP', decisions: [], ...review }) as never}
+                    currentUserId="usr_admin"
+                    isAdmin
+                />,
+            ),
+        );
+    }
+
+    /** A subject frozen with the coverage `createLegacyAccessReview` writes into its provenance. */
+    const withCoverage = (id: string, populationCoverage: string) =>
+        legacySubject({
+            id,
+            snapshotJson: {
+                ...legacySubject().snapshotJson,
+                provenance: {
+                    snapshotId: 'snap-1',
+                    payloadHash: 'a'.repeat(64),
+                    mappingVersion: 3,
+                    connectionId: 'conn-legacy',
+                    populationCoverage,
+                },
+            },
+        });
+
+    it('shows "coverage unverified" over a snapshot whose coverage is UNKNOWN', () => {
+        renderLegacy({ connectedDecisions: [withCoverage('ldec_1', 'UNKNOWN')] });
+        const notice = screen.getByTestId('access-review-coverage-unverified');
+        // `useTranslations` is mocked to the identity, so the key is the text.
+        expect(notice.textContent).toContain('coverageUnverifiedTitle');
+        expect(notice.textContent).toContain('coverageUnverifiedBody');
+    });
+
+    it('stays shown on a fully DECIDED campaign — the moment it would otherwise read as a whole-population review', () => {
+        renderLegacy({
+            connectedDecisions: [{ ...withCoverage('ldec_1', 'UNKNOWN'), decision: 'CONFIRM' }],
+        });
+        expect(screen.getByTestId('access-review-close-button')).not.toBeDisabled();
+        expect(screen.getByTestId('access-review-coverage-unverified')).toBeInTheDocument();
+    });
+
+    it('a subject frozen before coverage existed reads unverified, not verified', () => {
+        // `legacySubject()` carries no provenance at all — the shape of every
+        // campaign created before #3325, none of whose snapshots was verified.
+        renderLegacy({ connectedDecisions: [legacySubject()] });
+        expect(screen.getByTestId('access-review-coverage-unverified')).toBeInTheDocument();
+    });
+
+    it('says nothing when every subject was frozen from a VERIFIED snapshot', () => {
+        renderLegacy({
+            connectedDecisions: [withCoverage('ldec_1', 'VERIFIED'), withCoverage('ldec_2', 'VERIFIED')],
+        });
+        expect(screen.queryByTestId('access-review-coverage-unverified')).not.toBeInTheDocument();
+    });
+
+    it('one subject short of VERIFIED is enough to show it', () => {
+        renderLegacy({
+            connectedDecisions: [withCoverage('ldec_1', 'VERIFIED'), withCoverage('ldec_2', 'UNKNOWN')],
+        });
+        expect(screen.getByTestId('access-review-coverage-unverified')).toBeInTheDocument();
+    });
+
+    it('a CONNECTED_APP campaign makes no coverage claim either way', () => {
+        render(
+            withClient(
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview({
+                        scope: 'CONNECTED_APP',
+                        decisions: [],
+                        connectedDecisions: [connectedSubject()],
+                    }) as never}
+                    currentUserId="usr_admin"
+                    isAdmin
+                />,
+            ),
+        );
+        expect(screen.queryByTestId('access-review-coverage-unverified')).not.toBeInTheDocument();
+    });
+});

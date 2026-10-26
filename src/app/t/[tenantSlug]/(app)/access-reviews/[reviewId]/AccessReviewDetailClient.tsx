@@ -53,6 +53,7 @@ import {
     subjectTableOf,
     type StoredAccessReviewScope,
 } from '@/lib/access-review/scope';
+import { frozenCampaignCoverage } from '@/lib/legacy-access/coverage';
 
 /**
  * The roles a MODIFY decision may target — a writer's list, because closing the
@@ -434,6 +435,11 @@ export function AccessReviewDetailClient({
     // refuses it too — this is the same rule stated where the operator sees it,
     // so the button is disabled rather than failing on press.
     const everySubjectDecided = subjectCount > 0 && decided === subjectCount;
+    // #3325 — VERIFIED only when every frozen subject says so; a legacy
+    // campaign with no subjects, or subjects frozen before coverage existed,
+    // reads unverified. `frozenCampaignCoverage` is the evidence PDF's reader too.
+    const legacyCoverageUnverified =
+        isLegacy && frozenCampaignCoverage(connectedRows.map((r) => r.snapshotJson)) !== 'VERIFIED';
 
     // ─── #3674 — the AGENT campaign's packs, narrowings and sample ──────
     //
@@ -1271,6 +1277,22 @@ export function AccessReviewDetailClient({
                 >
                     <strong className="font-semibold">{t('truncatedTitle')}</strong>{' '}
                     {t('truncatedBody', { count: subjectCount })}
+                </div>
+            ) : null}
+
+            {/* #3325 — the same warning one level up. A legacy application's
+                snapshot is not known to hold every account it has, so a page
+                that showed a decided campaign with no caveat would read as a
+                whole-population review. Read off the FROZEN subjects, as the
+                evidence is, so the page and the artefact cannot disagree. */}
+            {legacyCoverageUnverified ? (
+                <div
+                    role="status"
+                    data-testid="access-review-coverage-unverified"
+                    className="rounded-md border border-border-warning bg-bg-warning p-3 text-sm text-content-warning"
+                >
+                    <strong className="font-semibold">{t('coverageUnverifiedTitle')}</strong>{' '}
+                    {t('coverageUnverifiedBody')}
                 </div>
             ) : null}
 

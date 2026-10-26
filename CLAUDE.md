@@ -1530,6 +1530,16 @@ degrading.
   needs a low distinct count, a minimum row count, a repetition floor AND zero
   e-mail share — four terms, because any three of them admit a column of 12
   unique names.
+- **`COMPLETE` is about our read, never the application's population** (#3325).
+  That is `LegacyAccessSnapshot.populationCoverage`, `UNKNOWN` by the column's
+  SCHEMA default, and the pull does not name it (owner decision, 2026-10-09): a
+  default claiming a whole population with every caller overriding it is one new
+  transport away from a silent false claim. Only a transport that observed the
+  whole table itself may write `VERIFIED`, and none does. A campaign freezes it
+  into each subject's provenance; the campaign page and the evidence say
+  "coverage unverified" through `frozenCampaignCoverage`
+  (`lib/legacy-access/coverage.ts`). It is a label, not a gate — refusing
+  `UNKNOWN` refuses every legacy campaign — and it never folds into `status`.
 
 **Resolutions and the crosswalk, since Step 3c** (`usecases/legacy-reconcile.ts`).
 A run's verdicts are immutable: a second run ADDS rows keyed on
