@@ -3,8 +3,8 @@ name: iam-audit-procedures
 description: Re-perform one library v1 IAM audit procedure for one period from the raw rows given, conclude PASS, FAIL or INCONCLUSIVE by the catalogue's order, and name each exception for a finding proposal; or, given one period's workpapers, draft the short narrative a reviewer reads beside each, stating only what it records. Use when auditing leaver timeliness, recertification completeness, grant expiry, privileged access or agent authority, or when narrating their workpapers.
 license: proprietary
 metadata:
-  sourceRef: original guidance; procedures are Inflect audit catalogue version 1, library v1
-  version: '3'
+  sourceRef: original guidance; procedures are Inflect audit catalogue version 2, library v1
+  version: '4'
   requiredInput: periodLabel
   output: proposal
   controls: A.5.15, A.5.16, A.5.18, A.6.5, A.8.2, A.8.5, CC6.1, ASI02, ASI03
@@ -27,7 +27,10 @@ workpapers (the last section). You read and you propose; you change nothing.
 - `iam.recertification_completeness` (quarter). Unit: a review population. R1 a
   closed campaign covered it (`NOT_RECERTIFIED_IN_PERIOD`); R2 it had subjects
   and every one was decided (`CAMPAIGN_INCOMPLETE`); R3 its snapshot was not
-  truncated (`CAMPAIGN_TRUNCATED`); R4 it closed by its due date
+  truncated (`CAMPAIGN_TRUNCATED`) and, for a legacy application, the
+  population coverage its subjects were frozen with is VERIFIED
+  (`POPULATION_COVERAGE_UNVERIFIED`; a truncated campaign is only
+  `CAMPAIGN_TRUNCATED`); R4 it closed by its due date
   (`CLOSED_AFTER_DUE`); R5 nobody decided their own access (`SELF_REVIEW`); R6
   each revoke or modify took effect: a membership still as it was is
   `REVOCATION_NOT_EXECUTED`, a connected or legacy account still ACTIVE is

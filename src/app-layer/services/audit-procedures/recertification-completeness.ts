@@ -9,7 +9,8 @@
  *
  *   R1 a covering campaign exists                 → NOT_RECERTIFIED_IN_PERIOD
  *   R2 it is non-empty and fully decided          → CAMPAIGN_INCOMPLETE
- *   R3 it covered its whole population            → CAMPAIGN_TRUNCATED
+ *   R3 it covered its whole population            → CAMPAIGN_TRUNCATED /
+ *                                                   POPULATION_COVERAGE_UNVERIFIED (legacy)
  *   R4 it closed on time                          → CLOSED_AFTER_DUE
  *   R5 nobody decided their own access            → SELF_REVIEW
  *   R6 revocations took effect                    → REVOCATION_NOT_EXECUTED /
@@ -24,9 +25,24 @@
  * or `executed` figures in the campaign's audit rows, or its evidence PDF.
  * R2 is written `subjectCount > 0 && decided === subjectCount`, never
  * `decided === subjectCount`, which is true of an empty campaign.
+ *
+ * R3 on a LEGACY_APP campaign asks a second question (owner decision,
+ * 2026-10-26, #3325). `snapshotTruncated = false` says the campaign took every
+ * account the snapshot held; it cannot say the snapshot held every account the
+ * APPLICATION has, because the operator's shim ran the query and its row count
+ * is its own claim. That is the snapshot's `populationCoverage`, frozen into
+ * each subject's provenance at create and read here through the one allowlist
+ * reader, `frozenCampaignCoverage` — off the FROZEN subjects, never the live
+ * snapshot row, so a later pull cannot change what the campaign certified.
+ * Anything but VERIFIED is the exception `POPULATION_COVERAGE_UNVERIFIED`. A
+ * truncated campaign is `CAMPAIGN_TRUNCATED` whatever its coverage: one
+ * attribute, one result, and truncation is the observed fact — the campaign is
+ * KNOWN to have left accounts out — where unverified coverage only says nobody
+ * can tell. The other scopes have no coverage to read and rule R3 as before.
  */
 import type { AttributeResult, UnitJudgement } from '@/lib/agentic/audit-procedure-library';
 import { judgeUnit } from '@/lib/agentic/audit-procedure-library';
+import { frozenCampaignCoverage } from '@/lib/legacy-access/coverage';
 
 import {
     emailKey,
@@ -382,9 +398,10 @@ export const recertificationCompleteness: ProcedureModule = {
                             : { attribute: 'R2', result: 'EXCEPTION', code: 'CAMPAIGN_INCOMPLETE' },
                     );
                     results.push(
-                        camp.snapshotTruncated
-                            ? { attribute: 'R3', result: 'EXCEPTION', code: 'CAMPAIGN_TRUNCATED' }
-                            : { attribute: 'R3', result: 'MET' },
+                        r3CoveredWholePopulation(
+                            camp,
+                            isMemberships ? [] : (rowsByCampaign.get(camp.id) ?? []).map((r) => r.snapshotJson),
+                        ),
                     );
                     results.push(
                         camp.dueAt === null || camp.closedAt.getTime() <= camp.dueAt.getTime()
@@ -483,6 +500,21 @@ export const recertificationCompleteness: ProcedureModule = {
         };
     },
 };
+
+/**
+ * R3 — the campaign covered its whole population. Truncation first, because it
+ * is observed; then, for a LEGACY_APP campaign only, the population coverage
+ * its subjects were frozen with. `frozenSubjects` are the `snapshotJson` of
+ * the campaign's own decision rows, read whole: a truncated decision read is
+ * UNTESTABLE on R2 before R3 is asked. A membership campaign passes none.
+ */
+function r3CoveredWholePopulation(camp: Campaign, frozenSubjects: readonly unknown[]): AttributeResult {
+    if (camp.snapshotTruncated) return { attribute: 'R3', result: 'EXCEPTION', code: 'CAMPAIGN_TRUNCATED' };
+    if (camp.scope === 'LEGACY_APP' && frozenCampaignCoverage(frozenSubjects) !== 'VERIFIED') {
+        return { attribute: 'R3', result: 'EXCEPTION', code: 'POPULATION_COVERAGE_UNVERIFIED' };
+    }
+    return { attribute: 'R3', result: 'MET' };
+}
 
 function snapshotOf(json: unknown): Record<string, unknown> {
     return typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : {};

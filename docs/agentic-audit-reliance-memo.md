@@ -1,6 +1,6 @@
 # Reliance on the auditor agent's workpapers: memo to the external auditor
 
-Version **1**, for audit procedure catalogue version **1** (library v1). Step
+Version **2**, for audit procedure catalogue versions **1** and **2** (library v1). Step
 `4d` of [the agentic IAM plan](agentic-iam-roadmap.md), issue #3681.
 
 **Addressed to:** the certification body that holds Inflect's ISO/IEC 27001
@@ -20,7 +20,11 @@ the workpapers written in the pilot period from 2026-10-19 to 2026-10-20, on the
 basis of its own re-performed sample and internal audit's agreement rate. The
 record does not name the audit firm. An editorial change to this memo that
 alters no procedure, control, limit or request does not raise its version;
-replacing a firm's name with its role (2026-10-20) was such a change.
+replacing a firm's name with its role (2026-10-20) was such a change. Version 2
+(2026-10-26) is not: it adds catalogue version 2 (#4379), which changes what
+`iam.recertification_completeness` tests for a legacy application. The
+workpapers the conclusion on version 1 covers were all written under catalogue
+version 1, and no conclusion on version 2 is recorded.
 
 ## What we ask you to rely on
 
@@ -33,7 +37,7 @@ audit cycle, as audit evidence of the operation of those controls.
 | Procedure | What it tests | Control identifiers the catalogue cites |
 |---|---|---|
 | `iam.leaver_timeliness` | Leavers' directory access ends within the set window | ISO/IEC 27001:2022 A.5.16, A.5.18, A.6.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) |
-| `iam.recertification_completeness` | Every access recertification in the period closed over a non-empty population | ISO/IEC 27001:2022 A.5.18 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) |
+| `iam.recertification_completeness` | Every access recertification in the period closed over a non-empty population; under catalogue version 2, a legacy application's only over a population whose coverage was verified | ISO/IEC 27001:2022 A.5.18 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i) |
 | `iam.time_bounded_access_expiry` | Time-bounded access ended when it was due to | ISO/IEC 27001:2022 A.5.15, A.5.18 · SOC 2 CC6.1 · OWASP ASI03 |
 | `iam.privileged_access` | Privileged access is held only by approved holders | ISO/IEC 27001:2022 A.5.18, A.8.2, A.8.5 · SOC 2 CC6.1 · NIS2 Art. 21(2)(i), (j) |
 | `agent.authority_conformance` | Each agent acts only within the authority it was granted | OWASP ASI02, ASI03 · ISO/IEC 27001:2022 A.5.15, A.8.2 · **ISO/IEC 42001 A.9.4** · SOC 2 CC6.1 |
@@ -90,9 +94,9 @@ quarter is in it only if it lies wholly inside the cycle.
   A control in scope with no workpaper in the period is listed with that limit;
   it is never left out.
 - **One summary item.** It carries the framework, the period, each procedure with
-  the controls it is on and the procedures on none, the catalogue version and its
-  standing, the agreement rate over the whole pack with both definitions, and the
-  pack's limits.
+  the controls it is on and the procedures on none, each catalogue version its
+  workpapers were written under and the standing of each, the agreement rate
+  over the whole pack with both definitions, and the pack's limits.
 
 **What you can verify yourself.** A workpaper's population digest is the SHA-256
 over the procedure id, the period label and the sorted unit ids. Its sample
@@ -113,11 +117,12 @@ role in the rule, not by name.
 The pack states every limit that applies; it does not decide whether to rely.
 
 - **Library v1 is not an approved or agreed definition.** Internal audit's
-  approval of catalogue version 1 and the managed-service provider's agreement
-  of it are open on #3663, and each procedure's provider methodology reference
-  is open there too. The pack says so as
+  approval and the managed-service provider's agreement are open for both
+  catalogue versions: on #3663 for version 1 and on #4379 for version 2. Each
+  procedure's provider methodology reference is open too. The pack says so as
   `CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT` and
-  `CATALOGUE_NOT_AGREED_BY_PROVIDER` until both are recorded.
+  `CATALOGUE_NOT_AGREED_BY_PROVIDER`, judged for every version its workpapers
+  were written under, until each is recorded.
 - **ISO/IEC 42001 coverage is narrow.** Only `agent.authority_conformance` cites
   an ISO/IEC 42001 Annex A identifier (A.9.4). The other four procedures evidence
   access controls under ISO/IEC 27001:2022 Annex A and SOC 2 CC6.1, which the AI

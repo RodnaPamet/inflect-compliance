@@ -31,15 +31,20 @@ import {
     LIBRARY_V1_PROCEDURE_IDS,
     LIBRARY_V1_STATUS,
     LIBRARY_V1_STATUS_SENTENCE,
+    catalogueVersionStatus,
     isLibraryV1Procedure,
     type LibraryV1ProcedureId,
 } from './audit-procedure-library';
-import { PERIOD_LABEL, periodBounds } from './audit-workpaper';
+import { AUDIT_PROCEDURE_CATALOGUE_VERSION, PERIOD_LABEL, periodBounds } from './audit-workpaper';
 import { METRIC_DEFINITIONS, type MetricDefinition } from './report-definitions';
 import { workpaperReviewRate, type WorkpaperReviewRate } from './workpaper-review-sampling';
 
-/** Bumped when a snapshot's shape changes, so a reader can tell two packs apart. */
-export const RELIANCE_SNAPSHOT_VERSION = 1;
+/**
+ * Bumped when a snapshot's shape changes, so a reader can tell two packs apart.
+ * 2: the summary's `catalogue` gained `byVersion`, the standing of each catalogue
+ * version the pack's workpapers were written under (catalogue version 2, #4379).
+ */
+export const RELIANCE_SNAPSHOT_VERSION = 2;
 export const RELIANCE_CONTROL_SNAPSHOT_TYPE = 'AGENT_AUDIT_RELIANCE_CONTROL';
 export const RELIANCE_SUMMARY_SNAPSHOT_TYPE = 'AGENT_AUDIT_RELIANCE_SUMMARY';
 
@@ -237,12 +242,40 @@ export interface RelianceSummarySnapshot {
     readonly proceduresWithoutControl: readonly string[];
     readonly catalogue: {
         readonly versions: readonly number[];
+        /** The standing of the version in force. */
         readonly status: typeof LIBRARY_V1_STATUS;
+        /** The standing of each version in `versions`: a pack can hold workpapers of more than one. */
+        readonly byVersion: readonly CatalogueVersionEntry[];
         readonly statement: string;
     };
     readonly agreement: WorkpaperReviewRate & { readonly workpapers: number; readonly notDrawn: number };
     readonly definitions: readonly MetricDefinition[];
     readonly limits: readonly ReliancePackLimit[];
+}
+
+/**
+ * One catalogue version's standing as the pack states it. A version this build
+ * does not know reads UNKNOWN with no issue, never as approved.
+ */
+export interface CatalogueVersionEntry {
+    readonly catalogueVersion: number;
+    readonly internalAuditApproval: string;
+    readonly providerAgreement: string;
+    readonly providerMethodologyReference: string;
+    readonly recordedOn: string | null;
+}
+
+function catalogueVersionEntry(version: number): CatalogueVersionEntry {
+    const standing = catalogueVersionStatus(version);
+    return standing
+        ? { catalogueVersion: version, ...standing }
+        : {
+              catalogueVersion: version,
+              internalAuditApproval: 'UNKNOWN',
+              providerAgreement: 'UNKNOWN',
+              providerMethodologyReference: 'UNKNOWN',
+              recordedOn: null,
+          };
 }
 
 export interface ReliancePlanItem {
@@ -474,12 +507,21 @@ export function planReliancePack(input: RelianceInput): ReliancePlanResult {
         (p) => ![...procByControl.values()].some((procs) => procs.has(p)),
     );
     const packLimits: ReliancePackLimit[] = [];
-    // Widened to string on purpose: the limit holds for every value but the
-    // one that lifts it, so a status the catalogue adds later fails closed.
-    const approval: string = LIBRARY_V1_STATUS.internalAuditApproval;
-    const providerAgreement: string = LIBRARY_V1_STATUS.providerAgreement;
-    if (approval !== 'APPROVED') packLimits.push('CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT');
-    if (providerAgreement !== 'AGREED') packLimits.push('CATALOGUE_NOT_AGREED_BY_PROVIDER');
+    // Each version the pack's workpapers were written under answers for
+    // itself: a pack holding version 1 and version 2 workpapers is not relieved
+    // of a limit because the version in force lifted it. The fields are read as
+    // strings on purpose: the limit holds for every value but the one that lifts
+    // it, so a status the catalogue adds later, and a version this build does not
+    // know, fail closed. A pack is never assembled without a workpaper; were the
+    // list empty all the same, the version in force is judged rather than nothing,
+    // because `some` over no versions would lift every limit.
+    const versions = [...new Set(allEntries.map((e) => e.catalogueVersion))].sort((a, b) => a - b);
+    const byVersion = versions.map(catalogueVersionEntry);
+    const judged = byVersion.length > 0 ? byVersion : [catalogueVersionEntry(AUDIT_PROCEDURE_CATALOGUE_VERSION)];
+    if (judged.some((v) => v.internalAuditApproval !== 'APPROVED')) {
+        packLimits.push('CATALOGUE_NOT_APPROVED_BY_INTERNAL_AUDIT');
+    }
+    if (judged.some((v) => v.providerAgreement !== 'AGREED')) packLimits.push('CATALOGUE_NOT_AGREED_BY_PROVIDER');
     if (proceduresWithoutControl.length > 0) packLimits.push('PROCEDURE_WITHOUT_CONTROL');
     if (agreement.concluded === 0) packLimits.push('NO_CONCLUDED_REVIEW');
 
@@ -502,8 +544,9 @@ export function planReliancePack(input: RelianceInput): ReliancePlanResult {
         })),
         proceduresWithoutControl: [...proceduresWithoutControl],
         catalogue: {
-            versions: [...new Set(allEntries.map((e) => e.catalogueVersion))].sort((a, b) => a - b),
+            versions,
             status: LIBRARY_V1_STATUS,
+            byVersion,
             statement: LIBRARY_V1_STATUS_SENTENCE,
         },
         agreement,

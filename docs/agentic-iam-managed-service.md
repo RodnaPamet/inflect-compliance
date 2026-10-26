@@ -388,9 +388,9 @@ What the product holds here, and what it does not:
 - **No real vendor's agent has exchanged an A2A task** (#3752). The peer path is
   proven against an in-process fake peer.
 - **The procedure catalogue is adopted for this repository, not approved or
-  agreed.** Internal audit's approval and the provider's agreement of version 1
-  are open on #3663, and each procedure's provider methodology reference is open
-  there too.
+  agreed.** Internal audit's approval and the provider's agreement are open for
+  version 1 on #3663 and for version 2, the version in force, on #4379, and each
+  procedure's provider methodology reference is open too.
   The reliance pack states both as limits.
 
 ## The monthly report

@@ -430,7 +430,7 @@ stays open on #3752. The mapping is in
 
 ### Audit procedure catalogue
 
-`docs/agentic-audit-procedures.md` is catalogue version 1 of the agentic
+`docs/agentic-audit-procedures.md` is catalogue version 2 of the agentic
 auditor's procedures: leaver timeliness, recertification completeness,
 time-bounded access expiry, privileged access, agent authority conformance, stop
 control, approval quality and evidence sufficiency. Each names its control
@@ -439,10 +439,13 @@ exclusions, a keyed sample with a stated epoch, the attributes tested, the raw
 rows its re-performance recomputes, its exception and what makes it
 INCONCLUSIVE; an empty population is never a pass. It proposes library v1 as the
 first five. The repository owner's merge of its pull request is the repository
-owner's sign-off and adopts version 1 for this repository. The merge does not
-supply internal audit's approval or the managed-service provider's agreement:
-neither is recorded on #3663, each is recorded there when given, and while both are open library v1 is
-proposed to them, not approved or agreed. The catalogue records the ownership
+owner's sign-off and adopts the version for this repository: version 1 first,
+then version 2, which changes procedure 2's R3 for a legacy application
+(#4379; owner decision, 2026-10-26). The merge does not supply internal audit's
+approval or the managed-service provider's agreement: none is recorded, each is
+recorded when given on the version's issue (#3663 for version 1, #4379 for
+version 2), and while they are open library v1 is proposed to them, not
+approved or agreed. The catalogue records the ownership
 rule of decision 3: the second line is to own and operate the auditor agent, and
 internal audit is to approve its procedures and sample its workpapers. The
 line-of-defence value, the auditor independence check and the workpaper record
@@ -970,8 +973,8 @@ both as open, and every evidence row and finding proposal says so.
   the same procedure and period names the live proposal it already raised
   rather than raising it again, and links a finding a person created from it.
   The runner writes no Finding for a procedure run; nothing closes one.
-- **Two readings of catalogue version 1**, recorded for internal audit and
-  confirmed by the owner (2026-10-19): procedure 5 does not audit auditor
+- **Two readings of catalogue version 1**, unchanged in version 2, recorded for
+  internal audit and confirmed by the owner (2026-10-19): procedure 5 does not audit auditor
   agents' own windows (rule 8), and its A1 and A4 are asked at each recorded
   call in the hour. The check on the auditor is internal audit's sampling of
   its workpapers, step `3d`.
@@ -1108,7 +1111,8 @@ ISO/IEC 27001 certification body as the auditor.
   scope and one FRAMEWORK_COVERAGE summary. A control's item carries every
   workpaper of the period, internal audit's sampling record of each, the
   agreement figures and every limit that applies. The summary carries the scope,
-  the catalogue version and its standing, and the pack's agreement rate with its
+  each catalogue version its workpapers were written under and the standing of
+  each (the catalogue limits are judged per version), and the pack's agreement rate with its
   two definitions (`assurance.reliance_reperformance_agreement_rate` and the
   disagreement rate). The rules live in the pure planner
   `lib/agentic/audit-reliance.ts`.
@@ -1133,7 +1137,9 @@ ISO/IEC 27001 certification body as the auditor.
   control in scope, for SOC 2 and ISO/IEC 42001, over the workpapers written in
   the pilot period from 2026-10-19 to 2026-10-20, on its own re-performed sample
   and internal audit's agreement rate. The record does not name the audit firm.
-  Attaching it as Evidence to each control it covers is the tenant's act.
+  Attaching it as Evidence to each control it covers is the tenant's act. Memo
+  version 2 (2026-10-26) adds catalogue version 2; no conclusion on it is
+  recorded.
 
 ### Tenant-authored skills
 
