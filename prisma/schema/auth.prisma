@@ -207,6 +207,8 @@ model Tenant {
   peerAgents                        PeerAgent[]
   tenantSkills                      TenantSkill[]
   tenantSkillVersions               TenantSkillVersion[]
+  agentProfiles                     AgentProfile[]
+  agentProfileVersions              AgentProfileVersion[]
   peerAgentMessages                 PeerAgentMessage[]
   peerAgentKillSwitches             PeerAgentKillSwitch[]
   peerAgentInboundCredentials       PeerAgentInboundCredential[]

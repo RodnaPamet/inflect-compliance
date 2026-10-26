@@ -2760,6 +2760,44 @@ a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — i
 `'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
 every run it walks as STATIC (#4270).
 
+**An agent profile is what the agent should DO, never what it may reach**
+(Step 1a, #4143; `usecases/agent-profiles.ts` is the only writer,
+`usecases/agent-profile-runs.ts` the resolver). Rules that are each one careless
+edit from being undone:
+
+  - **A version runs only once a person other than its author approves it**
+    (owner decision 3): `admin.agent_registry`, refused for the author
+    (`SELF_DECISION`) and for an API key, and backed by the CHECK
+    `AgentProfileVersion_not_self_decided`. A version's text and settings are
+    frozen for every role by trigger; the one admitted change is the rotation
+    sweeps' re-wrap of `instructions`, so the resolver RECOMPUTES the hash of
+    the decrypted text on every resolution and refuses a mismatch
+    (`PROFILE_HASH_MISMATCH`). That recompute is the freeze for the encrypted
+    column; do not drop it as redundant.
+  - **Tools only narrow.** Save and approval refuse a tool the agent is not
+    granted, BY NAME (`TOOL_NOT_GRANTED`), never dropping it; at run time an
+    engine passes `def.profile.toolNames` to `offerToolSet` as `profileTools`,
+    which offers the intersection with the current grants and records each lost
+    tool as `PROFILE_TOOL_NOT_GRANTED`. An empty list offers nothing.
+  - **`agent-profile:<id>@v<n>` resolves only inside the caller's tenant**, and
+    only the APPROVED version in force; a malformed key is refused, never read
+    as a registered workflow key.
+  - **No engine runs a profile yet** (owner decision, 2026-10-26).
+    `runsProfiles(driver)` is a `Record<AgentDriver, boolean>`, false for every
+    engine, and admission refuses a profile before the run row exists:
+    `PROFILE_NEEDS_REASONING_ENGINE` on static, `PROFILE_ENGINE_CANNOT_RUN_PROFILES`
+    otherwise. Flue builds its prompt from the definition's description, so it
+    would run a profile while ignoring the instructions. The engine that sets
+    its entry true must render the pinned instructions as the operator's fenced
+    block, pass `profileTools`, and record the data category on the Anthropic
+    sub-processor row in the same diff (Step 2c).
+  - **A run pins `profileVersionId` and `profileInstructionsHash`**, written in
+    the CREATE and never after (trigger), both or neither (CHECK).
+  - **`AGENT_PROFILES` is the deployment's switch**, read like
+    `AGENT_DRIVER_FLUE`. Off, every profile route answers 404 before its
+    permission check (`whenAgentProfilesEnabled`) and a profile key is refused
+    at admission (`PROFILES_DISABLED`).
+
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
 `GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and

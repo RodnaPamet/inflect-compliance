@@ -606,6 +606,23 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'principal when the owner-orphan pass contains the agent.',
     },
 
+    // Agent profiles (Step 1a of docs/claude-agent-sdk-design.md, #4143). The
+    // same key as the catch-all below, stated on its own because which key it
+    // is was a decision (owner decision 3, 2026-10-25): a profile is what the
+    // agent should do, a register decision, and the four-eyes rule that a
+    // version is approved by someone other than its author is held in the
+    // usecase and by a CHECK, not by a second key. Above the inventory reads,
+    // so a GET of a profile, which carries the instructions, takes the
+    // register key and never the read-only view key.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/profile(\\/.*)?$`),
+        permission: 'admin.agent_registry',
+        note:
+            "Write, submit, approve, reject, retire and read an agent's profile: " +
+            'the instructions, tools, skills and model tier it runs with. The ' +
+            'approver is never the author (usecase and CHECK).',
+    },
+
     // ── The agent INVENTORY reads (#3710) ─────────────────────────────
     //
     // Read-only `admin.agent_registry_view` OR the register key, whose holders

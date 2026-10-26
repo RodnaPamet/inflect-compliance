@@ -542,6 +542,19 @@ model WorkflowRun {
   /// Names and hashes only — no skill text — so it is not in the Epic B
   /// encryption manifest; the hash points at the document in the repository.
   mountedSkills     Json?
+  /// THE AGENT PROFILE VERSION THIS RUN EXECUTES (Step 1a, #4143), or NULL
+  /// for every run of a registered workflow. A plain id with no FK, as
+  /// `parentExecutionId` is: the run must say what it was told after the
+  /// version is retired.
+  ///
+  /// WRITE-ONCE at the database with `profileInstructionsHash`, the way
+  /// `mountedSkills` is: a trigger refuses any change once the row exists, and
+  /// a CHECK holds the two to both-or-neither.
+  profileVersionId        String?
+  /// Hex SHA-256 of the profile instructions the run was given, recomputed
+  /// from the decrypted text when the run was admitted. "What was this agent
+  /// told" stays answerable after the profile is edited.
+  profileInstructionsHash String?
   /// THE A2A PEER WHOSE TASK STARTED THIS RUN (#3679), or NULL for every run
   /// a peer did not start. A plain id with no FK, as `parentExecutionId` is:
   /// the run must say who caused it after the peer is retired.
@@ -824,6 +837,10 @@ model RegisteredAgent {
   /// register's own governance artefact must never be the thing that takes a
   /// working agent dark.
   policyCard  AgentPolicyCard?
+  /// What the agent should DO, as a customer wrote it (Step 1a, #4143). At
+  /// most one, holding many versions. Never what it may REACH: its tools are a
+  /// subset of `tools` above, checked at save and again at run.
+  profile     AgentProfile?
   /// The agent's own behavioural history, and the latch it can throw. The
   /// breaker is optional for the same reason the card is: an agent registered
   /// before it existed has none, and an absent breaker refuses nothing.
@@ -3057,6 +3074,115 @@ model TenantSkillVersion {
   @@unique([id, tenantId])
   @@unique([tenantId, skillId, version])
   /// The mount read: a tenant's APPROVED versions.
+  @@index([tenantId, status])
+}
+
+/// AN AGENT PROFILE: what one registered agent should DO, as its tenant wrote
+/// it (Step 1a of `docs/claude-agent-sdk-design.md`, #4143).
+///
+/// The mutable head, in the `AgentPolicyCard` shape: one row per agent and a
+/// pointer to the version in force. Everything a run reads lives on an
+/// immutable `AgentProfileVersion`. A profile holds what the agent should do,
+/// never what it may reach: its tools are a subset of the agent's
+/// `RegisteredAgentTool` grants, and its instructions teach and never grant.
+model AgentProfile {
+  id       String @id @default(cuid())
+  tenantId String
+  agentId  String
+
+  /// The APPROVED version in force, or NULL before the first approval and
+  /// after the approved version is retired. An Int rather than an FK to the
+  /// version row, for the reason `AgentPolicyCard.currentVersion` gives: two
+  /// tables pointing at each other cannot be inserted in either order.
+  currentApprovedVersion Int?
+
+  /// A plain String with no FK: the record must survive the creator's account.
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Composite FK to the agent's (id, tenantId) key, so a profile can never
+  /// point at another tenant's agent. CASCADE: instructions for an agent that
+  /// no longer exists describe nothing.
+  agent    RegisteredAgent       @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  versions AgentProfileVersion[]
+
+  @@unique([id, tenantId])
+  /// One profile per agent. Declared twice for the reason `AgentPolicyCard`
+  /// gives: the tenant-leading index every tenant model needs, and the unique
+  /// over the relation's exact field list that Prisma needs to type it 1:1.
+  @@unique([tenantId, agentId])
+  @@unique([agentId, tenantId])
+}
+
+/// ONE IMMUTABLE VERSION of an agent profile (#4143).
+///
+/// An edit is a new version at DRAFT. A version runs only once someone other
+/// than its author has APPROVED it (owner decision 3, 2026-10-25), and a run
+/// pins its id and the hash of its decrypted instructions.
+///
+/// ## Held below the usecase
+///
+/// The approver is never the author (CHECK). The status moves one way, every
+/// stamp is written once, and a version's text and settings never change after
+/// insert, for any role (trigger). The one change the trigger admits besides
+/// the lifecycle is the rotation sweeps' re-wrap of the encrypted
+/// `instructions`: ciphertext to `v2:` ciphertext with every other column
+/// unchanged. Partial unique indexes admit one APPROVED and one open (DRAFT or
+/// SUBMITTED) version per profile; Prisma cannot declare a partial index, so do
+/// not add a `@@unique` for either. `app_user` holds no DELETE.
+///
+/// The closed vocabularies (`modelTier`, `effort`, `allowedTriggers`) are
+/// Strings pinned by CHECKs rather than Postgres enums, for the reason
+/// `RegisteredAgentTool.toolName` gives: widening one is a CHECK change, not an
+/// `ALTER TYPE` that fails still-running containers mid-deploy.
+model AgentProfileVersion {
+  id        String @id @default(cuid())
+  tenantId  String
+  profileId String
+  /// 1, 2, 3 … per profile.
+  version   Int
+
+  /// What the agent should do, in the tenant's words. Sanitised and scanned at
+  /// the write seam, and encrypted at rest (Epic B).
+  instructions     String
+  /// Hex SHA-256 of `instructions` as stored in plaintext. A run recomputes it
+  /// from the decrypted text and refuses a version whose text no longer
+  /// matches, whoever changed it.
+  instructionsHash String
+  /// The MCP tools the profile uses: a subset of the agent's grants when it
+  /// was saved, and intersected with the grants again at run time.
+  toolNames        String[]
+  /// The skills the profile mounts, as a JSON array of `{ origin, name }`.
+  skillRefs        Json
+  /// A deployment tier, never a model id (`PROFILE_MODEL_TIERS`; CHECK).
+  modelTier        String
+  /// `PROFILE_EFFORTS`; CHECK.
+  effort           String
+  /// 1 to `ENGINE_CAPS.MAX_STEPS`; CHECK.
+  maxTurns         Int
+  outputKind       AgentProfileOutputKind
+  /// `PROFILE_TRIGGERS`: ASK, AUTOMATION, TEST_RUN; CHECK, non-empty.
+  allowedTriggers  String[]
+
+  status            AgentProfileVersionStatus @default(DRAFT)
+  authoredByUserId  String
+  submittedAt       DateTime?
+  submittedByUserId String?
+  /// Who approved or rejected it. Never `authoredByUserId` (CHECK).
+  decidedAt         DateTime?
+  decidedByUserId   String?
+  retiredAt         DateTime?
+  retiredByUserId   String?
+
+  createdAt DateTime @default(now())
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profile AgentProfile @relation(fields: [profileId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, profileId, version])
   @@index([tenantId, status])
 }
 
