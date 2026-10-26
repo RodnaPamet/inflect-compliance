@@ -33,6 +33,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
+import { riskCanCreate } from '../_shared/bulk-permissions';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { formatTailAwareAle } from '@/lib/tail-language';
 import type { DashboardPayload } from '@/app-layer/usecases/risk-dashboard';
@@ -249,7 +250,7 @@ export default function RiskBoardPage() {
                 <Heading level={2} className="mb-2">{t('board.hygiene')}</Heading>
                 {totalCount === 0 ? (
                     <div data-testid="board-hygiene-empty">
-                        <RiskFirstRunEmpty size="sm" />
+                        <RiskFirstRunEmpty size="sm" canCreate={riskCanCreate(tenant)} />
                     </div>
                 ) : (
                     <p className="text-sm text-content-default">

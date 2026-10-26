@@ -39,8 +39,9 @@ The uptime alert fires within about six minutes of an outage. How long the
 email then waits for a person is not bounded, and no acknowledgement or
 response time is committed. An outage at 03:00 waits until someone reads it.
 
-[`docs/change-management-policy.md`](change-management-policy.md) refers to
-this runbook for the on-call rotation. That rotation does not exist.
+[`docs/change-management-policy.md`](change-management-policy.md#on-call-coverage)
+says what that means for changes: out of hours, nobody is assigned to review
+or merge, and an emergency fix waits for a reviewer like any other change.
 
 ## Getting onto the VM
 

@@ -1834,7 +1834,8 @@
       "emptyFilteredDesc": "Clear a filter to see the rest of the register.",
       "resourceSingular": "arrangement",
       "resourcePlural": "arrangements"
-    }
+    },
+    "loadError": "Couldn't load risks. Check your connection and try again."
   },
   "controls": {
     "title": "Controls Library",
@@ -2606,7 +2607,7 @@
       "viewList": "List",
       "viewGallery": "Gallery",
       "archivedNoticeTitle": "Archived evidence",
-      "archivedNoticeBody": "Archived evidence should not be used in active audit packs or compliance assessments. To reuse it, unarchive it. Evidence whose retention date has passed needs a new Retention date first: set one in Edit evidence, then unarchive it.",
+      "archivedNoticeBody": "Archived evidence should not be used in active audit packs or compliance assessments. To reuse it, unarchive it. Evidence whose retention date has passed comes back too, without that date: set a new one afterwards if it needs one.",
       "emptyArchivedTitle": "No archived evidence",
       "emptyExpiringTitle": "No evidence expiring soon",
       "emptyFilterTitle": "No evidence matches your filters",
@@ -2779,7 +2780,7 @@
       "titleMultiHint": "Per-file titles default to the filename when uploading multiple files.",
       "retainLabel": "Retain until",
       "retainTooltipAria": "About retention dates",
-      "retainTooltip": "After this date the evidence is archived out of the active set, and 365 days later it is deleted for good. Until then an Editor or Admin can bring it back by setting a new retention date and unarchiving it.",
+      "retainTooltip": "After this date the evidence is archived out of the active set, and 365 days later it is deleted for good. Until then an Editor or Admin can bring it back by unarchiving it, which also clears the date that passed.",
       "retainPlaceholder": "Select date",
       "retainAria": "Retain until",
       "retainHint": "Optional — applies to every file in the batch.",

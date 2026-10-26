@@ -335,6 +335,58 @@ describe('Tasks list — the write surface each role actually gets', () => {
         expect(labels).toEqual([BULK.changeStatus, BULK.setDueDate]);
     });
 
+    /**
+     * #4328 — a custom role can hold a granular key its base role's write
+     * tier does not reach (`permissionsExceeding` compares the grant with
+     * the GRANTER's set, not the base role's). `assertCanCreateTask` and
+     * `assertCanWriteTasks` assert `canWrite` behind `tasks.create` /
+     * `tasks.edit`, so a Reader-based role holding those keys was offered
+     * the Task button, the pencil and an editable quick view, and every
+     * attempt came back refused.
+     */
+    it('a custom role on a Reader base holding tasks.create is offered no Task button', async () => {
+        mountAs('READER', { create: true });
+        await screen.findByText(HIGH_TASK.title);
+
+        expect(screen.queryByRole('button', { name: LIST.addBtn })).not.toBeInTheDocument();
+        expect(document.getElementById('new-task-btn')).toBeNull();
+    });
+
+    it('a custom role on a Reader base holding tasks.edit gets no pencil', async () => {
+        mountAs('READER', { edit: true });
+        await screen.findByText(HIGH_TASK.title);
+
+        expect(screen.queryByTestId(`task-quick-edit-${HIGH_TASK.id}`)).not.toBeInTheDocument();
+    });
+
+    it('a custom role on a Reader base holding tasks.edit gets a read-only quick view', async () => {
+        mountAs('READER', { edit: true });
+        await screen.findByText(HIGH_TASK.title);
+
+        // The title still opens the quick view — reading is allowed — but
+        // its fields are locked and no autosave line promises a save.
+        fireEvent.click(screen.getByTestId(`task-title-${HIGH_TASK.id}`));
+        await screen.findByRole('button', { name: panelCloseName });
+        await waitFor(() =>
+            expect(document.getElementById('task-panel-title')).toHaveValue(HIGH_TASK.title),
+        );
+        expect(document.getElementById('task-panel-title')).toBeDisabled();
+        expect(screen.queryByTestId('task-edit-autosave-status')).not.toBeInTheDocument();
+    });
+
+    it('an EDITOR’s quick view is editable — the control for the case above', async () => {
+        mountAs('EDITOR');
+        await screen.findByText(HIGH_TASK.title);
+
+        fireEvent.click(screen.getByTestId(`task-title-${HIGH_TASK.id}`));
+        await screen.findByRole('button', { name: panelCloseName });
+        await waitFor(() =>
+            expect(document.getElementById('task-panel-title')).toHaveValue(HIGH_TASK.title),
+        );
+        expect(document.getElementById('task-panel-title')).toBeEnabled();
+        expect(screen.getByTestId('task-edit-autosave-status')).toBeInTheDocument();
+    });
+
     it.each(['OWNER', 'ADMIN'] as const)('%s is offered the Deleted view', async (role) => {
         mountAs(role);
         await screen.findByText(HIGH_TASK.title);

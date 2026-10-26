@@ -49,7 +49,9 @@ describe('first-run empty state — mount coverage', () => {
 
     it('the dashboard status-breakdown slot mounts the primitive', () => {
         expect(dashboard).toMatch(IMPORT);
-        expect(dashboard).toMatch(/emptyState=\{<RiskFirstRunEmpty size="sm" \/>\}/);
+        // Props after `size` are allowed: `canCreate` decides the CTA, and
+        // tests/rendered/risk-dashboard-empty-register-create.test.tsx renders it.
+        expect(dashboard).toMatch(/emptyState=\{<RiskFirstRunEmpty size="sm"[^>]*\/>\}/);
         // The legacy plain-<p> shape that used to fill the slot is gone.
         expect(dashboard).not.toMatch(
             /emptyState=\{\s*<p [^>]*>\s*\{t\('noRisksYet'\)\}\s*<\/p>/,
@@ -58,7 +60,8 @@ describe('first-run empty state — mount coverage', () => {
 
     it('the board hygiene-empty branch mounts the primitive', () => {
         expect(board).toMatch(IMPORT);
-        expect(board).toMatch(/<RiskFirstRunEmpty size="sm" \/>/);
+        // As above; tests/rendered/risk-board-page.test.tsx renders the CTA rule.
+        expect(board).toMatch(/<RiskFirstRunEmpty size="sm"[^>]*\/>/);
         // Legacy "No risks on the register yet" plain <p> is gone.
         expect(board).not.toMatch(
             /className="text-sm text-content-subtle"[\s\S]{0,60}data-testid="board-hygiene-empty"/,

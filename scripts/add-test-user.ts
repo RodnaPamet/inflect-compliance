@@ -3,7 +3,7 @@
  * Usage: npx tsx scripts/add-test-user.ts
  */
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '@/lib/auth/passwords';
 import { hashForLookup } from '@/lib/security/encryption';
 
 const prisma = new PrismaClient();
@@ -21,7 +21,7 @@ async function main() {
     // Match the prod BCRYPT_COST (see src/lib/auth/passwords.ts). Keeping
     // the seed cost in lockstep avoids a rehash-on-verify storm the first
     // time a test user logs in after a fresh seed.
-    const passwordHash = await bcrypt.hash('password123', 12);
+    const passwordHash = await hashPassword('password123');
 
     for (const u of users) {
         // Create or find user

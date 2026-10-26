@@ -357,21 +357,31 @@ describe('unarchiveEvidence', () => {
         expect(payload.action).toBe('EVIDENCE_UNARCHIVED');
     });
 
-    it('refuses while the retention date has passed, and changes nothing (#4277, owner decision)', async () => {
-        // A new or empty retention date, set in Edit evidence, is the way back.
-        // Unarchive does not clear the date or the policy as a side effect.
+    it('clears the expiry and a lapsed retention schedule, so the row returns to the active list (#4277)', async () => {
+        const expiredAt = new Date('2026-01-01T00:00:00Z');
+        const retentionUntil = new Date('2025-12-31T00:00:00Z');
         (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue({
-            id: 'ev-1', title: 'X', isArchived: true,
-            expiredAt: new Date('2026-01-01T00:00:00Z'),
-            retentionUntil: new Date('2025-12-31T00:00:00Z'),
+            id: 'ev-1', title: 'X', isArchived: true, expiredAt, retentionUntil,
             retentionPolicy: 'DAYS_AFTER_UPLOAD', retentionDays: 30,
         });
+        (mockDb.evidence.update as jest.Mock).mockResolvedValue({ id: 'ev-1', isArchived: false });
 
-        await expect(unarchiveEvidence(editorCtx, 'ev-1')).rejects.toMatchObject({
-            details: { reason: 'RETENTION_DATE_PASSED' },
+        await unarchiveEvidence(editorCtx, 'ev-1');
+
+        expect((mockDb.evidence.update as jest.Mock).mock.lastCall[0].data).toEqual({
+            isArchived: false,
+            expiredAt: null,
+            retentionUntil: null,
+            retentionPolicy: 'NONE',
+            retentionDays: null,
         });
-        expect(mockDb.evidence.update).not.toHaveBeenCalled();
-        expect(logEvent).not.toHaveBeenCalled();
+        const details = (logEvent as jest.Mock).mock.lastCall[2].detailsJson;
+        expect(details.clearedExpiredAt).toBe(expiredAt.toISOString());
+        expect(details.clearedRetention).toEqual({
+            retentionUntil: retentionUntil.toISOString(),
+            retentionPolicy: 'DAYS_AFTER_UPLOAD',
+            retentionDays: 30,
+        });
     });
 
     it('keeps a retention date that is still ahead', async () => {
@@ -388,7 +398,7 @@ describe('unarchiveEvidence', () => {
             isArchived: false,
             expiredAt: null,
         });
-        expect((logEvent as jest.Mock).mock.lastCall[2].detailsJson.clearedExpiredAt).toBeNull();
+        expect((logEvent as jest.Mock).mock.lastCall[2].detailsJson.clearedRetention).toBeNull();
     });
 
     it('unarchives an expired row whose archive flag was already cleared', async () => {
