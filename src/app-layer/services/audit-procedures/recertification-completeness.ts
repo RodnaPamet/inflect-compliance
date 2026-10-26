@@ -397,7 +397,12 @@ export const recertificationCompleteness: ProcedureModule = {
                             ? { attribute: 'R2', result: 'MET' }
                             : { attribute: 'R2', result: 'EXCEPTION', code: 'CAMPAIGN_INCOMPLETE' },
                     );
-                    results.push(r3CoveredWholePopulation(camp, rows));
+                    results.push(
+                        r3CoveredWholePopulation(
+                            camp,
+                            isMemberships ? [] : (rowsByCampaign.get(camp.id) ?? []).map((r) => r.snapshotJson),
+                        ),
+                    );
                     results.push(
                         camp.dueAt === null || camp.closedAt.getTime() <= camp.dueAt.getTime()
                             ? { attribute: 'R4', result: 'MET' }
@@ -499,15 +504,13 @@ export const recertificationCompleteness: ProcedureModule = {
 /**
  * R3 — the campaign covered its whole population. Truncation first, because it
  * is observed; then, for a LEGACY_APP campaign only, the population coverage
- * its subjects were frozen with. `rows` are the campaign's own decision rows,
- * read whole: a truncated decision read is UNTESTABLE on R2 before R3 is asked.
+ * its subjects were frozen with. `frozenSubjects` are the `snapshotJson` of
+ * the campaign's own decision rows, read whole: a truncated decision read is
+ * UNTESTABLE on R2 before R3 is asked. A membership campaign passes none.
  */
-function r3CoveredWholePopulation(
-    camp: Campaign,
-    rows: readonly { snapshotJson?: unknown }[],
-): AttributeResult {
+function r3CoveredWholePopulation(camp: Campaign, frozenSubjects: readonly unknown[]): AttributeResult {
     if (camp.snapshotTruncated) return { attribute: 'R3', result: 'EXCEPTION', code: 'CAMPAIGN_TRUNCATED' };
-    if (camp.scope === 'LEGACY_APP' && frozenCampaignCoverage(rows.map((r) => r.snapshotJson)) !== 'VERIFIED') {
+    if (camp.scope === 'LEGACY_APP' && frozenCampaignCoverage(frozenSubjects) !== 'VERIFIED') {
         return { attribute: 'R3', result: 'EXCEPTION', code: 'POPULATION_COVERAGE_UNVERIFIED' };
     }
     return { attribute: 'R3', result: 'MET' };
