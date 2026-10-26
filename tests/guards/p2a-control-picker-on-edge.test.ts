@@ -103,7 +103,6 @@ describe("Epic P2-PR-A — control picker on edge", () => {
                 /data-testid="inspector-edge-control-picker"/,
             );
             // "Linked control" is localized — assert the catalog value + key ref.
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const en = require('../../messages/en.json');
             expect(en.automation.inspector.linkedControl).toBe('Linked control');
             expect(src).toMatch(/aria-label=\{t\("linkedControl"\)\}/);

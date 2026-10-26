@@ -20,8 +20,9 @@ import {
     assertNotSelfDeactivation,
 } from '../policies/admin.policies';
 import { assertCanRead } from '../policies/common';
+import { memberCanSignOffTasks, REVIEWER_ELIGIBILITY_SELECT } from './task-reviewer-eligibility';
 import { logEvent } from '../events/audit';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
 import type { Role } from '@prisma/client';
 import {
@@ -30,9 +31,16 @@ import {
     isMemberRoleChangeRole,
     isOwnerManagedRole,
     mayCarryCustomRole,
+    OWNER_MANAGED_MEMBERSHIP_END_REFUSAL,
+    ownerManagedMembershipEndMessage,
     ownerManagedRoleMessage,
     unassignableRoleMessage,
 } from '@/lib/roles';
+import {
+    assertCustomRoleAssignableInTx,
+    logCustomRoleChange,
+    writeCustomRoleInTx,
+} from './custom-roles';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -123,6 +131,16 @@ export interface AssignableUser {
 
 export async function listAssignableUsers(
     ctx: RequestContext,
+    options: {
+        /**
+         * #4278 — only the members a task's reviewer may be: those whose
+         * role can edit tasks, and so can sign one off. The same rule the
+         * task write paths enforce (`memberCanSignOffTasks`), so the
+         * reviewer picker offers exactly the people the write accepts.
+         * The roster shape is unchanged — no role leaves the server.
+         */
+        taskReviewersOnly?: boolean;
+    } = {},
 ): Promise<AssignableUser[]> {
     assertCanRead(ctx);
     const memberships = await runInTenantContext(ctx, (db) =>
@@ -132,6 +150,7 @@ export async function listAssignableUsers(
                 status: 'ACTIVE',
             },
             select: {
+                ...REVIEWER_ELIGIBILITY_SELECT,
                 user: {
                     select: {
                         id: true,
@@ -145,7 +164,10 @@ export async function listAssignableUsers(
             take: MEMBERSHIP_SCAN_CAP,
         }),
     );
-    return memberships.map((m) => ({
+    const eligible = options.taskReviewersOnly
+        ? memberships.filter((m) => memberCanSignOffTasks(m))
+        : memberships;
+    return eligible.map((m) => ({
         id: m.user.id,
         name: m.user.name,
         email: m.user.email,
@@ -170,6 +192,15 @@ export async function inviteTenantMember(
 
 // ─── Update Member Role ───
 
+/** The membership row the role change and the custom-role change act on. */
+type ActiveMembership = {
+    id: string;
+    userId: string;
+    role: Role;
+    customRoleId: string | null;
+    user: { id: string; name: string | null; email: string };
+};
+
 /**
  * Change an EXISTING, ACTIVE member's built-in role — the members page.
  *
@@ -189,112 +220,219 @@ export async function updateTenantMemberRole(
     ctx: RequestContext,
     input: { membershipId: string; role: Role }
 ) {
-    assertCanChangeRoles(ctx);
-
-    // `MEMBER_ROLE_CHANGE_ROLES`, not `Role`: a new enum value is unassignable
-    // here until it is added there on purpose.
-    if (!isMemberRoleChangeRole(input.role)) {
-        throw badRequest(unassignableRoleMessage(input.role));
-    }
-    // Into an OWNER-managed role — refused before the membership is even read.
-    // OWNER keeps its own wording below; this is the AI_ADMIN half.
-    const intoOwnerManaged = input.role !== 'OWNER' && isOwnerManagedRole(input.role);
-    if (intoOwnerManaged && !ctx.appPermissions.admin.owner_management) {
-        throw forbidden(ownerManagedRoleMessage(input.role));
-    }
+    assertRoleChangeRequested(ctx, input.role);
 
     return runInTenantContext(ctx, async (db) => {
-        const membership = await db.tenantMembership.findFirst({
-            where: {
-                id: input.membershipId,
-                tenantId: ctx.tenantId,
-                status: 'ACTIVE',
-            },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-
-        if (!membership) {
-            throw notFound('Membership not found or not active.');
-        }
-
-        // Safety: prevent self-demotion
-        assertNotSelfDemotion(ctx, membership.userId, input.role);
-
-        // Safety: OWNER-boundary checks — only OWNERs can touch OWNER memberships
-        // or promote to OWNER. The DB trigger is the backstop; these checks are
-        // the user-friendly front door with clearer error messages.
-        if (input.role === 'OWNER' && !ctx.appPermissions.admin.owner_management) {
-            throw forbidden('Only OWNERs can promote to OWNER.');
-        }
-        if (membership.role === 'OWNER' && !ctx.appPermissions.admin.owner_management) {
-            throw forbidden('Only OWNERs can modify an OWNER membership.');
-        }
-        // Out of an OWNER-managed role (AI_ADMIN).
-        if (isOwnerManagedRole(membership.role) && !ctx.appPermissions.admin.owner_management) {
-            throw forbidden(ownerManagedRoleMessage(membership.role));
-        }
-
-        // A role whose scope is always the built-in one (OWNER, AI_ADMIN) never
-        // sits under a custom role, which would replace it at resolution. This
-        // also refuses a no-op OWNER → OWNER on a legacy row that carries one:
-        // the database CHECK would refuse that write anyway, without a reason.
-        if (membership.customRoleId && !mayCarryCustomRole(input.role)) {
-            throw new ConflictError(builtInScopeRoleMessage(input.role, 'promote'), {
-                reason: BUILT_IN_SCOPE_REFUSAL,
-            });
-        }
-
-        // Safety: last-OWNER protection — do not demote the only OWNER.
-        if (membership.role === 'OWNER' && input.role !== 'OWNER') {
-            const ownerCount = await db.tenantMembership.count({
-                where: {
-                    tenantId: ctx.tenantId,
-                    role: 'OWNER',
-                    status: 'ACTIVE',
-                },
-            });
-            if (ownerCount <= 1) {
-                throw forbidden('Cannot demote the last OWNER. Promote another OWNER first.');
-            }
-        }
-
-        // Safety: last-admin protection (legacy — keep for non-OWNER admins)
-        if (membership.role === 'ADMIN' && input.role !== 'ADMIN' && input.role !== 'OWNER') {
-            const adminCount = await db.tenantMembership.count({
-                where: {
-                    tenantId: ctx.tenantId,
-                    role: 'ADMIN',
-                    status: 'ACTIVE',
-                },
-            });
-            if (adminCount <= 1) {
-                throw forbidden('Cannot remove the last admin. Promote another member first.');
-            }
-        }
-
-        const oldRole = membership.role;
-
+        const membership = await findActiveMembership(db, ctx, input.membershipId);
+        await assertRoleChangeAllowedInTx(db, ctx, membership, input.role);
         const updated = await db.tenantMembership.update({
             where: { id: input.membershipId },
             data: { role: input.role },
             include: { user: { select: { id: true, name: true, email: true } } },
         });
-
-        await logEvent(db, ctx, {
-            action: 'MEMBER_ROLE_CHANGED',
-            entityType: 'TenantMembership',
-            entityId: updated.id,
-            details: `Role changed: ${oldRole} → ${input.role} for ${membership.user.email}`,
-            detailsJson: {
-                category: 'status_change',
-                entityName: 'TenantMembership',
-                fromStatus: oldRole,
-                toStatus: input.role,
-            },
-        });
-
+        await logRoleChange(db, ctx, membership, input.role, updated.id);
         return updated;
     });
+}
+
+/**
+ * The members page's Save when it changes BOTH the role and the custom role —
+ * all or nothing (#4118).
+ *
+ * These were two requests' worth of work run one after the other, role first,
+ * so a refused custom role (one the caller may not grant, or one deleted since
+ * the page loaded) answered an error while the role change had already
+ * committed. Now every check of both halves runs first, against the
+ * membership as read — the custom-role half against the role it is about to
+ * hold — then both writes, then both audit rows. A refusal of either half
+ * writes nothing.
+ *
+ * Each half is the same code its single-field usecase runs
+ * (`updateTenantMemberRole`, `assignCustomRole`), so the combination can
+ * refuse nothing the two would allow one after the other, and allow nothing
+ * either would refuse.
+ */
+export async function updateTenantMemberRoleAndCustomRole(
+    ctx: RequestContext,
+    input: { membershipId: string; role: Role; customRoleId: string | null }
+) {
+    assertRoleChangeRequested(ctx, input.role);
+    assertCanManageMembers(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const membership = await findActiveMembership(db, ctx, input.membershipId);
+        await assertRoleChangeAllowedInTx(db, ctx, membership, input.role);
+        await assertCustomRoleAssignableInTx(db, ctx, input.role, input.customRoleId);
+
+        const roleChanged = await db.tenantMembership.update({
+            where: { id: input.membershipId },
+            data: { role: input.role },
+            include: { user: { select: { id: true, name: true, email: true } } },
+        });
+        const updated = await writeCustomRoleInTx(db, input.membershipId, input.customRoleId);
+
+        await logRoleChange(db, ctx, membership, input.role, roleChanged.id);
+        await logCustomRoleChange(db, ctx, {
+            membership: { ...membership, role: input.role },
+            updated,
+            customRoleId: input.customRoleId,
+        });
+        return updated;
+    });
+}
+
+/** The role change's checks that need no database: the caller and the role asked for. */
+function assertRoleChangeRequested(ctx: RequestContext, role: Role): void {
+    assertCanChangeRoles(ctx);
+
+    // `MEMBER_ROLE_CHANGE_ROLES`, not `Role`: a new enum value is unassignable
+    // here until it is added there on purpose.
+    if (!isMemberRoleChangeRole(role)) {
+        throw badRequest(unassignableRoleMessage(role));
+    }
+    // Into an OWNER-managed role — refused before the membership is even read.
+    // OWNER keeps its own wording below; this is the AI_ADMIN half.
+    const intoOwnerManaged = role !== 'OWNER' && isOwnerManagedRole(role);
+    if (intoOwnerManaged && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden(ownerManagedRoleMessage(role));
+    }
+}
+
+async function findActiveMembership(
+    db: PrismaTx,
+    ctx: RequestContext,
+    membershipId: string,
+): Promise<ActiveMembership> {
+    const membership = await db.tenantMembership.findFirst({
+        where: {
+            id: membershipId,
+            tenantId: ctx.tenantId,
+            status: 'ACTIVE',
+        },
+        include: { user: { select: { id: true, name: true, email: true } } },
+    });
+
+    if (!membership) {
+        throw notFound('Membership not found or not active.');
+    }
+    return membership;
+}
+
+/** Every refusal of a role change that reads the membership or the tenant. Writes nothing. */
+async function assertRoleChangeAllowedInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    membership: ActiveMembership,
+    role: Role,
+): Promise<void> {
+    // Safety: prevent self-demotion
+    assertNotSelfDemotion(ctx, membership.userId, role);
+
+    // Safety: OWNER-boundary checks — only OWNERs can touch OWNER memberships
+    // or promote to OWNER. The DB trigger is the backstop; these checks are
+    // the user-friendly front door with clearer error messages.
+    if (role === 'OWNER' && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden('Only OWNERs can promote to OWNER.');
+    }
+    if (membership.role === 'OWNER' && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden('Only OWNERs can modify an OWNER membership.');
+    }
+    // Out of an OWNER-managed role (AI_ADMIN).
+    if (isOwnerManagedRole(membership.role) && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden(ownerManagedRoleMessage(membership.role));
+    }
+
+    // A role whose scope is always the built-in one (OWNER, AI_ADMIN) never
+    // sits under a custom role, which would replace it at resolution. This
+    // also refuses a no-op OWNER → OWNER on a legacy row that carries one:
+    // the database CHECK would refuse that write anyway, without a reason.
+    if (membership.customRoleId && !mayCarryCustomRole(role)) {
+        throw new ConflictError(builtInScopeRoleMessage(role, 'promote'), {
+            reason: BUILT_IN_SCOPE_REFUSAL,
+        });
+    }
+
+    // Safety: last-OWNER protection — do not demote the only OWNER.
+    if (membership.role === 'OWNER' && role !== 'OWNER') {
+        const ownerCount = await db.tenantMembership.count({
+            where: {
+                tenantId: ctx.tenantId,
+                role: 'OWNER',
+                status: 'ACTIVE',
+            },
+        });
+        if (ownerCount <= 1) {
+            throw forbidden('Cannot demote the last OWNER. Promote another OWNER first.');
+        }
+    }
+
+    // Safety: last-admin protection (legacy — keep for non-OWNER admins)
+    if (membership.role === 'ADMIN' && role !== 'ADMIN' && role !== 'OWNER') {
+        await assertNotLastActiveAdmin(db, ctx, 'Cannot remove the last admin. Promote another member first.');
+    }
+}
+
+async function logRoleChange(
+    db: PrismaTx,
+    ctx: RequestContext,
+    membership: ActiveMembership,
+    role: Role,
+    entityId: string,
+): Promise<void> {
+    await logEvent(db, ctx, {
+        action: 'MEMBER_ROLE_CHANGED',
+        entityType: 'TenantMembership',
+        entityId,
+        details: `Role changed: ${membership.role} → ${role} for ${membership.user.email}`,
+        detailsJson: {
+            category: 'status_change',
+            entityName: 'TenantMembership',
+            fromStatus: membership.role,
+            toStatus: role,
+        },
+    });
+}
+
+/**
+ * Last-admin protection (legacy — kept for non-OWNER admins): refuse a change
+ * that would leave the tenant with no ACTIVE ADMIN. The role change, the
+ * deactivation and the removal each ask it, with their own sentence, for a
+ * target that is an ACTIVE ADMIN.
+ */
+async function assertNotLastActiveAdmin(
+    db: PrismaTx,
+    ctx: RequestContext,
+    refusal: string,
+): Promise<void> {
+    const adminCount = await db.tenantMembership.count({
+        where: {
+            tenantId: ctx.tenantId,
+            role: 'ADMIN',
+            status: 'ACTIVE',
+        },
+    });
+    if (adminCount <= 1) {
+        throw forbidden(refusal);
+    }
+}
+
+/**
+ * Only an OWNER (a holder of `admin.owner_management`) ends an OWNER-managed
+ * membership — OWNER or AI_ADMIN (`OWNER_MANAGED_ROLES`), ACTIVE or
+ * DEACTIVATED — the boundary the role change holds. Without it an ADMIN, who
+ * cannot so much as change such a member's role, could switch the membership
+ * off or delete it. AI_ADMIN joined the rule in #4118 (owner decision).
+ */
+function assertMayEndMembership(
+    ctx: RequestContext,
+    membership: { role: Role },
+    verb: 'deactivate' | 'remove',
+): void {
+    if (isOwnerManagedRole(membership.role) && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden(ownerManagedMembershipEndMessage(membership.role, verb), {
+            reason: OWNER_MANAGED_MEMBERSHIP_END_REFUSAL,
+        });
+    }
 }
 
 // ─── Deactivate Member ───
@@ -306,21 +444,13 @@ export async function deactivateTenantMember(
     assertCanManageMembers(ctx);
 
     return runInTenantContext(ctx, async (db) => {
-        const membership = await db.tenantMembership.findFirst({
-            where: {
-                id: input.membershipId,
-                tenantId: ctx.tenantId,
-                status: 'ACTIVE',
-            },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-
-        if (!membership) {
-            throw notFound('Membership not found or not active.');
-        }
+        const membership = await findActiveMembership(db, ctx, input.membershipId);
 
         // Safety: prevent self-deactivation
         assertNotSelfDeactivation(ctx, membership.userId);
+
+        // Safety: only an OWNER deactivates an OWNER or an AI_ADMIN.
+        assertMayEndMembership(ctx, membership, 'deactivate');
 
         // Safety: last-OWNER protection — cannot deactivate the only OWNER.
         if (membership.role === 'OWNER') {
@@ -338,16 +468,7 @@ export async function deactivateTenantMember(
 
         // Safety: last-admin protection (legacy — keep for non-OWNER admins)
         if (membership.role === 'ADMIN') {
-            const adminCount = await db.tenantMembership.count({
-                where: {
-                    tenantId: ctx.tenantId,
-                    role: 'ADMIN',
-                    status: 'ACTIVE',
-                },
-            });
-            if (adminCount <= 1) {
-                throw forbidden('Cannot deactivate the last admin.');
-            }
+            await assertNotLastActiveAdmin(db, ctx, 'Cannot deactivate the last admin.');
         }
 
         const deactivated = await db.tenantMembership.update({
@@ -380,8 +501,10 @@ export async function deactivateTenantMember(
  * Hard-remove a member from the tenant (deletes the TenantMembership row).
  * Distinct from deactivate (soft, revocable): this fully detaches the user.
  * Works on ACTIVE or already-DEACTIVATED members. Same guardrails as
- * deactivate — no self-removal, no removing the last ACTIVE OWNER (the
- * `tenant_membership_last_owner_guard` DB trigger is the fail-closed backstop).
+ * deactivate — no self-removal, an OWNER or an AI_ADMIN only by an OWNER, no
+ * removing the last ACTIVE OWNER (the `tenant_membership_last_owner_guard` DB
+ * trigger is the fail-closed backstop) and no removing the last ACTIVE ADMIN
+ * (#4118 — deactivation refused it while removal allowed it).
  */
 export async function removeTenantMember(
     ctx: RequestContext,
@@ -407,6 +530,10 @@ export async function removeTenantMember(
             throw forbidden('Cannot remove your own membership. Ask another admin.');
         }
 
+        // Safety: only an OWNER removes an OWNER or an AI_ADMIN, ACTIVE or
+        // DEACTIVATED — the same boundary as deactivation and the role change.
+        assertMayEndMembership(ctx, membership, 'remove');
+
         // Safety: last-OWNER protection — cannot remove the only ACTIVE OWNER.
         if (membership.role === 'OWNER' && membership.status === 'ACTIVE') {
             const ownerCount = await db.tenantMembership.count({
@@ -419,6 +546,13 @@ export async function removeTenantMember(
             if (ownerCount <= 1) {
                 throw forbidden('Cannot remove the last OWNER. Promote another OWNER first.');
             }
+        }
+
+        // Safety: last-admin protection — the check the role change and the
+        // deactivation ask. A DEACTIVATED admin is not counted, so removing one
+        // leaves the count as it was.
+        if (membership.role === 'ADMIN' && membership.status === 'ACTIVE') {
+            await assertNotLastActiveAdmin(db, ctx, 'Cannot remove the last admin. Promote another member first.');
         }
 
         await db.tenantMembership.delete({

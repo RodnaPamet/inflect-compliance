@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Card, cardVariants } from '@/components/ui/card';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
 import { Shield, ExternalLink, Trash2, Save, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button-variants';
@@ -17,6 +17,7 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ErrorState } from '@/components/ui/error-state';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
@@ -46,22 +47,39 @@ function ProviderStatusBadge({ existingProvider }: { existingProvider: SsoProvid
     if (!existingProvider) {
         return <StatusBadge variant="neutral">{t('sso.notConfigured')}</StatusBadge>;
     }
+    // Enabled first: enforcement applies only to an enabled provider
+    // (src/lib/auth/sso-enforcement.ts), so a disabled one that is saved
+    // enforced enforces nothing and must not read "Enforced".
+    if (!existingProvider.isEnabled) {
+        return <StatusBadge variant="error">{t('sso.disabled')}</StatusBadge>;
+    }
     if (existingProvider.isEnforced) {
         return <StatusBadge variant="warning">{t('sso.enforced')}</StatusBadge>;
     }
-    if (existingProvider.isEnabled) {
-        return <StatusBadge variant="info">{t('sso.enabled')}</StatusBadge>;
-    }
-    return <StatusBadge variant="error">{t('sso.disabled')}</StatusBadge>;
+    return <StatusBadge variant="info">{t('sso.enabled')}</StatusBadge>;
 }
 
 export default function SsoAdminPage() {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    const permissions = usePermissions();
+    // Every method of /api/t/<slug>/sso, the read included, takes
+    // `admin.manage`, while the admin pages open on `admin.view`. Without the
+    // key the page neither asks (the refusal would only add an AUTHZ_DENIED
+    // row) nor offers a form it could not load or save.
+    const canManage = permissions.admin.manage;
+    // Setting up a provider, and changing whom it trusts, is Owner-tier
+    // (src/lib/auth/sso-trust-fields.ts). The server refuses it either way;
+    // this keeps an Admin from filling in fields they cannot save.
+    const canChangeTrust = permissions.admin.owner_management;
     const [providers, setProviders] = useState<SsoProvider[]>([]);
     const [tab, setTab] = useState<Tab>('OIDC');
     const [loading, setLoading] = useState(true);
+    // A failed read is not "nothing configured": the form is withheld, or a
+    // save from it would create a second configuration. `message` is the
+    // server's, '' when it gave none.
+    const [loadError, setLoadError] = useState<{ message: string } | null>(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -89,19 +107,30 @@ export default function SsoAdminPage() {
     const fetchProviders = useCallback(async () => {
         try {
             const res = await fetch(apiUrl('/sso'));
-            if (res.ok) {
-                const data = await res.json();
-                setProviders(data);
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                setLoadError({ message: apiErrorMessage(body, '') });
+                return;
             }
-        } catch {
-            // Silently fail on fetch errors
+            const data = await res.json();
+            setProviders(data);
+            setLoadError(null);
+        } catch (err) {
+            setLoadError({ message: err instanceof Error ? err.message : '' });
         } finally {
             setLoading(false);
         }
     }, [apiUrl]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => { fetchProviders(); }, [fetchProviders]);
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (canManage) fetchProviders();
+    }, [canManage, fetchProviders]);
+
+    function retryLoad() {
+        setLoading(true);
+        fetchProviders();
+    }
 
     // ── Load existing provider into form ──
     const existingProvider = providers.find((p) => p.type === tab);
@@ -163,20 +192,15 @@ export default function SsoAdminPage() {
             ? {
                 issuer: oidcIssuer,
                 clientId: oidcClientId,
-                // Don't send masked value back
-                ...(oidcClientSecret !== '••••••••' && { clientSecret: oidcClientSecret }),
-                ...(existingProvider && oidcClientSecret === '••••••••' && {
-                    clientSecret: (existingProvider.configJson as Record<string, string>).clientSecret,
-                }),
+                // Sent as shown: the mask, if untouched, tells the server to
+                // keep the stored secret (SSO_SECRET_MASK).
+                clientSecret: oidcClientSecret,
                 scopes: oidcScopes.split(/\s+/).filter(Boolean),
             }
             : {
                 entityId: samlEntityId,
                 ssoUrl: samlSsoUrl,
-                ...(samlCertificate !== '••••••••' && { certificate: samlCertificate }),
-                ...(existingProvider && samlCertificate === '••••••••' && {
-                    certificate: (existingProvider.configJson as Record<string, string>).certificate,
-                }),
+                certificate: samlCertificate,
                 ...(samlNameIdFormat && { nameIdFormat: samlNameIdFormat }),
             };
 
@@ -219,17 +243,21 @@ export default function SsoAdminPage() {
     async function performDelete() {
         if (!existingProvider) return;
         setError(null);
+        setSuccess(null);
         try {
             const res = await fetch(apiUrl('/sso'), {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: existingProvider.id }),
             });
-            if (res.ok) {
-                resetForm();
-                await fetchProviders();
-                setSuccess(t('sso.deletedOk'));
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                setError(apiErrorMessage(body, t('sso.deleteFailed')));
+                return;
             }
+            resetForm();
+            await fetchProviders();
+            setSuccess(t('sso.deletedOk'));
         } catch (err) {
             setError((err as Error).message);
         }
@@ -242,6 +270,51 @@ export default function SsoAdminPage() {
         const tenantSlug = window.location.pathname.split('/')[2];
         const protocol = tab.toLowerCase();
         return `/api/auth/sso/${protocol}/start?tenant=${tenantSlug}&provider=${existingProvider.id}&returnTo=${window.location.pathname}`;
+    }
+
+    const header = (
+        <div>
+            <PageBreadcrumbs
+                items={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('sso.crumbSelf') },
+                ]}
+                className="mb-1"
+            />
+            <Heading level={1} className="flex items-center gap-tight">
+                <Shield className="w-6 h-6 text-[var(--brand-default)]" />
+                {t('sso.title')}
+            </Heading>
+            <p className="text-sm text-content-muted mt-1">
+                {t('sso.subtitle')}
+            </p>
+            <div className="mt-3">
+                <IdentityCrossLinks current="sso" />
+            </div>
+        </div>
+    );
+
+    const howItWorks = (
+        <div className={cn(cardVariants({ density: 'compact' }), 'border border-border-default/50')}>
+            <Heading level={3} className="mb-2">{t('sso.howTitle')}</Heading>
+            <ul className="text-xs text-content-muted space-y-1.5">
+                <li>• {t('sso.how1')}</li>
+                <li>• {t('sso.how2')}</li>
+                <li>• {t('sso.how3')}</li>
+                <li>• {t('sso.how4')}</li>
+            </ul>
+        </div>
+    );
+
+    if (!canManage) {
+        return (
+            <div className="space-y-section animate-fadeIn">
+                {header}
+                <InlineNotice variant="info" id="sso-manage-only">{t('sso.manageOnly')}</InlineNotice>
+                {howItWorks}
+            </div>
+        );
     }
 
     if (loading) {
@@ -266,29 +339,25 @@ export default function SsoAdminPage() {
         );
     }
 
+    if (loadError) {
+        return (
+            <div className="space-y-section animate-fadeIn">
+                {header}
+                <Card>
+                    <ErrorState
+                        title={t('sso.loadFailed')}
+                        description={loadError.message || undefined}
+                        onRetry={retryLoad}
+                        data-testid="sso-load-error"
+                    />
+                </Card>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-section animate-fadeIn">
-            {/* Header */}
-            <div>
-                <PageBreadcrumbs
-                    items={[
-                        { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
-                        { label: t('crumb.admin'), href: tenantHref('/admin') },
-                        { label: t('sso.crumbSelf') },
-                    ]}
-                    className="mb-1"
-                />
-                <Heading level={1} className="flex items-center gap-tight">
-                    <Shield className="w-6 h-6 text-[var(--brand-default)]" />
-                    {t('sso.title')}
-                </Heading>
-                <p className="text-sm text-content-muted mt-1">
-                    {t('sso.subtitle')}
-                </p>
-                <div className="mt-3">
-                    <IdentityCrossLinks current="sso" />
-                </div>
-            </div>
+            {header}
 
             {/* Protocol tabs — Epic 60 ToggleGroup. `id` on each option
                 preserves `#sso-tab-oidc` / `#sso-tab-saml` DOM anchors
@@ -320,6 +389,17 @@ export default function SsoAdminPage() {
             <div className={cardVariants()}>
                 <Heading level={2} className="mb-4">{t('sso.configHeading', { tab })}</Heading>
 
+                {!canChangeTrust && (
+                    <InlineNotice variant="info" className="mb-4" id="sso-trust-owner-only">
+                        {existingProvider ? t('sso.trustOwnerOnly') : t('sso.setupOwnerOnly')}
+                    </InlineNotice>
+                )}
+                {canChangeTrust && existingProvider && (
+                    <p className="text-xs text-content-subtle mb-4" id="sso-trust-change-hint">
+                        {t('sso.trustChangeUnlinks')}
+                    </p>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
                     {/* Provider name */}
                     <div>
@@ -342,6 +422,7 @@ export default function SsoAdminPage() {
                         </label>
                         <input
                             id="sso-domains"
+                            disabled={!canChangeTrust}
                             value={formEmailDomains}
                             onChange={(e) => setFormEmailDomains(e.target.value)}
                             placeholder="acme.com, acme.io"
@@ -358,6 +439,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.issuerUrl')}</label>
                             <input
                                 id="sso-oidc-issuer"
+                                disabled={!canChangeTrust}
                                 value={oidcIssuer}
                                 onChange={(e) => setOidcIssuer(e.target.value)}
                                 placeholder="https://login.example.com"
@@ -368,6 +450,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.clientId')}</label>
                             <input
                                 id="sso-oidc-client-id"
+                                disabled={!canChangeTrust}
                                 value={oidcClientId}
                                 onChange={(e) => setOidcClientId(e.target.value)}
                                 placeholder="client-id-from-idp"
@@ -387,6 +470,7 @@ export default function SsoAdminPage() {
                                 />
                                 <button
                                     type="button"
+                                    aria-label={showSecret ? t('sso.hideSecret') : t('sso.showSecret')}
                                     onClick={() => setShowSecret(!showSecret)}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-content-muted hover:text-content-emphasis"
                                 >
@@ -411,6 +495,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.entityId')}</label>
                             <input
                                 id="sso-saml-entity-id"
+                                disabled={!canChangeTrust}
                                 value={samlEntityId}
                                 onChange={(e) => setSamlEntityId(e.target.value)}
                                 placeholder="https://idp.example.com"
@@ -421,6 +506,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.ssoUrl')}</label>
                             <input
                                 id="sso-saml-sso-url"
+                                disabled={!canChangeTrust}
                                 value={samlSsoUrl}
                                 onChange={(e) => setSamlSsoUrl(e.target.value)}
                                 placeholder="https://idp.example.com/saml/sso"
@@ -431,6 +517,7 @@ export default function SsoAdminPage() {
                             <label className="text-xs text-content-muted uppercase tracking-wider mb-1 block">{t('sso.certificate')}</label>
                             <textarea
                                 id="sso-saml-certificate"
+                                disabled={!canChangeTrust}
                                 value={samlCertificate}
                                 onChange={(e) => setSamlCertificate(e.target.value)}
                                 placeholder="MIICzjCCAb..."
@@ -509,7 +596,7 @@ export default function SsoAdminPage() {
                     <Button
                         variant="primary"
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={saving || (!existingProvider && !canChangeTrust)}
                         loading={saving}
                         id="sso-save-btn"
                     >
@@ -545,15 +632,7 @@ export default function SsoAdminPage() {
             </div>
 
             {/* Info card */}
-            <div className={cn(cardVariants({ density: 'compact' }), 'border border-border-default/50')}>
-                <Heading level={3} className="mb-2">{t('sso.howTitle')}</Heading>
-                <ul className="text-xs text-content-muted space-y-1.5">
-                    <li>• {t('sso.how1')}</li>
-                    <li>• {t('sso.how2')}</li>
-                    <li>• {t('sso.how3')}</li>
-                    <li>• {t('sso.how4')}</li>
-                </ul>
-            </div>
+            {howItWorks}
             <ConfirmDialog
                 showModal={showDeleteConfirm}
                 setShowModal={setShowDeleteConfirm}

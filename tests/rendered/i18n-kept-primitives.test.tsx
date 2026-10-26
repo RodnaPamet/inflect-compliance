@@ -50,13 +50,17 @@ import { LossExceedanceCurve } from '@/components/ui/charts/loss-exceedance-curv
 import { RadarChart } from '@/components/ui/charts/radar-chart';
 import { chartReady } from '@inflect/ui/components/ui/charts/types';
 import { EmptyState } from '@/components/ui/empty-state';
+import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { EvidenceGallery } from '@/components/ui/EvidenceGallery';
+import { FrameworkMinimap } from '@/components/ui/FrameworkMinimap';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ProgressCircle } from '@/components/ui/progress-circle';
+import { SankeyChart } from '@/components/ui/SankeyChart';
 import { ShimmerDots } from '@/components/ui/shimmer-dots';
 import { Slider } from '@/components/ui/slider';
 import { TabSelect } from '@/components/ui/tab-select';
+import { TreeExpandCollapseToggle } from '@/components/ui/TreeExpandCollapseToggle';
 import { ViewToggle } from '@/components/ui/view-toggle';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
@@ -75,6 +79,8 @@ import type { TableInstance } from '@/components/ui/table/types';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { InfoTooltip, TooltipProvider } from '@/components/ui/tooltip';
 import { UndoToast } from '@/components/ui/undo-toast';
+import type { FrameworkTreeNode } from '@/lib/framework-tree/types';
+import type { TraceabilityGraph } from '@/lib/traceability-graph/types';
 
 type Locale = 'en' | 'bg';
 
@@ -266,6 +272,34 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
         const dialog = screen.getByRole('dialog');
         expectLocalised(textOfIdRefs(dialog, 'aria-labelledby'), 'Menu');
         expectLocalised(textOfIdRefs(dialog, 'aria-describedby'), 'Popover content');
+    });
+
+    it('KpiFilterCard: the sparkline name, with and without a string label (#3209)', () => {
+        const points = [
+            { date: new Date('2026-01-01T00:00:00Z'), value: 1 },
+            { date: new Date('2026-01-02T00:00:00Z'), value: 2 },
+        ];
+
+        // A STRING label interpolates into the name...
+        const { unmount } = render(
+            <KpiFilterCard label="Risks" value="7" sparkline={points} />,
+        );
+        expectLocalised(
+            screen.getByLabelText(/./).getAttribute('aria-label'),
+            'Risks trend',
+        );
+        unmount();
+
+        // ...and a NON-string label falls to the bare noun. Both arms are
+        // rendered because the two sides of that ternary read different keys,
+        // so a case covering one arm leaves the other's key unproven.
+        render(
+            <KpiFilterCard label={<span>Risks</span>} value="7" sparkline={points} />,
+        );
+        expectLocalised(
+            screen.getByLabelText(/./).getAttribute('aria-label'),
+            'Trend',
+        );
     });
 
     it('InfoTooltip: the help button name', () => {
@@ -737,5 +771,93 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
         expectLocalised(screen.getByRole('grid').getAttribute('aria-label'), 'Evidence gallery');
     });
 
+    // ─── #3209 tranche 2: the LANDMARK AND GROUP NAMES ───
+    //
+    // Three more `aria-label="…"` literals, and they differ from every case
+    // above in what they name: not a control but a REGION — a `<nav>`, an
+    // `<svg role="img">`, a `role="group"`. A screen-reader user navigating by
+    // landmark hears these before any content inside them, so an English one
+    // on a Bulgarian page mislabels the whole region rather than one button.
+    //
+    // Each renders with no caller copy, as the block's header requires. None
+    // of the three accepts a label prop for the element asserted here, so the
+    // component's own key is the only source — `TreeExpandCollapseToggle` does
+    // take `expandLabel` / `collapseLabel`, but those name its two BUTTONS,
+    // not the group.
 
+    it('FrameworkMinimap: the navigation landmark name (#3209)', () => {
+        // One SECTION node, not an empty tree: the component returns null when
+        // `deriveMinimapSections` yields nothing, so an empty `nodes` array
+        // would render no `<nav>` at all and leave this reading `undefined` in
+        // both locales — a case that passes its English half for the wrong
+        // reason and cannot fail its Bulgarian one.
+        const section: FrameworkTreeNode = {
+            id: 'section:f1:Organizational',
+            kind: 'section',
+            label: 'Organizational',
+            title: 'Organizational controls',
+            descendantCount: 3,
+            childCount: 3,
+            hasChildren: true,
+            children: [],
+        };
+        const { container } = render(
+            <FrameworkMinimap nodes={[section]} scrollContainerRef={{ current: null }} />,
+        );
+        expectLocalised(
+            container.querySelector('nav')?.getAttribute('aria-label'),
+            'Framework section navigator',
+        );
+    });
+
+    it('SankeyChart: the diagram name (#3209)', () => {
+        // A real cross-tier flow (asset -> risk <- control). The empty and
+        // no-links branches render their own placeholder instead of the
+        // labelled `<svg>`, so the flow is what puts the subject on screen.
+        const graph: TraceabilityGraph = {
+            nodes: [
+                { id: 'a1', kind: 'asset', label: 'A1', secondary: null, badge: null, href: null },
+                { id: 'r1', kind: 'risk', label: 'R1', secondary: null, badge: null, href: null },
+                {
+                    id: 'c1',
+                    kind: 'control',
+                    label: 'C1',
+                    secondary: null,
+                    badge: null,
+                    href: null,
+                },
+            ],
+            edges: [
+                { id: 'e1', source: 'a1', target: 'r1', relation: 'exposes', qualifier: null },
+                { id: 'e2', source: 'c1', target: 'r1', relation: 'mitigates', qualifier: null },
+            ],
+            categories: [],
+            meta: {
+                truncated: false,
+                droppedNodeCount: 0,
+                nodeCap: null,
+                appliedFilters: {},
+            },
+        };
+        const { container } = render(<SankeyChart graph={graph} />);
+        expectLocalised(
+            container.querySelector('svg[role="img"]')?.getAttribute('aria-label'),
+            'Cross-tier traceability flow (Sankey)',
+        );
+    });
+
+    it('TreeExpandCollapseToggle: the group name (#3209)', () => {
+        render(
+            <TreeExpandCollapseToggle
+                expandedCount={0}
+                totalExpandable={4}
+                onExpandAll={() => {}}
+                onCollapseAll={() => {}}
+            />,
+        );
+        expectLocalised(
+            screen.getByRole('group').getAttribute('aria-label'),
+            'Tree expansion controls',
+        );
+    });
 });

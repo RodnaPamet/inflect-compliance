@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
 import { SamlConfigSchema } from '@/app-layer/schemas/sso-config.schemas';
 import {
@@ -8,9 +7,10 @@ import {
     decodeSamlRelayState,
 } from '@/lib/security/saml-client';
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
-import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
-import { env } from '@/env';
-import jwt from 'jsonwebtoken';
+import { ssoLog, generateSsoRequestId, emailDomainForLog } from '@/lib/security/sso-logging';
+import { issueSsoHandoff, ssoHandoffResponse } from '@/lib/auth/sso-handoff';
+import { clearSsoFlow, readBoundSsoFlow } from '@/lib/auth/sso-flow';
+import { spendSsoFlowOnce } from '@/lib/auth/sso-flow-spend';
 import { sanitizeRedirectPath } from '@/lib/auth/guard';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
 
@@ -25,8 +25,8 @@ export const dynamic = 'force-dynamic';
  * 2. Validates the SAML response signature and assertions
  * 3. Extracts NameID/email/name claims
  * 4. Links external identity to local user
- * 5. Creates JWT session
- * 6. Redirects to app
+ * 5. Hands off to NextAuth, which opens the session (`src/lib/auth/sso-handoff.ts`)
+ * 6. Redirects through the completion page to the app
  */
 export async function POST(req: NextRequest) {
     const requestId = generateSsoRequestId();
@@ -49,8 +49,35 @@ export async function POST(req: NextRequest) {
         return redirectToLogin(req, 'missing_relay', 'Missing RelayState parameter');
     }
 
-    const relayState = decodeSamlRelayState(relayStateRaw);
+    // RelayState is the flow's id; the flow itself is in the cookie /start
+    // set (src/lib/auth/sso-flow.ts). A SAML response posted into any other
+    // browser — the login-CSRF shape — has no matching cookie and stops here.
+    const boundRelay = readBoundSsoFlow(req, 'saml', relayStateRaw);
+    const relayState = boundRelay ? decodeSamlRelayState(boundRelay) : null;
     if (!relayState) {
+        return redirectToLogin(req, 'invalid_relay', 'Invalid RelayState');
+    }
+
+    // ── One callback per flow, held on the server (src/lib/auth/sso-flow-spend.ts) ──
+    // Spent before the response is read: a replay of the same cookie and
+    // response, from any browser, stops here, and so does a second try after a
+    // failure. A store that cannot be reached refuses rather than lets through.
+    let spent: boolean;
+    try {
+        spent = await spendSsoFlowOnce(relayStateRaw);
+    } catch (err) {
+        ssoLog('error', 'SAML flow could not be spent', {
+            requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
+            providerId: relayState.providerId, stage: 'state_validation',
+            meta: { error: (err as Error).message },
+        });
+        return redirectToLogin(req, 'sso_error');
+    }
+    if (!spent) {
+        ssoLog('warn', 'SAML flow presented a second time', {
+            requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
+            providerId: relayState.providerId, stage: 'state_validation',
+        });
         return redirectToLogin(req, 'invalid_relay', 'Invalid RelayState');
     }
 
@@ -94,12 +121,17 @@ export async function POST(req: NextRequest) {
     const callbackUrl = `${baseUrl}/api/auth/sso/saml/callback`;
     const spIssuer = `${baseUrl}/saml/metadata/${tenant.slug}`;
 
-    const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer);
+    const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer, relayState.request);
 
     // ── Validate SAML response ──
+    // It must answer this flow's request, with a bearer confirmation for this
+    // callback (src/lib/security/saml-client.ts).
     let validatedResponse;
     try {
-        validatedResponse = await validateSamlResponse(saml, samlResponse);
+        validatedResponse = await validateSamlResponse(saml, samlResponse, {
+            callbackUrl,
+            requestId: relayState.request.id,
+        });
     } catch (err) {
         ssoLog('error', 'SAML response validation failed', {
             requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
@@ -134,7 +166,7 @@ export async function POST(req: NextRequest) {
         ssoLog('warn', 'SAML identity linking rejected', {
             requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
             providerId: provider.id, stage: 'identity_linking',
-            meta: { reason: linkResult.reason, email: validatedResponse.email },
+            meta: { reason: linkResult.reason, emailDomain: emailDomainForLog(validatedResponse.email) },
         });
         return redirectToLogin(
             req,
@@ -145,7 +177,7 @@ export async function POST(req: NextRequest) {
 
     const linkedUserId = linkResult.userId;
 
-    // ── Load membership for session ──
+    // ── Membership must be live ──
     const membership = await prisma.tenantMembership.findUnique({
         where: {
             tenantId_userId: {
@@ -153,64 +185,17 @@ export async function POST(req: NextRequest) {
                 userId: linkedUserId,
             },
         },
+        select: { status: true },
     });
 
-    if (!membership) {
+    if (!membership || membership.status !== 'ACTIVE') {
         return redirectToLogin(req, 'no_membership');
     }
 
-    const user = await prisma.user.findUnique({
-        where: { id: linkedUserId },
-        select: { id: true, email: true, name: true },
-    });
-
-    if (!user) {
-        return redirectToLogin(req, 'user_not_found');
-    }
-
-    // ── Create JWT session ──
-    const authSecret = env.AUTH_SECRET;
-    if (!authSecret) {
-        ssoLog('error', 'AUTH_SECRET not set', {
-            requestId, tenantSlug: tenant.slug, providerType: 'SAML', stage: 'session_creation',
-        });
-        return redirectToLogin(req, 'config_error');
-    }
-
-    const sessionToken = jwt.sign(
-        {
-            userId: user.id,
-            email: user.email,
-            name: user.name ?? validatedResponse.name,
-            tenantId: tenant.id,
-            role: membership.role,
-            provider: `sso-saml-${provider.id}`,
-            sub: user.id,
-            iat: Math.floor(Date.now() / 1000),
-        },
-        authSecret,
-        { expiresIn: '7d' }
-    );
-
-    // ── Set session cookie ──
-    const isProduction = env.NODE_ENV === 'production';
-    const cookieName = isProduction
-        ? '__Secure-authjs.session-token'
-        : 'authjs.session-token';
-
-    const cookieStore = await cookies();
-    cookieStore.set(cookieName, sessionToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 7 * 24 * 60 * 60,
-    });
-
     // ── Redirect to app ──
-    // `returnTo` originates in the UNAUTHENTICATED /start query string and
-    // rides here inside an UNSIGNED state blob, so it is attacker-controlled
-    // end to end. `new URL(returnTo, baseUrl)` does not constrain it:
+    // `returnTo` originates in the UNAUTHENTICATED /start query string, so
+    // whoever wrote that link chose it: it is attacker-controlled even though
+    // the flow cookie that carries it here is signed. `new URL(returnTo, baseUrl)` does not constrain it:
     // `new URL('https://evil.com', base)` and `new URL('//evil.com', base)`
     // both resolve to the attacker's origin, which is a phishing link served
     // from our own domain.
@@ -226,7 +211,10 @@ export async function POST(req: NextRequest) {
     const returnTo = relayState.returnTo
         ? sanitizeRedirectPath(relayState.returnTo)
         : `/t/${tenant.slug}/dashboard`;
-    return NextResponse.redirect(new URL(returnTo, baseUrl));
+    const handoff = await issueSsoHandoff({ userId: linkedUserId, tenantId: tenant.id });
+    const res = ssoHandoffResponse(baseUrl, returnTo, handoff);
+    clearSsoFlow(res, 'saml');
+    return res;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -244,5 +232,10 @@ function redirectToLogin(
     if (errorMessage) {
         loginUrl.searchParams.set('error_description', errorMessage);
     }
-    return NextResponse.redirect(loginUrl);
+    // 303: this answers the identity provider's POST, and a 307 would have
+    // the browser POST it on to the sign-in page. A failed callback spends
+    // the flow too.
+    const res = NextResponse.redirect(loginUrl, 303);
+    clearSsoFlow(res, 'saml');
+    return res;
 }

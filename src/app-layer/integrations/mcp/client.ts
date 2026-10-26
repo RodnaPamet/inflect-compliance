@@ -48,6 +48,7 @@ import {
     type WireResponse,
 } from '@/lib/mcp/wire-transport';
 import { findInternalSecret } from './egress-scan';
+import { MCP_TOOL_NAME_MAX_LENGTH } from '@/lib/mcp/external-tool-name';
 import {
     LATEST_PROTOCOL_VERSION,
     type JsonRpcResponse,
@@ -337,6 +338,59 @@ export async function initialize(opts: McpClientOptions): Promise<{ protocolVers
     return { protocolVersion: version };
 }
 
+export interface AdvertisedTools {
+    /** The descriptors with a usable name, in the order the server listed them. */
+    tools: McpToolDescriptor[];
+    /**
+     * How many descriptors were refused for their name: not a string, empty,
+     * longer than `MCP_TOOL_NAME_MAX_LENGTH`, or carrying an
+     * `UNSAFE_NAME_CHARACTER`. A COUNT, never the names. A refused name is
+     * exactly the text this bound exists to keep out of our logs, audit rows
+     * and screens.
+     */
+    refusedNames: number;
+}
+
+/**
+ * A code point that changes how a name READS, or breaks it across lines,
+ * without being visible text:
+ *
+ *   - `Cc`  controls, C0 and C1 and DEL; `\n` `\r` `\t` `NUL` among them
+ *   - `Zl` `Zp`  U+2028 and U+2029, line breaks that are not `\n`
+ *   - `Cf`  format characters: bidi overrides and isolates, LRM/RLM, zero-width
+ *           space and joiners, BOM, soft hyphen, tag characters
+ *   - `Default_Ignorable_Code_Point`  what Unicode says renders as nothing,
+ *           which adds variation selectors, Hangul fillers and CGJ to `Cf`
+ *   - `Cs`  a lone surrogate: not a character, and UTF-8 encodes every one as
+ *           U+FFFD, so two different names would be stored as one
+ *
+ * Every other printable character is accepted, `/` `:` spaces and non-Latin
+ * scripts included (owner decision, 2026-10-25): refusing a name hides that
+ * tool and strands any grant or pin on it, and a real server may already use
+ * them. The specification's recommended set is narrower and was not adopted.
+ */
+const UNSAFE_NAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+
+/**
+ * A name this deployment will key on: a string of 1 to 128 UTF-16 units with no
+ * `UNSAFE_NAME_CHARACTER`.
+ *
+ * Nothing bounded an advertised name before #4238. The per-connection caps
+ * bound how MANY tools are read and the byte cap bounds the whole response, so
+ * one tool's name could be most of a megabyte. That text became the qualified
+ * name everywhere downstream, including the `source` of a hash-chained audit
+ * row that streams to the tenant's SIEM, and every screen and export that
+ * prints it as text.
+ */
+function isUsableToolName(name: unknown): name is string {
+    return (
+        typeof name === 'string' &&
+        name.length > 0 &&
+        name.length <= MCP_TOOL_NAME_MAX_LENGTH &&
+        !UNSAFE_NAME_CHARACTER.test(name)
+    );
+}
+
 /**
  * THEIR catalogue, which is not an allowlist.
  *
@@ -344,10 +398,26 @@ export async function initialize(opts: McpClientOptions): Promise<{ protocolVers
  * can change between calls. Nothing here may be called on the strength of
  * appearing in this list: it is the input to a PIN that a human approves, and
  * the pin is what makes a tool reachable.
+ *
+ * A descriptor whose name is unusable is REFUSED here, at the one place every
+ * advertised name enters, rather than truncated. Two long names sharing a
+ * prefix would truncate to one name, and a pin or grant keyed on that name
+ * would then belong to whichever tool came first. The refusals are counted so
+ * the caller can say that tools were left out.
  */
-export async function listTools(opts: McpClientOptions): Promise<McpToolDescriptor[]> {
+export async function listTools(opts: McpClientOptions): Promise<AdvertisedTools> {
     const result = (await rpc(opts, 'tools/list')) as { tools?: unknown } | undefined;
-    return Array.isArray(result?.tools) ? (result.tools as McpToolDescriptor[]) : [];
+    const advertised: unknown[] = Array.isArray(result?.tools) ? result.tools : [];
+    const tools: McpToolDescriptor[] = [];
+    let refusedNames = 0;
+    for (const descriptor of advertised) {
+        if (isUsableToolName((descriptor as { name?: unknown } | null)?.name)) {
+            tools.push(descriptor as McpToolDescriptor);
+        } else {
+            refusedNames++;
+        }
+    }
+    return { tools, refusedNames };
 }
 
 /** Call one tool. Authority is the caller's problem — see the header. */

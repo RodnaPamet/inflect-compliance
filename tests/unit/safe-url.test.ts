@@ -24,6 +24,18 @@ describe('isSafeHref', () => {
         expect(isSafeHref(url)).toBe(false);
     });
 
+    it.each([
+        'java\tscript:alert(1)',
+        'java\nscript:alert(1)',
+        'j\ra\tv\nascript:alert(1)',
+        '\u0000javascript:alert(1)',
+        '\u0001 javascript:alert(1)',
+    ])('blocks a dangerous protocol split by characters a browser drops: %j', (url) => {
+        // The URL parser removes tab and newline anywhere, and ignores leading
+        // control characters, so each of these opens as `javascript:`.
+        expect(isSafeHref(url)).toBe(false);
+    });
+
     it('blocks null / undefined / empty', () => {
         expect(isSafeHref(null)).toBe(false);
         expect(isSafeHref(undefined)).toBe(false);

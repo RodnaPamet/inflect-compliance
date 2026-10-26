@@ -98,6 +98,13 @@ export interface EvidenceGalleryProps<T extends EvidenceGalleryRow> {
      *  thumbnail/preview affordance (e.g. permissions filter). */
     fileUrl: (row: T) => string | null;
     /**
+     * The URL an image thumbnail loads from, when it should differ from the
+     * download URL — the evidence page asks its route for a PREVIEW, so a
+     * thumbnail shown while scrolling is not recorded as a download. Falls
+     * back to `fileUrl`. Only consulted where `fileUrl` is non-null.
+     */
+    previewUrl?: (row: T) => string | null;
+    /**
      * Optional click handler — passes the row. When omitted, image
      * cards are clickable links to `fileUrl(row)` and non-previewable
      * cards are static (the table view's actions remain the canonical
@@ -110,6 +117,15 @@ export interface EvidenceGalleryProps<T extends EvidenceGalleryRow> {
     statusLabel?: (status: string) => string;
     /** Retention status resolver (re-uses the table's getRetentionStatus). */
     retentionStatus?: (
+        row: T,
+    ) => { label: string; badge: StatusBadgeVariant } | null;
+    /**
+     * Freshness resolver — the same label the table's Freshness column shows
+     * for the row. When supplied it replaces the generic age badge, which
+     * measures the age of a last-refreshed date and so misreads a review
+     * DUE date (a review due in six months read "today").
+     */
+    freshnessStatus?: (
         row: T,
     ) => { label: string; badge: StatusBadgeVariant } | null;
     /**
@@ -137,10 +153,12 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
     loading,
     emptyState,
     fileUrl,
+    previewUrl,
     onRowClick,
     statusBadgeVariant,
     statusLabel,
     retentionStatus,
+    freshnessStatus,
     selectedIds,
     onToggleSelect,
     downloadLabel = 'Download',
@@ -195,10 +213,12 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
                     row={row}
                     now={now}
                     fileUrl={fileUrl}
+                    previewUrl={previewUrl}
                     onRowClick={onRowClick}
                     statusBadgeVariant={statusBadgeVariant}
                     statusLabel={statusLabel}
                     retentionStatus={retentionStatus}
+                    freshnessStatus={freshnessStatus}
                     selected={selectedIds?.has(row.id) ?? false}
                     onToggleSelect={onToggleSelect}
                     selectable={!!(selectedIds && onToggleSelect)}
@@ -216,10 +236,12 @@ interface GalleryCardProps<T extends EvidenceGalleryRow> {
     /** Shared hydration-safe clock for the freshness badge. */
     now?: Date;
     fileUrl: (row: T) => string | null;
+    previewUrl?: (row: T) => string | null;
     onRowClick?: (row: T) => void;
     statusBadgeVariant?: (status: string) => StatusBadgeVariant;
     statusLabel?: (status: string) => string;
     retentionStatus?: (row: T) => { label: string; badge: StatusBadgeVariant } | null;
+    freshnessStatus?: (row: T) => { label: string; badge: StatusBadgeVariant } | null;
     selectable?: boolean;
     selected?: boolean;
     onToggleSelect?: (id: string, next: boolean) => void;
@@ -230,10 +252,12 @@ function GalleryCard<T extends EvidenceGalleryRow>({
     row,
     now,
     fileUrl,
+    previewUrl,
     onRowClick,
     statusBadgeVariant,
     statusLabel,
     retentionStatus,
+    freshnessStatus,
     selectable,
     selected,
     onToggleSelect,
@@ -246,6 +270,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
         null;
     const match = resolveFileTypeIcon(row.fileName, mime, row.type);
     const url = fileUrl(row);
+    const thumbUrl = url === null ? null : (previewUrl?.(row) ?? url);
     // R5-P2 #1 — never auto-fetch a thumbnail/PDF (or offer download) for a file
     // the AV gate would block; fall through to the file-type icon instead.
     const scanServable = isScanServable(row.fileRecord?.scanStatus);
@@ -253,6 +278,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
     const isPdf = match.label === 'PDF' && url !== null && scanServable;
 
     const retention = retentionStatus?.(row) ?? null;
+    const freshness = freshnessStatus?.(row) ?? null;
     const statusVariant: StatusBadgeVariant = statusBadgeVariant?.(row.status) ?? 'neutral';
 
     const isPending = String(row.id).startsWith('temp:');
@@ -323,7 +349,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
                 {isImage ? (
                     // eslint-disable-next-line @next/next/no-img-element -- The src is a runtime tenant-scoped /api download URL with auth cookies; next/image needs declared remote-pattern allowlists + known dimensions, neither of which fits a per-tenant evidence thumbnail. `loading="lazy" decoding="async"` provides the perf characteristics that matter.
                     <img
-                        src={url!}
+                        src={thumbUrl!}
                         alt={row.title}
                         loading="lazy"
                         decoding="async"
@@ -393,12 +419,21 @@ function GalleryCard<T extends EvidenceGalleryRow>({
                 </div>
 
                 <div className="mt-auto flex flex-wrap items-center gap-1.5">
-                    <FreshnessBadge
-                        lastRefreshedAt={row.lastRefreshedAt ?? row.nextReviewDate ?? row.expiredAt ?? null}
-                        now={now}
-                        compact
-                        data-testid={`evidence-gallery-freshness-${row.id}`}
-                    />
+                    {freshness ? (
+                        <StatusBadge
+                            variant={freshness.badge}
+                            data-testid={`evidence-gallery-freshness-${row.id}`}
+                        >
+                            {freshness.label}
+                        </StatusBadge>
+                    ) : (
+                        <FreshnessBadge
+                            lastRefreshedAt={row.lastRefreshedAt ?? row.nextReviewDate ?? row.expiredAt ?? null}
+                            now={now}
+                            compact
+                            data-testid={`evidence-gallery-freshness-${row.id}`}
+                        />
+                    )}
                     {retention && (
                         <StatusBadge variant={retention.badge}>
                             {retention.label}

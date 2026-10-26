@@ -388,6 +388,20 @@ describe('assertRegisteredAgent — the enforcing/non-enforcing pair', () => {
         },
     );
 
+    it.each(NON_VOUCHED.map((c) => [c.label, c] as const))(
+        'ENFORCING, %s: the refusal never tells the caller to rebind the key',
+        async (_label, cell) => {
+            // A key's agent is written once, by `createApiKey`; nothing changes
+            // it afterwards, so "rebind" is advice the caller cannot follow.
+            const err = await assertRegisteredAgent(arrange(cell, true), SURFACE).catch((e: unknown) => e);
+            expect(err).toBeInstanceOf(Error);
+            expect((err as Error).message).not.toMatch(/\bre-?bind/i);
+            if (cell.expect.reasonWhenEnforcing === 'agent_not_found') {
+                expect((err as Error).message).toContain('create a new API key for a registered agent');
+            }
+        },
+    );
+
     it('ENFORCING, vouched: returns the verdict and writes nothing', async () => {
         const vouched = TABLE_A.find((c) => c.standing === 'vouched')!;
         const verdict = await assertRegisteredAgent(arrange(vouched, true), SURFACE);

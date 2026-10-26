@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks mirroring
- * runtime contracts; the file-level disable is this repo's standard for these
- * surfaces. */
 
 /**
  * A write is encrypted with the AMBIENT tenant's key, never the row's.

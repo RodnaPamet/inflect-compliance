@@ -18,7 +18,9 @@ import {
     computePayloadHash,
     createPayloadHasher,
     isDeniedColumn,
+    mapAccountTypeValue,
     mapStatusValue,
+    normaliseFoldKeys,
     projectedColumns,
     type CanonicalAccount,
     type StoredMapping,
@@ -222,6 +224,77 @@ describe('computeColumnSetFingerprint', () => {
         // the case a positional remap would map onto the wrong canonical field.
         expect(computeColumnSetFingerprint(['LOGIN', 'EMP_NO']))
             .not.toBe(computeColumnSetFingerprint(['LOGIN', 'EMPLOYEE_ID']));
+    });
+});
+
+describe('mapAccountTypeValue — the twin of mapStatusValue', () => {
+    it.each([
+        ['HUMAN', 'HUMAN'], ['user', 'HUMAN'], ['Person', 'HUMAN'], ['EMPLOYEE', 'HUMAN'],
+        ['SERVICE', 'SERVICE'], ['svc', 'SERVICE'], ['app', 'SERVICE'],
+        ['SHARED', 'SHARED'], ['generic', 'SHARED'],
+        ['SYSTEM', 'SYSTEM'], ['builtin', 'SYSTEM'],
+    ])('%s → %s on the defaults alone', (raw, expected) => {
+        expect(mapAccountTypeValue(raw)).toBe(expected);
+    });
+
+    it('folds whitespace and hyphens, so three spellings of one word are one key', () => {
+        // The default table ships SERVICE_ACCOUNT, so this collapse is not a
+        // convenience — without it the shipped spelling is unreachable from the
+        // two ways a source is likely to write it.
+        for (const raw of ['service account', 'Service-Account', 'SERVICE   ACCOUNT']) {
+            expect(mapAccountTypeValue(raw)).toBe('SERVICE');
+        }
+    });
+
+    it('maps an UNRECOGNISED value to UNKNOWN, never to HUMAN', () => {
+        // The asymmetry is the point, and it runs the other way from status. Read
+        // as HUMAN, a service account joins the population a reviewer must decide
+        // on one by one; UNKNOWN is visible as undecided.
+        expect(mapAccountTypeValue('P')).toBe('UNKNOWN');
+        expect(mapAccountTypeValue('')).toBe('UNKNOWN');
+        expect(mapAccountTypeValue(null)).toBe('UNKNOWN');
+        expect(mapAccountTypeValue(7)).toBe('UNKNOWN');
+    });
+
+    it('an override reaches a spelling the defaults cannot — the whole point of the field', () => {
+        // The issue's case: a DB source spelling P/T for person/technical folds
+        // every row to UNKNOWN with no configuration able to fix it.
+        const folds = { P: 'HUMAN', T: 'SERVICE' } as const;
+        expect(mapAccountTypeValue('P', folds)).toBe('HUMAN');
+        expect(mapAccountTypeValue('T', folds)).toBe('SERVICE');
+        // Unchanged without it, which is what made this unreachable before.
+        expect(mapAccountTypeValue('P')).toBe('UNKNOWN');
+        expect(mapAccountTypeValue('T')).toBe('UNKNOWN');
+    });
+
+    it('an override BEATS a default, so a source that reuses a shipped word can be corrected', () => {
+        // `APP` defaults to SERVICE. A source where APP means a shared human
+        // login must be able to say so, or the default silently overrules the
+        // operator who looked at the column.
+        expect(mapAccountTypeValue('APP')).toBe('SERVICE');
+        expect(mapAccountTypeValue('APP', { APP: 'SHARED' })).toBe('SHARED');
+    });
+
+    it('a lower-case stored key is a DEAD fold until the write seam re-keys it', () => {
+        // `mapAccountTypeValue` folds the raw CELL and looks the override up by
+        // that key, so it cannot by itself reach a key somebody typed lower case:
+        expect(mapAccountTypeValue('P', { p: 'HUMAN' } as Record<string, 'HUMAN'>)).toBe('UNKNOWN');
+        expect(mapStatusValue('X', { x: 'LOCKED' } as Record<string, 'LOCKED'>)).toBe('UNKNOWN');
+
+        // That is the dead fold: the row reads UNKNOWN exactly as it would with no
+        // fold at all, so nothing surfaces. `normaliseFoldKeys` is what the write
+        // seam applies, and it is the only reason the stored key is reachable.
+        expect(normaliseFoldKeys({ p: 'HUMAN', 'service account': 'SERVICE' }))
+            .toEqual({ P: 'HUMAN', SERVICE_ACCOUNT: 'SERVICE' });
+        expect(mapAccountTypeValue('P', normaliseFoldKeys({ p: 'HUMAN' }))).toBe('HUMAN');
+        expect(mapStatusValue('x', normaliseFoldKeys({ x: 'LOCKED' }))).toBe('LOCKED');
+    });
+
+    it('an absent fold map stays absent rather than becoming {}', () => {
+        // `sameMapping` compares the two by JSON, so turning undefined into an
+        // empty object would report every re-save of an unchanged mapping as a
+        // change — and that diff is audited.
+        expect(normaliseFoldKeys(undefined)).toBeUndefined();
     });
 });
 

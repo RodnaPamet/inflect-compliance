@@ -23,7 +23,9 @@ const POLICY_CHECKLIST = 'src/app/t/[tenantSlug]/(app)/policies/[policyId]/Polic
 
 describe('R5-P3 (4) columns memo tracks the hydrated clock', () => {
     it('the columns memo dependency array includes hydratedNow', () => {
-        expect(read(CLIENT)).toMatch(/\]\), \[t, permissions, apiUrl, tx, hydratedNow\]\)/);
+        // `grants` and `tFileKind` joined in #4277 (the cells read the
+        // custom-role grants and the translated file kind).
+        expect(read(CLIENT)).toMatch(/\]\), \[t, permissions, grants, apiUrl, tx, hydratedNow, tFileKind\]\)/);
     });
 });
 

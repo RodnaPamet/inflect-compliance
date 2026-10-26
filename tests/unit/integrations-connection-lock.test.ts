@@ -13,6 +13,12 @@
  * and releasing without checking the token turns one overlap into unbounded
  * overlap.
  */
+const recordSyncLock = jest.fn();
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    ...(jest.requireActual('@/lib/observability/integration-metrics') as object),
+    recordSyncLock: (...a: unknown[]) => recordSyncLock(...a),
+}));
+
 import {
     acquireSyncLock,
     releaseSyncLock,
@@ -70,6 +76,67 @@ describe('acquireSyncLock', () => {
         expect(token).toEqual(expect.any(String));
         expect(row.syncLockedAt).toBe(NOW);
         expect(row.syncLockToken).toBe(token);
+    });
+
+    // ── A FAILED CLAIM HAS TWO CAUSES, AND THEY WANT DIFFERENT REMEDIES ──
+    //
+    // `count === 0` means the lock is held OR the id matched no row at all.
+    // Until #3316 both logged "sync already running" and counted as `busy`, so
+    // an operator who had deleted and recreated a connection was told to wait
+    // out a 30-minute lease that would never clear, and dashboard "contention"
+    // silently included every dispatch at a dangling reference.
+    //
+    // The RETURN is deliberately unchanged — still `null`, so no caller
+    // branches — which is why these assert the metric and not the signature.
+    describe('a failed claim says WHICH failure it was (#3316)', () => {
+        // jest.config.js sets none of clearMocks/resetMocks, so a shared
+        // jest.fn ACCUMULATES across tests in this file. Without this the
+        // `not.toHaveBeenCalledWith` below would read a sibling's call — and
+        // the busy case would see the absent case's own, which is the kind of
+        // pass that means nothing.
+        beforeEach(() => {
+            recordSyncLock.mockClear();
+        });
+
+        /** No such connection: the read finds nothing and the UPDATE matches nothing. */
+        function fakeMissingDb() {
+            return {
+                integrationConnection: {
+                    findFirst: jest.fn(async () => null),
+                    updateMany: jest.fn(async () => ({ count: 0 })),
+                },
+            } as unknown as Parameters<typeof acquireSyncLock>[0];
+        }
+
+        it('reports `absent` for a connection that does not exist', async () => {
+            const token = await acquireSyncLock(fakeMissingDb(), 'conn_deleted', NOW);
+
+            // Behaviour for callers is unchanged.
+            expect(token).toBeNull();
+            // The diagnosis is not.
+            expect(recordSyncLock).toHaveBeenCalledWith(
+                expect.objectContaining({ outcome: 'absent' }),
+            );
+            expect(recordSyncLock).not.toHaveBeenCalledWith(
+                expect.objectContaining({ outcome: 'busy' }),
+            );
+        });
+
+        it('still reports `busy` when the lock is genuinely held', async () => {
+            // The other half, and the one that must not regress: calling every
+            // failure `absent` would be the same defect pointing the other way,
+            // and would have an operator ignore real contention.
+            const held = new Date(NOW.getTime() - 60_000);
+            const { db } = fakeDb({ syncLockedAt: held, syncLockToken: 'other-run' });
+
+            expect(await acquireSyncLock(db, CONN, NOW)).toBeNull();
+            expect(recordSyncLock).toHaveBeenCalledWith(
+                expect.objectContaining({ outcome: 'busy' }),
+            );
+            expect(recordSyncLock).not.toHaveBeenCalledWith(
+                expect.objectContaining({ outcome: 'absent' }),
+            );
+        });
     });
 
     it('refuses when another run holds a FRESH lock', async () => {

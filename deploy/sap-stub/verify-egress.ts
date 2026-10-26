@@ -91,7 +91,7 @@ async function attempt(): Promise<boolean> {
     // this exercises the credential path, which it does not. That seam, from a
     // stored `secretEncrypted` through `resolveMcpCredentials` to this header,
     // is the part of the VERIFY this command cannot reach.
-    const tools = await listTools({ url: URL_ });
+    const { tools } = await listTools({ url: URL_ });
     console.log(`    listTools            -> ${tools.map((t) => t.name).join(', ')}`);
     if (tools.length === 0) return false;
 

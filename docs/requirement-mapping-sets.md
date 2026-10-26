@@ -121,6 +121,8 @@ mapping_entries:
 | Source requirement code not found | Error recorded, entry skipped, import continues |
 | Target requirement code not found | Error recorded, entry skipped, import continues |
 | Content hash matches existing set | Import skipped (unless `force: true`) |
+| An active mapping's pair is no longer named by any entry | Mapping retired (`validTo = now`), row kept; reads exclude it through `activeMappingWindow` |
+| A retired mapping's pair is named again | Mapping revived (`validTo` cleared), same row |
 
 ### Adding a New Mapping File
 
@@ -148,7 +150,9 @@ YAML File → Zod Parse → SHA-256 Hash → Dedup Check
                                           │
                               Upsert Mappings (bulk)
                                           │
-                              Report {created, updated, errors}
+                              Retire mappings the file no longer names
+                                          │
+                              Report {created, updated, retired, errors}
 ```
 
 ### Entrypoints
@@ -236,7 +240,7 @@ directory rather than editing rows by hand.
 | `AISVS-1.0` | `NIST-CSF-2.0` | `aisvs-to-nist-csf.yaml` | 13 |
 | `AIUC-1` | `EU-AI-ACT-2024` | `aiuc-1-to-eu-ai-act.yaml` | 39 |
 | `AIUC-1` | `IMDA-MGF-2026` | `aiuc-1-to-imda-mgf.yaml` | 49 |
-| `AIUC-1` | `ISO27001-2022` | `aiuc-1-to-iso27001.yaml` | 46 |
+| `AIUC-1` | `ISO27001-2022` | `aiuc-1-to-iso27001.yaml` | 59 |
 | `AIUC-1` | `ISO42001-2023` | `aiuc-1-to-iso-42001.yaml` | 62 |
 | `AIUC-1` | `OWASP-ASI-TOP10` | `aiuc-1-to-owasp-agentic.yaml` | 46 |
 | `AIUC-1` | `SOC2-2017` | `aiuc-1-to-soc2.yaml` | 23 |
@@ -250,8 +254,8 @@ directory rather than editing rows by hand.
 | `IMDA-MGF-2026` | `AIUC-1` | `imda-mgf-to-aiuc-1.yaml` | 49 |
 | `IMDA-MGF-2026` | `ISO42001-2023` | `imda-mgf-to-iso-42001.yaml` | 47 |
 | `IMDA-MGF-2026` | `OWASP-ASI-TOP10` | `imda-mgf-to-owasp-agentic.yaml` | 27 |
-| `ISO27001-2022` | `AIUC-1` | `iso27001-to-aiuc-1.yaml` | 46 |
-| `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 14 |
+| `ISO27001-2022` | `AIUC-1` | `iso27001-to-aiuc-1.yaml` | 59 |
+| `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 10 |
 | `ISO27001-2022` | `NIST-CSF-2.0` | `iso27001-to-nist-csf.yaml` | 14 |
 | `ISO27001-2022` | `OWASP-ASI-TOP10` | `iso27001-to-owasp-agentic.yaml` | 39 |
 | `ISO27001-2022` | `SOC2-2017` | `iso27001-to-soc2.yaml` | 26 |
@@ -289,10 +293,12 @@ transpose of the forward file with each strength inverted (`SUBSET` ⇄
 alone.
 
 Because the reverse of a `SUBSET` is a `SUPERSET` — which gap analysis reads
-as `COVERED` — the AIUC-1 sets reserve either for an edge where meeting the
-broader requirement as written necessarily meets the narrower one. None of
-their 265 edges clears that bar, so every one is `INTERSECT` or `RELATED`,
-and none, in either direction, is ever read as `COVERED`.
+as `COVERED` — every symmetric pair reserves either for an edge where meeting
+the broader requirement as written necessarily meets the narrower one. None of
+the AIUC-1 sets' 278 edges clears that bar. Of the nineteen such edges the
+earlier agentic pairs carried, eighteen failed it on review (2026-10-24) and
+are now `INTERSECT`; the one left is OWASP ASI07 → IMDA MGF-3.6, whose four
+named failures are exactly what MGF-3.6 requires closed.
 The AIUC-1 ⇄ SOC 2 pair maps onto the common criteria only, because the SOC 2
 representation that installed SOC 2 controls link to carries no `A1` / `C1` /
 `PI1` / `P1`.
@@ -367,6 +373,26 @@ Gap analysis output is structured for direct UI/report consumption:
 - **Auditable**: Traceability findings include full edge chains with rationale
 - **Summarized**: Coverage percentages, strength distributions, actionable counts
 
+These usecases compare two framework CATALOGUES and take no tenant. No route
+calls them; what a tenant sees comes from the two readers below.
+
+## Where Tenants See the Mappings
+
+Two product surfaces read the persisted mappings against a tenant's own
+controls, and both go through one loader,
+`services/inherited-requirement-coverage.ts`, so they cannot disagree about which
+controls reach a requirement:
+
+| Surface | Usecase | Question it answers |
+|---------|---------|---------------------|
+| A framework's Coverage tab, "Coverage from your other frameworks" (`?action=inherited-coverage` on the framework route) | `usecases/framework/inherited-coverage.ts` | Which of this framework's requirements do my controls on other frameworks reach, and through which mapping? |
+| A registered agent's Coverage tab | `usecases/agent-coverage.ts` | Which OWASP agentic risks do this agent's tenant controls reach, directly or by mapping? |
+
+Both resolve the source and target as framework FAMILIES (both representations,
+both code spellings), count only routes the tenant holds a control on, and cap
+inherited status at `PARTIALLY_COVERED`: a curated mapping is never coverage,
+and nothing inherited is added to a framework's own coverage percentage.
+
 ## File Map
 
 ```
@@ -379,10 +405,13 @@ src/app-layer/repositories/
 src/app-layer/services/
 ├── mapping-set-importer.ts              # YAML parse → ref resolution → upsert
 ├── mapping-resolution.ts               # BFS traversal engine
-└── cross-framework-traceability.ts      # Business semantics layer
+├── cross-framework-traceability.ts      # Business semantics layer
+└── inherited-requirement-coverage.ts    # Tenant controls reaching a requirement by mapping
 
 src/app-layer/usecases/
-├── gap-analysis.ts                     # Product-facing gap analysis entrypoints
+├── gap-analysis.ts                     # Catalogue-level gap analysis entrypoints
+├── framework/inherited-coverage.ts     # A framework's coverage from the tenant's other frameworks
+├── agent-coverage.ts                   # Per-agent OWASP risk coverage (same loader)
 └── library-sync.ts                     # Lifecycle orchestration (fw + mappings)
 
 src/data/libraries/mappings/          # one file per ORDERED framework pair —
@@ -432,11 +461,13 @@ When creating mapping YAML files, use these guidelines for strength values:
 | Use `EQUAL` when... | Both requirements express **exactly the same** obligation |
 |---------------------|----------------------------------------------------------|
 | Use `SUPERSET` when... | Source requirement is **broader** and fully covers target |
-| Use `SUBSET` when... | Source requirement is **narrower** and only partially covers target |
+| Use `SUBSET` when... | Source requirement is **narrower** and is wholly contained in the target: meeting the target, as written, necessarily meets the source |
 | Use `INTERSECT` when... | Requirements **share common ground** but have distinct scopes |
 | Use `RELATED` when... | Requirements are **conceptually related** but addressing different concerns |
 
 **Default to `RELATED` when uncertain.** Overclaiming strength is worse than underclaiming — the gap analysis layer uses conservative interpretation, so `RELATED` mappings surface as "review needed" rather than "covered."
+
+**`SUBSET` is a containment claim, not "covers part of".** A source that covers part of the target but also asks for things the target does not is `INTERSECT`. The difference is invisible in a one-way file and decisive in a symmetric pair, whose reverse turns every `SUBSET` into a `SUPERSET`, which gap analysis reports as `COVERED`. A broad control mapped onto a narrow risk is the common trap: ISO 27001 A.5.15 (access control) covers part of OWASP ASI03 (agent identity and privilege abuse), but it governs every system's access, so addressing ASI03 does not meet it, and the edge is `INTERSECT`.
 
 ### Rationale Best Practices
 

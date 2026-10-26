@@ -126,6 +126,15 @@ describe('list / _buildWhere', () => {
         ]);
     });
 
+    it('a comma-joined Owner multi-select becomes `ownerUserId: { in }`', async () => {
+        // The Owner facet is `multiple: true` and the filter state comma-joins,
+        // so two picks arrive as one string. Assigned raw, `"owner-1,owner-2"`
+        // was compared against a single user id and matched no control.
+        await ControlRepository.list(db as any, ctx, { ownerUserId: 'owner-1,owner-2' });
+        const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
+        expect(where.ownerUserId).toEqual({ in: ['owner-1', 'owner-2'] });
+    });
+
     it('accepts NOT_APPLICABLE applicability', async () => {
         await ControlRepository.list(db as any, ctx, { applicability: 'NOT_APPLICABLE' });
         const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
@@ -189,6 +198,69 @@ describe('list / _buildWhere', () => {
             ControlRepository.list(db as any, ctx, { applicability: 'MAYBE' }),
         ).rejects.toThrow(/control applicability/i);
         expect(db.control.findMany).not.toHaveBeenCalled();
+    });
+});
+
+// ─── listDeleted — the "Deleted controls" view ───
+
+describe('listDeleted', () => {
+    it('reads ONLY soft-deleted rows, under the live list\'s tenant scope', async () => {
+        // `withDeleted` alone opts out of the soft-delete read filter, which
+        // returns live and deleted rows alike — the view listed the whole
+        // register. The explicit `deletedAt: { not: null }` is the fix.
+        await ControlRepository.listDeleted(db as any, ctx, undefined, { take: 5000 });
+        const arg = (db.control.findMany.mock.calls[0] as any[])[0];
+        expect(arg.where).toEqual({
+            OR: [{ tenantId: 'tenant-1' }, { tenantId: null }],
+            deletedAt: { not: null },
+        });
+        // The withDeleted marker the soft-delete extension honours.
+        expect(arg.__includeDeleted).toBe(true);
+        expect(arg.take).toBe(5000);
+        expect(arg.orderBy).toEqual({ deletedAt: 'desc' });
+    });
+
+    it('honours the same filters as the live list', async () => {
+        await ControlRepository.listDeleted(
+            db as any,
+            ctx,
+            { status: 'IMPLEMENTED,NEEDS_REVIEW', ownerUserId: 'owner-9', q: 'firewall', due: 'soon' },
+            { take: 5000 },
+        );
+        const where = (db.control.findMany.mock.calls[0] as any[])[0].where;
+        expect(where.status).toEqual({ in: ['IMPLEMENTED', 'NEEDS_REVIEW'] });
+        expect(where.ownerUserId).toBe('owner-9');
+        expect(where.deletedAt).toEqual({ not: null });
+        // The tenant scope survives the filters, which sit under AND.
+        expect(where.OR).toEqual([{ tenantId: 'tenant-1' }, { tenantId: null }]);
+        expect(where.AND).toHaveLength(2); // due-soon predicate + search
+        expect(JSON.stringify(where.AND)).toContain('firewall');
+    });
+
+    it('selects the live list row shape plus the who/when columns', async () => {
+        // Owner, evidence counts and framework links: without them every row
+        // in the view read Owner "—" and Evidence 0.
+        db.control.findMany.mockResolvedValueOnce([
+            {
+                id: 'c-1',
+                deletedAt: new Date('2026-10-01T00:00:00Z'),
+                deletedByUserId: 'user-2',
+                requirementLinks: [
+                    { requirement: { framework: { key: 'ISO27001', name: 'ISO 27001' } } },
+                ],
+            },
+        ]);
+        const rows = await ControlRepository.listDeleted(db as any, ctx, undefined, { take: 10 });
+        const select = (db.control.findMany.mock.calls[0] as any[])[0].select;
+        expect(select.owner).toEqual({ select: { id: true, name: true, email: true } });
+        expect(select._count).toEqual({ select: { evidenceLinks: true, evidenceControlLinks: true } });
+        expect(select.deletedAt).toBe(true);
+        expect(select.deletedByUserId).toBe(true);
+        expect(rows[0]).toMatchObject({
+            id: 'c-1',
+            deletedByUserId: 'user-2',
+            frameworks: [{ key: 'ISO27001', name: 'ISO 27001' }],
+        });
     });
 });
 

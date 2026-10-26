@@ -134,8 +134,8 @@ export const AUDIT_APPEND_OBSERVED_LATENCY_FLOOR_MS = 400;
  * into a connection queue, which is the failure #2653 observed.
  *
  * WHY NOT MORE: 25 is also PgBouncer's `DEFAULT_POOL_SIZE` in
- * `deploy/docker-compose.prod.yml:42` and the chart default quoted in
- * `docs/sizing.md`. PgBouncer runs in transaction mode, so an in-flight
+ * `deploy/docker-compose.prod.yml`, the value `docs/sizing.md` quotes
+ * for it. PgBouncer runs in transaction mode, so an in-flight
  * transaction holds a SERVER connection there too — asking this pool
  * for more than 25 does not buy concurrency, it relocates the queue
  * into PgBouncer, where the wait is governed by `query_wait_timeout`
@@ -306,16 +306,50 @@ export const TENANT_TX_MAX_WAIT_MS = 10_000;
  * How long the BODY of a tenant-context transaction may run.
  *
  * 5_000 ms — which is exactly Prisma's default, and that is the point.
- * The observed failure was at ACQUISITION, so nothing measured here
- * argues for a longer body, and raising it would raise the worst-case
- * time a single caller can hold a pooled connection, which is the
- * resource that was scarce in the first place.
+ * Raising it would raise the worst-case time a single caller can hold a
+ * pooled connection, which is the resource that was scarce in the first
+ * place, and it would do so for all of this constant's call sites to
+ * accommodate a handful.
  *
  * It is declared anyway because #2653's acceptance was that the number
  * must be STATED rather than inherited. An inherited 5_000 and a stated
  * 5_000 behave identically and read completely differently: the second
  * is a decision a reviewer can argue with, and it stops moving when
  * Prisma changes its mind.
+ *
+ * ── THE BODY HAS BEEN OBSERVED TO EXCEED THIS (#4079) ──────────────────
+ *
+ * This docblock said "the observed failure was at ACQUISITION, so nothing
+ * measured here argues for a longer body". That was true of #2653, whose
+ * failure was `appendAuditEntry` serialising on an advisory lock, and it
+ * is no longer true as written. Three body overshoots, all under a
+ * six-shard CI run and all marginal:
+ *
+ *   #4071  run 40089033553  `db.riskScoreEvent.create` in `createRisk`
+ *          5105 ms against 5000 — a 2% overshoot. Passed on re-run.
+ *   #4069                   expiry at COMMIT. Did not reproduce.
+ *   #4096                   expiry on a `db.risk.update` QUERY. Reproduced.
+ *
+ * THE NUMBER DOES NOT MOVE ON THIS EVIDENCE, and the distinction matters:
+ * every overshoot was on a loaded CI runner with six Jest shards competing
+ * for the same pool, and nothing here measures what these bodies cost in
+ * PRODUCTION. A constant raised on CI-contention evidence would be a
+ * production budget set by test parallelism.
+ *
+ * What is recorded is that the body is NOT known to have headroom. The
+ * previous wording told the next reader that nothing had ever approached
+ * the bound, which is the opposite of the measurement — and nothing failed
+ * when it stopped being true, because a justification has no test. The
+ * cost of the staleness is real: a 2% overshoot fails one shard, which
+ * fails `Test` and `Coverage` with it, on a pull request that touched
+ * none of the code involved.
+ *
+ * Narrowing a specific body is the direction that does not widen this
+ * budget, and #4079 records why the obvious candidate is not free: the
+ * `tenant.findUnique` for `maxRiskScale` inside `createRisk` is a global
+ * un-RLS'd read, but hoisting it needs either a SECOND transaction — an
+ * extra acquisition, which is what #2653 was about — or a
+ * `no-direct-prisma` allowlist entry for the whole file.
  */
 export const TENANT_TX_TIMEOUT_MS = 5_000;
 

@@ -26,7 +26,8 @@ copyright: >
   descriptions are original paraphrases; the normative standard is
   ISO-copyrighted and can be purchased from
   https://www.iso.org/standard/71670.html
-version: 1
+version: 2
+text_hash: e35f915b56ba7147489ae1a197068c7cdab254914949f1fc2b351c2316a9620e
 publication_date: "2019-08-06"
 provider: ISO/IEC
 packager: inflect
@@ -40,6 +41,17 @@ objects:
     description: Privacy Information Management System (PIMS) — controller (Annex A) and processor (Annex B) guidance.
 
     requirement_nodes:
+      # Clause 6 is a LEAF in this outline: no sub-clause sits under it, so it
+      # stands for the whole clause and is assessable, as the catalogue that
+      # installs ISO 27701 already treats it (`iso27701-control-templates.json`
+      # ships it as a requirement and links PIMS-10 to it). Until version 2 it
+      # was marked non-assessable, a heading over nothing: it got no requirement
+      # row, so every crosswalk entry naming it was dropped at import.
+      #
+      # Clause 5 stays a heading. It extends ISO 27001's management clauses,
+      # which neither ISO catalogue ships as an obligation, and making it
+      # assessable would declare one the catalogue does not deliver.
+
       # ─── Clause 5 — PIMS-specific requirements related to ISO/IEC 27001 ───
       - urn: urn:inflect:req:iso27701-2019:clause-5
         ref_id: "5"
@@ -62,7 +74,6 @@ objects:
           implementation guidance across policies, HR, access, crypto, operations,
           supplier and incident management. (Paraphrase)
         depth: 1
-        assessable: false
         category: PIMS Controls
         artifacts: "Privacy-extended control set, Supplier privacy clauses"
 

@@ -24,6 +24,7 @@ import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { useCopyToClipboard } from '@/components/ui/hooks';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ErrorState } from '@/components/ui/error-state';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -141,14 +142,19 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     mcp:        { labelKey: 'scopeGroup.mcp', scopes: ['mcp:read', 'mcp:propose', 'mcp:orchestrate'] },
 };
 
+/**
+ * The expiry choices, `value` in days. "No expiry" is a CHOICE in the list,
+ * `''`, not only the placeholder: with it filtered out, the only way back to no
+ * expiry was clicking the chosen option a second time. `labelKey` for the same
+ * reason as `SCOPE_GROUPS`: the table is module-level.
+ */
 const EXPIRY_OPTIONS = [
-    { label: 'No expiry', value: '' },
-    { label: '30 days', value: '30' },
-    { label: '90 days', value: '90' },
-    { label: '180 days', value: '180' },
-    { label: '1 year', value: '365' },
-];
-const EXPIRY_CB_OPTIONS: ComboboxOption[] = EXPIRY_OPTIONS.filter(o => o.value).map(o => ({ value: o.value, label: o.label }));
+    { labelKey: 'apiKeys.noExpiry', value: '' },
+    { labelKey: 'apiKeys.expiry30Days', value: '30' },
+    { labelKey: 'apiKeys.expiry90Days', value: '90' },
+    { labelKey: 'apiKeys.expiry180Days', value: '180' },
+    { labelKey: 'apiKeys.expiry1Year', value: '365' },
+] as const;
 
 /** The bindable agents, as Combobox options. */
 const AGENT_CB_OPTIONS = (agents: AgentOption[]): ComboboxOption[] =>
@@ -371,6 +377,9 @@ export default function ApiKeysPage() {
     const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // The key list did not load: the server's reason, shown IN PLACE of the
+    // tables, which would otherwise read "No active API keys."
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
     // Create form
@@ -394,6 +403,10 @@ export default function ApiKeysPage() {
      */
     const [agents, setAgents] = useState<AgentOption[]>([]);
     const [agentsRefused, setAgentsRefused] = useState(false);
+    // The register answered with something other than a refusal or a list, or
+    // did not answer at all. Kept apart from `agentsRefused`, whose message
+    // tells the admin they lack a permission, which this does not mean.
+    const [agentsLoadFailed, setAgentsLoadFailed] = useState(false);
     const [createdKey, setCreatedKey] = useState<CreatedKeyResponse | null>(null);
     // Pending revocation — drives the ConfirmDialog. Replaces the
     // previous window.confirm() call.
@@ -403,9 +416,15 @@ export default function ApiKeysPage() {
     const fetchKeys = useCallback(async () => {
         try {
             const res = await fetch(apiUrl('/admin/api-keys'));
-            if (res.ok) setKeys(await res.json());
+            if (res.ok) {
+                setKeys(await res.json());
+                setLoadError(null);
+            } else {
+                const body = await res.json().catch(() => null);
+                setLoadError(apiErrorMessage(body, t('apiKeys.loadFailed')));
+            }
         } catch {
-            setError(t('apiKeys.loadFailed'));
+            setLoadError(t('apiKeys.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -415,15 +434,16 @@ export default function ApiKeysPage() {
         try {
             const res = await fetch(apiUrl('/admin/agents?status=ACTIVE'));
             if (res.status === 403) { setAgentsRefused(true); return; }
-            if (!res.ok) return;
+            // Any other failure is UNKNOWN, not "no agents": an empty selector
+            // reads as a definite answer we do not have.
+            if (!res.ok) { setAgentsLoadFailed(true); return; }
             const body = await res.json();
             const rows: AgentOption[] = Array.isArray(body) ? body : (body.agents ?? []);
             setAgents(rows);
         } catch {
-            // A failed probe means UNKNOWN, not "no agents". Leaving the list
-            // empty without `agentsRefused` renders the selector with nothing in
-            // it, which reads as a definite answer we do not have.
-            setAgentsRefused(true);
+            // A failed probe means UNKNOWN: not "no agents", and not "you may
+            // not read the register" either, which is what it used to say.
+            setAgentsLoadFailed(true);
         }
     }, [apiUrl]);
 
@@ -498,24 +518,32 @@ export default function ApiKeysPage() {
     async function performRevoke(key: ApiKeyRecord) {
         setError(null);
         setSuccess(null);
+        let res: Response;
         try {
-            const res = await fetch(apiUrl(`/admin/api-keys/${key.id}`), { method: 'DELETE' });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: 'Revoke failed' }));
-                setError(apiErrorMessage(err, t('apiKeys.revokeFailed')));
-                throw new Error(err.error?.message || err.error || 'Revoke failed');
-            }
-            setSuccess(t('apiKeys.revokedSuccess', { name: key.name }));
-            await fetchKeys();
+            res = await fetch(apiUrl(`/admin/api-keys/${key.id}`), { method: 'DELETE' });
         } catch (err) {
-            setError((err as Error).message);
+            setError((err as Error).message || t('apiKeys.revokeFailed'));
             throw err;
         }
+        if (!res.ok) {
+            // One message, set once: the server's, or the fallback. It used to
+            // be set here and then OVERWRITTEN by a catch that re-read the body
+            // itself and printed "[object Object]" for the standard envelope.
+            const body = await res.json().catch(() => null);
+            const message = apiErrorMessage(body, t('apiKeys.revokeFailed'));
+            setError(message);
+            // Rejecting keeps the confirm dialog open; the message is already shown.
+            throw new Error(message);
+        }
+        setSuccess(t('apiKeys.revokedSuccess', { name: key.name }));
+        await fetchKeys();
     }
 
     // ─── Partition keys ───
     const activeKeys = keys.filter(k => !k.revokedAt && !isExpired(k.expiresAt));
     const inactiveKeys = keys.filter(k => k.revokedAt || isExpired(k.expiresAt));
+
+    const expiryOptions: ComboboxOption[] = EXPIRY_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }));
 
     // ─── Epic 52 — DataTable columns ───
     const activeKeyColumns = useMemo(
@@ -665,7 +693,7 @@ export default function ApiKeysPage() {
             <div className="space-y-section animate-fadeIn">
                 <Heading level={2} className="flex items-center gap-tight">
                     <KeyRound className="w-6 h-6 text-[var(--brand-default)]" />
-                    Loading API keys…
+                    {t('apiKeys.loading')}
                 </Heading>
                 <Card className="space-y-default">
                     <div className="h-4 bg-bg-elevated/60 rounded w-1/3 animate-pulse" />
@@ -765,9 +793,9 @@ export default function ApiKeysPage() {
                         <Combobox
                             hideSearch
                             id="key-expiry-select"
-                            selected={EXPIRY_CB_OPTIONS.find(o => o.value === createExpiry) ?? null}
+                            selected={expiryOptions.find(o => o.value === createExpiry) ?? null}
                             setSelected={(opt) => setCreateExpiry(opt?.value ?? '')}
-                            options={EXPIRY_CB_OPTIONS}
+                            options={expiryOptions}
                             placeholder={t('apiKeys.noExpiry')}
                             matchTriggerWidth
                             buttonProps={{ className: 'w-full sm:w-48' }}
@@ -786,6 +814,10 @@ export default function ApiKeysPage() {
                         {agentsRefused ? (
                             <p className="text-xs text-content-muted" id="key-binding-unavailable">
                                 {t('apiKeys.bindingUnavailable')}
+                            </p>
+                        ) : agentsLoadFailed ? (
+                            <p className="text-xs text-content-muted" id="key-binding-load-failed">
+                                {t('apiKeys.bindingLoadFailed')}
                             </p>
                         ) : (
                             <>
@@ -864,20 +896,31 @@ export default function ApiKeysPage() {
                 so the DataTable primitive's own bordered card is the
                 only one (matches Controls list visually). The section
                 heading hoists out above the table. */}
-            <div id="active-keys-card">
-                <Heading level={3} className="mb-3">{t('apiKeys.activeKeysCount', { count: activeKeys.length })}</Heading>
-                <DataTable
-                    data={activeKeys}
-                    columns={activeKeyColumns}
-                    getRowId={(k) => k.id}
-                    emptyState={t('apiKeys.emptyActive')}
-                    resourceName={(p) => (p ? t('apiKeys.resourcePlural') : t('apiKeys.resourceSingular'))}
-                    data-testid="active-keys-table"
+            {loadError ? (
+                // A failed load is never "No active API keys.": the list is
+                // unknown, and the server's reason says why.
+                <ErrorState
+                    title={t('apiKeys.loadFailed')}
+                    description={loadError !== t('apiKeys.loadFailed') ? loadError : undefined}
+                    onRetry={() => { void fetchKeys(); }}
+                    data-testid="api-keys-load-error"
                 />
-            </div>
+            ) : (
+                <div id="active-keys-card">
+                    <Heading level={3} className="mb-3">{t('apiKeys.activeKeysCount', { count: activeKeys.length })}</Heading>
+                    <DataTable
+                        data={activeKeys}
+                        columns={activeKeyColumns}
+                        getRowId={(k) => k.id}
+                        emptyState={t('apiKeys.emptyActive')}
+                        resourceName={(p) => (p ? t('apiKeys.resourcePlural') : t('apiKeys.resourceSingular'))}
+                        data-testid="active-keys-table"
+                    />
+                </div>
+            )}
 
             {/* Inactive/Revoked Keys */}
-            {inactiveKeys.length > 0 && (
+            {!loadError && inactiveKeys.length > 0 && (
                 <div className="opacity-60" id="inactive-keys-card">
                     <Heading level={3} className="mb-3">{t('apiKeys.revokedSection', { count: inactiveKeys.length })}</Heading>
                     <DataTable

@@ -46,6 +46,14 @@ import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import { graphHeaders } from '@/lib/http/graph-headers';
+import { SSO_HANDOFF_COOKIE, SSO_HANDOFF_PROVIDER_ID } from '@/lib/auth/sso-session';
+import type { SignInMethod } from '@/lib/auth/sso-enforcement';
+import {
+    pendingAfterMembershipRefresh,
+    workspacesAskingForCode,
+    workspacesStillAskingForCode,
+} from '@/lib/auth/workspace-mfa';
+import { SessionRevokedError } from '@/lib/auth/session-revoked';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -106,7 +114,16 @@ declare module 'next-auth' {
             memberships?: MembershipEntry[];
             /** Org-layer memberships, for the org-route middleware gate. */
             orgMemberships?: OrgMembershipEntry[];
+            /** Set when single sign-on opened the session: the only tenant it may reach. */
+            ssoTenantId?: string | null;
+            /** How the session was opened; read by "Enforce SSO" (`src/lib/auth/sso-enforcement.ts`). */
+            signInMethod?: SignInMethod | null;
         };
+    }
+
+    interface User {
+        /** Set by the `sso-handoff` provider: the tenant whose IdP vouched for the user. */
+        ssoTenantId?: string;
     }
 }
 
@@ -119,6 +136,13 @@ declare module 'next-auth/jwt' {
         tenantSlug?: string | null;
         role?: Role;
         mfaPending?: boolean;
+        /**
+         * The session's OTHER workspaces whose MFA policy still wants a code
+         * from it: the edge holds each one's paths until its own challenge is
+         * passed (`src/lib/auth/workspace-mfa.ts`). The primary workspace is
+         * `mfaPending`, which holds the whole session.
+         */
+        mfaPendingTenantIds?: string[];
         mfaFailClosed?: boolean;
         /** Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS. */
         memberships?: MembershipEntry[];
@@ -130,6 +154,19 @@ declare module 'next-auth/jwt' {
         orgMembershipsTruncated?: boolean;
         /** Provider name when the user signed in via OAuth. */
         provider?: string;
+        /**
+         * Set when single sign-on opened the session: the tenant whose
+         * identity provider vouched for the user, and the only tenant the
+         * session may reach. See `src/lib/auth/sso-session.ts`.
+         */
+        ssoTenantId?: string | null;
+        /**
+         * How the session was opened. "Enforce SSO" admits a break-glass
+         * member only on a password sign-in (`src/lib/auth/sso-enforcement.ts`).
+         * Absent on a token minted before this field existed, which reads as
+         * no password sign-in.
+         */
+        signInMethod?: SignInMethod;
         /** EI-1/EI-3 — telemetry flag: the groups claim overflowed (>200 groups)
          *  and was resolved via a Microsoft Graph `/me/memberOf` fetch instead.
          *  The resolved group list itself is consumed in-callback by EI-3's role
@@ -142,7 +179,7 @@ declare module 'next-auth/jwt' {
         expiresAt?: number;
         /** Operational session row id (Epic C.3). */
         userSessionId?: string;
-        /** Soft-error flag — surfaces `RefreshTokenError` / `SessionRevoked` / `MfaDependencyFailure`. */
+        /** Soft-error flag — surfaces `RefreshTokenError` / `MfaDependencyFailure` / `EntraGroupGateDenied`. A revoked session is not flagged: the `jwt` callback throws `SessionRevokedError`. */
         error?: string;
     }
 }
@@ -200,10 +237,37 @@ export async function applyMembershipClaims(
         token.userId = dbUser.id;
         token.sessionVersion = dbUser.sessionVersion;
 
+        // A session opened by single sign-on is scoped to the tenant whose
+        // identity provider vouched for the user: its claims name that
+        // tenant's membership alone and no organization, so the edge gate
+        // refuses everything else. See `src/lib/auth/sso-session.ts`.
+        const ssoScope = token.ssoTenantId;
+        const scopedRows = dbUser.tenantMemberships.filter(
+            (m) => ssoScope == null || m.tenantId === ssoScope,
+        );
+        const orgRows = ssoScope == null ? dbUser.orgMemberships : [];
+
+        // A workspace that enforces SSO is reachable only by its own SSO, or
+        // by a break-glass member signed in with a password — so a session
+        // it does not admit carries no claim to it, and the edge refuses it.
+        const { enforcementAdmits, tenantsEnforcingSso } = await import('@/lib/auth/sso-enforcement');
+        const enforcing = await tenantsEnforcingSso(scopedRows.map((m) => m.tenantId));
+        const tenantRows = scopedRows.filter(
+            (m) =>
+                !enforcing.has(m.tenantId) ||
+                enforcementAdmits({
+                    tenantId: m.tenantId,
+                    ssoTenantId: ssoScope,
+                    signInMethod: token.signInMethod,
+                    role: m.role,
+                    hasPassword: !!dbUser.passwordHash,
+                }),
+        );
+
         // Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS so the
         // cookie stays bounded; `membershipsTruncated` flags the rare
         // over-cap case for the middleware gate.
-        token.memberships = dbUser.tenantMemberships
+        token.memberships = tenantRows
             .slice(0, MAX_JWT_MEMBERSHIPS)
             .map((m) => ({
                 slug: m.tenant.slug,
@@ -211,11 +275,11 @@ export async function applyMembershipClaims(
                 tenantId: m.tenantId,
             }));
         token.membershipsTruncated =
-            dbUser.tenantMemberships.length > MAX_JWT_MEMBERSHIPS;
+            tenantRows.length > MAX_JWT_MEMBERSHIPS;
 
         // Same pattern (and cap) for the org layer so the middleware can
         // gate `/org/:slug/*` with no DB hit.
-        token.orgMemberships = dbUser.orgMemberships
+        token.orgMemberships = orgRows
             .slice(0, MAX_JWT_MEMBERSHIPS)
             .map((m) => ({
                 slug: m.organization.slug,
@@ -223,7 +287,7 @@ export async function applyMembershipClaims(
                 organizationId: m.organizationId,
             }));
         token.orgMembershipsTruncated =
-            dbUser.orgMemberships.length > MAX_JWT_MEMBERSHIPS;
+            orgRows.length > MAX_JWT_MEMBERSHIPS;
 
         // Backward-compat: keep tenantId/tenantSlug/role as the "primary"
         // membership (oldest by createdAt).
@@ -383,6 +447,37 @@ const providers: NextAuthOptions['providers'] = [
             };
         },
     }),
+    // Single sign-on hand-off. The OIDC and SAML callbacks verify the
+    // identity provider's answer and leave a single-use hand-off in a cookie
+    // scoped to this provider's callback; the completion page
+    // (`/login/sso-complete`) asks NextAuth to sign in here, and this redeems
+    // it. From then on it is an ordinary NextAuth sign-in: the same cookie,
+    // claims, MFA policy and session row as every other provider. It takes no
+    // credentials from the request body — only the cookie, so a hand-off
+    // cannot be completed in another browser. See `src/lib/auth/sso-handoff.ts`.
+    Credentials({
+        id: SSO_HANDOFF_PROVIDER_ID,
+        name: 'Single sign-on',
+        credentials: {},
+        async authorize() {
+            const { redeemSsoHandoff } = await import('@/lib/auth/sso-handoff');
+            const handoff = await redeemSsoHandoff(await readSsoHandoffCookie());
+            if (!handoff) return null;
+            // Re-read at redemption: the membership may have been ended in the
+            // seconds since the callback checked it.
+            const membership = await prisma.tenantMembership.findUnique({
+                where: { tenantId_userId: { tenantId: handoff.tenantId, userId: handoff.userId } },
+                select: { status: true, user: { select: { id: true, email: true, name: true } } },
+            });
+            if (!membership || membership.status !== 'ACTIVE' || !membership.user.email) return null;
+            return {
+                id: membership.user.id,
+                email: membership.user.email,
+                name: membership.user.name,
+                ssoTenantId: handoff.tenantId,
+            };
+        },
+    }),
 ];
 
 // ─── Invite-redemption helpers ──────────────────────────────────────
@@ -469,6 +564,16 @@ async function ensureOrgMembershipFromInvite(
     }
 }
 
+async function readSsoHandoffCookie(): Promise<string | null> {
+    try {
+        const { cookies } = await import('next/headers');
+        const cookieStore = await cookies();
+        return cookieStore.get(SSO_HANDOFF_COOKIE)?.value ?? null;
+    } catch {
+        return null;
+    }
+}
+
 async function readInviteTokenFromCookies(): Promise<{
     tenantToken: string | null;
     orgToken: string | null;
@@ -488,6 +593,33 @@ async function readInviteTokenFromCookies(): Promise<{
 
 // ─── NextAuthOptions ────────────────────────────────────────────────
 
+/** The workspaces a token's claims name. */
+function membershipTenantIds(token: JWT): Set<string> {
+    return new Set((token.memberships ?? []).map((m) => m.tenantId));
+}
+
+/**
+ * Bring `mfaPendingTenantIds` in line with re-read memberships: a workspace
+ * the session left drops out, and one it gained since sign-in is asked whether
+ * it wants a code, as sign-in would have asked (`pendingAfterMembershipRefresh`).
+ * A failed read leaves the set as it was.
+ */
+async function refreshPendingMfaWorkspaces(token: JWT, before: ReadonlySet<string>): Promise<void> {
+    if (!token.userId) return;
+    try {
+        token.mfaPendingTenantIds = await pendingAfterMembershipRefresh(token.userId, {
+            pending: token.mfaPendingTenantIds ?? [],
+            // A token minted before the set existed has never asked its other
+            // workspaces: every one of them counts as gained.
+            before: token.mfaPendingTenantIds === undefined ? new Set<string>() : before,
+            after: (token.memberships ?? []).map((m) => m.tenantId),
+            primaryTenantId: token.tenantId,
+        });
+    } catch {
+        // Unchanged.
+    }
+}
+
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(prisma) as NextAuthOptions['adapter'],
     providers,
@@ -497,6 +629,22 @@ export const authOptions: NextAuthOptions = {
     },
     session: { strategy: 'jwt' },
     secret: env.AUTH_SECRET,
+    // NextAuth's own errors, through the structured logger rather than
+    // `console.error` with the whole metadata object. A revoked session is not
+    // a fault: the `jwt` callback throws `SessionRevokedError` on purpose, and
+    // NextAuth reports every throw there as JWT_SESSION_ERROR.
+    logger: {
+        error(code, metadata) {
+            if (metadata instanceof SessionRevokedError) {
+                edgeLogger.info('session refused', { component: 'auth', reason: metadata.reason });
+                return;
+            }
+            edgeLogger.error(`next-auth ${code}`, {
+                component: 'auth',
+                error: metadata instanceof Error ? metadata.message : String(code),
+            });
+        },
+    },
     callbacks: {
         /**
          * signIn — runs on EVERY sign-in attempt. Two responsibilities:
@@ -517,6 +665,29 @@ export const authOptions: NextAuthOptions = {
          */
         async signIn({ user, account, profile }) {
             if (!account) return true;
+
+            // An SSO hand-off links no account and redeems no invite. The
+            // email it carries was asserted by one tenant's identity
+            // provider, which that tenant's admin configures — it proves
+            // nothing about the address anywhere else, so it must not join
+            // the person to another tenant or org. The session it opens is
+            // scoped to that tenant in the `jwt` callback.
+            if (account.provider === SSO_HANDOFF_PROVIDER_ID) return true;
+
+            // "Enforce SSO": a sign-in that enforcement would leave with no
+            // workspace is sent to that workspace's SSO instead of an empty
+            // "no workspace" page (src/lib/auth/sso-enforcement.ts). Asked
+            // after any invite this sign-in redeems, which can add one.
+            const ssoRequired = async (userId: string | undefined): Promise<string | true> => {
+                if (!userId) return true;
+                const { signInMethodOf, workspaceRequiringSso } = await import('@/lib/auth/sso-enforcement');
+                const slug = await workspaceRequiringSso(userId, signInMethodOf(account.provider));
+                // The workspace rides inside the code: for a password sign-in,
+                // next-auth's client drops the URL and keeps only `error`.
+                return slug
+                    ? `/login?${new URLSearchParams({ error: `sso_required:${slug}` }).toString()}`
+                    : true;
+            };
 
             // R-3: defensive email-verified check for OAuth.
             if (
@@ -584,7 +755,7 @@ export const authOptions: NextAuthOptions = {
                         existingUser.id,
                         user.email,
                     );
-                    return true;
+                    return ssoRequired(existingUser.id);
                 }
             }
 
@@ -619,7 +790,7 @@ export const authOptions: NextAuthOptions = {
             // would wrongly count every sign-in. Needs a dedicated first-login
             // detector (e.g. a User.firstSignedInAt sentinel set in createUser +
             // read here) — a schema/behaviour change out of scope for this PR.
-            return true;
+            return ssoRequired(user.id);
         },
 
         /**
@@ -630,6 +801,17 @@ export const authOptions: NextAuthOptions = {
         async jwt({ token, user, account, profile, trigger }) {
             // Initial sign in.
             if (account && user) {
+                // Before the claims, which it scopes. Fail closed: a hand-off
+                // that somehow named no tenant opens no session.
+                if (account.provider === SSO_HANDOFF_PROVIDER_ID) {
+                    if (!user.ssoTenantId) {
+                        throw new Error('SSO hand-off named no tenant');
+                    }
+                    token.ssoTenantId = user.ssoTenantId;
+                }
+                // Before the claims too: "Enforce SSO" reads it.
+                const { signInMethodOf } = await import('@/lib/auth/sso-enforcement');
+                token.signInMethod = signInMethodOf(account.provider);
                 await applyMembershipClaims(token, user.id);
 
                 if (account.provider !== 'credentials') {
@@ -670,10 +852,14 @@ export const authOptions: NextAuthOptions = {
                             const { syncEntraMembershipRole, applyEntraSyncToToken } =
                                 await import('@/lib/auth/entra-group-sync');
                             const activeTenantId = token.tenantId;
+                            const tid = (profile as { tid?: unknown } | undefined)?.tid;
                             const result = await syncEntraMembershipRole({
                                 userId: token.userId,
                                 tenantId: activeTenantId,
                                 aadGroups: groups,
+                                // Mappings apply only to the workspace's own
+                                // Microsoft directory (src/lib/auth/entra-group-sync.ts).
+                                signInDirectoryId: typeof tid === 'string' ? tid : null,
                             });
                             applyEntraSyncToToken(token, activeTenantId, result);
                         } catch (err) {
@@ -722,6 +908,24 @@ export const authOptions: NextAuthOptions = {
                     }
                 }
 
+                // ── MFA for every OTHER workspace the session can reach ──
+                // The block above asks only the primary workspace, the oldest
+                // membership. A workspace that requires MFA but was joined
+                // later was never asked, so its members got in on a password
+                // alone (src/lib/auth/workspace-mfa.ts).
+                token.mfaPendingTenantIds = [];
+                const otherTenantIds = (token.memberships ?? [])
+                    .map((m) => m.tenantId)
+                    .filter((id) => id !== activeTenantId);
+                if (otherTenantIds.length > 0 && token.userId) {
+                    try {
+                        token.mfaPendingTenantIds = await workspacesAskingForCode(token.userId, otherTenantIds);
+                    } catch {
+                        // Fails open, as the primary workspace does unless it
+                        // is set to fail closed.
+                    }
+                }
+
                 // ── Epic C.3 — record operational session row ──
                 try {
                     const { recordNewSession } = await import(
@@ -750,11 +954,18 @@ export const authOptions: NextAuthOptions = {
             // gate immediately, with no full re-login. Falls through to the
             // session-revocation + OAuth-refresh checks below.
             if (trigger === 'update' && token.email) {
+                const before = membershipTenantIds(token);
                 await applyMembershipClaims(token);
+                await refreshPendingMfaWorkspaces(token, before);
             }
 
             // Epic C.3 — verify session row still exists + isn't revoked.
+            // A revoked (or expired) row THROWS, outside the try: NextAuth then
+            // treats the session as invalid and every server gate sees none
+            // (src/lib/auth/session-revoked.ts). Returning the token with an
+            // `error` flag, as this did, kept every claim and refused nothing.
             if (typeof token.userSessionId === 'string' && token.userSessionId) {
+                let revoked = false;
                 try {
                     const { verifyAndTouchSession } = await import(
                         '@/lib/security/session-tracker'
@@ -762,14 +973,13 @@ export const authOptions: NextAuthOptions = {
                     const result = await verifyAndTouchSession(
                         token.userSessionId,
                     );
-                    if (result.revoked) {
-                        return { ...token, error: 'SessionRevoked' };
-                    }
+                    revoked = result.revoked;
                 } catch {
                     // Helper already logs; fail-open on telemetry-side
                     // failures so a transient DB blip doesn't sign every
                     // user out.
                 }
+                if (revoked) throw new SessionRevokedError('session_revoked');
             }
 
             // OAuth access-token refresh intentionally NOT done here.
@@ -817,6 +1027,22 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
+            // The same check for the session's other pending workspaces: each
+            // leaves the set once its own challenge was passed since this token
+            // was issued. A read failure leaves them pending; the person can
+            // still pass the challenge.
+            if (token.mfaPendingTenantIds?.length && token.userId) {
+                try {
+                    token.mfaPendingTenantIds = await workspacesStillAskingForCode(
+                        token.userId,
+                        token.mfaPendingTenantIds,
+                        (token.iat as number | undefined) ?? 0,
+                    );
+                } catch {
+                    // Stays pending.
+                }
+            }
+
             // Throttled revocation check AND membership-claims refresh
             // (5-minute interval, one shared timestamp).
             //
@@ -844,14 +1070,21 @@ export const authOptions: NextAuthOptions = {
                 const now = Math.floor(Date.now() / 1000);
                 const lastChecked = token.sessionVersionCheckedAt ?? 0;
                 if (now - lastChecked >= SESSION_CHECK_INTERVAL) {
+                    let versionBumped = false;
                     try {
                         const currentUser = await prisma.user.findUnique({
                             where: { id: token.userId },
                             select: { sessionVersion: true },
                         });
-                        if (currentUser && currentUser.sessionVersion > token.sessionVersion) {
-                            return { ...token, error: 'SessionRevoked' };
-                        }
+                        versionBumped = Boolean(
+                            currentUser && currentUser.sessionVersion > token.sessionVersion,
+                        );
+                    } catch {
+                        // Fail open on telemetry-side failures.
+                    }
+                    // Outside the try, for the same reason as the row check above.
+                    if (versionBumped) throw new SessionRevokedError('session_version_bumped');
+                    try {
                         // Claims re-read from the database on the same cadence.
                         // This also SHRINKS the token when a membership is
                         // revoked: previously a removed membership stayed in the
@@ -861,7 +1094,9 @@ export const authOptions: NextAuthOptions = {
                         // breach — but the gate was answering from a token that
                         // no longer described reality).
                         if (token.email) {
+                            const before = membershipTenantIds(token);
                             await applyMembershipClaims(token);
+                            await refreshPendingMfaWorkspaces(token, before);
                         }
                         // Stamped LAST so a failed read retries on the next
                         // request instead of being skipped for five minutes.
@@ -887,6 +1122,8 @@ export const authOptions: NextAuthOptions = {
                 session.user.mfaPending = token.mfaPending ?? false;
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
+                session.user.ssoTenantId = token.ssoTenantId ?? null;
+                session.user.signInMethod = token.signInMethod ?? null;
             }
             return session;
         },

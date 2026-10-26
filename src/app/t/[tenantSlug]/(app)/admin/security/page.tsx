@@ -5,11 +5,11 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, cardVariants } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from '@/lib/tenant-context-provider';
 import { AgentEnforcementCard } from './AgentEnforcementCard';
 import { ApiKeyRotationCard } from './ApiKeyRotationCard';
 import { ShieldCheck, Save, AlertTriangle, LogOut, Users, UserX } from 'lucide-react';
@@ -20,6 +20,10 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage } from '@/lib/api-error';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { UserCombobox, type Member } from '@/components/ui/user-combobox';
+import { FormField } from '@/components/ui/form-field';
 
 type MfaPolicy = 'DISABLED' | 'OPTIONAL' | 'REQUIRED';
 
@@ -30,28 +34,51 @@ interface SecuritySettings {
 
 const POLICY_VALUES: MfaPolicy[] = ['DISABLED', 'OPTIONAL', 'REQUIRED'];
 
+/** Which destructive session action the confirm dialog is open for. */
+type PendingRevoke = 'others' | 'all' | 'member' | null;
+
+/** A member's name for the confirm and the success message, never their id alone. */
+function memberName(member: Member): string {
+    return member.name?.trim() || member.email?.trim() || `User ${member.id.slice(0, 8)}`;
+}
+
 export default function AdminSecurityPage() {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { tenantSlug } = useTenantContext();
-    const [settings, setSettings] = useState<SecuritySettings>({ mfaPolicy: 'DISABLED', sessionMaxAgeMinutes: null });
+    const { tenantSlug, userId: currentUserId } = useTenantContext();
+    // Only an Owner signs out an Owner or an AI admin (owner decision,
+    // 2026-10-25); the picker cannot see roles, so the server refuses and the
+    // field says so up front.
+    const canRevokeOwnerManaged = usePermissions().admin.owner_management;
+    /**
+     * What is STORED, or null until it loads. Null after a failed load too, and
+     * that is the point (#4117): the page used to start from Disabled and an
+     * empty session age and keep them when the read failed, so it showed the
+     * defaults as if they were the saved settings, and Save wrote them over the
+     * real ones.
+     */
+    const [settings, setSettings] = useState<SecuritySettings | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [revoking, setRevoking] = useState(false);
-    const [revokeUserId, setRevokeUserId] = useState('');
+    const [pendingRevoke, setPendingRevoke] = useState<PendingRevoke>(null);
+    const [revokeTarget, setRevokeTarget] = useState<Member | null>(null);
 
     const fetchSettings = useCallback(async () => {
         try {
             const res = await fetch(apiUrl('/security/mfa/policy'));
-            if (res.ok) {
-                const data = await res.json();
-                setSettings(data);
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data) {
+                setLoadError(apiErrorMessage(data, t('security.failedLoadSettings')));
+                return;
             }
+            setSettings(data);
         } catch {
-            setError(t('security.failedLoadSettings'));
+            setLoadError(t('security.failedLoadSettings'));
         } finally {
             setLoading(false);
         }
@@ -61,6 +88,7 @@ export default function AdminSecurityPage() {
     useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
     const handleSave = async () => {
+        if (!settings) return;
         setSaving(true);
         setError(null);
         setSuccess(null);
@@ -72,7 +100,7 @@ export default function AdminSecurityPage() {
             });
             if (!res.ok) {
                 const data = await res.json();
-                throw new Error(data.error || t('security.failedSave'));
+                throw new Error(apiErrorMessage(data, t('security.failedSave')));
             }
             const updated = await res.json();
             setSettings(updated);
@@ -85,17 +113,28 @@ export default function AdminSecurityPage() {
         }
     };
 
+    /** Sends the sign-in page after a revocation that also ended this session. */
+    const leaveForSignIn = () => setTimeout(() => { window.location.href = '/login'; }, 2000);
+
     const handleRevokeMySessions = async () => {
-        if (!confirm(t('security.revokeMyConfirm'))) return;
         setRevoking(true);
         setError(null);
+        setSuccess(null);
         try {
             const res = await fetch(apiUrl('/security/sessions/revoke-current'), { method: 'POST' });
-            if (res.ok) {
-                setSuccess(t('security.mySessionsRevoked'));
-                setTimeout(() => window.location.href = '/login', 2000);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(apiErrorMessage(data, t('security.failedRevokeSessions')));
+            }
+            // The server keeps the session making the request. Only when it could
+            // not tell that session apart from the others did it revoke them all,
+            // and only then is there a sign-in page to go to.
+            if (data.currentSessionKept === true) {
+                setSuccess(t('security.otherSessionsRevoked'));
+                setTimeout(() => setSuccess(null), 3000);
             } else {
-                throw new Error(t('security.failedRevokeSessions'));
+                setSuccess(t('security.mySessionsRevoked'));
+                leaveForSignIn();
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : t('security.revocationFailed'));
@@ -105,16 +144,20 @@ export default function AdminSecurityPage() {
     };
 
     const handleRevokeAllTenant = async () => {
-        if (!confirm(t('security.revokeAllConfirm'))) return;
         setRevoking(true);
         setError(null);
+        setSuccess(null);
         try {
             const res = await fetch(apiUrl('/security/sessions/revoke-all'), { method: 'POST' });
-            const data = await res.json();
-            if (res.ok) {
-                setSuccess(t('security.allRevoked', { count: data.usersAffected }));
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(apiErrorMessage(data, t('security.failedRevoke')));
+            }
+            if (data.currentSessionKept === false) {
+                setSuccess(t('security.allRevokedIncludingYou', { count: data.usersAffected }));
+                leaveForSignIn();
             } else {
-                throw new Error(data.error || t('security.failedRevoke'));
+                setSuccess(t('security.allRevoked', { count: data.usersAffected }));
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : t('security.bulkRevocationFailed'));
@@ -124,23 +167,24 @@ export default function AdminSecurityPage() {
     };
 
     const handleRevokeUser = async () => {
-        if (!revokeUserId.trim()) return;
-        if (!confirm(t('security.revokeUserConfirm', { id: revokeUserId }))) return;
+        const target = revokeTarget;
+        if (!target) return;
         setRevoking(true);
         setError(null);
+        setSuccess(null);
         try {
             const res = await fetch(apiUrl('/security/sessions/revoke-user'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetUserId: revokeUserId.trim() }),
+                body: JSON.stringify({ targetUserId: target.id }),
             });
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
             if (res.ok) {
-                setSuccess(t('security.userSessionsRevoked'));
-                setRevokeUserId('');
+                setSuccess(t('security.userSessionsRevoked', { name: memberName(target) }));
+                setRevokeTarget(null);
                 setTimeout(() => setSuccess(null), 3000);
             } else {
-                throw new Error(data.error || t('security.failedRevokeUser'));
+                throw new Error(apiErrorMessage(data, t('security.failedRevokeUser')));
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : t('security.userRevocationFailed'));
@@ -148,6 +192,15 @@ export default function AdminSecurityPage() {
             setRevoking(false);
         }
     };
+
+    /** Each confirm dialog is open only while its own action is pending. */
+    const dialogState = (which: Exclude<PendingRevoke, null>) => ({
+        showModal: pendingRevoke === which,
+        setShowModal: ((open: boolean | ((prev: boolean) => boolean)) => {
+            const next = typeof open === 'function' ? open(pendingRevoke === which) : open;
+            setPendingRevoke(next ? which : null);
+        }) as Dispatch<SetStateAction<boolean>>,
+    });
 
     if (loading) {
         return (
@@ -194,6 +247,17 @@ export default function AdminSecurityPage() {
                 </Heading>
             </div>
 
+            {loadError && (
+                <InlineNotice
+                    variant="error"
+                    icon={AlertTriangle}
+                    title={loadError}
+                    data-testid="security-settings-load-error"
+                >
+                    {t('security.saveBlockedUntilLoaded')}
+                </InlineNotice>
+            )}
+
             {error && (
                 <InlineNotice variant="error" icon={AlertTriangle}>{error}</InlineNotice>
             )}
@@ -223,7 +287,7 @@ export default function AdminSecurityPage() {
                         <label
                             key={value}
                             className={`flex items-start gap-compact p-4 rounded-lg border cursor-pointer transition-all ${
-                                settings.mfaPolicy === value
+                                settings?.mfaPolicy === value
                                     ? 'border-[var(--brand-default)]/60 bg-[var(--brand-subtle)]'
                                     : 'border-border-default hover:border-border-emphasis'
                             }`}
@@ -232,13 +296,14 @@ export default function AdminSecurityPage() {
                                 type="radio"
                                 name="mfaPolicy"
                                 value={value}
-                                checked={settings.mfaPolicy === value}
-                                onChange={() => setSettings(s => ({ ...s, mfaPolicy: value }))}
+                                checked={settings?.mfaPolicy === value}
+                                disabled={!settings}
+                                onChange={() => setSettings(s => (s ? { ...s, mfaPolicy: value } : s))}
                                 className="mt-1 accent-[var(--brand-default)]"
                             />
                             <div>
                                 <span className={`text-sm font-medium ${
-                                    settings.mfaPolicy === value ? 'text-[var(--brand-muted)]' : 'text-content-emphasis'
+                                    settings?.mfaPolicy === value ? 'text-[var(--brand-muted)]' : 'text-content-emphasis'
                                 }`}>
                                     {t(`security.policy.${value}.label`)}
                                     {value === 'REQUIRED' && (
@@ -251,7 +316,7 @@ export default function AdminSecurityPage() {
                     ))}
                 </div>
 
-                {settings.mfaPolicy === 'REQUIRED' && (
+                {settings?.mfaPolicy === 'REQUIRED' && (
                     <InlineNotice variant="warning" title={t('security.beforeRequiredTitle')}>
                         <ul className="text-xs text-content-warning list-disc pl-4 space-y-1">
                             <li>{t('security.beforeRequired1')}</li>
@@ -285,10 +350,11 @@ export default function AdminSecurityPage() {
                         min={5}
                         max={43200}
                         placeholder={t('security.maxSessionAgePlaceholder')}
-                        value={settings.sessionMaxAgeMinutes ?? ''}
+                        value={settings?.sessionMaxAgeMinutes ?? ''}
+                        disabled={!settings}
                         onChange={(e) => {
                             const val = e.target.value ? parseInt(e.target.value, 10) : null;
-                            setSettings(s => ({ ...s, sessionMaxAgeMinutes: val }));
+                            setSettings(s => (s ? { ...s, sessionMaxAgeMinutes: val } : s));
                         }}
                         className="input w-full max-w-xs"
                     />
@@ -301,7 +367,7 @@ export default function AdminSecurityPage() {
                 <Button
                     variant="primary"
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || !settings}
                     loading={saving}
                     id="security-save-btn"
                 >
@@ -328,7 +394,7 @@ export default function AdminSecurityPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-compact">
                     {/* Revoke my sessions */}
                     <button
-                        onClick={handleRevokeMySessions}
+                        onClick={() => setPendingRevoke('others')}
                         disabled={revoking}
                         className="p-4 border border-border-default rounded-lg hover:border-[var(--brand-default)]/50 transition text-left flex items-start gap-compact group"
                         id="revoke-my-sessions-btn"
@@ -342,7 +408,7 @@ export default function AdminSecurityPage() {
 
                     {/* Revoke all tenant sessions */}
                     <button
-                        onClick={handleRevokeAllTenant}
+                        onClick={() => setPendingRevoke('all')}
                         disabled={revoking}
                         className="p-4 border border-border-error rounded-lg hover:border-border-error transition text-left flex items-start gap-compact group"
                         id="revoke-all-sessions-btn"
@@ -355,22 +421,32 @@ export default function AdminSecurityPage() {
                     </button>
                 </div>
 
-                {/* Revoke specific user */}
+                {/* Revoke one member's sessions — picked by name from this
+                    workspace's members, never typed as an id no screen shows. You
+                    are left out: "Sign Out Other Sessions" is your own action, and
+                    revoking yourself here would sign this session out too. */}
                 <div className="border-t border-border-default/50 pt-4">
-                    <label className="block text-sm text-content-default mb-2">{t('security.revokeSpecificLabel')}</label>
-                    <div className="flex gap-tight">
-                        <input
-                            type="text"
-                            placeholder={t('security.userIdPlaceholder')}
-                            value={revokeUserId}
-                            onChange={(e) => setRevokeUserId(e.target.value)}
-                            className="input flex-1"
-                            id="revoke-user-id-input"
-                        />
+                    <div className="flex gap-tight items-end">
+                        <div className="flex-1 min-w-0">
+                            <FormField
+                                label={t('security.revokeSpecificLabel')}
+                                description={canRevokeOwnerManaged ? undefined : t('security.revokeOwnerOnlyHint')}
+                            >
+                                <UserCombobox
+                                    id="revoke-user-picker"
+                                    tenantSlug={tenantSlug}
+                                    selectedId={revokeTarget?.id ?? null}
+                                    onChange={(_id, member) => setRevokeTarget(member)}
+                                    filter={(member) => member.id !== currentUserId}
+                                    placeholder={t('security.pickMemberPlaceholder')}
+                                    disabled={revoking}
+                                />
+                            </FormField>
+                        </div>
                         <Button
                             variant="destructive"
-                            onClick={handleRevokeUser}
-                            disabled={revoking || !revokeUserId.trim()}
+                            onClick={() => setPendingRevoke('member')}
+                            disabled={revoking || !revokeTarget}
                             id="revoke-user-btn"
                         >
                             <UserX className="w-4 h-4" />
@@ -379,6 +455,31 @@ export default function AdminSecurityPage() {
                     </div>
                 </div>
             </div>
+
+            <ConfirmDialog
+                {...dialogState('others')}
+                tone="danger"
+                confirmLabel={t('security.signOutOthersConfirmLabel')}
+                title={t('security.signOutOthersConfirmTitle')}
+                description={t('security.signOutOthersConfirmBody')}
+                onConfirm={handleRevokeMySessions}
+            />
+            <ConfirmDialog
+                {...dialogState('all')}
+                tone="danger"
+                confirmLabel={t('security.revokeAllConfirmLabel')}
+                title={t('security.revokeAllConfirmTitle')}
+                description={t('security.revokeAllConfirmBody')}
+                onConfirm={handleRevokeAllTenant}
+            />
+            <ConfirmDialog
+                {...dialogState('member')}
+                tone="danger"
+                confirmLabel={t('security.revokeUserConfirmLabel')}
+                title={t('security.revokeUserConfirmTitle', { name: revokeTarget ? memberName(revokeTarget) : '' })}
+                description={t('security.revokeUserConfirmBody', { name: revokeTarget ? memberName(revokeTarget) : '' })}
+                onConfirm={handleRevokeUser}
+            />
         </div>
     );
 }

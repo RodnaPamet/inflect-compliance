@@ -79,8 +79,12 @@ jest.mock('@/app-layer/usecases/risk-hierarchy', () => ({
 
 // ── Tranche 4 (#2189): the link/detach verbs on the risk + asset graph ──
 const mockUnlinkAssetEvidence = jest.fn();
+// `restoreAsset` (#4276) joins the same factory — a second jest.mock of this
+// module would replace the first and leave `unlinkAssetEvidence` undefined.
+const mockRestoreAsset = jest.fn();
 jest.mock('@/app-layer/usecases/asset', () => ({
     unlinkAssetEvidence: (...a: unknown[]) => mockUnlinkAssetEvidence(...a),
+    restoreAsset: (...a: unknown[]) => mockRestoreAsset(...a),
 }));
 const mockUnmapAssetFromRisk = jest.fn();
 jest.mock('@/app-layer/usecases/traceability', () => ({
@@ -259,6 +263,7 @@ import { DELETE as scenarioDelete } from '@/app/api/t/[tenantSlug]/risks/scenari
 import { POST as evidenceBulkDelete } from '@/app/api/t/[tenantSlug]/evidence/bulk/delete/route';
 import { POST as evidencePurge } from '@/app/api/t/[tenantSlug]/evidence/[id]/purge/route';
 import { POST as evidenceRestore } from '@/app/api/t/[tenantSlug]/evidence/[id]/restore/route';
+import { POST as assetRestore } from '@/app/api/t/[tenantSlug]/assets/[id]/restore/route';
 import { POST as policiesBulkDelete } from '@/app/api/t/[tenantSlug]/policies/bulk/delete/route';
 import { POST as policiesBulkArchive } from '@/app/api/t/[tenantSlug]/policies/bulk/archive/route';
 import { POST as policyPurge } from '@/app/api/t/[tenantSlug]/policies/[id]/purge/route';
@@ -569,6 +574,19 @@ const ROUTES: ReadonlyArray<{
         key: 'admin.manage',
         usecase: mockRestoreEvidence,
         forwards: ['ev-1'],
+        result: { restored: true },
+    },
+    // #4276 — declared `assets.edit` while restoreAsset reaches assertCanAdmin
+    // through restoreEntity: an EDITOR passed the gate and was refused by the
+    // usecase, which writes no row. The purge sibling was already admin.manage.
+    {
+        name: 'POST /assets/[id]/restore',
+        handler: asHandler(assetRestore),
+        path: '/api/t/acme/assets/as-1/restore',
+        params: { tenantSlug: 'acme', id: 'as-1' },
+        key: 'admin.manage',
+        usecase: mockRestoreAsset,
+        forwards: ['as-1'],
         result: { restored: true },
     },
     {

@@ -27,6 +27,9 @@ export default async function AccessReviewsPage({
         <AccessReviewsClient
             tenantSlug={tenantSlug}
             initialReviews={initialReviews}
+            // #4130 — both gates the create path takes: the route's
+            // `access_reviews.create` and the usecase's `assertCanAdmin`.
+            canCreate={ctx.permissions.canAdmin && ctx.appPermissions.access_reviews.create}
         />
     );
 }

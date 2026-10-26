@@ -872,7 +872,7 @@ describe('R17: a run a peer started never writes above PROPOSE_ONLY', () => {
 
     beforeEach(async () => {
         await cleanOutbound();
-        listToolsMock.mockResolvedValue([WRITE_DEF, READ_DEF]);
+        listToolsMock.mockResolvedValue({ tools: [WRITE_DEF, READ_DEF], refusedNames: 0 });
         callToolMock.mockImplementation(async (_t: unknown, name: string) => (name === READ_DEF.name ? { email: 'old@x' } : {}));
     });
 

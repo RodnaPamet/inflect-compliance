@@ -26,6 +26,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { ForbiddenError } from '@/lib/errors/types';
 import { computeVelocity } from '@/app-layer/usecases/risk-velocity';
 
@@ -113,9 +114,10 @@ describeFn('computeVelocity — the RQ-9 orchestrator', () => {
 
     afterAll(async () => {
         for (const tenantId of [OURS, THEIRS]) {
-            await globalPrisma.tenant.deleteMany({ where: { id: tenantId } }).catch(() => {});
+            await deleteAuditRowsForTenants(globalPrisma, [tenantId]);
+            await globalPrisma.tenant.deleteMany({ where: { id: tenantId } });
         }
-        await globalPrisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
+        await globalPrisma.user.deleteMany({ where: { id: userId } });
         await globalPrisma.$disconnect().catch(() => {});
     });
 

@@ -487,6 +487,55 @@ Condition 15 is on the `code` source that `inflect-agent-harness/2` added
     and reports a credential written into the code by its location (`code://…`)
     or by the environment variable it names (`env://…`), never by its value.
 
+### The OpenShell source (#3936)
+
+#3936 adds the OpenShell source, also as the `runtime` kind, under the owner's
+decisions of 2026-10-24 on that issue. It reads the client's own OpenShell
+gateway — a host the client runs and names in its configuration — over the
+gateway's gRPC control API, with a bearer credential scoped to `sandbox:read`.
+
+Conditions 2 and 4 hold for it, and the way they hold is worth stating because
+it is stronger here than for the HTTP sources. Condition 2 is normally tested by
+request log against a GET allowlist; this gateway speaks gRPC and publishes no
+REST transcoding, so the source is handed a wire of five methods, all `List` or
+`Get`, with no verb to call and no method parameter. `scanner-surface.ts`
+declares the one service and those five RPCs and hashes them into the manifest
+the client sees on every scan. **And the proto itself requires `sandbox:read`
+for every one of them while requiring `sandbox:write` for every mutation** —
+`ExecSandbox`, `DeleteSandbox`, `AttachSandboxProvider` and the rest — so a
+correctly scoped credential is refused by the client's own gateway before the
+method runs, independently of anything in this product. That third mechanism is
+the one that holds if the first two are wrong.
+
+| | From the OpenShell gateway |
+|---|---|
+| **Read** | The sandboxes (`ListSandboxes`), each one's id. For each: its configuration (`GetSandbox`), from which only the policy's digest, each network endpoint's enforcement mode, the Landlock compatibility mode, whether every endpoint names a host, and whether a middleware stage is selected and fails closed; and the loaded policy revision (`GetSandboxPolicyStatus`), to establish whether the declared policy is the one in force. Only for an estate that opts in (`readProviders`, off by default): the providers attached to each sandbox (`ListSandboxProviders`), each one's name and profile id, and that profile's declared endpoints (`GetProviderProfile`). |
+| **Reported** | One agent per sandbox (`openshell:sandbox:<id>`). No owner: the gateway records no accountable owner for a sandbox, and a label an estate administrator could write is not read for ownership. No tools, no models, no register link. Per-criterion verdicts with the policy digest as the evidence pointer. For an estate that opts in, each attached provider as a credential **reference** (`openshell://sandbox/<id>/provider/<name>`), with age, expiry and grant kind reported as unknown rather than guessed, because the attachment listing establishes none of them. |
+| **Never read** | Credential values. `ProviderClient`, which retrieves them over mTLS with an `OU=operator` certificate, is never called and is not on the declared surface. Nor is any sandbox log, exec stream, SSH session or service endpoint. Policy **content** is read and reduced, never forwarded: no host, port, protocol, L7 rule, access preset, binary path, filesystem path, process identity or middleware configuration reaches an observation, a report or a log line. |
+| **Received and not kept** | `GetSandbox` returns the whole policy, and the source reads only the members in the first row. More importantly, the `Provider` message returned by `ListSandboxProviders` carries `map<string, string> credentials` annotated `[(openshell.options.v1.secret) = true]` in the gateway's own proto — so that listing is **secret-bearing in shape**. The source never reads that member, and the listing is requested only for an estate that opts in, so by default none of it reaches the scanner at all. A test holds marker strings in every discarded member, and in a credential value, out of the whole report. |
+
+**The provider listing is opt-in and off by default**, for the same reason
+LangSmith's deployments listing is: the listing carries secrets. The difference
+is that LangSmith's schema documents its secret values, whereas here the proto
+annotates them, which is a stronger statement about intent. **Whether the
+gateway populates that member under a `sandbox:read` token is not established**
+— see the gap below — so the source is built for the worse case: the call is
+gated off, the member is never read, and the runner's refusal to sign a report
+containing a secret-shaped string is the backstop.
+
+**The opt-in widens the credential.** `GetProviderProfile` requires
+`provider:read`, a second scope. An estate that does not opt in grants one
+scope; an estate that does grants two, and gains `H2.credential_bound` by it.
+The two scopes are separate constants in the scanner so the widening appears in
+the estate's configuration rather than being implied by the method list.
+
+**A policy that is declared is not a policy in force.** The source reads the
+loaded revision and treats a declared policy that is not the loaded one as
+evidencing nothing. This matters for the client rather than for us: a verdict
+that said a sandbox enforced egress because its policy file said so, while the
+runtime ran an older revision, would be a false assurance in the client's own
+compliance record.
+
 ## Retention
 
 All four models this assessment covers are Business records (decision 11 of the
@@ -597,6 +646,62 @@ including its 30-day notice window, before that data moves.
 | R16 | A self-hosted LangSmith host is repointed at an internal address, and the scanner sends the API key there. | Checked at configuration as a customer-named host, and resolved again before every request; a private, loopback, link-local or metadata address stops the read before the key is sent. An estate's private-range allowlist admits only the ranges it lists, never metadata, loopback or link-local, and both checks apply it. Residual, unchanged by the allowlist: the connection is not pinned to the checked address. | `packages/agent-harness-scanner/src/customer-host.ts` (#3738) |
 
 ## Gaps
+
+**R-OS1 — whether a read identity can read credential values: NARROWED
+2026-10-25, still open.** The `Provider` message returned by
+`ListSandboxProviders` carries a `credentials` map annotated secret in the
+gateway's proto.
+
+The blocker recorded here — "needs a gateway with JWT signing configured, which
+needs PKI and a client identity" — has been removed. A v0.1.5 gateway now runs
+on mTLS with its four `gateway_jwt` keys, and the measurement was taken against
+it. Three things came out of it, and the third is why this gap stays open.
+
+**The scope premise does not hold for mTLS.** `openshell whoami` for a client
+certificate reports `Roles: openshell-user` and `Scopes:` **empty**. So an mTLS
+identity is authorised by ROLE, and `sandbox:read` — which this scanner declares
+as `OPENSHELL_READ_SCOPE` — is not what gates it. That does not make the
+constant wrong: the gateway also supports OIDC (`gateway login --oidc-issuer`),
+and scopes plausibly govern that path. It means the constant is **untested for
+the transport we actually use**, and the question "what can a `sandbox:read`
+token read" is not answerable by pointing a client certificate at the gateway.
+
+**Every read surface returned credential NAMES only.** With a provider created
+holding a sentinel value, five surfaces — `provider list`, `provider get`,
+`profile describe`, `profile export`, `provider list-profiles` — returned the
+key name and no value: `Credential keys: API_KEY`. The sentinel also appeared
+nowhere else: not in the SQLite store in plaintext, nowhere on the VM's disk,
+not in the sandbox's environment, not in any file inside the sandbox, and not in
+the supervisor's environment. The gateway carries `envelope` and `chacha20`
+symbols, consistent with envelope encryption at rest.
+
+**But the control failed, so this is no evidence of redaction either way.** A sentinel
+that appears nowhere is equally consistent with two different worlds: the value
+was stored and is never exposed, or the value was never stored and there was
+nothing to expose. `--credential` accepts `KEY=VALUE` *or* a bare `KEY` treated
+as an environment lookup, which makes the second genuinely plausible, and
+nothing available from outside the process distinguishes them. A negative result
+whose control cannot fire is not a measurement.
+
+So the upper bound remains unestablished, for a narrower reason than before:
+not "no gateway was stood up" but "no provider type was used whose credential
+is demonstrably resolved". Closing it needs either a provider the runtime
+actually consumes, so that a resolved value proves storage, or gateway-side
+instrumentation of the credential read path.
+
+The source is written for the worse case — the listing is opt-in and off by
+default, the member is never read, and the signing step refuses a report
+containing a secret-shaped string — so the residual is not that a value could be
+reported. It is that **the size of the exposure an estate accepts when it opts
+in is unknown**: if the gateway redacts, opting in exposes credential names and
+nothing more; if it does not, a `sandbox:read` token is a token that can read
+the estate's credential values, and that belongs in the onboarding conversation
+in much stronger terms than it currently appears.
+
+Measuring it is cheap once a gateway is authenticated. Until then, an estate
+asking what opting in costs should be told that the lower bound is credential
+names and the upper bound has not been established.
+
 
 What this assessment relies on that has no source on `main` today, and who
 owns it:

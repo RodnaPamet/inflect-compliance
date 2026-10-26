@@ -265,7 +265,7 @@ describeFn('audience-scoped tokens, the autonomy ceiling, and mid-run revocation
         await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
         await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
         await prisma.risk.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-        await prisma.tenant.deleteMany({ where: { id: TENANT } }).catch(() => {});
+        await prisma.tenant.deleteMany({ where: { id: TENANT } });
         await prisma.$disconnect();
     });
 

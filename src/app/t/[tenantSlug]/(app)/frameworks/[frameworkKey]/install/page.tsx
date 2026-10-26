@@ -10,11 +10,14 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { cardVariants } from '@/components/ui/card';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { usePermissions } from '@/lib/tenant-context-provider';
 import { cn } from '@inflect/ui/lib/cn';
 
 // Shapes cross-walked from the framework install API:
@@ -38,8 +41,10 @@ interface InstallPreviewTemplate {
     alreadyInstalled: boolean;
 }
 interface InstallPreview {
-    packKey: string;
-    packName: string;
+    // previewPackInstall names one pack; previewPacksInstall lists the chosen ones.
+    packKey?: string;
+    packName?: string;
+    packKeys?: string[];
     framework: { key: string; name: string; version: string | null };
     totalTemplates: number;
     newControls: number;
@@ -47,7 +52,7 @@ interface InstallPreview {
     templates: InstallPreviewTemplate[];
 }
 interface InstallResult {
-    packKey: string;
+    packKey?: string;
     packName: string;
     framework: string;
     controlsCreated: number;
@@ -74,10 +79,21 @@ export default function InstallWizardPage() {
     const requestedPack = searchParams.get('pack');
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
     const tenantHref = useCallback((path: string) => `/t/${tenantSlug}${path}`, [tenantSlug]);
+    // #4125 — the install API checks `frameworks.install`
+    // (`assertCanInstallFrameworkPack`). Without it the wizard's steps are
+    // not offered: a member who opens this URL directly is told who can
+    // install, rather than walking the wizard to be refused at its last click.
+    const canInstall = usePermissions().frameworks.install;
 
     const [framework, setFramework] = useState<InstallFramework | null>(null);
     const [packs, setPacks] = useState<FrameworkPackSummary[]>([]);
     const [selectedPack, setSelectedPack] = useState<string>('');
+    // A framework with several packs is installed by CHOOSING among them — the
+    // EU drone framework's packs are its operating subcategories — so they are
+    // checkboxes, at least one is required, and the shared controls install
+    // once. A single-pack framework keeps the one-click radio flow.
+    const multiPack = packs.length > 1;
+    const [chosenPacks, setChosenPacks] = useState<string[]>([]);
     const [preview, setPreview] = useState<InstallPreview | null>(null);
     const [loading, setLoading] = useState(true);
     const [installing, setInstalling] = useState(false);
@@ -98,8 +114,14 @@ export default function InstallWizardPage() {
                 if (packRes.ok) {
                     const ps = await packRes.json();
                     setPacks(ps);
-                    // Auto-select if only one pack or requested
-                    if (requestedPack) {
+                    // Auto-select if only one pack or requested. With several
+                    // packs a requested one is pre-ticked, never installed
+                    // without the tenant confirming the rest of the choice.
+                    if (ps.length > 1) {
+                        if (requestedPack && ps.some((p: FrameworkPackSummary) => p.key === requestedPack)) {
+                            setChosenPacks([requestedPack]);
+                        }
+                    } else if (requestedPack) {
                         setSelectedPack(requestedPack);
                     } else if (ps.length === 1) {
                         setSelectedPack(ps[0].key);
@@ -119,6 +141,23 @@ export default function InstallWizardPage() {
             .then(p => { setPreview(p); if (p) setStep('preview'); });
     }, [selectedPack, apiUrl, frameworkKey]);
 
+    const toggleChosen = (key: string) =>
+        setChosenPacks((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+
+    const previewChosen = async () => {
+        if (chosenPacks.length === 0) return;
+        setError('');
+        const keys = packs.map((p) => p.key).filter((k) => chosenPacks.includes(k));
+        const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=preview&packKeys=${keys.map(encodeURIComponent).join(',')}`));
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            setError(apiErrorMessage(err, tx('install.installFailed')));
+            return;
+        }
+        setPreview(await res.json());
+        setStep('preview');
+    };
+
     const handleInstall = async () => {
         setInstalling(true);
         setError('');
@@ -126,7 +165,11 @@ export default function InstallWizardPage() {
             const res = await fetch(apiUrl(`/frameworks/${frameworkKey}`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ packKey: selectedPack }),
+                body: JSON.stringify(
+                    multiPack
+                        ? { packKeys: packs.map((p) => p.key).filter((k) => chosenPacks.includes(k)) }
+                        : { packKey: selectedPack },
+                ),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ error: tx('install.installFailed') }));
@@ -159,24 +202,75 @@ export default function InstallWizardPage() {
                 </p>
             </div>
 
+            {!canInstall && (
+                <InlineNotice variant="info" title={tx('install.restrictedTitle')} id="install-restricted">
+                    {tx('install.restricted')}
+                </InlineNotice>
+            )}
+
             {/* Step indicator */}
-            <div className="flex items-center gap-tight text-xs">
-                {['stepSelect', 'stepPreview', 'stepInstall'].map((s, i) => (
-                    <div key={s} className="flex items-center gap-tight">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 && step === 'select' ? 'bg-brand-600 text-content-emphasis' :
-                                i === 1 && step === 'preview' ? 'bg-brand-600 text-content-emphasis' :
-                                    i === 2 && step === 'done' ? 'bg-bg-success-emphasis text-content-emphasis' :
-                                        step === 'done' || (step === 'preview' && i === 0) ? 'bg-bg-success text-content-success' :
-                                            'bg-bg-elevated text-content-subtle'
-                            }`}>{i + 1}</div>
-                        <span className="text-content-muted">{tx(`install.${s}`)}</span>
-                        {i < 2 && <span className="text-content-subtle">→</span>}
+            {canInstall && (
+                <div className="flex items-center gap-tight text-xs">
+                    {['stepSelect', 'stepPreview', 'stepInstall'].map((s, i) => (
+                        <div key={s} className="flex items-center gap-tight">
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 && step === 'select' ? 'bg-brand-600 text-content-emphasis' :
+                                    i === 1 && step === 'preview' ? 'bg-brand-600 text-content-emphasis' :
+                                        i === 2 && step === 'done' ? 'bg-bg-success-emphasis text-content-emphasis' :
+                                            step === 'done' || (step === 'preview' && i === 0) ? 'bg-bg-success text-content-success' :
+                                                'bg-bg-elevated text-content-subtle'
+                                }`}>{i + 1}</div>
+                            <span className="text-content-muted">{tx(`install.${s}`)}</span>
+                            {i < 2 && <span className="text-content-subtle">→</span>}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Step 1: Choose packs — several packs, at least one required */}
+            {canInstall && step === 'select' && multiPack && (
+                <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')} id="install-choose-packs">
+                    <Heading level={2}>{tx('install.choosePacks')}</Heading>
+                    <p className="text-sm text-content-muted">{tx('install.choosePacksHint')}</p>
+                    <div className="space-y-tight">
+                        {packs.map(p => {
+                            const checked = chosenPacks.includes(p.key);
+                            return (
+                                <label key={p.key} htmlFor={`pack-${p.key}`} className={`flex items-start gap-compact p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-[var(--brand-default)] bg-[var(--brand-subtle)]' : 'border-border-subtle hover:border-border-emphasis'
+                                    }`}>
+                                    <Checkbox
+                                        id={`pack-${p.key}`}
+                                        checked={checked}
+                                        onCheckedChange={() => toggleChosen(p.key)}
+                                        className="mt-0.5"
+                                    />
+                                    <div>
+                                        <div className="text-sm font-medium text-content-emphasis">{p.name}</div>
+                                        {p.description && <div className="text-xs text-content-muted mt-0.5">{p.description}</div>}
+                                        <div className="text-xs text-content-subtle mt-0.5">{tx('install.packMeta', { count: p._count?.templateLinks || 0, version: p.version || tx('install.latest') })}</div>
+                                    </div>
+                                </label>
+                            );
+                        })}
                     </div>
-                ))}
-            </div>
+                    {chosenPacks.length === 0 && (
+                        <p className="text-xs text-content-warning" id="install-choose-packs-required">{tx('install.choosePacksRequired')}</p>
+                    )}
+                    {error && (
+                        <div className="text-sm text-content-error">{error}</div>
+                    )}
+                    <Button
+                        variant="secondary"
+                        onClick={previewChosen}
+                        disabled={chosenPacks.length === 0}
+                        id="preview-chosen-packs-btn"
+                    >
+                        {tx('install.previewChosen', { count: chosenPacks.length })}
+                    </Button>
+                </div>
+            )}
 
             {/* Step 1: Select Pack */}
-            {step === 'select' && (
+            {canInstall && step === 'select' && !multiPack && (
                 <div className={cn(cardVariants({ density: 'none' }), 'space-y-default')}>
                     <Heading level={2}>{tx('install.selectAPack')}</Heading>
                     {packs.length === 0 ? (
@@ -206,7 +300,7 @@ export default function InstallWizardPage() {
             )}
 
             {/* Step 2: Preview */}
-            {step === 'preview' && preview && (
+            {canInstall && step === 'preview' && preview && (
                 <div className="space-y-default">
                     <div className={cardVariants({ density: 'none' })}>
                         <Heading level={2} className="mb-4">{tx('install.installPreview')}</Heading>
@@ -241,7 +335,7 @@ export default function InstallWizardPage() {
                     )}
 
                     <div className="flex gap-compact">
-                        <Button variant="secondary" onClick={() => { setStep('select'); setSelectedPack(''); }}>
+                        <Button variant="secondary" onClick={() => { setStep('select'); setSelectedPack(''); setPreview(null); }}>
                             {tx('install.back')}
                         </Button>
                         <Button
@@ -266,7 +360,7 @@ export default function InstallWizardPage() {
             )}
 
             {/* Step 3: Done */}
-            {step === 'done' && result && (
+            {canInstall && step === 'done' && result && (
                 <div className={cn(cardVariants({ density: 'none' }), 'text-center space-y-default')} id="install-result">
                     <div className="text-4xl"></div>
                     <Heading level={1}>{tx('install.successHeading')}</Heading>

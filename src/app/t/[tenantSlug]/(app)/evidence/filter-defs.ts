@@ -273,6 +273,12 @@ export function categoryOptionsFromEvidence(
         .map((c) => ({ value: c, label: c }));
 }
 
+/**
+ * The facets whose options are built from loaded evidence, so can shrink with
+ * it. Linked control is not one: its options come from the controls list.
+ */
+export const EVIDENCE_ROW_DERIVED_FILTER_KEYS = ['folder', 'category'] as const;
+
 export function buildEvidenceFilters(
     controls: ReadonlyArray<ControlLike>,
     evidence: ReadonlyArray<EvidenceFolderLike & EvidenceCategoryLike> = [],

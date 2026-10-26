@@ -128,7 +128,6 @@ describe('a tenant removal leaves an audit record', () => {
      */
     it('the detector finds the known removal path', () => {
         // Printed so the denominator is in the output, not inferred from a pass.
-        // eslint-disable-next-line no-console
         console.log(`tenant soft-delete sites: ${sites.length}`);
         expect(sites.length).toBeGreaterThanOrEqual(1);
         expect(sites.map(s => s.file)).toContain('src/app-layer/usecases/org-tenants.ts');

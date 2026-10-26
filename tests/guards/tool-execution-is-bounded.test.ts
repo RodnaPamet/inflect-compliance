@@ -304,3 +304,161 @@ describe('tool execution is bounded', () => {
         expect(TOOL_EXEC_MAX_OUTPUT_BYTES).toBeGreaterThan(0);
     });
 });
+
+/**
+ * 4.2b (#3963) — a sandbox that cannot be created is a REFUSAL, never a
+ * fallback to local execution.
+ *
+ * ═══ WHY THIS IS A GUARD AND NOT A UNIT TEST ═══
+ *
+ * The issue's acceptance is "a test makes sandbox creation fail and asserts the
+ * call is refused". There is no sandbox creation yet — 4.2 (#3962) adds the
+ * OpenShell backend and has not landed, and `src/lib/agentic` contains no
+ * OpenShell reference today. A unit test written now would have to mock the
+ * thing it is testing into existence, which proves nothing about the code that
+ * eventually ships.
+ *
+ * The issue's second sentence is the durable half and is what these assertions
+ * are: "with the mutation proof run the other way too, so a fallback introduced
+ * later reddens this rather than passing quietly." The danger is not today's
+ * code. It is the plausible edit a year from now — a sandbox backend added, and
+ * beside it a `catch` that runs the tool locally so the feature "keeps working"
+ * when the gateway is down. That is precisely the moment confinement was most
+ * needed, and it is the edit that looks most reasonable in review.
+ *
+ * ═══ WHY NOT "NO EXECUTOR INSIDE A catch" ═══
+ *
+ * Because the seam has no `catch` keyword in code at all — measured, not
+ * assumed: its three occurrences of the word are in prose, and error handling
+ * runs through `Promise.race` and `.then(onOk, onErr)`. A rule phrased around
+ * `catch` would be trivially satisfied today and blind to the fallback shapes
+ * this module can actually express. So all three are named.
+ */
+describe('tool execution refuses rather than falling back (4.2b)', () => {
+    const seam = sources.find((f) => f.rel === SEAM);
+
+    /** The executor callees the seam is allowed to reach, pinned by name. */
+    const SEAM_EXECUTORS = ['exec', 'execFile'];
+
+    it('the seam reaches exactly the executors it is pinned to', () => {
+        // A local fallback added beside a sandbox backend is a SECOND execution
+        // path, and a second path means a new callee here. Pinning the set
+        // makes that edit arrive through this assertion.
+        expect(seam).toBeDefined();
+        const found = [...SEAM_EXECUTORS, 'spawn', 'spawnSync', 'fork', 'execSync', 'execFileSync']
+            .filter((name) => callSites(seam!.code, name).length > 0);
+        expect(found.sort()).toEqual([...SEAM_EXECUTORS].sort());
+    });
+
+    /**
+     * Extract a balanced region starting at the delimiter at `openIdx`.
+     *
+     * Hand-rolled regexes cannot do this, and the control below proved it: a
+     * first version used `\.catch\(([^)]*)\)`, which stops at the arrow
+     * function's OWN `()` and captured a single paren, so the assertion passed
+     * while detecting nothing. The `.then` variant passed only by luck. Depth
+     * counting is the cheapest thing that is actually correct.
+     */
+    function balancedFrom(code: string, openIdx: number, open: string, close: string): string {
+        let depth = 0;
+        for (let i = openIdx; i < code.length; i += 1) {
+            if (code[i] === open) depth += 1;
+            else if (code[i] === close) {
+                depth -= 1;
+                if (depth === 0) return code.slice(openIdx + 1, i);
+            }
+        }
+        return code.slice(openIdx + 1);
+    }
+
+    const EXECUTOR_CALL = /\b(exec|execFile|execSync|execFileSync|spawn|spawnSync|fork)\s*\(/;
+
+    /**
+     * The three positions a rejection can be handled from in this module, each
+     * returning the HANDLER BODIES it finds. Paired with a fixture below, so a
+     * shape that cannot be detected cannot be claimed as covered.
+     */
+    const REJECTION_HANDLERS: ReadonlyArray<{ name: string; bodies: (code: string) => string[] }> = [
+        {
+            name: 'catch block',
+            bodies: (code) => {
+                const out: string[] = [];
+                for (const m of code.matchAll(/\bcatch\s*(?:\([^)]*\))?\s*\{/g)) {
+                    out.push(balancedFrom(code, m.index! + m[0].length - 1, '{', '}'));
+                }
+                return out;
+            },
+        },
+        {
+            name: '.catch(handler)',
+            bodies: (code) => {
+                const out: string[] = [];
+                for (const m of code.matchAll(/\.catch\s*\(/g)) {
+                    out.push(balancedFrom(code, m.index! + m[0].length - 1, '(', ')'));
+                }
+                return out;
+            },
+        },
+        {
+            // `.then(onFulfilled, onRejected)` — only the SECOND argument is an
+            // error path, which is the arm the seam already uses for its timer.
+            name: '.then(ok, onRejected)',
+            bodies: (code) => {
+                const out: string[] = [];
+                for (const m of code.matchAll(/\.then\s*\(/g)) {
+                    const args = balancedFrom(code, m.index! + m[0].length - 1, '(', ')');
+                    // Split on the top-level comma only.
+                    let depth = 0;
+                    for (let i = 0; i < args.length; i += 1) {
+                        const c = args[i];
+                        if (c === '(' || c === '[' || c === '{') depth += 1;
+                        else if (c === ')' || c === ']' || c === '}') depth -= 1;
+                        else if (c === ',' && depth === 0) { out.push(args.slice(i + 1)); break; }
+                    }
+                }
+                return out;
+            },
+        },
+    ];
+
+    it.each(REJECTION_HANDLERS.map((h) => h.name))(
+        'no executor is reached from a %s in the seam',
+        (name) => {
+            const handler = REJECTION_HANDLERS.find((h) => h.name === name)!;
+            const offenders = handler
+                .bodies(seam!.code)
+                .filter((body) => EXECUTOR_CALL.test(body))
+                .map((body) => body.trim().slice(0, 80));
+            expect(offenders).toEqual([]);
+        },
+    );
+
+    it('each rejection-handler pattern CAN detect an executor — the control', () => {
+        // Without this, the three assertions above are satisfied by extractors
+        // that find nothing. A first version of this guard failed exactly here.
+        const fixtures: Record<string, string> = {
+            'catch block': 'try { await sandbox(); } catch (e) { execFile(cmd, args); }',
+            '.catch(handler)': 'await sandbox().catch(() => exec(cmd));',
+            '.then(ok, onRejected)': 'await sandbox().then((r) => r, () => exec(cmd));',
+        };
+        for (const { name, bodies } of REJECTION_HANDLERS) {
+            const detected = bodies(fixtures[name]).filter((b) => EXECUTOR_CALL.test(b)).length;
+            expect({ name, detected }).toEqual({ name, detected: 1 });
+        }
+    });
+
+    it('no agent-reachable module names a local-execution fallback', () => {
+        // The wider population, in case the fallback is added one level out
+        // rather than inside the seam: a module that reaches the seam must not
+        // also reach an executor, which the "only through the seam" assertion
+        // above already enforces. This states the 4.2b reason for it, so the
+        // rule is not relaxed later as merely structural.
+        const reachable = sources.filter((f) =>
+            AGENT_REACHABLE_ROOTS.some((root) => f.rel.startsWith(root)) && f.rel !== SEAM,
+        );
+        const offenders = reachable
+            .filter((f) => EXECUTOR_IMPORT.test(f.code) || CODE_EVAL.test(f.code))
+            .map((f) => f.rel);
+        expect(offenders).toEqual([]);
+    });
+});

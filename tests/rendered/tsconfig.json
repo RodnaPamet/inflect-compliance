@@ -6,7 +6,16 @@
         "moduleResolution": "bundler",
         "target": "ES2020",
         "noEmit": false,
-        "isolatedModules": false,
+        // `true`, as the root config has it, so ts-jest transpiles each file on
+        // its own. At `false` it built a TypeScript language service over this
+        // whole program (`include` below: every rendered suite and all of src)
+        // and kept it for the life of the process. Under `--runInBand` that
+        // service was ~4 GB that every later file in the shard paid for: each
+        // full GC had to walk it, and on a CI runner those pauses stalled
+        // database transactions past their 5 s timeout. Type errors in the
+        // suites are still caught, by `npm run typecheck:rendered`
+        // (tsconfig.typecheck.json, which extends this file).
+        "isolatedModules": true,
         "incremental": false,
         "types": ["jest", "node", "jest-axe", "@testing-library/jest-dom"]
     },

@@ -78,7 +78,6 @@ const listWith = async (
 };
 
 describe('graphHeaders (#3458)', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { graphHeaders, GRAPH_ACCEPT_LANGUAGE } = require('@/lib/http/graph-headers');
 
     it('always sends a real culture, because `*` is what breaks PIM', () => {

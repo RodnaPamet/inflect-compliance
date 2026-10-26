@@ -67,6 +67,8 @@ export interface SyncResult {
             skipped: number;
             failed: number;
             totalEntries: number;
+            /** Active mappings retired because their entry left its file. */
+            retired: number;
         };
     };
     /** Total duration in ms */
@@ -74,6 +76,16 @@ export interface SyncResult {
 }
 
 // ─── Sync All Libraries ──────────────────────────────────────────────
+
+export type SyncOptions = ImportOptions & {
+    skipMappings?: boolean;
+    /** Defaults to `LIBRARIES_DIR`. A bundled caller must pass it: see `syncLibrariesAtStartup`. */
+    librariesDir?: string;
+    /** Defaults to the mapping importer's `MAPPINGS_DIR`. */
+    mappingsDir?: string;
+    /** Framework keys whose row another writer owns; their libraries are not imported. */
+    skipFrameworkKeys?: ReadonlySet<string>;
+};
 
 /**
  * Synchronize all YAML libraries from the default directory into Prisma,
@@ -94,18 +106,19 @@ export interface SyncResult {
  */
 export async function syncAllLibraries(
     db: PrismaClient,
-    options?: ImportOptions & { skipMappings?: boolean },
+    options?: SyncOptions,
 ): Promise<SyncResult> {
     return runJob('library-sync-all', async () => {
         const start = performance.now();
         const component = 'library-sync';
+        const librariesDir = options?.librariesDir ?? LIBRARIES_DIR;
 
         // ── Phase 1: Framework Libraries ──────────────────────────
         // Must complete before mapping sets — mappings reference
         // FrameworkRequirement rows created by framework import.
-        logger.info('Sync started — phase 1: frameworks', { component, dir: LIBRARIES_DIR });
+        logger.info('Sync started — phase 1: frameworks', { component, dir: librariesDir });
 
-        const results = await importAllFromDirectory(db, LIBRARIES_DIR, options);
+        const results = await importAllFromDirectory(db, librariesDir, options, options?.skipFrameworkKeys);
 
         const summary = {
             created: results.filter(r => r.action === 'created').length,
@@ -124,7 +137,7 @@ export async function syncAllLibraries(
         // Isolated: failures are caught, logged, and reported but do
         // not roll back framework changes.
         let mappingSetResults: ImportMappingSetResult[] = [];
-        const mappingSummary = { imported: 0, skipped: 0, failed: 0, totalEntries: 0 };
+        const mappingSummary = { imported: 0, skipped: 0, failed: 0, totalEntries: 0, retired: 0 };
 
         if (!options?.skipMappings) {
             logger.info('Sync phase 2: mapping sets', { component });
@@ -132,7 +145,7 @@ export async function syncAllLibraries(
             try {
                 mappingSetResults = await importAllMappingSets(
                     db,
-                    undefined, // default MAPPINGS_DIR
+                    options?.mappingsDir, // undefined: the importer's default MAPPINGS_DIR
                     { force: options?.force },
                 );
 
@@ -143,6 +156,7 @@ export async function syncAllLibraries(
                         mappingSummary.imported++;
                     }
                     mappingSummary.totalEntries += r.created + r.updated;
+                    mappingSummary.retired += r.retired;
                     if (r.errors.length > 0) {
                         mappingSummary.failed += r.errors.length;
                     }
@@ -185,6 +199,57 @@ export async function syncAllLibraries(
             totalDurationMs,
         };
     });
+}
+
+// ─── Container Start ─────────────────────────────────────────────────
+
+/**
+ * What `scripts/sync-framework-libraries.ts` runs at every container start,
+ * after the catalogue seeder.
+ *
+ * Until this existed nothing in a deployed environment called
+ * `syncAllLibraries`, so no library row and no mapping set reached one. The
+ * crosswalks, and every surface that reads them (inherited coverage, gap
+ * analysis, traceability), worked in tests and on databases somebody had
+ * synced by hand.
+ *
+ * A ROW WITH A PACK IS THE CATALOGUE'S, AND THIS LEAVES IT ALONE. Two
+ * libraries (`AIUC-1`, `COSO-ICF-2013`) declare the same framework key as
+ * their catalogue fixture, so both writers would write one row. They do not
+ * agree on it: COSO's 17 library descriptions are long-form and its fixture
+ * summaries are short, and the two write different `version` and
+ * `metadataJson` values. Importing over the catalogue's row rewrites all of
+ * that until the next start puts the catalogue's back. Worse comes later.
+ * COSO's fixture carries no metadata, so the version history the importer
+ * keeps in `metadataJson` survives there. On the next COSO library version,
+ * the importer would diff against the catalogue's summaries, record all 17 as
+ * changed, and mark every linked control NEEDS_REVIEW in every tenant holding
+ * one. The library importer never creates a pack, so "has a pack" separates
+ * the two writers without a list, and a library that later gains a catalogue
+ * fixture drops out of this sync by itself.
+ *
+ * The directories are passed explicitly because `LIBRARIES_DIR` and the
+ * mapping importer's `MAPPINGS_DIR` resolve from `__dirname`, which in a
+ * bundled script is `dist/`. They resolve from the working directory instead,
+ * which is `/app` in the image (the Dockerfile copies `src/data/libraries`
+ * there) and the repo root in a checkout.
+ */
+export async function syncLibrariesAtStartup(
+    db: PrismaClient,
+    dirs: { librariesDir: string; mappingsDir: string },
+): Promise<SyncResult & { catalogueOwnedKeys: string[] }> {
+    // Unbounded on purpose: a truncated read would hand an owned row to the
+    // library importer. The global catalogue is a few dozen rows.
+    const owned = await db.framework.findMany({
+        where: { packs: { some: {} } },
+        select: { key: true },
+    });
+    const catalogueOwnedKeys = owned.map((f) => f.key).sort();
+    const result = await syncAllLibraries(db, {
+        ...dirs,
+        skipFrameworkKeys: new Set(catalogueOwnedKeys),
+    });
+    return { ...result, catalogueOwnedKeys };
 }
 
 /**

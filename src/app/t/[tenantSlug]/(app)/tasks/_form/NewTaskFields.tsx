@@ -7,6 +7,7 @@
  * Both the legacy `/tasks/new` page and the future `<NewTaskModal>`
  * (P2) compose this component unchanged.
  */
+import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -24,11 +25,16 @@ import {
 import { UserCombobox } from '@/components/ui/user-combobox';
 import {
     EntityPicker,
+    fetchEntityLabel,
     type EntityPickerKind,
 } from '@/components/ui/entity-picker';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import type { NewTaskFormFields, NewTaskFormReturn } from './useNewTaskForm';
+import {
+    LINK_ENTITY_TYPES,
+    type NewTaskFormFields,
+    type NewTaskFormReturn,
+} from './useNewTaskForm';
 
 type Tr = (key: string) => string;
 const optsFrom = (t: Tr, prefix: string, values: readonly string[]): ComboboxOption[] =>
@@ -41,7 +47,7 @@ const buildSeverityOptions = (t: Tr): ComboboxOption[] =>
 const buildPriorityOptions = (t: Tr): ComboboxOption[] =>
     optsFrom(t, 'priorityLabels', ['P0', 'P1', 'P2', 'P3']);
 const buildLinkEntityOptions = (t: Tr): ComboboxOption[] =>
-    optsFrom(t, 'linkEntity', ['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'RISK', 'EVIDENCE']);
+    optsFrom(t, 'linkEntity', LINK_ENTITY_TYPES);
 const buildFindingOptions = (t: Tr): ComboboxOption[] =>
     optsFrom(t, 'findingSourceLabels', ['INTERNAL', 'EXTERNAL_AUDITOR', 'PEN_TEST', 'INCIDENT']);
 const buildGapTypeOptions = (t: Tr): ComboboxOption[] =>
@@ -55,6 +61,36 @@ export function NewTaskFields({
     tenantSlug: string;
 }) {
     const t = useTranslations('tasks');
+    const tCommon = useTranslations('common');
+    const untitled = tCommon('ui.untitled');
+    // A preset link (staged by the control / risk / asset page the form
+    // was opened from) carries only a type and an id. Look its name up
+    // once so the staged list can show it; keyed on the unlabelled links
+    // so a resolved one is never fetched again.
+    const { labelPendingLink } = form;
+    const unlabelled = form.pendingLinks
+        .flatMap((l) => (l.label ? [] : [`${l.entityType}:${l.entityId}`]))
+        .join('|');
+    useEffect(() => {
+        if (!unlabelled) return;
+        let active = true;
+        for (const ref of unlabelled.split('|')) {
+            const sep = ref.indexOf(':');
+            const entityType = ref.slice(0, sep);
+            const entityId = ref.slice(sep + 1);
+            void fetchEntityLabel(
+                tenantSlug,
+                entityType as EntityPickerKind,
+                entityId,
+                untitled,
+            ).then((label) => {
+                if (active && label) labelPendingLink(entityType, entityId, label);
+            });
+        }
+        return () => {
+            active = false;
+        };
+    }, [unlabelled, tenantSlug, untitled, labelPendingLink]);
     const TYPE_OPTIONS = buildTypeOptions(t);
     const SEVERITY_OPTIONS = buildSeverityOptions(t);
     const PRIORITY_OPTIONS = buildPriorityOptions(t);
@@ -189,6 +225,9 @@ export function NewTaskFields({
                         id="task-reviewer-input"
                         name="reviewerUserId"
                         tenantSlug={tenantSlug}
+                        // Only members whose role can edit tasks — the
+                        // server refuses anyone else as reviewer (#4278).
+                        audience="task-reviewer"
                         selectedId={form.fields.reviewerUserId || null}
                         onChange={(userId) =>
                             form.setField('reviewerUserId', userId ?? '')
@@ -334,10 +373,10 @@ export function NewTaskFields({
                                 className="flex items-center gap-tight text-sm text-content-default bg-bg-default/50 rounded px-3 py-1.5"
                             >
                                 <StatusBadge variant="info">
-                                    {l.entityType}
+                                    {form.linkTypeLabel(l.entityType)}
                                 </StatusBadge>
-                                <span className="font-mono text-xs flex-1">
-                                    {l.entityId}
+                                <span className="text-xs flex-1">
+                                    {l.label ?? t('new.linkedRecord')}
                                 </span>
                                 <Tooltip content={t('new.removeTooltip')}>
                                     <button

@@ -22,6 +22,7 @@ import {
     saveLegacyAccessMapping,
 } from '@/app-layer/usecases/legacy-access-mapping';
 import {
+    ACCOUNT_TYPES,
     CANONICAL_STATUSES,
     EntitlementLayoutSchema,
 } from '@/lib/legacy-access/canonical';
@@ -31,6 +32,9 @@ const Body = z.object({
     fields: z.record(z.string().min(1).max(64), z.string().min(1).max(256)),
     entitlements: EntitlementLayoutSchema,
     statusValues: z.record(z.string().min(1).max(64), z.enum(CANONICAL_STATUSES)).optional(),
+    accountTypeValues: z
+        .record(z.string().min(1).max(64), z.enum(ACCOUNT_TYPES))
+        .optional(),
     columnSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
     confirmedColumns: z.array(z.string().min(1).max(256)).max(512).optional(),
 });

@@ -603,10 +603,27 @@ describe('New page token discipline', () => {
         //     PageBreadcrumbs + BackAffordance primitives, no legacy
         //     btn/badge/glass-card); in the unmigrated tally only because the
         //     surface is new and not yet promoted to MIGRATED_PAGES.
+        //   - 145 (+2): Sandbox runtime declarations (#3995) —
+        //     admin/sandbox-runtime/page.tsx + SandboxRuntimeClient.tsx, the
+        //     read-only surface listing the four channels a sandbox runtime can
+        //     report on, the two enforcement values a committed policy must
+        //     carry, and the sandboxed-execution switch. It exists because the
+        //     runtime reads its configuration once at startup and exposes NO
+        //     configuration read API, so without this page the only record of
+        //     what a deploy declared is the deploy itself — and the fourth
+        //     channel (OCSF over OTLP) has no Helm chart key at all, so an
+        //     operator auditing the chart would conclude it does not exist.
+        //     Token-clean (semantic content-*/border-* only; Heading +
+        //     StatusBadge + InlineNotice + PageBreadcrumbs + BackAffordance
+        //     primitives, no legacy btn/badge/glass-card); in the unmigrated
+        //     tally only because the surface is new and not yet promoted to
+        //     MIGRATED_PAGES, which this file's convention makes a separate
+        //     landing. The figure is the LIVE count measured after the two
+        //     files existed (145), not 143 plus arithmetic.
         // Each increment names the epic + page + reason; promotion
         // to MIGRATED_PAGES is the path forward, never silent
         // floor-bumping.
-        expect(unmigrated.length).toBeLessThanOrEqual(143);
+        expect(unmigrated.length).toBeLessThanOrEqual(145);
     });
 
     it('migrated page count is at least 4', () => {

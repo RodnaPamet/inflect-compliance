@@ -23,7 +23,14 @@ import * as path from 'node:path';
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { mdSection } from '../helpers/markdown-regions';
-import { codeOf, declarationOf, sqlCodeOf, functionBodyOf } from '../helpers/source-blocks';
+import {
+    allCallExpressionsOf,
+    codeOf,
+    declarationOf,
+    sqlCodeOf,
+    functionBodyOf,
+} from '../helpers/source-blocks';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -146,7 +153,11 @@ describe('Agentic engine — guardrails', () => {
         // Charged on the axes an agentic loop can actually spend: a tool call
         // is its unit of work, and tokens are what a reasoning loop burns.
         expect(flueRun).toMatch(/'TOOL_CALLS'/);
-        expect(flueRun).toMatch(/charge\('TOKENS'/);
+        // The charge after the dispatch, which is the one that settles the
+        // run's spend. A bare `charge('TOKENS'` also matches the check before
+        // each model call (#4196), so it would pass with either one deleted.
+        // That check is proven by `flue-kill-switch-stops-the-model-call`.
+        expect(flueRun).toMatch(/charge\('TOKENS', costTokens - budget\.used\('TOKENS'\)\)/);
         // And it halts through the shared path rather than settling its own
         // way, so a cap halt is the same row on both engines. Anchored on the
         // import for the reason above: the bare call needle matches five
@@ -203,6 +214,41 @@ describe('Agentic engine — scope + model hardening', () => {
     it('WorkflowRun + WorkflowStep free-text is encrypted at rest (Epic B)', () => {
         expect(ENCRYPTED_FIELDS.WorkflowRun).toEqual(expect.arrayContaining(['contextJson', 'summary']));
         expect(ENCRYPTED_FIELDS.WorkflowStep).toEqual(expect.arrayContaining(['inputJson', 'outputJson']));
+    });
+
+    it('WorkflowRun.summary stays UNPOPULATED, so its schema comment stays true (#3910)', () => {
+        // The column is in the manifest above and is written by nobody, so a
+        // reader reaching for "the run's answer" finds NULL and reads it as
+        // "this run produced none" rather than "nothing fills this in". The
+        // real output is the SYNTHESIS step's `outputJson`.
+        //
+        // POPULATION DERIVED FROM GIT, not a list of the four writers I happened
+        // to find — a fifth would otherwise be invisible to this.
+        const writes = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/') && f.endsWith('.ts'))
+            .flatMap((f) => {
+                const src = codeOf(fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf-8'));
+                if (!src.includes('workflowRun.')) return [];
+                return (['create', 'update', 'upsert', 'updateMany'] as const).flatMap((verb) =>
+                    allCallExpressionsOf(src, `workflowRun.${verb}`).map((call) => ({ f, verb, call })),
+                );
+            });
+
+        // THE DENOMINATOR. An extractor that matched nothing would satisfy the
+        // assertion below for the wrong reason — the shape that has cost this
+        // repo a green guard before.
+        expect(writes.length).toBeGreaterThanOrEqual(4);
+
+        // DEDUPED BY FILE for the message's sake. `allCallExpressionsOf`
+        // extractions overlap — four `workflowRun.update` extractions in
+        // `workflow-runs.ts` alone, and a single offending call falls inside
+        // three of them — so the raw list reported three sites for one defect.
+        // The verdict was right and the number was not, and a guard's count is
+        // read by whoever it fires on.
+        const setsSummary = [
+            ...new Set(writes.filter((w) => /\bsummary\s*:/.test(w.call)).map((w) => w.f)),
+        ].sort();
+        expect(setsSummary).toEqual([]);
     });
 
     it('WorkflowRun + WorkflowStep have RLS tenant-isolation in a migration', () => {

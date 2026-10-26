@@ -44,6 +44,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
     type FilterType,
 } from '@/components/ui/filter';
@@ -56,6 +57,7 @@ import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildRiskFilters,
+    RISK_ROW_DERIVED_FILTER_KEYS,
     RISK_API_TRANSFORMS,
     RISK_FILTER_KEYS,
 } from './filter-defs';
@@ -76,7 +78,7 @@ import { RiskAleChip } from './_shared/RiskAleChip';
 import { RiskCollisionCallouts } from './_shared/RiskCollisionCallouts';
 import { deriveMatrixMovements } from './_shared/matrix-movements';
 import { RiskBandChip } from './_shared/RiskBandChip';
-import type { RiskBulkPermissions } from './_shared/bulk-permissions';
+import { RISK_BULK_MAX, type RiskBulkPermissions } from './_shared/bulk-permissions';
 import { detectCellCollisions } from '@/lib/risk-collisions';
 import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -84,6 +86,7 @@ import { useLocalStorage } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
+import { apiErrorMessage } from '@/lib/api-error';
 
 /** Bulk-action status options (canonical BulkActionBar). Labels resolve
  *  through the `risks.bulkStatus.*` catalog inside the component. */
@@ -110,6 +113,9 @@ function assetCellLabel(r: RiskListItem): string {
     const total = r._count?.assetLinks ?? 1;
     return total > 1 ? `${first} +${total - 1}` : first;
 }
+
+/** A bulk request the server refused; its message is the server's reason. */
+class BulkRefusedError extends Error {}
 
 /** RQ2-5 — resolved ALE for a list row (null = not quantified). */
 function riskAle(r: RiskListItem): number | null {
@@ -185,6 +191,8 @@ interface RisksClientProps {
     };
     /** Which bulk actions to offer; see `riskBulkPermissions`. */
     bulkPermissions: RiskBulkPermissions;
+    /** Whether to offer Create and Import; see `riskCanCreate`. */
+    canCreate: boolean;
     translations: {
         title: string;
         listDescription: string;
@@ -274,6 +282,7 @@ function RisksPageInner({
     tenantSlug,
     permissions,
     bulkPermissions,
+    canCreate,
     translations: t,
 }: RisksClientProps) {
     const tx = useTranslations('risks');
@@ -408,9 +417,22 @@ function RisksPageInner({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- apiUrl is a stable per-render closure over tenantSlug
     }, [risksQuery, tenantSlug]);
 
+    // A refused bulk action shows the server's reason (an owner who is no
+    // longer a member, a permission it lacks). The reason sits at
+    // `error.message` in the API envelope; with none, or when the request
+    // never reached the server, the toast falls back to the generic text.
+    const bulkRefusal = async (res: Response) =>
+        new BulkRefusedError(apiErrorMessage(await res.json().catch(() => null), tx('bulk.actionFailed')));
+    const refusalText = (err: unknown) =>
+        err instanceof BulkRefusedError ? err.message : tx('bulk.actionFailed');
+
     const handleBulkApply = async (action: string, value: string) => {
         const ids = Array.from(selected);
         if (!action || ids.length === 0) return;
+        if (ids.length > RISK_BULK_MAX) {
+            toast.error(tx('bulk.tooMany', { max: RISK_BULK_MAX }));
+            return;
+        }
 
         // Bulk delete is a soft/restorable delete → Epic 67 undo-toast rather
         // than a blocking confirm: drop the rows from the SWR cache now, fire
@@ -433,12 +455,12 @@ function RisksPageInner({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ riskIds: ids }),
                     });
-                    if (!res.ok) throw new Error('Bulk delete failed');
+                    if (!res.ok) throw await bulkRefusal(res);
                     await revalidateAfterBulk();
                 },
                 undoAction: () => { void risksQuery.mutate(); },
-                onError: () => {
-                    toast.error(tx('bulk.actionFailed'));
+                onError: (err) => {
+                    toast.error(refusalText(err));
                     void risksQuery.mutate();
                 },
             });
@@ -459,15 +481,15 @@ function RisksPageInner({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error('Bulk action failed');
+            if (!res.ok) throw await bulkRefusal(res);
             await revalidateAfterBulk();
             // Only a SUCCESSFUL apply clears the selection — a failed bulk
             // leaves the rows selected so the user can retry without
             // re-picking them.
             setSelected(new Set());
             toast.success(tx('bulk.applied', { count: ids.length }));
-        } catch {
-            toast.error(tx('bulk.actionFailed'));
+        } catch (err) {
+            toast.error(refusalText(err));
         } finally {
             setBulkApplying(false);
         }
@@ -1108,8 +1130,9 @@ function RisksPageInner({
 
     // Right-rail Phase 3 — the AI assist co-pilot rail. A persistent,
     // co-resident entry point to the AI risk-assessment flow that
-    // follows the user across the register. Gated on write permission
-    // (the AI flow itself requires `risks.create`); `defaultCollapsed`
+    // follows the user across the register. Gated on the coarse write
+    // tier, the one check the AI suggestion routes make (they hold no
+    // granular key); `defaultCollapsed`
     // so it lands as a quiet 44px spine, not a 320px land-grab — the
     // user expands it when they want to engage.
     const aiAssistRail = permissions.canWrite ? (
@@ -1217,7 +1240,7 @@ function RisksPageInner({
                     columnsDropdown={columnsDropdown}
                     filtersDropdown={filtersDropdown}
                     leading={
-                        permissions.canWrite ? (
+                        canCreate ? (
                             <Button
                                 variant="primary"
                                 icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -1320,7 +1343,7 @@ function RisksPageInner({
                                                 icon: <AppIcon name="shield" size={16} />,
                                                 href: tenantHref('/vulnerabilities'),
                                             },
-                                            permissions.canWrite && {
+                                            canCreate && {
                                                 id: 'risk-import-btn',
                                                 label: tx('importRisks'),
                                                 icon: <AppIcon name="upload" size={16} />,
@@ -1468,6 +1491,7 @@ function RisksPageInner({
                                 <RiskFirstRunEmpty
                                     size="sm"
                                     onCreateClick={() => setIsCreateOpen(true)}
+                                    canCreate={canCreate}
                                 />
                             )
                         }
@@ -1480,7 +1504,7 @@ function RisksPageInner({
                 )}
             </ListPageShell.Body>
 
-            {permissions.canWrite && (
+            {canCreate && (
                 <NewRiskModal
                     open={isCreateOpen}
                     setOpen={setIsCreateOpen}
@@ -1517,7 +1541,7 @@ function RisksFilterToolbar({
     // next-intl's scoped Translator types the key as a narrow union; the
     // filter-defs factory takes a plain (key: string) resolver. Adapt with a
     // thin arrow — the runtime accepts any dotted key in the namespace.
-    const filters: FilterType[] = useMemo(
+    const builtFilters: FilterType[] = useMemo(
         () =>
             buildRiskFilters(
                 risks,
@@ -1526,6 +1550,8 @@ function RisksFilterToolbar({
             ),
         [risks, tx, tGroup],
     );
+    // The options are built from the risks loaded, which the filters narrow.
+    const filters = useRetainedFilterOptions(builtFilters, RISK_ROW_DERIVED_FILTER_KEYS);
     return (
         <FilterToolbar
             filters={filters}

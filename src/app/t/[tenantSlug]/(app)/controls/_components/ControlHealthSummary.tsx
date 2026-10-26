@@ -47,10 +47,9 @@ export function ControlHealthSummary() {
         <Card>
             <div className="mb-4 flex items-center gap-1.5">
                 <Heading level={3}>{t('dashboard.controlHealthTitle')}</Heading>
-                {/* Health is a MEASURED-only verdict — declared effectiveness
-                    informs valuation/ROI, never health. Without that note a
-                    control with declared 95 + no tests reads UNKNOWN here but
-                    95% on ROI, which looks like a contradiction. */}
+                {/* The hint states the verdict rule, held to it by
+                    tests/unit/control-health-hint-matches-rule. Declared
+                    effectiveness informs valuation/ROI, never health. */}
                 <InfoTooltip content={t('dashboard.controlHealthMeasuredOnly')} />
             </div>
             {/* The verdict scan is capped; say so rather than silently dropping

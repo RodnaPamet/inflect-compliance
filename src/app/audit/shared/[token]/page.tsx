@@ -11,6 +11,8 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@inflect/ui/lib/cn';
 import { RelianceSnapshotBlock } from '@/components/audits/RelianceSnapshotBlock';
+import { apiErrorMessage } from '@/lib/api-error';
+import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
 
 type ReturnChannelKind = 'COMMENT' | 'EVIDENCE_REQUEST' | 'FINDING' | 'QUESTION';
 const KINDS: ReturnChannelKind[] = ['COMMENT', 'EVIDENCE_REQUEST', 'FINDING', 'QUESTION'];
@@ -40,9 +42,14 @@ interface SharedPackData {
 
 type PackItem = SharedPackData['items'][number];
 
-function itemDisplayName(item: PackItem): string {
+/**
+ * The name an item is listed by. The Statement of Applicability a freeze
+ * attaches (#4129) is named in words, in the auditor's language.
+ */
+function itemDisplayName(item: PackItem, soaName: (framework: string) => string): string {
     try {
         const snap = JSON.parse(item.snapshotJson || '{}');
+        if (snap.type === 'SOA_REPORT') return soaName(snap.frameworkName || snap.framework || '');
         return snap.code || snap.title || snap.name || item.entityId;
     } catch {
         return item.entityId;
@@ -63,6 +70,11 @@ interface PackSnapshot {
 
 export default function SharedPackPage() {
     const t = useTranslations('external.auditShare');
+    const soaName = (framework: string) => t('soaItemName', { framework });
+    // An item's status by its label, as the pack page shows it (#4129) — the
+    // stored value (`IMPLEMENTED`) is a code, not something to show an auditor.
+    const tStatus = useTranslations('audits.packs.itemStatus');
+    const statusLabel = (status: string) => (tStatus.has(status) ? tStatus(status) : humanizeSnakeCase(status));
     const params = useParams();
     const token = params.token as string;
 
@@ -98,7 +110,7 @@ export default function SharedPackPage() {
             const created = await res.json();
             const itemName = attachItemId
                 ? (data?.items.find((i) => i.id === attachItemId)
-                    ? itemDisplayName(data.items.find((i) => i.id === attachItemId)!)
+                    ? itemDisplayName(data.items.find((i) => i.id === attachItemId)!, soaName)
                     : undefined)
                 : undefined;
             setSubmissions((prev) => [{ id: created.id, kind, body: message.trim(), itemName }, ...prev]);
@@ -115,8 +127,10 @@ export default function SharedPackPage() {
         fetch(`/api/audit/shared/${token}`)
             .then(async r => {
                 if (!r.ok) {
-                    const err = await r.json().catch(() => ({}));
-                    throw new Error(err.message || t('invalidOrExpired'));
+                    // The reason is under `error.message` ("Share link has
+                    // expired", …); `err.message` was never there (#4129).
+                    const err = await r.json().catch(() => null);
+                    throw new Error(apiErrorMessage(err, t('invalidOrExpired')));
                 }
                 return r.json();
             })
@@ -161,7 +175,7 @@ export default function SharedPackPage() {
                     <div className="text-sm text-slate-500 uppercase tracking-wide mb-2">{t('sharedAuditPack')}</div>
                     <Heading level={1} id="shared-pack-name">{pack?.name}</Heading>
                     <p className="text-slate-400 text-sm mt-1">
-                        {cycle?.name} · {cycle?.frameworkKey} · {pack?.status}
+                        {cycle?.name} · {cycle?.frameworkKey} · {pack?.status ? (t.has(`packStatus.${pack.status}`) ? t(`packStatus.${pack.status}`) : pack.status) : null}
                     </p>
                     {pack?.frozenAt && (
                         <p className="text-xs text-slate-500 mt-1">
@@ -195,12 +209,12 @@ export default function SharedPackPage() {
                             {typeItems.map((item) => {
                                 let snap: PackSnapshot = {};
                                 try { snap = JSON.parse(item.snapshotJson || '{}'); } catch { /* */ }
-                                const name = snap.code || snap.title || snap.name || item.entityId;
+                                const name = itemDisplayName(item, soaName);
                                 return (
                                     <div key={item.id} className="p-3 text-sm">
                                         <div className="flex items-center justify-between">
                                             <span className="font-medium">{name}</span>
-                                            {snap.status && <StatusBadge variant="neutral">{snap.status}</StatusBadge>}
+                                            {snap.status && <StatusBadge variant="neutral">{statusLabel(snap.status)}</StatusBadge>}
                                         </div>
                                         {snap.description && <p className="text-xs text-slate-500 mt-1">{snap.description}</p>}
                                         <div className="flex gap-default mt-1 text-xs text-slate-500">
@@ -287,7 +301,7 @@ export default function SharedPackPage() {
                                             attachItemId === item.id ? 'bg-slate-700 border-slate-500 text-white' : 'bg-slate-800/50 border-slate-700 text-slate-300 hover:bg-slate-700/50',
                                         )}
                                     >
-                                        {itemDisplayName(item)}
+                                        {itemDisplayName(item, soaName)}
                                     </button>
                                 ))}
                             </div>

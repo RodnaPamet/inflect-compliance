@@ -123,7 +123,7 @@ beforeEach(() => {
     mockTx.externalToolParameterSet.findMany.mockResolvedValue([]);
     mockTx.employee.findMany.mockResolvedValue([]);
     mockTx.identityAccountLink.findMany.mockResolvedValue([]);
-    listToolsMock.mockResolvedValue([ALERTS]);
+    listToolsMock.mockResolvedValue({ tools: [ALERTS], refusedNames: 0 });
     callToolMock.mockResolvedValue({ content: [] });
 });
 

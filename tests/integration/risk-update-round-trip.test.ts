@@ -20,6 +20,10 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env.test') });
 
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
+import {
+    deleteAuditRowsForTenants,
+    deleteAuditRowsForUsers,
+} from '../helpers/audit-cleanup';
 import type { PrismaClient } from '@prisma/client';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { createRisk, updateRisk, getRisk } from '@/app-layer/usecases/risk';
@@ -82,11 +86,33 @@ describeFn('risk edit round-trip (write → read back)', () => {
     });
 
     afterAll(async () => {
+        // THE CHILDREN BEFORE THE PARENTS (#3343). This teardown deleted the
+        // tenant straight away and swallowed the result, so it failed on
+        // `Risk_tenantId_fkey` every run and the tenants survived for the
+        // next suite in the shard to inherit. Resolving the ids first is what
+        // lets the children be cleared: the deletes below key on slug and email.
+        const tenantRows = await testPrisma.tenant.findMany({
+            where: { slug: { in: slugs } },
+            select: { id: true },
+        });
+        const tenantIds = tenantRows.map((t: { id: string }) => t.id);
+        const userRows = await testPrisma.user.findMany({
+            where: { email: { in: emails } },
+            select: { id: true },
+        });
+        const userIds = userRows.map((u: { id: string }) => u.id);
+
+        if (tenantIds.length > 0) {
+            await testPrisma.risk.deleteMany({ where: { tenantId: { in: tenantIds } } });
+            await deleteAuditRowsForTenants(testPrisma, tenantIds);
+        }
+        if (userIds.length > 0) await deleteAuditRowsForUsers(testPrisma, userIds);
+
         for (const slug of slugs) {
-            await testPrisma.tenant.deleteMany({ where: { slug } }).catch(() => {});
+            await testPrisma.tenant.deleteMany({ where: { slug } });
         }
         for (const email of emails) {
-            await testPrisma.user.deleteMany({ where: { email } }).catch(() => {});
+            await testPrisma.user.deleteMany({ where: { email } });
         }
         await testPrisma.$disconnect();
     });

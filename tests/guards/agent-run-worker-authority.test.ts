@@ -102,8 +102,8 @@ describe('the queued path resumes rather than restarts', () => {
 describe('only the reasoning engine goes to the worker', () => {
     const start = functionBodyOf(read(USECASE), 'startWorkflowRun');
 
-    it('enqueues when the resolved driver is flue', () => {
-        expect(start).toMatch(/chosenDriver === 'flue'/);
+    it('enqueues when the resolved driver is a reasoning engine', () => {
+        expect(start).toMatch(/isReasoningEngine\(chosenDriver\)/);
         expect(start).toContain("enqueue('agent-run-execute'");
     });
 
@@ -152,7 +152,7 @@ describe('the RESUME door goes to the worker too', () => {
         // drain lives. This path branched on the driver for the register gate
         // and then called `executeFrom` inline regardless, so a human approval
         // ran the whole model loop inside a Next.js POST handler.
-        expect(resume).toMatch(/resumeDriver === 'flue'/);
+        expect(resume).toMatch(/isReasoningEngine\(resumeDriver\)/);
         expect(resume).toContain("enqueue('agent-run-execute'");
     });
 
@@ -160,7 +160,7 @@ describe('the RESUME door goes to the worker too', () => {
         // The worker resumes from `row.stepCount`; this path computed
         // `resumedFrom + 1` and passed it as an argument, which does not
         // survive the hop. Writing it is what makes the two the same number.
-        const handoff = resume.slice(resume.indexOf("resumeDriver === 'flue'"));
+        const handoff = resume.slice(resume.indexOf('isReasoningEngine(resumeDriver)'));
         expect(handoff).toContain('stepCount: resumedFrom + 1');
         expect(handoff.indexOf('stepCount: resumedFrom + 1')).toBeLessThan(
             handoff.indexOf("enqueue('agent-run-execute'"),

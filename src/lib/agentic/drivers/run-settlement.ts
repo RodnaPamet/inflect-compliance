@@ -26,7 +26,18 @@ export async function updateRun(
     data: Record<string, unknown>,
 ): Promise<void> {
     await runInTenantContext(ctx, (db) =>
-        db.workflowRun.update({ where: { id: runId }, data: data as never }),
+        db.workflowRun.update({
+            where: { id: runId },
+            data: data as never,
+            // An `update` RETURNS the row, and Prisma maps every scalar it
+            // returns — so a run stamped with an engine this build does not
+            // know (#4241) made this write throw after the statement ran, rolled
+            // the transaction back, and left the run unsettleable: `failRun`
+            // could not fail it. `omit` rather than `select: { id: true }`
+            // because the audit extension's `after` snapshot is read off this
+            // result, and narrowing it would empty that snapshot.
+            omit: { driver: true },
+        }),
     );
 }
 
@@ -140,6 +151,16 @@ export async function haltRunAtGuard(
 }
 
 /**
+ * A cap that also latched on a run settled as KILLED, and which of the two the
+ * engine observed first (#4230). The order is the engine's own observation, not
+ * a comparison of clocks (#4209).
+ */
+export interface CapBesideKill {
+    readonly halt: RunCapHalt;
+    readonly observedFirst: 'CAP' | 'KILL';
+}
+
+/**
  * Settle a run stopped by a KILL SWITCH.
  *
  * ── WHY NOT `failRun` ───────────────────────────────────────────────────────
@@ -159,14 +180,28 @@ export async function haltRunAtGuard(
  * echo the reason text an administrator typed: that is tenant content, and the
  * thing being told about the refusal is the thing that was just stopped — the
  * same rule `assertNotKilled` follows at the tool boundary.
+ *
+ * ── A RUN THAT WAS ALSO CAPPED (#4230) ──────────────────────────────────────
+ *
+ * The status and the reason name the kill: an operator who pressed stop looks
+ * for that act in the record. The cap is not dropped. `alsoCapped` counts the
+ * same metric `haltRunAtCap` counts and puts the cap's fields on this row, so
+ * a run settled as killed still shows the ceiling that fired. `observedFirst`
+ * says which of the two this process saw first (#4209). Every cap key is
+ * present and `null` on a kill with no cap, so "no cap latched" is a value a
+ * reader can see rather than an absent key.
  */
 export async function haltRunAtKill(
     ctx: RequestContext,
     runId: string,
     kill: { scope: string; switchId: string; engagedAt: Date },
     reason: string,
+    alsoCapped: CapBesideKill | null = null,
 ): Promise<string> {
     const message = `flue_run_agent_killed: ${reason}`;
+    if (alsoCapped) {
+        recordAgentRunCapHalt({ cap: alsoCapped.halt.kind, source: alsoCapped.halt.source });
+    }
     await updateRun(ctx, runId, {
         status: 'ABORTED',
         completedAt: new Date(),
@@ -187,6 +222,12 @@ export async function haltRunAtKill(
             killSwitchId: kill.switchId,
             killEngagedAt: kill.engagedAt.toISOString(),
             escalate: true,
+            // Named at the sink, never spread, as on `WORKFLOW_RUN_CAP_HALTED`.
+            cap: alsoCapped?.halt.kind ?? null,
+            capSource: alsoCapped?.halt.source ?? null,
+            capLimit: alsoCapped?.halt.limit ?? null,
+            capUsed: alsoCapped?.halt.used ?? null,
+            observedFirst: alsoCapped?.observedFirst ?? null,
         },
     }).catch(() => undefined);
     return 'ABORTED';

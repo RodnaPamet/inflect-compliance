@@ -11,9 +11,10 @@
  *     Idempotent on the `(policyVersionId, userId)` unique constraint.
  *   - `getPolicyAttestation(ctx, policyId, userId?)` — has the user
  *     attested the current version? Returns the row or null.
- *   - `getPolicyAcknowledgementRoster(ctx, policyId)` — admin/audit
- *     roster: who was required, who acknowledged the current version
- *     (stale acks excluded), provenance, and the "who attested" log.
+ *   - `getPolicyAcknowledgementRoster(ctx, policyId)` — roster readable
+ *     by OWNER / ADMIN / AUDITOR: who was required, who acknowledged the
+ *     current version (stale acks excluded), provenance, and the "who
+ *     attested" log.
  *
  * Only PUBLISHED policies can be attested; attesting a DRAFT or
  * ARCHIVED version doesn't satisfy the ISO control.
@@ -22,10 +23,11 @@ import { z } from 'zod';
 import { Role } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { assertCanRead, assertCanAdmin } from '../policies/common';
+import { assertCanRead, assertCanAdmin, assertCanAudit } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { PolicyRepository } from '../repositories/PolicyRepository';
+import { resolveTenantSlugForLinks, tenantPageLink } from '../notifications/tenant-link';
 
 export interface AttestPolicyResult {
     acknowledgementId: string;
@@ -245,16 +247,26 @@ export async function requirePolicyAcknowledgement(
             throw badRequest('The selected audience resolved to zero active members.');
         }
 
-        await db.policyAcknowledgementAssignment.createMany({
+        // Only the rows this request created come back: a person already
+        // assigned to this version was already asked — by an earlier request,
+        // or by the publish or rollback that carried the campaign onto it, each
+        // of which notified them under its own key — so asking again here would
+        // tell them twice about the same version.
+        const created = await db.policyAcknowledgementAssignment.createManyAndReturn({
             data: userIds.map((userId) => ({ policyVersionId, userId, assignedById: ctx.userId })),
             skipDuplicates: true,
+            select: { userId: true },
         });
+        const newlyAssigned = created.map((row) => row.userId);
 
-        // Notify each assignee (best-effort — a notification failure must not
-        // fail the assignment). dedupeKey keeps a re-run from double-notifying.
+        // Notify each new assignee (best-effort — a notification failure must
+        // not fail the assignment). dedupeKey backstops two racing requests.
+        // The link carries the `/t/<slug>` prefix every tenant page lives under;
+        // a bare `/policies/<id>` 404'd from the bell (#4128).
         const title = `Action required: acknowledge "${policy.title}"`;
         const message = `You have been asked to read and acknowledge the policy "${policy.title}".`;
-        for (const userId of userIds) {
+        const linkUrl = tenantPageLink(await resolveTenantSlugForLinks(db, ctx), `/policies/${policyId}`);
+        for (const userId of newlyAssigned) {
             await db.notification
                 .create({
                     data: {
@@ -263,7 +275,7 @@ export async function requirePolicyAcknowledgement(
                         type: 'GENERAL',
                         title,
                         message,
-                        linkUrl: `/policies/${policyId}`,
+                        linkUrl,
                         dedupeKey: `POLICY_ACK_REQUIRED:${policyVersionId}:${userId}`,
                     },
                 })
@@ -338,15 +350,22 @@ export interface AcknowledgementRoster {
 }
 
 /**
- * Admin roster for the current published version: who was required to
+ * Roster for the current published version: who was required to
  * acknowledge, who has (with timestamps), % complete, and voluntary
- * acknowledgers (acknowledged without being assigned). Admin/audit only.
+ * acknowledgers (acknowledged without being assigned), plus the attestation
+ * log.
+ *
+ * Authorization — OWNER, ADMIN and AUDITOR may READ it (`assertCanAudit`;
+ * `canAudit` is exactly those three tiers). Acknowledgement evidence is what an
+ * auditor asks for (ISO 27001 §7.3), so this was widened from admin-only by
+ * owner decision (#4128). Writing the campaign — `requirePolicyAcknowledgement`
+ * — stays admin-only.
  */
 export async function getPolicyAcknowledgementRoster(
     ctx: RequestContext,
     policyId: string,
 ): Promise<AcknowledgementRoster> {
-    assertCanAdmin(ctx);
+    assertCanAudit(ctx);
 
     return runInTenantContext(ctx, async (db) => {
         const policy = await PolicyRepository.getById(db, ctx, policyId);

@@ -105,7 +105,7 @@ export const MACHINE_CALLER_PREFIXES = [
     // Per-provider raw-body signature verification; the tenant is resolved
     // from the IntegrationConnection and never from the caller.
     '/api/integrations/webhooks',
-    // `Bearer <TenantApiKey>` → `authenticateMcpRequest` → verifyApiKey with
+    // `Bearer <TenantApiKey>` → `verifyMcpCredential` → verifyApiKey with
     // an `mcp:read` capability scope.
     '/api/mcp',
     // The inbound A2A endpoint (#3679): another organisation's agent, which has
@@ -447,6 +447,38 @@ export function extractTenantSlugFromPath(pathname: string): string | null {
     const apiMatch = pathname.match(/^\/api\/t\/([^/]+)(?:\/|$)/);
     if (apiMatch) return apiMatch[1];
 
+    return null;
+}
+
+/**
+ * The workspace whose MFA challenge this request must pass first, if any, for
+ * the session's NON-primary workspaces (`mfaPendingTenantIds`; the primary one
+ * is `mfaPending`, handled before this):
+ *   - a path inside a pending workspace answers that workspace;
+ *   - an org path answers the first pending workspace, because an org route
+ *     exposes a portfolio that includes it;
+ *   - any other path answers nothing.
+ * Paths that must stay reachable mid-challenge are the caller's to exempt
+ * (`isMfaAllowedPath`). See `src/lib/auth/workspace-mfa.ts`.
+ */
+export function pendingMfaWorkspaceSlug(
+    pathname: string,
+    token: {
+        memberships?: ReadonlyArray<{ slug: string; tenantId: string }> | null;
+        mfaPendingTenantIds?: readonly string[] | null;
+    },
+): string | null {
+    const pending = new Set(token.mfaPendingTenantIds ?? []);
+    if (pending.size === 0) return null;
+    const memberships = token.memberships ?? [];
+    const slug = extractTenantSlugFromPath(pathname);
+    if (slug) {
+        const membership = memberships.find((m) => m.slug === slug);
+        return membership && pending.has(membership.tenantId) ? slug : null;
+    }
+    if (isOrgPath(pathname)) {
+        return memberships.find((m) => pending.has(m.tenantId))?.slug ?? null;
+    }
     return null;
 }
 

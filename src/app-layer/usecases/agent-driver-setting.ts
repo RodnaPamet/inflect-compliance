@@ -42,6 +42,7 @@ import {
 } from '@/lib/agentic/agent-driver';
 import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
 import { runInTenantContext } from '@/lib/db-context';
+import { readStoredDriverMode } from '@/lib/agentic/agent-driver-stored-mode';
 import { env } from '@/env';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
@@ -65,18 +66,20 @@ export interface AgentDriverSetting {
 
 /** Read the stored mode and, more importantly, what it will actually do. */
 export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentDriverSetting> {
-    const row = await runInTenantContext(ctx, (db) =>
-        db.tenantSecuritySettings.findUnique({
-            where: { tenantId: ctx.tenantId },
-            select: { agentDriver: true },
-        }),
+    // READ AS TEXT, through the reader the run path also uses (#4224). Read
+    // through the generated client, a stored value this build's enum does not
+    // contain fails the whole query — so this surface answered 500 and the
+    // `UNRECOGNISED_SETTING` sentence below it, which tells an owner to choose
+    // an engine again, was unreachable at exactly the moment it applied.
+    const stored = await runInTenantContext(ctx, (db) =>
+        readStoredDriverMode(db, ctx.tenantId),
     );
 
-    // COERCED on read, exactly as `resolveDriverForTenant` does. An absent row,
-    // a NULL and a value this build does not recognise all read STATIC, and
-    // reading them any other way here would make this surface disagree with
-    // the run path about the same stored byte.
-    const mode = coerceStoredDriverMode(row?.agentDriver ?? null);
+    // COERCED on read, and the run path reaches the same arms through
+    // `resolveAgentDriver`. An absent row, a NULL and a value this build does
+    // not recognise all read STATIC, and reading them any other way here would
+    // make this surface disagree with the run path about the same stored byte.
+    const mode = coerceStoredDriverMode(stored);
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
     // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
     // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no

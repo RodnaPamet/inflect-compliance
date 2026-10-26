@@ -248,7 +248,7 @@ async function clearOwnRows(): Promise<void> {
             where: { emailHash: { in: TENANTS.map((x) => hashForLookup(`owner@${x}.test`)) } },
         })
         .catch(() => {});
-    await prisma.tenant.deleteMany({ where: { id: { in: [...TENANTS] } } }).catch(() => {});
+    await prisma.tenant.deleteMany({ where: { id: { in: [...TENANTS] } } });
 }
 
 describeFn('the agent-governance reports API refuses at the route, and says so once (real DB)', () => {

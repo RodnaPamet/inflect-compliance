@@ -26,6 +26,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { runStepAction, storeActionResult } from '@/app-layer/usecases/onboarding-automation';
 
 const globalPrisma = new PrismaClient({
@@ -126,8 +127,9 @@ describeFn('onboarding-automation — runStepAction & storeActionResult (integra
         await cleanTenant();
         await cleanCatalog();
         await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: TENANT_ID } }).catch(() => {});
-        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } }).catch(() => {});
-        await globalPrisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
+        await deleteAuditRowsForTenants(globalPrisma, [TENANT_ID]);
+        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
+        await globalPrisma.user.deleteMany({ where: { id: userId } });
         await globalPrisma.$disconnect().catch(() => {});
     });
 
@@ -149,7 +151,9 @@ describeFn('onboarding-automation — runStepAction & storeActionResult (integra
     it('FRAMEWORK_SELECTION with empty/undefined selectedFrameworks creates nothing', async () => {
         // allData has no FRAMEWORK_SELECTION key → `|| []` branch.
         const res = await runStepAction(ctx(), 'FRAMEWORK_SELECTION', {}, {});
-        expect(res).toEqual({ action: 'FRAMEWORK_INSTALL', created: 0, skipped: 0, details: '' });
+        // `failures` joined the result in #4125 — the wizard reads it to name
+        // each framework pack that did not install.
+        expect(res).toEqual({ action: 'FRAMEWORK_INSTALL', created: 0, skipped: 0, details: '', failures: [] });
     });
 
     it('FRAMEWORK_SELECTION with an unknown framework hits the no-pack skip branch', async () => {

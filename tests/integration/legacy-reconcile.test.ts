@@ -18,7 +18,7 @@ import {
 
 const prisma: PrismaClient = prismaTestClient();
 const TENANT = 'lgrc-tenant';
-const ctx = () => makeRequestContext('OWNER', { tenantId: TENANT });
+const ctx = () => makeRequestContext('OWNER', { userId: 'lgrc-user-1', tenantId: TENANT });
 
 let connectionId: string;
 let snapshotId: string;
@@ -66,9 +66,9 @@ beforeAll(async () => {
     // The audit writer's FK. Seeded here rather than inherited from a sibling
     // suite — see the note in legacy-access-profile.test.ts.
     await prisma.user.upsert({
-        where: { id: 'user-1' },
+        where: { id: 'lgrc-user-1' },
         update: {},
-        create: { id: 'user-1', email: 'reconciler@lgrc.test', name: 'Reconciler' },
+        create: { id: 'lgrc-user-1', email: 'reconciler@lgrc.test', name: 'Reconciler' },
     });
 });
 

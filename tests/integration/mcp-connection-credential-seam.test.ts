@@ -159,7 +159,7 @@ describe('a credential travels from the connection row to the wire', () => {
         const authorization = await authorizationFor(row.id, config, secrets);
         expect(authorization).toBe(SECRET);
 
-        const tools = await listTools({ url: URL_, authorization });
+        const { tools } = await listTools({ url: URL_, authorization });
         expect(tools.map((t) => t.name)).toContain('sales_orders_by_creator');
 
         // THE SEAM, OBSERVED AT THE FAR END. Everything above could hold while

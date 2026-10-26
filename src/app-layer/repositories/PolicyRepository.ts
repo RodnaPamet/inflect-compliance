@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { Prisma, PolicyStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
-import { parseEnumListFilter } from '../domain/list-filter';
+import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 
 /** Counts backing the six KPI filter cards on the Policies list page. */
 export interface PolicyKpiCounts {
@@ -17,6 +17,7 @@ export interface PolicyKpiCounts {
 
 export interface PolicyFilters {
     status?: string;
+    /** One category, or several comma-joined (the list's multi-select facet). */
     category?: string;
     language?: string;
     q?: string;
@@ -65,6 +66,11 @@ const policyListSelect = {
     createdAt: true,
     owner: { select: { id: true, name: true, email: true } },
     currentVersion: { select: { id: true, versionNumber: true } },
+    // The NEWEST version, for the Version column. `currentVersion` is the
+    // published pointer: it does not move when a draft is added, and is null
+    // for a policy created without content — so on its own the column read
+    // "v1" for every never-published policy, whatever its drafts.
+    versions: { select: { versionNumber: true }, orderBy: { versionNumber: 'desc' }, take: 1 },
     _count: { select: { versions: true, controlLinks: true, approvals: true } },
 } as const;
 
@@ -137,6 +143,14 @@ export class PolicyRepository {
      * Resolve the `outstandingAck` filter into a concrete `currentVersionId`
      * restriction. An empty result must narrow to ZERO rows (the facet was
      * requested and matched nothing) — never silently drop the filter.
+     *
+     * PUBLISHED only (owner decision, #4279). Archiving keeps the pointer and
+     * the assignments, so an archived policy matched — yet nobody can
+     * acknowledge a policy that is not PUBLISHED (`policy-attestation.ts`),
+     * its row's rollup is a dash, and the facet describes itself as
+     * "Published policies with assignees who have not acknowledged". An AND
+     * term, so an explicit status filter still intersects rather than being
+     * overwritten.
      */
     private static async _applyOutstandingAck(
         db: PrismaTx,
@@ -146,7 +160,17 @@ export class PolicyRepository {
     ): Promise<Prisma.PolicyWhereInput> {
         if (!filters?.outstandingAck) return where;
         const ids = await PolicyRepository.outstandingAckVersionIds(db, ctx);
-        return { ...where, currentVersionId: { in: ids } };
+        return {
+            ...where,
+            currentVersionId: { in: ids },
+            AND: [...PolicyRepository._andTerms(where), { status: PolicyStatus.PUBLISHED }],
+        };
+    }
+
+    /** `where.AND` as an array, whatever shape it was given in. */
+    private static _andTerms(where: Prisma.PolicyWhereInput): Prisma.PolicyWhereInput[] {
+        if (!where.AND) return [];
+        return Array.isArray(where.AND) ? [...where.AND] : [where.AND];
     }
 
     static async list(
@@ -185,32 +209,38 @@ export class PolicyRepository {
      *
      * The shapes below mirror each def's `apply` in PoliciesClient — change
      * one and you must change the other, which is why the mapping is spelled
-     * out rather than inferred:
-     *   total          clearAll()                  -> tenant, no filters
+     * out rather than inferred.
+     *
+     * A card's click first CLEARS every other card's filter key
+     * (`useKpiFilter` makes the cards mutually exclusive), so each count drops
+     * all three card-owned dimensions — status, reviewBucket, outstanding —
+     * whatever set them (a card or the Filter dropdown), and then applies its
+     * own. Only the filters no card owns (category, q, language) survive:
+     *   total          clearAll()                    -> tenant, no filters
      *   draft/inReview/approved
-     *                  set('status', X)            -> current filters, status replaced
-     *   overdueReview  set('reviewBucket','overdue')
-     *   outstandingAck set('outstanding','true')
+     *                  set('status', X)              -> card keys cleared, status = X
+     *   overdueReview  set('reviewBucket','overdue') -> card keys cleared, overdue
+     *   outstandingAck set('outstanding','true')     -> card keys cleared, outstanding
+     * Keeping the other card keys (as this did) made the Draft card count
+     * drafts due within 30 days while its click showed every draft.
      */
     static async kpiCounts(
         db: PrismaTx,
         ctx: RequestContext,
         filters?: PolicyFilters,
     ): Promise<PolicyKpiCounts> {
-        // Status is replaced (not intersected) by the status cards, so the
-        // groupBy runs over the other active filters only.
-        const withoutStatus: PolicyFilters | undefined = filters
-            ? { ...filters, status: undefined }
-            : undefined;
-        const statusWhere = await PolicyRepository._applyOutstandingAck(
-            db,
-            ctx,
-            PolicyRepository._buildWhere(ctx, withoutStatus),
-            withoutStatus,
-        );
+        const withoutCardKeys: PolicyFilters = {
+            ...(filters ?? {}),
+            status: undefined,
+            reviewBucket: undefined,
+            outstandingAck: undefined,
+        };
+        // Status is replaced by the status cards, so the groupBy splits the
+        // card-free set by status.
+        const statusWhere = PolicyRepository._buildWhere(ctx, withoutCardKeys);
 
-        const overdueFilters: PolicyFilters = { ...(filters ?? {}), reviewBucket: 'overdue' };
-        const ackFilters: PolicyFilters = { ...(filters ?? {}), outstandingAck: true };
+        const overdueFilters: PolicyFilters = { ...withoutCardKeys, reviewBucket: 'overdue' };
+        const ackFilters: PolicyFilters = { ...withoutCardKeys, outstandingAck: true };
 
         const [byStatus, total, overdueReview, outstandingAck] = await Promise.all([
             db.policy.groupBy({
@@ -256,6 +286,25 @@ export class PolicyRepository {
         };
     }
 
+    /**
+     * Every category in use in the tenant, for the list's Category facet.
+     *
+     * NOT derived from the loaded rows: those are the current-filter result,
+     * so once one category was chosen the facet offered only that one and a
+     * second could never be added. Independent of every filter for the same
+     * reason. Soft-deleted policies are excluded by the soft-delete extension.
+     */
+    static async distinctCategories(db: PrismaTx, ctx: RequestContext): Promise<string[]> {
+        const groups = await db.policy.groupBy({
+            by: ['category'],
+            where: { tenantId: ctx.tenantId, category: { not: null } },
+            orderBy: { category: 'asc' },
+        });
+        return groups
+            .map((g) => g.category?.trim() ?? '')
+            .filter((c) => c !== '');
+    }
+
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: PolicyListParams): Promise<PaginatedResponse<unknown>> {
         const limit = clampLimit(params.limit);
         const where = await PolicyRepository._applyOutstandingAck(
@@ -296,7 +345,18 @@ export class PolicyRepository {
             Object.values(PolicyStatus),
             'policy status',
         );
-        if (filters?.category) where.category = filters.category;
+        // The Category facet is multi-select, so the value arrives
+        // comma-joined, and an equality on the joined string matched nothing
+        // once two were picked (#4279). Category is free text, so a single
+        // category may itself hold a comma: match the raw value as well as
+        // its comma-split members.
+        const categories = parseIdListFilter(filters?.category);
+        if (categories) {
+            where.category =
+                typeof categories === 'string'
+                    ? categories
+                    : { in: [...new Set([filters!.category!.trim(), ...categories.in])] };
+        }
         if (filters?.language) where.language = filters.language;
         if (filters?.q) {
             where.OR = [
@@ -307,12 +367,24 @@ export class PolicyRepository {
         // Review-cycle bucket. `overdue` = nextReviewAt in the past; `upcoming`
         // = due within the next 30 days. Makes "policies overdue for review"
         // findable from the list (previously only surfaced via email reminders).
-        if (filters?.reviewBucket === 'overdue') {
-            where.nextReviewAt = { lt: new Date() };
-        } else if (filters?.reviewBucket === 'upcoming') {
-            const now = new Date();
-            const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-            where.nextReviewAt = { gte: now, lte: in30 };
+        //
+        // Neither bucket holds an ARCHIVED policy (owner decision, #4279): an
+        // archived policy is not due for review — its row carries no Overdue
+        // badge and the reminder job skips it — so counting it made the card
+        // and the filter disagree with both. An AND term, so an explicit
+        // status filter still intersects.
+        if (filters?.reviewBucket === 'overdue' || filters?.reviewBucket === 'upcoming') {
+            if (filters.reviewBucket === 'overdue') {
+                where.nextReviewAt = { lt: new Date() };
+            } else {
+                const now = new Date();
+                const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                where.nextReviewAt = { gte: now, lte: in30 };
+            }
+            where.AND = [
+                ...PolicyRepository._andTerms(where),
+                { status: { not: PolicyStatus.ARCHIVED } },
+            ];
         }
         return where;
     }

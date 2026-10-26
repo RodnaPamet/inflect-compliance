@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import {
-    getAuditPack, updateAuditPack, addAuditPackItems,
+    getAuditPack, updateAuditPack, addAuditPackItems, removeAuditPackItem,
     freezeAuditPack, generateShareLink, revokeShare,
     exportAuditPack,
 } from '@/app-layer/usecases/audit-readiness';
@@ -25,6 +25,11 @@ const AddItemsSchema = z.object({
         snapshotJson: z.string().optional(),
         sortOrder: z.number().int().optional(),
     })).min(1).max(2000),
+}).strip();
+
+// #4129 — one item out of a DRAFT pack; the usecase refuses a frozen one.
+const RemoveItemSchema = z.object({
+    itemId: z.string().min(1),
 }).strip();
 
 const ShareSchema = z.object({
@@ -91,6 +96,10 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     if (action === 'items') {
         const body = AddItemsSchema.parse(raw);
         return jsonResponse(await addAuditPackItems(ctx, params.packId, body.items), { status: 201 });
+    }
+    if (action === 'remove-item') {
+        const body = RemoveItemSchema.parse(raw);
+        return jsonResponse(await removeAuditPackItem(ctx, params.packId, body.itemId));
     }
     if (action === 'freeze') {
         return jsonResponse(await freezeAuditPack(ctx, params.packId));

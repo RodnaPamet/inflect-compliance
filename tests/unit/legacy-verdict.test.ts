@@ -230,7 +230,6 @@ describe('the module cannot reach a writer', () => {
                 });
             }
             expect(() => {
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
                 require('@/lib/legacy-access/verdict');
             }).not.toThrow();
         });

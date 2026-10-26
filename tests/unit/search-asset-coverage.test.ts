@@ -98,7 +98,6 @@ describe('Asset search coverage', () => {
         expect(src).toMatch(
             /asset:\s*\{\s*heading:\s*t\('entityAsset'\)[^}]*icon:\s*Package/,
         );
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         expect(require('../../messages/en.json').commandPalette.entityAsset).toBe('Assets');
         // Package imported from lucide-react
         expect(src).toMatch(

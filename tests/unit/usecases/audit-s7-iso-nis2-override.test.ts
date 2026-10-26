@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test
- * mocks mirror the runtime contracts; per-line typing has poor
- * cost/benefit here (matches the codebase's standard test pattern).
- */
 /**
  * Audit S7 — ISO27001 + NIS2 honour Tenant.readinessWeightsJson.
  *

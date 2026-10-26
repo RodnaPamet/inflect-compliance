@@ -30,8 +30,9 @@ Middleware intercepts EVERY authenticated request when mfaPending=true
  ├─ APIs → 403 "MFA verification required"
  └─ MFA challenge + enrolment + /api/auth/ → allowed (exempt)
 
-Session revocation uses sessionVersion increment strategy
- └─ JWT callback detects stale token → forces re-auth
+Session revocation: sessionVersion bump (all of a person's JWTs) or
+UserSession.revokedAt (one sign-in each, named by the JWT's userSessionId)
+ └─ JWT callback detects either → SessionRevokedError → no session
 ```
 
 ## MFA Policy Modes
@@ -57,15 +58,20 @@ Session revocation uses sessionVersion increment strategy
 
 ## Session Revocation
 
-**Strategy**: JWT `sessionVersion` field. Each revocation increments `User.sessionVersion` in the database. The JWT callback compares the token's version against the DB on every request; stale tokens force re-authentication.
+**Strategy**: two mechanisms, both checked by the JWT callback in `src/auth.ts`, which throws `SessionRevokedError` on either.
+
+- `User.sessionVersion` — incrementing it invalidates every JWT the person holds, the one making the request included. It is how "revoke everything" works.
+- `UserSession.revokedAt` — one row per sign-in, named by the JWT's `userSessionId`. Stamping rows revokes those sign-ins only, which is the only way to sign out a person's other sessions and keep the current one.
+
+A session belongs to the person, not to a tenant, so either mechanism signs the person out of every workspace. Logic lives in `src/app-layer/usecases/session-security.ts`.
 
 ### Endpoints
 
-| Endpoint | Access | Audit Event |
-|----------|--------|-------------|
-| `POST /security/sessions/revoke-current` | Self | `CURRENT_SESSION_REVOKED` |
-| `POST /security/sessions/revoke-user` | Admin | `SESSIONS_REVOKED_FOR_USER` |
-| `POST /security/sessions/revoke-all` | Admin | `ALL_TENANT_SESSIONS_REVOKED` |
+| Endpoint | Access | What it revokes | Audit Event |
+|----------|--------|-----------------|-------------|
+| `POST /security/sessions/revoke-current` | Self | Every session of the caller's except the one making the request. When that session cannot be identified (no live `UserSession` row for the token's `userSessionId`), every session, and the response says `currentSessionKept: false` | `OTHER_SESSIONS_REVOKED`, or `CURRENT_SESSION_REVOKED` when nothing could be kept |
+| `POST /security/sessions/revoke-user` | Admin | Every session of one member | `SESSIONS_REVOKED_FOR_USER` |
+| `POST /security/sessions/revoke-all` | Admin | Every session of the tenant's ACTIVE members; the caller's current session is kept as above | `ALL_TENANT_SESSIONS_REVOKED` |
 
 ## Brute-Force Protection
 
@@ -101,9 +107,12 @@ These are the audit events actually emitted today (via `logEvent`):
 |-------|------|--------------|
 | `MFA_CHALLENGE_PASSED` | Successful login-time MFA challenge | `mfa-challenge.ts` |
 | `MFA_CHALLENGE_FAILED` | Failed login-time MFA challenge | `mfa-challenge.ts` |
-| `CURRENT_SESSION_REVOKED` | User revokes own sessions | session-revoke routes |
+| `OTHER_SESSIONS_REVOKED` | User signs out their other sessions | session-revoke routes |
+| `CURRENT_SESSION_REVOKED` | User revokes all own sessions, the current one included | session-revoke routes |
 | `SESSIONS_REVOKED_FOR_USER` | Admin revokes a user's sessions | session-revoke routes |
 | `ALL_TENANT_SESSIONS_REVOKED` | Admin revokes all tenant sessions | session-revoke routes |
+| `MFA_POLICY_CHANGED` | The tenant MFA policy changes; `detailsJson.before` / `after` carry the old and new policy | `mfa.ts` |
+| `SESSION_MAX_AGE_CHANGED` | The tenant's maximum session age changes; `before` / `after` carry the old and new minutes (`null` is the default) | `mfa.ts` |
 
 **Safety**: Audit details never contain TOTP codes, secrets, session tokens, or otpauth URIs.
 
@@ -147,4 +156,4 @@ These are the audit events actually emitted today (via `logEvent`):
 - **Redis rate limiting**: Current in-memory limiter works for single-instance. For HA/multi-instance, replace with Redis-backed sliding window.
 - **QR code rendering**: Challenge page shows a setup key and QR icon placeholder. Add a real QR code library (e.g., `qrcode`) for better enrollment UX.
 - **Admin MFA enrollment reset**: Let admins reset a user's MFA enrollment (for lost device recovery). Currently users must contact admin to downgrade policy.
-- **Enrollment + policy audit events**: the action names `MFA_ENROLLMENT_STARTED`, `MFA_ENROLLED`, `MFA_ENROLLMENT_VERIFY_FAILED`, and `MFA_POLICY_CHANGED` are reserved but NOT yet emitted — `mfa-enrollment.ts` and `mfa.ts` currently make no `logEvent` calls. Wire `logEvent` into the enrollment start/verify/remove and policy-update paths so these surface in the audit trail alongside the challenge + session-revoke events above.
+- **Enrollment audit events**: the action names `MFA_ENROLLMENT_STARTED`, `MFA_ENROLLED` and `MFA_ENROLLMENT_VERIFY_FAILED` are reserved but NOT yet emitted — `mfa-enrollment.ts` makes no `logEvent` calls. Wire `logEvent` into the enrollment start/verify/remove paths so these surface in the audit trail alongside the policy, challenge and session-revoke events above.

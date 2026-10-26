@@ -155,7 +155,14 @@ export const CACHE_KEYS = {
     // payload (notifications + timeline); mutations on the detail page
     // invalidate it.
     incidents: makeResource('incidents'),
-    frameworks: makeResource('frameworks'),
+    frameworks: {
+        ...makeResource('frameworks'),
+        /**
+         * The frameworks in use in this workspace (a control mapped to one of
+         * their requirements) — what an audit cycle can be created for.
+         */
+        inUse: () => '/frameworks?inUse=true' as const,
+    },
     issues: makeResource('issues'),
     accessReviews: makeResource('access-reviews'),
     // Calendar is a range read-model, not a list/detail resource — the key
@@ -343,6 +350,11 @@ export const CACHE_KEYS = {
     },
     coverage: {
         home: () => '/coverage' as const,
+    },
+    // The dashboard's "Complete your setup" card reads the wizard's stored
+    // status here, so it can hide once setup is finished.
+    onboarding: {
+        metrics: () => '/onboarding/metrics' as const,
     },
     // Control test plans / runs — the tenant-wide /tests surfaces (PR-Q SWR
     // migration). `detail` is the tenant-wide plan-detail key the leaf

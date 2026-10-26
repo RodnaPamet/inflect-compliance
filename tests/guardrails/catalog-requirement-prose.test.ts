@@ -211,13 +211,14 @@ describe('catalogue requirements carry prose', () => {
         ['iso-42001.yaml', 'iso42001'],
         ['nist-ssdf-800-218.yaml', 'ssdf'],
         ['aiuc-1.yaml', 'aiuc-1'],
+        ['eu-uas-ops.yaml', 'eu-uas-ops'],
         // nis2 is deliberately absent: its library is keyed thematically
         // (NIS2-RM) and its fixture by article (Art.21(2)(a)), so a code join
         // resolves nothing. prisma/fixtures/nis2-library-map.json is the join,
         // and tests/guardrails/library-obligations-reach-the-catalogue.test.ts
         // is where that declaration lives.
         // iso27001 is absent for the same class of reason: its library carries
-        // 29 coarse Annex A headings against the fixture's 93 controls, so most
+        // 34 coarse Annex A headings against the fixture's 93 controls, so most
         // rows have no comparable node at all.
     ];
 
@@ -314,7 +315,7 @@ describe('catalogue requirements carry prose', () => {
      * A total is also blind to a swap. The "says more than the title" rule
      * above compares 702 requirements across 12 declared pairs, and two
      * populations sit outside it BY DECLARATION: ISO 27001 (93 — its library
-     * carries 29 coarse Annex A headings, so most rows have no comparable
+     * carries 34 coarse Annex A headings, so most rows have no comparable
      * node) and NIS 2 (20 — joined by `nis2-library-map.json`, not by code).
      * Strip ten ISO 27001 summaries, author ten onto the NIS 2 rows that lack
      * them, and the total is still 405 with no pair rule to object. Per
@@ -364,11 +365,11 @@ describe('catalogue requirements carry prose', () => {
      * ISO 27001 escapes both halves, and not for want of a declaration — its
      * join is real and `normalised`, stripping the library's `A.` prefix. The
      * library is what is short: `src/data/libraries/iso27001-2022.yaml`
-     * selects 29 Annex A controls (`A.5.1` … `A.8.32`) against the fixture's
+     * selects 34 Annex A controls (`A.5.1` … `A.8.32`) against the fixture's
      * 93, and `A.8.34` is not one of them, so deleting `8.34` removes no
      * obligation and the pair stays green. On main the 93 rows OF THIS
-     * FIXTURE are not pinned or floored anywhere, and only 29 of them are
-     * joined — the map below is the first reader of the other 64.
+     * FIXTURE are not pinned or floored anywhere, and only 34 of them are
+     * joined — the map below is the first reader of the other 59.
      *
      * Both qualifiers are load-bearing against a grep.
      * `framework-coverage.test.ts:47` does assert `toBe(93)`, but on the
@@ -376,7 +377,7 @@ describe('catalogue requirements carry prose', () => {
      * which also carries 8.34 — so it does not protect this file, confirmed
      * by that suite passing under the 8.34 deletion. And "not joined" would
      * contradict the paragraph above, which correctly says the join IS real
-     * for the 29 the library selects.
+     * for the 34 the library selects.
      *
      * Six fixtures do carry a literal count equal to the denominator here —
      * soc2 10 (`soc2-starter-pack-coverage.test.ts:137`), eu-ai-act 16
@@ -408,6 +409,11 @@ describe('catalogue requirements carry prose', () => {
         // transcription path to fall down. The summaries are generated from
         // the library's own descriptions, which are original prose.
         'aiuc-1-control-templates.json': '0 of 50',
+        // EU drone operations ships every requirement WITH a summary, generated
+        // from the library's descriptions (Inflect's own account of each
+        // article or point), so it adds 51 to the population and none to the
+        // ceiling.
+        'eu-uas-ops-control-templates.json': '0 of 51',
         'asvs-l1-control-templates.json': '0 of 128',
         'cis-v8-ig1-control-templates.json': '0 of 56',
         // COSO ships every requirement WITH a summary. It is the first
@@ -427,7 +433,7 @@ describe('catalogue requirements carry prose', () => {
         'nist-privacy-control-templates.json': '100 of 100',
         'owasp-aisvs-control-templates.json': '191 of 191',
         'owasp-asi-control-templates.json': '0 of 10',
-        'soc2-control-templates.json': '0 of 10',
+        'soc2-control-templates.json': '0 of 17',
         'ssdf-control-templates.json': '42 of 42',
     };
 

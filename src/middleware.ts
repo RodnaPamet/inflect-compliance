@@ -15,6 +15,7 @@ import {
     isOrgPath,
     isMfaAllowedPath,
     extractTenantSlugFromPath,
+    pendingMfaWorkspaceSlug,
     matchTenantApiKeyRequest,
     buildLoginRedirect,
     unauthorizedJson,
@@ -28,7 +29,12 @@ import { applySecurityHeaders } from '@/lib/security/headers';
 import { resolveCorsConfig, isOriginAllowed, applyCorsHeaders, CORS_PREFLIGHT_HEADERS } from '@/lib/security/cors';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
 import { edgeLogger } from '@/lib/observability/edge-logger';
-import { documentLoadRoute, DOCUMENT_LOAD_MSG } from '@/lib/observability/vital-route';
+import {
+    documentLoadRoute,
+    DOCUMENT_LOAD_MSG,
+    softNavigationRoute,
+    SOFT_NAVIGATION_MSG,
+} from '@/lib/observability/vital-route';
 
 /**
  * GAP-04 — Edge middleware: centralized auth guard + CSP for ALL routes.
@@ -357,16 +363,16 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             return forbiddenJson('MFA verification required');
         }
 
-        // The challenge lives at a tenant URL, so a page redirect needs a
-        // slug. Prefer the one in the URL; fall back to the token's primary
-        // membership, which is what non-tenant pages (`/`, `/org/<slug>/…`,
-        // `/admin`) now need. The fallback is always populated when it is
-        // needed: `mfaPending` is only ever set when `token.tenantId` is
-        // non-null (`src/auth.ts` — the MFA block is inside `if
+        // The challenge lives at a tenant URL, and `mfaPending` is the
+        // PRIMARY workspace's: the challenge verifies a code for the workspace
+        // in its URL, so it must be the primary's. `tenantSlug` is always
+        // populated here: `mfaPending` is only ever set when `token.tenantId`
+        // is non-null (`src/auth.ts` — the MFA block is inside `if
         // (activeTenantId)`), and `tenantId`/`tenantSlug` are assigned
-        // together from the primary membership.
+        // together from the primary membership. The URL's slug is the fallback
+        // for a token that somehow lacks it.
         const tenantSlug =
-            extractTenantSlugFromPath(pathname) ?? token.tenantSlug ?? null;
+            token.tenantSlug ?? extractTenantSlugFromPath(pathname) ?? null;
 
         if (tenantSlug) {
             const mfaUrl = new URL(`/t/${tenantSlug}/auth/mfa`, req.nextUrl.origin);
@@ -379,6 +385,24 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         // because falling through is how a page path used to skip this gate
         // entirely.
         return NextResponse.redirect(new URL('/no-tenant', req.nextUrl.origin));
+    }
+
+    // ── 4b. MFA for the workspace being opened ──
+    // The primary workspace's policy is `mfaPending`, above. Every other
+    // workspace the session can reach was asked at sign-in too, and one that
+    // still wants a code from this session holds its own paths (and org paths)
+    // until its own challenge is passed (`pendingMfaWorkspaceSlug`). Before,
+    // only the oldest membership's policy was ever asked.
+    if (!isMfaAllowedPath(pathname)) {
+        const pendingSlug = pendingMfaWorkspaceSlug(pathname, token);
+        if (pendingSlug) {
+            if (isApiRoute(pathname)) {
+                return forbiddenJson('MFA verification required');
+            }
+            const mfaUrl = new URL(`/t/${pendingSlug}/auth/mfa`, req.nextUrl.origin);
+            mfaUrl.searchParams.set('next', pathname);
+            return NextResponse.redirect(mfaUrl);
+        }
     }
 
     // ── 5. Tenant-access gate ──
@@ -624,6 +648,22 @@ export default async function middleware(
     });
     if (documentRoute !== null) {
         edgeLogger.info(DOCUMENT_LOAD_MSG, { route: documentRoute });
+    }
+
+    // AND ONE PER CLIENT-SIDE NAVIGATION (#4195), which is what four of the
+    // five web-vitals now fire on. Counted separately rather than folded into
+    // the line above: `document_load` answers "is anyone using the app", the
+    // two together answer "are beacons being dropped", and merging them would
+    // make every existing query of the first silently wrong. Same bounded
+    // shape — route only, nothing per-identity.
+    const softNavRoute = softNavigationRoute({
+        rsc: req.headers.get('rsc'),
+        routerPrefetch: req.headers.get('next-router-prefetch'),
+        pathname,
+        passedThrough: isPassThrough,
+    });
+    if (softNavRoute !== null) {
+        edgeLogger.info(SOFT_NAVIGATION_MSG, { route: softNavRoute });
     }
 
     return res;

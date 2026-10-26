@@ -31,6 +31,7 @@
  */
 
 import { cn } from '@inflect/ui/lib/cn';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComplianceStatusIndicator } from './ComplianceStatusIndicator';
 import {
@@ -71,6 +72,7 @@ export function FrameworkMinimap({
     id = 'framework-minimap',
     className,
 }: FrameworkMinimapProps) {
+    const t = useTranslations('common.ui');
     const sections = useMemo(() => deriveMinimapSections(nodes), [nodes]);
     const sectionIds = useMemo(() => sections.map((s) => s.id), [sections]);
 
@@ -167,7 +169,7 @@ export function FrameworkMinimap({
     return (
         <nav
             id={id}
-            aria-label="Framework section navigator"
+            aria-label={t('frameworkSectionNavigator')}
             className={cn(
                 'flex flex-col gap-1 overflow-y-auto p-2 rounded-md border border-border-subtle bg-bg-default/30',
                 className,

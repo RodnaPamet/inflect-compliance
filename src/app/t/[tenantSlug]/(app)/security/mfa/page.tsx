@@ -20,6 +20,7 @@ import { useCopyToClipboard } from '@/components/ui/hooks';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Heading } from '@/components/ui/typography';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { TotpQrCode } from './TotpQrCode';
 
 interface MfaStatus {
     isEnrolled: boolean;
@@ -75,8 +76,10 @@ export default function UserMfaPage() {
         try {
             const res = await fetch(apiUrl('/security/mfa/enroll/start'), { method: 'POST' });
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || t('startFailed'));
+                // `error` is the envelope's OBJECT, `{ code, message }`, so
+                // `new Error(data.error)` rendered "[object Object]".
+                const data = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(data, t('startFailed')));
             }
             const data = await res.json();
             setEnrollment(data);
@@ -129,6 +132,11 @@ export default function UserMfaPage() {
                 setSuccess(t('removedSuccess'));
                 await fetchStatus();
                 setTimeout(() => setSuccess(null), 3000);
+            } else {
+                // A refused removal (the workspace requires MFA, say) used to
+                // do nothing at all: no message, and the factor still on.
+                const data = await res.json().catch(() => null);
+                setError(apiErrorMessage(data, t('removeFailed')));
             }
         } catch {
             setError(t('removeFailed'));
@@ -275,13 +283,11 @@ export default function UserMfaPage() {
                         </p>
                     </div>
 
-                    {/* QR Code placeholder — render the otpauth URI */}
+                    {/* The otpauth URI as a QR code. White in both themes:
+                        scanners read dark modules on a light ground. */}
                     <div className="flex flex-col items-center gap-default py-4">
                         <div className="bg-white p-4 rounded-lg">
-                            {/* Simple QR fallback: render as a monospace URI block */}
-                            <div className="w-full sm:w-48 h-48 flex items-center justify-center">
-                                <QrCode className="w-full sm:w-32 h-32 text-content-emphasis" />
-                            </div>
+                            <TotpQrCode value={enrollment.otpauthUrl} alt={t('qrCodeAlt')} />
                         </div>
                         <p className="text-xs text-content-subtle">
                             {t('cannotScan')}

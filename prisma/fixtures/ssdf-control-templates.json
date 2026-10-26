@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "NIST SSDF (SP 800-218) v1.1 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
-    "grounding": "Requirement titles and summaries come from src/data/libraries/nist-ssdf-800-218.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/nist-ssdf-800-218.yaml so the two cannot drift. Task content is grounded in each template's own description. Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -337,6 +337,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Work through every component on the infrastructure scoping list in turn."
+              }
+            },
+            {
+              "text": {
+                "en": "Write each authentication, access, logging, isolation and patching need as its own row."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the infrastructure component that each requirement row applies to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each row derives from policy, a customer commitment, regulation or a contract."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the infrastructure requirements register with a source recorded on every row."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Infrastructure security requirements register: one row per requirement, the component it applies to and the source it derives from"
           },
@@ -351,6 +378,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Check that the regulation each register row cites is still in force."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the threat each row answers is still credible and its technology still in use."
+              }
+            },
+            {
+              "text": {
+                "en": "Add rows for anything that has entered the stack since the previous review."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark rows that no longer apply as withdrawn instead of deleting them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the change list and review date, and attach it with both reviewed registers."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Requirements review record listing every row added, amended or withdrawn, and the date the review was carried out"
           },
@@ -384,7 +438,34 @@
             "en": "Product list with the exposure and data classification recorded against each, and the requirement tier each classification attracts"
           },
           "suggestedRole": "Engineering lead",
-          "sortOrder": 0
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the list of software products the organisation ships as the starting point."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each product on the list is exposed to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the data each product holds, noting any customer data."
+              }
+            },
+            {
+              "text": {
+                "en": "Define the requirement tier that each exposure and data classification attracts."
+              }
+            },
+            {
+              "text": {
+                "en": "File the classified product list with the binding tier recorded against each product."
+              }
+            }
+          ]
         },
         {
           "title": {
@@ -434,7 +515,34 @@
             "en": "Per-product record of applied requirements and granted exemptions, each exemption naming its approver and rationale"
           },
           "suggestedRole": "Engineering lead",
-          "sortOrder": 2
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify each new product or major feature at the point it is designed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which of the software requirements the design takes on."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each requirement the design is excused from."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who granted each exemption and the rationale they gave for it."
+              }
+            },
+            {
+              "text": {
+                "en": "File the per-product record of applied requirements and granted exemptions."
+              }
+            }
+          ]
         }
       ]
     },
@@ -464,7 +572,29 @@
             "en": "List of component suppliers drawn from dependency manifests and commercial agreements, distinguishing commercial from open-source sources"
           },
           "suggestedRole": "Procurement",
-          "sortOrder": 0
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the component sources named in every project's dependency manifests."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the suppliers named in the commercial agreements covering reused components."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each supplier on the list as commercial or open-source."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the supplier list as the population the requirements will be issued to."
+              }
+            }
+          ]
         },
         {
           "title": {
@@ -475,6 +605,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Write the support and patching expectations a reused component must meet."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the requirements on known-vulnerability disclosure and on licensing."
+              }
+            },
+            {
+              "text": {
+                "en": "State the provenance data a provider must supply with each version."
+              }
+            },
+            {
+              "text": {
+                "en": "Send the statement to every provider currently supplying a component."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date it reached each provider and attach the distribution record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The issued component security requirements, with a distribution record naming each provider and the date it was sent"
           },
@@ -543,6 +700,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Walk the lifecycle from design through release to vulnerability response."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down each activity at which a security decision is actually taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the decisions currently taken by whoever happens to be nearest."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every activity on the list that has no named performer today."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the activity list with the unperformed activities marked as gaps."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "SDLC security activity list covering design through release and response, marking every activity with no named performer"
           },
@@ -593,6 +777,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each role from the responsibility matrix as a row of the curriculum."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each role the modules it must complete instead of one shared deck."
+              }
+            },
+            {
+              "text": {
+                "en": "State what each module is meant to leave the person able to do."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the modules needing a refresh because the practice, stack or threat moved."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the curriculum showing the role-to-module mapping and each module's capability."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Training curriculum showing each SDLC role, the modules assigned to it and the capability each module is meant to produce"
           },
@@ -643,6 +854,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Capture the statement exactly as upper management or the authorising official issued it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the approval under which the commitment statement was issued."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the channel the statement went out through and the date it was sent."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the audience it reached among people holding development responsibilities."
+              }
+            },
+            {
+              "text": {
+                "en": "File the statement as issued beside its channel, audience and date record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The management commitment statement as issued, with the record of the channel, audience and date on which it was communicated"
           },
@@ -657,6 +895,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Select a sample of activities from the responsibility matrix."
+              }
+            },
+            {
+              "text": {
+                "en": "Establish who genuinely performed each sampled activity during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each actual performer against the role the matrix names as accountable."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every mismatch, vacant accountable role and untrained performer found."
+              }
+            },
+            {
+              "text": {
+                "en": "Amend the matrix in the same pass and attach the comparison with its amendments."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Comparison record listing each mismatch between the matrix and the actual performer, with the amendment made to the matrix"
           },
@@ -689,6 +954,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Write out the commit, build, test, package and deploy stages."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the tool type each stage requires, such as static analysis or secrets scanning."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the risk each required tool type reduces and flag any tool with none."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every stage lacking its required tool type as a gap."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the stage-to-tool-type map with its gaps shown."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Stage-to-tool-type map naming the tool required at each SDLC stage, the risk it mitigates and every stage where none is present"
           },
@@ -703,6 +995,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the specific tool chosen for each stage on the map."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each chosen tool as mandatory or advisory for its stage."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each tool is invoked, the input it receives and what it returns."
+              }
+            },
+            {
+              "text": {
+                "en": "State whether a failing tool blocks its stage or only reports."
+              }
+            },
+            {
+              "text": {
+                "en": "Version-mark the toolchain specification and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Toolchain specification: the tool at each stage, how it is invoked and whether its failure blocks the stage or only reports"
           },
@@ -753,6 +1072,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Set each tool to emit its native machine-readable results file for every run."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the run identifier, the commit or build examined, findings and timestamp."
+              }
+            },
+            {
+              "text": {
+                "en": "Route each tool's artifacts to a store that outlives the pipeline run."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the artifact format and storage destination for each tool."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep one sample artifact per tool with the output configuration as evidence."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Tool output configuration listing the artifact format and retention destination per tool, with a sample artifact from each"
           },
@@ -803,6 +1149,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the pipeline definitions to see which tools genuinely run."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the branches and stages on which each tool is invoked."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the observed invocations against the toolchain specification."
+              }
+            },
+            {
+              "text": {
+                "en": "Judge for each difference whether the specification or the pipeline is at fault."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the change made for each difference and attach the comparison."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Comparison of the specification against the pipeline definitions, listing each difference and how it was resolved"
           },
@@ -834,6 +1207,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name each decision point, from pull request to pre-deployment, where software is checked."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each check point examines and the tool or person examining it."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove the points where no real decision is taken on the result."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every decision point with no check today as a gap on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the list of check points with those gaps shown."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "List of SDLC check points, what each examines and the points currently carrying no check"
           },
@@ -884,6 +1284,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Configure each criterion to be evaluated at the point where its check sits."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the pipeline so that a failed criterion halts the stage."
+              }
+            },
+            {
+              "text": {
+                "en": "Run a deliberately failing build and observe the stage stop."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which criteria are enforced automatically and which still rely on a person."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the gate configuration with the log of the build that was stopped."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Pipeline configuration showing each criterion evaluated at its check point, with evidence of a failing build being stopped"
           },
@@ -939,6 +1366,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify each release that proceeded with a check criterion unmet."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the unmet criterion and the reason given for proceeding."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the approval the exception was actually issued under."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the compensating action taken and the exception's expiry or review date."
+              }
+            },
+            {
+              "text": {
+                "en": "Compile the entries into the period's exception log and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Exception log: the criterion unmet, the reason, the authority recorded, the compensating action and the expiry of each exception"
           },
@@ -953,6 +1407,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Pick a sample from the releases shipped in the period to trace backwards."
+              }
+            },
+            {
+              "text": {
+                "en": "Locate the check results and the criteria applied for each sampled release."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each sampled release has either a clean pass or a logged exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each release with no retrievable evidence as a finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the traceability record with the result for every sampled release."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Traceability record per sampled release: the check results located, the criteria applied and any release with no retrievable evidence"
           },
@@ -1020,6 +1501,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Issue each environment its own identities and secrets instead of a shared set."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the network paths that let a development host reach production."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the paths that let one environment reach another environment's data."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any shared component that cannot be split as an accepted crossing with its reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the identities and permitted paths per environment in the segmentation record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Segmentation record per environment: its own identities and secrets, the network paths permitted and any accepted crossing with its reason"
           },
@@ -1034,6 +1542,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Group the developer, build and test endpoints into classes by the risk they carry."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the disk encryption, patch currency and endpoint protection requirements."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the rules on administrative rights and on what may be installed."
+              }
+            },
+            {
+              "text": {
+                "en": "State the classes each part covers, deciding explicitly whether ephemeral CI runners fall in."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the endpoint hardening baseline document."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Endpoint hardening baseline stating the required settings and which class of development, build or test endpoint each applies to"
           },
@@ -1084,6 +1619,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Attempt to use a development credential against staging and production endpoints."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt to reach a production data store from a build runner."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the actual outcome of each cross-environment attempt."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a finding with an owner for every attempt that unexpectedly succeeded."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-test each closed finding and attach the record of attempts and outcomes."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Separation test record: each attempted cross-environment authentication or connection, the outcome, and the finding raised where it succeeded"
           },
@@ -1114,6 +1676,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the source repositories and the infrastructure-as-code repositories."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the pipeline definitions, container registries and package feeds."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the scripts kept in shared drives or wikis."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the class of code, owning system and administrator for each store."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark any code held outside a managed store and attach the code store inventory."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Inventory of every store holding source, executable or configuration-as-code, with the class of code, owning system and administrator"
           },
@@ -1164,6 +1753,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Configure each protected branch to refuse direct pushes."
+              }
+            },
+            {
+              "text": {
+                "en": "Block force pushes and branch deletion on the same protected branches."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether administrators can still bypass each protection setting."
+              }
+            },
+            {
+              "text": {
+                "en": "Repeat the configuration on every inventoried repository beyond the flagship one."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the branch protection settings for each repository and attach them."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Branch protection settings export per repository, showing direct push, force push and deletion refused, and the administrator bypass state"
           },
@@ -1178,6 +1794,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Issue or register signing keys for every contributor and automation that commits."
+              }
+            },
+            {
+              "text": {
+                "en": "Turn on the rejection of unsigned commits on the protected branches."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how a contributor's signing key is revoked when they leave."
+              }
+            },
+            {
+              "text": {
+                "en": "Push an unsigned commit to a protected branch and observe its refusal."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the per-repository signing settings with the rejected commit as proof."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Commit signing configuration per repository with evidence that an unsigned commit to a protected branch is refused"
           },
@@ -1192,6 +1835,38 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the current holders of every code store and pipeline."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each exported holder list against the recorded write-access model."
+              }
+            },
+            {
+              "text": {
+                "en": "Revoke the access held by leavers and by people who have changed role."
+              }
+            },
+            {
+              "text": {
+                "en": "Revoke expired integrations and service accounts whose pipeline no longer exists."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each revocation with its date in the access review record."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason for keeping any grant that looks wrong but is retained."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Access review record per store and pipeline: the exported holder list, the differences against the model and every revocation made with its date"
           },
@@ -1206,6 +1881,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the live protection, signing and access settings for every inventoried store."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare those settings with the access model and the branch and signing configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "List each repository whose settings differ and the action taken on it."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a finding for any repository found that the inventory does not list."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the drift report covering every repository checked."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Drift report listing every repository whose protection, signing or access settings differ from the recorded model, and the action taken"
           },
@@ -1236,6 +1938,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the installers, archives, container images and packages published per release."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the publication location and the consumers of each artifact."
+              }
+            },
+            {
+              "text": {
+                "en": "Include artifacts published through channels outside the main release process."
+              }
+            },
+            {
+              "text": {
+                "en": "Group the artifacts by release channel and attach the list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "List of published release artifacts per channel, naming what each is, where it is published and who consumes it"
           },
@@ -1286,6 +2010,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Publish the hash and signature next to each downloadable file of every release."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the hash algorithm used for each release."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the published values with the release for later integrity questions."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each release that went out with no hash or signature as unverifiable."
+              }
+            },
+            {
+              "text": {
+                "en": "Collect the period's published hashes and signatures per release as evidence."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Published integrity information per release: the hash and signature for each downloadable file and the algorithm used"
           },
@@ -1353,6 +2104,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the release files and integrity information each archive must hold."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the build inputs, build configuration and provenance data to the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the identifier tying each release to its source revision."
+              }
+            },
+            {
+              "text": {
+                "en": "State the release retention period and the source that sets it."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the contents definition with the retention period written into it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Archive contents definition listing every item retained per release, with the stated retention period and its source"
           },
@@ -1367,6 +2145,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Configure the archive store so deposits are write-once for the retention period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who can delete or overwrite a deposit and under what circumstances."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the archive is not a build-server directory the next build can reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the archive's own backup and its location relative to the build systems."
+              }
+            },
+            {
+              "text": {
+                "en": "File the archive configuration alongside the record of who may alter deposits."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Archive store configuration showing write-once retention, the accounts able to delete or overwrite, and the archive's own backup arrangement"
           },
@@ -1381,6 +2186,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Add a step to the release build that generates the bill of materials."
+              }
+            },
+            {
+              "text": {
+                "en": "Emit the bill of materials in a standard machine-readable format."
+              }
+            },
+            {
+              "text": {
+                "en": "Include transitive dependencies with the version and supplier of each."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the bill of materials to the release alongside its artifacts."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the generator and format version, and file one generated sample."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Release build configuration showing bill-of-materials generation, with a generated bill of materials naming its format and generator"
           },
@@ -1431,6 +2263,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Publish each release's bill of materials where the people who need it can get it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the route consumers use to obtain each published bill of materials."
+              }
+            },
+            {
+              "text": {
+                "en": "Note each consumer supplied on request and how that request is handled."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each release shipped with no published bill of materials and the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Compile the period's publication record per release and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Publication record per release: where the bill of materials was published, the route consumers use and any release published without one"
           },
@@ -1540,6 +2399,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the vetted services for authentication, authorisation, logging, secrets and cryptography."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each vetted service lives and what it covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how a team adopts each service in its design."
+              }
+            },
+            {
+              "text": {
+                "en": "State what a team must show before building a proprietary equivalent."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the standardised services list for design teams to use."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Standardised security services list: each service, how a design adopts it, what it covers and what a team must show to build its own instead"
           },
@@ -1554,6 +2440,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List each change in the period that met the modelling trigger."
+              }
+            },
+            {
+              "text": {
+                "en": "Start each model before implementation, while the design can still change."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the assets, trust boundaries and attack-surface interfaces in each model."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the plausible attacker and record a mitigation, accepted risk or open action per threat."
+              }
+            },
+            {
+              "text": {
+                "en": "List the triggered changes left unmodelled and attach the period's models."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Risk models produced in the period, each naming the assets, trust boundaries and attack surface, with a mitigation or accepted risk against every threat"
           },
@@ -1568,6 +2481,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record each security-relevant decision with the design rather than in chat."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the options rejected and the risk each decision answers."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any security requirement relaxed or waived, with the reasoning."
+              }
+            },
+            {
+              "text": {
+                "en": "Link every risk from the threat model to its mitigation, acceptance or deferral owner."
+              }
+            },
+            {
+              "text": {
+                "en": "File the decision record alongside each change's design."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Design decision record per change: the decisions taken, the options rejected, any relaxed requirement with its reasoning and the response to each risk"
           },
@@ -1582,6 +2522,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the risk models produced during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each threat has a mitigation, a reasoned acceptance or an owned, dated action."
+              }
+            },
+            {
+              "text": {
+                "en": "Locate each claimed mitigation in the code or configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "List the threats that carry no recorded response."
+              }
+            },
+            {
+              "text": {
+                "en": "List the claimed mitigations that cannot be located and attach both lists."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Threat response review listing every threat with no recorded response and every claimed mitigation that could not be located"
           },
@@ -1612,6 +2579,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the designs in scope for independent review."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each design a reviewer who did not work on it, or an automated check."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each reviewer's basis of independence and the qualification behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record designs with no independent reviewer available instead of using a teammate."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reviewer assignment list for the designs in scope."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reviewer assignment list: each design in scope, its assigned reviewer, the basis of that reviewer's independence and their qualification"
           },
@@ -1698,6 +2692,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List the designs that went into build during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each in-scope design to its independent review record."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag in-scope designs that were built with no review record at all."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag reviews dated after the build started as unable to influence the design."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each case arose and what was done, and attach the coverage check."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Coverage check listing every design built without an independent review, or reviewed only after build began, with the action taken"
           },
@@ -1766,6 +2787,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Write the maintenance and release activity a component must show."
+              }
+            },
+            {
+              "text": {
+                "en": "Add criteria for vulnerability-report handling, licence and supported version."
+              }
+            },
+            {
+              "text": {
+                "en": "State the source a component must be fetched from."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each component already assessed with the assessment date and outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the approved list beside the criteria it was assessed against."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Component approval criteria plus the approved list, showing the assessment date and outcome behind each entry"
           },
@@ -1780,6 +2828,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List the internal modules built for authentication, validation, cryptography and data access."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe what each module does and how a team adopts it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the maintainer and current version of each module."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the common needs that have no shared module yet."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the catalogue where teams can find it before writing their own."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Internal shared module catalogue: each module, its purpose, maintainer and current version, plus the common needs with no module yet"
           },
@@ -1794,6 +2869,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Add software composition analysis to the build pipeline."
+              }
+            },
+            {
+              "text": {
+                "en": "Fail the build on a component absent from the approved list."
+              }
+            },
+            {
+              "text": {
+                "en": "Fail the build on a component fetched from an unexpected registry."
+              }
+            },
+            {
+              "text": {
+                "en": "Fail the build on a vulnerability at a severity the criteria do not permit."
+              }
+            },
+            {
+              "text": {
+                "en": "Introduce a dependency deliberately and observe the build being rejected."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how an exception is requested and logged, and attach the gate configuration."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Composition analysis gate configuration with evidence of a build rejected for an unapproved or disallowed dependency"
           },
@@ -1844,6 +2951,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the components the builds actually assembled during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "List built components missing from the approved list and approved ones nobody uses."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each component whose built version differs from the approved version."
+              }
+            },
+            {
+              "text": {
+                "en": "Resolve each difference by approving, removing or upgrading, and record the outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any component that reached a build despite the gate and attach the reconciliation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation of built components against the approved list, listing each difference, its resolution and anything that bypassed the gate"
           },
@@ -1874,6 +3008,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Derive the languages, frameworks and runtimes from the codebase itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the projects using each language, framework and runtime."
+              }
+            },
+            {
+              "text": {
+                "en": "Include build scripts and any lone service written in a second language."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each entry with no secure coding guidance covering it."
+              }
+            },
+            {
+              "text": {
+                "en": "File the language inventory showing which entries lack guidance."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Language and framework inventory listing each one in use, the projects using it, and which have no secure coding guidance yet"
           },
@@ -1924,6 +3085,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Split the standard's rules into those a tool can decide and those it cannot."
+              }
+            },
+            {
+              "text": {
+                "en": "Encode the tool-decidable rules in the shared lint or analyser configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm every project inherits the shared configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the remaining rules in the standard as reviewer judgement."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the shared configuration with the marked-up standard."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Shared lint configuration implementing the machine-decidable rules, with the standard marked to show which rules remain reviewer judgement"
           },
@@ -1938,6 +3126,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the in-code suppressions and configuration overrides across the projects."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the rule suppressed and the location of each suppression."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who added each suppression and the reason they gave."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise every suppression with no reason for a decision."
+              }
+            },
+            {
+              "text": {
+                "en": "File the period's suppression register with unexplained entries listed."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Suppression register: each suppressed rule, its location, who added it and the reason, with unexplained suppressions listed for decision"
           },
@@ -1952,6 +3167,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Re-derive the language inventory from the current codebase."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the re-derived inventory against the published coding standards."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each language or framework in use with no standard covering it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each standard covering something no longer written here."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was commissioned or retired and attach the coverage comparison."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Coverage comparison listing each language in use with no standard, each standard covering nothing in use, and the action taken on each"
           },
@@ -1983,6 +3225,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every build pipeline, including those for supporting components and container images."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the compiler, interpreter or bundler each pipeline invokes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the version of each toolchain in use."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each toolchain's configuration lives."
+              }
+            },
+            {
+              "text": {
+                "en": "File the pipeline and toolchain list as the base for the hardening work."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Pipeline and toolchain list: each build pipeline, the compiler, interpreter or bundler it invokes, its version and where its configuration lives"
           },
@@ -1997,6 +3266,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the security features each toolchain offers."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which features are approved for use on each toolchain."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the exact setting or flag that turns on each approved feature."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each feature deliberately left unused, with the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the hardening configuration as one approved entry per toolchain."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Approved hardening configuration per toolchain: each feature to be used, the exact setting that enables it and the reason for any feature not used"
           },
@@ -2011,6 +3307,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Add the approved hardening settings to each pipeline's build configuration."
+              }
+            },
+            {
+              "text": {
+                "en": "Cover the pipelines producing supporting components as well as the main ones."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each pipeline unable to take a setting, naming the setting and reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Collect the changed build files together with the list of excepted pipelines."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Build configurations carrying the approved hardening settings, with the pipelines unable to take a setting listed with the reason"
           },
@@ -2061,6 +3379,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Check each pipeline's toolchain against the approved hardening features."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the toolchains offering none of the approved features."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the toolchain versions too old to support the approved features."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide for each whether to upgrade, replace or accept, recording any acceptance reason."
+              }
+            },
+            {
+              "text": {
+                "en": "File a decision against every pipeline in the toolchain assessment."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Toolchain assessment naming each pipeline whose toolchain offers no approved hardening feature, with the upgrade, replacement or acceptance decision"
           },
@@ -2092,6 +3437,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Decide how changes are grouped, whether by codebase area, risk or change type."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each group human review, automated analysis or both."
+              }
+            },
+            {
+              "text": {
+                "en": "State what happens to changes that fall outside every group."
+              }
+            },
+            {
+              "text": {
+                "en": "Define the qualification a reviewer needs for each higher-risk area."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the written review policy and attach a copy."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Review policy stating which change types receive human review, automated analysis or both, and who counts as a qualified reviewer"
           },
@@ -2106,6 +3478,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the rules marked reviewer judgement in the secure coding standard."
+              }
+            },
+            {
+              "text": {
+                "en": "Drop any rule that automated analysis already covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Order the items by how often each issue actually occurs."
+              }
+            },
+            {
+              "text": {
+                "en": "Trim the checklist to a length usable on every change."
+              }
+            },
+            {
+              "text": {
+                "en": "State where a reviewer records that each point was considered."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the checklist with each item traced to its rule in the standard."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Published reviewer checklist mapped back to the secure coding standard, covering the rules automated analysis does not decide"
           },
@@ -2120,6 +3524,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Require an approving review from a qualified reviewer before merge to a protected branch."
+              }
+            },
+            {
+              "text": {
+                "en": "Record per repository whether self-approval or administrator override still works."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt a merge without an approval and observe the refusal."
+              }
+            },
+            {
+              "text": {
+                "en": "List each exempt repository with the reason it is exempt."
+              }
+            },
+            {
+              "text": {
+                "en": "Save the merge rule settings with a record of the refused merge attempt."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Repository configuration requiring an approving review before merge, with evidence of a merge refused for want of one and any exempt repository listed"
           },
@@ -2175,6 +3606,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw a sample of merged changes across the repositories."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the review or analysis each sampled change type required."
+              }
+            },
+            {
+              "text": {
+                "en": "Check that the review came from a qualified reviewer and preceded the merge."
+              }
+            },
+            {
+              "text": {
+                "en": "Note approvals given by the change author and merges under administrator override."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the sample with the findings raised from it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Review sampling record: each sampled change, the review it required, what it actually received, and the findings raised"
           },
@@ -2206,6 +3664,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List each application in scope for executable-code testing."
+              }
+            },
+            {
+              "text": {
+                "en": "Select which of static analysis, dynamic scanning, fuzzing or penetration testing applies."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the weaknesses each selected test should catch beyond review and analysis."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each test type considered and rejected, with the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the selections and rejections as one decision record per application."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Testing decision record per application: the test types selected, what each is expected to find, and the reasoning for anything rejected"
           },
@@ -2249,13 +3734,40 @@
         },
         {
           "title": {
-            "en": "Run the designed tests in the pipeline against each build and file the report of every run"
+            "en": "Run the scoped static and dynamic analysis in the pipeline on every build and keep each run's report"
           },
           "description": {
             "en": "Execute the tests the scope calls for from the pipeline itself, so the static and dynamic analysis run against every build rather than when somebody remembers to start them, and keep the report of each run: what was tested, which build or version, when, under which credentials, what coverage was reached and what was found. Keep the reports of runs that found nothing as well, because a period with no findings and a period where the test never ran are otherwise the same absence. Attach the test reports for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Trigger the scoped tests from the pipeline on every build."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the build or version tested, the date and the credentials used for each run."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the coverage reached and the findings of each run."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the reports of runs that found nothing alongside the others."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's test reports, including the runs with no findings."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Test reports for the period: the build tested, the date, the credentials used, the coverage reached and the findings, including runs that found nothing"
           },
@@ -2311,6 +3823,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the runs performed against the scope designed for each application."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which targets were reached and what coverage was achieved."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each application in the decision record with no run at all."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each scope area that no run has ever touched."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action on each untested area and attach the coverage review."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Coverage review setting the runs performed against the designed scope, naming every application and scope area never tested"
           },
@@ -2342,6 +3881,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Derive the settings from the configuration surface as it exists in the code."
+              }
+            },
+            {
+              "text": {
+                "en": "Include authentication, session, transport, certificate and authorisation settings."
+              }
+            },
+            {
+              "text": {
+                "en": "Include logging and audit switches, exposed interfaces and ports."
+              }
+            },
+            {
+              "text": {
+                "en": "Include sample accounts, demonstration data and any debugging or diagnostic mode."
+              }
+            },
+            {
+              "text": {
+                "en": "Compile every setting found into the security-relevant settings list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Security-relevant settings list derived from the configuration surface, covering authentication, transport, authorisation, logging, exposed interfaces and diagnostic modes"
           },
@@ -2392,6 +3958,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the defaults in the application code to the baseline values."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the shipped configuration files to the same baseline values."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the installer defaults to match the baseline."
+              }
+            },
+            {
+              "text": {
+                "en": "Update every container image and deployment template carrying its own copy."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each place a default was set and attach the list of changes."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Record of the default values as set in the code, shipped configuration, installer and deployment templates, one entry per place changed"
           },
@@ -2406,6 +3999,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Document what each security-relevant setting does and its default value."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe what changing each setting exposes or prevents."
+              }
+            },
+            {
+              "text": {
+                "en": "List the values that are safe to use for each setting."
+              }
+            },
+            {
+              "text": {
+                "en": "Cover the deliberately restrictive defaults an administrator may loosen first."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the administrator configuration reference and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Administrator configuration reference documenting every security-relevant setting, its default, and the effect of changing it"
           },
@@ -2456,6 +4076,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Re-derive the configuration surface from the current release."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the re-derived settings against the security-relevant settings list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each new setting lacking a baseline value, rationale or administrator entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the listed settings removed since the last pass."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the unrecorded and the removed settings as two lists in the re-check."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Settings re-check listing every setting in the current release with no recorded default or documentation, and every listed setting no longer present"
           },
@@ -2524,6 +4171,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Write how to report, what information helps and what response to expect."
+              }
+            },
+            {
+              "text": {
+                "en": "State what the organisation asks of a finder while a fix is prepared."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the policy where an outside finder can see it before they need it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the role handling each stage from receipt to disclosure and its performer."
+              }
+            },
+            {
+              "text": {
+                "en": "File the public policy beside the internal handling process it relies on."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "The published vulnerability disclosure policy with the internal handling process naming the role responsible at each step"
           },
@@ -2610,6 +4284,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List the vulnerability reports handled during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Check each was acknowledged and picked up by the named role as the policy says."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the reporter was kept informed and the disclosure was handled as described."
+              }
+            },
+            {
+              "text": {
+                "en": "Log each departure and decide whether the policy or the practice changes."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the walkthrough record covering every handled report."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Policy walkthrough record: each handled report against the policy's steps, every departure found and whether the policy or the practice was changed"
           },
@@ -2641,6 +4342,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the scoring input taken from the advisory."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the local factors of code reachability in the product and exposure by the deployment."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the local factors of the data touched and any mitigation already in place."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the rule that turns an assessed result into a severity band."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the vulnerability assessment method and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Vulnerability assessment method: the inputs taken, the local factors that modify them and how the result maps to a severity band"
           },
@@ -2655,6 +4383,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the time allowed from confirmation to a fix or mitigation for each band."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the separate time allowed for the fix to reach deployed installations."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what happens when a deadline cannot be met."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the escalation route a missed deadline is raised through."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the timescales with both deadlines stated for every band."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Remediation timescales: the deadline for each severity band to fix and to reach deployed installations, and the escalation route when one cannot be met"
           },
@@ -2741,6 +4496,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify the reporter and the acquirers and users running affected versions."
+              }
+            },
+            {
+              "text": {
+                "en": "Notify each party through the route the disclosure process names."
+              }
+            },
+            {
+              "text": {
+                "en": "Tell them the affected versions, the action to take and any interim mitigation."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who was notified, by which route and on what date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any withheld or delayed notice with its reasoning and attach the record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Notification record: who was notified, the route and date, what they were told, and the reasoning behind any withheld or delayed notification"
           },
@@ -2755,6 +4537,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Set each closure in the period against the deadline its band carries."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the deadlines met and missed with the age of each vulnerability."
+              }
+            },
+            {
+              "text": {
+                "en": "List the vulnerabilities still open past their deadline."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason behind each missed deadline."
+              }
+            },
+            {
+              "text": {
+                "en": "File the performance report showing met, missed and overdue items."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Remediation performance report: closures against the deadline for their band, every miss with its reason, and every vulnerability still open past its deadline"
           },
@@ -2788,6 +4597,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the severity at which a vulnerability receives a root-cause analysis."
+              }
+            },
+            {
+              "text": {
+                "en": "Add triggers for vulnerabilities that reached a release or repeat a known shape."
+              }
+            },
+            {
+              "text": {
+                "en": "State in the template what a completed analysis must record."
+              }
+            },
+            {
+              "text": {
+                "en": "Name where analyses are filed so they can be read together later."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the analysis criteria together with the template."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Root-cause analysis criteria naming which vulnerabilities are analysed, with the template stating what a completed analysis must record"
           },
@@ -2874,6 +4710,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Gather the root-cause analyses recorded so far."
+              }
+            },
+            {
+              "text": {
+                "en": "Group them by cause, such as an inconsistent practice or a recurring entry stage."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any component or team carrying more than its share of causes."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each pattern with the analyses that support it."
+              }
+            },
+            {
+              "text": {
+                "en": "State where the sample is too thin for a pattern and attach the pattern analysis."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Pattern analysis grouping the recorded root causes, naming each pattern with the analyses supporting it and stating where evidence is too thin"
           },
@@ -2888,6 +4751,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Choose the practice change each pattern points at, from a rule to a guardrail."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the change to the standard, checklist, check, training or guardrail concerned."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who made each change and the date it took effect."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reasoning for any pattern accepted without change."
+              }
+            },
+            {
+              "text": {
+                "en": "File the change record that ties every pattern to its outcome."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Change record linking each identified pattern to the practice, check or training that was changed, when it took effect, or the reasoning for accepting it"
           },

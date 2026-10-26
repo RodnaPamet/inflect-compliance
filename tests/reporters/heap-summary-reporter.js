@@ -84,10 +84,57 @@ class HeapSummaryReporter {
             lines.push(`  largest step      ${signed(worst.delta)} after ${rel(worst.path)}`);
             lines.push(`  steps that receded ${receded} of ${this._samples.length - 1}`);
         }
-        if (receded <= 2 && this._samples.length > 10) {
-            // The discriminator between "the suite is big" and "something is
-            // retained": genuine per-suite weight comes back down after GC.
+        // ─── THE SHAPE VERDICT, AND WHY IT IS GATED ON IN-BAND (#3977) ────
+        //
+        // This used to fire on `receded <= 2` in EITHER mode, and in workers
+        // mode that is a verdict about the parent — a process that runs no
+        // tests, so its RSS has nothing to give back and "never receded" is
+        // true of it always. Every local run (workers is the default) therefore
+        // printed `RETENTION`, which is the claim the issue was opened to
+        // investigate, asserted by the instrument meant to investigate it.
+        //
+        // Measured on one hash-shuffled 1/50 slice, same 61 files:
+        //
+        //   workers (parent sample)   1 of 227 steps receded  -> "RETENTION"
+        //   in-band (real process)   16 of  60 steps receded  -> no verdict
+        //
+        // So the verdict is only ever printed for the mode it can be true of.
+        if (this._inBand && receded <= 2 && this._samples.length > 10) {
             lines.push('  shape             RETENTION — rss essentially never receded');
+        } else if (!this._inBand && receded <= 2 && this._samples.length > 10) {
+            // Say why there is no verdict, rather than leaving a gap that
+            // reads as "nothing to report".
+            lines.push(
+                '  shape             NOT ASSESSED — a parent that runs no tests cannot recede;',
+            );
+            lines.push(
+                '                    re-run with --runInBand for a verdict (that is what CI does)',
+            );
+        }
+        // ─── THE RETAINED SET, ONCE, WHEN IT CAN BE HAD (#3977) ───────────
+        //
+        // Every number above is PRE-GC: `process.memoryUsage()` counts garbage
+        // V8 has not got round to, which is why "rss never receded" cannot tell
+        // cumulative weight from a leak. One forced collection at the end gives
+        // the figure that can: what SURVIVED the whole shard.
+        //
+        // Once, deliberately. Jest will force a GC per file given
+        // `--expose-gc` AND `--logHeapUsage` (jest-runner calls
+        // `globalThis.gc?.()` only on that path), and measured on one 1/50
+        // slice that costs 79% more wall clock — 69 s to 123 s for 61 files —
+        // against a 19% lower peak. That trade does not fit a 35-minute shard
+        // budget, so this takes one sample rather than 500.
+        //
+        // `--expose-gc` is in no workflow today, so this line is usually the
+        // absence notice. That is the point: it names what the run could not
+        // measure instead of leaving the reader to assume the numbers above are
+        // the retained set.
+        if (typeof globalThis.gc === 'function') {
+            globalThis.gc();
+            const { heapUsed, rss } = process.memoryUsage();
+            lines.push(`  retained (post-GC) ${mb(heapUsed)} heap, ${mb(rss)} rss`);
+        } else {
+            lines.push('  retained (post-GC) not measured — add --expose-gc to NODE_OPTIONS');
         }
         lines.push('──────────────────────────────────────────────────────────────', '');
         process.stderr.write(lines.join('\n'));

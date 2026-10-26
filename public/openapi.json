@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Inflect Compliance API",
-    "version": "3.302.0",
+    "version": "3.319.5",
     "description": "Multi-tenant compliance-management API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.\n\n**Authenticating.** To try an endpoint, click **Authorize**:\n- *BearerAuth* (recommended for integrations) — paste a tenant **API key** (`iflk_…`), minted under Admin → API Keys. Sent as `Authorization: Bearer iflk_…`.\n- *SessionCookie* — for the dev/staging \"Try it out\" flow, sign in first; the browser sends the `next-auth.session-token` cookie automatically (same-origin only).\n\n**Coverage.** Operations marked `x-stub: true` exist and are callable, but their request/response bodies are not yet published in this contract — only the critical-endpoint set carries full schemas. See `docs/api-consumer-guide.md` for the auth, rate-limit, versioning, and error-contract details.",
     "license": {
       "name": "Proprietary"
@@ -2297,8 +2297,7 @@
             "enum": [
               "TEXT",
               "FILE",
-              "LINK",
-              "SCREENSHOT"
+              "LINK"
             ],
             "default": "TEXT"
           },
@@ -2362,7 +2361,7 @@
         "required": [
           "title"
         ],
-        "description": "Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly. content is encrypted at rest for TEXT type."
+        "description": "Create an evidence record. type=FILE expects a paired multipart upload via /evidence/uploads; type=TEXT/LINK can use this JSON body directly: content is the note for TEXT and the URL for LINK."
       },
       "EvidenceDetail": {
         "type": "object",
@@ -2589,7 +2588,7 @@
         "required": [
           "kind"
         ],
-        "description": "Attach evidence to a control. FILE kinds reference an uploaded FileRecord by id; LINK kinds carry a URL; INTEGRATION_RESULT kinds are emitted by automation runs."
+        "description": "Attach evidence to a control. LINK kinds carry a URL and create a DRAFT evidence-library record of type LINK, joined to the control and titled by the note, or by the URL when there is none; the response is that record. FILE kinds reference an uploaded FileRecord by `fileId` (required) and are joined to the control as an evidence-library record: the live record that already holds that file when there is one, otherwise a new DRAFT record of type FILE titled by the note, or by the file name when there is none; the response is that record. A file the evidence upload would refuse (type, size, malware scan) or that is not stored is refused. INTEGRATION_RESULT kinds are emitted by automation runs."
       },
       "EvidenceListItem": {
         "type": "object",
@@ -2756,7 +2755,10 @@
             "minLength": 1
           },
           "content": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "controlIds": {
             "type": "array",
@@ -6672,6 +6674,31 @@
         }
       }
     },
+    "/api/auth/sso/discover": {
+      "get": {
+        "summary": "GET /api/auth/sso/discover",
+        "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
+        "tags": [
+          "auth"
+        ],
+        "x-stub": true,
+        "responses": {
+          "2XX": {
+            "description": "Successful response. The success schema is not yet published in the contract."
+          },
+          "default": {
+            "description": "Error — see the ErrorResponse envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/sso/oidc/callback": {
       "get": {
         "summary": "GET /api/auth/sso/oidc/callback",
@@ -10104,6 +10131,47 @@
             }
           }
         }
+      },
+      "patch": {
+        "summary": "PATCH /api/t/{tenantSlug}/access-reviews/{reviewId}",
+        "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
+        "tags": [
+          "access-reviews"
+        ],
+        "x-stub": true,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "reviewId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response. The success schema is not yet published in the contract."
+          },
+          "default": {
+            "description": "Error — see the ErrorResponse envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/t/{tenantSlug}/access-reviews/{reviewId}/agent-narrowings/{narrowingId}": {
@@ -10534,6 +10602,49 @@
     "/api/t/{tenantSlug}/access-reviews/{reviewId}/evidence": {
       "get": {
         "summary": "GET /api/t/{tenantSlug}/access-reviews/{reviewId}/evidence",
+        "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
+        "tags": [
+          "access-reviews"
+        ],
+        "x-stub": true,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "reviewId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response. The success schema is not yet published in the contract."
+          },
+          "default": {
+            "description": "Error — see the ErrorResponse envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/access-reviews/{reviewId}/evidence/regenerate": {
+      "post": {
+        "summary": "POST /api/t/{tenantSlug}/access-reviews/{reviewId}/evidence/regenerate",
         "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
         "tags": [
           "access-reviews"

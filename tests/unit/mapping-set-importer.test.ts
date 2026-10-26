@@ -158,8 +158,21 @@ function createMockDb(options: {
         requirementMapping: {
             findMany: jest.fn().mockResolvedValue([]), // No existing mappings by default
             upsert: jest.fn().mockResolvedValue({ id: 'map-new' }),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         },
     } as any;
+}
+
+/** An existing mapping row as the importer reads it back. */
+function existingRow(id: string, sourceCode: string, targetCode: string, validTo: Date | null = null) {
+    return {
+        id,
+        sourceRequirementId: `req-${sourceCode}`,
+        targetRequirementId: `req-${targetCode}`,
+        validTo,
+        sourceRequirement: { code: sourceCode },
+        targetRequirement: { code: targetCode },
+    };
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -245,6 +258,27 @@ describe('MappingSet Importer', () => {
 
             expect(computeMappingSetHash(stored1)).not.toBe(computeMappingSetHash(stored2));
         });
+
+        it('changes hash when only a rationale, the name or the description changes', () => {
+            // The hash once covered refs and strengths only, so a reworded
+            // rationale under the same version was skipped by every database
+            // already holding the set and never reached it.
+            const stored = parseMappingSetString(VALID_YAML);
+            const base = computeMappingSetHash(stored);
+            const [first, ...rest] = stored.mapping_entries;
+            const reworded = { ...stored, mapping_entries: [{ ...first, rationale: 'Reworded.' }, ...rest] };
+
+            expect(computeMappingSetHash(reworded)).not.toBe(base);
+            expect(computeMappingSetHash({ ...stored, name: 'Renamed' })).not.toBe(base);
+            expect(computeMappingSetHash({ ...stored, description: 'Redescribed' })).not.toBe(base);
+        });
+
+        it('does not depend on key order', () => {
+            const stored = parseMappingSetString(VALID_YAML);
+            const reordered = Object.fromEntries(Object.entries(stored).reverse()) as typeof stored;
+
+            expect(computeMappingSetHash(reordered)).toBe(computeMappingSetHash(stored));
+        });
     });
 
     // ─── Import: Happy Path ──────────────────────────────────────────
@@ -309,13 +343,80 @@ describe('MappingSet Importer', () => {
             const db = createMockDb();
             // Simulate first mapping already existing via bulk-loaded existing keys
             db.requirementMapping.findMany.mockResolvedValue([
-                { sourceRequirementId: 'req-a51', targetRequirementId: 'req-gv-oc01' },
+                { ...existingRow('map-1', 'A.5.1', 'GV.OC-01'), sourceRequirementId: 'req-a51', targetRequirementId: 'req-gv-oc01' },
             ]);
 
             const result = await importMappingSet(db, stored, hash);
 
             expect(result.created).toBe(2);
             expect(result.updated).toBe(1);
+        });
+    });
+
+    // ─── Import: Retirement ──────────────────────────────────────────
+    describe('Import (an entry removed from the file)', () => {
+        it('retires an active mapping whose pair the file no longer names', async () => {
+            const stored = parseMappingSetString(VALID_YAML);
+            const db = createMockDb();
+            db.requirementMapping.findMany.mockResolvedValue([
+                existingRow('map-1', 'A.5.1', 'GV.OC-01'),
+                existingRow('map-gone', 'A.5.15', 'GV.OC-01'),
+            ]);
+
+            const result = await importMappingSet(db, stored, computeMappingSetHash(stored));
+
+            expect(result.retired).toBe(1);
+            expect(db.requirementMapping.updateMany).toHaveBeenCalledTimes(1);
+            const call = db.requirementMapping.updateMany.mock.calls[0][0];
+            expect(call.where).toEqual({ id: { in: ['map-gone'] } });
+            expect(call.data.validTo).toBeInstanceOf(Date);
+        });
+
+        it('compares the pairs the file names, not the entries that resolved', async () => {
+            const stored = parseMappingSetString(VALID_YAML);
+            // GV.RR-01 is missing from the target framework's read, so the
+            // A.5.2 → GV.RR-01 entry is an error. The file still names the
+            // pair, which is what decides.
+            const db = createMockDb({
+                targetReqs: [
+                    { id: 'req-gv-oc01', code: 'GV.OC-01' },
+                    { id: 'req-pr-aa01', code: 'PR.AA-01' },
+                ],
+            });
+            db.requirementMapping.findMany.mockResolvedValue([
+                existingRow('map-a52', 'A.5.2', 'GV.RR-01'),
+            ]);
+
+            const result = await importMappingSet(db, stored, computeMappingSetHash(stored));
+
+            expect(result.errors).toHaveLength(1);
+            expect(result.retired).toBe(0);
+            expect(db.requirementMapping.updateMany).not.toHaveBeenCalled();
+        });
+
+        it('leaves a mapping it already retired alone', async () => {
+            const stored = parseMappingSetString(VALID_YAML);
+            const db = createMockDb();
+            db.requirementMapping.findMany.mockResolvedValue([
+                existingRow('map-old', 'A.5.15', 'GV.OC-01', new Date('2026-01-01T00:00:00Z')),
+            ]);
+
+            const result = await importMappingSet(db, stored, computeMappingSetHash(stored));
+
+            expect(result.retired).toBe(0);
+            expect(db.requirementMapping.updateMany).not.toHaveBeenCalled();
+        });
+
+        it('revives a retired mapping when the file names it again', async () => {
+            const stored = parseMappingSetString(VALID_YAML);
+            const db = createMockDb();
+
+            await importMappingSet(db, stored, computeMappingSetHash(stored));
+
+            for (const [call] of db.requirementMapping.upsert.mock.calls) {
+                expect(call.update.validTo).toBeNull();
+            }
+            expect(db.requirementMapping.upsert).toHaveBeenCalledTimes(3);
         });
     });
 

@@ -138,7 +138,8 @@ test.describe('Controls Center', () => {
             '#evidence-url-input',
             'https://docs.example.com/evidence-report',
         );
-        await authedPage.fill('#evidence-note-input', 'E2E evidence note');
+        // A link is a library record (#4126), named by the Title field.
+        await authedPage.fill('#control-upload-title', 'E2E evidence link');
         await Promise.all([
             authedPage.waitForResponse(
                 resp =>

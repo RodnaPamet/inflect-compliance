@@ -115,6 +115,46 @@ export function coerceStoredDriverMode(
 }
 
 /**
+ * What a run's `WorkflowRun.driver` reads as when this build does not know the
+ * value it holds (#4241).
+ *
+ * NOT `STATIC`, and the difference from `coerceStoredDriverMode` above is the
+ * whole point. The settings column is a PERMISSION: reading a value this build
+ * does not know as `STATIC` narrows what the tenant gets, which is the safe
+ * direction for a permission. `WorkflowRun.driver` is a FACT about a run that
+ * already happened — the engine `selectRunDriver` actually chose at its start.
+ * Reading an unknown value as `STATIC` there would put a fiction in the
+ * register (the column's own docblock uses that word for exactly this), and
+ * would pass a run walked by an engine this build has never heard of off as
+ * one the static engine walked — the answer an incident review gets at the
+ * moment it asks.
+ *
+ * So an unknown value reads as this marker, which is neither engine, and every
+ * reader that decides something from the column compares against a NAMED
+ * engine — `=== 'FLUE'` — so the marker refuses there rather than passing.
+ */
+export const RUN_DRIVER_UNRECOGNISED = 'UNRECOGNISED' as const;
+
+/**
+ * A run's recorded engine as this build can state it: one of the modes it was
+ * built with, or {@link RUN_DRIVER_UNRECOGNISED}.
+ */
+export type RecordedRunDriver = AgentDriverMode | typeof RUN_DRIVER_UNRECOGNISED;
+
+/**
+ * Coerce the bytes `WorkflowRun.driver` holds into a {@link RecordedRunDriver}.
+ *
+ * Applied at the READ boundary (`readRecordedRunDrivers`), for the reason
+ * `coerceStoredDriverMode` gives: a value that reaches a comparison uncoerced is
+ * a value some branch treats as "not the one I am looking for". The column is
+ * NOT NULL, so `null` and `undefined` mean the run was not read at all — and an
+ * engine nobody read is not one this build can name either.
+ */
+export function coerceRecordedRunDriver(stored: string | null | undefined): RecordedRunDriver {
+    return stored && isAgentDriverMode(stored) ? stored : RUN_DRIVER_UNRECOGNISED;
+}
+
+/**
  * WHICH DRIVERS THIS BUILD CAN ACTUALLY EXECUTE.
  *
  * The same shape as `DIRECTION_IMPLEMENTED` in `src/lib/identity/write-ladder.ts`,
@@ -159,6 +199,49 @@ export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     // revertible by reverting one line.
     flue: true,
 };
+
+/**
+ * IS THIS DRIVER A REASONING ENGINE — a model choosing its own calls in a loop —
+ * rather than the static walk over a hand-written step array?
+ *
+ * The question `startWorkflowRun` asks before it requires a registered agent,
+ * pins skills, or hands the run to the worker. It used to ask it by comparing
+ * against the literal `'flue'`, which is right only while Flue is the one
+ * engine: the next engine would have run unvouched, unpinned and inline.
+ *
+ * A `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
+ * without a classification here is a compile error rather than a silent
+ * `undefined` read as false (Step 0a, `docs/claude-agent-sdk-design.md`).
+ */
+const REASONING_ENGINE: Readonly<Record<AgentDriver, boolean>> = {
+    static: false,
+    flue: true,
+};
+
+export function isReasoningEngine(driver: AgentDriver): boolean {
+    return REASONING_ENGINE[driver];
+}
+
+/**
+ * THE MODE A RUN RECORDS FOR THE DRIVER THAT WALKED IT (#4270): the value
+ * `WorkflowRun.driver` stores and the run metrics' `driver` label carries.
+ *
+ * Both were written `driver === 'flue' ? 'FLUE' : 'STATIC'`, exact while there
+ * are two engines. With a third, every run it walked would be recorded as
+ * STATIC, the one wrong answer the column exists to rule out. A
+ * `Record<AgentDriver, AgentDriverMode>`, so a driver added to `AGENT_DRIVERS`
+ * fails `tsc` until it names the mode it records, and can name only a mode the
+ * enum declares. `tests/unit/agent-driver-mode-rollout.test.ts` holds that
+ * mode to its rollout stage for every driver this build can run.
+ */
+const RECORDED_MODE: Readonly<Record<AgentDriver, AgentDriverMode>> = {
+    static: 'STATIC',
+    flue: 'FLUE',
+};
+
+export function recordedModeOf(driver: AgentDriver): AgentDriverMode {
+    return RECORDED_MODE[driver];
+}
 
 /** The independent terms the decision is composed from. */
 export interface AgentDriverTerms {

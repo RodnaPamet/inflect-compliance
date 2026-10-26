@@ -110,6 +110,7 @@ function makeMappingResult(overrides: Partial<ImportMappingSetResult> = {}): Imp
         targetFrameworkRef: 'NIST-CSF-2.0',
         created: 14,
         updated: 0,
+        retired: 0,
         skippedDuplicate: false,
         errors: [],
         ...overrides,
@@ -153,6 +154,7 @@ describe('Library Sync Usecase', () => {
                 mockDb,
                 expect.any(String), // LIBRARIES_DIR
                 undefined,          // no options passed
+                undefined,          // no framework keys skipped
             );
             expect(mockImportAllMappingSets).toHaveBeenCalledWith(
                 mockDb,
@@ -318,6 +320,7 @@ describe('Library Sync Usecase', () => {
                 mockDb,
                 expect.any(String),
                 expect.objectContaining({ force: true }),
+                undefined,
             );
         });
 

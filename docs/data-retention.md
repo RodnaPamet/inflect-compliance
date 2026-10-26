@@ -201,7 +201,7 @@ a `userId` but stores no contact PII).
 | `ReportRun` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `ReportSchedule` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `ReportTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `RequirementMapping` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `RequirementMapping` | Configuration | No | None — global reference data, upserted by the deploy-time library sync; a mapping whose entry leaves its file is retired (`validTo` set), not deleted | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `RequirementMappingSet` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `Risk` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `RiskAppetiteBreach` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |

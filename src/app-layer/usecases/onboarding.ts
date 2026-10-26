@@ -10,7 +10,7 @@ import {
     emitOnboardingFinished,
     emitOnboardingRestarted,
 } from '../events/onboarding.events';
-import { runStepAction, storeActionResult } from './onboarding-automation';
+import { assertFrameworkPackChoices, runStepAction, storeActionResult } from './onboarding-automation';
 import { logger } from '@/lib/observability/logger';
 import {
     recordOnboardingStepCompleted,
@@ -182,6 +182,22 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
             throw badRequest('Onboarding must be started before completing steps.');
         }
 
+        // #4125 — the framework step installs what was chosen, so completing
+        // it with nothing chosen is refused, as the wizard's disabled
+        // Continue already says. Checked before the idempotent return so a
+        // step completed empty before this rule cannot be re-completed empty.
+        // (The `skip` action is a separate path and still advances.)
+        if (step === 'FRAMEWORK_SELECTION') {
+            const frameworkStep = (existing.stepData as Record<string, any> | null)?.FRAMEWORK_SELECTION;
+            const selected = frameworkStep?.selectedFrameworks;
+            if (!Array.isArray(selected) || selected.length === 0) {
+                throw badRequest('Choose at least one framework to continue.');
+            }
+            // A framework whose packs are its subcategories (EU drone
+            // operations) needs at least one of them chosen as well.
+            await assertFrameworkPackChoices(ctx, frameworkStep);
+        }
+
         // Idempotent: already completed
         if (existing.completedSteps.includes(step)) {
             return existing;
@@ -209,6 +225,11 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
     // Phase 2: Run automation AFTER the transaction commits (heavy, may be slow)
     // This runs outside the transaction so it won't cause timeout issues.
     // Errors are logged but don't block the wizard response.
+    //
+    // The row returned is the one storeActionResult wrote, when it wrote one,
+    // so the wizard receives this step's result (e.g. which framework packs
+    // failed to install) in the same response rather than on its next load.
+    let latest = record;
     try {
 
         const allData = (record.stepData as Record<string, any>) || {};
@@ -219,7 +240,8 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
                 component: 'onboarding', step, action: result.action,
                 created: result.created, skipped: result.skipped,
             });
-            await storeActionResult(ctx, step, result);
+            const stored = await storeActionResult(ctx, step, result);
+            if (stored) latest = stored;
         }
     } catch (e) {
         logger.warn('onboarding automation failed', {
@@ -229,7 +251,7 @@ export async function completeOnboardingStep(ctx: RequestContext, step: Onboardi
     }
 
     logger.info('onboarding step completed', { component: 'onboarding', step });
-    return record;
+    return latest;
 }
 
 // ─── Skip Step ───

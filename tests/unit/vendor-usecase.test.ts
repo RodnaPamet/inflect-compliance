@@ -104,6 +104,8 @@ jest.mock('@/app-layer/events/audit', () => ({
 
 jest.mock('@/lib/security/sanitize', () => ({
     sanitizePlainText: jest.fn((s: string) => `SAN::${s}`),
+    // URLs go through the real URL sanitiser, so its output is asserted as stored.
+    sanitizeUrlText: jest.requireActual('@/lib/security/sanitize').sanitizeUrlText,
 }));
 
 import {
@@ -287,6 +289,26 @@ describe('vendor documents', () => {
         (VendorDocumentRepository.listByVendor as jest.Mock).mockResolvedValue([{ id: 'd-1' }]);
         const rows = await listVendorDocuments(readerCtx, 'v-1');
         expect(rows).toEqual([{ id: 'd-1' }]);
+    });
+
+    it('keeps a URL\'s query string: websiteUrl and a document\'s externalUrl use the URL sanitiser', async () => {
+        // `sanitizePlainText` parses as HTML and decodes `&region` / `&para` /
+        // `&times` without a `;`, so these addresses used to be stored broken.
+        (VendorRepository.create as jest.Mock).mockResolvedValue({ id: 'v-1', name: 'X', status: 'ACTIVE', criticality: 'HIGH' });
+        (VendorDocumentRepository.create as jest.Mock).mockResolvedValue({ id: 'd-1', vendorId: 'v-1', type: 'SOC2', title: 'R' });
+        const url = 'https://acme.example/trust?lang=en&region=us&param=1&timestamp=2';
+
+        await createVendor(editorCtx, { name: 'X', websiteUrl: url } as any);
+        await addVendorDocument(editorCtx, 'v-1', { type: 'SOC2', title: 'R', externalUrl: `${url}#<b>` });
+
+        expect((VendorRepository.create as jest.Mock).mock.calls[0][2].websiteUrl).toBe(url);
+
+        // …and on update.
+        (VendorRepository.update as jest.Mock).mockResolvedValue({ id: 'v-1', name: 'X', status: 'ACTIVE' });
+        await updateVendor(editorCtx, 'v-1', { websiteUrl: url });
+        expect((VendorRepository.update as jest.Mock).mock.calls[0][3].websiteUrl).toBe(url);
+        // Markup characters are percent-encoded, which a browser does to them anyway.
+        expect((VendorDocumentRepository.create as jest.Mock).mock.calls[0][3].externalUrl).toBe(`${url}#%3Cb%3E`);
     });
 
     it('addVendorDocument sanitises text fields, emits VENDOR_DOCUMENT_ADDED', async () => {

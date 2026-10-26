@@ -84,7 +84,6 @@ export function NewAuditFields({
                     name: string;
                 }>;
                 if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setFrameworks([
                     noFrameworkOption,
                     ...rows.map((fw) => ({ value: fw.key, label: fw.name })),
@@ -115,7 +114,6 @@ export function NewAuditFields({
                     frameworkKey: string;
                 }>;
                 if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setCycles([
                     noCycleOption,
                     ...rows.map((c) => ({ value: c.id, label: `${c.name} · ${c.frameworkKey}` })),

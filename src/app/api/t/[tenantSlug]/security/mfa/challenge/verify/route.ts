@@ -6,6 +6,7 @@ import { checkRateLimit, resetRateLimit, MFA_VERIFY_LIMIT } from '@/lib/security
 import { verifyMfaChallenge } from '@/app-layer/usecases/mfa-challenge';
 import { env } from '@/env';
 import { jsonResponse } from '@/lib/api-response';
+import { activeMemberWorkspaceId } from '@/lib/auth/workspace-mfa';
 
 /**
  * POST /api/t/[tenantSlug]/security/mfa/challenge/verify
@@ -19,6 +20,7 @@ import { jsonResponse } from '@/lib/api-response';
  */
 export const POST = withApiErrorHandling(async (
     req: NextRequest,
+    { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
 ) => {
     // Get current session
     const session = await auth();
@@ -27,8 +29,14 @@ export const POST = withApiErrorHandling(async (
     }
 
     const userId = session.user.id;
-    const tenantId = session.user.tenantId;
 
+    // The code is checked against the workspace in the URL, whose enrolment
+    // it belongs to. It used to be checked against the session's primary
+    // workspace whatever the URL said, which was the only workspace whose
+    // policy was ever asked (src/lib/auth/workspace-mfa.ts). The edge sends a
+    // pending primary to its own challenge page, so that case is unchanged.
+    const { tenantSlug } = await paramsPromise;
+    const tenantId = await activeMemberWorkspaceId(userId, tenantSlug);
     if (!tenantId) {
         return jsonResponse({ error: 'No tenant context' }, { status: 400 });
     }

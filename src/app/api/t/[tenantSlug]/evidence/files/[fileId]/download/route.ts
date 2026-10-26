@@ -4,6 +4,11 @@
  * Secure file download: tenant-scoped, role-gated.
  * - S3 provider: responds with 302 redirect to presigned URL
  * - Local provider: streams file with correct headers
+ *
+ * `?purpose=preview` is the details panel's inline image/PDF and the
+ * gallery's thumbnail. It passes every gate a download does and is recorded
+ * as `EVIDENCE_PREVIEWED` / ledger channel `EVIDENCE_PREVIEW` instead of as a
+ * download (#4277). Any other value, or none, is a download.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
@@ -16,7 +21,8 @@ import { SIGNED_DOWNLOAD_URL_TTL_SECONDS } from '@/lib/storage/signed-url-policy
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; fileId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    const result = await downloadEvidenceFile(ctx, params.fileId);
+    const purpose = req.nextUrl.searchParams.get('purpose') === 'preview' ? 'preview' : 'download';
+    const result = await downloadEvidenceFile(ctx, params.fileId, { purpose });
 
     // This route's local sanitiser was the ONLY one in the repo, and the
     // shared helper is that same logic — extracted so the other sixteen sites
@@ -38,7 +44,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         tenantId: ctx.tenantId,
         fileRecordId: params.fileId,
         sha256: result.sha256,
-        channel: 'EVIDENCE_DOWNLOAD',
+        channel: purpose === 'preview' ? 'EVIDENCE_PREVIEW' : 'EVIDENCE_DOWNLOAD',
         actorUserId: ctx.userId,
         signedUrlExpiresAt:
             result.mode === 'redirect'

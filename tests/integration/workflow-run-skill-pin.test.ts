@@ -62,6 +62,8 @@ import { skillContentHash } from '@/lib/agentic/flue/skills/evaluation-record';
 import { resetSkillCache } from '@/lib/agentic/flue/skills/resolve';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { evaluateAgentRegistration } from '@/lib/agentic/agent-registration-gate';
+import { enqueue } from '@/app-layer/jobs/queue';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -103,8 +105,8 @@ describeFn('a run pins the skills it was taught (real DB)', () => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
         }).catch(() => {});
-        await prisma.tenant.deleteMany({ where: { id: TENANT } }).catch(() => {});
-        await prisma.user.deleteMany({ where: { id: USER } }).catch(() => {});
+        await prisma.tenant.deleteMany({ where: { id: TENANT } });
+        await prisma.user.deleteMany({ where: { id: USER } });
         await prisma.$disconnect();
     });
 
@@ -122,6 +124,29 @@ describeFn('a run pins the skills it was taught (real DB)', () => {
         const { runId } = await startWorkflowRun(ctx(), WF_NONE, {});
         const row = await prisma.workflowRun.findUniqueOrThrow({ where: { id: runId }, select: { mountedSkills: true } });
         expect(row.mountedSkills).toEqual([]);
+    });
+
+    // ── WHAT A REASONING ENGINE IS OWED (Step 0a) ─────────────────────────
+    //
+    // The registration gate and the worker hand-off ask `isReasoningEngine`
+    // rather than compare with 'flue'. These two cases are what make that
+    // behavioural: with `isReasoningEngine('flue')` answering false, an
+    // unvouched caller would get a run, and a Flue run would execute inline in
+    // the request. Both are asserted on the real start path.
+    it('refuses a reasoning-engine run from an unvouched caller, before its row exists', async () => {
+        // Counted against the workflow before and after, so a run another case
+        // created can neither satisfy nor spoil it.
+        const before = await prisma.workflowRun.count({ where: { tenantId: TENANT, workflowKey: WF_NONE } });
+        jest.mocked(evaluateAgentRegistration).mockResolvedValueOnce({ standing: 'no_binding' } as never);
+        await expect(startWorkflowRun(ctx(), WF_NONE, {})).rejects.toThrow(/flue_requires_registered_agent/);
+        expect(await prisma.workflowRun.count({ where: { tenantId: TENANT, workflowKey: WF_NONE } })).toBe(before);
+    });
+
+    it('hands a reasoning-engine run to the worker rather than running it in the request', async () => {
+        jest.mocked(enqueue).mockClear();
+        const { runId, status } = await startWorkflowRun(ctx(), WF_NONE, {});
+        expect(status).toBe('RUNNING');
+        expect(jest.mocked(enqueue)).toHaveBeenCalledWith('agent-run-execute', { tenantId: TENANT, runId });
     });
 
     it.each([
@@ -142,7 +167,7 @@ describeFn('the pin is write-once at the database', () => {
     });
     afterAll(async () => {
         await prisma.workflowRun.deleteMany({ where: { tenantId: T } }).catch(() => {});
-        await prisma.tenant.deleteMany({ where: { id: T } }).catch(() => {});
+        await prisma.tenant.deleteMany({ where: { id: T } });
         await prisma.$disconnect();
     });
 

@@ -13,7 +13,12 @@
 import { computePermissions } from '@/lib/tenant-context';
 import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 import { TENANT_ROLES } from '@/lib/roles';
-import { riskBulkPermissions } from '@/app/t/[tenantSlug]/(app)/risks/_shared/bulk-permissions';
+import {
+    RISK_BULK_MAX,
+    riskBulkPermissions,
+    riskCanCreate,
+} from '@/app/t/[tenantSlug]/(app)/risks/_shared/bulk-permissions';
+import { BulkRiskAssignSchema, BulkRiskDeleteSchema, BulkRiskStatusSchema } from '@/lib/schemas';
 import type { Role } from '@prisma/client';
 
 const forBuiltIn = (role: Role) =>
@@ -64,5 +69,49 @@ describe('riskBulkPermissions — a custom role needs both gates', () => {
             canEdit: false,
             canDelete: true,
         });
+    });
+});
+
+describe('riskCanCreate — the create and import routes and their usecases', () => {
+    const expected: Record<Role, boolean> = {
+        OWNER: true,
+        ADMIN: true,
+        EDITOR: true,
+        READER: false,
+        AUDITOR: false,
+        AI_ADMIN: false,
+    };
+
+    it.each(TENANT_ROLES.map((r) => [r]))('%s', (role) => {
+        const r = role as Role;
+        expect(riskCanCreate({ permissions: computePermissions(r), appPermissions: getPermissionsForRole(r) })).toBe(
+            expected[r],
+        );
+    });
+
+    it('an EDITOR-based role without risks.create is refused by the create route', () => {
+        const base = getPermissionsForRole('EDITOR');
+        const appPermissions = { ...base, risks: { ...base.risks, create: false } };
+        expect(riskCanCreate({ permissions: computePermissions('EDITOR'), appPermissions })).toBe(false);
+    });
+
+    it('a READER-based role granted risks.create is still refused by assertCanWrite', () => {
+        const appPermissions = parsePermissionsJson({ risks: { view: true, create: true } }, 'READER');
+        expect(appPermissions.risks.create).toBe(true);
+        expect(riskCanCreate({ permissions: computePermissions('READER'), appPermissions })).toBe(false);
+    });
+});
+
+describe('RISK_BULK_MAX — the list stops the selection the bulk schemas refuse', () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `risk-${i}`);
+    const bodies = {
+        status: (riskIds: string[]) => BulkRiskStatusSchema.safeParse({ riskIds, status: 'OPEN' }),
+        assign: (riskIds: string[]) => BulkRiskAssignSchema.safeParse({ riskIds, ownerUserId: null }),
+        delete: (riskIds: string[]) => BulkRiskDeleteSchema.safeParse({ riskIds }),
+    };
+
+    it.each(Object.entries(bodies))('%s accepts RISK_BULK_MAX ids and refuses one more', (_name, parse) => {
+        expect(parse(ids(RISK_BULK_MAX)).success).toBe(true);
+        expect(parse(ids(RISK_BULK_MAX + 1)).success).toBe(false);
     });
 });

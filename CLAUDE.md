@@ -144,7 +144,12 @@ Trivy blocks on `CRITICAL,HIGH` (container scan). The structural
 ratchet at `tests/guardrails/security-gate-strictness.test.ts` fails
 CI if either gate is silently re-lowered (`moderate` → `high` /
 `critical`, or `CRITICAL,HIGH` → `CRITICAL`) or `next` is downgraded
-back to 14.x.
+back to 14.x. SAST is the third gate (#4047): neither CodeQL context
+can be required, so a step of the required `Security` job fails a
+merge-queue candidate unless the PR's own `CodeQL` check (GitHub's
+new-alert comparison) succeeded. It fails closed, waiting up to 10
+minutes for a missing or unfinished check (`scripts/sast-alert-gate.mjs`),
+and the same ratchet pins it.
 
 Async-request-API: this migration is COMPLETE. Every dynamic route
 handler types `params` as `Promise<…>` and awaits it itself (354 of
@@ -241,7 +246,9 @@ runbook in `docs/rate-limiting.md`.
 `withApiErrorHandling` gets `API_MUTATION_LIMIT` (60/min) on
 POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
-`{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route today because no route supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
+`{ rateLimit: { config, scope } }` options on specific routes. Keyed `(scope, IP)` — the key shape is `<scope>:ip:<ip>:<actor>`, but `actor` is `anon` on every route except `agents/questions`, the only one that supplies the optional `getUserId` resolver, so co-NAT'd users share a budget. Storage: in-process Map (Node runtime).
+
+`/api/mcp` replaces this tier with two budgets, because a hosted MCP client calls from its provider's egress addresses and an IP-keyed bucket would make every customer agent hosted there share one. Before authentication, `MCP_IP_CEILING_LIMIT` (600/min per IP, scope `mcp-ip`) is containment. After it, `MCP_PER_KEY_LIMIT` (60/min) is keyed on the VERIFIED `apiKeyId` with no IP, through `enforceApiKeyRateLimit`, and charged per JSON-RPC message, all or nothing, so a batch cannot carry more than a minute's budget. It is charged BEFORE the invocation is built (`verifyMcpCredential`, then the charge, then `completeMcpAuthentication`): building it sends a live `tools/list` to every external connection the agent is granted, and a malformed request is charged one unit and builds nothing (#4205). Never key a budget on a digest of a presented token after the fact: it is the value an unauthenticated caller varies.
 
 **Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
 through `API_READ_LIMIT` (120/min) at the Edge middleware via
@@ -470,16 +477,31 @@ to that array only with a written `reason`.
 **C.3 — Session hardening.** A `UserSession` row is minted on every
 sign-in (NextAuth `jwt` callback → `recordNewSession`) carrying
 `ipAddress`, `userAgent`, `expiresAt`, `lastActiveAt`. Every JWT
-pass calls `verifyAndTouchSession` — revoked or expired rows
-short-circuit as `SessionRevoked`. Per-tenant policy lives on
+pass calls `verifyAndTouchSession`. A revoked or expired row makes the
+callback THROW `SessionRevokedError` (`src/lib/auth/session-revoked.ts`), and
+NextAuth then treats the session as invalid: `getServerSession` / `auth()`
+return `null`, so every server gate refuses it. It used to return the token
+with `error: 'SessionRevoked'` and every claim intact, and nothing read the
+flag, so no revocation signed anybody out. Never go back to flagging. The
+throw must also sit outside the fail-open `try`, or a revocation is swallowed
+as a telemetry failure. Per-tenant policy lives on
 `TenantSecuritySettings.maxConcurrentSessions` (overflow → revoke
 oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
 `expiresAt` at insert time). The admin UI lives at
 `/admin/members` — Sessions column + modal + per-row revoke,
-backed by `GET/DELETE /api/t/:slug/admin/sessions`. The pre-Epic-C
-endpoints (`security/sessions/revoke-current` etc.) and the
-`User.sessionVersion` bump still work as the coarse-grained
-backstop.
+backed by `GET/DELETE /api/t/:slug/admin/sessions`. "Sign Out Other
+Sessions" (`security/sessions/revoke-current`) stamps the caller's
+OTHER `UserSession` rows and keeps the one named by the request JWT's
+`userSessionId` (#4117); it bumps `User.sessionVersion` only when that
+session cannot be identified. Revoke All (`revoke-all`, ACTIVE members
+only, the caller's current session kept) and per-user revocation bump
+`sessionVersion` AND stamp the rows — the version bump stays the
+coarse-grained backstop for a token whose row was never written. Signing
+ONE person out — per-user or one device — of an OWNER or AI_ADMIN needs
+`admin.owner_management`, as deactivating one does
+(`assertMayRevokeSessionsOf`, `REVOKING_OWNER_MANAGED_SESSIONS_IS_OWNER_TIER`;
+owner decision, 2026-10-25); Revoke All does not ask it, being the incident
+lever.
 
 **C.4 — Audit event streaming.** Every committed audit row is
 fired through `streamAuditEvent` into a per-tenant in-memory
@@ -848,10 +870,13 @@ new tenant-membership creation path).
   (`CAMPAIGN_MODIFY_ROLES`; `CAMPAIGN_NEVER_PROMOTES_TO_OWNER`) and never a
   custom role (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`) — refused at the schema and
   again at close — and a REVOKE or MODIFY of a LIVE OWNER needs a closer holding
-  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`); the last-OWNER
-  guard still applies to that closer. Each refusal is the WHOLE close, before any
-  row executes, so a decision stored before the rule is never applied and never
-  dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` / `_CLOSE_REFUSED`.
+  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`), as does a REVOKE
+  or MODIFY of a LIVE AI_ADMIN (`AI_ADMIN_SUBJECT_NEEDS_OWNER_CLOSER`, matching
+  the members page, where only an OWNER moves one out of the role or deactivates
+  it); the last-OWNER guard still applies to that closer. Each refusal is the
+  WHOLE close, before any row executes, so a decision stored before the rule is
+  never applied and never dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` /
+  `_CLOSE_REFUSED`.
   Reasons live in `src/lib/access-review/member-decision-rules.ts`.
 
 ### Observability
@@ -862,7 +887,76 @@ All structured logging, tracing, and metrics flow through `src/lib/observability
 
 NextAuth v4.24.15 (stable, exact-pinned in `package.json`) is configured in `src/auth.ts`. Providers: Google OAuth, Microsoft Entra ID (via the v4 `azure-ad` provider — same OAuth endpoints, Microsoft renamed the product), enterprise SSO — SAML and OIDC (via `src/app/api/auth/sso/saml/` and `src/app/api/auth/sso/oidc/`), and Credentials. The JWT carries `tenantId`, `role`, `mfaPending`, `memberships[]`, and the Epic C.3 `userSessionId`. Token refresh logic lives in `src/lib/auth/refresh.ts`.
 
+**MFA is asked of every workspace a session can reach** (`src/lib/auth/workspace-mfa.ts`).
+`mfaPending` is the PRIMARY workspace's flag (the oldest membership): it holds the whole
+session at that workspace's challenge. Every OTHER workspace whose policy wants a code
+goes in `mfaPendingTenantIds`. The edge holds that workspace's paths, and org paths,
+until its own challenge is passed (`pendingMfaWorkspaceSlug` in `src/lib/auth/guard.ts`).
+The challenge verifies the code against the workspace in its URL, so a pending primary is
+sent to the primary's own challenge page. Sign-in used to ask only the primary, so a
+workspace that required MFA but was joined later let its members in on a password alone.
+Do not narrow it back to the primary.
+
+**SSO sign-in goes through NextAuth, and its session reaches one workspace.**
+The SAML and OIDC callbacks do not mint a session. They verify the identity
+provider's answer and issue a single-use, 60-second hand-off
+(`src/lib/auth/sso-handoff.ts`), stored hashed in `VerificationToken` and
+delivered in an HttpOnly cookie scoped to `/api/auth/callback/sso-handoff`.
+`/login/sso-complete` then signs in with the `sso-handoff` Credentials
+provider, which redeems the cookie, so the session is NextAuth's own: same
+cookie, claims, workspace MFA policy and `UserSession` row as every other
+sign-in. Before 2026-10-24 the callbacks hand-signed an `authjs.session-token`
+that NextAuth v4 never reads, so no SSO sign-in ever produced a session. The
+session is SCOPED (`ssoTenantId`, `src/lib/auth/sso-session.ts`): a tenant's
+identity provider is configured by that tenant's admin and can assert any
+email, so its session carries only that tenant's membership and no org
+memberships, and `getTenantCtx` / `getLegacyCtx` / `getTenantServerContext` /
+`getOrgCtx` / `getOrgServerContext` refuse anything else. The hand-off links
+no account and redeems no invite. Do not widen the scope to "every tenant the
+account belongs to": that is the cross-tenant takeover the scope exists to stop.
+The round trip is BOUND to the browser that started it (`src/lib/auth/sso-flow.ts`):
+`/start` seals the flow, PKCE verifier included, into an HMAC-signed HttpOnly
+cookie and sends the IdP only a random id as OIDC `state` / SAML `RelayState`,
+and the callback refuses without that cookie. `/start` also refuses a
+cross-site initiation (`Sec-Fetch-Site`). Never put flow contents back in the
+URL: that is login CSRF, and a verifier beside its code is no PKCE. The
+sign-in page starts SSO by WORKSPACE (`/api/auth/sso/discover`, `SsoSignIn`),
+never by email domain: `emailDomains` are unverified, so domain discovery would
+let any workspace claim anyone's domain. `/login?sso=<slug>` is the shareable link.
+"Enforce SSO" (`src/lib/auth/sso-enforcement.ts`): an enforcing workspace is
+reachable only by its own SSO or a break-glass OWNER/ADMIN signed in with their
+password — Google, Microsoft and other passwords are refused there, in the claims
+and at the DB-backed gates; a sign-in left with no workspace is refused with
+`sso_required:<slug>`. The session's `signInMethod` is what break-glass reads.
+
+**The OIDC ID token is VERIFIED, not decoded** (`verifyIdToken` in
+`src/lib/security/oidc-client.ts`, via `jose`): signature by a key at the
+IdP's `jwks_uri`, an asymmetric-only `algorithms` allowlist, `iss` exactly the
+discovery document's issuer, `aud`/`azp` naming the client, `exp`/`iat`, and
+the flow's nonce. Do not add an unverified claims decoder back for
+convenience; the callback used one until 2026-10-24, and any token with any
+signature signed in whoever it named. The exact issuer match is also what
+refuses Microsoft's `common`/`organizations` endpoints, whose `{tenantid}`
+template no real token matches. Every request the client makes goes through `safeFetch`:
+discovery, the token exchange, and the key set, which is handed to `jose` as
+its `[customFetch]`. Only the issuer is typed by an administrator; the other
+two URLs come from the IdP's own discovery document, so guarding the issuer
+alone guards nothing (`tests/guards/ssrf-egress-coverage.test.ts`).
+
+**A SAML response must answer this flow's request** (`buildSamlInstance` /
+`validateSamlResponse` in `src/lib/security/saml-client.ts`). `/start` picks
+the AuthnRequest ID and seals it into the flow. The callback requires
+`InResponseTo` to match it (`validateInResponseTo: 'always'`, through a cache
+that knows only that ID), a bearer confirmation whose `Recipient` is this
+callback with a live `NotOnOrAfter`, and an assertion no older than
+`SAML_MAX_ASSERTION_AGE_MS`. The flow is also spent on the server
+(`src/lib/auth/sso-flow-spend.ts`), because a cleared cookie binds nothing. Do
+not drop back to node-saml's default `never`: under it a captured response
+signed its subject in from any browser.
+
 **Bounded JWT membership payload.** The JWT is a fixed-size cookie credential — `memberships[]` / `orgMemberships[]` are capped at `MAX_JWT_MEMBERSHIPS` (50) in the `jwt` callback. Over the cap, `membershipsTruncated` / `orgMembershipsTruncated` is set and the middleware's `checkTenantAccess` / `checkOrgAccess` defers a slug-miss to the authoritative DB-backed server gate (`TenantLayout` / `getTenantCtx`) instead of denying. UI that needs the COMPLETE list (the `/tenants` picker) does its own server-side DB lookup — the JWT list is a bounded fast-path, not the source of truth. Old sessions (pre-cap, no flag) degrade gracefully: an absent flag reads as `false`, so they behave exactly as before until natural re-mint. Locked by `tests/guardrails/jwt-membership-bound.test.ts`.
+
+**SSO trust is Owner-tier.** Creating an OIDC or SAML `TenantIdentityProvider`, or changing one of its trust fields, needs `admin.owner_management`: 403, reason `SSO_TRUST_IS_OWNER_TIER`, naming the changed `fields`. The trust fields are `SSO_TRUST_CONFIG_KEYS` (OIDC issuer, clientId, discoveryUrl; SAML entityId, ssoUrl, certificate) plus `type`, `emailDomains` and the JIT settings. A sign-in through the provider becomes a session for whichever member the identity provider names, matched by email on first sign-in, so an ADMIN who could re-point it could sign in as an OWNER. A trust change removes every `UserIdentityLink` to the provider in the same transaction (`SsoConfigRepository.updateAndRemoveLinks`). The rest of the form, enable, enforce and delete stay ADMIN. The diff is `changedSsoTrustFields` in `src/lib/auth/sso-trust-fields.ts`; a key belongs there only if it decides whom the provider believes. A save that leaves out the JIT settings keeps the stored ones. The Entra (`ENTRA_ID`) provider has its own writer, `usecases/entra-provider.ts`, with the same rule over `ENTRA_TRUST_CONFIG_KEYS` (`aadTenantId`, `clientId`): creating it or changing either is Owner-tier. That is not decoration, because `syncEntraMembershipRole` applies the group mappings and the gate only to a sign-in whose token `tid` equals `aadTenantId` (outcome `foreign_directory` otherwise; refused when the gate is on; no configured directory applies nothing). The SCIM Groups path passes no `signInDirectoryId` and is unaffected.
 
 **GAP-04 — type augmentation pattern.** `src/auth.ts` declares two module augmentations: `next-auth` for `Session.user` (id/tenantId/role/mfaPending/memberships) and `next-auth/jwt` for the full JWT shape (every custom field the codebase stores). Middleware reads typed `token.role` / `token.memberships` directly via `getToken({ req, secret })`. There are zero `as any` casts in the auth-critical path; the structural guardrail at `tests/guardrails/auth-stack-pinning.test.ts` fails CI if any are reintroduced.
 
@@ -908,13 +1002,16 @@ Adding a new model ⇒ classify it in the doc's inventory table (the
 ### Change Management
 
 **See `docs/change-management-policy.md`** — the written contract over the
-existing rapid-release pipeline (semantic-release auto-versions every push to
-main; staging auto-deploys; production is gated by a GitHub Environment approval).
+existing rapid-release pipeline (semantic-release auto-versions main on each push
+that leaves the merge queue empty, plus a daily run, so its commit does not
+invalidate queue candidates in flight; a merge reaches production with no further
+approval, through `ghcr-publish.yml` and Watchtower — there is no staging stage
+and no deployment approval yet built, #4056).
 It defines the three change classes (STANDARD / SIGNIFICANT / EMERGENCY), the
 approval matrix (who is the required second approver for migrations, infra, secret
 rotations, SSO/SCIM changes), the emergency-bypass + retrospective procedure, the
 rollback policy (app = redeploy prior image; migrations = forward-fix, never
-revert), and the audit trail (PR + CI + Environment approval + CHANGELOG). It is
+revert), and the audit trail (PR + merge-queue CI + published image + CHANGELOG). It is
 the policy twin of `docs/deployment.md` (operational) and cross-links
 `docs/incident-response.md` (on-call rotation). A SIGNIFICANT change — a schema
 migration, a security-middleware change, a dependency major bump — must carry a
@@ -1506,10 +1603,12 @@ implementation of reminders, closing and the evidence PDF.
   resolution method — read off the frozen subjects rather than re-queried, because
   re-reading at close reintroduces the drift the freeze removed. The hash lets an
   auditor re-derive from the stored rows through `verifySnapshotPayloadHash`.
-- **SOC 2 suggests `CC6.1`, not the brief's `CC6.2`/`CC6.3`**, because this
-  catalogue has one sub-code per criterion and neither exists. A test asserts that
-  ABSENCE so the substitution is revisited if the catalogue changes. Filed
-  separately; see `legacy-evidence-controls.ts`.
+- **SOC 2 suggests the brief's own `CC6.2` and `CC6.3`**, since #3369 completed
+  CC6 to CC6.1-CC6.8. It suggested `CC6.1` as a substitute while the catalogue
+  carried one sub-code per criterion and neither of the brief's codes existed;
+  the test that asserted that ABSENCE is what forced the revisit, and now
+  asserts presence. Six of the eight sub-codes were re-attributions of controls
+  already written under `CC6.1`. See `legacy-evidence-controls.ts`.
 - **A remediation task for a legacy campaign says to act IN THE APPLICATION**, and
   says we never write to it. The connected wording — "in the identity provider" —
   would invite somebody to wait for an automation that cannot exist.
@@ -1870,8 +1969,9 @@ wrote nothing. Rules that are easy to undo:
   keys, not arrays, and turns a `Date` into `{}`); the hash is the hex SHA-256 of
   exactly the stored bytes, so it equals the `FileRecord.sha256`.
   `getAgentReviewPacks` recomputes it on every read and reports `matches`. Filed
-  against A.5.18, CC6.1 (the brief's CC6.3 is in neither SOC 2 representation —
-  a test asserts the absence) and ASI03.
+  against A.5.18, CC6.3 (present in both SOC 2 representations since #3369
+  completed CC6; a test asserts that presence, having asserted its absence
+  before) and ASI03.
 - **The sample uses the existing keyed sampler** (`selectSample`,
   `sampleSizeFor`), seeded per tenant through `deriveSubkey` and epoch-bound to
   the campaign, at close. The second human may read the pack and is neither the
@@ -2605,8 +2705,92 @@ tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
   `TenantMembership.role` ascending to find the most senior member; an AI_ADMIN
   must never sort ahead of ADMIN. The migration is a plain `ADD VALUE`.
 
+### Claude agent engines
 
+An agent builder that lets a customer set up their own agent with no CLI, and
+the engines that run what it builds: the Tool Runner first, the Agent SDK if a
+profile ever needs it, and Managed Agents for profiles that need a container.
+**The three design documents are the source of truth for intent**:
+`docs/claude-agent-sdk-design.md` (the builder, Phases 0, 1, 3 and 4, and the
+global rules every step obeys), `docs/claude-tool-runner-design.md` (Phase 2)
+and `docs/claude-managed-agents-design.md` (Phases 5 and 6). The work is the
+step issues under #4135, one pull request each.
 
+Three of the global rules, because they are the ones a careless edit undoes:
+
+- **The engine decides what to try; the funnel decides what is permitted.**
+  Every tool call any engine makes goes through `runGuardedTool` →
+  `runReadTool` / `runProposeTool`. An engine module holds no permission check,
+  no usecase call and no Prisma call.
+- **Authority only narrows.** A profile's tools are a subset of the agent's
+  grants, instructions teach and never grant, and nothing a tenant writes can
+  widen a grant, a ceiling or a scope.
+- **Nothing new is stored at Anthropic without the sub-processor step.** The
+  hosted engines send Messages API calls only (`thread: false`,
+  `persistSession: false`); Managed Agents stores data by design and is gated in
+  its own phases.
+
+**The tool core is engine-neutral** (`src/lib/agentic/engine-tools/`, Step 0a).
+The scope / autonomy / read-only narrowing (`offerToolSet`), the review latch and
+the guarded call live there, and `eslint.config.mjs` refuses any import of
+`@flue/*`, `valibot` or `@earendil-works/*` under it. An engine supplies only its
+tool shape (a `ToolBuilder`) and its guard source prefix; `runGuardedTool` takes
+the prefix with no default, so a new engine names its own audit rows. Flue's
+prefix is `'flue'`, which keeps every guard source byte-identical to what it was
+before the move.
+
+**Every model call is preceded by the kill switch and the caps** (#4196). A kill
+engaged mid-run used to refuse only the tool calls: the model was called again
+and the run settled COMPLETED. On Flue the interceptor in `flue/telemetry.ts`
+awaits the run binding's `beforeModelCall` once per model operation, keyed on
+the operation object, because the runtime intercepts every streamed chunk of
+one call with the same object. Do not move the check to the tool boundary or
+the agent render: the tool boundary is too late, and the render cannot await.
+
+**"Is this a reasoning engine" is `isReasoningEngine(driver)`**
+(`src/lib/agentic/agent-driver.ts`), never a comparison with `'flue'`. It is
+backed by a `Record<AgentDriver, boolean>`, so a driver added to `AGENT_DRIVERS`
+without a classification fails `tsc`. The registration gate, the skill pin and
+the worker hand-off in `startWorkflowRun` and `resumeWorkflowRun` ask it, so the
+next engine is vouched, pinned and kept off the web tier without anybody
+remembering those lines. A comparison that genuinely means Flue (the
+Flue-specific gate in `agent-driver-policy.ts`) stays a comparison. Which engine
+a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — is
+`recordedModeOf(driver)`, a `Record<AgentDriver, AgentDriverMode>`, never a
+`'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
+every run it walks as STATIC (#4270).
+
+**The engine choice has one control: the "Agent engines" section on Admin → AI
+features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
+`GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and
+the `PUT` stays `admin.tenant_lifecycle`. The page gates each section, not the
+whole page. The six-term `flue-wiring` checklist stays OWNER-only. The section
+requests it only for a viewer who can change the engine, so an admin's visit
+writes no `AUTHZ_DENIED` row. Do not put a second engine control anywhere
+else: the Flue card on Integrations was that, and it was removed. A new engine
+is offered by adding its mode to `AGENT_DRIVER_MODES` and its name and
+description to `admin.agentEngines.engine`. A new `StaticDriverReason` must get
+a sentence in `REASON_MESSAGE`, which `satisfies` the union, so `tsc` fails
+until it does.
+
+**A new engine passes the driver conformance suite before it is switched on**
+(Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
+hold ten run scenarios and one admission scenario. An engine supplies an
+adapter, which scripts the model's turns and reads back an observation. The
+scenarios assert only on that observation. The helper reads `adapter.engine`
+for two describe titles and nothing else, and
+`tests/unit/driver-conformance-variances.test.ts` counts the reads. Do not add
+an engine branch to the helper. A difference belongs in the adapter, or in a
+VARIANCE that names the stronger property and the owner decision accepting it
+(`checkVariances`, which runs as a case of its own). Flue declares none.
+
+Two scenarios are easy to weaken by accident:
+
+- **The kill scenario** holds every engine to the per-model-call check above.
+- **The ledger scenario** is `ledger-accounts-for-every-call`. A `MODEL_CALL`
+  step may cover a dispatch if it names how many calls it covers (owner
+  decision 2026-10-25, #4197). The count is asserted against the model inputs
+  and is never inferred from the number of steps.
 
 ## Testing Conventions
 
@@ -2691,8 +2875,8 @@ tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
   2026-08-25 — it was `push`/`schedule`/`dispatch`-only while a separate
   `Coverage (shard N/4)` matrix re-ran the whole suite to instrument it).
 
-  It now merges **six** artifacts, and which six is load-bearing.
-  Coverage is collected by the jobs that already run the suite: the four
+  It now merges **nine** artifacts, and which nine is load-bearing.
+  Coverage is collected by the jobs that already run the suite: the seven
   `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files), `Ratchets`
   (guards + guardrails + contracts, 661 files) and `Flue`
   (`coverage-shard-flue`). Those sets are

@@ -49,7 +49,7 @@ found there is a question to re-ask, not a finding to carry forward.
 | 0.1d dropped-tool MCP defect | PENDING | Needs the issue tracker read at the pinned release |
 | 0.1e telemetry off | **VERIFIED** (v0.1.5 chart + binary) | One switch was named; there are **three independent channels**. See below |
 | 0.1f SDK module format | PENDING | Moot for now: the SDK is deferred. Still needed before it is ever taken |
-| 0.1g audit-log coverage | **PARTIAL** — blocker now NAMED | Per-decision records come from the SUPERVISOR, not the gateway; and a Docker-backed sandbox refuses to launch without gateway authentication. See below |
+| 0.1g audit-log coverage | **MEASURED 2026-10-25 — coverage is ABSENT** | The TOML `ocsf_log` table is SILENTLY IGNORED (preflight passes it, nothing is written). Enablement is `OPENSHELL_OCSF_JSON` + `OPENSHELL_OCSF_LOG_DIR` only; retention defaults to 3 days. With the writer verifiably enabled, SIX operations — including two auth rejections and a blocked egress — produced ZERO records. OCSF events exist only as text on per-container stdout, which the driver deletes with the container |
 
 ### 0.1e — one switch was named; there are three independent channels
 
@@ -92,7 +92,100 @@ but it is NOT among the gateway's 33 long options and does not appear in
 environment is the only route, and the tool's own self-documentation does not
 say the control exists.
 
-### 0.1g — the mechanism is there; the coverage is still unmeasured
+### 0.1g — MEASURED 2026-10-25. The coverage is not there.
+
+Measured on a clean Ubuntu 26.04 VM with Docker from Docker's apt repository, a
+v0.1.5 gateway with mTLS, and sandboxes that actually reach `Ready` — the
+configuration this host cannot run (see the snap `no_new_privs` section below).
+Three claims in the rest of this note are **wrong** and are corrected here.
+
+**The TOML table does nothing.** The 2026-10-24 attempt read `ocsf_log`'s
+missing `enabled` key to mean that the table's presence enables the writer. It
+does not. A
+config carrying
+
+```toml
+[openshell.gateway.ocsf_log]
+path = "/home/lab/openshell/ocsf/gateway-ocsf.jsonl"
+```
+
+passes `openshell-gateway config preflight` with exit 0, and the gateway then
+never mentions OCSF, registers no `openshell_ocsf_log_*` metric, and writes no
+file at that path or anywhere else on the filesystem. Silently ignored.
+
+**What actually enables it is two environment variables**, the pair the admin
+page's channel list already names:
+
+```
+OPENSHELL_OCSF_JSON=true
+OPENSHELL_OCSF_LOG_DIR=/home/lab/openshell/ocsf
+```
+
+→ `OCSF JSONL audit log enabled (openshell-ocsf.<date>.log, daily rotation, keep 3)`
+
+Note what that line also settles: the `path` key is not merely ignored, it is
+the wrong SHAPE. The env var takes a DIRECTORY and the filename is generated.
+And the default retention is **three days** — a compliance artefact that
+deletes itself before most review cycles.
+
+**With the writer verifiably enabled, it recorded nothing.** Six operations
+against a gateway whose `readyz` was confirmed healthy first:
+
+| operation | outcome | OCSF records |
+|---|---|---|
+| `sandbox list` | succeeded | 0 |
+| `sandbox create` | reached `Ready`, containers healthy | 0 |
+| connect with no client certificate | rejected | 0 |
+| client certificate from an untrusted CA | rejected, `unknown ca` | 0 |
+| authenticated read | succeeded | 0 |
+| blocked egress from inside a sandbox | `Network is unreachable` | 0 |
+
+Zero bytes, through a 45-second wait and a clean shutdown, so buffering is
+excluded. The gateway logged the TLS rejection to its own journal
+(`ERROR TLS handshake failed error=invalid peer certificate`) and not to the
+audit log, which is the distinction that matters: the events are observed, and
+they do not reach the artefact a compliance reader would be pointed at.
+
+**OCSF events DO exist — as text on container stdout.** This is the
+architectural finding, and it is why "the OCSF export wrote no file" has looked
+like a defect since v0.1.2 without being one:
+
+```
+supervisor container (7 events, all startup)
+  CONFIG:CONFIGURED   OPA runtime binary identity mode [require_binary_identity:true]
+  CONFIG:ENABLED      TLS termination enabled: ephemeral CA generated
+  CONFIG:READY        Policy DNS connected to isolation boundary
+  CONFIG:LOADED       initial policy revision loaded [version:1] [hash:a45a8ff3…]
+  NET:LISTEN 127.0.0.1:3128 · SSH:LISTEN · NET:OPEN 127.0.0.1:17670
+
+workload container (42 events)
+  36 CONFIG:UNKNOWN · 2 PROC:LAUNCH · 2 CONFIG:PROBED · 2 CONFIG:BUILT · 2 CONFIG:APPLYING
+```
+
+So the audit trail for sandbox-level activity is **per-container stdout**, not a
+gateway file. Two consequences the roadmap has to absorb. It is ephemeral: the
+Docker driver removes a container within a second of exit, which took an
+event-driven `docker logs -f` to capture at all. And 36 of the 42 workload
+events are a kind literally named `CONFIG:UNKNOWN`, so even the stream that
+exists is mostly uncategorised.
+
+**No decision event was recorded for the one thing phase 5.1 needs.** Egress was
+genuinely enforced — a raw `/dev/tcp` connect from inside the sandbox returned
+`Network is unreachable` — and produced no OCSF event in either container or in
+the gateway file. Worth stating the limit of that: the mode documented to log
+violations is `NETWORK_ENFORCEMENT_MODE_UNSPECIFIED`, "log violations and allow
+traffic", and traffic here was BLOCKED rather than allowed, so the policy in
+force was not that mode. A deployment that deliberately selected audit mode
+remains untested, and it is the one case that might record a denial.
+
+**What this means for 5.1.** A compliance claim of the form "the sandbox runtime
+produces an audit trail of its enforcement decisions" is not supportable on
+v0.1.5 as configured. What is supportable is narrower and should be written
+narrowly: the runtime enforces, the enforcement is observable in container
+logs, and the enforcement decisions are not individually recorded in any
+durable artefact.
+
+### Superseded: the mechanism is there; the coverage is still unmeasured
 
 The symptom this note inherited from the v0.1.2 testing was that "the OCSF JSON
 export wrote no file". On v0.1.5 the gateway's OCSF writer is a first-class
@@ -106,6 +199,96 @@ That is consistent with the v0.1.2 symptom being the feature's default state
 rather than a defect, but consistent is not the same as established, and
 nothing here says what the writer records per decision kind. Phase 5.1 still
 depends on that measurement.
+
+#### Why that measurement could not be taken on this host — root-caused 2026-10-25
+
+It needs a gateway that can actually start a sandbox, and on this host no
+sandbox ever reached a running state. Both containers died with `exit=255`
+inside a second, and no gateway log, retained container output or
+`openshell logs` ever carried a reason. Attaching `docker logs -f` on the
+container's `start` event — the stream survives the container, which the driver
+removes in under a second — captured one line:
+
+```
+exec /.openshell/runtime/openshell-sandbox: operation not permitted
+```
+
+**The cause is not OpenShell.** It is a known and permanent limitation of
+snap-packaged Docker, and it reduces to one command with nothing of ours in it:
+
+```
+$ docker run --rm --security-opt no-new-privileges busybox:latest echo RAN
+exec /bin/echo: operation not permitted
+$ docker run --rm busybox:latest echo RAN
+RAN
+```
+
+snapd's own AppArmor confinement denies `no_new_privs` transitions outright
+(Launchpad #1908448, open since 2020). It is not fixable in Docker and
+Canonical's position is that it cannot be supported until AppArmor itself
+supports it. OpenShell's Docker driver sets `no_new_privileges` on sandbox
+containers, which for a sandbox is exactly right — so the driver and the
+packaging are incompatible by design, not by accident, and waiting for a
+release does not help.
+
+That the driver sets it is MEASURED, not inferred from the error. The gateway's
+own debug log carries the container-create payloads it sends to Docker:
+
+```
+"SecurityOpt":["no-new-privileges:true"]
+"Entrypoint":["/.openshell/runtime/openshell-sandbox"]
+"CapDrop":["ALL"]   "ReadonlyRootfs":true   "PidsLimit":2048
+```
+
+The entrypoint override is the staged path from the error message, so this is
+the same container. Note the other three hardening options in that payload:
+each was tested individually against this host and each WORKS. Only
+`no-new-privileges` fails, which is why the whole hardening set looked
+collectively suspect for hours while exactly one term in it was responsible.
+
+What took four hours to find was hidden by two things worth recording, because
+both will mislead the next reader the same way:
+
+- **`EPERM` is not `EACCES`.** `man 2 execve` grants EPERM only for a
+  nosuid mount with a set-user-ID file, or an LSM denial. A missing exec bit, a
+  `noexec` mount or an untraversable directory all give EACCES. The binary is
+  static-PIE, mode `0555`, owner `0:0`, carries no file capabilities and no
+  setuid bit, so every filesystem explanation was excluded early — correctly,
+  and that is why the search went to the LSM.
+- **Container-level AppArmor options cannot see it.**
+  `--security-opt apparmor=unconfined` changes the profile applied to the
+  CONTAINER; the profile doing the denying is the snap's, confining `runc`
+  itself. So the one flag that looks like it tests the hypothesis reports that
+  the hypothesis is false:
+
+```
+nnp alone                                  exec /bin/echo: operation not permitted
+nnp + apparmor=unconfined                  exec /bin/echo: operation not permitted
+nnp + seccomp=unconfined                   exec /bin/echo: operation not permitted
+apparmor=unconfined alone                  RAN
+seccomp=unconfined alone                   RAN
+```
+
+An earlier round of four controls — exec from inside the image, from a named
+volume, from a dot-prefixed volume path, and from a `/tmp` bind mount — was read
+as DISPROVING a snap-AppArmor cause. It did not: none of those four set
+`no-new-privileges`, which is the only trigger. A control that does not vary the
+responsible term cannot clear it, and a set of four agreeing controls reads far
+more conclusive than one.
+
+The host kernel is not implicated: `setpriv --no-new-privs /bin/echo` runs
+normally, so `no_new_privs` works outside the snap's confinement.
+
+Measured on: snap `docker` 29.8.0 rev 3618 (publisher Canonical), containerd
+`db8809540e`, kernel `7.0.0-28-generic`, `docker info` reporting
+`name=apparmor,profile=default`.
+
+**Consequence for the roadmap.** 0.1g, R-OS1 and anything else needing a running
+sandbox cannot be measured on this host under snap Docker. The options are
+Docker from Docker's own apt repository (removes the snap confinement; untested
+here, and replacing the host's Docker affects every other container on it) or
+the VM the host section already contemplates. This is independent evidence for
+that section's conclusion rather than a new requirement.
 
 ### What a running v0.1.5 gateway looks like, observed
 
@@ -137,11 +320,13 @@ Four facts the roadmap did not have:
 - `config preflight` validates and exits 0 without starting the service, which
   makes configuration checkable in CI without a running gateway.
 
-### 0.1g — measured as far as an unauthenticated gateway allows
+### 0.1g — the 2026-10-24 attempt, on an unauthenticated gateway
 
-Attempted on 2026-10-24 against the running v0.1.5 gateway. 0.1g is still
-PARTIAL, but the blocker is now a specific named requirement rather than
-"needs a gateway", and four facts came out of the attempt.
+Attempted on 2026-10-24 against the running v0.1.5 gateway on the development
+host, before the 2026-10-25 measurement above. Its two claims about the OCSF
+writer, that the TOML table's presence enables it and that the per-decision
+records are the supervisor's, were overtaken by that measurement and are not
+repeated here. Four facts from the attempt still stand.
 
 **1. A DOCKER-BACKED SANDBOX WILL NOT LAUNCH ON AN UNAUTHENTICATED GATEWAY.**
 `sandbox create` refuses:
@@ -162,47 +347,29 @@ optional for the Docker driver. `generate-certs --output-dir <DIR>` writes the
 PKI and a `jwt/` triple (`signing.pem`, `public.pem`, `kid`) to the filesystem
 rather than to Kubernetes Secrets, which is the local-binary route.
 
-**2. The gateway's own OCSF writer records nothing about sandbox decisions.**
-Started with the writer enabled, it created
-`openshell-ocsf.<date>.log` at **0 bytes** and stayed there. That is not a
-defect: per-decision records are the SUPERVISOR's, written to its stderr and
-collected with `docker logs <supervisor-container>`, gated on
-`ocsf_json_enabled`. The vendored `openshell-cli` and `debug-openshell-cluster`
-skills both say so. So 0.1g cannot be answered from the gateway alone — it
-needs a live sandbox, which needs item 1.
-
-`ocsf_json_enabled` itself is settable and took effect:
-`settings set --global --key ocsf_json_enabled --value true` returned
-`revision 1`.
-
-**3. `ocsf_log` HAS NO `enabled` KEY — the chart key and the TOML key differ.**
-The Helm chart exposes `server.ocsfLog.enabled`, recorded above. The gateway's
-own TOML has no such key: `[openshell.gateway.ocsf_log]` is enabled by the
-table's PRESENCE, and `path` is required. A config written from the chart's
-vocabulary is rejected as malformed. Both spellings are correct for their own
-surface, and neither page says the other exists.
-
-Also: `compute_driver` lives under `[openshell.gateway]`, not under
-`[openshell]`. The vendored cluster skill's phrasing — "requires
-`[openshell] version = 2`, a singular `compute_driver` selector" — reads as if
-both sit in `[openshell]`, and they do not.
-
-**4. `config preflight` names no offending field.** A malformed v2 file returns
+**2. `config preflight` names no offending field.** A malformed v2 file returns
 `category=malformed detected_version=2` and a documentation link, with no key,
 line or table. It does distinguish `missing_version` from `malformed`, so the
 category is real — but locating the bad key means bisecting the file by hand.
-Worth knowing before budgeting any gateway-configuration work.
+Worth knowing before budgeting any gateway-configuration work, and the
+2026-10-25 measurement adds the other half: preflight also passes a table the
+gateway then ignores.
 
-**Left unresolved deliberately.** The `[openshell.gateway.gateway_jwt]` table
-with `signing_key_path` is what the published configuration reference and the
-Helm path both describe, and v0.1.5's own preflight rejects it at that path,
-one level up, and as an inline table. `signing_key_path` does not appear as a
-standalone string in the binary. So either preflight is stricter than the
-runtime, or the local-binary gateway does not accept that table at this
-release. Settling it means reading the versioned configuration reference for
-0.1.5 rather than `latest` — which is finding 3 of the vendored-skill review
-in `.claude/skills/OPENSHELL-LOCAL-NOTES.md`, arriving from the other
-direction.
+**3. `compute_driver` lives under `[openshell.gateway]`, not under
+`[openshell]`.** The vendored cluster skill's phrasing — "requires
+`[openshell] version = 2`, a singular `compute_driver` selector" — reads as if
+both sit in `[openshell]`, and they do not.
+
+**4. Left unresolved deliberately: the `gateway_jwt` table.** The
+`[openshell.gateway.gateway_jwt]` table with `signing_key_path` is what the
+published configuration reference and the Helm path both describe, and
+v0.1.5's own preflight rejects it at that path, one level up, and as an inline
+table. `signing_key_path` does not appear as a standalone string in the binary.
+So either preflight is stricter than the runtime, or the local-binary gateway
+does not accept that table at this release. Settling it means reading the
+versioned configuration reference for 0.1.5 rather than `latest` — which is
+finding 3 of the vendored-skill review in `.claude/skills/OPENSHELL-LOCAL-NOTES.md`,
+arriving from the other direction.
 
 ### Distribution, which the supply-chain phase can rely on
 
@@ -354,10 +521,11 @@ sound on the facts it was given.
 ## What this phase did not establish
 
 0.1e is now settled on v0.1.5 and is recorded above; it needed the chart and
-the binary rather than a running gateway. **0.1g needs a running gateway AND
-gateway authentication material** — a Docker-backed sandbox refuses to launch
-without it, and the per-decision records are the supervisor's rather than the
-gateway's. Both are recorded above. Phase 5.1
+the binary rather than a running gateway. **0.1g is measured (2026-10-25), and
+the coverage is absent**: no enforcement decision reached a durable artefact.
+One case is still untested, a deployment that deliberately selects the audit
+enforcement mode, and measuring anything needs gateway authentication material,
+because a Docker-backed sandbox refuses to launch without it. Phase 5.1
 depends on it — a decision OpenShell never records cannot be bridged into the
 hash-chained `AuditLog`, and claiming otherwise would put the gap in Inflect's
 compliance record instead of the vendor's. 0.1c's stated behaviour, that

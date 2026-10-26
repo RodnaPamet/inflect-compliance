@@ -19,7 +19,10 @@
  *
  *   • Title + message (truncated to one + two lines respectively).
  *   • Time (relative, formatted via Intl.RelativeTimeFormat).
- *   • Click → marks-read + navigates to `linkUrl` if present.
+ *   • Click → marks-read + navigates to `linkUrl` if present. A stored
+ *     tenant path that predates the `/t/<slug>` prefix (#4128) is resolved
+ *     against the current workspace — `resolveNotificationHref` lists the
+ *     exact prefixes that count; every other link is used as stored.
  *
  * Empty state uses the R11 personality vocabulary — "All clear"
  * with a calm icon, not a generic "No notifications" sentence.
@@ -37,6 +40,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Bell, CheckCheck } from 'lucide-react';
 
@@ -44,6 +48,7 @@ import { Popover } from '@/components/ui/popover';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDateCompact } from '@inflect/ui/lib/format-date';
 import { noteUnauthorized } from '@/lib/auth/session-expiry';
+import { resolveNotificationHref } from '@/lib/notifications/notification-href';
 import { env } from '@/env';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
@@ -124,6 +129,12 @@ function formatRelativeTime(iso: string): string {
 
 export function NotificationsBell() {
     const t = useTranslations('panels.bell');
+    // The CURRENT workspace, from the URL rather than `useTenantHref`: the bell
+    // is also mounted in the org chrome, which has no tenant context (and so
+    // no workspace to resolve a legacy tenant path against).
+    const params = useParams();
+    const currentTenantSlug =
+        typeof params?.tenantSlug === 'string' ? params.tenantSlug : null;
     const [open, setOpen] = useState(false);
     const [items, setItems] = useState<NotificationRow[] | null>(null);
     const [loading, setLoading] = useState(false);
@@ -504,7 +515,7 @@ export function NotificationsBell() {
                                 return n.linkUrl ? (
                                     <Link
                                         key={n.id}
-                                        href={n.linkUrl}
+                                        href={resolveNotificationHref(n.linkUrl, currentTenantSlug)}
                                         onClick={() => {
                                             close();
 

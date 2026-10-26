@@ -37,7 +37,7 @@ const prisma: PrismaClient = prismaTestClient();
 
 const T1 = 'lra-tenant';
 const T2 = 'lra-other';
-const ctx = (role = 'ADMIN') => makeRequestContext(role, { tenantId: T1 });
+const ctx = (role = 'ADMIN') => makeRequestContext(role, { userId: 'lra-user-1', tenantId: T1 });
 
 let connectionId = '';
 let snapshotId = '';
@@ -96,8 +96,8 @@ beforeAll(async () => {
         await prisma.tenant.upsert({ where: { id }, update: {}, create: { id, name, slug: id } });
     }
     await prisma.user.upsert({
-        where: { id: 'user-1' }, update: {},
-        create: { id: 'user-1', email: 'reviewer@lra.test', name: 'Reviewer' },
+        where: { id: 'lra-user-1' }, update: {},
+        create: { id: 'lra-user-1', email: 'reviewer@lra-actions.test', name: 'Reviewer' },
     });
     await prisma.user.upsert({
         where: { id: 'user-owner' }, update: {},
@@ -163,8 +163,7 @@ describe('authorisation', () => {
         // `canAdmin`: a custom role can grant confirm on a READER base, whose
         // `canAdmin` is false. A coarse check would refuse what the route
         // allowed, and the custom role would be unusable.
-        const custom = makeRequestContext('READER', {
-            tenantId: T1,
+        const custom = makeRequestContext('READER', { userId: 'lra-user-1', tenantId: T1,
             appPermissions: {
                 ...getPermissionsForRole('READER'),
                 identity_reconciliation: { view: true, confirm: true },
@@ -308,7 +307,7 @@ describe('each action writes what it claims', () => {
             decideLegacyAccount(ctx(), {
                 connectionId, accountKey: 'alovelace', executionId,
                 action: {
-                    kind: 'NON_PERSON', ownerUserId: 'user-1',
+                    kind: 'NON_PERSON', ownerUserId: 'lra-user-1',
                     justification: 'batch job for the nightly export',
                 },
             })

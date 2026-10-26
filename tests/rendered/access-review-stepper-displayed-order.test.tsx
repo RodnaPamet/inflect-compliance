@@ -193,7 +193,7 @@ describe('access-review stepper', () => {
 
         const list = render(
             <Wrapper>
-                <AccessReviewsClient tenantSlug="acme" initialReviews={DISPLAYED} />
+                <AccessReviewsClient tenantSlug="acme" canCreate initialReviews={DISPLAYED} />
             </Wrapper>,
         );
         // Derive the order from the DOM rather than restating the literal.

@@ -111,6 +111,22 @@ export interface ProviderTurn {
      * recorded spend, which is the one direction a cost record must not fail in.
      */
     readonly usage?: { readonly tokensIn: number; readonly tokensOut: number };
+    /**
+     * What the provider that produced this turn needs back on the next
+     * request, which the loop carries and never reads (#4153).
+     *
+     * For the Anthropic provider this is the reply's content blocks as
+     * returned, `thinking` blocks included. Those blocks carry the model's
+     * reasoning and its progress notes between tool calls, and the API
+     * expects them back unchanged, in order. Rebuilding the turn from `text`
+     * and `toolCalls` dropped them.
+     *
+     * OPAQUE, so the loop stays provider-neutral (#3808). Only the provider
+     * that wrote it interprets it, and a provider that does not set it gets
+     * the history it always got. It is never logged, audited or shown: it
+     * goes into the history and from there only into the next request.
+     */
+    readonly providerPart?: unknown;
 }
 
 /** What the loop sends. `toolResults` carries the previous turn's dispatches. */
@@ -119,7 +135,13 @@ export interface ProviderRequest {
     readonly system: string;
     readonly question: string;
     readonly history: ReadonlyArray<
-        | { readonly role: 'assistant'; readonly text: string | null; readonly toolCalls: ProviderTurn['toolCalls'] }
+        | {
+              readonly role: 'assistant';
+              readonly text: string | null;
+              readonly toolCalls: ProviderTurn['toolCalls'];
+              /** The turn's {@link ProviderTurn.providerPart}, when its provider set one. */
+              readonly providerPart?: unknown;
+          }
         | { readonly role: 'tool'; readonly id: string; readonly name: string; readonly content: string }
     >;
     readonly tools: ReadonlyArray<{ readonly name: string; readonly description: string; readonly jsonSchema: unknown }>;
@@ -377,7 +399,15 @@ export async function runAssistantLoop(opts: RunLoopOptions): Promise<LoopResult
             return finish(turn.stopReason === 'max_tokens' ? 'halted-iterations' : 'answered');
         }
 
-        history.push({ role: 'assistant', text: turn.text, toolCalls: turn.toolCalls });
+        // APPEND-ONLY. The provider's part rides along untouched and only when
+        // the provider set one, so the history a provider without one receives
+        // is exactly what it was before (#4153).
+        history.push({
+            role: 'assistant',
+            text: turn.text,
+            toolCalls: turn.toolCalls,
+            ...(turn.providerPart === undefined ? {} : { providerPart: turn.providerPart }),
+        });
 
         for (const call of turn.toolCalls) {
             if (spentCalls >= bounds.toolCalls) return finish('halted-tool-calls');

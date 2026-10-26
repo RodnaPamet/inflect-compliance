@@ -512,7 +512,7 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // outbox dedupe key. (Audit Coherence S7, 2026-05-24)
         pattern: '15 4 * * *',
         description:
-            'Escalate severely overdue access-review campaigns to tenant ADMIN/OWNERs so they can reassign, force-close, or chase.',
+            'Escalate severely overdue access-review campaigns to tenant ADMIN/OWNERs so they can change the reviewer or due date, decide the pending rows, or chase.',
         defaultPayload: {},
     },
     {

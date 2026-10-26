@@ -83,7 +83,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockTx.integrationConnection.findFirst.mockResolvedValue(connectionRow);
     mockTx.mcpToolManifestPin.findMany.mockResolvedValue([]);
-    listToolsMock.mockResolvedValue([ALERTS]);
+    listToolsMock.mockResolvedValue({ tools: [ALERTS], refusedNames: 0 });
 });
 
 describe('qualification and attestation', () => {
@@ -141,12 +141,13 @@ describe('qualification and attestation', () => {
 
 describe('bounds and refusals', () => {
     it('truncates a catalogue too long to approve, and says so', async () => {
-        listToolsMock.mockResolvedValue(
-            Array.from({ length: MAX_EXTERNAL_TOOLS + 7 }, (_, i) => ({
+        listToolsMock.mockResolvedValue({
+            tools: Array.from({ length: MAX_EXTERNAL_TOOLS + 7 }, (_, i) => ({
                 ...ALERTS,
                 name: `tool_${i}`,
             })),
-        );
+            refusedNames: 0,
+        });
         const res = await listExternalMcpTools(ctx, CONN);
         expect({
             returned: res.tools.length,
@@ -157,6 +158,19 @@ describe('bounds and refusals', () => {
             advertised: MAX_EXTERNAL_TOOLS + 7,
             truncated: true,
         });
+    });
+
+    it('says how many tools the reader refused for their name, without quoting one (#4238)', async () => {
+        // The reader refuses a name past the MCP limit rather than passing it
+        // on. Left unsaid, a refused tool would look to the operator like one
+        // the server never offered, so the catalogue carries the count.
+        listToolsMock.mockResolvedValue({ tools: [ALERTS], refusedNames: 3 });
+        const res = await listExternalMcpTools(ctx, CONN);
+        expect({
+            names: res.tools.map((t) => t.advertisedName),
+            advertised: res.advertised,
+            refusedNames: res.refusedNames,
+        }).toEqual({ names: ['list_alerts'], advertised: 1, refusedNames: 3 });
     });
 
     it('does not reach the network when the connection is not this tenant\'s', async () => {
@@ -222,7 +236,7 @@ describe('approving an external definition', () => {
         expect(writePinMock.mock.calls[0][5]).toBe(true);
 
         writePinMock.mockClear();
-        listToolsMock.mockResolvedValue([{ ...ALERTS, annotations: { readOnlyHint: true } }]);
+        listToolsMock.mockResolvedValue({ tools: [{ ...ALERTS, annotations: { readOnlyHint: true } }], refusedNames: 0 });
         await approveExternalToolManifest(adminCtx, {
             connectionId: CONN,
             toolName: 'list_alerts',
@@ -248,7 +262,7 @@ describe('approving an external definition', () => {
     });
 
     it('refuses a tool the server no longer advertises', async () => {
-        listToolsMock.mockResolvedValue([]);
+        listToolsMock.mockResolvedValue({ tools: [], refusedNames: 0 });
         await expect(
             approveExternalToolManifest(adminCtx, {
                 connectionId: CONN,
@@ -260,12 +274,13 @@ describe('approving an external definition', () => {
     });
 
     it('says "past the cap" rather than "gone" when the catalogue was truncated', async () => {
-        listToolsMock.mockResolvedValue(
-            Array.from({ length: MAX_EXTERNAL_TOOLS + 1 }, (_, i) => ({
+        listToolsMock.mockResolvedValue({
+            tools: Array.from({ length: MAX_EXTERNAL_TOOLS + 1 }, (_, i) => ({
                 ...ALERTS,
                 name: i === MAX_EXTERNAL_TOOLS ? 'list_alerts' : `tool_${i}`,
             })),
-        );
+            refusedNames: 0,
+        });
         await expect(
             approveExternalToolManifest(adminCtx, {
                 connectionId: CONN,
@@ -324,7 +339,7 @@ describe('external tool catalogue — credential resolution', () => {
         listToolsMock.mockReset();
         mockTx.integrationConnection.findFirst.mockResolvedValue(OAUTH_ROW);
         mockTx.mcpToolManifestPin.findMany.mockResolvedValue([]);
-        listToolsMock.mockResolvedValue([]);
+        listToolsMock.mockResolvedValue({ tools: [], refusedNames: 0 });
     });
 
     it('passes the resolver the connection id, config and secrets', async () => {

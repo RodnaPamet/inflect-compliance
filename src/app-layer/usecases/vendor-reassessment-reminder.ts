@@ -28,6 +28,7 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { runJob } from '@/lib/observability/job-runner';
+import { tenantPageLink } from '@/app-layer/notifications/tenant-link';
 
 export interface VendorReassessmentReminderOptions {
     /** Override "now" timestamp for tests. */
@@ -73,6 +74,10 @@ export async function runVendorReassessmentReminder(
                 tenantId: true,
                 name: true,
                 ownerUserId: true,
+                // For the notification link — a tenant page lives under
+                // `/t/<slug>/…`; the bare `/vendors/<id>` this used to store
+                // 404'd from the bell (#4128). Joined, as `task-due` does.
+                tenant: { select: { slug: true } },
             },
         });
 
@@ -100,7 +105,7 @@ export async function runVendorReassessmentReminder(
                             message:
                                 `Vendor "${v.name}" is past its scheduled review date. ` +
                                 'Re-assess the vendor or extend the review date.',
-                            linkUrl: `/vendors/${v.id}`,
+                            linkUrl: tenantPageLink(v.tenant?.slug, `/vendors/${v.id}`),
                         },
                     });
                 }

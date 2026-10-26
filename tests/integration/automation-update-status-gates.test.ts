@@ -277,7 +277,7 @@ describeFn('automation UPDATE_STATUS obeys the status gates', () => {
 
         const exec = await executionFor(rule.id);
         expect(exec.status).toBe('FAILED');
-        expect(exec.errorMessage).toContain('must have a controlId or a link to CONTROL');
+        expect(exec.errorMessage).toContain('must have a control, or a link to a control');
         expect(await statusOf(task.id)).toBe('OPEN');
         expect(await statusAudits(task.id)).toHaveLength(0);
     });

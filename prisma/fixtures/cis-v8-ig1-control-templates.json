@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "CIS Critical Security Controls v8 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
-    "grounding": "Requirement titles and summaries come from src/data/libraries/cis-controls-v8.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/cis-controls-v8.yaml so the two cannot drift. Task content is grounded in each template's own description. Checklist steps for the tasks that had none were added on 2026-10-24: each set breaks its task's own description into the acts a practitioner ticks off, and adds no obligation, tool, frequency or figure the description does not carry.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -575,6 +575,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Name who investigates an unrecognised device found on the network."
+              }
+            },
+            {
+              "text": {
+                "en": "List what the investigator must establish: owner, purpose and any authorisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out the outcomes: add to the inventory, take off the network, or quarantine."
+              }
+            },
+            {
+              "text": {
+                "en": "State that a quarantined device stays held while its ownership is traced."
+              }
+            },
+            {
+              "text": {
+                "en": "Require every finding to end in one of the named outcomes."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the finished unauthorised asset procedure."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Unauthorised asset procedure naming the investigator, what they must establish and the outcomes a finding can end in"
           },
@@ -589,6 +621,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Log the date each unrecognised device was found and how it was spotted."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who investigated each device and which outcome it ended in."
+              }
+            },
+            {
+              "text": {
+                "en": "Record that the check ran even when the period turned up no devices."
+              }
+            },
+            {
+              "text": {
+                "en": "File the unauthorised asset log covering the whole period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Unauthorised asset log for the period: discovery date, how it was found, investigator and the outcome recorded against each"
           },
@@ -603,6 +657,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Re-pull every source system the scoping note names."
+              }
+            },
+            {
+              "text": {
+                "en": "List assets a source can see that the inventory does not hold."
+              }
+            },
+            {
+              "text": {
+                "en": "List inventory rows no source has seen since the last run."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag rows whose owner or network address has moved."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each difference with the correction applied, then attach the result."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation between the inventory and its source systems, listing each difference and the correction made"
           },
@@ -635,6 +716,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the installed application list from the tooling that manages each asset class."
+              }
+            },
+            {
+              "text": {
+                "en": "Collapse installations into one entry per publisher and title."
+              }
+            },
+            {
+              "text": {
+                "en": "Carry the count of assets holding each title against its entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the listing with the date it was extracted."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated installed-software listing by publisher and title, with the number of assets carrying each title"
           },
@@ -649,6 +752,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Mark every title on the listing as authorised or not authorised."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who authorised each title and the business purpose it serves."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag the titles nobody can account for so removal work starts there."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the authorised titles as a standalone software inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach that inventory and hand it to the people who build and provision assets."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Authorised software inventory: publisher, title, version, business purpose and who authorised it"
           },
@@ -704,6 +834,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List each title the review marked as unauthorised."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove each title from the assets carrying it, or authorise it instead."
+              }
+            },
+            {
+              "text": {
+                "en": "Add every title authorised this way to the software inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action, the assets affected, who acted and the date."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm every title is removed or authorised, then attach the record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Record of unauthorised titles found, the action taken on each, the assets affected and the date"
           },
@@ -718,6 +875,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Re-run the installed-software extraction and set it beside the last run."
+              }
+            },
+            {
+              "text": {
+                "en": "List the removed titles that have reappeared since that run."
+              }
+            },
+            {
+              "text": {
+                "en": "List the newly present titles and the authorised titles that vanished."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the suspected route for each reappearance, such as a build image."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period-on-period comparison of installed titles."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Period-on-period comparison of installed titles listing reappearances, new arrivals and the suspected route for each reappearance"
           },
@@ -753,6 +937,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Create one row per data set saying what it is and how sensitive it is."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every system and store each data set sits in."
+              }
+            },
+            {
+              "text": {
+                "en": "Include copies such as spreadsheet exports, backups and analytics copies."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person accountable for each data set."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the inventory on compilation and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Sensitive data inventory: data set, sensitivity, every storage location it occupies and the named owner"
           },
@@ -808,6 +1019,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Turn on full-disk encryption for laptops, desktops and mobile devices."
+              }
+            },
+            {
+              "text": {
+                "en": "Take each device's encryption state from the management console."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a reason and a named owner for every device that cannot be encrypted."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the status report once it covers every end-user device."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Encryption status report per end-user device taken from the management console, with a recorded reason against every unencrypted device"
           },
@@ -822,6 +1055,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Identify the records in each inventoried store past their retention period."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove those records from every store where no hold applies."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the store, the rule applied, the volume removed and the date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason against any store held beyond its period, such as a legal hold."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the retention run record for this pass."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Retention run record: store, retention rule applied, volume removed or the reason it was retained, and the date"
           },
@@ -836,6 +1096,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "List each device or medium retired, reassigned or returned in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the sanitisation method used, the date and who performed it."
+              }
+            },
+            {
+              "text": {
+                "en": "Link the console record or certificate that proves each sanitisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the disposal supplier's destruction record to the row of each item they took."
+              }
+            },
+            {
+              "text": {
+                "en": "File the disposal register for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Disposal register: asset identifier, sanitisation method, date, who performed it and the destruction record or certificate"
           },
@@ -850,6 +1137,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the users, groups, service accounts and integrations reaching each store."
+              }
+            },
+            {
+              "text": {
+                "en": "Put each store's access list in front of its data owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Question every service account and integration granted for a past project."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove the access no longer needed and record the date of each removal."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the removals on each store's list and attach the lists."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Access list per sensitive data store showing everything that can reach it, the entries removed and the date"
           },
@@ -886,6 +1200,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List every platform in the asset inventory that needs its own baseline."
+              }
+            },
+            {
+              "text": {
+                "en": "Name each required setting and the value it must hold per baseline."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each setting came from a vendor hardening guide or an enterprise decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Version and date each baseline and attach the set."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Secure configuration baseline per asset class, versioned and dated, giving the required value for each setting"
           },
@@ -900,6 +1236,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Set out the required settings and values for each network device class."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who may change the configuration of each device class."
+              }
+            },
+            {
+              "text": {
+                "en": "Define how every configuration change on a device is recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Exclude firmware, which the network infrastructure control covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the network device configuration standard."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Network device configuration standard per device class, giving the required settings, who may change them and how each change is recorded"
           },
@@ -914,6 +1277,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Push the idle-lock setting to each asset class through the management tooling."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the lock interval actually in force for each class."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each exempt class, such as a kiosk, and what protects it instead."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the policy export showing the interval per class."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Session lock policy export per asset class showing the configured idle interval and any recorded exemption"
           },
@@ -928,6 +1313,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Enable the host-based firewall on servers and end-user devices."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the ruleset in force from each enforcement point, not the assigned policy."
+              }
+            },
+            {
+              "text": {
+                "en": "Record per class what is allowed inbound and outbound and where default deny sits."
+              }
+            },
+            {
+              "text": {
+                "en": "Count the assets in each class reporting the ruleset as applied."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the firewall configuration per class with those counts."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Host firewall configuration per asset class with the ruleset in force and the number of assets confirmed as applying it"
           },
@@ -983,6 +1395,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "List every tool and channel through which assets can be administered."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare that list with the management tooling the enterprise has approved."
+              }
+            },
+            {
+              "text": {
+                "en": "Close each administration path that is not on the approved list."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each closure on the comparison and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Comparison of the administration paths open on enterprise assets against the approved management tooling, with each closure recorded"
           },
@@ -1057,6 +1491,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the password policy in every system that authenticates users."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the password setting in force from each of those systems."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each system that falls short can enforce and what limits the damage."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify accounts sharing one password across systems or people."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the replacement made for each shared credential found."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the policy exports alongside the shared-credential record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Password policy export per authentication system, plus the record of shared credentials found and what replaced them"
           },
@@ -1071,6 +1537,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List everyone who performs privileged work."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each person's everyday account beside their dedicated administrator account."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove administrative rights from every everyday account."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a plan and owner to split any account still carrying both."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the account mapping with the removed rights shown."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Mapping of each administrator's everyday account to their dedicated privileged account, with the rights removed from the everyday account"
           },
@@ -1085,6 +1578,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the enterprise's defined inactivity period alongside the run."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply that period to the last-used dates in the account inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Disable every account idle beyond the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Log each disabled account with its owner, last-used date and disable date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason for any dormant account left enabled, then attach the run record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dormant account run record: account, owner, last-used date, and the action taken or the reason it stays enabled"
           },
@@ -1099,6 +1619,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the account list from every system again."
+              }
+            },
+            {
+              "text": {
+                "en": "List the accounts found on a system but missing from the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "List the inventory rows a system no longer holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag accounts whose type or owner has changed since the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the fix made for each account difference and attach the reconciliation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Account reconciliation listing every difference between the system exports and the inventory, with the correction applied to each"
           },
@@ -1133,6 +1680,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "State where an access request is raised for a joiner or role change."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who is entitled to raise an access request."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who is entitled to approve a request in this enterprise."
+              }
+            },
+            {
+              "text": {
+                "en": "Specify the record that survives each grant so it can be found later."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the access granting procedure written in the enterprise's own terms."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Access granting procedure naming the request route, who approves, and the record retained for each grant"
           },
@@ -1188,6 +1762,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "List the internet-published applications and remote routes into the network."
+              }
+            },
+            {
+              "text": {
+                "en": "Enforce multi-factor authentication on each application and route listed."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the enforcement state from the application or identity provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify anything that reaches inside without passing an enforced route."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the multi-factor enforcement export."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Multi-factor enforcement state per externally reachable application and remote access route, exported from the application or identity provider"
           },
@@ -1202,6 +1803,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List every administrative account, including local and appliance accounts."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply multi-factor authentication wherever administrative privilege is used."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each account where it cannot be enforced and what that account administers."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what stands in place of multi-factor for each exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach an enforcement report covering accounts outside the identity provider too."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Multi-factor enforcement report covering every administrative account, with each exception and what compensates for it"
           },
@@ -1216,6 +1844,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Log one row for each access grant or revocation in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the person, the access changed and the trigger behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who approved each change in the log."
+              }
+            },
+            {
+              "text": {
+                "en": "Record both the request date and the effective date on every row."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the period's access change log."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Access change log for the period: person, access changed, trigger, approver, request date and effective date"
           },
@@ -1230,6 +1885,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Look up the revocation record for each leaver and role change in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "List those with no revocation record and those covered on only some systems."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag cases where the gap between the two dates was long enough to matter."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause of each miss, such as a trigger that never arrived."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the leaver-to-revocation reconciliation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Leaver-to-revocation reconciliation: each person, their leaving or change date, the revocation date, and the cause of every miss"
           },
@@ -1263,6 +1945,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the sources that bring vulnerabilities to the enterprise's attention."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the scanner in use and the range it covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each source against the asset classes it can actually see."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any asset class that no source looks at."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the process with its coverage table."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Vulnerability management process with a table of detection sources against the asset classes each one covers"
           },
@@ -1277,6 +1986,38 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Define how a finding is assigned its severity."
+              }
+            },
+            {
+              "text": {
+                "en": "State who each finding goes to and the states it moves through."
+              }
+            },
+            {
+              "text": {
+                "en": "State the proof required before a finding can be closed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the enterprise's own remediation timeframes per severity, where set."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how a finding that will not be fixed is recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "File the remediation process once every part is written."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Remediation process stating the severity scheme, assignment, states, closure proof and how a finding that will not be fixed is recorded"
           },
@@ -1291,6 +2032,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the patching tool to deliver operating-system security updates automatically."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the configured schedule, the reboot behaviour and each patch group's members."
+              }
+            },
+            {
+              "text": {
+                "en": "List the assets that sit in no patch group at all."
+              }
+            },
+            {
+              "text": {
+                "en": "Name an owner to patch each of those assets by hand."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the patch tool configuration export."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Patch tool configuration export: patch groups, configured schedule, reboot behaviour, and the assets in no group with their named owner"
           },
@@ -1305,6 +2073,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Enable automatic security updates for applications with their own updater."
+              }
+            },
+            {
+              "text": {
+                "en": "Enable automatic delivery for titles packaged through the endpoint tool."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which titles the automatic delivery covers."
+              }
+            },
+            {
+              "text": {
+                "en": "List by name the titles that can only be updated by hand."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the coverage list with the manual titles kept separate."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Application patching coverage list separating automatically updated titles from those that update only by hand"
           },
@@ -1319,6 +2114,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Gather the period's findings from the sources the process names."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each finding's identifier, affected assets and assigned severity."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the owner each finding went to and its current state."
+              }
+            },
+            {
+              "text": {
+                "en": "Note what closed each closed finding and why each open one remains open."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the vulnerability finding list for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Vulnerability finding list for the period with severity, affected assets, owner, state and the closure evidence or the reason it remains open"
           },
@@ -1333,6 +2155,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the patching tool's per-asset result for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Put those results beside the asset inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Split the assets into patched, failed and never seen by the tool."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action taken on each failed or unseen asset."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the patch cycle comparison."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Patch cycle comparison listing successful, failed and unreported assets against the inventory, with the action taken on each"
           },
@@ -1365,6 +2214,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each system in the asset inventory into the logging scope table."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the authentication, privilege and configuration events each must capture."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the application events needed to reconstruct what happened."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the destination each system's events are sent to."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed logging scope table."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Logging scope table: system, the event types it must record and the destination those events go to"
           },
@@ -1379,6 +2255,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record which events are logged and who may read the logs."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe how the logs are protected from alteration."
+              }
+            },
+            {
+              "text": {
+                "en": "State the retention period as a number of days."
+              }
+            },
+            {
+              "text": {
+                "en": "Define what happens when a log source stops sending."
+              }
+            },
+            {
+              "text": {
+                "en": "Version and date the process and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Audit log management process stating the events logged, access rules, tamper protection and the retention period in days"
           },
@@ -1434,6 +2337,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Measure the volume of events currently being ingested."
+              }
+            },
+            {
+              "text": {
+                "en": "Work out how many days of events the current allocation holds at that rate."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare that figure with the retention period the process commits to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action taken where they differ: storage, filtering or a lower period."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the storage measurement with the action noted."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Storage measurement showing ingest volume, the days of retention actually held and the action taken where it falls short of the committed period"
           },
@@ -1448,6 +2378,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Query the destination for the latest event from every scoped system."
+              }
+            },
+            {
+              "text": {
+                "en": "List the scoped systems that have gone silent."
+              }
+            },
+            {
+              "text": {
+                "en": "List any source sending events that the scope never named."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause and fix for each silent or unexpected source."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the log source reconciliation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Log source reconciliation listing every scoped system that stopped sending, every unexpected source, and the cause and fix recorded for each"
           },
@@ -1478,6 +2435,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Narrow the installed-software data to browsers and email clients."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which browser and email client each asset carries."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the installed build of each product, not only its name."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the listing with its extraction date and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Browser and email client listing by asset, giving the product and the installed version of each"
           },
@@ -1492,6 +2471,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Check whether each vendor still supports and updates its product."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the permitted browser and email client products as a list."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove or replace each non-permitted product on the assets carrying it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the asset and date for every removal made."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the permitted list together with the removal record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Permitted browser and email client list, with the record of each removal carried out and the asset it was removed from"
           },
@@ -1506,6 +2512,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take a fresh browser and email client listing."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each installed version against the vendor's currently supported releases."
+              }
+            },
+            {
+              "text": {
+                "en": "List every asset running a version the vendor no longer updates."
+              }
+            },
+            {
+              "text": {
+                "en": "Record why each lagging asset is behind, such as a blocked update."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the version comparison for browsers and email clients."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Comparison of deployed browser and email client versions against currently supported releases, listing each lagging asset and the reason it is behind"
           },
@@ -1536,6 +2569,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Record the office resolvers that enterprise assets use."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how names resolve for assets connected over the VPN."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what off-network laptops resolve against with no tunnel up."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which of those paths the filtering service currently covers."
+              }
+            },
+            {
+              "text": {
+                "en": "File the resolution path list showing covered and uncovered paths."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "List of DNS resolution paths for enterprise assets — office, VPN and off-network — recording which are covered by the filtering service and which are not"
           },
@@ -1550,6 +2610,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Configure the filtering service as the resolver for enterprise networks."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure it as the resolver for devices working away from those networks."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which categories the service blocks."
+              }
+            },
+            {
+              "text": {
+                "en": "Check that hardcoded resolvers or user settings cannot bypass the filter."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the configuration per network and device class and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "DNS filtering configuration showing the resolver enforced per network and device class, the categories blocked, and how alternative resolvers are prevented"
           },
@@ -1564,6 +2651,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the DNS filter's block report for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the block volume and the categories hit."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the assets that appear repeatedly in the report."
+              }
+            },
+            {
+              "text": {
+                "en": "Investigate each repeat source and record what was found."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the block report with the investigation notes."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "DNS filter block report for the period, with the repeat source assets investigated and what each investigation found"
           },
@@ -1596,6 +2710,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Install the anti-malware agent across each platform."
+              }
+            },
+            {
+              "text": {
+                "en": "Export installed and running state per asset from the console."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the console's asset count with the enterprise asset inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Record an owner and a reason for each asset absent from the console."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the anti-malware coverage list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Anti-malware coverage list per asset showing installed and running state, and the assets absent from the console with a named owner"
           },
@@ -1610,6 +2751,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Enable automatic updates of detection content in the tool's policy."
+              }
+            },
+            {
+              "text": {
+                "en": "Export that setting and its interval from the console."
+              }
+            },
+            {
+              "text": {
+                "en": "List the assets whose detection data is older than the interval."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the policy export together with the stale-detection list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Anti-malware policy export showing the automatic update setting and interval, with the list of assets whose detection data is stale"
           },
@@ -1624,6 +2787,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Push the policy stopping removable media autorun to each asset class."
+              }
+            },
+            {
+              "text": {
+                "en": "Insert media on a sample device to verify the policy applies."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the policy name, the setting applied and the classes it reaches."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the policy configuration with the verification note."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Autorun and autoplay policy configuration per asset class, with the note of the verification carried out on a sample device"
           },
@@ -1638,6 +2823,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the malware detections seen during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the asset and what was found for each detection."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the tool's action and any follow-up a person took."
+              }
+            },
+            {
+              "text": {
+                "en": "Group detections that recur on the same asset."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the malware detection report."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Malware detection report for the period: asset, what was detected, the tool's action and the resolution recorded against each"
           },
@@ -1652,6 +2864,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the last check-in date for every asset the console knows about."
+              }
+            },
+            {
+              "text": {
+                "en": "List the assets whose agent has stopped reporting."
+              }
+            },
+            {
+              "text": {
+                "en": "Find out why each stopped: decommissioned, off the network or agent broken."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome for each silent agent."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the agent check-in comparison."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Agent check-in comparison listing every asset with the agent installed but not reporting, its last check-in date and the outcome"
           },
@@ -1685,6 +2924,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List each system and data set from the asset and data inventories."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each is backed up and to which repository."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who depends on each one being recoverable."
+              }
+            },
+            {
+              "text": {
+                "en": "Note whether each not-backed-up row reflects a deliberate decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the finished backup scope list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Backup scope list: system or data set, whether it is backed up, the repository it goes to and the dependent team"
           },
@@ -1740,6 +3006,28 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Configure each backup job to run unattended on the defined schedule."
+              }
+            },
+            {
+              "text": {
+                "en": "Map each job to the in-scope assets and data sets it covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the backup job configuration from the backup tooling."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the configuration export together with the asset mapping."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Backup job configuration export with each job mapped to the in-scope assets and data sets it covers"
           },
@@ -1754,6 +3042,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Apply encryption to each backup repository."
+              }
+            },
+            {
+              "text": {
+                "en": "Cut each repository's access list to the accounts that genuinely need it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every person and account left on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the backup software's own service accounts in that record."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the access list together with the encryption settings."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Backup repository access list naming every account that retains access, alongside the encryption settings applied to the repository"
           },
@@ -1768,6 +3083,28 @@
           },
           "phase": "OPERATE",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Write the current backup to the location kept apart from production."
+              }
+            },
+            {
+              "text": {
+                "en": "Record when the copy was written and where it is held."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the mechanism enforcing its isolation from production."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the record of this period's isolated copy."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Isolated copy record for the period: what was written, the date, its location and the mechanism enforcing the isolation"
           },
@@ -1782,6 +3119,28 @@
           },
           "phase": "REVIEW",
           "sortOrder": 5,
+          "steps": [
+            {
+              "text": {
+                "en": "Set the period's backup job results beside the scope list."
+              }
+            },
+            {
+              "text": {
+                "en": "Group in-scope assets as backed up, failed, or absent from every result."
+              }
+            },
+            {
+              "text": {
+                "en": "Note what was done about each failed job and each asset no result mentions."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the backup reconciliation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation of backup job results against the scope list, listing failed and unmentioned assets with the action taken on each"
           },
@@ -1812,6 +3171,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List routers, switches, wireless controllers, access points, firewalls and VPN concentrators."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the devices sitting in branch offices and small sites."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each device's model, location and running firmware version."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether the vendor still supports each model."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the completed network device list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Network device list: model, location, the firmware version running and the vendor support status of the model"
           },
@@ -1826,6 +3212,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Find where each model's vendor announces its security fixes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record that channel against the model in the advisory table."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person or team subscribed to each channel."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise each model with no subscriber as a finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the advisory source table."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Advisory source table mapping each device model to its vendor security channel and the person or team subscribed to it"
           },
@@ -1840,6 +3253,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Describe how an update is applied for each device class."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the configuration backup taken before each update starts."
+              }
+            },
+            {
+              "text": {
+                "en": "List who must be told about an update on each class."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the recovery route for a device the update leaves unreachable."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the firmware update method note."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Firmware update method per device class, naming the pre-update configuration backup and the recovery route if the device does not come back"
           },
@@ -1854,6 +3294,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Apply the updates the vendor has published for each model on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each device's previous version and the version it moved to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date each device was updated."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason and decision holder for any device left on an older version."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the before-and-after firmware update record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Firmware update record: device, previous version, new version, date, and the recorded reason and owner for any device left behind"
           },
@@ -1868,6 +3335,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Set each device's running version against its vendor's current release."
+              }
+            },
+            {
+              "text": {
+                "en": "List every device that is behind, by how much and why."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate out the models the vendor has stopped updating altogether."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag those models for replacement rather than patching."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the firmware version comparison."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Firmware version comparison listing each device behind its vendor's current release, and separately the models no longer receiving updates"
           },
@@ -1905,6 +3399,28 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the employee population from the HR system."
+              }
+            },
+            {
+              "text": {
+                "en": "Add contractors and temporary staff from wherever they are recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Record name, start date, employment type and role for each person."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the population list and attach it."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Dated training population list covering employees and contractors, with start date, employment type and role per person"
           },
@@ -1960,6 +3476,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "State which modules apply to everybody and which only to certain roles."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the point in joining at which a new starter takes the training."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how often the workforce repeats the training."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the system that holds the completion record."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the programme description."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Programme description stating module assignment by role, the point in joining at which training is taken, the repeat cycle and the system holding completions"
           },
@@ -1974,6 +3517,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Deliver the training to everyone on the population list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each person's completed modules and the date of each."
+              }
+            },
+            {
+              "text": {
+                "en": "Chase outstanding names until the register matches the population list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a reason against every person who does not complete."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the training completion register."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Training completion register: person, modules completed, completion date, and a recorded reason against every non-completion"
           },
@@ -1988,6 +3558,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the completion register with the population list."
+              }
+            },
+            {
+              "text": {
+                "en": "List people with no completion and joiners who arrived after compilation."
+              }
+            },
+            {
+              "text": {
+                "en": "Strike off the leavers who no longer belong on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the topics the period's reports and near-misses suggest are not landing."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the curriculum changes agreed for the next run and attach the reconciliation."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation of completions against the population list, with non-completions, late joiners and the curriculum changes agreed for the next run"
           },
@@ -2018,6 +3615,33 @@
           },
           "phase": "SCOPE",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "State which kinds of enterprise data put a provider on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "State which kinds of dependent process put a provider on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Word the test so that somebody else can apply it."
+              }
+            },
+            {
+              "text": {
+                "en": "Add worked examples falling on both sides of the line."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the service provider scoping note."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Scoping note stating the inclusion test for service providers, with worked examples on both sides of the line"
           },
@@ -2073,6 +3697,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Add each new provider's row with its start date when the contract is signed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the termination date for each relationship that ended."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether each departing provider's data was returned or deleted with confirmation."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what any data still held by a former provider is pending."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the provider change record for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Provider change record for the period: additions with their start date, and terminations with the data disposition recorded against each"
           },
@@ -2087,6 +3738,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the supplier contract and payment records the enterprise keeps."
+              }
+            },
+            {
+              "text": {
+                "en": "List parties found there but absent from the provider inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Put each of those parties through the inclusion test."
+              }
+            },
+            {
+              "text": {
+                "en": "Add each party that qualifies or record why it falls outside."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the reconciliation with the decision against each party."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Reconciliation listing every third party found in contract or payment records but absent from the inventory, with the inclusion decision recorded against each"
           },
@@ -2119,6 +3797,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the person who holds the incident coordination role."
+              }
+            },
+            {
+              "text": {
+                "en": "List the decisions the role carries, such as declaring, engaging help and closing."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the arrangement that covers the role when that person is unavailable."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a finding where no such cover actually exists."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the incident coordinator record."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Record naming the incident handling coordinator, the decisions the role carries, and the arrangement covering it when that person is unavailable"
           },
@@ -2133,6 +3838,33 @@
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "List the internal contacts, starting with the coordinator and their cover."
+              }
+            },
+            {
+              "text": {
+                "en": "Add who can authorise taking a system offline and who speaks to customers."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the external parties relied on or required to be notified."
+              }
+            },
+            {
+              "text": {
+                "en": "Give every entry a second contact route as well as an email address."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date each entry was last confirmed and attach the list."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident contact list of internal and external parties, each with a second contact route and the date the entry was last confirmed"
           },
@@ -2188,6 +3920,33 @@
           },
           "phase": "OPERATE",
           "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Log each report with the date it arrived and who raised it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was reported and who picked it up."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each report turned out to be and how it ended."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the reports that proved to be nothing in the log."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the incident report log for the period."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Incident report log for the period: date received, reporter, what was reported, who handled it, the finding and the outcome"
           },
@@ -2202,6 +3961,33 @@
           },
           "phase": "REVIEW",
           "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Confirm each named person on the list still holds their role."
+              }
+            },
+            {
+              "text": {
+                "en": "Verify that every address and number still reaches its contact."
+              }
+            },
+            {
+              "text": {
+                "en": "Recheck external entries for changed support contracts or account managers."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date checked and the corrections made for each entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the confirmed contact list with its check date."
+              }
+            }
+          ],
           "evidenceHint": {
             "en": "Confirmed incident contact list showing the date each entry was checked and the corrections made"
           },

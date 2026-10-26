@@ -40,7 +40,6 @@ const columns = createColumns<Row>([
     {
         id: 'actionsGroup',
         header: 'Actions',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         columns: [
             { id: 'edit', header: '', cell: () => <span>e</span>, enableHiding: false },
             { id: 'archive', header: '', cell: () => <span>a</span>, enableHiding: false },

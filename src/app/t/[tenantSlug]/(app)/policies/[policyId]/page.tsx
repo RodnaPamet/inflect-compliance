@@ -4,6 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
+import { normaliseHref } from '@/lib/security/safe-url';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
@@ -44,6 +45,15 @@ import { useToast } from '@/components/ui/hooks';
 import { cn } from '@inflect/ui/lib/cn';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
+import { apiErrorMessage } from '@/lib/api-error';
+import {
+    isApprovalDecidable,
+    isRevisionOf,
+    liveVersion as liveVersionOf,
+    newestVersion,
+    publishableVersionId,
+} from '@/lib/policy/publication-state';
+import { buildPolicyStatusLabels } from '../filter-defs';
 import { PolicySharePointSection } from './PolicySharePointSection';
 import { PolicyEvidenceChecklist } from './PolicyEvidenceChecklist';
 
@@ -128,7 +138,11 @@ const EVENT_LABEL_KEYS: Record<string, string> = {
     POLICY_ROLLED_BACK: 'detail.event.rolledBack',
 };
 
-type ContentMode = 'MARKDOWN' | 'EXTERNAL_LINK' | 'FILE';
+// No file upload: the editor's former "File Upload" mode posted to an
+// endpoint that only accepts JSON, so it always failed, and even a success
+// would have stored the text `File: <name>` with no file attached (#4127).
+// Versions saved that way are MARKDOWN rows and still render as text.
+type ContentMode = 'MARKDOWN' | 'EXTERNAL_LINK';
 
 export default function PolicyDetailPage() {
     const t = useTranslations('policies');
@@ -162,7 +176,6 @@ export default function PolicyDetailPage() {
     const [externalUrl, setExternalUrl] = useState('');
     const [changeSummary, setChangeSummary] = useState('');
     const [saving, setSaving] = useState(false);
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     // Review editing
     const [editingReview, setEditingReview] = useState(false);
@@ -222,23 +235,39 @@ export default function PolicyDetailPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { if (tab === 'activity') fetchActivity(); }, [tab, fetchActivity]);
 
-    // Pre-load the current version's content into the editor when the
-    // Editor tab is opened directly (the "+ Version" button already seeds
-    // it on its own click). Without this, opening the tab showed an empty
-    // editor and the operator couldn't edit the existing policy. Only
-    // text-bearing versions (MARKDOWN / HTML) are loaded; the rich editor
-    // lives under the MARKDOWN content-mode and renders HTML in WYSIWYG.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => {
-        if (tab !== 'editor' || editorContent) return;
-        const cv = policy?.currentVersion || policy?.versions?.[0];
-        if (cv?.contentText && (cv.contentType === 'HTML' || cv.contentType === 'MARKDOWN')) {
-            setContentMode('MARKDOWN');
-            setEditorContent(cv.contentText);
-            setEditorContentType(cv.contentType === 'HTML' ? 'HTML' : 'MARKDOWN');
+    /**
+     * Load a version into the editor — always the NEWEST one (#4127).
+     *
+     * This used to read `currentVersion`, the published pointer, which does not
+     * move when a version is saved. Once a draft had been edited, the editor
+     * reopened on the OLD text, and saving from it silently overwrote the newer
+     * version's changes. Text versions open in the rich editor (HTML in
+     * WYSIWYG); an external-link version opens with its address.
+     */
+    const seedEditor = (v: PolicyVersionDTO | null) => {
+        if (v?.contentType === 'EXTERNAL_LINK' && v.externalUrl) {
+            setContentMode('EXTERNAL_LINK');
+            setExternalUrl(v.externalUrl);
+            setEditorContent('');
+            return;
         }
-        // editorContent intentionally omitted — re-seeding on every keystroke
-        // would fight the operator's edits; the guard above runs it once.
+        const isText = v?.contentType === 'HTML' || v?.contentType === 'MARKDOWN';
+        setContentMode('MARKDOWN');
+        setEditorContent(isText ? v?.contentText ?? '' : '');
+        setEditorContentType(v?.contentType === 'HTML' ? 'HTML' : 'MARKDOWN');
+    };
+
+    // Pre-load the newest version into the editor when the Editor tab is
+    // opened directly (the "+ Version" button already seeds it on its own
+    // click). Without this, opening the tab showed an empty editor and the
+    // operator couldn't edit the existing policy.
+    useEffect(() => {
+        if (tab !== 'editor' || editorContent || externalUrl) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        seedEditor(newestVersion(policy?.versions));
+        // editorContent / externalUrl intentionally omitted — re-seeding on
+        // every keystroke would fight the operator's edits; the guard above
+        // runs it once per opening.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab, policy]);
 
@@ -257,7 +286,6 @@ export default function PolicyDetailPage() {
     const createVersion = async () => {
         if (contentMode === 'MARKDOWN' && !editorContent.trim()) return;
         if (contentMode === 'EXTERNAL_LINK' && !externalUrl.trim()) return;
-        if (contentMode === 'FILE' && !selectedFile) return;
         setSaving(true);
         setError('');
         try {
@@ -266,11 +294,7 @@ export default function PolicyDetailPage() {
             // `sanitizePolicyContent` allowlists HTML on write, so
             // the wire format simply needs the right `contentType`.
             const wireContentType =
-                contentMode === 'FILE'
-                    ? 'MARKDOWN'
-                    : contentMode === 'MARKDOWN'
-                      ? editorContentType
-                      : contentMode;
+                contentMode === 'MARKDOWN' ? editorContentType : contentMode;
             const body: Record<string, unknown> = {
                 contentType: wireContentType,
                 changeSummary: changeSummary || null,
@@ -289,17 +313,6 @@ export default function PolicyDetailPage() {
                 body.contentType = 'EXTERNAL_LINK';
                 body.externalUrl = externalUrl;
                 body.contentText = `External document: ${externalUrl}`;
-            } else if (contentMode === 'FILE' && selectedFile) {
-                // Upload file first
-                const formData = new FormData();
-                formData.append('file', selectedFile);
-                const uploadRes = await fetch(apiUrl('/evidence'), {
-                    method: 'POST',
-                    body: formData,
-                });
-                if (!uploadRes.ok) throw new Error(t('detail.errFileUpload'));
-                body.contentText = `File: ${selectedFile.name}`;
-                body.changeSummary = changeSummary || `Uploaded file: ${selectedFile.name}`;
             }
 
             const res = await fetch(apiUrl(`/policies/${policyId}/versions`), {
@@ -309,10 +322,12 @@ export default function PolicyDetailPage() {
             });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                throw new Error(data.error || t('detail.errCreateVersion'));
+                // The error body is `{ error: { code, message } }`; reading
+                // `data.error` as the message rendered "[object Object]".
+                throw new Error(apiErrorMessage(data, t('detail.errCreateVersion')));
             }
             setEditorContent(''); setExternalUrl(''); setChangeSummary(''); setEditorContentType('MARKDOWN');
-            setSelectedFile(null); setTab('versions');
+            setTab('versions');
             toast.success(
                 policyIsLive
                     ? t('detail.versionProposedToast')
@@ -328,17 +343,27 @@ export default function PolicyDetailPage() {
 
     const saveReview = async () => {
         setSavingReview(true);
+        setError('');
         try {
             const body: Record<string, unknown> = {};
             if (reviewDays) body.reviewFrequencyDays = parseInt(reviewDays);
             if (nextReview) body.nextReviewAt = nextReview;
-            await fetch(apiUrl(`/policies/${policyId}`), {
+            const res = await fetch(apiUrl(`/policies/${policyId}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
+            // A refused save used to close the form as if it had worked — the
+            // response was never checked — so the schedule silently stayed
+            // unchanged. Keep the form open and say why instead.
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(apiErrorMessage(d, t('detail.errSaveReview')));
+            }
             setEditingReview(false);
             await fetchPolicy();
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : t('detail.errSaveReview'));
         } finally {
             setSavingReview(false);
         }
@@ -348,7 +373,7 @@ export default function PolicyDetailPage() {
         setActionLoading('review');
         try {
             const res = await fetch(apiUrl(`/policies/${policyId}/review`), { method: 'POST' });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(apiErrorMessage(d, t('detail.errFailed'))); }
             const updated = await res.json().catch(() => null);
             await fetchPolicy();
             // "Mark reviewed" stamps the periodic review date — it does NOT
@@ -368,19 +393,25 @@ export default function PolicyDetailPage() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ versionId }),
             });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(apiErrorMessage(d, t('detail.errFailed'))); }
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
     };
 
-    const decideApproval = async (approvalId: string, decision: 'APPROVED' | 'REJECTED') => {
+    /**
+     * `comment` is the reviewer's note from the approval banner. It used to be
+     * dropped here — only `{ decision }` was sent, though the route accepts a
+     * comment — so a reason typed for a rejection was thrown away.
+     */
+    const decideApproval = async (approvalId: string, decision: 'APPROVED' | 'REJECTED', comment?: string) => {
         setActionLoading('decide-' + approvalId);
         try {
+            const trimmed = comment?.trim() ?? '';
             const res = await fetch(apiUrl(`/policies/${policyId}/approval/${approvalId}/decide`), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ decision }),
+                body: JSON.stringify({ decision, ...(trimmed ? { comment: trimmed } : {}) }),
             });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(apiErrorMessage(d, t('detail.errFailed'))); }
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
     };
@@ -392,7 +423,7 @@ export default function PolicyDetailPage() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ versionId, ...(bypassApprovalReason ? { bypassApprovalReason } : {}) }),
             });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(apiErrorMessage(d, t('detail.errFailed'))); }
             setBypassOpen(false);
             setBypassReason('');
             setAckRefreshToken((n) => n + 1);
@@ -404,7 +435,7 @@ export default function PolicyDetailPage() {
         setActionLoading('rollback');
         try {
             const res = await fetch(apiUrl(`/policies/${policyId}/rollback`), { method: 'POST' });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(apiErrorMessage(d, t('detail.errFailed'))); }
             setAckRefreshToken((n) => n + 1);
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
@@ -416,7 +447,7 @@ export default function PolicyDetailPage() {
             const res = await fetch(apiUrl(`/policies/${policyId}/archive`), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
             });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(apiErrorMessage(d, t('detail.errFailed'))); }
             await fetchPolicy();
         } catch (err: unknown) { setError(err instanceof Error ? err.message : t('detail.errUnknown')); } finally { setActionLoading(''); }
     };
@@ -429,7 +460,7 @@ export default function PolicyDetailPage() {
         setActionLoading('unarchive');
         try {
             const res = await fetch(apiUrl(`/policies/${policyId}/unarchive`), { method: 'POST' });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || t('detail.errFailed')); }
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(apiErrorMessage(d, t('detail.errFailed'))); }
             toast.success(t('detail.unarchivedToast'));
             await fetchPolicy();
         } catch (err: unknown) {
@@ -441,8 +472,12 @@ export default function PolicyDetailPage() {
 
     const renderVersionContent = (v: PolicyVersionDTO) => {
         if (v.contentType === 'EXTERNAL_LINK' && v.externalUrl) {
+            // Followable only when safe; an unsafe address is shown as text.
+            if (!normaliseHref(v.externalUrl)) {
+                return <p className="text-sm text-content-default break-all">{v.externalUrl}</p>;
+            }
             return (
-                <a href={v.externalUrl} target="_blank" rel="noopener noreferrer"
+                <a href={normaliseHref(v.externalUrl)!} target="_blank" rel="noopener noreferrer"
                     className="text-[var(--brand-default)] hover:text-[var(--brand-muted)] underline flex items-center gap-1">
                     {v.externalUrl}
                 </a>
@@ -523,7 +558,6 @@ export default function PolicyDetailPage() {
         );
     }
 
-    const currentVersion = policy.currentVersion || policy.versions?.[0];
     const versions = policy.versions || [];
     const canWrite = tenant.permissions.canWrite;
     const canAdmin = tenant.permissions.canAdmin;
@@ -532,58 +566,106 @@ export default function PolicyDetailPage() {
     // decidePolicyApproval so the button is disabled before the round-trip.
     const currentUserId = tenant.userId;
 
-    // Promoted state-advancing verbs (Prompt-2.4) target the current/displayed
-    // version — the same gating the per-version cards use, surfaced in the
-    // page action cluster so publish/request-approval are reachable from Current.
-    const headerVersion = versions.find((v) => v.id === policy.currentVersionId) ?? versions[0] ?? currentVersion;
-    const headerApprovals = (headerVersion?.approvals || []).filter((a) => a.status === 'PENDING' || a.status === 'APPROVED' || a.status === 'REJECTED');
-    const headerHasPending = headerApprovals.some((a) => a.status === 'PENDING');
-    const headerHasApproved = headerApprovals.some((a) => a.status === 'APPROVED');
-    const headerIsPublished = !!headerVersion && policy.currentVersionId === headerVersion.id && policy.status === 'PUBLISHED';
-    const canRequestApproval = canWrite && !!headerVersion && !headerHasPending && !headerHasApproved && !headerIsPublished && policy.status !== 'ARCHIVED';
     /**
-     * The version the server would actually accept a publish for.
+     * Which version each action acts on (#4127). The rules live in
+     * `@/lib/policy/publication-state`, which the usecases also call, so a
+     * button here and the server's check cannot pick different versions.
      *
-     * `publishPolicy` requires BOTH that the policy is APPROVED and that the
-     * version matches the one the approval was granted for. `currentVersionId`
-     * is NOT that version: nothing updates it when a version is created or
-     * approved — it tracks the last PUBLISHED version — so after a new version
-     * is drafted and approved it still points at the previous, live one.
-     *
-     * Deriving the target from the approval record (most recently decided
-     * APPROVED row) is what makes the button agree with the server instead of
-     * targeting whatever happens to be displayed.
+     * The header used to act on `currentVersionId` — the PUBLISHED pointer,
+     * which does not move when a version is saved — so once a draft had been
+     * edited, Request Approval asked about the old text and an emergency
+     * publish published it, skipping the newer version entirely.
      */
-    const approvedTargetVersionId = (() => {
-        const approved = (policy.approvals ?? [])
-            .filter((a) => a.status === 'APPROVED')
-            .sort((a, b) => {
-                const at = a.decidedAt ? new Date(a.decidedAt).getTime() : 0;
-                const bt = b.decidedAt ? new Date(b.decidedAt).getTime() : 0;
-                return bt - at;
-            });
-        return approved[0]?.policyVersionId ?? null;
-    })();
-
+    const publication = {
+        status: policy.status,
+        currentVersionId: policy.currentVersionId ?? null,
+        versions,
+        approvals: (policy.approvals ?? []).map((a) => ({
+            policyVersionId: a.policyVersionId ?? null,
+            status: a.status,
+            createdAt: typeof a.createdAt === 'string' ? a.createdAt : null,
+            decidedAt: a.decidedAt ?? null,
+        })),
+    };
+    // The newest version: what the editor starts from, what the header's
+    // Request Approval asks about, and what an emergency publish publishes.
+    const newest = newestVersion(versions);
+    // The version staff follow now — only while the policy is PUBLISHED.
+    const live = liveVersionOf(publication);
+    // The Current tab: the published version if there is one, else the newest.
+    const currentVersion = live ?? newest;
+    // The one version a publish without a bypass would be accepted for:
+    // the approved version of an APPROVED policy, or an approved revision of
+    // a PUBLISHED one.
+    const publishableId = publishableVersionId(publication);
+    // One open request per policy at a time — the server refuses a second.
+    const policyHasPending = publication.approvals.some((a) => a.status === 'PENDING');
+    // The version the header's Request Approval asks about: the newest one,
+    // unless it is already the live one. On a PUBLISHED policy that newest
+    // version is a revision and goes through approval while the policy stays
+    // PUBLISHED.
+    const requestTarget = newest && newest.id !== live?.id ? newest : null;
     /**
-     * Publish is offered ONLY in the state the server accepts.
-     *
-     * This previously read `headerHasApproved && !headerIsPublished` with no
-     * regard for the policy's own status. Creating a new version demotes the
-     * policy to DRAFT but leaves `currentVersionId` on the OLD version — which
-     * still carries its APPROVED approval — so the button lit up on a DRAFT
-     * policy and every click threw "is DRAFT; cannot publish without going
-     * through APPROVED". The gate was written against a comment (below, now
-     * corrected) that claimed version creation sets `currentVersionId`.
-     *
-     * Requiring `status === 'APPROVED'` and targeting the approved version
-     * makes the affordance and the server's rule the same rule.
+     * Request Approval is offered on a version the server would accept a
+     * request for: no request already open, not the live version, not the
+     * version that is already approved and waiting to be published, not an
+     * archived policy — and, while PUBLISHED, only a revision (newer than the
+     * live version).
      */
-    // No "and not already published" clause: APPROVED and PUBLISHED are
-    // mutually exclusive states, so requiring APPROVED already excludes it.
-    const canPublishNow =
-        canAdmin && policy.status === 'APPROVED' && !!approvedTargetVersionId;
-    const canBypassPublish = canAdmin && !!headerVersion && !headerHasApproved && !headerIsPublished && policy.status !== 'ARCHIVED';
+    const canRequestApprovalFor = (v: PolicyVersionDTO) =>
+        canWrite &&
+        !policyHasPending &&
+        policy.status !== 'ARCHIVED' &&
+        v.id !== live?.id &&
+        v.id !== publishableId &&
+        (policy.status !== 'PUBLISHED' || isRevisionOf(live, v));
+    const canRequestApproval = !!requestTarget && canRequestApprovalFor(requestTarget);
+    /**
+     * Publish is offered ONLY for the version the server accepts.
+     *
+     * This once read `headerHasApproved && !headerIsPublished` with no regard
+     * for the policy's own status, so it lit up on a DRAFT policy whose old
+     * version still carried an APPROVED row, and every click was refused.
+     * `publishableVersionId` is the server's own rule.
+     */
+    const canPublishNow = canAdmin && !!publishableId;
+    const publishableVersion = versions.find((v) => v.id === publishableId) ?? null;
+    /**
+     * Publish without approval publishes the NEWEST version. Not offered when
+     * that version is already live, or is the approved one (Publish does it
+     * without a bypass), or while the policy is APPROVED: the server binds an
+     * APPROVED policy's publish to its approved version even with a bypass.
+     */
+    const canBypassPublish =
+        canAdmin &&
+        !!newest &&
+        policy.status !== 'ARCHIVED' &&
+        policy.status !== 'APPROVED' &&
+        newest.id !== live?.id &&
+        newest.id !== publishableId;
+    // The acknowledgement roster is keyed on the published pointer.
+    const ackVersion = versions.find((v) => v.id === policy.currentVersionId) ?? versions[0] ?? policy.currentVersion;
+    const statusLabels = buildPolicyStatusLabels((key) => t(key));
+    /**
+     * The next step, shown on the Current tab (a request under review is
+     * already explained by the ApprovalBanner):
+     *   - an approved version waiting to be published — only for those who
+     *     CAN publish; an Editor was told "ready to publish" with no way to;
+     *   - a draft — for anyone who can request approval;
+     *   - a revision of a published policy not yet sent for approval.
+     */
+    const currentGuide: { variant: 'success' | 'info'; title: string; body: string } | null =
+        canPublishNow && publishableVersion
+            ? { variant: 'success', title: t('detail.guideApprovedTitle'), body: t('detail.guideApprovedBody', { n: publishableVersion.versionNumber }) }
+            : canWrite && policy.status === 'DRAFT'
+              ? { variant: 'info', title: t('detail.guideDraftTitle'), body: t('detail.guideDraftBody') }
+              : canRequestApproval && live && requestTarget
+                ? {
+                      variant: 'info',
+                      title: t('detail.guideRevisionTitle'),
+                      body: t('detail.guideRevisionBody', { n: requestTarget.versionNumber, live: live.versionNumber }),
+                  }
+                : null;
 
     type PolicyTab = 'current' | 'versions' | 'mappings' | 'traceability' | 'acknowledgements' | 'tasks' | 'editor' | 'activity';
     const tabs: ReadonlyArray<{ key: PolicyTab; label: string }> = [
@@ -605,7 +687,9 @@ export default function PolicyDetailPage() {
     const pendingApproval = (() => {
         const all = policy.approvals ?? [];
         const pending = all.find((a) => a.status === 'PENDING');
-        if (!pending) return null;
+        // Only a request that can still be decided: one on an IN_REVIEW
+        // policy, or one asking about a revision of a PUBLISHED policy.
+        if (!pending || !isApprovalDecidable(publication, { status: pending.status, policyVersionId: pending.policyVersionId ?? null })) return null;
         const matchingVersion = (policy.versions ?? []).find(
             (v) => v.id === pending.policyVersionId,
         );
@@ -646,7 +730,9 @@ export default function PolicyDetailPage() {
                             kind: 'status',
                             id: 'policy-status',
                             label: t('detail.metaStatus'),
-                            value: policy.status,
+                            // The shared status labels (en + bg), not the
+                            // raw enum — this showed e.g. "IN_REVIEW".
+                            value: statusLabels[policy.status] ?? policy.status,
                             variant:
                                 POLICY_STATUS_VARIANT[policy.status] ??
                                 'neutral',
@@ -691,9 +777,10 @@ export default function PolicyDetailPage() {
                         {t('detail.exportPdf')}
                     </a>
                     {/* Prompt-2.4 — state-advancing verbs promoted from the
-                        per-version cards, gated on the current version's status. */}
+                        per-version cards. Each acts on the version the
+                        server would accept (see `publication` above). */}
                     {canRequestApproval && (
-                        <Button variant="secondary" size="sm" onClick={() => headerVersion && requestApproval(headerVersion.id)} disabled={!!actionLoading} id="header-request-approval">
+                        <Button variant="secondary" size="sm" onClick={() => requestTarget && requestApproval(requestTarget.id)} disabled={!!actionLoading} id="header-request-approval">
                             {t('detail.requestApproval')}
                         </Button>
                     )}
@@ -708,7 +795,7 @@ export default function PolicyDetailPage() {
                         </Button>
                     )}
                     {canPublishNow && (
-                        <Button variant="secondary" size="sm" onClick={() => approvedTargetVersionId && publishVersion(approvedTargetVersionId)} disabled={!!actionLoading} id="header-publish">
+                        <Button variant="secondary" size="sm" onClick={() => publishableId && publishVersion(publishableId)} disabled={!!actionLoading} id="header-publish">
                             {t('detail.publish')}
                         </Button>
                     )}
@@ -720,12 +807,7 @@ export default function PolicyDetailPage() {
                     {canWrite && policy.status !== 'ARCHIVED' && (
                         <button onClick={() => {
                             setTab('editor');
-                            setEditorContent(currentVersion?.contentText || '');
-                            setEditorContentType(
-                                currentVersion?.contentType === 'HTML'
-                                    ? 'HTML'
-                                    : 'MARKDOWN',
-                            );
+                            seedEditor(newest);
                         }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
                     )}
                     {canAdmin && policy.status !== 'ARCHIVED' && (
@@ -737,17 +819,21 @@ export default function PolicyDetailPage() {
             }
         >
             {/* Approval banner (Epic 45.3) — only mounts when an
-                approval row is PENDING. Reviewer-only actions are
-                gated by `canAdmin`; non-reviewers still see status
-                + requester so the page is informative. */}
-            {policy.status === 'IN_REVIEW' && pendingApproval && (
+                approval row is PENDING and can still be decided: the
+                policy is IN_REVIEW, or it is PUBLISHED and the request is
+                for a revision (`pendingApproval` holds that check).
+                Reviewer-only actions are gated by `canAdmin`;
+                non-reviewers still see status + requester so the page is
+                informative. The reviewer's comment travels with the
+                decision. */}
+            {pendingApproval && (
                 <ApprovalBanner
                     approval={pendingApproval}
                     canDecide={canAdmin}
                     currentUserId={currentUserId}
                     busy={!!actionLoading && actionLoading.startsWith('decide-')}
-                    onDecide={(approvalId, decision) =>
-                        decideApproval(approvalId, decision)
+                    onDecide={(approvalId, decision, comment) =>
+                        decideApproval(approvalId, decision, comment)
                     }
                 />
             )}
@@ -874,22 +960,14 @@ export default function PolicyDetailPage() {
                 #tab-activity DOM ids E2E selectors rely on. */}
 
             {/* ── Current Version ── */}
-            {/* Publication-flow guide — the Request Approval / Publish
-                buttons live in the Versions tab, which isn't obvious from
-                the Current view. Surface the next step for the two states
-                whose action is a tab away (IN_REVIEW is already explained
-                by the ApprovalBanner above; PUBLISHED/ARCHIVED need none). */}
-            {tab === 'current' && canWrite && (policy.status === 'DRAFT' || policy.status === 'APPROVED') && (
+            {/* Publication-flow guide — the next step (see `currentGuide`). */}
+            {tab === 'current' && currentGuide && (
                 <InlineNotice
-                    variant={policy.status === 'APPROVED' ? 'success' : 'info'}
-                    title={policy.status === 'APPROVED' ? t('detail.guideApprovedTitle') : t('detail.guideDraftTitle')}
+                    variant={currentGuide.variant}
+                    title={currentGuide.title}
                 >
                     <div className="flex items-center justify-between gap-default flex-wrap">
-                        <span>
-                            {policy.status === 'APPROVED'
-                                ? t('detail.guideApprovedBody')
-                                : t('detail.guideDraftBody')}
-                        </span>
+                        <span>{currentGuide.body}</span>
                         <Button variant="secondary" size="sm" onClick={() => setTab('versions')} id="goto-versions-btn">
                             {t('detail.gotoVersions')}
                         </Button>
@@ -964,22 +1042,16 @@ export default function PolicyDetailPage() {
                         <Card className="text-center text-content-subtle">{t('detail.versionsEmpty')}</Card>
                     ) : versions.map((v: PolicyVersionDTO) => {
                         const vApprovals = (v.approvals || []).filter((a) => a.status === 'PENDING' || a.status === 'APPROVED' || a.status === 'REJECTED');
-                        const hasPending = vApprovals.some((a) => a.status === 'PENDING');
-                        const hasApproved = vApprovals.some((a) => a.status === 'APPROVED');
-                        // `currentVersionId` marks the LAST PUBLISHED version, and
-                        // it does NOT mean the policy is currently published.
-                        //
-                        // It is NOT "set at creation": `PolicyVersionRepository.create`
-                        // writes the version row and nothing else — only
-                        // `setCurrentVersion`, called from publish and rollback,
-                        // moves this pointer. The old wording here is what the
-                        // header publish gate was written against, which is how
-                        // that button ended up offered on a DRAFT policy. A version is "Published"
-                        // only when it's the current version AND the policy's lifecycle
-                        // status is PUBLISHED. Keying off currentVersionId alone made a
-                        // fresh draft's version show "Published" and hid Request Approval.
+                        // `currentVersionId` is the published pointer, and it
+                        // does NOT mean the policy is currently published (it is
+                        // also seeded when a policy is created with content). A
+                        // version is "Published" only when it is that pointer AND
+                        // the policy is PUBLISHED (the same rule as `live`).
+                        // "Current" marks the version the Current tab shows when
+                        // nothing is published: the newest one.
                         const isCurrentVersion = policy.currentVersionId === v.id;
                         const isPublishedVersion = isCurrentVersion && policy.status === 'PUBLISHED';
+                        const isCurrentTabVersion = v.id === currentVersion?.id;
 
                         return (
                             <div key={v.id} className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
@@ -987,7 +1059,7 @@ export default function PolicyDetailPage() {
                                     <div className="flex items-center gap-compact">
                                         <span className="text-sm font-semibold text-[var(--brand-default)]">v{v.versionNumber}</span>
                                         {isPublishedVersion && <StatusBadge variant="success">{t('detail.published')}</StatusBadge>}
-                                        {isCurrentVersion && !isPublishedVersion && (
+                                        {isCurrentTabVersion && !isPublishedVersion && (
                                             <span className="text-xs font-medium text-content-subtle">{t('detail.current')}</span>
                                         )}
                                         {v.contentType === 'EXTERNAL_LINK' && <StatusBadge variant="info">{t('detail.externalLink')}</StatusBadge>}
@@ -996,12 +1068,17 @@ export default function PolicyDetailPage() {
                                         </span>
                                     </div>
                                     <div className="flex gap-tight">
-                                        {canWrite && !hasPending && !hasApproved && !isPublishedVersion && (
+                                        {canRequestApprovalFor(v) && (
                                             <Button variant="secondary" size="sm" onClick={() => requestApproval(v.id)} disabled={!!actionLoading} id={`request-approval-${v.versionNumber}`}>
                                                 {actionLoading === 'approve-' + v.id ? '...' : t('detail.requestApproval')}
                                             </Button>
                                         )}
-                                        {canAdmin && hasApproved && !isPublishedVersion && (
+                                        {/* Only on the version a publish would be
+                                            accepted for. This read "has any APPROVED
+                                            row", so a version approved in an earlier
+                                            cycle kept the button and every click was
+                                            refused. */}
+                                        {canAdmin && v.id === publishableId && (
                                             <Button variant="primary" size="sm" onClick={() => publishVersion(v.id)} disabled={!!actionLoading} id={`publish-version-${v.versionNumber}`}>
                                                 {actionLoading === 'publish-' + v.id ? '...' : t('detail.publish')}
                                             </Button>
@@ -1016,54 +1093,66 @@ export default function PolicyDetailPage() {
                                 {vApprovals.length > 0 && (
                                     <div className="border-t border-border-default/50 pt-2 space-y-1">
                                         <p className="text-xs font-semibold text-content-subtle">{t('detail.approvalsLabel')}</p>
-                                        {vApprovals.map((a) => (
-                                            <div key={a.id} className="flex items-center justify-between text-xs">
-                                                <div className="flex items-center gap-tight">
-                                                    <StatusBadge variant={APPROVAL_BADGE[a.status]}>{approvalStatusLabel(a.status, tApproval)}</StatusBadge>
-                                                    <span className="text-content-muted">
-                                                        {t('detail.approvalBy', { name: a.requestedBy?.name || t('detail.unknown') })}
-                                                        {a.decidedAt && ` · ${formatDate(a.decidedAt)}`}
-                                                    </span>
-                                                </div>
-                                                {/* A PENDING row whose POLICY has moved past IN_REVIEW
-                                                    is stale: the server now refuses to decide it, because
-                                                    doing so would rewrite the policy's status out from
-                                                    under whatever moved it (publishing left rows PENDING,
-                                                    so one later Reject dropped a LIVE policy to DRAFT and
-                                                    stranded its acknowledgements). Show the row, but not
-                                                    an action that will be refused. The banner above is
-                                                    already gated on IN_REVIEW; this surface was not. */}
-                                                {canAdmin && a.status === 'PENDING' && policy.status !== 'IN_REVIEW' && (
-                                                    <span className="text-xs text-content-subtle" data-testid={`approval-stale-${a.id}`}>
-                                                        {t('detail.approvalNoLongerCurrent')}
-                                                    </span>
-                                                )}
-                                                {canAdmin && a.status === 'PENDING' && policy.status === 'IN_REVIEW' && (() => {
-                                                    // Client-side SoD mirror: block Approve when the viewer
-                                                    // requested this approval or authored the version. The
-                                                    // requester/author ids come off the nested refs
-                                                    // (`requestedBy.id` / `createdBy.id`).
-                                                    const isSelfApproval =
-                                                        (a.requestedBy?.id != null && a.requestedBy.id === currentUserId) ||
-                                                        (v.createdBy?.id != null && v.createdBy.id === currentUserId);
-                                                    const approveBtn = (
-                                                        <Button variant="primary" size="xs" onClick={isSelfApproval ? undefined : () => decideApproval(a.id, 'APPROVED')} disabled={isSelfApproval || !!actionLoading} id={`approve-${a.id}`}>
-                                                            {actionLoading === 'decide-' + a.id ? '...' : t('detail.approve')}
-                                                        </Button>
-                                                    );
-                                                    return (
-                                                        <div className="flex gap-1">
-                                                            {isSelfApproval ? (
-                                                                <Tooltip content={t('detail.sodApproveBlocked')}>
-                                                                    <span className="inline-flex">{approveBtn}</span>
-                                                                </Tooltip>
-                                                            ) : approveBtn}
-                                                            <Button variant="destructive" size="xs" onClick={() => decideApproval(a.id, 'REJECTED')} disabled={!!actionLoading}>{t('detail.reject')}</Button>
+                                        {vApprovals.map((a) => {
+                                            // Decidable while the policy is IN_REVIEW, or while
+                                            // it is PUBLISHED and this request is for a revision.
+                                            const decidable = isApprovalDecidable(publication, { status: a.status, policyVersionId: v.id });
+                                            return (
+                                                <div key={a.id} className="text-xs">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-tight">
+                                                            <StatusBadge variant={APPROVAL_BADGE[a.status]}>{approvalStatusLabel(a.status, tApproval)}</StatusBadge>
+                                                            <span className="text-content-muted">
+                                                                {t('detail.approvalBy', { name: a.requestedBy?.name || t('detail.unknown') })}
+                                                                {a.decidedAt && ` · ${formatDate(a.decidedAt)}`}
+                                                            </span>
                                                         </div>
-                                                    );
-                                                })()}
-                                            </div>
-                                        ))}
+                                                        {/* A PENDING row the policy has moved past is stale:
+                                                            the server refuses to decide it, because doing so
+                                                            would rewrite the policy's status out from under
+                                                            whatever moved it (publishing left rows PENDING, so
+                                                            one later Reject dropped a LIVE policy to DRAFT and
+                                                            stranded its acknowledgements). Show the row, but
+                                                            not an action that will be refused. */}
+                                                        {canAdmin && a.status === 'PENDING' && !decidable && (
+                                                            <span className="text-xs text-content-subtle" data-testid={`approval-stale-${a.id}`}>
+                                                                {t('detail.approvalNoLongerCurrent')}
+                                                            </span>
+                                                        )}
+                                                        {canAdmin && decidable && (() => {
+                                                            // Client-side SoD mirror: block Approve when the viewer
+                                                            // requested this approval or authored the version. The
+                                                            // requester/author ids come off the nested refs
+                                                            // (`requestedBy.id` / `createdBy.id`).
+                                                            const isSelfApproval =
+                                                                (a.requestedBy?.id != null && a.requestedBy.id === currentUserId) ||
+                                                                (v.createdBy?.id != null && v.createdBy.id === currentUserId);
+                                                            const approveBtn = (
+                                                                <Button variant="primary" size="xs" onClick={isSelfApproval ? undefined : () => decideApproval(a.id, 'APPROVED')} disabled={isSelfApproval || !!actionLoading} id={`approve-${a.id}`}>
+                                                                    {actionLoading === 'decide-' + a.id ? '...' : t('detail.approve')}
+                                                                </Button>
+                                                            );
+                                                            return (
+                                                                <div className="flex gap-1">
+                                                                    {isSelfApproval ? (
+                                                                        <Tooltip content={t('detail.sodApproveBlocked')}>
+                                                                            <span className="inline-flex">{approveBtn}</span>
+                                                                        </Tooltip>
+                                                                    ) : approveBtn}
+                                                                    <Button variant="destructive" size="xs" onClick={() => decideApproval(a.id, 'REJECTED')} disabled={!!actionLoading}>{t('detail.reject')}</Button>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                    {/* The reviewer's comment, shown with the decision. */}
+                                                    {a.comment && (
+                                                        <p className="mt-1 text-content-muted italic" data-testid={`approval-comment-${a.id}`}>
+                                                            {a.comment}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -1084,7 +1173,6 @@ export default function PolicyDetailPage() {
                         {([
                             { key: 'MARKDOWN' as const, label: t('detail.modeMarkdown'), icon: '' },
                             { key: 'EXTERNAL_LINK' as const, label: t('detail.externalLink'), icon: '' },
-                            { key: 'FILE' as const, label: t('detail.modeFileUpload'), icon: '' },
                         ]).map(opt => (
                             <button key={opt.key} onClick={() => setContentMode(opt.key)}
                                 className={`px-3 py-1.5 text-xs rounded-lg border transition ${contentMode === opt.key
@@ -1119,19 +1207,6 @@ export default function PolicyDetailPage() {
                         </div>
                     )}
 
-                    {/* File upload */}
-                    {contentMode === 'FILE' && (
-                        <div>
-                            <label className="input-label">{t('detail.uploadFile')}</label>
-                            <input type="file" className="input w-full" id="file-upload-input"
-                                onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-                                accept=".pdf,.doc,.docx,.txt,.md" />
-                            {selectedFile && (
-                                <p className="text-xs text-[var(--brand-default)] mt-1">{selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</p>
-                            )}
-                        </div>
-                    )}
-
                     <div>
                         <label className="input-label">{t('detail.changeSummaryLabel')}</label>
                         <input className="input w-full" value={changeSummary} onChange={e => setChangeSummary(e.target.value)}
@@ -1142,10 +1217,16 @@ export default function PolicyDetailPage() {
                         policy used to withdraw it silently — the editor gave no
                         indication that pressing Save would stop every outstanding
                         acknowledgement. It now saves as a proposal instead, which
-                        is only reassuring if the user is told. */}
+                        is only reassuring if the user is told — and told the
+                        real next step: the new version goes through Request
+                        Approval → approve → Publish while the policy stays
+                        published. An APPROVED policy is not live yet; its notice
+                        says that the approved version stays publishable. */}
                     {policyIsLive && (
                         <InlineNotice variant="info" icon={null}>
-                            {t('detail.liveEditProposalNotice')}
+                            {policy.status === 'PUBLISHED'
+                                ? t('detail.liveEditProposalNotice')
+                                : t('detail.approvedEditNotice')}
                         </InlineNotice>
                     )}
 
@@ -1175,10 +1256,13 @@ export default function PolicyDetailPage() {
             {tab === 'acknowledgements' && (
                 <PolicyAcknowledgementsPanel
                     policyId={policyId}
+                    // OWNER / ADMIN / AUDITOR read the roster (`canAudit`, as the
+                    // server's `assertCanAudit`); requesting stays `canAdmin`.
+                    canViewRoster={tenant.permissions.canAudit}
                     canAdmin={canAdmin}
                     isPublished={policy.status === 'PUBLISHED'}
                     refreshToken={ackRefreshToken}
-                    currentVersionNumber={headerVersion?.versionNumber ?? null}
+                    currentVersionNumber={ackVersion?.versionNumber ?? null}
                 />
             )}
             {tab === 'tasks' && (
@@ -1231,7 +1315,8 @@ export default function PolicyDetailPage() {
                     <Modal.Header title={t('detail.bypassTitle')} />
                     <Modal.Body>
                         <div className="space-y-default">
-                            <p className="text-sm text-content-muted">{t('detail.bypassBody')}</p>
+                            {/* Names the version it publishes — the newest one. */}
+                            <p className="text-sm text-content-muted" data-testid="policy-bypass-body">{t('detail.bypassBody', { n: newest?.versionNumber ?? '' })}</p>
                             <textarea
                                 className="input"
                                 rows={3}
@@ -1246,7 +1331,7 @@ export default function PolicyDetailPage() {
                         <Button variant="secondary" onClick={() => setBypassOpen(false)}>{t('detail.cancel')}</Button>
                         <Button
                             variant="primary"
-                            onClick={() => headerVersion && publishVersion(headerVersion.id, bypassReason.trim())}
+                            onClick={() => newest && publishVersion(newest.id, bypassReason.trim())}
                             disabled={!bypassReason.trim() || !!actionLoading}
                             data-testid="policy-bypass-confirm"
                         >
@@ -1261,12 +1346,13 @@ export default function PolicyDetailPage() {
                 committing. tone="warning": rollback re-publishes a prior version,
                 it is not a destructive delete. */}
             {/* Archive confirmation.
-                Archiving withdraws the policy from the library and blocks
-                every edit path — createPolicyVersion and requestPolicyApproval
-                both refuse archived policies — so it is far more consequential
-                than the rollback below, which HAD a confirm while this had
-                none. `tone="warning"` rather than "danger" because it is now
-                genuinely reversible via Restore. */}
+                Archiving keeps the policy on the list as Archived and refuses
+                a new version, an approval request and a rollback
+                (createPolicyVersion, requestPolicyApproval, rollbackPolicy) —
+                consequential enough to confirm, as the rollback below already
+                did. The body says only that (#4279): metadata and the owner
+                stay editable. `tone="warning"` rather than "danger" because it
+                is reversible via Restore. */}
             <ConfirmDialog
                 showModal={archiveOpen}
                 setShowModal={setArchiveOpen}

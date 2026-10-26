@@ -76,8 +76,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { REPO_ROOT } from '../helpers/repo-files';
-import { callExpressionOf, declarationOf } from '../helpers/source-blocks';
+import { REPO_ROOT, repoFiles, repoRelative, repoRelativeFiles } from '../helpers/repo-files';
+import { callExpressionOf, codeOf, declarationOf } from '../helpers/source-blocks';
+import { computeLibraryTextHash, parseLibraryFile, scanLibraryDirectory } from '@/app-layer/libraries';
 
 const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
 const CATALOG_SEEDER = path.join(REPO_ROOT, 'scripts/seed-framework-catalogs.ts');
@@ -207,5 +208,449 @@ describe('the shipped catalogue can reach production', () => {
         );
         expect(Object.keys(TEMPLATES_UNDELIVERED)).toEqual([]);
         expect(undelivered).toBe(0);
+    });
+});
+
+/**
+ * ═══ THE FRAMEWORK LIBRARIES AND THEIR CROSSWALKS, THE SAME QUESTION ═══
+ *
+ * The YAML libraries and mapping sets in `src/data/libraries/` had no delivery
+ * path either, for as long as the crosswalks existed. `syncAllLibraries` is the
+ * only writer of library framework rows and of `RequirementMapping`, and
+ * nothing a deployment ran called it, so inherited coverage, gap analysis and
+ * traceability read an empty mapping table in production while every test
+ * passed against rows its own `beforeAll` had imported.
+ *
+ * Folded in here rather than given a file of its own because it is this file's
+ * invariant, that what the repo ships reaches production, over a second
+ * population. The path has four links, and each one alone looks finished:
+ *
+ *   1. `scripts/build-worker.mjs` bundles the script into `dist/`, because the
+ *      production image cannot run TypeScript;
+ *   2. the Dockerfile copies `src/data/libraries` into the runtime image, which
+ *      otherwise carries `prisma/` and `dist/` and no YAML at all;
+ *   3. the script reads the YAML from the working directory, which is where
+ *      the Dockerfile puts it, not from `__dirname`, which in a bundle is
+ *      `dist/`;
+ *   4. `scripts/entrypoint.sh` runs the bundle AFTER the catalogue seed: the
+ *      sync leaves every row that has a pack to the catalogue, so the packs
+ *      must exist first.
+ *
+ * What the sync then DOES is held by
+ * `tests/integration/framework-library-startup-sync.test.ts`; this holds only
+ * that it is reached.
+ */
+const read = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+const trimmedLines = (rel: string): string[] => read(rel).split('\n').map((l) => l.trim());
+
+const LIBRARY_SYNC_SCRIPT = 'scripts/sync-framework-libraries.ts';
+const LIBRARY_SYNC_BUNDLE = 'dist/sync-framework-libraries.mjs';
+const RUN_LIBRARY_SYNC = `node ${LIBRARY_SYNC_BUNDLE} || echo "⚠ framework-library sync incomplete (non-fatal)"`;
+const RUN_CATALOGUE_SEED =
+    'node dist/seed-framework-catalogs.mjs || echo "⚠ framework-catalog seed skipped (non-fatal)"';
+const COPY_LIBRARIES = 'COPY --from=builder /app/src/data/libraries ./src/data/libraries';
+
+describe('the framework libraries reach production', () => {
+    it('the script exists', () => {
+        expect(fs.existsSync(path.join(REPO_ROOT, LIBRARY_SYNC_SCRIPT))).toBe(true);
+    });
+
+    it('build-worker bundles it into dist/', () => {
+        // One `await build({...})` call per bundle; the one naming the script
+        // must also name the bundle the entrypoint runs.
+        const builds = read('scripts/build-worker.mjs').split('await build(');
+        const own = builds.filter((b) => b.includes(`entryPoints: ['${LIBRARY_SYNC_SCRIPT}']`));
+        expect(own).toHaveLength(1);
+        expect(own[0].slice(0, own[0].indexOf('});'))).toContain(`outfile: '${LIBRARY_SYNC_BUNDLE}'`);
+    });
+
+    it('the runtime image carries the YAML', () => {
+        const dockerfile = trimmedLines('Dockerfile');
+        const runtimeStage = dockerfile.map((l) => l.startsWith('FROM ')).lastIndexOf(true);
+        expect(runtimeStage).toBeGreaterThanOrEqual(0);
+        expect(dockerfile.indexOf(COPY_LIBRARIES)).toBeGreaterThan(runtimeStage);
+    });
+
+    it('the script reads the YAML from where the image puts it', () => {
+        // `./src/data/libraries` under WORKDIR /app, and a cwd-relative path in
+        // the script. A `__dirname` path would resolve against `dist/`.
+        const src = trimmedLines(LIBRARY_SYNC_SCRIPT);
+        expect(src).toContain(`const librariesDir = path.resolve(process.cwd(), 'src/data/libraries');`);
+        expect(src.filter((l) => l.includes('__dirname') && !l.startsWith('*') && !l.startsWith('//'))).toEqual([]);
+    });
+
+    it('the entrypoint runs the bundle, after the catalogue seed', () => {
+        const entrypoint = trimmedLines('scripts/entrypoint.sh');
+        const catalogue = entrypoint.indexOf(RUN_CATALOGUE_SEED);
+        const sync = entrypoint.indexOf(RUN_LIBRARY_SYNC);
+        expect(catalogue).toBeGreaterThanOrEqual(0);
+        expect(sync).toBeGreaterThan(catalogue);
+    });
+});
+
+/**
+ * ═══ EVERY DIRECTORY PRODUCTION READS FROM THE WORKING DIRECTORY, DERIVED ═══
+ *
+ * The libraries above are one directory, held by name. The agent skills were a
+ * second, and nothing held them: `loadSkillCorpus` reads
+ * `path.join(process.cwd(), 'src/lib/agentic/flue/skills')`, the runtime stage
+ * did not copy it, and every Flue run start in production threw ENOENT and
+ * answered 500 (#4301). The suite never saw it, because jest and the dev
+ * server both run from a checkout, where every path under `src/` exists.
+ *
+ * So this derives the population instead of naming it. It scans every non-test
+ * source file under `src/` (the web tier, and everything the worker bundles
+ * import) and each `scripts/*.ts` that `build-worker.mjs` bundles into `dist/`.
+ * Both tiers run in the image's `WORKDIR`, so a cwd-relative path resolves
+ * against it.
+ *
+ * A read is analysable only in the form
+ * `path.join|resolve(process.cwd(), '<literal>')`. Any other use of
+ * `process.cwd()` fails the scan, unless `DECLARED_READS` names the directory it
+ * reads and a check below proves that. A reader the scan cannot follow is
+ * reported, never dropped.
+ *
+ * WHAT THIS CANNOT SEE. It reads the Dockerfile and `.dockerignore`, not a
+ * built image. A read through `__dirname` is out of scope:
+ * `src/app-layer/ai/identity-match/evaluation-record.ts` resolves its directory
+ * that way, and says why the worker not finding it is intended (#3611).
+ */
+/**
+ * A `process.cwd()` read whose path is not a literal, the directory it reads,
+ * and the check that proves it. Keep this short: the cure for an entry is to
+ * write the read in the literal form.
+ */
+const DECLARED_READS: Record<string, { dir: string; reason: string }> = {
+    'scripts/seed-framework-catalogs.ts': {
+        dir: 'prisma/fixtures',
+        reason: 'resolves each CATALOG_FIXTURES entry, and every entry is a prisma/fixtures/ path (asserted below)',
+    },
+};
+
+const LITERAL_READ = /path\.(?:join|resolve)\(\s*process\.cwd\(\)\s*,\s*'([^']+)'\s*\)/g;
+const ANY_CWD = /process\.cwd\(\)/g;
+
+/** The `scripts/*.ts` entry points `build-worker.mjs` bundles into `dist/`. */
+function bundledScripts(): string[] {
+    const src = read('scripts/build-worker.mjs');
+    return [...src.matchAll(/entryPoints:\s*\['(scripts\/[^']+\.ts)'\]/g)].map((m) => m[1]);
+}
+
+/** Non-test source under `src/`. */
+function sourceFiles(): string[] {
+    return repoFiles({ under: 'src', extensions: ['.ts', '.tsx', '.js', '.mjs'] })
+        .map(repoRelative)
+        .filter((rel) => !/(^|\/)__tests__\//.test(rel) && !/\.test\.[jt]sx?$/.test(rel));
+}
+
+interface CwdReads {
+    /** Directory → the files that read it. */
+    readonly reads: Map<string, string[]>;
+    /** `file: count` for every `process.cwd()` the literal form did not account for. */
+    readonly unanalysable: string[];
+}
+
+function cwdReads(files: readonly string[], text: (rel: string) => string): CwdReads {
+    const reads = new Map<string, string[]>();
+    const unanalysable: string[] = [];
+    for (const rel of files) {
+        const code = codeOf(text(rel));
+        const all = (code.match(ANY_CWD) ?? []).length;
+        if (all === 0) continue;
+        const literal = [...code.matchAll(LITERAL_READ)].map((m) => path.posix.normalize(m[1]));
+        for (const dir of literal) reads.set(dir, [...(reads.get(dir) ?? []), rel]);
+        const declared = DECLARED_READS[rel];
+        if (declared) {
+            reads.set(declared.dir, [...(reads.get(declared.dir) ?? []), rel]);
+        } else if (all > literal.length) {
+            unanalysable.push(`${rel}: ${all - literal.length} process.cwd() not in the literal form`);
+        }
+    }
+    return { reads, unanalysable };
+}
+
+/**
+ * The runtime stage's `COPY --from=builder /app/<p> ./<p>` paths, and its
+ * `WORKDIR`. A copy that lands somewhere other than its own path under
+ * `WORKDIR` does not serve a cwd-relative read, so it is not listed.
+ */
+function runtimeCopies(dockerfile: string): { workdir: string | null; copied: string[] } {
+    const lines = dockerfile
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l !== '' && !l.startsWith('#'));
+    const lastFrom = lines.map((l) => /^FROM\s/i.test(l)).lastIndexOf(true);
+    const stage = lastFrom === -1 ? [] : lines.slice(lastFrom + 1);
+    const workdirs = stage.filter((l) => /^WORKDIR\s/i.test(l)).map((l) => l.split(/\s+/)[1]);
+    const copied: string[] = [];
+    for (const l of stage) {
+        const m = /^COPY\s+--from=builder\s+\/app\/(\S+?)\/?\s+\.\/(\S+?)\/?$/.exec(l);
+        if (m && m[1] === m[2]) copied.push(m[1]);
+    }
+    return { workdir: workdirs.length > 0 ? workdirs[workdirs.length - 1] : null, copied };
+}
+
+/** Directories no runtime copy covers: neither copied nor under a copied path. */
+function uncovered(dirs: readonly string[], copied: readonly string[]): string[] {
+    return dirs.filter((dir) => !copied.some((c) => dir === c || dir.startsWith(`${c}/`)));
+}
+
+/** A `.dockerignore` pattern as an anchored regex over a context-relative path. */
+function ignoreRegex(pattern: string): RegExp {
+    const p = pattern.replace(/^\/+/, '').replace(/\/+$/, '');
+    let re = '';
+    for (let i = 0; i < p.length; i++) {
+        const ch = p[i];
+        if (ch === '*' && p[i + 1] === '*') {
+            // `**/` is zero or more directories; a trailing `**` is anything.
+            if (p[i + 2] === '/') {
+                re += '(?:.*/)?';
+                i += 2;
+            } else {
+                re += '.*';
+                i += 1;
+            }
+        } else if (ch === '*') re += '[^/]*';
+        else if (ch === '?') re += '[^/]';
+        else re += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    }
+    return new RegExp(`^${re}$`);
+}
+
+/**
+ * Is a context-relative file excluded from the build context? The last pattern
+ * that matches the file or one of its parent directories decides, and a `!`
+ * pattern re-includes.
+ */
+function ignoredBy(dockerignore: string): (file: string) => boolean {
+    const rules = dockerignore
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l !== '' && !l.startsWith('#'))
+        .map((l) => (l.startsWith('!') ? { negate: true, re: ignoreRegex(l.slice(1)) } : { negate: false, re: ignoreRegex(l) }));
+    return (file) => {
+        const parts = file.split('/');
+        const prefixes = parts.map((_, i) => parts.slice(0, i + 1).join('/'));
+        let ignored = false;
+        for (const rule of rules) {
+            if (prefixes.some((p) => rule.re.test(p))) ignored = !rule.negate;
+        }
+        return ignored;
+    };
+}
+
+describe('every directory production reads from the working directory is in the image (#4301)', () => {
+    const scanned = [...sourceFiles(), ...bundledScripts()];
+    const { reads, unanalysable } = cwdReads(scanned, read);
+    const dirs = [...reads.keys()].sort();
+    const { workdir, copied } = runtimeCopies(read('Dockerfile'));
+
+    it('the scan sees what it scans (denominator, not findings)', () => {
+        // Every assertion below is satisfied by an empty population.
+        expect(sourceFiles().length).toBeGreaterThan(1000);
+        expect(bundledScripts().length).toBeGreaterThanOrEqual(8);
+        expect(dirs).toEqual(expect.arrayContaining(['src/lib/agentic/flue/skills', 'src/data/libraries']));
+        expect(copied.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('every process.cwd() read is in a form the scan can follow', () => {
+        expect(unanalysable).toEqual([]);
+    });
+
+    it('both tiers run in /app, where the copies land', () => {
+        expect(workdir).toBe('/app');
+    });
+
+    it('the runtime stage copies every directory read', () => {
+        const missing = uncovered(dirs, copied).map((d) => `${d} (read by ${reads.get(d)?.join(', ')})`);
+        expect(missing).toEqual([]);
+    });
+
+    it('no file in a directory read is left out of the build context', () => {
+        // A COPY of a directory the context does not carry copies nothing, or
+        // copies a directory with its SKILL.md files missing.
+        const isIgnored = ignoredBy(read('.dockerignore'));
+        const tracked = repoRelativeFiles();
+        const dropped = dirs.flatMap((dir) => tracked.filter((f) => f.startsWith(`${dir}/`) && isIgnored(f)));
+        expect(dropped).toEqual([]);
+    });
+
+    it('every directory read holds files, so the copy carries something', () => {
+        const tracked = repoRelativeFiles();
+        const empty = dirs.filter((dir) => !tracked.some((f) => f.startsWith(`${dir}/`)));
+        expect(empty).toEqual([]);
+    });
+
+    it('each declared read reads only the directory it is declared to', () => {
+        const entries = [...declarationOf(read('scripts/seed-framework-catalogs.ts'), 'CATALOG_FIXTURES').matchAll(/'([^']+)'/g)].map(
+            (m) => m[1],
+        );
+        expect(entries.length).toBeGreaterThan(0);
+        expect(entries.filter((e) => !e.startsWith(`${DECLARED_READS['scripts/seed-framework-catalogs.ts'].dir}/`))).toEqual([]);
+        expect(Object.keys(DECLARED_READS).filter((f) => !scanned.includes(f))).toEqual([]);
+    });
+});
+
+describe('the readers report what they are for (positive controls on synthetic input)', () => {
+    const runtime = (copies: string): string =>
+        ['FROM node AS builder', 'WORKDIR /app', 'COPY --from=builder /app/x ./x', 'FROM node AS runner', 'WORKDIR /app', copies].join('\n');
+
+    it('a directory with no runtime copy is reported', () => {
+        const { copied } = runtimeCopies(runtime('COPY --from=builder /app/prisma ./prisma'));
+        expect(uncovered(['src/lib/agentic/flue/skills'], copied)).toEqual(['src/lib/agentic/flue/skills']);
+    });
+
+    it('a copy in the builder stage only does not count', () => {
+        expect(runtimeCopies(runtime('')).copied).toEqual([]);
+    });
+
+    it('a copy of an ancestor covers it; a copy to another path does not', () => {
+        expect(uncovered(['src/a/b'], runtimeCopies(runtime('COPY --from=builder /app/src ./src')).copied)).toEqual([]);
+        expect(uncovered(['src/a/b'], runtimeCopies(runtime('COPY --from=builder /app/src/a/b ./b')).copied)).toEqual(['src/a/b']);
+        expect(uncovered(['src/ab'], runtimeCopies(runtime('COPY --from=builder /app/src/a ./src/a')).copied)).toEqual(['src/ab']);
+    });
+
+    it('a commented-out copy does not count', () => {
+        expect(runtimeCopies(runtime('# COPY --from=builder /app/src ./src')).copied).toEqual([]);
+    });
+
+    it('a non-literal process.cwd() is reported, a literal one is read', () => {
+        const files: Record<string, string> = {
+            'a.ts': "const d = path.join(process.cwd(), 'src/x');",
+            'b.ts': 'const d = path.join(process.cwd(), dir);',
+            'c.ts': '// process.cwd() in a comment is not a read',
+        };
+        const { reads, unanalysable } = cwdReads(Object.keys(files), (f) => files[f]);
+        expect([...reads.keys()]).toEqual(['src/x']);
+        expect(unanalysable).toEqual(['b.ts: 1 process.cwd() not in the literal form']);
+    });
+
+    it('.dockerignore: a pattern on a parent or a file drops it, and a later ! keeps it', () => {
+        const file = 'src/lib/agentic/flue/skills/soa-authoring/SKILL.md';
+        expect(ignoredBy('src/lib/')(file)).toBe(true);
+        expect(ignoredBy('**/*.md')(file)).toBe(true);
+        expect(ignoredBy('**/*.md')('README.md')).toBe(true);
+        expect(ignoredBy('**/*.md\n!src/lib/agentic/flue/skills/**')(file)).toBe(false);
+        expect(ignoredBy('README.md\ndocs/\ntests/')(file)).toBe(false);
+    });
+});
+
+/**
+ * ═══ A LIBRARY'S TEXT CHANGE REACHES A DATABASE THAT ALREADY HAS IT ═══
+ *
+ * The library import skips a library whose content hash matches the stored
+ * one, and that hash covers the urn, the version and the node urns. Not the
+ * text: a reworded title or description, or a corrected copyright line, under
+ * the same version is skipped by every database already holding the library.
+ * Nothing fails. The edit simply never arrives, which since the container-start
+ * sync is production.
+ *
+ * Folding the text into that hash would deliver it, but under the same version
+ * the importer would record a `vN -> vN` diff, and a second such edit would
+ * upsert onto that row (`@@unique([frameworkKey, fromVersion, toVersion])`)
+ * instead of getting its own, so the tenants notified of the first change
+ * would not hear of the second. The version is the right signal; this makes it
+ * move.
+ *
+ * Each library records `text_hash`, `computeLibraryTextHash` of its content as
+ * of its version. When the content changes, this fails and names both values
+ * to write. CI checks out one commit, so this cannot see the version the file
+ * had on the base, and an edit that rewrites `text_hash` without bumping
+ * `version` gets past it. That edit is a deliberate change to the line beside
+ * the version, in the diff a reviewer reads. A forgotten bump, the case that
+ * happens, is caught.
+ *
+ * Mapping sets need no equivalent: they record no diff, so their own hash
+ * covers their text (`computeMappingSetHash`).
+ */
+const LIBRARIES_DIR = path.join(REPO_ROOT, 'src/data/libraries');
+
+describe("a library's text change reaches a database that already holds it", () => {
+    const libraries = scanLibraryDirectory(LIBRARIES_DIR).map((e) => ({
+        file: path.basename(e.filePath),
+        stored: parseLibraryFile(e.filePath),
+    }));
+
+    it('the scan sees the shipped libraries (denominator, not findings)', () => {
+        expect(libraries.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it('every library records the fingerprint of its content as of its version', () => {
+        const stale = libraries.flatMap(({ file, stored }) => {
+            const actual = computeLibraryTextHash(stored);
+            if (stored.text_hash === actual) return [];
+            const v = stored.version;
+            return [
+                stored.text_hash === undefined
+                    ? `${file}: records no text_hash. Add "text_hash: ${actual}" under "version: ${v}".`
+                    : `${file}: its content changed since version ${v} was recorded. ` +
+                      `Bump to "version: ${v + 1}" and set "text_hash: ${actual}", ` +
+                      `or the change reaches no database that already holds the library.`,
+            ];
+        });
+        expect(stale).toEqual([]);
+    });
+});
+
+/**
+ * ═══ A SEEDED DEV OR E2E DATABASE GETS WHAT THE CONTAINER START GIVES ═══
+ *
+ * `prisma/seed.ts` builds the dev and E2E databases and is not run on a deploy.
+ * It now calls `syncLibrariesAtStartup`, the function the container start
+ * calls, so those databases get the library rows and every crosswalk.
+ *
+ * The sync leaves alone every framework row a catalogue owns (one with a
+ * pack). Two catalogues declare the same key as their library (AIUC-1, COSO),
+ * and in production the catalogue writes that row first. If `seed.ts` stops
+ * applying one of them, or applies it after the sync, the sync finds no
+ * catalogue row, writes the library's instead, and the framework has the
+ * opposite owner in dev and E2E with no pack to install. Nothing else fails:
+ * the crosswalks resolve against either row. So each such catalogue must be
+ * applied in `seed.ts` before the sync. The population is derived, not listed:
+ * the catalogue seeder's fixtures whose framework key a library also declares.
+ *
+ * More generally, `seed.ts` applies every fixture the catalogue seeder applies.
+ * The internal-controls catalogue was the one it missed, so a dev or E2E
+ * database had that library's templates and neither the framework nor the
+ * pack that installs them.
+ */
+const SEED = 'prisma/seed.ts';
+
+describe('a seeded dev or E2E database gets what the container start gives', () => {
+    const seed = codeOf(read(SEED));
+    const libraryKeys = new Set(
+        scanLibraryDirectory(LIBRARIES_DIR).map((e) => parseLibraryFile(e.filePath).objects.framework.ref_id),
+    );
+    const sharedKey = [...catalogFixtures()].filter((file) => {
+        const fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8')) as {
+            framework?: { key?: string };
+        };
+        return fixture.framework?.key !== undefined && libraryKeys.has(fixture.framework.key);
+    });
+
+    it('finds the catalogues that share a key with their library (denominator)', () => {
+        expect(sharedKey.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('the seed runs the container start\'s library sync', () => {
+        expect(callExpressionOf(seed, 'syncLibrariesAtStartup')).toMatch(/^syncLibrariesAtStartup\(prisma,/);
+    });
+
+    it('the seed applies every catalogue the container start applies', () => {
+        // Each of these carries a framework and a pack that reach a deployed
+        // database only through the catalogue seeder. A fixture missing here
+        // exists in production and not in dev or E2E, as the internal-controls
+        // catalogue did: its 151 templates seeded, and no pack to install them.
+        const missing = [...catalogFixtures()].filter((file) => !seed.includes(`'prisma/fixtures/${file}'`));
+        expect(missing).toEqual([]);
+    });
+
+    it('the seed applies each of those catalogues before the sync', () => {
+        const sync = seed.indexOf('syncLibrariesAtStartup(');
+        const late = sharedKey.filter((file) => {
+            const at = seed.indexOf(`'prisma/fixtures/${file}'`);
+            return at < 0 || at > sync;
+        });
+        expect(late).toEqual([]);
     });
 });

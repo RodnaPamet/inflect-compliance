@@ -42,6 +42,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { ForbiddenError } from '@/lib/errors/types';
 import {
     bulkDeleteRisk,
@@ -122,7 +123,8 @@ describeFn('risk bulk actions — two-tenant behaviour', () => {
             await globalPrisma.riskScoreEvent.deleteMany({ where: { tenantId } }).catch(() => {});
             await globalPrisma.risk.deleteMany({ where: { tenantId } }).catch(() => {});
             await globalPrisma.tenantMembership.deleteMany({ where: { tenantId } }).catch(() => {});
-            await globalPrisma.tenant.deleteMany({ where: { id: tenantId } }).catch(() => {});
+            await deleteAuditRowsForTenants(globalPrisma, [tenantId]);
+            await globalPrisma.tenant.deleteMany({ where: { id: tenantId } });
         }
         await globalPrisma.user
             .deleteMany({ where: { id: { in: [adminUserId, ourMemberId] } } })
@@ -269,7 +271,7 @@ describeFn('risk bulk actions — two-tenant behaviour', () => {
             ).rejects.toThrow();
 
             expect((await raw(mine))!.ownerUserId).toBeNull();
-            await globalPrisma.user.deleteMany({ where: { id: stranger } }).catch(() => {});
+            await globalPrisma.user.deleteMany({ where: { id: stranger } });
         });
 
         it('requires write access', async () => {

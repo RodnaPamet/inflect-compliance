@@ -29,7 +29,7 @@ import { TYPESAFE_SUBPROCESSOR_ACTIVE } from '@/lib/legacy-access/adjudication-m
 
 const prisma: PrismaClient = prismaTestClient();
 const T = 'las-tenant';
-const ctx = (role = 'OWNER') => makeRequestContext(role, { tenantId: T });
+const ctx = (role = 'OWNER') => makeRequestContext(role, { userId: 'las-user-1', tenantId: T });
 
 async function clearOwnRows(): Promise<void> {
     await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: T } });
@@ -44,8 +44,8 @@ beforeAll(async () => {
         create: { id: T, name: 'Adjudication Tenant', slug: T },
     });
     await prisma.user.upsert({
-        where: { id: 'user-1' }, update: {},
-        create: { id: 'user-1', email: 'admin@las.test', name: 'Admin' },
+        where: { id: 'las-user-1' }, update: {},
+        create: { id: 'las-user-1', email: 'admin@las.test', name: 'Admin' },
     });
 });
 

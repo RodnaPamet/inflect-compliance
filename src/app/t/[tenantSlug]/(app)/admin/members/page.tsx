@@ -33,6 +33,7 @@ import { Popover } from '@/components/ui/popover';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { StatusBadge, statusBadgeVariants } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton, SkeletonButton } from '@/components/ui/skeleton';
 import { Modal } from '@/components/ui/modal';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
@@ -45,6 +46,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // ─── Types ───
 
@@ -125,29 +127,6 @@ function normalizeMember(m: Member): Member {
 }
 
 /**
- * Coerce an API error response body to a human string for setError().
- *
- * The API error envelope is `{ error: { code, message, requestId } }`
- * (toApiErrorResponse). Passing the raw `err.error` OBJECT to setError() and
- * rendering it as a React child throws "Minified React error #31 — objects are
- * not valid as a React child", which trips the page error boundary. This is
- * exactly what broke inviting: a 4xx invite response (e.g. "already a member")
- * set the error state to the object and crashed the page. Always coerce.
- */
-function apiErrorMessage(body: unknown, fallback: string): string {
-    if (body && typeof body === 'object') {
-        const b = body as { error?: unknown; message?: unknown };
-        if (typeof b.error === 'string') return b.error;
-        if (b.error && typeof b.error === 'object') {
-            const inner = b.error as { message?: unknown };
-            if (typeof inner.message === 'string') return inner.message;
-        }
-        if (typeof b.message === 'string') return b.message;
-    }
-    return fallback;
-}
-
-/**
  * The roles the INVITE picker offers — a writer's list. AI_ADMIN (#3699) is
  * never offered here: nobody is invited straight into it, and the API refuses
  * it (`ASSIGNABLE_TENANT_ROLES`).
@@ -225,10 +204,18 @@ export default function MembersAdminPage() {
     // typically <50; users can scroll or navigate to a specific
     // member via the global command palette (⌘K).
     const [error, setError] = useState<string | null>(null);
+    // The member list did not load: the server's reason, shown IN PLACE of the
+    // table. Kept apart from `error` (an action's refusal) because an empty
+    // table under a failed load reads as "this workspace has no members".
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     // Absolute invite link from the last "add member" — a share-anywhere
     // fallback so access never depends on the invite email arriving.
     const [inviteLink, setInviteLink] = useState<string | null>(null);
+    // Whether the server says that invite was actually emailed. False when
+    // no mailer is configured or the send failed — the link is then the
+    // only way the invitee hears about it.
+    const [inviteEmailed, setInviteEmailed] = useState(false);
 
     // Invite form
     const [showInvite, setShowInvite] = useState(false);
@@ -276,6 +263,10 @@ export default function MembersAdminPage() {
             if (membersRes.ok) {
                 const raw = await membersRes.json();
                 setMembers(Array.isArray(raw) ? raw.map(normalizeMember) : []);
+                setLoadError(null);
+            } else {
+                const body = await membersRes.json().catch(() => null);
+                setLoadError(apiErrorMessage(body, t('members.failedLoadMembers')));
             }
             if (invitesRes.ok) {
                 const raw = await invitesRes.json();
@@ -290,7 +281,7 @@ export default function MembersAdminPage() {
                 );
             }
         } catch {
-            setError(t('members.failedLoadMembers'));
+            setLoadError(t('members.failedLoadMembers'));
         } finally {
             setLoading(false);
         }
@@ -305,6 +296,7 @@ export default function MembersAdminPage() {
         setError(null);
         setSuccess(null);
         setInviteLink(null);
+        setInviteEmailed(false);
         setInviting(true);
 
         try {
@@ -321,9 +313,20 @@ export default function MembersAdminPage() {
             }
 
             const data = await res.json();
-            // The member is authorised the moment they sign in with this
-            // email — access no longer depends on the invite email arriving.
-            setSuccess(t('members.memberAddedLoginHint', { email: inviteEmail, role: inviteRole }));
+            // When they get access depends on how they sign in (src/auth.ts):
+            // a Google or Microsoft sign-in with this email redeems the invite
+            // by itself; any other sign-in redeems it only through the invite
+            // link. The message says both, with the role's label.
+            // Say "emailed" only when the server says it was: a deployment
+            // with no mailer sends nothing, and the admin must share the link.
+            const emailed = data?.emailSent === true;
+            setInviteEmailed(emailed);
+            const hintArgs = { email: inviteEmail, role: roleLabel(inviteRole) };
+            setSuccess(
+                emailed
+                    ? t('members.memberAddedEmailed', hintArgs)
+                    : t('members.memberAddedNotEmailed', hintArgs),
+            );
             setInviteLink(
                 typeof data?.url === 'string' ? `${window.location.origin}${data.url}` : null,
             );
@@ -399,6 +402,10 @@ export default function MembersAdminPage() {
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ error: t('members.roleChangeFailed') }));
                 setError(apiErrorMessage(err, t('members.roleChangeFailed')));
+                // The server applies a role and a custom role together or not
+                // at all, but the row is re-read either way, so it never shows
+                // a state the server does not hold.
+                await fetchMembers();
                 return;
             }
 
@@ -544,7 +551,13 @@ export default function MembersAdminPage() {
         {
             value: 'deactivate',
             label: t('members.deactivate'),
-            confirm: { tone: 'warning', confirmLabel: t('members.deactivate') },
+            // Its own sentence: the bar's default says the members are removed,
+            // which is the other action.
+            confirm: {
+                tone: 'warning',
+                confirmLabel: t('members.deactivate'),
+                description: t('members.bulkDeactivateDescription'),
+            },
         },
         {
             value: 'remove',
@@ -652,8 +665,31 @@ export default function MembersAdminPage() {
         }
     }, [apiUrl, fetchMembers, sessionsModalUser, t]);
 
+    // Only an OWNER revokes an OWNER's or an AI_ADMIN's sessions, as only an
+    // OWNER deactivates one (owner decision, 2026-10-25). One's own are one's own.
+    const mayRevokeSessionsOf = (m: Member) =>
+        canManageOwnerRoles || !isOwnerManagedRole(m.role) || m.userId === viewerUserId;
+
     // ─── Filter (R14-PR7 — search retired; full list shown) ───
     const filteredMembers = members;
+
+    // Only an OWNER changes an OWNER's or an AI_ADMIN's role
+    // (`OWNER_MANAGED_ROLES`), and neither membership takes a custom role
+    // (#3720, #3699), so for anyone else there is nothing to edit on the row.
+    // One rule for both ways into the editor — the role badge and the row
+    // menu's "Change role" — so neither offers what the other refuses.
+    const mayChangeRole = (m: Member) =>
+        m.status === 'ACTIVE' && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
+
+    // Seed the editor from the member's CURRENT role and custom role. A
+    // leftover pending custom role is either another member's or null, and
+    // Save sends any difference — so it would assign the wrong one or clear
+    // the member's own.
+    const openRoleEditor = (m: Member) => {
+        setEditingRoleId(m.id);
+        setPendingRole(m.role);
+        setPendingCustomRoleId(m.customRoleId);
+    };
 
     // ─── Members DataTable columns ───
     const memberColumns = useMemo(
@@ -733,6 +769,8 @@ export default function MembersAdminPage() {
                                         size="xs"
                                         onClick={() => setEditingRoleId(null)}
                                         icon={<XCircle className="w-3.5 h-3.5" />}
+                                        id={`role-cancel-${m.id}`}
+                                        aria-label={t('members.cancelRoleChange')}
                                     />
                                 </div>
                                 {customRoleBlocksPromotion && !legacyCustomRole && (
@@ -771,11 +809,7 @@ export default function MembersAdminPage() {
                             </div>
                         );
                     }
-                    // Only an OWNER changes an OWNER's or an AI_ADMIN's role
-                    // (`OWNER_MANAGED_ROLES`), and neither membership takes a
-                    // custom role (#3720, #3699), so for anyone else there is
-                    // nothing to edit on the row.
-                    const editable = m.status === 'ACTIVE' && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
+                    const editable = mayChangeRole(m);
                     return (
                         <div className="flex items-center gap-1 flex-wrap">
                             <Tooltip
@@ -794,11 +828,7 @@ export default function MembersAdminPage() {
                                     )}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        if (editable) {
-                                            setEditingRoleId(m.id);
-                                            setPendingRole(m.role);
-                                            setPendingCustomRoleId(m.customRoleId);
-                                        }
+                                        if (editable) openRoleEditor(m);
                                     }}
                                     aria-disabled={!editable || undefined}
                                     id={`role-badge-${m.id}`}
@@ -904,6 +934,15 @@ export default function MembersAdminPage() {
                 cell: ({ row }) => {
                     const m = row.original;
                     const isActive = m.status === 'ACTIVE';
+                    // Only an OWNER deactivates or removes an OWNER or an
+                    // AI_ADMIN (`OWNER_MANAGED_ROLES`), and nobody ends their
+                    // own membership. The server refuses all three, so none is
+                    // offered.
+                    const mayEndMembership =
+                        m.userId !== viewerUserId && (canManageOwnerRoles || !isOwnerManagedRole(m.role));
+                    // A menu with nothing in it is not rendered at all.
+                    const hasActions = isActive || mayEndMembership;
+                    if (!hasActions) return null;
                     return (
                         // R3 fix — the old in-cell absolute dropdown was clipped
                         // by the DataTable's overflow container (so clicking the
@@ -918,17 +957,18 @@ export default function MembersAdminPage() {
                                     <Popover.Menu>
                                         {isActive && (
                                             <>
-                                                <Popover.Item
-                                                    icon={<Shield className="w-3.5 h-3.5" />}
-                                                    onClick={() => {
-                                                        setEditingRoleId(m.id);
-                                                        setPendingRole(m.role);
-                                                        setOpenMenuId(null);
-                                                    }}
-                                                    id={`action-change-role-${m.id}`}
-                                                >
-                                                    {t('members.changeRole')}
-                                                </Popover.Item>
+                                                {mayChangeRole(m) && (
+                                                    <Popover.Item
+                                                        icon={<Shield className="w-3.5 h-3.5" />}
+                                                        onClick={() => {
+                                                            openRoleEditor(m);
+                                                            setOpenMenuId(null);
+                                                        }}
+                                                        id={`action-change-role-${m.id}`}
+                                                    >
+                                                        {t('members.changeRole')}
+                                                    </Popover.Item>
+                                                )}
                                                 <Popover.Item
                                                     icon={<Monitor className="w-3.5 h-3.5" />}
                                                     onClick={() => {
@@ -939,24 +979,28 @@ export default function MembersAdminPage() {
                                                 >
                                                     {t('members.viewSessions')}
                                                 </Popover.Item>
-                                                <Popover.Item
-                                                    icon={<UserMinus className="w-3.5 h-3.5" />}
-                                                    destructive
-                                                    onClick={() => handleDeactivate(m.id, m.user.email)}
-                                                    id={`action-deactivate-${m.id}`}
-                                                >
-                                                    {t('members.deactivate')}
-                                                </Popover.Item>
+                                                {mayEndMembership && (
+                                                    <Popover.Item
+                                                        icon={<UserMinus className="w-3.5 h-3.5" />}
+                                                        destructive
+                                                        onClick={() => handleDeactivate(m.id, m.user.email)}
+                                                        id={`action-deactivate-${m.id}`}
+                                                    >
+                                                        {t('members.deactivate')}
+                                                    </Popover.Item>
+                                                )}
                                             </>
                                         )}
-                                        <Popover.Item
-                                            icon={<Trash2 className="w-3.5 h-3.5" />}
-                                            destructive
-                                            onClick={() => handleRemove(m.id, m.user.email)}
-                                            id={`action-remove-${m.id}`}
-                                        >
-                                            {t('members.remove')}
-                                        </Popover.Item>
+                                        {mayEndMembership && (
+                                            <Popover.Item
+                                                icon={<Trash2 className="w-3.5 h-3.5" />}
+                                                destructive
+                                                onClick={() => handleRemove(m.id, m.user.email)}
+                                                id={`action-remove-${m.id}`}
+                                            >
+                                                {t('members.remove')}
+                                            </Popover.Item>
+                                        )}
                                     </Popover.Menu>
                                 }
                             >
@@ -1021,19 +1065,27 @@ export default function MembersAdminPage() {
         [t, roleLabel],
     );
 
+    // The back link and breadcrumb, in every state — they rendered only while
+    // the page was loading.
+    const pageNav = (
+        <>
+            <BackAffordance />
+            <PageBreadcrumbs
+                items={[
+                    { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
+                    { label: t('crumb.admin'), href: tenantHref('/admin') },
+                    { label: t('members.crumbSelf') },
+                ]}
+                className="mb-1"
+            />
+        </>
+    );
+
     // ─── Loading state ───
     if (loading) {
         return (
             <div className="space-y-section animate-fadeIn">
-                <BackAffordance />
-                <PageBreadcrumbs
-                    items={[
-                        { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
-                        { label: t('crumb.admin'), href: tenantHref('/admin') },
-                        { label: t('members.crumbSelf') },
-                    ]}
-                    className="mb-1"
-                />
+                {pageNav}
                 <Heading level={2} className="flex items-center gap-tight">
                     <Users className="w-6 h-6 text-[var(--brand-default)]" />
                     {t('members.loadingTitle')}
@@ -1049,6 +1101,7 @@ export default function MembersAdminPage() {
 
     return (
         <div className="space-y-section animate-fadeIn">
+            {pageNav}
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-default">
                 <div>
@@ -1056,10 +1109,14 @@ export default function MembersAdminPage() {
                         <Users className="w-6 h-6 text-[var(--brand-default)]" />
                         {t('members.title')}
                     </Heading>
-                    <p className="text-sm text-content-muted mt-1">
-                        {t('members.activeMembers', { count: members.filter(m => m.status === 'ACTIVE').length })}
-                        {invites.length > 0 && ` · ${t('members.pendingInvites', { count: invites.length })}`}
-                    </p>
+                    {/* No count over a list that did not load: "0 active
+                        members" would be a claim the page cannot make. */}
+                    {!loadError && (
+                        <p className="text-sm text-content-muted mt-1">
+                            {t('members.activeMembers', { count: members.filter(m => m.status === 'ACTIVE').length })}
+                            {invites.length > 0 && ` · ${t('members.pendingInvites', { count: invites.length })}`}
+                        </p>
+                    )}
                 </div>
                 <Button
                     variant="primary"
@@ -1092,7 +1149,9 @@ export default function MembersAdminPage() {
                         {inviteLink && (
                             <div className="flex items-center gap-tight text-xs">
                                 <span className="text-content-muted shrink-0">
-                                    {t('members.inviteLinkLabel')}
+                                    {inviteEmailed
+                                        ? t('members.inviteLinkLabel')
+                                        : t('members.inviteLinkLabelNotEmailed')}
                                 </span>
                                 <CopyText
                                     value={inviteLink}
@@ -1173,7 +1232,16 @@ export default function MembersAdminPage() {
                 `bg-bg-default rounded-lg border-border-subtle` card
                 is the only one (matches Controls list visually). */}
             <div id="members-table-card">
-                {filteredMembers.length === 0 ? (
+                {loadError ? (
+                    // A failed load is never "No members yet": the list is
+                    // unknown, and the server's reason says why.
+                    <ErrorState
+                        title={t('members.failedLoadMembers')}
+                        description={loadError !== t('members.failedLoadMembers') ? loadError : undefined}
+                        onRetry={() => { void fetchMembers(); }}
+                        data-testid="members-load-error"
+                    />
+                ) : filteredMembers.length === 0 ? (
                     <EmptyState
                         icon={Users}
                         title={t('members.noMembersTitle')}
@@ -1282,6 +1350,12 @@ export default function MembersAdminPage() {
                             description={t('members.sessionsEmptyBody')}
                         />
                     ) : (
+                        <>
+                        {sessionsModalUser && !mayRevokeSessionsOf(sessionsModalUser) && (
+                            <p className="text-xs text-content-muted mb-2" id="sessions-owner-only">
+                                {t('members.sessionsOwnerOnly')}
+                            </p>
+                        )}
                         <ul className="space-y-tight" id="sessions-list">
                             {memberSessions.map((s) => (
                                 <li
@@ -1300,18 +1374,21 @@ export default function MembersAdminPage() {
                                             {s.sessionId}
                                         </p>
                                     </div>
-                                    <Button
-                                        variant="secondary"
-                                        size="xs"
-                                        onClick={() => handleRevokeSession(s.sessionId)}
-                                        disabled={revokingSessionId === s.sessionId}
-                                        id={`revoke-session-${s.sessionId}`}
-                                    >
-                                        {revokingSessionId === s.sessionId ? t('members.revoking') : t('members.revoke')}
-                                    </Button>
+                                    {sessionsModalUser && mayRevokeSessionsOf(sessionsModalUser) && (
+                                        <Button
+                                            variant="secondary"
+                                            size="xs"
+                                            onClick={() => handleRevokeSession(s.sessionId)}
+                                            disabled={revokingSessionId === s.sessionId}
+                                            id={`revoke-session-${s.sessionId}`}
+                                        >
+                                            {revokingSessionId === s.sessionId ? t('members.revoking') : t('members.revoke')}
+                                        </Button>
+                                    )}
                                 </li>
                             ))}
                         </ul>
+                        </>
                     )}
                 </Modal.Body>
             </Modal>

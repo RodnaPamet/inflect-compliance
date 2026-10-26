@@ -21,6 +21,7 @@ import {
     validateParentReferences,
     scanLibraryDirectory,
     loadAllFromDirectory,
+    computeLibraryTextHash,
     LibraryParseError,
     LibraryValidationError,
     LibraryUrnCollisionError,
@@ -763,5 +764,39 @@ describe('parseLibraryFile + scan error branches', () => {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('computeLibraryTextHash', () => {
+    const base = parseLibraryString(MINIMAL_LIBRARY_YAML);
+    const hash = computeLibraryTextHash(base);
+
+    it('is a sha256 hex digest', () => {
+        expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('moves when a requirement is reworded, which the import hash does not see', () => {
+        const nodes = base.objects.framework.requirement_nodes.map((n, i) =>
+            i === 0 ? { ...n, description: 'Reworded first requirement' } : n,
+        );
+        const reworded = { ...base, objects: { ...base.objects, framework: { ...base.objects.framework, requirement_nodes: nodes } } };
+        expect(computeLibraryTextHash(reworded)).not.toBe(hash);
+        // The import's skip hash covers urns and the version only, so it
+        // cannot tell the two apart. That blind spot is what the text hash is for.
+        expect(loadLibrary(reworded).contentHash).toBe(loadLibrary(base).contentHash);
+    });
+
+    it('moves when framework metadata changes', () => {
+        expect(computeLibraryTextHash({ ...base, copyright: 'Corrected attribution' })).not.toBe(hash);
+    });
+
+    it('ignores the version and the recorded hash itself', () => {
+        expect(computeLibraryTextHash({ ...base, version: 7 })).toBe(hash);
+        expect(computeLibraryTextHash({ ...base, text_hash: 'f'.repeat(64) })).toBe(hash);
+    });
+
+    it('ignores comments and formatting, since it reads the parsed library', () => {
+        const commented = `# a comment\n${MINIMAL_LIBRARY_YAML.replace('name: Test Framework\n', 'name:   "Test Framework"   # same value\n')}`;
+        expect(computeLibraryTextHash(parseLibraryString(commented))).toBe(hash);
     });
 });

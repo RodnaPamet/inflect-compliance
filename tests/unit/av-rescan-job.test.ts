@@ -227,7 +227,6 @@ function pendingRow(over: RowOverrides = {}) {
 }
 
 function loadJob() {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('@/app-layer/jobs/av-rescan') as typeof import('@/app-layer/jobs/av-rescan');
 }
 

@@ -423,6 +423,42 @@ describe('an unknown account-type word is UNKNOWN (#3795)', () => {
         expect(out.accounts[0]!.accountType).toBe('UNKNOWN');
     });
 
+    it("a per-connection fold reaches the row, so a source's own spellings are usable", () => {
+        // The gap this closes: a database source spelling P/T for person/technical
+        // folded every row to UNKNOWN and nothing could be configured to fix it.
+        // `accountType` is the field that decides whether a reviewer is shown
+        // thirty-five service accounts beside five humans, so a source class that
+        // cannot reach it loses the protection rather than merely a label.
+        const mapping = wideMapping({ accountTypeValues: { P: 'HUMAN', T: 'SERVICE' } });
+        const out = mapRows(
+            mapping,
+            [wideRow({ LOGIN: 'a', KIND: 'P' }), wideRow({ LOGIN: 'b', KIND: 'T' })],
+            WIDE_COLUMNS,
+        );
+        expect(out.accounts.map((a) => a.accountType)).toEqual(['HUMAN', 'SERVICE']);
+
+        // And without the fold, the same rows are the UNKNOWN they were before —
+        // so the pairing proves the fold did the work, not the default table.
+        const bare = mapRows(
+            wideMapping(),
+            [wideRow({ LOGIN: 'a', KIND: 'P' }), wideRow({ LOGIN: 'b', KIND: 'T' })],
+            WIDE_COLUMNS,
+        );
+        expect(bare.accounts.map((a) => a.accountType)).toEqual(['UNKNOWN', 'UNKNOWN']);
+    });
+
+    it('a fold overrides a DEFAULT spelling, not only an unknown one', () => {
+        // APP defaults to SERVICE. A source where APP is a shared human login must
+        // be able to say so, or the default silently overrules the operator who
+        // read the column.
+        const out = mapRows(
+            wideMapping({ accountTypeValues: { APP: 'SHARED' } }),
+            [wideRow({ KIND: 'APP' })],
+            WIDE_COLUMNS,
+        );
+        expect(out.accounts[0]!.accountType).toBe('SHARED');
+    });
+
     it('still maps the words it knows, including the synonyms', () => {
         for (const [word, expected] of [
             ['USER', 'HUMAN'],

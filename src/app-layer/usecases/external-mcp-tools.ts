@@ -77,6 +77,13 @@ export interface ExternalToolCatalogue {
     advertised: number;
     /** True when `advertised` exceeded the cap and `tools` is a prefix. */
     truncated: boolean;
+    /**
+     * How many advertised tools were left out for an unusable name (#4238):
+     * empty, not a string, or longer than `MCP_TOOL_NAME_MAX_LENGTH`. Counted
+     * and never quoted, so an operator can see a tool is missing without
+     * another party's text reaching the page. Not included in `advertised`.
+     */
+    refusedNames: number;
 }
 
 export interface ExternalToolManifestState extends ToolManifestState {
@@ -182,7 +189,7 @@ export async function listExternalMcpTools(
         persistRotatedRefreshToken(ctx, connection.id, secrets),
     );
 
-    const advertised = await listTools({ url, authorization });
+    const { tools: advertised, refusedNames } = await listTools({ url, authorization });
     const considered = advertised.slice(0, MAX_EXTERNAL_TOOLS);
 
     // One query for every pin this connection owns, rather than one per tool.
@@ -239,6 +246,7 @@ export async function listExternalMcpTools(
         tools,
         advertised: advertised.length,
         truncated: advertised.length > considered.length,
+        refusedNames,
     };
 }
 
@@ -585,7 +593,17 @@ export async function resolveGrantedExternalTools(
 
         let advertised;
         try {
-            advertised = await listTools({ url, authorization });
+            const read = await listTools({ url, authorization });
+            advertised = read.tools;
+            if (read.refusedNames > 0) {
+                // Counted, not quoted: the refused names are the text the bound
+                // keeps out. A granted tool among them is unreachable from here
+                // on, and this line is the trace of why.
+                logger.warn('mcp.external_tool_names_refused', {
+                    connectionId: connection.id,
+                    refused: read.refusedNames,
+                });
+            }
         } catch (err) {
             // Named, never quoted: an error from somebody else's server is text
             // we did not write, and this line is read by operators.

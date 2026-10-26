@@ -14,24 +14,64 @@
  *   1. The count of rendered behavioural tests, E2E specs, and
  *      registered high-risk primitives must each stay AT OR ABOVE a
  *      floor. Deleting verification trips CI.
- *   2. A slack sentinel: when the live count runs well above its
- *      floor, the floor MUST be raised in the same PR. That is the
- *      "staged" part — added verification is locked in as the new
- *      minimum, so a later PR cannot silently spend the surplus.
+ *   2. No change removes verification: each count must be at least
+ *      what it was at the change's BASE commit. That is the "staged"
+ *      part — what has merged is the new minimum for the next change,
+ *      whether or not a release has raised the stored floor yet.
  *
- * Floors only ever move UP. After a PR that adds rendered/E2E tests,
- * raise the matching floor here to the new count.
+ * Floors only ever move UP, and since 2026-10-24 nobody raises them by
+ * hand. They live in `tests/guards/coverage-floors.json`, and every
+ * release raises each one to its live count
+ * (`scripts/raise-coverage-floors.mjs`, run as semantic-release's
+ * prepare step; the release commit carries the file to main). A pull
+ * request that adds a test therefore never edits a floor, so two of them
+ * can no longer conflict on the same line in the merge queue, which they
+ * did four times on 2026-10-24 alone.
+ *
+ * Check 2 replaced a SLACK SENTINEL (2026-10-25), which failed a build
+ * whose count ran more than 8 rendered tests, 4 E2E specs or 3 primitives
+ * above the floor. Once the floors were raised by the release rather than
+ * by each PR, that measured release lag rather than anyone's mistake: a
+ * merge-queue candidate carries every entry ahead of it, so several PRs
+ * that each added a test went over the slack together and were all
+ * ejected. Over 2026-10-18..25 it failed 14 candidates of 9 PRs, every one
+ * for tests ADDED, none for tests removed. The base comparison asks the
+ * question the sentinel stood in for, about this change alone.
+ *
+ * The base is the first parent of the commit under test. In CI that is
+ * exact for every event: a pull request's test-merge commit has the base
+ * branch as its first parent, a merge-queue candidate is one squash on
+ * top of the candidates ahead of it, and a push has the previous main.
+ * The Ratchets job checks out two commits so that parent is present.
+ * Locally the base is the merge-base with origin/main, and the working
+ * tree is what is counted, so an uncommitted deletion fails too.
+ *
+ * A deliberate removal lowers the floor by the same amount in
+ * `coverage-floors.json` in the same change, so the removal is a line a
+ * reviewer sees, and check 2 allows exactly that much.
  *
  * See docs/verification-policy.md and docs/frontend-assurance-model.md.
  */
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import {
+    FLOORS_FILE,
+    FLOOR_KEYS,
+    countCoverage,
+    countCoverageAt,
+    readFloors,
+    readFloorsAt,
+} from '../../scripts/lib/coverage-floors.js';
 
 const ROOT = path.resolve(__dirname, '../..');
 
 /**
- * Coverage floors. UPWARD ratchet — only ever edited higher, in the
- * same PR that adds the tests. History:
+ * Coverage floors. UPWARD ratchet. Until 2026-10-24 each was raised by
+ * hand, in the same PR that added the tests, and this is the record of
+ * that era; `git log -- tests/guards/coverage-floors.json` is the rest.
+ * History:
  *   • 2026-05-22 — Roadmap-7 P4: established at the post-roadmap-4
  *     population (126 rendered / 36 E2E / 5 registered primitives).
  */
@@ -350,7 +390,17 @@ const ROOT = path.resolve(__dirname, '../..');
 // risks-list-bulk-surface.test.tsx (#4046) and the others merged since 381,
 // measured by this guard's own counter on this branch merged with main
 // (3.302.2). The merge queue found it again.
-const RENDERED_TEST_FLOOR = 390;
+//   393 (2026-10-24): + mfa-enrolment-qr-code.test.tsx and the others merged
+// since 390, measured by this guard's own counter on this branch merged with
+// main (3.305.1). Raised ahead of the queue this time: eight more rendered
+// tests were in flight, which would have put the count past floor + slack.
+//   400 (2026-10-24): + members-change-role-from-menu.test.tsx and the others
+// merged since 393, measured by this guard's own counter on this branch merged
+// with main (3.306.1). #4072, #4073 and #4078 each add one more and leave this
+// line alone, so the merge queue cannot conflict on it; they land in the slack.
+// From here on the release raises the floors (see the header).
+const FLOORS = readFloors(ROOT) as Record<'rendered' | 'e2e' | 'registry', number>;
+const RENDERED_TEST_FLOOR = FLOORS.rendered;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
@@ -374,29 +424,62 @@ const RENDERED_TEST_FLOOR = 390;
 // prop renders only when the list is non-empty. MEASURED at 54, not 50 — four
 // of the five arrived from other branches, which is exactly why this comment
 // records the measurement rather than the arithmetic.
-const E2E_SPEC_FLOOR = 54;
-const REGISTRY_FLOOR = 5;
+const E2E_SPEC_FLOOR = FLOORS.e2e;
+const REGISTRY_FLOOR = FLOORS.registry;
 
-/** Max a live count may exceed its floor before the floor must rise. */
-const SLACK = { rendered: 8, e2e: 4, registry: 3 } as const;
+type FloorKey = 'rendered' | 'e2e' | 'registry';
 
-function countFiles(rel: string, suffix: string): number {
-    const dir = path.join(ROOT, rel);
-    return fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).length;
-}
+const revision = (ref: string): string | null => {
+    try {
+        return execFileSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim() || null;
+    } catch {
+        return null;
+    }
+};
 
-function registrySize(): number {
-    const src = fs.readFileSync(
-        path.join(ROOT, 'tests/guards/behavioural-coverage-registry.test.ts'),
-        'utf8',
+const mergeBase = (ref: string): string | null => {
+    try {
+        return execFileSync('git', ['merge-base', 'HEAD', ref], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim() || null;
+    } catch {
+        return null;
+    }
+};
+
+/** The commit this change is measured against, and how it was found. */
+function changeBase(): { rev: string; how: string } {
+    if (process.env.GITHUB_ACTIONS === 'true') {
+        const rev = revision('HEAD^1');
+        if (rev) return { rev, how: `${rev.slice(0, 9)}, the first parent of the commit CI checked out` };
+        throw new Error(
+            'The commit CI checked out has no parent in this clone, so this change cannot be ' +
+                'measured against its base. The Ratchets job in .github/workflows/ci.yml checks ' +
+                'out with `fetch-depth: 2` for exactly this; restore it.',
+        );
+    }
+    const base = mergeBase('origin/main') ?? revision('HEAD^1');
+    if (base) return { rev: base, how: `${base.slice(0, 9)}, the merge-base with origin/main` };
+    throw new Error(
+        'Found neither a merge-base with origin/main nor a parent of HEAD, so this change ' +
+            'cannot be measured against its base. Fetch origin/main.',
     );
-    return (src.match(/primitive:\s*'/g) ?? []).length;
 }
+
+const LABEL: Record<FloorKey, string> = {
+    rendered: 'rendered behavioural tests',
+    e2e: 'E2E specs',
+    registry: 'registered high-risk primitives',
+};
 
 describe('rendered / browser coverage floor — staged upward ratchet', () => {
-    const rendered = countFiles('tests/rendered', '.test.tsx');
-    const e2e = countFiles('tests/e2e', '.spec.ts');
-    const registry = registrySize();
+    const { rendered, e2e, registry } = countCoverage(ROOT);
 
     it.each([
         ['rendered behavioural tests', rendered, RENDERED_TEST_FLOOR],
@@ -408,27 +491,69 @@ describe('rendered / browser coverage floor — staged upward ratchet', () => {
                 `${label}: count ${count} fell below the floor ${floor}. ` +
                     `Real-behaviour verification must not shrink — restore ` +
                     `the deleted test(s), or, if a test was legitimately ` +
-                    `merged/renamed, account for it. This floor only moves up.`,
+                    `merged/renamed, lower the floor in ${FLOORS_FILE} by ` +
+                    `the same amount in this change. Releases only raise it.`,
             );
         }
         expect(count).toBeGreaterThanOrEqual(floor);
     });
 
-    it.each([
-        ['RENDERED_TEST_FLOOR', rendered, RENDERED_TEST_FLOOR, SLACK.rendered],
-        ['E2E_SPEC_FLOOR', e2e, E2E_SPEC_FLOOR, SLACK.e2e],
-        ['REGISTRY_FLOOR', registry, REGISTRY_FLOOR, SLACK.registry],
-    ])('%s has no accumulated slack — raise it as coverage grows', (name, count, floor, slack) => {
-        if (count - floor > slack) {
-            throw new Error(
-                `${name} is ${floor} but the live count is ${count} ` +
-                    `(slack ${count - floor} > ${slack}). Raise ${name} to ` +
-                    `${count} in this PR so the added verification is locked ` +
-                    `in as the new minimum — an upward ratchet only works if ` +
-                    `the floor tracks the gains.`,
-            );
-        }
-        expect(count - floor).toBeLessThanOrEqual(slack);
+    describe('no change removes verification', () => {
+        const live: Record<FloorKey, number> = { rendered, e2e, registry };
+        const base = changeBase();
+        const before = countCoverageAt(ROOT, base.rev) as Record<FloorKey, number>;
+        const floorsBefore = readFloorsAt(ROOT, base.rev) as Record<FloorKey, number> | null;
+
+        it.each(FLOOR_KEYS as FloorKey[])('%s: no fewer than at the base, unless its floor came down by as much', (key) => {
+            // A floor lowered in this change is the reviewed way to remove
+            // verification on purpose; it allows exactly that many fewer.
+            const lowered = floorsBefore ? Math.max(0, floorsBefore[key] - FLOORS[key]) : 0;
+            const allowed = before[key] - lowered;
+            if (live[key] < allowed) {
+                throw new Error(
+                    `${LABEL[key]}: ${live[key]} in this change against ${before[key]} at its base ` +
+                        `(${base.how}), so it removes ${before[key] - live[key]}` +
+                        (lowered > 0 ? ` and lowers the floor by only ${lowered}` : '') +
+                        `. Restore the removed verification, or, if the removal is deliberate, ` +
+                        `lower "${key}" in ${FLOORS_FILE} by the same amount in this change, so ` +
+                        `the removal is a line a reviewer sees.`,
+                );
+            }
+            expect(live[key]).toBeGreaterThanOrEqual(allowed);
+        });
+
+        it('measures against a real base, not the commit under test', () => {
+            // A base that resolved to HEAD itself would make every change
+            // pass. Locally on main that is the truth (there is no change);
+            // in CI the checked-out commit always has a distinct parent.
+            if (process.env.GITHUB_ACTIONS === 'true') {
+                expect(base.rev).not.toBe(revision('HEAD'));
+            }
+            expect(base.rev).toMatch(/^[0-9a-f]{40}$/);
+        });
+    });
+
+    it('the floors file holds exactly the three floors, as integers', () => {
+        expect(Object.keys(FLOORS).sort()).toEqual([...FLOOR_KEYS].sort());
+        for (const key of FLOOR_KEYS) expect(Number.isInteger(FLOORS[key as keyof typeof FLOORS])).toBe(true);
+    });
+
+    it('every release raises the floors, and carries them to main', () => {
+        // Without both halves the floors stop moving: the prepare step raises
+        // them in the release's working tree, and only an asset reaches main.
+        const releaserc = JSON.parse(fs.readFileSync(path.join(ROOT, '.releaserc.json'), 'utf8')) as {
+            plugins: (string | [string, Record<string, unknown>])[];
+        };
+        const config = (name: string) =>
+            releaserc.plugins
+                .filter((p): p is [string, Record<string, unknown>] => Array.isArray(p) && p[0] === name)
+                .map((p) => p[1]);
+        expect(config('@semantic-release/exec').map((c) => c.prepareCmd)).toContain(
+            'node scripts/raise-coverage-floors.mjs',
+        );
+        expect(config('@semantic-release/git')[0]?.assets).toContain(FLOORS_FILE);
+        const order = releaserc.plugins.map((p) => (Array.isArray(p) ? p[0] : p));
+        expect(order.indexOf('@semantic-release/exec')).toBeLessThan(order.indexOf('@semantic-release/git'));
     });
 
     it('the floors are a genuine population, not a vacuous zero', () => {

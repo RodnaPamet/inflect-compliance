@@ -63,9 +63,9 @@ export function LinkedVendorsPanel({
     const [loading, setLoading] = useState(true);
     const [failed, setFailed] = useState(false);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
         let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
         setFailed(false);
         (async () => {

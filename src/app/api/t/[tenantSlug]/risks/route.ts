@@ -2,7 +2,7 @@ import { listRisks, listRisksPaginated, createRisk, listRisksWithDeleted, listRi
 import { getRiskStaleness } from '@/app-layer/usecases/risk-staleness';
 import { CreateRiskSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { requirePermission } from '@/lib/security/permission-middleware';
+import { assertPermission, requirePermission } from '@/lib/security/permission-middleware';
 import { parseJsonBody } from '@/lib/validation/route';
 import { z } from 'zod';
 import { normalizeQ } from '@/lib/filters/query-helpers';
@@ -56,8 +56,23 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     const query = RiskQuerySchema.parse(sp);
 
     if (query.includeDeleted === 'true') {
-        const risks = await listRisksWithDeleted(ctx);
-        return jsonResponse(risks);
+        // The deleted-risks read: `admin.manage` as well, the key the
+        // Restore and Purge routes name. It was `risks.view` alone, leaving
+        // the refusal to `listRisksWithDeleted`'s own `assertCanAdmin` — and
+        // a usecase refusal writes no AUTHZ_DENIED row, so a denied read was
+        // invisible to the security trail. The usecase check stays as the
+        // second layer. See docs/epic-c-security.md (C.1).
+        //
+        // `assertPermission` is `requirePermission`'s own decision (it writes
+        // the AUTHZ_DENIED row and throws the generic 403), called here
+        // because the gate depends on a query param, which a wrapper's static
+        // keys cannot express. A second `requirePermission` wrapper around
+        // this branch would resolve the tenant context — and verify an API
+        // key — twice per request.
+        await assertPermission(ctx, 'admin.manage', {
+            method: req.method,
+            path: req.nextUrl.pathname,
+        });
     }
 
     // PR-K — the "stale/overdue" filter runs the multi-signal detector
@@ -66,6 +81,13 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     if (query.stale === 'true') {
         const report = await getRiskStaleness(ctx);
         staleIdIn = report.staleRisks.map((r) => r.riskId);
+    }
+
+    if (query.includeDeleted === 'true') {
+        // The same filters and search as the live list. This branch used to
+        // take none and return every risk, deleted or not.
+        const risks = await listRisksWithDeleted(ctx, toRiskFilters(query, staleIdIn));
+        return jsonResponse(risks);
     }
 
     const hasPagination = query.limit || query.cursor;

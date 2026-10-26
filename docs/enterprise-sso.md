@@ -34,6 +34,16 @@
 
 Navigate to: `/t/<your-tenant>/admin` → click **SSO & Identity** pill button.
 
+**Who may change what.** Creating a provider, or changing one of its trust
+fields, is OWNER-tier (`admin.owner_management`; 403 `SSO_TRUST_IS_OWNER_TIER`).
+The trust fields are the OIDC issuer, client ID and discovery URL, the SAML
+entity ID, SSO URL and certificate, the protocol, the email domains and the
+JIT settings (`src/lib/auth/sso-trust-fields.ts`). A trust change removes every
+identity link to the provider in the same transaction; members re-link by
+email on their next sign-in. An ADMIN keeps every other field, the enable and
+enforce switches, and delete. A save that omits the JIT settings keeps the
+stored ones.
+
 ### OIDC Configuration Fields
 
 | Field | Required | Description |
@@ -48,6 +58,19 @@ Navigate to: `/t/<your-tenant>/admin` → click **SSO & Identity** pill button.
 ```
 https://<your-domain>/api/auth/sso/oidc/callback
 ```
+
+**The identity provider must answer over https, at a public address.** Inflect
+fetches the discovery document, the token endpoint and the signing keys through
+its SSRF guard (`safeFetch` in `src/app-layer/automation/webhook-safety.ts`):
+https only, every address the host name resolves to must be public, and a
+redirect is refused rather than followed, so configure the URL the IdP finally
+answers at. The guard covers all three URLs because only the issuer is typed
+here: the discovery document the issuer serves names the other two.
+
+A self-hosted install whose IdP runs on its own network allows that range with
+`EGRESS_PRIVATE_CIDR_ALLOWLIST` (see `docs/deployment.md`). Loopback and cloud
+metadata stay refused inside it, so an IdP on the same machine as Inflect is
+reached at a non-loopback address.
 
 ### SAML Configuration Fields
 
@@ -86,7 +109,8 @@ This prevents tenant admin lockout while maintaining enforcement for all other u
 
 ## JIT Provisioning
 
-When enabled per provider:
+When enabled per provider (set through the API — the admin page has no JIT
+control, and an OWNER-tier change):
 - Users whose email domain matches are auto-created on first SSO login
 - Default role: **READER** (configurable to EDITOR)
 - **ADMIN role is never auto-provisioned** — this is enforced at schema level
@@ -105,6 +129,25 @@ Entra **security-group** membership. Configure it at **Admin → Entra ID**.
 3. The **winning** mapping sets the role, and the user's existing membership
    role is updated to match (audited as `MEMBER_ROLE_CHANGED`,
    `source: entra_group_sync`).
+
+### Only your own directory's sign-ins count
+The mappings apply only to a Microsoft sign-in from the directory the workspace
+configured: the ID token's `tid` must equal the provider's **Directory (tenant)
+ID** (`aadTenantId`), compared case-insensitively. The deployment's Microsoft
+app can admit accounts from any directory, and a group object ID says nothing
+on its own about whose directory it came from, so a sign-in from another
+directory gets no mapped role (metric outcome `foreign_directory`). When the
+group gate is on, that sign-in is refused, as a non-matching one would be. A
+workspace that has mappings but no configured directory applies none at
+sign-in. SCIM's Groups push is not a sign-in and is unaffected: it is
+authenticated by the workspace's own SCIM token.
+
+Because the directory and client ID decide whose sign-ins the mappings apply
+to, **setting Entra up, and changing either of them, is Owner-only**
+(`admin.owner_management`; refusal reason `SSO_TRUST_IS_OWNER_TIER`, naming the
+fields), as the SSO page's trust fields are. An Admin keeps the other settings,
+the gate and the mappings below their own role. The audit row of every save
+names the trust fields it changed.
 
 Role sync only ever **sets** the role to a matched mapping — it never demotes a
 user who matches nothing (use the gate for that). It also never **creates** a
@@ -249,7 +292,8 @@ AUTH_SECRET=<your-auth-secret>       # NextAuth.js secret for JWT signing
 | "No matching account" | User doesn't exist or has no membership | Invite user first, or enable JIT provisioning |
 | "Identity conflict" | User already linked to a different IdP subject | Contact admin to unlink the existing identity |
 | "Cross-tenant login blocked" | Identity link exists for a different tenant | User must log into the correct tenant |
-| "SAML response validation failed" | Certificate mismatch or expired assertion | Verify the X.509 certificate matches the IdP |
+| "SAML response validation failed" | Certificate mismatch, an expired or replayed assertion, or a response that does not answer this sign-in's request | Verify the X.509 certificate matches the IdP, the IdP app's ACS URL is exactly the one the admin page shows (it must equal the assertion's `Recipient`), and the sign-in was started from Inflect and finished within 10 minutes |
+| OIDC sign-in fails, and the `discovery`, `token_exchange` or `id_token_verification` (`keys_unavailable`) log line names `only https`, a `private address`, `cannot resolve` or a redirect | The SSRF guard refused the issuer, the discovery-URL override, or an endpoint the discovery document names | Use the https URL the IdP finally answers at. On a self-hosted install with an internal IdP, add its range to `EGRESS_PRIVATE_CIDR_ALLOWLIST` |
 
 ### Diagnostic Logs
 

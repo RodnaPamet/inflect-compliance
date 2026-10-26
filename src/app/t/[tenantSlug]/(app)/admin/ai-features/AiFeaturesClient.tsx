@@ -25,9 +25,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
-import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { BackAffordance } from '@/components/nav/BackAffordance';
+import { useTenantContext } from '@/lib/tenant-context-provider';
 import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -46,7 +44,6 @@ const FEATURE_ORDER: readonly AiToggleKey[] = ['assistant', 'risk', 'questionnai
 
 export function AiFeaturesClient() {
     const t = useTranslations('admin');
-    const tenantHref = useTenantHref();
     const { tenantSlug } = useTenantContext();
     const [saving, setSaving] = useState<AiToggleKey | null>(null);
     const [failed, setFailed] = useState(false);
@@ -145,17 +142,6 @@ export function AiFeaturesClient() {
 
     return (
         <div className="space-y-section" data-testid="admin-ai-features">
-            <BackAffordance />
-            <PageBreadcrumbs
-                items={[
-                    { label: t('nav.aiFeatures'), href: tenantHref('/admin/ai-features') },
-                    { label: t('aiFeatures.breadcrumb') },
-                ]}
-            />
-
-            <Heading level={1}>{t('aiFeatures.heading')}</Heading>
-            <p className="max-w-3xl text-sm text-content-muted">{t('aiFeatures.intro')}</p>
-
             {failed && (
                 <InlineNotice variant="error" title={t('aiFeatures.saveFailedHeading')}>
                     {t('aiFeatures.saveFailedBody')}

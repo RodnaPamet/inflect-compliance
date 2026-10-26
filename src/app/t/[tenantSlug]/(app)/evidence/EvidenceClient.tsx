@@ -46,6 +46,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
     type FilterType,
 } from '@/components/ui/filter';
@@ -57,7 +58,6 @@ import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import {
     resolveFileTypeIcon,
 } from '@/components/ui/file-type-icon';
-import { FreshnessBadge } from '@/components/ui/FreshnessBadge';
 import { EvidenceGallery } from '@/components/ui/EvidenceGallery';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -67,13 +67,13 @@ import { celebrationDedupe, MILESTONES } from '@/lib/celebrations';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildEvidenceFilters,
+    EVIDENCE_ROW_DERIVED_FILTER_KEYS,
     EVIDENCE_FILTER_KEYS,
     evidenceFreshnessLabels,
 } from './filter-defs';
-import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel } from './evidence-labels';
+import { EVIDENCE_STATUS_VARIANT, evidenceStatusLabel } from '@/components/evidence/evidence-labels';
 import {
     evidenceFreshnessBucket,
-    reviewCurrencyAnchor,
     type EvidenceFreshnessBucket,
     type EvidenceRetentionMetrics,
 } from '@/lib/evidence-review-currency';
@@ -82,6 +82,8 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh, ShieldAlert, CircleHalfDottedClock } from '@inflect/ui/components/ui/icons/nucleo';
 import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import { ownerLabel } from '@/lib/evidence-owner-label';
+import { apiErrorMessage } from '@/lib/api-error';
+import { mayDownloadEvidenceFile } from '@/lib/evidence-download-access';
 
 interface Permissions {
     canRead: boolean;
@@ -90,6 +92,33 @@ interface Permissions {
     canAudit: boolean;
     canExport: boolean;
 }
+
+/**
+ * The custom-role grants (`appPermissions`) the evidence usecases check.
+ * `Permissions` above is the COARSE tier, which a custom role takes from its
+ * BASE role — so an EDITOR-based role with `evidence.edit: false` still reads
+ * `canWrite`, and every button gated on that alone was refused when clicked.
+ * Each button below is offered only when the coarse tier AND the grant its
+ * usecase checks both admit the user.
+ */
+interface EvidenceGrants {
+    /** `evidence.edit` — create a note or link, edit, submit, archive, bulk assign. */
+    evidenceEdit: boolean;
+    /** `evidence.upload` — upload a file, ZIP import, replace a file. */
+    evidenceUpload: boolean;
+    /** `admin.manage` — the bulk-delete route's gate. */
+    adminManage: boolean;
+}
+
+// The Freshness column and the gallery badge show the row's freshness
+// BUCKET — the same four the Freshness filter and the freshness KPI cards
+// use, from the same `evidenceFreshnessBucket` the server mirrors.
+const FRESHNESS_BADGE: Record<EvidenceFreshnessBucket, StatusBadgeVariant> = {
+    current: 'success',
+    expiring: 'warning',
+    expired: 'error',
+    needs_review: 'warning',
+};
 
 // Moved to evidence-labels alongside the status LABELS, which were already
 // shared. The tone was not, and the detail sheet's copy had lost
@@ -198,6 +227,19 @@ interface EvidenceClientProps {
 
     initialControls: EvidenceControlOption[];
     /**
+     * True when `initialControls` is the tenant's whole control list. The
+     * server reads one row past its SSR cap to know; when it is false the
+     * client fetches the full list, so the pickers and the Linked control
+     * filter are not limited to the first page.
+     */
+    controlsComplete: boolean;
+    /**
+     * Whether this user may list controls at all. A custom role can view
+     * evidence without viewing controls; it gets no control list rather
+     * than a page that refuses to open.
+     */
+    canViewControls: boolean;
+    /**
      * EP-4 — SSR snapshot of the tenant-wide retention/KPI aggregate. Seeds
      * the KPI strips instantly and acts as SWR `fallbackData` for
      * `/evidence/retention` (the same usecase), so the KPI values reflect the
@@ -206,6 +248,7 @@ interface EvidenceClientProps {
     initialMetrics: EvidenceRetentionMetrics;
     tenantSlug: string;
     permissions: Permissions;
+    grants: EvidenceGrants;
     translations: Record<string, string>;
 }
 
@@ -228,12 +271,34 @@ export function EvidenceClient(props: EvidenceClientProps) {
     );
 }
 
-function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, tenantSlug, permissions, translations: t }: EvidenceClientProps) {
+function EvidencePageInner({ initialEvidence, initialControls, controlsComplete, canViewControls, initialMetrics, tenantSlug, permissions, grants, translations: t }: EvidenceClientProps) {
     // `tx` — next-intl for the strings not threaded via the server
     // `translations` prop (retention labels, bulk actions, KPI labels,
     // empty states, tooltips, toasts, …). The prop `t` stays intact.
     const tx = useTranslations('evidence');
     const tGroup = useTranslations('common.filterGroups');
+    // The Type column's label, in the reader's language — the resolver's
+    // `label` is English and doubles as an identifier.
+    const tFileKind = useTranslations('common.fileKinds');
+
+    // Each button is offered only where its usecase would accept the click:
+    // the coarse tier AND the custom-role grant (see `EvidenceGrants`).
+    const canEditEvidence = permissions.canWrite && grants.evidenceEdit;
+    const canUploadEvidence = permissions.canWrite && grants.evidenceUpload;
+    // `bulkDeleteEvidence` asserts canAdmin; its route requires admin.manage.
+    const canBulkDelete = permissions.canAdmin && grants.adminManage;
+    // `downloadEvidenceFile`'s record gates, asked of a list row.
+    const mayDownload = useCallback(
+        (ev: EvidenceRow) =>
+            mayDownloadEvidenceFile(
+                {
+                    isArchived: ev.isArchived,
+                    controlLinkCount: ev.evidenceControlLinks?.length ?? 0,
+                },
+                permissions,
+            ),
+        [permissions],
+    );
     // Stabilise across renders so dependent useCallbacks don't get a
     // fresh identity every cycle (was a real exhaustive-deps warning).
     const apiUrl = useCallback(
@@ -316,6 +381,9 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         const ids = Array.from(selected);
         if (ids.length === 0 || !['assign', 'delete', 'approve'].includes(action)) return;
         setBulkApplying(true);
+        // The toast says what the SERVER said when it refused. A thrown fetch
+        // (offline) keeps the generic sentence.
+        let failure = tx('list.bulkFailed');
         try {
             const url =
                 action === 'delete' ? apiUrl('/evidence/bulk/delete')
@@ -330,7 +398,11 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!res.ok) throw new Error(tx('list.bulkFailed'));
+            if (!res.ok) {
+                const err = await res.json().catch(() => null);
+                failure = apiErrorMessage(err, failure);
+                throw new Error(failure);
+            }
             // Bulk-approve is reviewer-gated: only SUBMITTED rows the
             // reviewer didn't author move to APPROVED. Surface what was
             // and wasn't touched so the reviewer isn't left guessing.
@@ -357,16 +429,19 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         } catch {
             // R5-P2 #3 — BulkActionBar calls onApply un-awaited, so a throw here
             // became an unhandled rejection and a failed bulk showed nothing.
-            toast.error(tx('list.bulkFailed'));
+            toast.error(failure);
         } finally {
             setBulkApplying(false);
         }
     };
     const evidenceBulkActions: BulkActionDef[] = useMemo(
         () => [
-            // R5-P2 #3 — each bulk action is offered only to the tier the server
-            // enforces: approve is reviewer-gated (ADMIN), assign/delete are
-            // write-tier. A READER/AUDITOR sees none (selection is also disabled).
+            // R5-P2 #3 — each bulk action is offered only where the server
+            // accepts it: approve is reviewer-gated (`assertCanAdmin`), assign
+            // needs `evidence.edit` (`assertCanEditEvidence`), and delete is
+            // ADMIN-tier — `bulkDeleteEvidence` asserts canAdmin and its route
+            // requires `admin.manage`, so an EDITOR is never offered it. A role
+            // offered none gets no row selection either (`selectionEnabled`).
             ...(permissions.canAdmin ? [{
                 value: 'approve',
                 label: tx('list.bulkApprove'),
@@ -376,7 +451,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                     description: tx('list.bulkApproveDesc'),
                 },
             }] : []),
-            ...(permissions.canWrite ? [{
+            ...(canEditEvidence ? [{
                 value: 'assign',
                 label: tx('list.bulkAssign'),
                 renderInput: ({ value, setValue, setLabel }: { value: string; setValue: (v: string) => void; setLabel: (l: string) => void }) => (
@@ -395,10 +470,14 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                     />
                 ),
             }] : []),
-            ...(permissions.canWrite ? [{ value: 'delete', label: tx('list.bulkDelete'), confirm: true }] : []),
+            ...(canBulkDelete ? [{ value: 'delete', label: tx('list.bulkDelete'), confirm: true }] : []),
         ],
-        [tenantSlug, tx, permissions.canAdmin, permissions.canWrite],
+        [tenantSlug, tx, permissions.canAdmin, canEditEvidence, canBulkDelete],
     );
+    // Rows are selectable only when there is something to do with them. The
+    // table and the gallery share this, so a role offered no bulk action
+    // cannot tick cards into an empty bar.
+    const selectionEnabled = evidenceBulkActions.length > 0;
 
     // Stabilise the array identity across renders so dependent hooks
     // (`useEffect` at line ~330 reads `evidence`) don't re-fire on
@@ -410,7 +489,17 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         [evidenceQuery.data],
     );
 
-    const [controls] = useState<EvidenceControlOption[]>(initialControls);
+    // The pickers and the Linked control filter need EVERY control. The SSR
+    // slice is capped, and this used to be held in state and never fetched
+    // again, so a tenant with more controls than the cap could only reach
+    // the first page of them. When the server says the slice is short of the
+    // whole list, read the rest; a role that cannot list controls asks for
+    // nothing (the route would refuse it).
+    const allControlsQuery = useTenantSWR<CappedList<EvidenceControlOption>>(
+        canViewControls && !controlsComplete ? CACHE_KEYS.controls.list() : null,
+    );
+    const controls: EvidenceControlOption[] =
+        allControlsQuery.data?.rows ?? initialControls;
     // Mirrors `fetchParams`' default so the notices and empty-states below
     // describe the bucket the server actually queried.
     const retentionFilter = (state.tab?.[0] || 'active') as RetentionFilter;
@@ -436,7 +525,6 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         if (ev) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setDetailEvidenceId(ev);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setDetailSheetOpen(true);
         }
     }, [searchParams]);
@@ -475,6 +563,25 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         [swrMutate, evidenceKeyMatcher],
     );
 
+    // ONE record's own reads — the details panel (`/evidence/<id>`) and its
+    // file versions (`/evidence/<id>/file-versions`). The list matcher above
+    // cannot reach them, so a review or an edit made from the open panel left
+    // it showing the old status and buttons; a second Submit was then refused
+    // as an illegal transition.
+    const invalidateEvidenceRecord = useCallback(
+        (id: string) => {
+            const base = apiUrl(CACHE_KEYS.evidence.detail(id));
+            return swrMutate(
+                (key: unknown) =>
+                    typeof key === 'string' &&
+                    (key === base || key.startsWith(`${base}/`)),
+                undefined,
+                { revalidate: true },
+            );
+        },
+        [swrMutate, apiUrl],
+    );
+
     // Optimistically flip `isArchived` on the matching row across every
     // cached list variant, WITHOUT revalidating — so the row reacts
     // (e.g. drops out of the Active tab) the instant the button is
@@ -493,7 +600,9 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         ? {
                               ...current,
                               rows: (current.rows ?? []).map((r) =>
-                                  r.id === id ? { ...r, isArchived } : r,
+                                  r.id === id
+                                      ? { ...r, isArchived, ...(isArchived ? {} : { expiredAt: null }) }
+                                      : r,
                               ),
                           }
                         : current,
@@ -549,6 +658,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             // only" filter views which the primary key revalidation
             // doesn't cover.
             invalidateEvidence();
+            invalidateEvidenceRecord(id);
         });
     };
 
@@ -606,6 +716,17 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // exactly across hydration (avoids React #418/#422).
     const hydratedNow = useHydratedNow();
 
+    // A row's freshness bucket, labelled — the table cell and the gallery
+    // card both read it, so the two views name a row the same way.
+    // `evidenceFreshnessBucket` is what the server's freshness counts mirror.
+    const freshnessStatus = (ev: EvidenceRow) => {
+        const bucket = evidenceFreshnessBucket(ev, hydratedNow);
+        const labels = evidenceFreshnessLabels((k, v) =>
+            tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]),
+        );
+        return { bucket, label: labels[bucket], badge: FRESHNESS_BADGE[bucket] };
+    };
+
     // ─── R23-PR-E — KPI definitions for the Evidence page ───
     // Status-based buckets aligned to the existing `status` filter
     // (DRAFT/SUBMITTED/APPROVED/REJECTED). The retention tabs
@@ -645,7 +766,6 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // Distinct sparkline colour per card (canonical allocator) — no two cards
     // on the row share a colour. Memo on [] so the random allocation is stable
     // for this page view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const sparkColors = useMemo(
         () => assignSparklineVariants(['total', 'draft', 'submitted', 'approved']),
         [],
@@ -766,11 +886,13 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         () => ({
             title: (ev) => ev.title || '',
             type: (ev) =>
-                resolveFileTypeIcon(
-                    ev.fileName ?? null,
-                    ev.fileRecord?.mimeType ?? null,
-                    ev.type ?? null,
-                ).label,
+                tFileKind(
+                    resolveFileTypeIcon(
+                        ev.fileName ?? null,
+                        ev.fileRecord?.mimeType ?? null,
+                        ev.type ?? null,
+                    ).kind,
+                ),
             control: (ev) => controlLinksLabel(ev.evidenceControlLinks),
             category: (ev) => ev.category || '—',
             retention: (ev) => getRetentionStatus(ev, hydratedNow, tx).label,
@@ -778,7 +900,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             owner: (ev) => ownerLabel(ev),
         }),
         // statusLabel closes over `t`; getRetentionStatus is pure of `hydratedNow`.
-        [t, hydratedNow, tx],
+        [t, hydratedNow, tx, tFileKind],
     );
     const sortedEvidence = useMemo(
         () => sortRowsByDisplay(displayEvidenceFresh, sortAccessors, sortBy, sortOrder),
@@ -803,8 +925,10 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // refreshes / re-renders.
     // EP-4 — "all current" is judged from the SERVER retention aggregate
     // (whole tenant) rather than `isAllEvidenceCurrent` over the ≤100 loaded
-    // rows: at least one non-deleted row AND zero in the expired / expiring /
-    // needs-review buckets means every row is in the `current` bucket.
+    // rows: at least one active row AND zero in the expired / expiring /
+    // needs-review buckets means every active row is in the `current`
+    // bucket. The aggregate counts active evidence only (#4277), the same
+    // rows the default list shows.
     const allEvidenceCurrent =
         metrics.total > 0 &&
         metrics.expired === 0 &&
@@ -817,11 +941,12 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         if (evidenceQuery.isLoading) return;
         if (!allEvidenceCurrent) return;
         const def = MILESTONES['evidence-all-current'];
+        // The registry's copy is English; the toast reads the catalogue.
         celebrate({
             preset: def.preset,
             key: def.key,
-            message: def.message,
-            description: def.description,
+            message: tx('list.allCurrentMessage'),
+            description: tx('list.allCurrentDescription'),
         });
     }, [
         allEvidenceCurrent,
@@ -830,6 +955,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         anyFilterActive,
         evidenceQuery.isLoading,
         celebrate,
+        tx,
     ]);
 
     // ─── Column visibility (Epic 52 / R10-PR6) ───
@@ -869,7 +995,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // the filter gear can ride the same toolbar `actions` slot as the
     // columns gear. The FilterProvider state (keyed by
     // EVIDENCE_FILTER_KEYS) is untouched — a hidden filter keeps its value.
-    const evidenceFilters: FilterType[] = useMemo(
+    const builtEvidenceFilters: FilterType[] = useMemo(
         () =>
             buildEvidenceFilters(
                 controls as Parameters<typeof buildEvidenceFilters>[0],
@@ -879,6 +1005,9 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             ),
         [controls, evidence, tx, tGroup],
     );
+    // The folder and category options are built from the evidence loaded,
+    // which the filters narrow.
+    const evidenceFilters = useRetainedFilterOptions(builtEvidenceFilters, EVIDENCE_ROW_DERIVED_FILTER_KEYS);
     // U1 (2026-08-13) — the gear edits the KPI CARDS, not the Filter
     // dropdown's categories. Registering the filter defs as cards meant
     // hiding a card removed a FILTER from the product while the KPI
@@ -1002,7 +1131,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                             className={match.colorClass}
                             aria-hidden
                         />
-                        <span>{match.label}</span>
+                        <span>{tFileKind(match.kind)}</span>
                     </span>
                 );
             },
@@ -1098,19 +1227,22 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
 
             cell: ({ row }) => {
                 const ev = row.original;
-                // EP-2 Part 4 — freshness now tracks REVIEW-CURRENCY,
-                // not `updatedAt`. `nextReviewDate` (primary) / `expiredAt`
-                // (fallback) mean a metadata edit or archive-toggle no
-                // longer resets the age: a future review date reads
-                // fresh, a past one reads increasingly stale ("overdue
-                // for review"). Same badge vocabulary, review-driven input.
+                // EP-2 Part 4 — freshness tracks REVIEW-CURRENCY, not
+                // `updatedAt`. The cell used to feed `nextReviewDate` to a
+                // badge that measures the age of a LAST-REFRESHED date: a
+                // review due in six months read green "today", one overdue
+                // by 20 days read "20d ago", and the hover said "Last
+                // refreshed". It now names the row's bucket — the one the
+                // Freshness filter and the freshness cards count it in.
+                const fresh = freshnessStatus(ev);
                 return (
-                    <FreshnessBadge
-                        lastRefreshedAt={reviewCurrencyAnchor(ev)}
-                        now={hydratedNow ?? undefined}
-                        compact
+                    <StatusBadge
+                        variant={fresh.badge}
+                        data-freshness={fresh.bucket}
                         data-testid={`evidence-row-freshness-${ev.id}`}
-                    />
+                    >
+                        {fresh.label}
+                    </StatusBadge>
                 );
             },
             meta: { disableTruncate: true },
@@ -1141,7 +1273,8 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             enableHiding: false,
             cell: ({ row }) => {
                 const ev = row.original;
-                if (!permissions.canWrite || ev.id?.startsWith('temp:')) return null;
+                // `updateEvidence` asserts `evidence.edit`.
+                if (!canEditEvidence || ev.id?.startsWith('temp:')) return null;
                 return (
                     <Tooltip content={tx('list.editEvidence')}>
                         <button
@@ -1186,8 +1319,13 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             enableHiding: false,
             cell: ({ row }) => {
                 const ev = row.original;
-                if (!permissions.canWrite || ev.id?.startsWith('temp:')) return null;
-                const archived = !!ev.isArchived;
+                if (ev.id?.startsWith('temp:')) return null;
+                // An expired row is listed under Archived with or without the
+                // flag, and unarchiving clears both, so it offers Unarchive.
+                const archived = !!ev.isArchived || !!ev.expiredAt;
+                // Archive's route requires `evidence.edit` on top of the
+                // usecase's write tier; unarchive asks the write tier alone.
+                if (archived ? !permissions.canWrite : !canEditEvidence) return null;
                 return (
                     <Tooltip content={archived ? tx('list.unarchiveEvidence') : tx('list.archiveEvidence')}>
                         <button
@@ -1217,6 +1355,9 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
             cell: ({ row }) => {
                 const ev = row.original;
                 if (ev.type !== 'FILE' || !ev.fileRecordId || ev.id?.startsWith('temp:')) return null;
+                // The route refuses archived evidence, and evidence linked to
+                // no control for a role below the write tier.
+                if (!mayDownload(ev)) return null;
                 // R5-P2 #1 — refuse the download affordance for a file the AV gate
                 // would block: an infected/pending link previously rendered
                 // unconditionally and navigated to a 403 the browser saved as a
@@ -1271,7 +1412,8 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 const isPending = ev.id?.startsWith('temp:');
                 if (isPending) return <span className="text-xs text-content-subtle">{tx('list.uploading')}</span>;
                 if (!permissions.canWrite) return null;
-                const submitBtn = (
+                // Submit (and re-review) asserts `evidence.edit`.
+                const submitBtn = canEditEvidence && (
                     <Tooltip content={t.submitForReview}>
                         <button
                             type="button"
@@ -1319,7 +1461,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                             SUBMITTED, but labelled for renewal (distinct
                             icon + tooltip) so stale evidence is renewable
                             straight from the row. */}
-                        {ev.status === 'NEEDS_REVIEW' && (
+                        {ev.status === 'NEEDS_REVIEW' && canEditEvidence && (
                             <Tooltip content={tx('list.reReview')}>
                                 <button
                                     type="button"
@@ -1341,7 +1483,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // (getRetentionStatus) close over it, and sortAccessors already depends on
     // it, so omitting it let the labels and the sort order disagree after hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    ]), [t, permissions, apiUrl, tx, hydratedNow]);
+    ]), [t, permissions, grants, apiUrl, tx, hydratedNow, tFileKind]);
 
     // Item 3 — collapse the four right-most columns (edit / archive /
     // download / actions) under ONE spanning "Actions" header. orderColumns
@@ -1388,6 +1530,48 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
         [prefetchData],
     );
 
+    // One empty state for both views. The default list is the ACTIVE bucket,
+    // so "no evidence yet" is true only when the tenant has no evidence at
+    // all: with every row archived or expired the active list is empty, and
+    // the page said "No evidence yet". `archivedView` counts those rows (the
+    // cards, like the list, count active evidence only).
+    const listEmptyState = anyFilterActive ? (
+        <EmptyState
+            size="sm"
+            variant="no-results"
+            title={
+                retentionFilter === 'archived'
+                    ? tx('list.emptyArchivedTitle')
+                    : retentionFilter === 'expiring'
+                        ? tx('list.emptyExpiringTitle')
+                        : tx('list.emptyFilterTitle')
+            }
+            description={tx('list.emptyFilterDesc')}
+            secondaryAction={{
+                label: tx('list.clearFilters'),
+                onClick: () => filterCtx.clearAll(),
+            }}
+        />
+    ) : (metrics.archivedView ?? 0) > 0 ? (
+        <EmptyState
+            size="sm"
+            variant="no-results"
+            title={tx('list.emptyActiveTitle')}
+            description={tx('list.emptyActiveDesc')}
+            secondaryAction={{
+                label: tx('list.showArchived'),
+                onClick: () => filterCtx.set('tab', 'archived'),
+            }}
+        />
+    ) : (
+        <EmptyState
+            size="sm"
+            variant="no-records"
+            title={t.noEvidence}
+            description={tx('list.emptyRecordsDesc')}
+        />
+    );
+
     return (
         <ListPageShell className="animate-fadeIn gap-section">
             <ListPageShell.Header>
@@ -1408,7 +1592,10 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 </div>
             </ListPageShell.Header>
 
-            {permissions.canWrite && (
+            {/* A file upload and a ZIP import need `evidence.upload`
+                (`uploadEvidenceFile`, the imports route); a text note and a
+                link are `createEvidence`, which needs `evidence.edit`. */}
+            {canUploadEvidence && (
                 <>
                     <UploadEvidenceModal
                         open={showUpload}
@@ -1417,6 +1604,16 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         apiUrl={apiUrl}
                         controls={controls}
                     />
+                    <EvidenceBulkImportModal
+                        open={showBulkImport}
+                        setOpen={setShowBulkImport}
+                        tenantSlug={tenantSlug}
+                        apiUrl={apiUrl}
+                    />
+                </>
+            )}
+            {canEditEvidence && (
+                <>
                     <NewEvidenceTextModal
                         open={showTextModal}
                         setOpen={setShowTextModal}
@@ -1430,12 +1627,6 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         tenantSlug={tenantSlug}
                         apiUrl={apiUrl}
                         controls={controls}
-                    />
-                    <EvidenceBulkImportModal
-                        open={showBulkImport}
-                        setOpen={setShowBulkImport}
-                        tenantSlug={tenantSlug}
-                        apiUrl={apiUrl}
                     />
                 </>
             )}
@@ -1452,6 +1643,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 evidenceId={detailEvidenceId}
                 tenantSlug={tenantSlug}
                 canWrite={permissions.canWrite}
+                canEdit={canEditEvidence}
                 canAdmin={permissions.canAdmin}
                 onEdit={(ev) => {
                     setEditInitial(ev);
@@ -1472,10 +1664,13 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 tenantSlug={tenantSlug}
                 controls={controls}
                 initial={editInitial}
+                canReplaceFile={canUploadEvidence}
                 onSaved={() => {
                     // Revalidate the list cache so the freshly-saved
-                    // values flow back into the table.
+                    // values flow back into the table — and the record's
+                    // own reads, so an open details panel shows them too.
                     invalidateEvidence();
+                    if (editInitial) invalidateEvidenceRecord(editInitial.id);
                 }}
             />
 
@@ -1619,7 +1814,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                 <EvidenceFilterToolbar
                     filters={evidenceFilters}
                     leading={
-                        permissions.canWrite ? (
+                        canUploadEvidence || canEditEvidence ? (
                             // PART 1 — one primary trigger opens a create
                             // menu (Popover.Menu). The four creation
                             // surfaces — file upload, text note, link/URL,
@@ -1632,6 +1827,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                 align="start"
                                 content={
                                     <Popover.Menu aria-label={tx('list.createMenuAria')}>
+                                        {canUploadEvidence && (
                                         <Popover.Item
                                             icon={<CloudUpload className="size-4" />}
                                             id="create-evidence-upload"
@@ -1642,6 +1838,8 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                         >
                                             {tx('list.createFileUpload')}
                                         </Popover.Item>
+                                        )}
+                                        {canEditEvidence && (
                                         <Popover.Item
                                             icon={<Note className="size-4" />}
                                             id="create-evidence-text"
@@ -1652,6 +1850,8 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                         >
                                             {tx('list.createTextNote')}
                                         </Popover.Item>
+                                        )}
+                                        {canEditEvidence && (
                                         <Popover.Item
                                             icon={<Hyperlink className="size-4" />}
                                             id="create-evidence-link"
@@ -1662,6 +1862,8 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                         >
                                             {tx('list.createLink')}
                                         </Popover.Item>
+                                        )}
+                                        {canUploadEvidence && (
                                         <Popover.Item
                                             icon={<FileZip2 className="size-4" />}
                                             id="create-evidence-bulk"
@@ -1672,6 +1874,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                         >
                                             {tx('list.createBulkImport')}
                                         </Popover.Item>
+                                        )}
                                     </Popover.Menu>
                                 }
                             >
@@ -1746,7 +1949,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         table renders it via `selectionControls`; the
                         gallery has no built-in selection chrome, so mount
                         it here when a selection exists). */}
-                    {selected.size > 0 && (
+                    {selectionEnabled && selected.size > 0 && (
                         <div className="mb-default">
                             <BulkActionBar
                                 actions={evidenceBulkActions}
@@ -1763,36 +1966,21 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         // freshness badge reads identically in both views.
                         now={hydratedNow ?? undefined}
                         loading={evidenceQuery.isLoading && !evidenceQuery.data}
-                        emptyState={
-                            anyFilterActive ? (
-                                <EmptyState
-                                    size="sm"
-                                    variant="no-results"
-                                    title={
-                                        retentionFilter === 'archived'
-                                            ? tx('list.emptyArchivedTitle')
-                                            : retentionFilter === 'expiring'
-                                                ? tx('list.emptyExpiringTitle')
-                                                : tx('list.emptyFilterTitle')
-                                    }
-                                    description={tx('list.emptyFilterDesc')}
-                                    secondaryAction={{
-                                        label: tx('list.clearFilters'),
-                                        onClick: () => filterCtx.clearAll(),
-                                    }}
-                                />
-                            ) : (
-                                <EmptyState
-                                    size="sm"
-                                    variant="no-records"
-                                    title={t.noEvidence}
-                                    description={tx('list.emptyRecordsDesc')}
-                                />
-                            )
-                        }
+                        emptyState={listEmptyState}
+                        // Null hides the card's download AND its preview, which
+                        // read the same route: neither is offered for a file
+                        // the route would refuse (archived, or linked to no
+                        // control for a role below the write tier).
                         fileUrl={(ev) =>
-                            ev.fileRecordId
+                            ev.fileRecordId && mayDownload(ev)
                                 ? apiUrl(`/evidence/files/${ev.fileRecordId}/download`)
+                                : null
+                        }
+                        // A thumbnail loads while the user scrolls; it is a
+                        // preview, recorded as one rather than as a download.
+                        previewUrl={(ev) =>
+                            ev.fileRecordId
+                                ? apiUrl(`/evidence/files/${ev.fileRecordId}/download?purpose=preview`)
                                 : null
                         }
                         statusBadgeVariant={(s) => STATUS_BADGE[s] ?? 'neutral'}
@@ -1801,18 +1989,30 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                             const rs = getRetentionStatus(ev, hydratedNow, tx);
                             return { label: rs.label, badge: rs.badge };
                         }}
+                        freshnessStatus={(ev) => {
+                            const fresh = freshnessStatus(ev);
+                            return { label: fresh.label, badge: fresh.badge };
+                        }}
                         // EP-2 Part 2 — click-to-open (same handler the
                         // table row uses) + bulk-selection parity + a
                         // localized download label on every card.
                         onRowClick={handleEvidenceCardClick}
-                        selectedIds={selected}
-                        onToggleSelect={(id, next) =>
-                            setSelected((prev) => {
-                                const n = new Set(prev);
-                                if (next) n.add(id);
-                                else n.delete(id);
-                                return n;
-                            })
+                        // Selection only where a bulk action exists — the same
+                        // rule as the table's `selectionEnabled`. Read-only roles
+                        // have none, so they got a checkbox and an empty bar
+                        // (#4277). Without both props the gallery renders no
+                        // checkboxes.
+                        selectedIds={selectionEnabled ? selected : undefined}
+                        onToggleSelect={
+                            selectionEnabled
+                                ? (id, next) =>
+                                      setSelected((prev) => {
+                                          const n = new Set(prev);
+                                          if (next) n.add(id);
+                                          else n.delete(id);
+                                          return n;
+                                      })
+                                : undefined
                         }
                         downloadLabel={tx('list.downloadFile')}
                         data-testid="evidence-gallery"
@@ -1853,7 +2053,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                         // action button.
                         onRowClick={handleEvidenceRowClick}
                         onRowPrefetch={handleEvidenceRowPrefetch}
-                        selectionEnabled={permissions.canWrite}
+                        selectionEnabled={selectionEnabled}
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),
                         )}
@@ -1869,33 +2069,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
                                 entityLabel={tx('list.entityLabel')}
                             />
                         )}
-                        emptyState={
-                            anyFilterActive ? (
-                                <EmptyState
-                                    size="sm"
-                                    variant="no-results"
-                                    title={
-                                        retentionFilter === 'archived'
-                                            ? tx('list.emptyArchivedTitle')
-                                            : retentionFilter === 'expiring'
-                                                ? tx('list.emptyExpiringTitle')
-                                                : tx('list.emptyFilterTitle')
-                                    }
-                                    description={tx('list.emptyFilterDesc')}
-                                    secondaryAction={{
-                                        label: tx('list.clearFilters'),
-                                        onClick: () => filterCtx.clearAll(),
-                                    }}
-                                />
-                            ) : (
-                                <EmptyState
-                                    size="sm"
-                                    variant="no-records"
-                                    title={t.noEvidence}
-                                    description={tx('list.emptyRecordsDesc')}
-                                />
-                            )
-                        }
+                        emptyState={listEmptyState}
                         resourceName={(p) => p ? tx('list.resourceMany') : tx('list.resourceOne')}
                         columnVisibility={columnVisibility}
                         onColumnVisibilityChange={setColumnVisibility}

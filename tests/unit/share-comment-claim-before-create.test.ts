@@ -98,9 +98,10 @@ describe('losing the claim creates NOTHING', () => {
 
 describe('an already-materialised comment is idempotent', () => {
     it('returns the existing finding without creating a second', async () => {
-        db.finding.findFirst.mockResolvedValue({ id: 'existing-f' });
+        db.finding.findFirst.mockResolvedValue({ id: 'existing-f', auditId: 'a1' });
         const r = await materializeShareCommentFinding(ctx, PACK, COMMENT);
-        expect(r).toEqual({ findingId: 'existing-f', alreadyExisted: true });
+        // `attachedToAudit` (#4129) — read off the existing finding's audit.
+        expect(r).toEqual({ findingId: 'existing-f', alreadyExisted: true, attachedToAudit: true });
         expect(createFinding).not.toHaveBeenCalled();
     });
 
@@ -109,10 +110,10 @@ describe('an already-materialised comment is idempotent', () => {
         // before the finding lookup, so a resolved comment always threw, even
         // when it had genuinely materialised and the caller just wanted the id.
         db.auditPackShareComment.findFirst.mockResolvedValue(comment({ status: 'RESOLVED' }));
-        db.finding.findFirst.mockResolvedValue({ id: 'existing-f' });
+        db.finding.findFirst.mockResolvedValue({ id: 'existing-f', auditId: null });
 
         const r = await materializeShareCommentFinding(ctx, PACK, COMMENT);
-        expect(r).toEqual({ findingId: 'existing-f', alreadyExisted: true });
+        expect(r).toEqual({ findingId: 'existing-f', alreadyExisted: true, attachedToAudit: false });
     });
 
     it('does not re-log the event when nothing actually transitioned', async () => {

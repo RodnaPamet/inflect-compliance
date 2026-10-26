@@ -49,6 +49,7 @@ jest.mock('@/app-layer/events/onboarding.events', () => ({
 jest.mock('@/app-layer/usecases/onboarding-automation', () => ({
     runStepAction: jest.fn(),
     storeActionResult: jest.fn().mockResolvedValue(undefined),
+    assertFrameworkPackChoices: jest.fn().mockResolvedValue(undefined),
 }));
 
 import {
@@ -60,7 +61,7 @@ import {
 } from '@/app-layer/usecases/onboarding';
 import { runInTenantContext } from '@/lib/db-context';
 import { OnboardingRepository } from '@/app-layer/repositories/OnboardingRepository';
-import { runStepAction } from '@/app-layer/usecases/onboarding-automation';
+import { assertFrameworkPackChoices, runStepAction, storeActionResult } from '@/app-layer/usecases/onboarding-automation';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
@@ -173,6 +174,67 @@ describe('completeOnboardingStep', () => {
         await expect(
             completeOnboardingStep(makeRequestContext('ADMIN'), 'COMPANY_PROFILE'),
         ).resolves.toBeDefined();
+    });
+});
+
+describe('completeOnboardingStep — the framework step (#4125)', () => {
+    it.each([
+        ['no FRAMEWORK_SELECTION data at all', {}],
+        ['an empty selection', { FRAMEWORK_SELECTION: { selectedFrameworks: [] } }],
+    ])('refuses to complete FRAMEWORK_SELECTION with %s, before writing', async (_label, stepData) => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockGetByTenantId.mockResolvedValueOnce({
+            status: 'IN_PROGRESS',
+            completedSteps: ['COMPANY_PROFILE'],
+            stepData,
+        } as never);
+
+        await expect(
+            completeOnboardingStep(makeRequestContext('ADMIN'), 'FRAMEWORK_SELECTION'),
+        ).rejects.toThrow(/at least one framework/i);
+        expect(mockCompleteStep).not.toHaveBeenCalled();
+        expect(mockRunStepAction).not.toHaveBeenCalled();
+    });
+
+    it('refuses a selection whose framework needs a pack chosen, before writing', async () => {
+        // EU drone operations: its packs are its subcategories, and the
+        // framework step must name at least one of them.
+        const stepData = { FRAMEWORK_SELECTION: { selectedFrameworks: ['EU-UAS-OPS'], selectedPacks: { 'EU-UAS-OPS': [] } } };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockGetByTenantId.mockResolvedValueOnce({
+            status: 'IN_PROGRESS', completedSteps: ['COMPANY_PROFILE'], stepData,
+        } as never);
+        const { badRequest } = jest.requireActual('@/lib/errors/types');
+        (assertFrameworkPackChoices as jest.Mock).mockRejectedValueOnce(badRequest('Choose at least one pack of EU-UAS-OPS to continue.'));
+
+        await expect(
+            completeOnboardingStep(makeRequestContext('ADMIN'), 'FRAMEWORK_SELECTION'),
+        ).rejects.toThrow(/at least one pack of EU-UAS-OPS/);
+        expect(assertFrameworkPackChoices).toHaveBeenCalledWith(expect.anything(), stepData.FRAMEWORK_SELECTION);
+        expect(mockCompleteStep).not.toHaveBeenCalled();
+        expect(mockRunStepAction).not.toHaveBeenCalled();
+    });
+
+    it('completes it with a selection, and returns the row carrying the install result', async () => {
+        const stepData = { FRAMEWORK_SELECTION: { selectedFrameworks: ['ISO27001'] } };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockGetByTenantId.mockResolvedValueOnce({
+            status: 'IN_PROGRESS', completedSteps: ['COMPANY_PROFILE'], stepData,
+        } as never);
+        mockCompleteStep.mockResolvedValueOnce({ id: 'ob-1', stepData } as never);
+        const result = {
+            action: 'FRAMEWORK_INSTALL', created: 0, skipped: 1, details: '',
+            failures: [{ framework: 'ISO27001', name: 'ISO/IEC 27001', packKey: 'iso', message: 'nope' }],
+        };
+        mockRunStepAction.mockResolvedValueOnce(result);
+        const stored = { id: 'ob-1', stepData: { ...stepData, _actionResults: { FRAMEWORK_SELECTION: result } } };
+        (storeActionResult as jest.Mock).mockResolvedValueOnce(stored);
+
+        // The wizard reads the failures from this response; returning the
+        // pre-automation row left them stored and unread.
+        await expect(
+            completeOnboardingStep(makeRequestContext('ADMIN'), 'FRAMEWORK_SELECTION'),
+        ).resolves.toBe(stored);
     });
 });
 

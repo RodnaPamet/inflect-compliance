@@ -80,9 +80,7 @@ describe('integration provider fleet — runtime wiring', () => {
         // Import the real registry + bootstrap side effect (no mocks) and assert
         // every provider actually registered.
         jest.isolateModules(() => {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             require('@/app-layer/integrations/bootstrap');
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { registry } = require('@/app-layer/integrations/registry');
             const ids = registry.listProviders().map((p: { id: string }) => p.id).sort();
             expect(ids).toEqual(EXPECTED_PROVIDER_IDS);

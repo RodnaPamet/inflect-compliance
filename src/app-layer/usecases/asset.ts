@@ -6,7 +6,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
-import { sanitizePlainText } from '@/lib/security/sanitize';
+import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { createAssignmentNotification } from '../notifications/assignment';
 import { logger } from '@/lib/observability';
@@ -791,12 +791,16 @@ export async function purgeAsset(ctx: RequestContext, id: string) {
     return purgeEntity(ctx, 'Asset', id);
 }
 
-export async function listAssetsWithDeleted(ctx: RequestContext, filters?: AssetFilters) {
+export async function listAssetsWithDeleted(
+    ctx: RequestContext,
+    filters?: AssetFilters,
+    options: { take?: number } = {},
+) {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
         // ONLY soft-deleted rows (the repository adds `deletedAt: { not: null }`),
         // honouring the same type/status/criticality/q filters as the live list.
-        const rows = await AssetRepository.listDeleted(db, ctx, filters);
+        const rows = await AssetRepository.listDeleted(db, ctx, filters, options);
         // Same rollups as listAssets so the deleted-assets view renders with the
         // identical column set (task counts + open-vuln signal).
         return enrichAssetRows(db, ctx, rows);
@@ -842,7 +846,11 @@ export async function linkAssetEvidence(
     data: { url: string; note?: string | null },
 ) {
     assertCanWrite(ctx);
-    const url = data.url.trim();
+    // The URL becomes the row's `content` and, with no note, its title. It is
+    // percent-encoded rather than run through `sanitizePlainText`, which would
+    // decode `&region=` into `®ion=` (see `sanitizeUrlText`). A note that is
+    // blank once its markup is gone falls back to the URL, like no note.
+    const url = sanitizeUrlText(data.url);
     const note = data.note ? sanitizePlainText(data.note) : null;
     const result = await runInTenantContext(ctx, async (db) => {
         const asset = await db.asset.findFirst({
@@ -856,7 +864,7 @@ export async function linkAssetEvidence(
                 // Kept as the "uploaded from" provenance stamp.
                 assetId,
                 type: 'LINK',
-                title: note || url,
+                title: note?.trim() ? note : url,
                 content: url,
                 status: 'DRAFT',
                 ownerUserId: ctx.userId,

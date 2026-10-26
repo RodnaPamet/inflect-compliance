@@ -6,9 +6,10 @@
  * Body: `{ sections: [{ sectionId, requirementIds: string[] }, ...] }`
  *
  * Persists a per-tenant `sortOrder` overlay for every
- * non-deprecated requirement in the framework. Admin-gated via
- * `assertCanInstallFrameworkPack` inside the usecase (the same
- * OWNER/ADMIN bar every other framework-write surface uses today).
+ * non-deprecated requirement in the framework. Gated by
+ * `assertCanInstallFrameworkPack` inside the usecase (the
+ * `frameworks.install` permission every other tenant-scoped
+ * framework write uses).
  *
  * Why a path-level new route instead of an `?action=reorder` on
  * the existing handler: matches the `/tree` sibling route's

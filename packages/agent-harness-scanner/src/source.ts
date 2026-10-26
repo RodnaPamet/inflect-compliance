@@ -31,7 +31,7 @@ import type {
     SOURCE_KINDS_V3,
 } from '@/lib/agentic/harness-contract';
 
-import type { McpListingWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from './http';
+import type { McpListingWire, OpenShellReadWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from './http';
 
 /** The scanner speaks `inflect-agent-harness/3`: its kinds are `/3`'s, and its reasons `/2`'s, which `/3` keeps. */
 export type SourceKind = (typeof SOURCE_KINDS_V3)[number];
@@ -120,6 +120,14 @@ export interface SourceContext {
     readonly mcp: McpListingWire;
     /** The one register read, for the `inflect-register` source. */
     readonly register: RegisterReadWire;
+    /**
+     * The OpenShell gateway read — three methods, for the `runtime` kind's
+     * OpenShell source. A wire of its own because the gateway speaks gRPC and
+     * publishes no REST transcoding, and because `ReadOnlyHttp`'s one-method
+     * shape is what makes a source unable to write BY CONSTRUCTION; see
+     * `http.ts`.
+     */
+    readonly openshell: OpenShellReadWire;
 }
 
 /**

@@ -2,20 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     getFramework, getFrameworkRequirements, listFrameworkPacks,
-    installPack, computeCoverage, previewPackInstall,
+    installPack, installPacks, computeCoverage, computeInheritedCoverage,
+    previewPackInstall, previewPacksInstall,
     listTemplates, installSingleTemplate, bulkMapControls,
     bulkInstallTemplates, exportCoverageData,
     computeRequirementsDiff, exportReadinessReport,
-    upsertRequirements,
 } from '@/app-layer/usecases/framework';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
-const InstallSchema = z.object({
-    packKey: z.string().min(1),
-}).strip();
+// One pack (`packKey`), or several packs of THIS framework (`packKeys`) —
+// the subcategories a tenant chose. At least one is required either way.
+const InstallSchema = z.union([
+    z.object({ packKeys: z.array(z.string().min(1)).min(1).max(20) }).strip(),
+    z.object({ packKey: z.string().min(1) }).strip(),
+]);
 
 const InstallTemplateSchema = z.object({
     templateCode: z.string().min(1),
@@ -30,20 +33,6 @@ const BulkMapSchema = z.object({
 
 const BulkInstallSchema = z.object({
     templateCodes: z.array(z.string().min(1)).min(1).max(100),
-}).strip();
-
-const UpsertRequirementsSchema = z.object({
-    requirements: z.array(z.object({
-        code: z.string().min(1),
-        title: z.string().min(1),
-        description: z.string().optional(),
-        section: z.string().optional(),
-        category: z.string().optional(),
-        theme: z.string().optional(),
-        themeNumber: z.number().int().optional(),
-        sortOrder: z.number().int().optional(),
-    })).min(1),
-    deprecateMissing: z.boolean().optional(),
 }).strip();
 
 // GET /api/t/[tenantSlug]/frameworks/[frameworkKey]?action=...
@@ -63,7 +52,14 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     if (action === 'coverage') {
         return jsonResponse(await computeCoverage(ctx, params.frameworkKey, version));
     }
+    if (action === 'inherited-coverage') {
+        return jsonResponse(await computeInheritedCoverage(ctx, params.frameworkKey));
+    }
     if (action === 'preview') {
+        const packKeys = url.searchParams.get('packKeys');
+        if (packKeys !== null) {
+            return jsonResponse(await previewPacksInstall(ctx, params.frameworkKey, packKeys.split(',')));
+        }
         const packKey = url.searchParams.get('packKey');
         if (!packKey) return jsonResponse({ error: 'packKey required' }, { status: 400 });
         return jsonResponse(await previewPackInstall(ctx, packKey));
@@ -132,12 +128,18 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         const body = BulkInstallSchema.parse(raw);
         return jsonResponse(await bulkInstallTemplates(ctx, body.templateCodes), { status: 201 });
     }
-    if (action === 'upsert-requirements') {
-        const body = UpsertRequirementsSchema.parse(raw);
-        return jsonResponse(await upsertRequirements(ctx, params.frameworkKey, body.requirements, { deprecateMissing: body.deprecateMissing }), { status: 200 });
-    }
+    // There is no action that edits a framework's requirements. They are one
+    // catalogue every workspace reads, kept by the deploy-time seeding and
+    // import scripts (`scripts/seed-framework-catalogs.ts`,
+    // `scripts/framework-import.ts`). `?action=upsert-requirements` let any
+    // workspace's Owner or Admin rewrite, add or retire requirements of any
+    // framework for every other workspace, unaudited, and no screen called it
+    // (#4125 follow-up). It now falls through like any unknown action.
 
-    // Default: install full pack
+    // Default: install the chosen pack(s)
     const body = InstallSchema.parse(raw);
+    if ('packKeys' in body) {
+        return jsonResponse(await installPacks(ctx, params.frameworkKey, body.packKeys), { status: 201 });
+    }
     return jsonResponse(await installPack(ctx, body.packKey), { status: 201 });
 });

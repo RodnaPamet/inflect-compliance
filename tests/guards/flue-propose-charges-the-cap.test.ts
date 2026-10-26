@@ -104,7 +104,8 @@ describe('the charge is wired where the other two are', () => {
         expect(read(EXECUTE)).toContain(
             "import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools'",
         );
-        expect(read('src/lib/agentic/flue/tools-adapter.ts')).toContain('isProposeTool(name)');
+        // The dispatch moved with the engine-neutral core (Step 0a).
+        expect(read('src/lib/agentic/engine-tools/run-guarded-tool.ts')).toContain('isProposeTool(name)');
     });
 
     it('BEFORE the tool runs, like the other two counters', () => {

@@ -38,8 +38,7 @@ export type SsoStage =
     | 'state_validation'
     | 'token_exchange'
     | 'response_validation'
-    | 'nonce_validation'
-    | 'claims_extraction'
+    | 'id_token_verification'
     | 'identity_linking'
     | 'session_creation'
     | 'redirect'
@@ -88,4 +87,16 @@ export function redactSsoUrl(url: string): string {
     } catch {
         return '[INVALID_URL]';
     }
+}
+
+/**
+ * The part of an email address an SSO log line may carry: its domain, which is
+ * what telling a `domain_mismatch` from a wrong provider needs. The full
+ * address identifies a person, and log lines are kept and shipped outside the
+ * product.
+ */
+export function emailDomainForLog(email: string | null | undefined): string | null {
+    if (!email) return null;
+    const at = email.lastIndexOf('@');
+    return at >= 0 ? email.slice(at + 1).toLowerCase() : null;
 }

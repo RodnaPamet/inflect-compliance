@@ -105,6 +105,13 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
             'another organisation, read again on every review and admission.',
         noBareFetchOf: 'fetch(cardUrl',
     },
+    {
+        file: 'src/lib/security/oidc-client.ts',
+        reason:
+            'SSO sign-in: a workspace administrator types the OIDC issuer, and the ' +
+            "issuer's discovery document names the token endpoint and the key set.",
+        noBareFetchOf: 'fetch(discoveryUrl',
+    },
 ];
 
 /**
@@ -242,5 +249,31 @@ describe('SSRF — the MCP clients reach the network only through the shared tra
         // and is unlikely to ask which. Pinning the denominator makes a future
         // omission loud.
         expect(MCP_CLIENTS).toHaveLength(3);
+    });
+});
+
+/**
+ * The OIDC client fetches THREE URLs, and the SINKS entry above names one
+ * bare-fetch shape. The other two are the ones a reader misses: the token
+ * endpoint and the key set come from the identity provider's discovery
+ * document, not from anything typed into this product, and the key set is
+ * fetched by `jose`, whose default is the global `fetch`. So: no fetch call in
+ * the file but `safeFetch`, and jose handed `safeFetch` as its fetch.
+ */
+const OIDC_CLIENT = 'src/lib/security/oidc-client.ts';
+
+const oidcFetchCallsOtherThanSafeFetch = () =>
+    (codeOf(OIDC_CLIENT).match(/\w*fetch\s*\(/gi) ?? []).filter((call) => !/^safeFetch\s*\($/.test(call));
+
+const oidcKeySetFetchesThroughTheGuard = () =>
+    /createRemoteJWKSet\([^;]*\[customFetch\]\s*:\s*\([^)]*\)\s*=>\s*safeFetch\(/.test(codeOf(OIDC_CLIENT));
+
+describe('SSRF — the OIDC client reaches the identity provider only through safeFetch', () => {
+    it('makes no fetch call other than safeFetch', () => {
+        expect(oidcFetchCallsOtherThanSafeFetch()).toEqual([]);
+    });
+
+    it("hands jose's key-set fetch to safeFetch, not jose's default global fetch", () => {
+        expect(oidcKeySetFetchesThroughTheGuard()).toBe(true);
     });
 });

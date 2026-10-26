@@ -44,25 +44,31 @@ export type EvidenceFreshnessBucket =
  * this pure `.ts` lib so both the server usecase/repository and the client
  * island share exactly one contract.
  *
- * Bucket semantics mirror `evidenceFreshnessBucket` (over non-deleted rows,
- * archived included): `needsReview` wins outright (status NEEDS_REVIEW);
- * then `expired` (expiredAt set, or the review/retention date lapsed); then
- * `expiringSoon` (review/retention date within 30 days); `current` is the
- * remainder. `active` / `archived` are the retention-tab dimensions.
+ * Bucket semantics mirror `evidenceFreshnessBucket` over the ACTIVE bucket
+ * (not deleted, not archived, no `expiredAt`) — the rows the list shows by
+ * default, so a card counts what its click shows (#4277; archived and
+ * expired evidence used to be counted too). `needsReview` wins outright
+ * (status NEEDS_REVIEW); then `expired` (the review/retention date lapsed,
+ * not yet swept); then `expiringSoon` (review/retention date within 30
+ * days); `current` is the remainder. `archived` / `archivedView` describe
+ * the rest of the library.
  */
 export interface EvidenceRetentionMetrics {
+    /** Active evidence — every status and freshness count below is of these. */
     total: number;
     byStatus: Record<
         'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'NEEDS_REVIEW',
         number
     >;
-    /** Not archived, not expired, not deleted — the live workspace. */
+    /** Not archived, not expired, not deleted — the live workspace. Equals `total`. */
     active: number;
     /** isArchived = true (not deleted). */
     archived: number;
+    /** The Archived view's rows: archived OR expired (not deleted). */
+    archivedView: number;
     /** Freshness "expiring" bucket count (review/retention date ≤ 30d out). */
     expiringSoon: number;
-    /** Freshness "expired" bucket count (expiredAt set or date lapsed). */
+    /** Freshness "expired" bucket count (review/retention date lapsed, not yet swept). */
     expired: number;
     /** status = NEEDS_REVIEW. */
     needsReview: number;

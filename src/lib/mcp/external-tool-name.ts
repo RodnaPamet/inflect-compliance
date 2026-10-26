@@ -36,6 +36,18 @@
 /** The prefix that marks a name as belonging to an external server. */
 export const EXTERNAL_TOOL_PREFIX = 'mcp__';
 
+/**
+ * The longest tool name accepted from another party's server.
+ *
+ * The MCP specification's own figure (2025-11-25, "Tool Names": names SHOULD
+ * be between 1 and 128 characters). It is enforced where advertised names
+ * enter, in `listTools` (`app-layer/integrations/mcp/client.ts`), which refuses
+ * an unusable name rather than truncating it (#4238). It lives here, in a
+ * module with no imports, so the catalogue page can quote it without pulling
+ * the transport into the browser bundle.
+ */
+export const MCP_TOOL_NAME_MAX_LENGTH = 128;
+
 const SEPARATOR = '__';
 
 export interface ExternalToolRef {

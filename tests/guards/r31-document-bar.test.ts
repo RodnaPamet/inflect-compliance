@@ -88,7 +88,6 @@ describe("R31 (Bundle 3) — document bar", () => {
         it("renders an inline <nav> breadcrumb on the toolbar", () => {
             expect(src).toMatch(/data-canvas-document-breadcrumb="true"/);
             // The breadcrumb aria-label is localized.
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const en = require('../../messages/en.json');
             expect(en.automation.documentBar.breadcrumb).toBe('Breadcrumb');
             expect(src).toMatch(/aria-label=\{t\("breadcrumb"\)\}/);

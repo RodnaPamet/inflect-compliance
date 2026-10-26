@@ -193,7 +193,6 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
 
         it("Evidence success surfaces toast.success", () => {
             // Toast copy is localized — assert catalog value + key ref.
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const en = require('../../messages/en.json');
             expect(en.automation.exportMenu.attachedToast).toMatch(
                 /^Process map attached to Evidence/,

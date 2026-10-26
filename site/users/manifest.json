@@ -2,15 +2,80 @@
     "$comment": "The sections of the USER site, https://rodnapamet.github.io/inflect-compliance/. This site publishes only docs/user/ — page guides, how-tos and runbooks written for people who use the product — and nothing under docs/user/ is published anywhere else. Sections follow the app's own sidebar; a label may be a {{ui:<key>}} token so it prints the app's own name. Listing a folder publishes every doc in it. See docs/docs-site.md.",
     "sections": [
         {
+            "group": "Page guides",
             "label": "{{ui:nav.govern}}",
             "docs": [
+                "docs/user/guide/govern/assets.md",
+                "docs/user/guide/govern/risks.md",
+                "docs/user/guide/govern/controls.md",
                 "docs/user/guide/govern/"
             ]
         },
         {
+            "group": "Page guides",
+            "label": "{{ui:nav.comply}}",
+            "docs": [
+                "docs/user/guide/comply/tasks.md",
+                "docs/user/guide/comply/evidence.md",
+                "docs/user/guide/comply/"
+            ]
+        },
+        {
+            "group": "Page guides",
+            "label": "{{ui:nav.manage}}",
+            "docs": [
+                "docs/user/guide/manage/policies.md",
+                "docs/user/guide/manage/"
+            ]
+        },
+        {
+            "group": "Page guides",
+            "label": "{{ui:nav.admin}}",
+            "docs": [
+                "docs/user/guide/admin/members.md",
+                "docs/user/guide/admin/sso.md",
+                "docs/user/guide/admin/security.md",
+                "docs/user/guide/admin/"
+            ]
+        },
+        {
+            "group": "How-to guides",
             "label": "Set up your workspace",
             "docs": [
                 "docs/user/how-to/set-up/"
+            ]
+        },
+        {
+            "group": "How-to guides",
+            "label": "Get started",
+            "docs": [
+                "docs/user/how-to/get-started/"
+            ]
+        },
+        {
+            "group": "How-to guides",
+            "label": "Policies",
+            "docs": [
+                "docs/user/how-to/policies/create-a-policy.md",
+                "docs/user/how-to/policies/publish-a-policy.md",
+                "docs/user/how-to/policies/"
+            ]
+        },
+        {
+            "group": "How-to guides",
+            "label": "Prepare for an audit",
+            "docs": [
+                "docs/user/how-to/audits/set-up-an-audit-cycle.md",
+                "docs/user/how-to/audits/build-an-audit-pack.md",
+                "docs/user/how-to/audits/"
+            ]
+        },
+        {
+            "group": "How-to guides",
+            "label": "Review access",
+            "docs": [
+                "docs/user/how-to/access-reviews/run-an-access-review.md",
+                "docs/user/how-to/access-reviews/"
             ]
         }
     ]

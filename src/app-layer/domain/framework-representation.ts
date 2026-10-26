@@ -93,6 +93,30 @@ export function frameworkFamilyId(fw: FrameworkIdentity): string {
     return fw.sourceUrn ?? LEGACY_KEY_FAMILY_URNS[fw.key] ?? `key:${fw.key}`;
 }
 
+/**
+ * The rows a list that OFFERS frameworks should show: one per family where
+ * the family has an installable row.
+ *
+ * A row with no pack is left out when another row of its family has one. That
+ * is the library row beside its catalogue twin (`ISO27001-2022` beside
+ * `ISO27001`): reference data the crosswalks resolve against, not a second
+ * framework to browse or map a control to. A family with no installable row
+ * keeps every row, so a library-only framework (GDPR, NIST CSF 2.0) is still
+ * offered. The Frameworks page's coverage loses nothing by the omission:
+ * `computeCoverage` reconciles links across the family, so a link on the
+ * hidden row counts on its twin.
+ *
+ * Owner decision, 2026-10-24: tenants see one row per framework, and the
+ * library-only ones are shown.
+ */
+export function withoutReferenceTwins<T extends FrameworkIdentity>(
+    rows: readonly T[],
+    packCount: (row: T) => number,
+): T[] {
+    const installableFamilies = new Set(rows.filter((r) => packCount(r) > 0).map(frameworkFamilyId));
+    return rows.filter((r) => packCount(r) > 0 || !installableFamilies.has(frameworkFamilyId(r)));
+}
+
 /** `A.5.15` — the library spelling of an ISO 27001 Annex A control. */
 const ISO27001_PREFIXED_ANNEX_A = /^A\.(\d+\.\d+)$/;
 /** `5.15` — the seeded spelling of the same control. */

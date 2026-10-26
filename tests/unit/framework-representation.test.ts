@@ -33,6 +33,7 @@ import {
     canonicalRequirementCode,
     frameworkFamilyId,
     requirementCodeSpellings,
+    withoutReferenceTwins,
 } from '@/app-layer/domain/framework-representation';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -189,7 +190,7 @@ describe('the shipped data the ISO 27001 rule stands on', () => {
         );
         const reachable = seedCodes.filter((c) => canonicalLib.has(c));
         // The library carries a curated SUBSET of Annex A, not all 93 rows.
-        expect(reachable.length).toBe(29);
+        expect(reachable.length).toBe(34);
         expect(reachable.slice(0, 4)).toEqual(['5.1', '5.2', '5.3', '5.7']);
     });
 
@@ -266,5 +267,88 @@ describe('the shipped data the SOC 2 rule stands on', () => {
             ),
         ) as { framework: { sourceUrn?: string } };
         expect(catalog.framework.sourceUrn).toBe(SOC2_FAMILY_URN);
+    });
+});
+
+const catalogSourceUrn = (file: string): string | undefined =>
+    (JSON.parse(fs.readFileSync(path.join(ROOT, 'prisma/fixtures', file), 'utf8')) as {
+        framework: { sourceUrn?: string };
+    }).framework.sourceUrn;
+
+describe('the shipped data the DORA tie stands on', () => {
+    const DORA_FAMILY_URN = 'urn:inflect:library:dora-2022';
+    const libCodes = libraryCodes('dora-2022.yaml');
+    const seedCodes = catalogCodes('dora-control-templates.json');
+
+    it('the catalogue writes the library urn, so the two rows are one family', () => {
+        expect(catalogSourceUrn('dora-control-templates.json')).toBe(DORA_FAMILY_URN);
+    });
+
+    it('every catalogue article is spelled the same in the library', () => {
+        // The tie makes a crosswalk citing DORA-2022 reach a tenant's DORA
+        // controls by code equality, so the codes must be the same obligation's.
+        expect(seedCodes.length).toBeGreaterThanOrEqual(20);
+        expect(seedCodes.filter((c) => !libCodes.includes(c))).toEqual([]);
+    });
+
+    it('canonicalisation is the identity here, and collapses nothing', () => {
+        for (const code of [...libCodes, ...seedCodes]) {
+            expect(canonicalRequirementCode(DORA_FAMILY_URN, code)).toBe(code);
+        }
+        expect(canonicalCollisions(DORA_FAMILY_URN, libCodes)).toEqual([]);
+    });
+});
+
+describe('the shipped data the NIS2 tie stands on', () => {
+    const NIS2_FAMILY_URN = 'urn:inflect:library:nis2-2022';
+    const libCodes = libraryCodes('nis2-2022.yaml');
+    const seedCodes = catalogCodes('nis2-control-templates.json');
+
+    it('the catalogue writes the library urn, so the two rows are one family', () => {
+        expect(catalogSourceUrn('nis2-control-templates.json')).toBe(NIS2_FAMILY_URN);
+    });
+
+    it('the two representations share no code, so the tie joins nothing', () => {
+        // The tie exists so the offer lists show one NIS2. The library groups
+        // the directive into twelve domains (`NIS2-RM`) and the catalogue
+        // carries Article 21 points (`Art.21(2)(a)`), so a code-equality join
+        // across them reaches nothing: a missing join, not a wrong one. If a
+        // future revision makes the namespaces overlap, the overlap has to be
+        // checked as the DORA tie is before it is trusted.
+        expect(seedCodes.length).toBeGreaterThan(0);
+        expect(libCodes.length).toBeGreaterThan(0);
+        expect(seedCodes.filter((c) => libCodes.includes(c))).toEqual([]);
+    });
+});
+
+describe('withoutReferenceTwins', () => {
+    const row = (key: string, sourceUrn: string | null, packs: number) => ({ key, sourceUrn, packs });
+    const offered = (rows: ReturnType<typeof row>[]) =>
+        withoutReferenceTwins(rows, (r) => r.packs).map((r) => r.key);
+
+    it('drops a pack-less row whose family has an installable row', () => {
+        expect(
+            offered([row('ISO27001', ISO27001_FAMILY_URN, 1), row('ISO27001-2022', ISO27001_FAMILY_URN, 0)]),
+        ).toEqual(['ISO27001']);
+    });
+
+    it('keeps a library row with no installable twin', () => {
+        expect(offered([row('GDPR', 'urn:inflect:library:gdpr', 0)])).toEqual(['GDPR']);
+    });
+
+    it('reaches the twin through the legacy key map, as the family does', () => {
+        expect(offered([row('SOC2', null, 1), row('SOC2-2017', SOC2_FAMILY_URN, 0)])).toEqual(['SOC2']);
+    });
+
+    it('keeps every row of a family where none is installable', () => {
+        expect(
+            offered([row('OWASP-ASI', 'urn:x', 0), row('OWASP-ASI-TOP10', 'urn:x', 0)]),
+        ).toEqual(['OWASP-ASI', 'OWASP-ASI-TOP10']);
+    });
+
+    it('never drops an installable row, and keeps the input order', () => {
+        expect(
+            offered([row('B', 'urn:y', 1), row('A', 'urn:y', 2), row('C', 'urn:y', 0)]),
+        ).toEqual(['B', 'A']);
     });
 });

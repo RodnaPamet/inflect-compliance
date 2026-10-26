@@ -83,6 +83,7 @@ copyright: >
   control activities, evidence guidance and crosswalks are not reproduced. Not
   legal advice, and not a substitute for an accredited AIUC-1 audit.
 version: 1
+text_hash: 88a862f7d728bea41761e7a6906a92b0db0bbc2897f994a9348cca3cc1580c57
 publication_date: "2026-10-15"
 provider: Artificial Intelligence Underwriting Company (AIUC)
 packager: inflect
@@ -116,7 +117,7 @@ objects:
         name: Establish input data policy
         description: >-
           Customers can read, before they send anything, what happens to the data
-          they give the agent: whether it is used to train or tune models, how it
+          they give the agent: whether it goes into training or fine-tuning, how it
           is processed to answer a request, how long it is kept and what they can
           ask to have done with it. The retention periods the organisation states
           are carried out by an automated deletion mechanism rather than left to
@@ -804,8 +805,8 @@ objects:
         ref_id: E013
         name: Implement quality management system
         description: >-
-          A quality management system scaled to the size of the organisation
-          governs its AI systems: quality objectives and metrics, an approach to
+          A quality management system, sized to the organisation, governs its AI
+          systems: quality objectives and metrics, an approach to
           risk, change management, and issue tracking through to corrective action,
           with procedures for data management and for communicating with
           stakeholders where proportionate. Optional under AIUC-1.

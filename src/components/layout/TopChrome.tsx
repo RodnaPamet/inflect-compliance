@@ -41,7 +41,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Popover } from '@/components/ui/popover';
-import { ShieldCheck, UserArrowRight } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleUser, ShieldCheck, ShieldKeyhole, UserArrowRight } from '@inflect/ui/components/ui/icons/nucleo';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { useCurrentBreadcrumbs } from './breadcrumbs-store';
 // PR-2 — OrgIdentityPill retired in favour of OrgWorkspaceSwitcher
@@ -116,6 +116,7 @@ interface TopChromeProps {
 export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChromeProps) {
     const t = useTranslations('nav');
     const tSecurity = useTranslations('account.security');
+    const tProfile = useTranslations('account.profile');
     const breadcrumbs = useCurrentBreadcrumbs();
     const params = useParams();
     // R14-PR4 — tenant variant mounts <TenantSwitcher> (popover).
@@ -152,6 +153,14 @@ export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChr
             : params?.tenantSlug
               ? `/t/${params.tenantSlug}/dashboard`
               : '/';
+
+    // MFA enrolment is per tenant (`UserMfaEnrollment` is keyed on user AND
+    // tenant), so the row exists only where there is a tenant to enrol in.
+    // The org variant has none, and `/account/security` above is tenant-less.
+    const mfaHref =
+        variant !== 'org' && typeof params?.tenantSlug === 'string'
+            ? `/t/${params.tenantSlug}/security/mfa`
+            : null;
 
     return (
         <NavBar
@@ -207,6 +216,22 @@ export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChr
                         // auth library.
                         items={({ close }) => (
                             <>
+                                {/* The only way to change your name or photo.
+                                    Tenant-less, like the security row, so it
+                                    shows in both chromes. */}
+                                <Link
+                                    href="/account/profile"
+                                    role="menuitem"
+                                    id="user-menu-profile"
+                                    onClick={close}
+                                    className={USER_MENU_ROW_CLASS}
+                                >
+                                    <CircleUser
+                                        className="h-4 w-4 flex-shrink-0"
+                                        aria-hidden="true"
+                                    />
+                                    <span>{tProfile('profileTitle')}</span>
+                                </Link>
                                 <Link
                                     href="/account/security"
                                     role="menuitem"
@@ -220,6 +245,21 @@ export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChr
                                     />
                                     <span>{tSecurity('securityTitle')}</span>
                                 </Link>
+                                {mfaHref ? (
+                                    <Link
+                                        href={mfaHref}
+                                        role="menuitem"
+                                        id="user-menu-mfa"
+                                        onClick={close}
+                                        className={USER_MENU_ROW_CLASS}
+                                    >
+                                        <ShieldKeyhole
+                                            className="h-4 w-4 flex-shrink-0"
+                                            aria-hidden="true"
+                                        />
+                                        <span>{t('multiFactorAuth')}</span>
+                                    </Link>
+                                ) : null}
                                 <Popover.Separator />
                                 <button
                                     type="button"

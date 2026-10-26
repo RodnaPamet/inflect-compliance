@@ -154,9 +154,9 @@ export async function getFrameworkTree(
 
 /**
  * Persist a per-tenant requirement ordering overlay for a single
- * framework. Admin-gated (re-uses
- * `assertCanInstallFrameworkPack` — the same OWNER/ADMIN gate
- * used for every other framework-write surface today).
+ * framework. Gated by `assertCanInstallFrameworkPack` — the
+ * `frameworks.install` permission every other tenant-scoped
+ * framework write uses, and the key the Builder tab is shown on.
  *
  * The endpoint accepts the user's desired ordering as a list of
  * SECTION blocks, each with its requirements in the new order.

@@ -51,8 +51,11 @@ import {
     STARTER_RISKS,
     runStepAction,
     storeActionResult,
+    assertFrameworkPackChoices,
+    chosenPacksFor,
 } from '@/app-layer/usecases/onboarding-automation';
 import { makeRequestContext } from '../helpers/make-context';
+import { forbidden } from '@/lib/errors/types';
 
 const VALID_ASSET_TYPES = new Set<string>(Object.values(AssetType));
 
@@ -229,6 +232,8 @@ beforeEach(() => {
         const catalog: Record<string, string[]> = {
             iso27001: ['ISO27001_2022_BASE'],
             nis2: ['NIS2_BASELINE'],
+            // A framework whose packs are its subcategories.
+            'eu-uas-ops': ['EU_UAS_OPEN_A1', 'EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3', 'EU_UAS_LUC'],
         };
         const grouped = new Map<string, string[]>();
         for (const k of keys) {
@@ -297,6 +302,36 @@ describe('executeFrameworkInstall', () => {
         expect(r?.created).toBe(0);
         expect(r?.skipped).toBe(1);
         expect(r?.details).toContain('install failed');
+        // #4125 — the failure is recorded for the wizard to show. An
+        // unexpected error's text is NOT passed on (it can carry internals);
+        // the wizard shows its own sentence for a null message.
+        expect(r?.failures).toEqual([
+            { framework: 'iso27001', name: 'iso27001', packKey: 'ISO27001_2022_BASE', message: null },
+        ]);
+    });
+
+    it("records a refusal's own message, which is meant for the user", async () => {
+        // #4125 — e.g. a member whose custom role cannot install frameworks
+        // runs the wizard. The refusal used to be swallowed into `details`.
+        (installPack as jest.Mock)
+            .mockRejectedValueOnce(forbidden('You do not have permission to install frameworks.'))
+            .mockResolvedValueOnce({ controlsCreated: 3, tasksCreated: 2 });
+        const r = await runStepAction(ctx, 'FRAMEWORK_SELECTION', {}, {
+            FRAMEWORK_SELECTION: {
+                selectedFrameworks: ['ISO27001', 'NIS2'],
+                frameworkLabels: { ISO27001: 'ISO/IEC 27001:2022', NIS2: 'NIS2' },
+            },
+        });
+        expect(r?.created).toBe(3);
+        expect(r?.failures).toEqual([
+            {
+                framework: 'ISO27001',
+                // Named as the picker showed it, not by its key.
+                name: 'ISO/IEC 27001:2022',
+                packKey: 'ISO27001_2022_BASE',
+                message: 'You do not have permission to install frameworks.',
+            },
+        ]);
     });
 
     it('handles a missing FRAMEWORK_SELECTION payload (defaults to empty list)', async () => {
@@ -304,6 +339,71 @@ describe('executeFrameworkInstall', () => {
         // Branch: `allData['FRAMEWORK_SELECTION']?.selectedFrameworks || []`.
         expect(r?.created).toBe(0);
         expect(r?.skipped).toBe(0);
+    });
+
+    it('installs only the chosen packs of a framework with several', async () => {
+        // The EU drone framework's packs are its subcategories; a tenant that
+        // flies A2 and A3 gets those two, not A1 and the LUC as well.
+        const r = await runStepAction(ctx, 'FRAMEWORK_SELECTION', {}, {
+            FRAMEWORK_SELECTION: {
+                selectedFrameworks: ['EU-UAS-OPS'],
+                selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3'] },
+            },
+        });
+        expect((installPack as jest.Mock).mock.calls.map((c) => c[1])).toEqual(['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3']);
+        expect(r?.created).toBe(6);
+        expect(r?.failures).toEqual([]);
+    });
+
+    it('installs none of them, and says so, when no pack was chosen', async () => {
+        // Completion refuses this state now; a state saved before that rule
+        // must not fall back to installing every subcategory.
+        const r = await runStepAction(ctx, 'FRAMEWORK_SELECTION', {}, {
+            FRAMEWORK_SELECTION: {
+                selectedFrameworks: ['EU-UAS-OPS'],
+                frameworkLabels: { 'EU-UAS-OPS': 'EU Drone Operations' },
+                selectedPacks: { 'EU-UAS-OPS': ['SOMETHING_ELSE'] },
+            },
+        });
+        expect(installPack).not.toHaveBeenCalled();
+        expect(r?.skipped).toBe(1);
+        expect(r?.failures).toEqual([
+            expect.objectContaining({ framework: 'EU-UAS-OPS', name: 'EU Drone Operations', packKey: '' }),
+        ]);
+    });
+});
+
+describe('assertFrameworkPackChoices', () => {
+    it('accepts a single-pack framework with no pack choice at all', async () => {
+        await expect(assertFrameworkPackChoices(ctx, { selectedFrameworks: ['ISO27001'] })).resolves.toBeUndefined();
+    });
+
+    it('refuses a framework with several packs and none chosen', async () => {
+        await expect(
+            assertFrameworkPackChoices(ctx, { selectedFrameworks: ['EU-UAS-OPS'], selectedPacks: { 'EU-UAS-OPS': [] } }),
+        ).rejects.toThrow(/at least one pack of EU-UAS-OPS/);
+        await expect(
+            assertFrameworkPackChoices(ctx, { selectedFrameworks: ['EU-UAS-OPS'] }),
+        ).rejects.toThrow(/at least one pack of EU-UAS-OPS/);
+    });
+
+    it('refuses a chosen key that is not one of its packs', async () => {
+        await expect(
+            assertFrameworkPackChoices(ctx, {
+                selectedFrameworks: ['EU-UAS-OPS'],
+                selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2', 'ISO27001_2022_BASE'] },
+            }),
+        ).rejects.toThrow(/Not a pack of EU-UAS-OPS: ISO27001_2022_BASE/);
+    });
+
+    it('accepts a valid choice, and reads the choice case-insensitively', async () => {
+        await expect(
+            assertFrameworkPackChoices(ctx, {
+                selectedFrameworks: ['eu-uas-ops'],
+                selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2'] },
+            }),
+        ).resolves.toBeUndefined();
+        expect(chosenPacksFor({ selectedPacks: { 'EU-UAS-OPS': ['EU_UAS_OPEN_A2', 7, ''] } }, 'eu-uas-ops')).toEqual(['EU_UAS_OPEN_A2']);
     });
 });
 
@@ -476,7 +576,19 @@ describe('storeActionResult', () => {
         expect(key).toBe('_actionResults');
         // Branch: prior results preserved + new step merged.
         expect(payload.PRIOR).toEqual({ action: 'PRIOR' });
-        expect(payload.ASSET_SETUP).toEqual(result);
+        // #4125 — each stored result is stamped `ranAt`, so the wizard can
+        // tell which of two framework installs is the newer.
+        expect(payload.ASSET_SETUP).toEqual({ ...result, ranAt: expect.any(String) });
+        expect(Number.isNaN(Date.parse(payload.ASSET_SETUP.ranAt))).toBe(false);
+    });
+
+    it('returns the row it wrote, so the step completion can hand it to the wizard', async () => {
+        (OnboardingRepository.getByTenantId as jest.Mock).mockResolvedValue({ stepData: {} });
+        const written = { id: 'ob-1', stepData: { _actionResults: {} } };
+        (OnboardingRepository.saveStepData as jest.Mock).mockResolvedValueOnce(written);
+        await expect(
+            storeActionResult(ctx, 'FRAMEWORK_SELECTION', { action: 'FRAMEWORK_INSTALL', created: 0, skipped: 0, details: '' }),
+        ).resolves.toBe(written);
     });
 
     it('tolerates a row with no prior stepData (defaults applied)', async () => {
