@@ -53,6 +53,7 @@ describe('the text-note form', () => {
                     tenantSlug="acme"
                     apiUrl={(p) => `/api/t/acme${p}`}
                     controls={[]}
+                    canEditControlLinks
                 />
             </SWRConfig>,
         );

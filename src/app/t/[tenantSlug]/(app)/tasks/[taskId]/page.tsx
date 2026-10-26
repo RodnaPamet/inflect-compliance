@@ -272,7 +272,7 @@ export default function TaskDetailPage() {
     const router = useRouter();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, role, tenantSlug, userId } = useTenantContext();
+    const { permissions, appPermissions, role, tenantSlug, userId } = useTenantContext();
     const taskId = params?.taskId as string;
     // Ordered ids for the prev/next stepper beside the name — list order,
     // so stepping walks the sequence the user just saw.
@@ -1727,6 +1727,12 @@ export default function TaskDetailPage() {
                             key: task.key ?? undefined,
                         }}
                         canWrite={!!permissions.canWrite}
+                        // Its assignee picker POSTs to `/tasks/:id/assign`
+                        // (`tasks.assign`). The form variant shows no
+                        // evidence box; its gate is passed so it holds if
+                        // one is ever shown here.
+                        canUploadEvidence={!!permissions.canWrite && appPermissions.evidence.upload}
+                        canAssign={!!permissions.canWrite && appPermissions.tasks.assign}
                         onSaved={() => void taskQuery.mutate()}
                     />
                 </Modal.Body>

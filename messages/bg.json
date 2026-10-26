@@ -2757,6 +2757,7 @@
       "categoryPlaceholder": "напр. Контрол на достъпа",
       "controlsLabel": "Свързани контроли",
       "controlsDesc": "Контролите, които това доказателство удовлетворява.",
+      "controlsReadOnlyDesc": "Промяната на тези връзки изисква право за редактиране на контроли.",
       "controlsPlaceholder": "Изберете контроли…",
       "controlsSearchPlaceholder": "Търсене на контроли…",
       "controlsEmpty": "Няма съвпадащи контроли",

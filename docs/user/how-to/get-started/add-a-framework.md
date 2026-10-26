@@ -7,7 +7,7 @@ Add a framework, such as ISO 27001 or NIS2, when your organisation needs to meet
 - You need the Owner or Admin role. With a custom role, you can add a framework when your role was given permission to install frameworks, whatever its base role.
 - Without that permission you see no button that adds a framework: no **{{ui:frameworks.list.importFramework}}**, no **{{ui:frameworks.detail.installPack}}** and no **{{ui:frameworks.templates.install}}**. Every role can still open a framework and read its requirements.
 - Adding a framework never removes or overwrites controls you already have. If your workspace already holds a control with the same code as one in the pack, Inflect keeps your control as it is and maps it to the framework's requirements.
-- A framework can offer more than one pack. If it does, decide which ones you need. EU Drone Operations, for example, has one pack for each operating subcategory (A1, A2, A3, STS-01, STS-02, operational authorisation and LUC), and you install the ones you fly in.
+- A framework can offer more than one pack. If it does, decide which ones you need. EU Drone Operations, for example, has one pack for each operating subcategory (A1, A2, A3, STS-01, STS-02, operational authorisation and LUC), and you install the ones you fly in. Each subcategory pack's name lists the drone classes it covers, such as "(class C2)". If you fly a class C2 drone, the **Class C2 drone** pack installs A2 and A3 together, because a C2 can fly in either.
 
 ## Steps
 

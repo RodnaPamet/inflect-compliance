@@ -200,11 +200,12 @@ interface ControlsClientProps {
     };
     appPermissions: {
         controls: { create: boolean; edit: boolean };
-        // The inline task edit panel needs the task write permission.
-        tasks: { edit: boolean };
-        // The quick view's drag-and-drop upload box POSTs to
+        // The inline task edit panel needs the task write permission, and
+        // `tasks.assign` for its assignee picker (`/tasks/:id/assign`).
+        tasks: { edit: boolean; assign: boolean };
+        // The quick views' drag-and-drop upload boxes POST to
         // `/evidence/uploads`, whose usecase asserts `evidence.upload` — a
-        // DIFFERENT key from the one that opens the panel.
+        // DIFFERENT key from the one that opens either panel.
         evidence: { upload: boolean };
         // The AI Assist rail opens `/risks/ai`, whose generate and apply
         // routes take `risks.create`.
@@ -1912,6 +1913,11 @@ function ControlsPageInner({
                 tenantSlug={tenantSlug}
                 task={selectedTask}
                 canWrite={canEditTasks}
+                // Its evidence box and assignee picker ask their own keys
+                // (`evidence.upload`; `tasks.assign` + the write tier), inside
+                // the panel's task edit rights.
+                canUploadEvidence={canEditTasks && canUploadEvidence}
+                canAssign={canEditTasks && appPermissions.tasks.assign}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
             />

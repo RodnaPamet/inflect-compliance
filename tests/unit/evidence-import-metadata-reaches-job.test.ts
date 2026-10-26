@@ -83,9 +83,12 @@ beforeEach(() => {
         userId: 'u1',
         role: 'ADMIN',
         requestId: 'req-1',
-        permissions: {},
+        permissions: { canWrite: true },
         // The route gates on this before doing anything else.
-        appPermissions: { evidence: { upload: true } },
+        // `controls.edit` (with the write tier above): a default control
+        // links every imported record, which takes the control side's rule
+        // (#4326; refusals in evidence-import-control-link-gate.test.ts).
+        appPermissions: { evidence: { upload: true }, controls: { edit: true } },
     });
     createPendingMock.mockResolvedValue({ id: 'fr-1' });
     markStoredMock.mockResolvedValue(undefined);

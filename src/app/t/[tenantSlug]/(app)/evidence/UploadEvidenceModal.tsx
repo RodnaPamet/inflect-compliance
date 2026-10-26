@@ -111,6 +111,13 @@ export interface UploadEvidenceModalProps {
     tenantSlug: string;
     apiUrl: (path: string) => string;
     controls: ControlOption[];
+    /**
+     * Offer the control picker. An upload (or a SharePoint import) with a
+     * control adds a link, which needs the coarse write tier AND
+     * `controls.edit`, a key a custom role on a write-tier base can lack
+     * (#4326). Without it the picker is not shown and nothing sends a control.
+     */
+    canEditControlLinks: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -122,6 +129,7 @@ export function UploadEvidenceModal({
     tenantSlug: _tenantSlug,
     apiUrl,
     controls,
+    canEditControlLinks,
 }: UploadEvidenceModalProps) {
     const tx = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -663,6 +671,7 @@ export function UploadEvidenceModal({
                         </div>
 
                         {/* Control link — Epic 55: searchable Combobox */}
+                        {canEditControlLinks && (
                         <FormField
                             label={tx('upload.linkControlLabel')}
                             description={
@@ -692,6 +701,7 @@ export function UploadEvidenceModal({
                                 caret
                             />
                         </FormField>
+                        )}
 
                         {/* EP-3 — Category. Free text applied to every
                             file in the batch. */}

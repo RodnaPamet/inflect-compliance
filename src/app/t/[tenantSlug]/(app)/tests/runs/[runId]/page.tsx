@@ -14,6 +14,7 @@ import { Paperclip } from 'lucide-react';
 import { textLinkVariants } from '@/components/ui/typography';
 import { normaliseHref } from '@/lib/security/safe-url';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -96,7 +97,19 @@ export default function TestRunPage() {
     const router = useRouter();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions } = useTenantContext();
+    const { permissions, appPermissions } = useTenantContext();
+    // A new upload or link is created linked to the run's control, which takes
+    // `controls.edit` as well as the write tier (#4326). Without it, the run
+    // can still take evidence already in the library.
+    const canLinkToControl = permissions.canWrite && appPermissions.controls.edit;
+    const evKindOptions = useMemo(
+        () =>
+            canLinkToControl
+                ? EV_KIND_OPTIONS
+                // guardrail-ignore: filters the evidence-KIND options (a role that cannot link to the control is offered only library evidence) — not server-fetched rows.
+                : EV_KIND_OPTIONS.filter((o) => o.value === 'EVIDENCE'),
+        [EV_KIND_OPTIONS, canLinkToControl],
+    );
     const toast = useToast();
     const runId = params?.runId as string;
 
@@ -135,7 +148,7 @@ export default function TestRunPage() {
 
     // Evidence form
     const [showEvForm, setShowEvForm] = useState(false);
-    const [evKind, setEvKind] = useState<'LINK' | 'EVIDENCE' | 'FILE_UPLOAD'>('FILE_UPLOAD');
+    const [evKind, setEvKind] = useState<'LINK' | 'EVIDENCE' | 'FILE_UPLOAD'>(canLinkToControl ? 'FILE_UPLOAD' : 'EVIDENCE');
     const [evUrl, setEvUrl] = useState('');
     const [evNote, setEvNote] = useState('');
     const [evEvidenceId, setEvEvidenceId] = useState('');
@@ -287,7 +300,7 @@ export default function TestRunPage() {
                     body: formData,
                 });
                 if (!uploadRes.ok) {
-                    throw new Error((await uploadRes.text()) || t('run.errors.uploadFailed'));
+                    throw new Error(apiErrorMessage(await uploadRes.json().catch(() => null), t('run.errors.uploadFailed')));
                 }
                 const uploaded = await uploadRes.json();
                 evidenceId = uploaded.id;
@@ -308,7 +321,7 @@ export default function TestRunPage() {
                     }),
                 });
                 if (!createRes.ok) {
-                    throw new Error((await createRes.text()) || t('run.errors.createLinkFailed'));
+                    throw new Error(apiErrorMessage(await createRes.json().catch(() => null), t('run.errors.createLinkFailed')));
                 }
                 evidenceId = (await createRes.json()).id;
             }
@@ -663,9 +676,9 @@ export default function TestRunPage() {
                             <Combobox
                                 hideSearch
                                 id="evidence-kind-select"
-                                selected={EV_KIND_OPTIONS.find(o => o.value === evKind) ?? null}
+                                selected={evKindOptions.find(o => o.value === evKind) ?? null}
                                 setSelected={(opt) => setEvKind((opt?.value ?? 'FILE_UPLOAD') as 'LINK' | 'EVIDENCE' | 'FILE_UPLOAD')}
-                                options={EV_KIND_OPTIONS}
+                                options={evKindOptions}
                                 matchTriggerWidth
                             />
                         </div>

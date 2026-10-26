@@ -25,6 +25,10 @@ import 'dotenv/config';
 // separate process that never loads that hook, so without this its job
 // execution would be invisible to Tempo.
 import { initTelemetry, shutdownTelemetry } from '../src/lib/observability/instrumentation';
+import {
+    startQueueDepthReporting,
+    stopQueueDepthReporting,
+} from '../src/lib/observability/metrics';
 import { pauseInFlightRuns } from '../src/lib/agentic/in-flight-runs';
 import { SHUTDOWN_PAUSE_RUNS_MS } from '../src/lib/observability/shutdown-budget';
 import {
@@ -152,6 +156,8 @@ log.info({ queueName: QUEUE_NAME, redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@
 // module scope so the graceful-shutdown handler can close them.
 let connection: Redis | undefined;
 let worker: Worker | undefined;
+// The queue the `job.queue.depth` gauge reads. See bootstrap().
+let depthQueue: Queue | undefined;
 
 // ─── Boot-time schedule self-registration (item 28) ───
 //
@@ -207,6 +213,30 @@ async function bootstrap(): Promise<void> {
     startActiveUserGauges();
 
     connection = createWorkerConnection();
+
+    // Queue depth (`job.queue.depth`, exported as `job_queue_depth_ratio`).
+    // This worker is the only long-running process that holds the queue,
+    // and QUEUE_NAME is the only queue it serves, so it is the one read.
+    //
+    // AFTER initTelemetry(): the OTel metrics API has no proxy provider, so
+    // a gauge registered before the global MeterProvider is set stays a
+    // no-op for the life of the process. With OTEL_ENABLED unset the gauge
+    // is a no-op anyway and its callback never runs, so nothing reads Redis.
+    //
+    // The Queue rides on `connection` rather than opening its own: BullMQ
+    // treats a passed ioredis instance as shared and leaves it open on
+    // close(), so the quit in shutdown() still owns it. The cost is one
+    // getJobCounts round trip per metric export (every 30s), each bounded
+    // by QUEUE_DEPTH_READ_TIMEOUT_MS.
+    const queueForDepth = new Queue(QUEUE_NAME, { connection });
+    // A Queue with no 'error' listener prints every connection error to
+    // stderr. The Worker's own 'error' handler below already reports Redis
+    // trouble, so the telemetry reader keeps quiet about it.
+    queueForDepth.on('error', (err) => {
+        log.debug({ err: err instanceof Error ? err.message : String(err) }, 'queue-depth reader: redis error');
+    });
+    depthQueue = queueForDepth;
+    startQueueDepthReporting(() => queueForDepth);
 
     worker = new Worker(
         QUEUE_NAME,
@@ -374,6 +404,16 @@ async function shutdown(signal: string) {
             log.warn({ err }, 'shutdown: pausing in-flight agentic runs threw');
         });
         await worker?.close();
+        // Stop the queue-depth reads before the connection they use goes:
+        // shutdownTelemetry() below flushes metrics once more, and that
+        // flush runs the gauge's callback. Closing the reader's Queue leaves
+        // `connection` open (it is shared), so the quit below still owns it.
+        // A failure here is logged, never thrown — it must not cost the
+        // OTel drain.
+        stopQueueDepthReporting();
+        await depthQueue?.close().catch((err) => {
+            log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shutdown: closing the queue-depth reader threw');
+        });
         await connection?.quit();
         // Drain in-flight OTel span batches before exit so the final
         // jobs' execution spans reach Tempo (bounded + never throws).

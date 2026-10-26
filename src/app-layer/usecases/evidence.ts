@@ -3,6 +3,7 @@ import { EvidenceRepository, EvidenceListFilters } from '../repositories/Evidenc
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { assertCanReadEvidence, assertCanEditEvidence, assertCanUploadEvidence } from '../policies/evidence.policies';
 import { logEvent } from '../events/audit';
+import { assertMayChangeEvidenceControlLinks } from './evidence-control-links';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -90,6 +91,11 @@ function normalizeControlIds(
     return [...set];
 }
 
+/** The routes the create, edit and upload usecases below serve, named on a link refusal's audit row. */
+const CREATE_SURFACE = { method: 'POST', path: '/api/t/[tenantSlug]/evidence' } as const;
+const UPDATE_SURFACE = { method: 'PUT', path: '/api/t/[tenantSlug]/evidence/[id]' } as const;
+const UPLOAD_SURFACE = { method: 'POST', path: '/api/t/[tenantSlug]/evidence/uploads' } as const;
+
 export async function listEvidence(
     ctx: RequestContext,
     filters?: EvidenceListFilters,
@@ -165,6 +171,15 @@ export async function createEvidence(
 ) {
     assertCanEditEvidence(ctx);
 
+    // EP-3 — normalise the control association to a set. `controlIds` is
+    // the many-to-many input; a legacy singular `controlId` is wrapped in.
+    const requestedControlIds = normalizeControlIds(data.controlIds, data.controlId);
+    // A record created with controls adds links, which takes the control side's
+    // rule as well (#4326). Asked before anything else is read or written.
+    if (requestedControlIds.length > 0) {
+        await assertMayChangeEvidenceControlLinks(ctx, CREATE_SURFACE);
+    }
+
     // R5-P1 #1/#2 — FILE evidence's `content` is a storage pathKey that ONLY the
     // multipart upload path (`uploadEvidenceFile`) may derive server-side. This
     // JSON endpoint used to write caller-supplied `content` verbatim for FILE
@@ -189,10 +204,6 @@ export async function createEvidence(
     const fileName = null;
     const fileSize = null;
     const content = data.content ? sanitizeEvidenceBody(data.type, data.content) || null : null;
-
-    // EP-3 — normalise the control association to a set. `controlIds` is
-    // the many-to-many input; a legacy singular `controlId` is wrapped in.
-    const requestedControlIds = normalizeControlIds(data.controlIds, data.controlId);
 
     const created = await runInTenantContext(ctx, async (db) => {
         // Validate every control belongs to the same tenant (foreign /
@@ -273,6 +284,34 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
             select: { type: true, status: true, content: true },
         });
         if (!existing) throw notFound('Evidence not found');
+
+        // EP-3 — `controlIds` reconciles the links to exactly that set; omitted
+        // ⇒ links untouched. The diff is taken BEFORE any write because a
+        // change to it (an addition OR a removal) takes the control side's rule
+        // as well (#4326). The edit form sends the set back on every save, so a
+        // set equal to the current one is no change and needs nothing more.
+        let linkDiff: { toAdd: string[]; toRemove: string[] } | null = null;
+        if (data.controlIds !== undefined) {
+            const desired = normalizeControlIds(data.controlIds, null);
+            const current = await EvidenceRepository.listControlLinks(db, ctx, id);
+            const currentIds = new Set(current.map((l) => l.controlId));
+            const desiredSet = new Set(desired);
+            linkDiff = {
+                toAdd: desired.filter((cid) => !currentIds.has(cid)),
+                toRemove: [...currentIds].filter((cid) => !desiredSet.has(cid)),
+            };
+            if (linkDiff.toAdd.length > 0 || linkDiff.toRemove.length > 0) {
+                await assertMayChangeEvidenceControlLinks(ctx, UPDATE_SURFACE);
+            }
+            if (desired.length > 0) {
+                const existingControls = await EvidenceRepository.filterExistingControlIds(db, ctx, desired);
+                const missing = desired.filter((cid) => !existingControls.has(cid));
+                if (missing.length > 0) {
+                    throw badRequest('INVALID_CONTROL', 'Control not found or belongs to a different tenant');
+                }
+            }
+        }
+
         const suppliedContent = isEvidenceContentEditable(existing.type)
             ? data.content
             : undefined;
@@ -322,25 +361,11 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
             await EvidenceRepository.setTags(db, ctx, id, data.tags);
         }
 
-        // EP-3 — reconcile control links to exactly `controlIds` when the
-        // multi-select is present. Adds/removes join rows (never moves the
-        // record). Omitted ⇒ links untouched.
-        if (data.controlIds !== undefined) {
-            const desired = normalizeControlIds(data.controlIds, null);
-            if (desired.length > 0) {
-                const existingControls = await EvidenceRepository.filterExistingControlIds(db, ctx, desired);
-                const missing = desired.filter((cid) => !existingControls.has(cid));
-                if (missing.length > 0) {
-                    throw badRequest('INVALID_CONTROL', 'Control not found or belongs to a different tenant');
-                }
-            }
-            const current = await EvidenceRepository.listControlLinks(db, ctx, id);
-            const currentIds = new Set(current.map((l) => l.controlId));
-            const desiredSet = new Set(desired);
-            const toAdd = desired.filter((cid) => !currentIds.has(cid));
-            const toRemove = [...currentIds].filter((cid) => !desiredSet.has(cid));
-            await EvidenceRepository.createControlLinks(db, ctx, id, toAdd);
-            for (const cid of toRemove) {
+        // EP-3 — apply the link diff taken above. Adds/removes join rows
+        // (never moves the record).
+        if (linkDiff) {
+            await EvidenceRepository.createControlLinks(db, ctx, id, linkDiff.toAdd);
+            for (const cid of linkDiff.toRemove) {
                 await EvidenceRepository.unlinkControl(db, ctx, id, cid);
             }
         }
@@ -918,6 +943,14 @@ export async function uploadEvidenceFile(
 ) {
     assertCanUploadEvidence(ctx);
 
+    // EP-3 — normalise the control association (many-to-many + legacy single).
+    const requestedControlIds = normalizeControlIds(metadata.controlIds, metadata.controlId);
+    // An upload with a control adds a link, which takes the control side's rule
+    // as well (#4326). Asked before the bytes are scanned or stored.
+    if (requestedControlIds.length > 0) {
+        await assertMayChangeEvidenceControlLinks(ctx, UPLOAD_SURFACE);
+    }
+
     // Validate before writing
     const mimeType = file.type || 'application/octet-stream';
     if (!isAllowedMime(mimeType)) {
@@ -969,9 +1002,6 @@ export async function uploadEvidenceFile(
         { sha256: writeResult.sha256, sizeBytes: writeResult.sizeBytes },
         { pathKey, originalName, via: 're-upload' },
     );
-
-    // EP-3 — normalise the control association (many-to-many + legacy single).
-    const requestedControlIds = normalizeControlIds(metadata.controlIds, metadata.controlId);
 
     // Create FileRecord + Evidence in a transaction
     const result = await runInTenantContext(ctx, async (db) => {

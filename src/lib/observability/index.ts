@@ -43,6 +43,7 @@ export {
     recordRequestError,
     recordJobMetrics,
     startQueueDepthReporting,
+    stopQueueDepthReporting,
     normalizeRoute,
 } from './metrics';
 

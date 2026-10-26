@@ -210,7 +210,7 @@ describe('recordJobMetrics', () => {
 // ─── 4. Queue Depth Reporting ───────────────────────────────────────────
 
 describe('startQueueDepthReporting', () => {
-    let startQueueDepthReporting: (getQueueFn: () => { getJobCounts: () => Promise<Record<string, number>> }) => void;
+    let startQueueDepthReporting: (getQueueFn: () => { name: string; getJobCounts: () => Promise<Record<string, number>> }) => void;
     let _resetQueueDepthForTesting: () => void;
 
     beforeAll(() => {
@@ -229,6 +229,7 @@ describe('startQueueDepthReporting', () => {
 
     it('should not throw when initializing with a mock queue', () => {
         const mockQueue = {
+            name: 'inflect-jobs',
             getJobCounts: async () => ({
                 waiting: 5,
                 active: 2,
@@ -243,6 +244,7 @@ describe('startQueueDepthReporting', () => {
 
     it('should be idempotent (safe to call multiple times)', () => {
         const mockQueue = {
+            name: 'inflect-jobs',
             getJobCounts: async () => ({ waiting: 0, active: 0, delayed: 0, failed: 0 }),
         };
 
