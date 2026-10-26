@@ -15,12 +15,16 @@ import { validateProviderConfig } from '../../config-schema';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { uploadEvidenceFile } from '../../../usecases/evidence';
+import { assertMayChangeEvidenceControlLinks } from '../../../usecases/evidence-control-links';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { getSharePointClient } from './service';
 import { encodeRemoteId } from './client';
 import type { SharePointClient } from './client';
 
 export const SP_IMPORT_MAX_ITEMS = 20;
+
+/** The route `importSharePointItems` serves, named on a refusal's audit row. */
+const SP_IMPORT_SURFACE = { method: 'POST', path: '/api/t/[tenantSlug]/integrations/sharepoint/import' } as const;
 
 export interface SpImportInput {
     connectionId: string;
@@ -220,6 +224,13 @@ export async function importSharePointItems(
     if (input.items.length === 0) return { imported: 0, failed: 0, evidenceIds: [], errors: [] };
     if (input.items.length > SP_IMPORT_MAX_ITEMS) {
         throw new Error(`Too many items — import at most ${SP_IMPORT_MAX_ITEMS} at a time`);
+    }
+    // A chosen control links every imported record to it, which takes the
+    // control side's rule as well (#4326). `uploadEvidenceFile` asks it per
+    // file; asking it once here refuses the whole import before anything is
+    // claimed or downloaded, with one refusal on record rather than one per file.
+    if (input.controlId) {
+        await assertMayChangeEvidenceControlLinks(ctx, SP_IMPORT_SURFACE);
     }
     const client = await getSharePointClient(ctx, input.connectionId, deps);
     const evidenceIds: string[] = [];

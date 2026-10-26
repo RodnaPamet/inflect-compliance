@@ -46,6 +46,13 @@ export interface NewEvidenceLinkModalProps {
     tenantSlug: string;
     apiUrl: (path: string) => string;
     controls: ControlOption[];
+    /**
+     * Offer the control picker. A record created with a control adds a link,
+     * which needs the coarse write tier AND `controls.edit`, a key a custom
+     * role on a write-tier base can lack (#4326). Without it the picker is not
+     * shown and the record is created with no control.
+     */
+    canEditControlLinks: boolean;
 }
 
 export function NewEvidenceLinkModal({
@@ -54,6 +61,7 @@ export function NewEvidenceLinkModal({
     tenantSlug: _tenantSlug,
     apiUrl,
     controls,
+    canEditControlLinks,
 }: NewEvidenceLinkModalProps) {
     const tx = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -202,6 +210,7 @@ export function NewEvidenceLinkModal({
                                     autoComplete="off"
                                 />
                             </div>
+                            {canEditControlLinks && (
                             <FormField label={tx('linkModal.linkControlLabel')}>
                                 <Combobox<false, ControlOption>
                                     id="link-evidence-control-select"
@@ -224,6 +233,7 @@ export function NewEvidenceLinkModal({
                                     caret
                                 />
                             </FormField>
+                            )}
                             <div>
                                 <label
                                     className="mb-1 block text-sm text-content-default"

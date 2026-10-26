@@ -77,7 +77,7 @@ const BASE: EditEvidenceInitial = {
 const ok = { ok: true, status: 200, json: async () => ({}) } as Response;
 
 function mount(initial: EditEvidenceInitial) {
-    render(<EditEvidenceModal open setOpen={() => {}} tenantSlug="acme" controls={[]} initial={initial} />);
+    render(<EditEvidenceModal open setOpen={() => {}} tenantSlug="acme" controls={[]} canEditControlLinks initial={initial} />);
 }
 const body = () => document.getElementById('edit-evidence-description') as HTMLTextAreaElement;
 const save = () => document.getElementById('edit-evidence-submit-btn') as HTMLButtonElement;

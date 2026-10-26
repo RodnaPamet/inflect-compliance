@@ -2757,6 +2757,7 @@
       "categoryPlaceholder": "e.g. Access control",
       "controlsLabel": "Linked controls",
       "controlsDesc": "The controls this evidence satisfies.",
+      "controlsReadOnlyDesc": "Changing these links needs permission to edit controls.",
       "controlsPlaceholder": "Select controls…",
       "controlsSearchPlaceholder": "Search controls…",
       "controlsEmpty": "No controls match",

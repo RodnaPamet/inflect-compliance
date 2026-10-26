@@ -29,6 +29,7 @@ import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { env } from '@/env';
 import { enqueue } from '@/app-layer/jobs/queue';
+import { assertMayChangeEvidenceControlLinks } from '@/app-layer/usecases/evidence-control-links';
 import { logger } from '@/lib/observability/logger';
 
 // Cap on staged ZIP size — large enough for a real evidence pack,
@@ -55,6 +56,23 @@ export const POST = withApiErrorHandling(
         }
 
         const formData = await req.formData();
+
+        // A default control links every record the import creates to it, so
+        // it takes the same rule as any other evidence-to-control link: the
+        // coarse write tier AND `controls.edit` (#4326, owner decision). Asked
+        // HERE, before the archive is staged. The worker cannot ask it: its
+        // context is the initiator's built-in role (`buildJobContext`), not
+        // their custom role, and a refusal there would arrive as a per-file
+        // error after the request had been accepted.
+        const controlId =
+            (formData.get('controlId') as string | null) || null;
+        if (controlId) {
+            await assertMayChangeEvidenceControlLinks(ctx, {
+                method: req.method,
+                path: req.nextUrl.pathname,
+            });
+        }
+
         const file = formData.get('file');
         if (!file || !(file instanceof File)) {
             return jsonResponse(
@@ -127,8 +145,7 @@ export const POST = withApiErrorHandling(
         });
 
         // ── Optional metadata applies to every extracted file ──────
-        const controlId =
-            (formData.get('controlId') as string | null) || null;
+        // (`controlId` is read, and checked, above.)
         const retentionUntil =
             (formData.get('retentionUntil') as string | null) || null;
         const category = (formData.get('category') as string | null) || null;

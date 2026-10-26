@@ -108,6 +108,7 @@ async function openChangeRetentionAndSave(onSaved?: () => void) {
             setOpen={() => {}}
             tenantSlug="acme"
             controls={[]}
+            canEditControlLinks
             initial={BASE}
             onSaved={onSaved}
         />,
@@ -173,6 +174,7 @@ describe('EditEvidenceModal — partial save reporting', () => {
                 setOpen={() => {}}
                 tenantSlug="acme"
                 controls={[]}
+                canEditControlLinks
                 initial={BASE}
             />,
         );

@@ -78,6 +78,7 @@ async function openAndSave(initial: EditEvidenceInitial) {
             setOpen={() => {}}
             tenantSlug="acme"
             controls={[]}
+            canEditControlLinks
             initial={initial}
         />,
     );
@@ -125,6 +126,7 @@ describe('EditEvidenceModal — tag reconciliation', () => {
                 setOpen={() => {}}
                 tenantSlug="acme"
                 controls={[]}
+                canEditControlLinks
                 initial={{ ...BASE, tags: ['soc2'] }}
             />,
         );
