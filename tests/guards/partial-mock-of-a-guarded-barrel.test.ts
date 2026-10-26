@@ -45,6 +45,20 @@ const GUARDED_BARRELS: Readonly<Record<string, GuardedBarrel>> = {
             'test still passes.',
         cap: 57,
     },
+    '@/lib/permissions': {
+        reason:
+            'exports `permissionsForMembership`, which `initiatorAuthority` calls to resolve a ' +
+            'custom role. Five suites supplied only `getPermissionsForRole`, so the moment a job ' +
+            'path reached that resolution it died naming a function nobody had touched (#4397). ' +
+            'Worse, a hand-rolled return value is role-INDEPENDENT: control-test-runner could drop ' +
+            'its granular narrowing entirely and no test moved (#4388), so the argument was ' +
+            'untestable as well as the omission unsafe.',
+        // 1 on this branch, not 0: `control-test-runner.test.ts` is migrated by
+        // #4401, which is not merged yet. Lower it to 0 in the same change that
+        // rebases past #4401 -- two branches editing one ratchet line is how a
+        // cap ends up above reality and stops being a ratchet.
+        cap: 1,
+    },
 };
 
 /** Test files that name the barrel at all — the only ones worth parsing. */
