@@ -299,6 +299,103 @@ export function initiatorAuthority(membership: {
     };
 }
 
+/** How many memberships a borrowed-actor pick will consider before giving up. */
+export const BORROWED_ACTOR_CANDIDATE_CAP = 50;
+
+/** Why a borrowed-actor pick came up empty. One definition for every such job. */
+export const BORROW_FAILURE = {
+    /** The tenant has no ACTIVE member matching the requested roles. */
+    NO_ACTIVE_MEMBER: 'NO_ACTIVE_MEMBER',
+    /** It has members, and not one of their RESOLVED authorities allows the work. */
+    NO_QUALIFYING_ACTOR: 'NO_QUALIFYING_ACTOR',
+} as const;
+
+export type BorrowFailure = (typeof BORROW_FAILURE)[keyof typeof BORROW_FAILURE];
+
+export type BorrowedActor = {
+    userId: string;
+    role: Role;
+    permissions: Permissions;
+    appPermissions: PermissionSet;
+};
+
+export type BorrowedActorOutcome =
+    | { actor: BorrowedActor; reason: null }
+    | { actor: null; reason: BorrowFailure };
+
+/**
+ * Pick the member a job BORROWS, by what their authority actually resolves to.
+ *
+ * Some jobs act for nobody in particular — a nightly sweep, a cron summary — and
+ * borrow a member so RLS and the read policies have an actor. They used to take
+ * the oldest ACTIVE OWNER/ADMIN and call `getPermissionsForRole(membership.role)`,
+ * which drops a custom role entirely: a workspace whose only admins carry a
+ * custom role got the BUILT-IN role's authority, which is not the authority any
+ * request of theirs would have (#4388, owner decision 2026-10-26).
+ *
+ * Two things follow, and the second is why this is a pick rather than a lookup:
+ *
+ *   * authority comes from `initiatorAuthority`, the same resolution a request
+ *     uses — custom role included, and the coarse flags computed from the role
+ *     rather than hand-projected from granular ones;
+ *   * the member chosen is the first IN ORDER whose resolved authority actually
+ *     ALLOWS the job's work. Picking the oldest admin and discovering at the
+ *     usecase's `assertCan*` that they cannot do it turns a routing decision
+ *     into a thrown refusal, which is what the delta-sync dispatcher avoids by
+ *     asking `mayRunDeltaSync` before it queues.
+ *
+ * `allows` is the job's OWN definition of its requirement and must be the key
+ * its usecase asserts — one definition, so the pick can never choose a member
+ * the work would then refuse.
+ *
+ * Never returns a bare `null`: the two ways a pick can come up empty are
+ * different operational facts and a caller that cannot tell them apart reports
+ * the wrong one. `NO_ACTIVE_MEMBER` means the tenant has nobody to borrow;
+ * `NO_QUALIFYING_ACTOR` means it has members and not one of them may do this
+ * work. Both are REFUSALS the caller reports under that name, never a fallback
+ * to a system context: a job that silently escalated past every member's
+ * authority is the failure this exists to prevent.
+ */
+export async function borrowedJobActor(input: {
+    tenantId: string;
+    /** Restrict to these roles, or omit to consider every ACTIVE member. */
+    roles?: Role[];
+    /** `createdAt` for "the oldest", `role` for "the most senior" (enum order). */
+    orderBy: 'createdAt' | 'role';
+    allows: (authority: { permissions: Permissions; appPermissions: PermissionSet }) => boolean;
+}): Promise<BorrowedActorOutcome> {
+    const candidates = await prisma.tenantMembership.findMany({
+        where: {
+            tenantId: input.tenantId,
+            status: 'ACTIVE',
+            ...(input.roles ? { role: { in: input.roles } } : {}),
+        },
+        // `customRole` is the whole point: without it selected, the resolution
+        // below cannot see the role that governs this member.
+        select: {
+            userId: true,
+            role: true,
+            customRole: { select: { baseRole: true, permissionsJson: true } },
+        },
+        orderBy: input.orderBy === 'role' ? { role: 'asc' } : { createdAt: 'asc' },
+        take: BORROWED_ACTOR_CANDIDATE_CAP,
+    });
+
+    for (const membership of candidates) {
+        const authority = initiatorAuthority(membership);
+        if (input.allows(authority)) {
+            return { actor: { userId: membership.userId, ...authority }, reason: null };
+        }
+    }
+    // An empty candidate list and a list nobody in which qualifies are not the
+    // same fact: the first is an empty tenant, the second is a permissions
+    // configuration that has locked a job out of a workspace that relies on it.
+    return {
+        actor: null,
+        reason: candidates.length === 0 ? BORROW_FAILURE.NO_ACTIVE_MEMBER : BORROW_FAILURE.NO_QUALIFYING_ACTOR,
+    };
+}
+
 /**
  * Resolve the context for a job that does what one named member asked for:
  * the initiator of an evidence import, the actor of a SharePoint sync.
