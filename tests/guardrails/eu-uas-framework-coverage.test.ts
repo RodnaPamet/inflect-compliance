@@ -6,7 +6,9 @@
  *
  * It is the first framework whose packs are a CHOICE rather than a single
  * baseline: one pack per operating subcategory (A1, A2, A3, STS-01, STS-02,
- * operational authorisation, LUC), sharing the controls every operation needs.
+ * operational authorisation, LUC), sharing the controls every operation needs,
+ * plus one per aircraft class an operator looks for by name (C2, which flies
+ * in A2 or A3, so its pack is exactly those two together).
  * The install wizard and onboarding make a tenant choose at least one. That
  * choice is only worth requiring if each pack is honest about its scope, in
  * two directions no other guard checks:
@@ -50,7 +52,7 @@ interface Fixture {
     requirements: Array<{ code: string; title: string; section: string; category: string; sortOrder: number; summary: string }>;
     templates: Template[];
     pack?: unknown;
-    packs: Array<{ key: string; templateCodes: string[] }>;
+    packs: Array<{ key: string; name: string; templateCodes: string[] }>;
 }
 
 const fixture = JSON.parse(fs.readFileSync(path.join(ROOT, FIXTURE), 'utf8')) as Fixture;
@@ -69,6 +71,9 @@ const GOVERNS: Record<string, string[]> = {
     EU_UAS_OPEN_A1: [...OPEN, 'UAS.OPEN.020', 'Art.20'],
     EU_UAS_OPEN_A2: [...OPEN, 'UAS.OPEN.030'],
     EU_UAS_OPEN_A3: [...OPEN, 'UAS.OPEN.040', 'Art.20'],
+    // A class, not a subcategory: a C2 aircraft flies in A2 or A3, so its pack
+    // is those two packs together and governs what they govern.
+    EU_UAS_CLASS_C2: [...new Set([...OPEN, 'UAS.OPEN.030', 'UAS.OPEN.040', 'Art.20'])],
     EU_UAS_STS_01: [...DECLARED, 'UAS.STS-01.010', 'UAS.STS-01.020', 'UAS.STS-01.030', 'UAS.STS-01.040'],
     EU_UAS_STS_02: [...DECLARED, 'UAS.STS-02.010', 'UAS.STS-02.020', 'UAS.STS-02.030', 'UAS.STS-02.040', 'UAS.STS-02.050'],
     EU_UAS_OPERATIONAL_AUTHORISATION: [
@@ -152,6 +157,23 @@ describe('EU UAS — each pack is honest about its subcategory', () => {
             core.filter((c) => !p.templateCodes.includes(c)).map((c) => `${p.key} lacks ${c}`),
         );
         expect(missing).toEqual([]);
+    });
+
+    it('the class C2 pack installs exactly what A2 and A3 install together', () => {
+        // Ticking "Class C2" and ticking A2 + A3 must give a tenant the same
+        // controls, or the two routes to the same aircraft would disagree.
+        const codes = (key: string) => fixture.packs.find((p) => p.key === key)!.templateCodes;
+        const union = new Set([...codes('EU_UAS_OPEN_A2'), ...codes('EU_UAS_OPEN_A3')]);
+        expect([...codes('EU_UAS_CLASS_C2')].sort()).toEqual([...union].sort());
+    });
+
+    it('every subcategory pack names the aircraft classes it admits', () => {
+        const name = (key: string) => fixture.packs.find((p) => p.key === key)!.name;
+        expect(name('EU_UAS_OPEN_A1')).toMatch(/\(class C0, C1\)$/);
+        expect(name('EU_UAS_OPEN_A2')).toMatch(/\(class C2\)$/);
+        expect(name('EU_UAS_OPEN_A3')).toMatch(/\(class C2, C3, C4\)$/);
+        expect(name('EU_UAS_STS_01')).toMatch(/\(class C5\)$/);
+        expect(name('EU_UAS_STS_02')).toMatch(/\(class C6\)$/);
     });
 
     it('no template is left out of every pack', () => {

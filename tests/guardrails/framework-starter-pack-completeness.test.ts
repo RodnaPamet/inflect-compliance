@@ -83,14 +83,15 @@ const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string | st
     // The library ref_id and the catalogue key are the same string on purpose:
     // both writers converge on one Framework row.
     'AIUC-1': { frameworkKey: 'AIUC-1', packKey: 'AIUC_1_BASELINE' },
-    // Seven packs, not one: one per operating subcategory, which the install
-    // wizard makes a tenant choose among (at least one). Each is wired, and
+    // Eight packs, not one: one per operating subcategory, which the install
+    // wizard makes a tenant choose among (at least one), plus a class C2 pack
+    // that is A2 and A3 together. Each is wired, and
     // tests/guardrails/eu-uas-framework-coverage.test.ts holds what each covers.
     'EU-UAS-OPS': {
         frameworkKey: 'EU-UAS-OPS',
         packKey: [
-            'EU_UAS_OPEN_A1', 'EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3', 'EU_UAS_STS_01', 'EU_UAS_STS_02',
-            'EU_UAS_OPERATIONAL_AUTHORISATION', 'EU_UAS_LUC',
+            'EU_UAS_OPEN_A1', 'EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3', 'EU_UAS_CLASS_C2', 'EU_UAS_STS_01',
+            'EU_UAS_STS_02', 'EU_UAS_OPERATIONAL_AUTHORISATION', 'EU_UAS_LUC',
         ],
     },
 };
