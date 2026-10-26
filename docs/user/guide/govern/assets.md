@@ -141,9 +141,10 @@ Owners and Admins only. Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:assets.
 | **{{ui:assets.deleted.emptyTitle}}** | No asset is deleted | Nothing to restore |
 | **{{ui:assets.list.loadError}}** | The list did not load, for example after you changed a filter or opened the deleted assets | Reload the page |
 | **{{ui:assets.bulk.actionFailed}}** | A bulk action did not go through, for example because more than 100 rows were selected | Select fewer rows and try again |
-| **{{ui:assets.deleted.restoreFailed}}**, or **{{ui:assets.deleted.purgeFailed}}** or another reason in the purge dialog | The restore or purge did not go through. A restore also fails when another asset now has the same name | Rename that other asset, or reload the page and try again |
+| A message that another asset now has the same name, after **{{ui:assets.deleted.restore}}** | Since this asset was deleted, another asset took its name | Rename that other asset, then restore this one |
+| **{{ui:assets.deleted.restoreFailed}}**, or **{{ui:assets.deleted.purgeFailed}}** or another reason in the purge dialog | The restore or purge did not go through. When the server gives a reason, the message shows it | Reload the page and try again |
 | A banner saying only the first 5,000 results are shown | More than 5,000 assets match the search and filters | Narrow the list with a filter or the search |
-| **A resource with that unique constraint already exists** in the new-asset dialog | Another asset already has that name | Choose a different name |
+| **{{ui:assets.form.nameTaken}}** in the new-asset dialog | Another asset already has that name | Choose a different name |
 | **Owner must be an active member of this tenant** | The chosen owner is no longer an active member | Choose another owner |
 | **{{ui:assets.form.createFailed}}** | The asset was not created | Try again |
 | **{{ui:assets.import.invalidCsv}}** | The file has no Name header, or no data rows | Fix the header and choose the file again |
