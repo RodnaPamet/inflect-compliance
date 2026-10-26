@@ -28,6 +28,7 @@ import { logger } from '@/lib/observability/logger';
 import { mayReadAgentSubjects } from '@/lib/access-review/scope';
 import { frozenCampaignCoverage, type PopulationCoverage } from '@/lib/legacy-access/coverage';
 import { assertNotAgentCampaign } from './access-review-scope-gate';
+import { assertReviewerIsActiveMember } from './access-review-reviewer';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 const MAX_SUBJECTS = 5000;
@@ -55,6 +56,10 @@ export async function createConnectedAccessReview(ctx: RequestContext, input: un
     const parsed = CreateConnectedAccessReviewSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
+        // Before the population, as every create path does: nothing is written
+        // for a reviewer who is not an ACTIVE member of this tenant.
+        await assertReviewerIsActiveMember(db, ctx, parsed.reviewerUserId);
+
         // MAX_SUBJECTS + 1, deliberately. `take: N` returning exactly N cannot
         // be told apart from a directory of exactly N accounts, so reading one
         // past the cap is the only way to know the list was cut off — and a

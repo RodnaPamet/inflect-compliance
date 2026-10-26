@@ -83,12 +83,12 @@ import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentTo
 import { remediationDescription } from './access-review-connected';
 import { startWorkflowRun } from './workflow-runs';
 import { assertAgentCampaignsAvailable } from './access-review-scope-gate';
+import { assertReviewerIsActiveMember } from './access-review-reviewer';
 
 // ── Refusals ─────────────────────────────────────────────────────────────
 
 export type AgentCampaignRefusal =
     | 'NO_SUBJECTS'
-    | 'REVIEWER_NOT_A_MEMBER'
     | 'NOT_AN_AGENT_CAMPAIGN'
     | 'CAMPAIGN_CLOSED'
     | 'PACKS_ALREADY_PREPARED'
@@ -260,13 +260,7 @@ export async function createAgentAccessReview(
     }
 
     return runInTenantContext(ctx, async (db) => {
-        const reviewer = await db.tenantMembership.findFirst({
-            where: { tenantId: ctx.tenantId, userId: parsed.reviewerUserId, status: 'ACTIVE' },
-            select: { id: true },
-        });
-        if (!reviewer) {
-            refuse('REVIEWER_NOT_A_MEMBER', 'the reviewer must be an active member of this tenant');
-        }
+        await assertReviewerIsActiveMember(db, ctx, parsed.reviewerUserId);
 
         // MAX + 1, for the reason the connected flow gives: N rows back cannot
         // be told from a register of exactly N.

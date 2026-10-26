@@ -36,7 +36,9 @@
  *
  * They are checked in that order on purpose — each presupposes the one before,
  * and reporting the later failure of an earlier cause sends somebody to fix the
- * wrong thing.
+ * wrong thing. Before all five, the reviewer must be an ACTIVE member of the
+ * tenant (`REVIEWER_NOT_A_MEMBER`); that rule is every create path's, so it
+ * lives in `access-review-reviewer.ts` rather than in the list above.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * COVERAGE IS LABELLED, NOT REFUSED (#3325)
@@ -63,6 +65,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { LEGACY_MCP_PROVIDER_ID } from '@/app-layer/integrations/providers/legacy-mcp';
 import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-target';
+import { assertReviewerIsActiveMember } from '@/app-layer/usecases/access-review-reviewer';
 import {
     DEFAULT_DORMANT_DAYS,
     findingsFor,
@@ -152,6 +155,11 @@ export async function createLegacyAccessReview(
     const parsed = CreateLegacyAccessReviewSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
+        // ── Gate 0: a reviewer who can open the campaign ───────────────────
+        // Shared with every create path, so not one of this module's named
+        // refusals: `REVIEWER_NOT_A_MEMBER` unless an ACTIVE member here.
+        await assertReviewerIsActiveMember(db, ctx, parsed.reviewerUserId);
+
         // ── Gate 1-3: a complete, fresh, reconciled snapshot ────────────────
         const snapshot = await db.legacyAccessSnapshot.findFirst({
             where: {

@@ -29,10 +29,13 @@ const mockDb = {
     identityAccountLink: { findMany: jest.fn() },
     user: { findUnique: jest.fn() },
     fileRecord: { create: jest.fn() },
+    // The reviewer-membership check every create path asks first.
+    tenantMembership: { findFirst: jest.fn() },
 };
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockDb.tenantMembership.findFirst.mockResolvedValue({ id: 'm-rev' });
     mockDb.connectedIdentityAccount.findMany.mockResolvedValue([
         { id: 'acc-1', provider: 'okta', email: 'a@x.com', displayName: 'A', isAdmin: true, mfaEnrolled: false, groupsJson: [], connectionId: 'conn-1', externalUserId: 'ext-a' },
         { id: 'acc-2', provider: 'okta', email: 'b@x.com', displayName: 'B', isAdmin: false, mfaEnrolled: true, groupsJson: [], connectionId: 'conn-1', externalUserId: 'ext-b' },
@@ -99,6 +102,19 @@ describe('createConnectedAccessReview', () => {
     it('forbids a non-admin', async () => {
         const ctx = makeRequestContext('READER');
         await expect(createConnectedAccessReview(ctx, { name: 'x', reviewerUserId: 'u' })).rejects.toThrow();
+    });
+
+    it('refuses a reviewer who is not an ACTIVE member of this tenant, before reading the directory, and writes nothing', async () => {
+        mockDb.tenantMembership.findFirst.mockResolvedValue(null);
+        const ctx = makeRequestContext('ADMIN');
+        await expect(
+            createConnectedAccessReview(ctx, { name: 'x', reviewerUserId: 'stranger' }),
+        ).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/^REVIEWER_NOT_A_MEMBER: /) });
+        expect(mockDb.tenantMembership.findFirst.mock.calls[0][0].where).toEqual({
+            tenantId: ctx.tenantId, userId: 'stranger', status: 'ACTIVE',
+        });
+        expect(mockDb.connectedIdentityAccount.findMany).not.toHaveBeenCalled();
+        expect(mockDb.accessReviewConnectedDecision.createMany).not.toHaveBeenCalled();
     });
 });
 

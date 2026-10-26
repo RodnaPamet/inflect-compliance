@@ -538,6 +538,7 @@ executorRegistry.register('access-review-reminder', async (payload) => {
         {
             skippedDuplicate: r.skippedDuplicate,
             skippedNoEmail: r.skippedNoEmail,
+            skippedReviewerNotMember: r.skippedReviewerNotMember,
             skippedComplete: r.skippedComplete,
         },
     );
