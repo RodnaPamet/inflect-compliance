@@ -4,18 +4,32 @@
 # Pre-compute the expensive / frequently-queried PromQL so dashboards and
 # alerts stay cheap. Naming follows the level:metric:operation convention.
 #
-# Metric name reference (collector's Prometheus exporter underscores the
-# app's dotted OTel instrument names):
-#   api.request.count      -> api_request_count_total
+# Metric names, as the collector's Prometheus exporter writes them. The OTel
+# instrument's dotted name becomes underscores, its unit is appended
+# (ms -> milliseconds; unit `1` adds nothing), a counter gets `_total`, and a
+# GAUGE whose unit is `1` gets `_ratio`. Attribute keys become labels the same
+# way (job.status -> job_status). Every app series also carries the resource
+# attributes as labels: service_name, service_version, deployment_environment,
+# host_name, os_type.
+#   api.request.count      -> api_request_count_total   {http_method, http_route, http_status_code}
 #   api.request.duration   -> api_request_duration_milliseconds_{bucket,sum,count}
-#   api.request.errors     -> api_request_errors_total
+#   api.request.errors     -> api_request_errors_total  {http_method, http_route, error_code}
 #   repo.method.duration   -> repo_method_duration_milliseconds_{bucket,sum,count}
-#   repo.method.calls      -> repo_method_calls_total
-#   repo.method.errors     -> repo_method_errors_total
-#   job.execution.count    -> job_execution_count_total
+#   repo.method.calls      -> repo_method_calls_total   {repo_method, outcome}
+#   repo.method.errors     -> repo_method_errors_total  {repo_method, error_type}
+#   job.execution.count    -> job_execution_count_total {job_name, job_status: success|failure}
 #   job.execution.duration -> job_execution_duration_milliseconds_{bucket,sum,count}
-#   job.queue.depth        -> job_queue_depth        (gauge)
-#   audit_stream.delivery.failures -> audit_stream_delivery_failures_total
+#   audit_stream.delivery.failures -> audit_stream_delivery_failures_total {http_status_code}
+#
+# tests/unit/prometheus-rules-match-emitted-metrics.test.ts derives these names
+# and labels from src/ and the collector config, and fails if a rule here
+# selects a metric, label or value the stack does not export.
+#
+# Ratios divide by `(denominator > 0)`. They used `clamp_min(denominator, 1)`,
+# which turns every rate below 1/s into 1/s: at 0.1 requests/s a ratio or a
+# mean read a tenth of its real value. With no traffic a ratio is now absent,
+# and `numerator or denominator * 0` makes it 0 when there is traffic but no
+# failure, rather than absent.
 # =============================================================================
 
 groups:
@@ -30,17 +44,26 @@ groups:
       - record: job:api_request:rate5m
         expr: sum by (service_name) (rate(api_request_count_total[5m]))
 
-      # Error rate (errors/s), per service.
+      # Errors a handler threw (errors/s), per service, whatever status they
+      # map to: withApiErrorHandling calls recordRequestError for a 404 or a
+      # 422 as well as a 500. Not a 5xx rate — that is the next rule.
       - record: job:api_request_errors:rate5m
         expr: sum by (service_name) (rate(api_request_errors_total[5m]))
 
-      # Error ratio (0..1). Guarded against divide-by-zero via `> 0` on the
-      # denominator inside the recording is unnecessary — empty result is fine.
-      - record: job:api_request:error_ratio5m
+      # 5xx responses (req/s), per service, thrown or returned.
+      - record: job:api_request_5xx:rate5m
+        expr: sum by (service_name) (rate(api_request_count_total{http_status_code=~"5.."}[5m]))
+
+      # 5xx ratio (0..1), per service.
+      - record: job:api_request:5xx_ratio5m
         expr: |
-          sum by (service_name) (rate(api_request_errors_total[5m]))
+          (
+            sum by (service_name) (rate(api_request_count_total{http_status_code=~"5.."}[5m]))
+            or
+            sum by (service_name) (rate(api_request_count_total[5m])) * 0
+          )
           /
-          clamp_min(sum by (service_name) (rate(api_request_count_total[5m])), 1)
+          (sum by (service_name) (rate(api_request_count_total[5m])) > 0)
 
       # p95 request latency (ms) over a 5m window.
       - record: job:api_request_duration_ms:p95
@@ -63,7 +86,7 @@ groups:
         expr: |
           sum by (service_name) (rate(api_request_duration_milliseconds_sum[5m]))
           /
-          clamp_min(sum by (service_name) (rate(api_request_duration_milliseconds_count[5m])), 1)
+          (sum by (service_name) (rate(api_request_duration_milliseconds_count[5m])) > 0)
 
   # ---------------------------------------------------------------------------
   # Repository layer — Prisma query health.
@@ -76,9 +99,13 @@ groups:
 
       - record: job:repo_method:error_ratio5m
         expr: |
-          sum by (service_name) (rate(repo_method_errors_total[5m]))
+          (
+            sum by (service_name) (rate(repo_method_errors_total[5m]))
+            or
+            sum by (service_name) (rate(repo_method_calls_total[5m])) * 0
+          )
           /
-          clamp_min(sum by (service_name) (rate(repo_method_calls_total[5m])), 1)
+          (sum by (service_name) (rate(repo_method_calls_total[5m])) > 0)
 
       - record: job:repo_method_duration_ms:p95
         expr: |
@@ -89,6 +116,12 @@ groups:
 
   # ---------------------------------------------------------------------------
   # Background jobs — BullMQ worker.
+  #
+  # There is no queue-depth rule. The app declares a `job.queue.depth` gauge
+  # (startQueueDepthReporting in src/lib/observability/metrics.ts) but nothing
+  # registers it, so no queue-depth series exists. Once the worker calls it,
+  # the series is `job_queue_depth_ratio{queue_name, queue_state}` — the gauge
+  # has unit `1` — and the backlog is `queue_state="waiting"`.
   # ---------------------------------------------------------------------------
   - name: inflect_jobs
     interval: 30s
@@ -97,14 +130,17 @@ groups:
       - record: job:job_execution:rate5m
         expr: sum by (service_name) (rate(job_execution_count_total[5m]))
 
-      # Job failure ratio (0..1). The app tags failures on the count metric
-      # with a status/outcome label — adjust the label name if your build
-      # uses a different one.
+      # Job failure ratio (0..1). recordJobMetrics labels every execution
+      # job.status = success | failure.
       - record: job:job_execution:failure_ratio5m
         expr: |
-          sum by (service_name) (rate(job_execution_count_total{status="error"}[5m]))
+          (
+            sum by (service_name) (rate(job_execution_count_total{job_status="failure"}[5m]))
+            or
+            sum by (service_name) (rate(job_execution_count_total[5m])) * 0
+          )
           /
-          clamp_min(sum by (service_name) (rate(job_execution_count_total[5m])), 1)
+          (sum by (service_name) (rate(job_execution_count_total[5m])) > 0)
 
       # p95 job execution time (ms).
       - record: job:job_execution_duration_ms:p95
@@ -113,10 +149,6 @@ groups:
             0.95,
             sum by (le, service_name) (rate(job_execution_duration_milliseconds_bucket[5m]))
           )
-
-      # Max observed queue depth per queue (gauge max over the scrape set).
-      - record: job:job_queue_depth:max
-        expr: max by (queue) (job_queue_depth)
 
   # ---------------------------------------------------------------------------
   # Compliance-critical — audit-stream delivery to tenant SIEMs.

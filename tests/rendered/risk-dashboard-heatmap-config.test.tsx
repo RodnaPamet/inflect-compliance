@@ -28,7 +28,12 @@ import * as React from 'react';
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
-    useTenantContext: () => ({ tenantName: 'Acme', tenantSlug: 'acme' }),
+    useTenantContext: () => ({
+        tenantName: 'Acme',
+        tenantSlug: 'acme',
+        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true },
+        appPermissions: require('@/lib/permissions').getPermissionsForRole('ADMIN'),
+    }),
     useMoneyFormatter: () => (v: number | null | undefined) =>
         jest.requireActual('@/lib/risk-coherence').formatCompactCurrency(v),
 }));

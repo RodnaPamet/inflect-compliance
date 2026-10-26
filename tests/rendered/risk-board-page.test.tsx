@@ -18,10 +18,27 @@ import { render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 import { SWRConfig } from 'swr';
 
+// The tenant context the page reads. `permissions` + `appPermissions` decide
+// whether the empty register offers Create (`riskCanCreate`); a test swaps
+// in a Reader's to check the button goes away.
+const mockRoleContext = (role: 'ADMIN' | 'READER') => ({
+    tenantName: 'Acme',
+    tenantSlug: 'acme',
+    currencySymbol: '€',
+    permissions: {
+        canRead: true,
+        canWrite: role === 'ADMIN',
+        canAdmin: role === 'ADMIN',
+        canAudit: false,
+        canExport: true,
+    },
+    appPermissions: jest.requireActual('@/lib/permissions').getPermissionsForRole(role),
+});
+let mockTenant: ReturnType<typeof mockRoleContext> | null = null;
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
-    useTenantContext: () => ({ tenantName: 'Acme', tenantSlug: 'acme', currencySymbol: '€' }),
+    useTenantContext: () => mockTenant ?? mockRoleContext('ADMIN'),
     useMoneyFormatter: () => (v: number | null | undefined) =>
         jest.requireActual('@/lib/risk-coherence').formatCompactCurrency(v),
 }));
@@ -156,7 +173,10 @@ function mockFetch(opts: {
 }
 
 describe('RiskBoardPage — five-section board view', () => {
-    afterEach(() => jest.clearAllMocks());
+    afterEach(() => {
+        jest.clearAllMocks();
+        mockTenant = null;
+    });
 
     it('renders all five board cards with their headlines', async () => {
         mockFetch({
@@ -220,5 +240,30 @@ describe('RiskBoardPage — five-section board view', () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('board-hygiene-all-fresh')).toBeInTheDocument());
         expect(screen.getByTestId('board-hygiene-pct').textContent).toBe('0%');
+    });
+});
+
+describe('RiskBoardPage — the empty register offers Create only to a user who can create', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+        mockTenant = null;
+    });
+
+    const EMPTY = { staleness: { staleRisks: [], staleCount: 0, totalCount: 0, maxAssessmentAgeDays: 180 } };
+
+    it('an Admin gets the Create button', async () => {
+        mockTenant = mockRoleContext('ADMIN');
+        mockFetch(EMPTY);
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('risk-first-run-empty')).toBeInTheDocument());
+        expect(screen.getByTestId('risk-first-run-cta')).toBeInTheDocument();
+    });
+
+    it('a Reader, whom the create route refuses, gets none', async () => {
+        mockTenant = mockRoleContext('READER');
+        mockFetch(EMPTY);
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('risk-first-run-empty')).toBeInTheDocument());
+        expect(screen.queryByTestId('risk-first-run-cta')).toBeNull();
     });
 });

@@ -215,7 +215,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(business_tenant_active_daily)",
+          "expr": "sum(business_tenant_active_daily_ratio)",
           "legendFormat": "DAU"
         }
       ]
@@ -259,7 +259,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(business_tenant_active_monthly)",
+          "expr": "sum(business_tenant_active_monthly_ratio)",
           "legendFormat": "MAU"
         }
       ]
@@ -303,7 +303,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(business_tenant_active_daily) / clamp_min(sum(business_tenant_active_monthly), 1)",
+          "expr": "sum(business_tenant_active_daily_ratio) / clamp_min(sum(business_tenant_active_monthly_ratio), 1)",
           "legendFormat": "stickiness"
         }
       ],
@@ -400,7 +400,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(business_tenant_active_daily)",
+          "expr": "sum(business_tenant_active_daily_ratio)",
           "legendFormat": "DAU"
         },
         {
@@ -409,7 +409,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(business_tenant_active_monthly)",
+          "expr": "sum(business_tenant_active_monthly_ratio)",
           "legendFormat": "MAU"
         }
       ]
@@ -841,7 +841,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (plan) (business_tenant_active_monthly)",
+          "expr": "sum by (plan) (business_tenant_active_monthly_ratio)",
           "legendFormat": "{{plan}}",
           "instant": true
         }

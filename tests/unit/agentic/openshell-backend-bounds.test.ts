@@ -64,7 +64,7 @@ function fakeTransport(over: Partial<SandboxTransport> = {}): {
             calls.created += 1;
             return { id: `sb-${calls.created}`, phase: 'SANDBOX_PHASE_READY' as const };
         },
-        execSandbox: async () => ({ exitCode: 0, signal: null, stdout: 'ok', stderr: '' }),
+        execSandbox: async () => ({ exited: true as const, exitCode: 0, signal: null, stdout: 'ok', stderr: '' }),
         deleteSandbox: async ({ sandboxId }) => {
             calls.deleted.push(sandboxId);
             return { outcome: 'DELETION_OUTCOME_COMPLETED' as const };
@@ -98,6 +98,7 @@ describe('1. both bounds trip through the backend', () => {
         const timers = makeTimers();
         const { transport } = fakeTransport({
             execSandbox: async () => ({
+                exited: true as const,
                 exitCode: 0,
                 signal: null,
                 stdout: 'x'.repeat(5_000),
@@ -115,7 +116,7 @@ describe('1. both bounds trip through the backend', () => {
         // the bound would depend on the remote side's cooperation.
         const timers = makeTimers();
         const { transport } = fakeTransport({
-            execSandbox: async () => ({ exitCode: 0, signal: null, stdout: 'y'.repeat(9_999), stderr: '' }),
+            execSandbox: async () => ({ exited: true as const, exitCode: 0, signal: null, stdout: 'y'.repeat(9_999), stderr: '' }),
         });
         await expect(
             run(openShellToolExecutor(transport), timers, { maxOutputBytes: 10 }),
@@ -145,7 +146,7 @@ describe('2. a sandbox that cannot be created is a REFUSAL (4.2b)', () => {
         // "your tool exited 1" from "we could not confine your tool".
         const timers = makeTimers();
         const { transport } = fakeTransport({
-            execSandbox: async () => ({ exitCode: 1, signal: null, stdout: 'out', stderr: 'err' }),
+            execSandbox: async () => ({ exited: true as const, exitCode: 1, signal: null, stdout: 'out', stderr: 'err' }),
         });
         const result = await run(openShellToolExecutor(transport), timers).catch((e: unknown) => e);
         expect(result).not.toBeInstanceOf(SandboxUnreachableError);
@@ -172,7 +173,7 @@ describe('3. one sandbox per execution, deleted afterwards', () => {
     it('deletes it when the tool FAILS too', async () => {
         const timers = makeTimers();
         const { transport, calls } = fakeTransport({
-            execSandbox: async () => ({ exitCode: 3, signal: null, stdout: '', stderr: 'bad' }),
+            execSandbox: async () => ({ exited: true as const, exitCode: 3, signal: null, stdout: '', stderr: 'bad' }),
         });
         await run(openShellToolExecutor(transport), timers).catch(() => undefined);
         expect(calls.deleted).toEqual(['sb-1']);
@@ -184,7 +185,7 @@ describe('3. one sandbox per execution, deleted afterwards', () => {
         // sandbox is logged, not thrown.
         const timers = makeTimers();
         const { transport } = fakeTransport({
-            execSandbox: async () => ({ exitCode: 0, signal: null, stdout: 'precious', stderr: '' }),
+            execSandbox: async () => ({ exited: true as const, exitCode: 0, signal: null, stdout: 'precious', stderr: '' }),
             deleteSandbox: () => {
                 throw new Error('delete exploded');
             },

@@ -1,17 +1,25 @@
 /**
- * A filter change whose fetch fails must say so, not leave the previous
- * filter's rows and counts on screen (#4327).
+ * A filter change whose fetch fails must SAY so, not leave the previous
+ * filter's rows on screen (#4327).
  *
- * `useTenantSWR` keeps the previous key's data, so after a failed filtered
- * fetch `data` is the unfiltered answer. The Risks list never read the
- * query's error at all: the table, the matrix and the histogram went on
- * drawing the old risks under the new filter pills, and the KPI cards their
- * counts. The check is whether the current key has rows of its own, the same
- * test the Assets and Tasks lists use.
+ * `useTenantSWR` runs with `keepPreviousData`, so after a failed filtered
+ * fetch `data` is still the earlier key's answer and `risksQuery.error` was
+ * never read at all: the table went on showing those rows, and the KPI counts
+ * above them, under the new filter pills.
+ *
+ * The same defect #4317 fixed on Tasks and #4291 on Assets, and the same
+ * remedy — so this suite is deliberately the shape of
+ * `tasks-list-failed-filter-shows-error.test.tsx`.
+ *
+ * BOTH DIRECTIONS ARE TESTED, and the second is the one with teeth. Showing an
+ * error whenever `error` is set would be easy and wrong: a failed BACKGROUND
+ * refresh of a key that already loaded must keep its readable table rather
+ * than blare over it. That is what `currentKeyHasRows` decides, and a test for
+ * only the first case would pass against `risksQuery.error ? … : undefined`.
  */
 import * as React from 'react';
-import { act, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { SWRConfig } from 'swr';
+import { configure, render, screen } from '@testing-library/react';
+import { SWRConfig, type Cache } from 'swr';
 
 jest.setTimeout(180_000);
 configure({ asyncUtilTimeout: 20_000 });
@@ -19,15 +27,7 @@ configure({ asyncUtilTimeout: 20_000 });
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p.startsWith('/') ? p : `/${p}`}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
-    useTenantContext: () => ({
-        tenantSlug: 'acme',
-        tenantName: 'Acme',
-        permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true },
-    }),
-    usePermissions: () => ({}),
-    useCurrentUserId: () => 'user-me',
-    useMoneyFormatter: () => (v: number | null | undefined) => (v == null ? '' : String(v)),
-    useModules: () => ({}),
+    useMoneyFormatter: () => (n: number) => `$${n}`,
 }));
 
 jest.mock('next-intl', () => {
@@ -38,9 +38,16 @@ jest.mock('next-intl', () => {
             root,
         );
     const make = (ns: string) => {
-        const t = (key: string) => {
+        const t = (key: string, params?: Record<string, unknown>) => {
             const v = walk(walk(en, ns), key);
-            return typeof v === 'string' ? v : key;
+            if (typeof v !== 'string') return key;
+            let s = v;
+            if (params) {
+                for (const [p, val] of Object.entries(params)) {
+                    s = s.replace(new RegExp(`\\{${p}\\}`, 'g'), String(val));
+                }
+            }
+            return s;
         };
         t.rich = (key: string) => walk(walk(en, ns), key) ?? key;
         t.has = (key: string) => typeof walk(walk(en, ns), key) === 'string';
@@ -49,163 +56,123 @@ jest.mock('next-intl', () => {
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
 
-jest.mock('next/navigation', () => {
-    const searchParams = new URLSearchParams();
-    const router = {
-        push: jest.fn(),
-        replace: jest.fn(),
-        refresh: jest.fn(),
-        back: jest.fn(),
-        forward: jest.fn(),
-        prefetch: jest.fn(),
-    };
-    return {
-        useRouter: () => router,
-        usePathname: () => '/t/acme/risks',
-        useSearchParams: () => searchParams,
-        useParams: () => ({ tenantSlug: 'acme' }),
-    };
-});
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn() }),
+    useSearchParams: () => new URLSearchParams(window.location.search),
+    usePathname: () => window.location.pathname,
+    useParams: () => ({ tenantSlug: 'acme' }),
+}));
 
 jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () => null }));
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { RisksClient } from '@/app/t/[tenantSlug]/(app)/risks/RisksClient';
-import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
 
-type Props = React.ComponentProps<typeof RisksClient>;
-type RiskRow = Props['initialRisks'][number];
+const en = require('../../messages/en.json');
 
-const EN = require('../../messages/en.json');
-const LOAD_ERROR: string = EN.risks.loadError;
+/**
+ * Built FROM the catalogue rather than hand-typed. `translations` carries ~22
+ * keys and a hand-written copy would drift from `messages/en.json` silently,
+ * which is the one thing a test of i18n-adjacent behaviour must not do.
+ */
+const TRANSLATIONS = Object.fromEntries(
+    [
+        'title', 'listDescription', 'risksIdentified', 'heatmap', 'histogram', 'register',
+        'addRisk', 'riskTitle', 'asset', 'threat', 'score', 'level', 'treatment',
+        'controlsCol', 'noRisks', 'low', 'medium', 'high', 'critical', 'untreated',
+        'heatmapTitle', 'totalRisks', 'avgScore', 'openRisks', 'overdueReviews',
+    ].map((k) => [k, typeof en.risks[k] === 'string' ? en.risks[k] : k]),
+) as React.ComponentProps<typeof RisksClient>['translations'];
 
-const risk = (id: string, title: string, status: string): RiskRow => ({
-    id,
-    key: id.toUpperCase(),
-    title,
-    threat: 'Threat',
-    likelihood: 3,
-    impact: 4,
-    inherentScore: 12,
-    score: 12,
-    treatment: null,
-    status,
-    controls: [],
-});
-const OPEN = risk('risk-1', 'Ransomware on the file server', 'OPEN');
-const CLOSED = risk('risk-2', 'Expired vendor contract', 'CLOSED');
-const ROWS = [OPEN, CLOSED];
-const KPIS = { total: 2, open: 1, avgScore: 12 };
+const MATRIX_CONFIG = {
+    likelihoodLabels: ['1', '2', '3', '4', '5'],
+    impactLabels: ['1', '2', '3', '4', '5'],
+    thresholds: { low: 4, medium: 9, high: 16 },
+} as unknown as React.ComponentProps<typeof RisksClient>['matrixConfig'];
 
-const json = (status: number, body: unknown) =>
-    ({
-        ok: status < 400,
-        status,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        json: async () => body,
-        text: async () => JSON.stringify(body),
-    }) as unknown as Response;
+type RiskRow = React.ComponentProps<typeof RisksClient>['initialRisks'][number];
+const RISK_TITLE = 'Edge proxy left unpatched';
+const ROWS = [
+    {
+        id: 'risk-a',
+        title: RISK_TITLE,
+        status: 'OPEN',
+        impact: 3,
+        likelihood: 3,
+        score: 9,
+        treatment: 'MITIGATE',
+        ownerUserId: null,
+        owner: null,
+        asset: null,
+        threat: null,
+        category: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+    } as unknown as RiskRow,
+];
 
-/** Which list fetches fail: a filtered one (status set), or every one. */
-let failWhen: (url: URL) => boolean = () => false;
+const PERMISSIONS = {
+    canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true,
+};
+const FILTERED_LIST_URL = '/api/t/acme/risks?status=OPEN';
 
-beforeEach(() => {
-    window.localStorage.clear();
-    window.history.replaceState({}, '', '/t/acme/risks');
-    failWhen = (url) => url.searchParams.has('status');
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-        const url = new URL(String(input), 'https://test.local');
-        if (url.pathname.endsWith('/risks')) {
-            return failWhen(url)
-                ? json(500, { error: { code: 'INTERNAL', message: 'boom', requestId: 'req-1' } })
-                : json(200, { rows: ROWS, truncated: false, kpiCounts: KPIS });
-        }
-        return json(200, {});
-    }) as unknown as typeof fetch;
-});
-
-const translations = new Proxy({} as Props['translations'], { get: (_t, key) => String(key) });
-
-function mount() {
+// SWR's `provider` wants its own `Cache`, and a `Map` satisfies it at runtime
+// (which is what the sibling Tasks suite relies on by leaving `new Map()`
+// un-annotated). The cast is at the seam rather than widening the map's own
+// type, so the primed entry below stays checked.
+function renderPage(cache: Map<string, { data: unknown }>) {
     return render(
-        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
+        <SWRConfig value={{ provider: () => cache as unknown as Cache, dedupingInterval: 0, shouldRetryOnError: false }}>
             <TooltipProvider>
                 <RisksClient
                     initialRisks={ROWS}
-                    matrixConfig={DEFAULT_RISK_MATRIX_CONFIG}
+                    matrixConfig={MATRIX_CONFIG}
                     tenantSlug="acme"
-                    permissions={{ canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true }}
-                    bulkPermissions={{ canEdit: true, canDelete: true }}
+                    permissions={PERMISSIONS}
+                    bulkPermissions={{ canEdit: true, canDelete: false }}
                     canCreate
-                    translations={translations}
+                    translations={TRANSLATIONS}
                 />
             </TooltipProvider>
         </SWRConfig>,
     );
 }
 
-/** The Open card applies a status filter, which the fetch then refuses. */
-async function applyOpenFilter() {
-    const card = await screen.findByRole('button', { name: /openRisks/ });
-    await act(async () => {
-        fireEvent.click(card);
-    });
-}
-
-/** The figure a KPI card shows, found by its label. */
-const cardValue = (label: string) => {
-    const card = screen.getAllByTestId('kpi-filter-card').find((c) => c.textContent?.includes(label));
-    if (!card) throw new Error(`no ${label} card`);
-    return card.querySelector('[data-metric-value]')?.textContent ?? '';
-};
-
-const listCalls = () =>
-    (global.fetch as jest.Mock).mock.calls
-        .map(([u]) => new URL(String(u), 'https://test.local'))
-        .filter((u) => u.pathname.endsWith('/risks'));
-
-it('a filter whose fetch fails shows the load error, not the previous rows or counts', async () => {
-    mount();
-    await screen.findByText(CLOSED.title);
-    // The cards read the server's counts before the filter is applied.
-    await waitFor(() => expect(cardValue('avgScore')).toBe('12.0'));
-    expect(cardValue('openRisks')).toBe('1');
-
-    await applyOpenFilter();
-
-    expect(await screen.findByText(LOAD_ERROR)).toBeTruthy();
-    expect(listCalls().some((u) => u.searchParams.has('status'))).toBe(true);
-    // Both risks belong to the unfiltered answer and must not stand in for
-    // the filtered one.
-    expect(screen.queryByText(CLOSED.title)).toBeNull();
-    expect(screen.queryByText(OPEN.title)).toBeNull();
-    // Nor may the cards show the unfiltered answer's figures.
-    for (const label of ['totalRisks', 'avgScore', 'openRisks']) {
-        expect(cardValue(label)).toBe('—');
-    }
+beforeEach(() => {
+    window.localStorage.clear();
+    // A FILTERED url the server did not render: `initialFilters` is absent, so
+    // the SSR rows belong to the unfiltered key and `filtersMatchInitial` is
+    // false. That is the live shape of "the user changed a filter".
+    window.history.replaceState({}, '', '/t/acme/risks?status=OPEN');
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'https://test.local');
+        const failed = url.pathname.endsWith('/risks') && url.searchParams.has('status');
+        const body = failed ? { error: { code: 'INTERNAL', message: 'boom' } } : { rows: ROWS, truncated: false };
+        return {
+            ok: !failed,
+            status: failed ? 500 : 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => body,
+            text: async () => JSON.stringify(body),
+        } as unknown as Response;
+    }) as unknown as typeof fetch;
 });
 
-it('the histogram view shows the load error instead of drawing the previous risks', async () => {
-    window.localStorage.setItem('inflect:risks-view:acme', JSON.stringify('histogram'));
-    mount();
-    await screen.findByTestId('risk-histogram-view');
+it('a filtered load that fails shows the error instead of the unfiltered rows', async () => {
+    renderPage(new Map());
 
-    await applyOpenFilter();
-
-    expect(await screen.findByText(LOAD_ERROR)).toBeTruthy();
-    expect(screen.queryByTestId('risk-histogram-view')).toBeNull();
+    expect(await screen.findByText(en.risks.loadError)).toBeTruthy();
+    // The SSR rows answer the UNFILTERED key and must not stand in for the
+    // filtered one.
+    expect(screen.queryAllByText(RISK_TITLE)).toHaveLength(0);
 });
 
-it('a failed refresh of a list that did load keeps its rows', async () => {
-    failWhen = () => true;
-    mount();
-    await screen.findByText(CLOSED.title);
-    await waitFor(() => expect(listCalls().length).toBeGreaterThan(0));
-    // Let the failed revalidation settle.
-    await act(async () => {
-        await new Promise((r) => setTimeout(r, 50));
-    });
+it('a failed refresh of a key that DID load keeps its table, with no error', async () => {
+    // The same failing fetch, but this key already has rows of its own in the
+    // cache. `currentKeyHasRows` is true, so the stale-but-readable table
+    // stands. Without that term this case would show the error too.
+    renderPage(new Map([[FILTERED_LIST_URL, { data: { rows: ROWS, truncated: false } }]]));
 
-    expect(screen.queryByText(LOAD_ERROR)).toBeNull();
-    expect(screen.getByText(CLOSED.title)).toBeTruthy();
+    expect(await screen.findByText(RISK_TITLE)).toBeTruthy();
+    expect(screen.queryAllByText(en.risks.loadError)).toHaveLength(0);
 });

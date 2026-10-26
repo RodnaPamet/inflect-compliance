@@ -119,6 +119,13 @@ describe('needsRehash', () => {
         expect(needsRehash(freshHash)).toBe(false);
     });
 
+    it('returns true for a $2y$ hash at full cost, so it is rewritten as $2b$', () => {
+        // Native bcrypt verifies $2y$ only through passwords.ts's mapping.
+        const cost = String(BCRYPT_COST).padStart(2, '0');
+        expect(needsRehash(`$2y$${cost}$${'a'.repeat(53)}`)).toBe(true);
+        expect(needsRehash(`$2b$${cost}$${'a'.repeat(53)}`)).toBe(false);
+    });
+
     it('returns true for a non-bcrypt format (forces algo migration)', () => {
         expect(needsRehash('argon2id$v=19$...')).toBe(true);
         expect(needsRehash('plaintext-leftover')).toBe(true);

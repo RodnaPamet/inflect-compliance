@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTenantApiUrl, useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useMoneyFormatter, useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
@@ -287,6 +287,8 @@ function RisksPageInner({
     translations: t,
 }: RisksClientProps) {
     const tx = useTranslations('risks');
+    const { cache: swrCache } = useSWRConfig();
+    const buildApiUrl = useTenantApiUrl();
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // P3 — the analytical views were ~8 tooltip-only icon buttons
@@ -385,22 +387,27 @@ function RisksPageInner({
             : undefined,
     });
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `rawRisks` is a fresh array each render by construction (`?? []`); the downstream useMemo keys off its CONTENTS via the query cache, not its identity. Wrapping it in its own useMemo would only move the allocation.
-    const rawRisks = risksQuery.data?.rows ?? [];
-    const truncated = risksQuery.data?.truncated ?? false;
-    // A failed load must read as a failure, not as the previous filter's
-    // rows. `useTenantSWR` keeps the PREVIOUS key's data (`keepPreviousData`),
-    // so after a failed filter change `data` is another query's answer and
-    // `!data` alone never fires. The list is unreachable when the CURRENT key
-    // has no rows of its own: no SSR fallback and nothing cached for it. A
-    // failed background refresh of a key that did load keeps its readable
-    // table. The same check as the Assets and Tasks lists.
-    const { cache: swrCache } = useSWRConfig();
-    const buildApiUrl = useTenantApiUrl();
+    // A FAILED LOAD HAS TO BE SAID, AND `!data` DOES NOT CATCH IT (#4327).
+    //
+    // `useTenantSWR` runs with `keepPreviousData`, so after a filter change
+    // whose fetch fails, `data` is still the PREVIOUS filter's answer: the
+    // table went on showing those rows — and the KPI counts above them — under
+    // the new filter pills, while nothing read `risksQuery.error` at all.
+    //
+    // The test is whether the CURRENT key has rows of its own: the SSR
+    // fallback is for this key, or SWR holds a cached answer for this exact
+    // URL. So a failed BACKGROUND refresh of a key that did load keeps its
+    // readable table, and only a key with nothing of its own shows the error.
+    // The check Tasks (#4317) and Assets (#4291) already use — this page has a
+    // single list view, so it needs no deleted-view branch of its own.
     const currentKeyHasRows =
         filtersMatchInitial || swrCache.get(buildApiUrl(risksKey))?.data !== undefined;
     const listError =
         risksQuery.error && !currentKeyHasRows ? tx('loadError') : undefined;
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `rawRisks` is a fresh array each render by construction (`?? []`); the downstream useMemo keys off its CONTENTS via the query cache, not its identity. Wrapping it in its own useMemo would only move the allocation.
+    const rawRisks = risksQuery.data?.rows ?? [];
+    const truncated = risksQuery.data?.truncated ?? false;
 
     // PR-K — real multi-signal staleness (review overdue, assessment aged,
     // controls moved since, sensor moved). Wires the previously-dead
@@ -1460,6 +1467,7 @@ function RisksPageInner({
                         data={visibleRisks}
                         columns={orderedRiskColumns}
                         loading={loading}
+                        error={listError}
                         getRowId={getRiskRowId}
                         sortableColumns={sortableRiskColumns}
                         sortBy={sortBy}
@@ -1473,7 +1481,6 @@ function RisksPageInner({
                         }}
                         onRowClick={handleRiskRowClick}
                         onRowPrefetch={handleRiskRowPrefetch}
-                        error={listError}
                         selectionEnabled
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),
