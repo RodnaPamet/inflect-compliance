@@ -2,7 +2,8 @@
 
 > **New to the codebase?** Start at [CONTRIBUTING.md](../CONTRIBUTING.md). The
 > operational twin of this doc is [`docs/deployment.md`](deployment.md); the
-> on-call rotation lives in [`docs/incident-response.md`](incident-response.md).
+> incident runbook is [`docs/incident-response.md`](incident-response.md), which
+> records that there is no on-call rotation.
 
 This policy describes how changes reach production. It captures the **rapid
 release model already in effect** — semantic-release auto-versions main (on
@@ -100,7 +101,7 @@ Grounding examples from the last 30 days of `CHANGELOG.md`:
 |-------------|-------------------|--------------------------------|
 | Application code change | PR reviewer | n/a for STANDARD |
 | Database migration (`prisma/`) | PR reviewer | Eng lead OR DBA |
-| Helm / Terraform change (`infra/`) | PR reviewer | Eng lead OR ops on-call |
+| Infrastructure change (`infra/`, `deploy/`) | PR reviewer | Eng lead |
 | Dependency major bump | PR reviewer | Author monitors post-deploy for 24h |
 | Secret rotation | PR reviewer | Security engineer |
 | SCIM / SSO config change | PR reviewer | Security engineer |
@@ -177,7 +178,7 @@ The durable record an auditor can request, all retained for the life of the repo
 2. The author cuts the fix on a branch named
    `emergency/<incident-id>-<short-desc>`.
 3. A second engineer (any senior engineer, **not** the author) reviews and
-   approves. The on-call may not self-approve their own fix.
+   approves. The author may not approve their own fix.
 4. The fix merges through the merge queue and rolls out like any other change.
    There is no staging leg to skip and no deploy workflow to dispatch: the
    merge queue's required checks are the only gate, and an emergency does not
@@ -222,14 +223,16 @@ in-scope part.
 
 ## On-call coverage
 
-- **Standard hours:** the PR reviewer and the merge queue's required checks gate
+There is no on-call rotation and no pager
+([`docs/incident-response.md`](incident-response.md#on-call)).
+
+- **At any hour,** the PR reviewer and the merge queue's required checks gate
   production; there is no separate production approver.
-- **Out of hours:** the on-call rotation reviews and merges.
-  The rotation itself is defined in
-  [`docs/incident-response.md`](incident-response.md); this policy cross-links
-  there rather than duplicating it.
-- **No self-approval:** the on-call engineer cannot approve their own PR. An
-  emergency cut requires a different reviewer.
+- **Out of hours,** nobody is assigned to review or merge. A change, an
+  emergency fix included, waits for a reviewer, and an outage waits for
+  someone to read the alert email. Neither has a committed response time.
+- **No self-approval:** an author cannot approve their own PR. An emergency
+  cut requires a different reviewer.
 
 ## Open policy questions
 

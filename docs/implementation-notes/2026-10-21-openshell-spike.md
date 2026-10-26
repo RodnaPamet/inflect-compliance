@@ -99,8 +99,9 @@ v0.1.5 gateway with mTLS, and sandboxes that actually reach `Ready` — the
 configuration this host cannot run (see the snap `no_new_privs` section below).
 Three claims in the rest of this note are **wrong** and are corrected here.
 
-**The TOML table does nothing.** This note previously said `ocsf_log` has no
-`enabled` key because the table's presence enables the writer. It does not. A
+**The TOML table does nothing.** The 2026-10-24 attempt read `ocsf_log`'s
+missing `enabled` key to mean that the table's presence enables the writer. It
+does not. A
 config carrying
 
 ```toml
@@ -319,6 +320,57 @@ Four facts the roadmap did not have:
 - `config preflight` validates and exits 0 without starting the service, which
   makes configuration checkable in CI without a running gateway.
 
+### 0.1g — the 2026-10-24 attempt, on an unauthenticated gateway
+
+Attempted on 2026-10-24 against the running v0.1.5 gateway on the development
+host, before the 2026-10-25 measurement above. Its two claims about the OCSF
+writer, that the TOML table's presence enables it and that the per-decision
+records are the supervisor's, were overtaken by that measurement and are not
+repeated here. Four facts from the attempt still stand.
+
+**1. A DOCKER-BACKED SANDBOX WILL NOT LAUNCH ON AN UNAUTHENTICATED GATEWAY.**
+`sandbox create` refuses:
+
+```
+code: 'The system is not in a state required for the operation's execution',
+message: "docker sandboxes require launch-scoped gateway authentication"
+```
+
+The gateway was healthy, the Docker driver was selected and polling, and the
+CLI reported `Status: Connected / Authentication: Not required`. That is not
+enough: the driver requires gateway-minted per-sandbox JWTs, so a plaintext
+evaluation gateway can serve health and create nothing.
+
+This bears directly on 0.3 and on phase 4. The roadmap treats the host as the
+gateway prerequisite; authentication material is a second one, and it is not
+optional for the Docker driver. `generate-certs --output-dir <DIR>` writes the
+PKI and a `jwt/` triple (`signing.pem`, `public.pem`, `kid`) to the filesystem
+rather than to Kubernetes Secrets, which is the local-binary route.
+
+**2. `config preflight` names no offending field.** A malformed v2 file returns
+`category=malformed detected_version=2` and a documentation link, with no key,
+line or table. It does distinguish `missing_version` from `malformed`, so the
+category is real — but locating the bad key means bisecting the file by hand.
+Worth knowing before budgeting any gateway-configuration work, and the
+2026-10-25 measurement adds the other half: preflight also passes a table the
+gateway then ignores.
+
+**3. `compute_driver` lives under `[openshell.gateway]`, not under
+`[openshell]`.** The vendored cluster skill's phrasing — "requires
+`[openshell] version = 2`, a singular `compute_driver` selector" — reads as if
+both sit in `[openshell]`, and they do not.
+
+**4. Left unresolved deliberately: the `gateway_jwt` table.** The
+`[openshell.gateway.gateway_jwt]` table with `signing_key_path` is what the
+published configuration reference and the Helm path both describe, and
+v0.1.5's own preflight rejects it at that path, one level up, and as an inline
+table. `signing_key_path` does not appear as a standalone string in the binary.
+So either preflight is stricter than the runtime, or the local-binary gateway
+does not accept that table at this release. Settling it means reading the
+versioned configuration reference for 0.1.5 rather than `latest` — which is
+finding 3 of the vendored-skill review in `.claude/skills/OPENSHELL-LOCAL-NOTES.md`,
+arriving from the other direction.
+
 ### Distribution, which the supply-chain phase can rely on
 
 v0.1.5 ships plain binaries for `x86_64-unknown-linux-gnu`/`-musl`,
@@ -469,8 +521,11 @@ sound on the facts it was given.
 ## What this phase did not establish
 
 0.1e is now settled on v0.1.5 and is recorded above; it needed the chart and
-the binary rather than a running gateway. **One fact still needs a running
-gateway**: what the audit log records per decision kind (0.1g). Phase 5.1
+the binary rather than a running gateway. **0.1g is measured (2026-10-25), and
+the coverage is absent**: no enforcement decision reached a durable artefact.
+One case is still untested, a deployment that deliberately selects the audit
+enforcement mode, and measuring anything needs gateway authentication material,
+because a Docker-backed sandbox refuses to launch without it. Phase 5.1
 depends on it — a decision OpenShell never records cannot be bridged into the
 hash-chained `AuditLog`, and claiming otherwise would put the gap in Inflect's
 compliance record instead of the vendor's. 0.1c's stated behaviour, that

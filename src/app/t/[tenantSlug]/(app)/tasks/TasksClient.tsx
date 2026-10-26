@@ -211,8 +211,9 @@ interface TasksClientProps {
     };
     /**
      * Coarse tiers the usecases assert BEHIND those route keys
-     * (`assertCanWriteTasks` / `assertCanAssignTasks` read `canWrite`;
-     * bulk delete, the Deleted view and restore read `canAdmin`). A
+     * (`assertCanCreateTask` / `assertCanWriteTasks` /
+     * `assertCanAssignTasks` read `canWrite`; bulk delete, the Deleted
+     * view and restore read `canAdmin`). A
      * custom role can hold a granular key its base role's tier does not
      * reach, so each affordance is gated on both — never on less than
      * the server checks.
@@ -246,12 +247,17 @@ function TasksPageInner({
     const t = useTranslations('tasks');
     // What the viewer may actually do, matched to the server: each is
     // the coarse tier the usecase asserts AND the key the route names.
+    //   - create:            `tasks.create` + `assertCanCreateTask`
+    //   - pencil / quick-view editing (PATCH, /status):
+    //                        `tasks.edit` + `assertCanWriteTasks`
     //   - bulk status / due: `tasks.edit` + `assertCanWriteTasks`
     //   - bulk assign:       `tasks.assign` + `assertCanAssignTasks`
     //   - bulk delete:       `admin.manage` + `assertCanAdmin`
     //   - Deleted view:      its list asserts `assertCanAdmin`, and its only
     //                        action, restore, is `tasks.edit` + `assertCanAdmin`
-    const canBulkEdit = permissions.canWrite && appPermissions.tasks.edit;
+    const canCreate = permissions.canWrite && appPermissions.tasks.create;
+    const canEdit = permissions.canWrite && appPermissions.tasks.edit;
+    const canBulkEdit = canEdit;
     const canBulkAssign = permissions.canWrite && appPermissions.tasks.assign;
     const canBulkDelete = permissions.canAdmin && appPermissions.admin.manage;
     const canRestoreDeleted = permissions.canAdmin && appPermissions.tasks.edit;
@@ -1061,7 +1067,7 @@ function TasksPageInner({
         // quick-view side panel (same target as a title click). Gated on
         // edit permission; `stopPropagation` so it doesn't also fire the
         // row's navigate-to-detail click.
-        if (appPermissions.tasks.edit) {
+        if (canEdit) {
             cols.push({
                 id: 'quick-edit',
                 header: '',
@@ -1085,7 +1091,7 @@ function TasksPageInner({
 
         return cols;
 
-    }, [appPermissions.tasks.edit, selected, tasks.length, tenantHref, t]);
+    }, [canEdit, selected, tasks.length, tenantHref, t]);
 
     // `orderColumns` returns a NEW array every call (it spreads `columns`),
     // so calling it inline in JSX would hand DataTable a fresh `columns`
@@ -1199,7 +1205,7 @@ function TasksPageInner({
                     severity: selectedTask.severity,
                     key: selectedTask.key ?? undefined,
                 }}
-                canWrite={appPermissions.tasks.edit}
+                canWrite={canEdit}
                 onClose={() => setSelectedTask(null)}
                 onSaved={() => void invalidateAllTasks()}
             />
@@ -1286,7 +1292,7 @@ function TasksPageInner({
                     filters={liveFilters}
                     searchId="tasks-search"
                     searchPlaceholder={t('list.searchPlaceholder')}
-                    leading={appPermissions.tasks.create ? (
+                    leading={canCreate ? (
                         <Button
                             variant="primary"
                             icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -1493,7 +1499,7 @@ function TasksPageInner({
                 />
             </ListPageShell.Body>
 
-            {appPermissions.tasks.create && (
+            {canCreate && (
                 <NewTaskModal open={isCreateOpen} setOpen={setIsCreateOpen} />
             )}
         </ListPageShell>

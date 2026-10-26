@@ -201,26 +201,10 @@ export async function hasTenantRole(
 
 // ─── Legacy helpers kept for backward compatibility ───
 
-// Same ESM/CJS interop normalisation as src/lib/auth/passwords.ts.
-// Without it, Node ≥ 22 returns the namespace with bcryptjs's exports
-// under `.default`, and `bcrypt.compare` is undefined.
-async function loadBcrypt(): Promise<typeof import('bcryptjs')> {
-    const m = await import('bcryptjs');
-    return (m as unknown as { default?: typeof m }).default ?? m;
-}
-
-export async function hashPassword(password: string): Promise<string> {
-    const bcrypt = await loadBcrypt();
-    return bcrypt.hash(password, 12);
-}
-
-export async function verifyPassword(
-    password: string,
-    hash: string
-): Promise<boolean> {
-    const bcrypt = await loadBcrypt();
-    return bcrypt.compare(password, hash);
-}
+// One hashing module: these are src/lib/auth/passwords.ts's, re-exported
+// for the legacy import path. This file kept its own bcryptjs loader until
+// 2026-10-26.
+export { hashPassword, verifyPassword } from '@/lib/auth/passwords';
 
 // signToken / verifyToken removed with the legacy `token` cookie they
 // existed for. signToken had exactly one caller (api/auth/register) and
