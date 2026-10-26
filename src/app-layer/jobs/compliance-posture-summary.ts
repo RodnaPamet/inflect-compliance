@@ -15,7 +15,9 @@
  */
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
-import { getPermissionsForRole } from '@/lib/permissions';
+import type { PermissionSet } from '@/lib/permissions';
+import type { Permissions } from '@/lib/tenant-context';
+import { borrowedJobActor, BORROW_FAILURE, type BorrowFailure } from '@/app-layer/context-system';
 import type { RequestContext } from '@/app-layer/types';
 import { generateCompliancePostureSummary } from '@/app-layer/usecases/compliance-posture';
 import { enqueue } from './queue';
@@ -26,43 +28,51 @@ import type {
 } from './types';
 
 /**
+ * Whether a borrowed actor's RESOLVED authority lets this job do its work:
+ * `generateCompliancePostureSummary` reaches `gatherPostureSignals`,
+ * which asserts `assertCanRead`.
+ *
+ * One definition, read by the pick below, so the job can never choose a member
+ * its own usecase would then refuse (#4388).
+ */
+export function mayGeneratePostureSummary(authority: { permissions: Permissions; appPermissions: PermissionSet }): boolean {
+    return authority.permissions.canRead === true;
+}
+
+/**
  * Build a tenant-scoped read RequestContext for the daily cron actor.
  *
  * Picks an active member (OWNER/ADMIN preferred) so RLS + the read policies
- * resolve against a real user. Returns null when the tenant has no active
- * members (nothing to summarise). Lives in the job layer (not the usecase)
+ * resolve against a real user. Comes up empty for TWO distinct reasons -- no
+ * active member at all, or members none of whose resolved authority may read
+ * the posture signals -- and reports which. Lives in the job layer (not the usecase)
  * because it needs a cross-tenant/global read before any tenant context
  * exists — tenant-scoped usecase code must never import global prisma.
  */
 async function buildPostureCronContext(
     tenantId: string,
-): Promise<RequestContext | null> {
-    const member = await prisma.tenantMembership.findFirst({
-        where: { tenantId, status: 'ACTIVE' },
-        // Role is a Postgres enum ordered by declaration
-        // (OWNER, ADMIN, EDITOR, READER, AUDITOR, AI_ADMIN), so `asc`
-        // surfaces an OWNER/ADMIN first and falls back to any active member.
-        // AI_ADMIN is last on purpose (#3699): it must never sort as more
-        // senior than the roles above it.
-        orderBy: { role: 'asc' },
-        select: { userId: true, role: true },
-    });
-    if (!member) return null;
-
-    const appPermissions = getPermissionsForRole(member.role);
-    return {
-        requestId: `compliance-posture-${tenantId}`,
-        userId: member.userId,
+): Promise<{ ctx: RequestContext; reason: null } | { ctx: null; reason: BorrowFailure }> {
+    // The actor is the first member IN ORDER whose resolved authority allows
+    // this job's work -- custom role included. It used to be the oldest
+    // OWNER/ADMIN with `getPermissionsForRole(role)`, which dropped the custom
+    // role, and the coarse flags were hand-projected from granular ones rather
+    // than computed from the role (#4388).
+    const { actor, reason } = await borrowedJobActor({
         tenantId,
-        role: member.role,
-        permissions: {
-            canRead: appPermissions.controls.view,
-            canWrite: appPermissions.controls.create,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
+        orderBy: 'role',
+        allows: mayGeneratePostureSummary,
+    });
+    if (!actor) return { ctx: null, reason };
+    return {
+        ctx: {
+            requestId: `compliance-posture-${tenantId}`,
+            userId: actor.userId,
+            tenantId,
+            role: actor.role,
+            permissions: actor.permissions,
+            appPermissions: actor.appPermissions,
         },
-        appPermissions,
+        reason: null,
     };
 }
 
@@ -71,13 +81,18 @@ async function buildPostureCronContext(
  * regenerates the cached posture summary.
  */
 export async function runCompliancePostureSummary(payload: CompliancePostureSummaryPayload) {
-    const ctx = await buildPostureCronContext(payload.tenantId);
+    const { ctx, reason } = await buildPostureCronContext(payload.tenantId);
     if (!ctx) {
-        logger.warn('compliance-posture-summary: tenant has no active members, skipping', {
-            component: 'compliance-posture',
-            tenantId: payload.tenantId,
-        });
-        return { tenantId: payload.tenantId, generated: false };
+        // This used to say "has no active members" unconditionally, which is
+        // false for the case the pick was added for: members who exist and may
+        // not read the signals. Name the reason the pick actually gave (#4388).
+        logger.warn(
+            reason === BORROW_FAILURE.NO_ACTIVE_MEMBER
+                ? 'compliance-posture-summary: tenant has no active members, skipping'
+                : 'compliance-posture-summary: no member may read posture signals, skipping',
+            { component: 'compliance-posture', tenantId: payload.tenantId, reason },
+        );
+        return { tenantId: payload.tenantId, generated: false, reason };
     }
     const result = await generateCompliancePostureSummary(ctx);
     return {

@@ -10,7 +10,9 @@
  */
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { getPermissionsForRole } from '@/lib/permissions';
+import type { PermissionSet } from '@/lib/permissions';
+import type { Permissions } from '@/lib/tenant-context';
+import { borrowedJobActor, BORROW_FAILURE, type BorrowFailure } from '@/app-layer/context-system';
 import {
     pullPolicyFromSharePoint,
     getSharePointClientForTenant,
@@ -18,34 +20,59 @@ import {
 import { logger } from '@/lib/observability/logger';
 import type { SharePointPolicyPullPayload, SharePointSubscriptionRenewPayload } from './types';
 
+/**
+ * Whether a borrowed actor's RESOLVED authority lets this job do its work:
+ * a pull WRITES the policy's content. `pullPolicyFromSharePoint` itself
+ * asserts nothing, but its user-facing twin `pullPolicyByIdFromSharePoint`
+ * asserts `assertCanWrite`, so that is the authority this work needs.
+ *
+ * One definition, read by the pick below, so the job can never choose a member
+ * its own usecase would then refuse (#4388).
+ */
+export function mayPullPolicyFromSharePoint(authority: { permissions: Permissions; appPermissions: PermissionSet }): boolean {
+    return authority.permissions.canWrite === true;
+}
+
 /** Build a write-capable tenant context for a job actor (first active admin). */
-async function buildPolicyJobContext(tenantId: string): Promise<RequestContext | null> {
-    const admin = await prisma.tenantMembership.findFirst({
-        where: { tenantId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
-        select: { userId: true, role: true },
-        orderBy: { createdAt: 'asc' },
-    });
-    if (!admin) return null;
-    const appPermissions = getPermissionsForRole(admin.role);
-    return {
-        requestId: `sharepoint-policy-${tenantId}`,
-        userId: admin.userId,
+async function buildPolicyJobContext(
+    tenantId: string,
+): Promise<{ ctx: RequestContext; reason: null } | { ctx: null; reason: BorrowFailure }> {
+    // The actor is the first member IN ORDER whose resolved authority allows
+    // this job's work -- custom role included. It used to be the oldest
+    // OWNER/ADMIN with `getPermissionsForRole(role)`, which dropped the custom
+    // role, and the coarse flags were hand-projected from granular ones rather
+    // than computed from the role (#4388).
+    const { actor, reason } = await borrowedJobActor({
         tenantId,
-        role: admin.role,
-        permissions: {
-            canRead: appPermissions.policies.view,
-            canWrite: appPermissions.policies.edit,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
+        roles: ['OWNER', 'ADMIN'],
+        orderBy: 'createdAt',
+        allows: mayPullPolicyFromSharePoint,
+    });
+    if (!actor) return { ctx: null, reason };
+    return {
+        ctx: {
+            requestId: `sharepoint-policy-${tenantId}`,
+            userId: actor.userId,
+            tenantId,
+            role: actor.role,
+            permissions: actor.permissions,
+            appPermissions: actor.appPermissions,
         },
-        appPermissions,
+        reason: null,
     };
 }
 
 export async function runSharePointPolicyPull(payload: SharePointPolicyPullPayload) {
-    const ctx = await buildPolicyJobContext(payload.tenantId);
-    if (!ctx) return { pulled: false, reason: 'no_admin' };
+    const { ctx, reason } = await buildPolicyJobContext(payload.tenantId);
+    // `no_admin` is kept for an empty tenant so the existing result contract
+    // does not move; a tenant whose members are all locked out of this work is
+    // a DIFFERENT fact and gets its own reason rather than that one (#4388).
+    if (!ctx) {
+        return {
+            pulled: false,
+            reason: reason === BORROW_FAILURE.NO_ACTIVE_MEMBER ? 'no_admin' : 'no_qualifying_actor',
+        };
+    }
     const policy = await prisma.policy.findFirst({
         where: { id: payload.policyId, tenantId: payload.tenantId },
         select: { spDriveId: true, spItemId: true },
@@ -70,7 +97,16 @@ export async function runSharePointSubscriptionRenew(_payload: SharePointSubscri
         if (!p.spSubscriptionId) continue;
         let client = clientByTenant.get(p.tenantId);
         if (client === undefined) {
-            const ctx = await buildPolicyJobContext(p.tenantId);
+            const { ctx, reason } = await buildPolicyJobContext(p.tenantId);
+            if (!ctx) {
+                // Renewal stops for this tenant's subscriptions; say why once
+                // per tenant rather than dropping them silently (#4388).
+                logger.warn('sharepoint-subscription-renew: no borrowable actor, tenant skipped', {
+                    component: 'sharepoint',
+                    tenantId: p.tenantId,
+                    reason,
+                });
+            }
             client = ctx ? await getSharePointClientForTenant(ctx).catch(() => null) : null;
             clientByTenant.set(p.tenantId, client);
         }

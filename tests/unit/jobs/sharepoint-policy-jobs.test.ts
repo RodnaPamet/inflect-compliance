@@ -16,7 +16,7 @@
  *     - null spSubscriptionId rows skipped.
  */
 const prismaMock = {
-    tenantMembership: { findFirst: jest.fn() },
+    tenantMembership: { findMany: jest.fn() },
     policy: { findFirst: jest.fn(), findMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock }));
@@ -27,11 +27,10 @@ const sync = {
 };
 jest.mock('@/app-layer/usecases/policy-sharepoint-sync', () => sync);
 
+// Spread the real module: initiatorAuthority() reaches permissionsForMembership(),
+// and a partial factory makes every export it does not list throw at call time.
 jest.mock('@/lib/permissions', () => ({
-    getPermissionsForRole: () => ({
-        policies: { view: true, edit: true }, admin: { manage: true },
-        audits: { view: true }, reports: { export: true },
-    }),
+    ...jest.requireActual('@/lib/permissions'),
 }));
 
 jest.mock('@/lib/observability/logger', () => ({
@@ -45,12 +44,12 @@ import {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    prismaMock.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1', role: 'ADMIN' });
+    prismaMock.tenantMembership.findMany.mockResolvedValue([{ userId: 'u1', role: 'ADMIN', customRole: null }]);
 });
 
 describe('runSharePointPolicyPull', () => {
     it('returns no_admin when the tenant has no active admin', async () => {
-        prismaMock.tenantMembership.findFirst.mockResolvedValue(null);
+        prismaMock.tenantMembership.findMany.mockResolvedValue([]);
         const res = await runSharePointPolicyPull({ tenantId: 't1', policyId: 'p1' } as never);
         expect(res).toEqual({ pulled: false, reason: 'no_admin' });
     });
@@ -87,7 +86,7 @@ describe('runSharePointSubscriptionRenew', () => {
 
     it('skips policies for a tenant with no admin (client null)', async () => {
         prismaMock.policy.findMany.mockResolvedValue([{ id: 'p1', tenantId: 't1', spSubscriptionId: 'sub1' }]);
-        prismaMock.tenantMembership.findFirst.mockResolvedValue(null);
+        prismaMock.tenantMembership.findMany.mockResolvedValue([]);
         const res = await runSharePointSubscriptionRenew({} as never);
         expect(res).toEqual({ subscriptions: 1, renewed: 0 });
         expect(sync.getSharePointClientForTenant).not.toHaveBeenCalled();
