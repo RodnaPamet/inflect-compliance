@@ -363,6 +363,16 @@ export const env = createEnv({
         // disagree with the id, and the disagreement would decide whether
         // somebody's question is answered.
         AGENT_INTERACTIVE_RUNS: z.string().optional(),
+        // THE AGENT PROFILE SURFACE (Step 1a of docs/claude-agent-sdk-design.md,
+        // #4143) — opt-in. Profiles are what a customer writes for their agent:
+        // instructions, tools, skills, a model tier. With this off, every
+        // profile route answers 404 and a profile run key is refused at
+        // admission, so the tables exist and nothing reaches them.
+        //
+        // Read through `agentProfilesEnabled`, which accepts only '1' and
+        // 'true', for the reason `AGENT_DRIVER_FLUE` above gives: a typo in a
+        // feature flag is "off", not a process that will not boot.
+        AGENT_PROFILES: z.string().optional(),
         // A2A HOST CONSUMERS (#3861) — admits a host that calls Inflect as a
         // CLIENT rather than as a peer agent: no card to pin, no Ed25519 key,
         // an OAuth2 bearer instead of a signed receipt.
@@ -652,6 +662,7 @@ export const env = createEnv({
         A2A_HOST_CONSUMER_TOKEN_SECRET: process.env.A2A_HOST_CONSUMER_TOKEN_SECRET,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
+        AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
         SANDBOX_RUNTIME_CONFIG_DIGEST: process.env.SANDBOX_RUNTIME_CONFIG_DIGEST,

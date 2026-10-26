@@ -66,7 +66,10 @@ code:
   agent (`TenantApiKey.agentId`, `maxAutonomyLevel`) and pointing the agent at
   `/api/mcp`.
 
-What a tenant **cannot** do is say what the agent should *do*. An Inflect-hosted
+What a tenant **cannot** do yet is have Inflect run what it says the agent
+should *do*. Since Step 1a it can write it down, behind the `AGENT_PROFILES`
+flag (see "Agent profiles" below), but no engine runs a profile until Phase 2.
+An Inflect-hosted
 run executes a `WorkflowDefinition` from `src/lib/agentic/workflow-registry.ts`
 (nine in `src/lib/agentic/workflows/` plus the registry's own `diagnostic`), and
 each one is written by this repository. So "set up my own agent" today means one of two things. Either the
@@ -204,6 +207,59 @@ call.
 The ledger scenario reflects an owner decision (2026-10-25, #4197). A
 `MODEL_CALL` step may cover a whole dispatch, provided it names how many model
 calls it covers. Flue writes one such step per dispatch.
+
+### Agent profiles
+
+Since Step 1a (#4143), a tenant can write what an agent should do as a
+versioned, approved agent profile, behind the opt-in `AGENT_PROFILES` flag. With
+the flag off, every profile route answers 404 before its permission check, and a
+profile run key is refused at admission.
+
+- **The model.** `AgentProfile` is one row per registered agent, pointing at the
+  approved version in force. `AgentProfileVersion` is immutable and holds:
+  - the instructions, encrypted at rest, and their SHA-256;
+  - the tools, a subset of the agent's grants;
+  - the skills;
+  - a model tier, which is a deployment tier and never a model id;
+  - an effort and a turn bound, at most `ENGINE_CAPS.MAX_STEPS`;
+  - the output kind and the allowed triggers.
+- **The lifecycle.** DRAFT, SUBMITTED, then APPROVED or REJECTED, with RETIRED
+  terminal. An edit is a new version. Approval and rejection take a person
+  other than the author, holding `admin.agent_registry` (owner decision 3).
+  This is held in `usecases/agent-profiles.ts`, by the CHECK
+  `AgentProfileVersion_not_self_decided`, and by a trigger that freezes a
+  version's text and settings for every role.
+- **At save and again at approval:**
+  - the instructions are sanitised, capped at 16,000 characters and scanned by
+    the skill text scan. They are refused by rule id, never stored;
+  - every tool must be granted now, or it is refused by name.
+- **Admission.** `startWorkflowRun` asks `resolveRunDefinition`, and only that
+  one call changed:
+  - a key that does not ask for a profile behaves exactly as before;
+  - `agent-profile:<profileId>@v<n>` resolves only to the approved version in
+    force, inside the caller's tenant, after recomputing the instructions'
+    hash;
+  - the compiled definition asks for a reasoning engine and carries the
+    version as `def.profile`;
+  - a run that is admitted pins `profileVersionId` and
+    `profileInstructionsHash`, write-once.
+- **No engine runs a profile yet** (decision 7 below). `runsProfiles(driver)` is
+  false for every engine, so admission refuses a profile before the run row
+  exists: `PROFILE_NEEDS_REASONING_ENGINE` on the static engine, and
+  `PROFILE_ENGINE_CANNOT_RUN_PROFILES` on Flue.
+- **The tools a run is offered** are narrowed in the engine-neutral core.
+  `offerToolSet`'s `profileTools` offers the intersection of the version's
+  tools and the agent's current grants. It records each tool lost to a revoked
+  grant as `PROFILE_TOOL_NOT_GRANTED`, and an engine that runs profiles passes
+  it.
+
+Two things are not enforced yet, and the steps that need them carry them:
+
+- **`allowedTriggers`** is checked at each trigger site: the Ask page and Test
+  run in 1b, automation in Phase 2.
+- **Resume and settlement** still read the registry. A profile run row cannot
+  exist until an engine runs profiles, and the engine that does routes both
+  through the resolver (Step 2b).
 
 ### What the harness scanner recognises
 
@@ -538,6 +594,14 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    `runGuardedTool`'s step 1. The result scan is left to the engine that
    consumes the result, because only Inflect's own engines put a result into
    Inflect's model.
+
+7. **Whether a profile runs on Flue in Phase 1.** **Decided (owner,
+   2026-10-26): no.** Flue builds its prompt from a workflow's description and
+   steps, so it would run a profile while ignoring the instructions. Admission
+   therefore refuses a profile on every engine whose `runsProfiles` entry is
+   false, which is every engine until Phase 2's Tool Runner sets its own. It
+   also keeps "tenant-authored agent instructions" off the Anthropic
+   sub-processor row until Step 2c, where the roadmap records it.
 
 ## Roadmap (future direction)
 
@@ -883,6 +947,12 @@ builder ships behind an opt-in flag and stays off until Phase 2 gives it an
 engine that can run a profile.
 
 #### Step 1a — Agent profile model and usecases
+
+Delivered (#4143). The model, usecases, routes, resolver and run pin are in
+"Agent profiles" under Current state. One deviation from the prompt below was
+an owner decision (decision 7): a profile resolved to Flue is refused too
+(`PROFILE_ENGINE_CANNOT_RUN_PROFILES`), because no engine renders a profile's
+instructions until Phase 2.
 
 **Goal.** Store what an agent should do, versioned and approved, and compile an
 approved version into a run Inflect can admit. Nothing runs it yet.

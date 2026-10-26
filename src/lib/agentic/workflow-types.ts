@@ -14,6 +14,13 @@
  *   - SYNTHESIS       — reason over accumulated context to produce a summary.
  */
 
+import type {
+    ProfileEffort,
+    ProfileModelTier,
+    ProfileOutputKind,
+    ProfileSkillRef,
+    ProfileTrigger,
+} from './agent-profile';
 import type { ApprovalWindow } from './approval-window';
 
 /** Accumulated run state. `outputs` is keyed by each step's `label`. */
@@ -225,10 +232,47 @@ export interface WorkflowDefinition {
      */
     a2aSkill?: A2aPublicSkillCopy;
 
+    /**
+     * THE AGENT PROFILE VERSION this definition was compiled from (Step 1a of
+     * `docs/claude-agent-sdk-design.md`, #4143), or ABSENT for every
+     * registered workflow.
+     *
+     * Present only on a definition `resolveRunDefinition` compiled from an
+     * APPROVED version inside the caller's tenant; no registered definition
+     * carries it. Admission refuses a definition carrying it on an engine that
+     * cannot run a profile (`runsProfiles`), before the run row exists, and a
+     * run that is admitted pins `versionId` and `instructionsHash`.
+     */
+    profile?: ProfileRunSpec;
+
     key: string;
     name: string;
     description: string;
     steps: WorkflowStepDef[];
+}
+
+/**
+ * One approved agent profile version, as an engine that runs profiles reads it.
+ * `instructions` is the decrypted text, whose hash `resolveRunDefinition` has
+ * just recomputed and compared with `instructionsHash`; it is the operator's
+ * own block in the prompt and never a grant. `toolNames` only narrows: an
+ * engine intersects it with the agent's current grants (`offerToolSet`'s
+ * `profileTools`).
+ */
+export interface ProfileRunSpec {
+    readonly profileId: string;
+    readonly agentId: string;
+    readonly versionId: string;
+    readonly version: number;
+    readonly instructions: string;
+    readonly instructionsHash: string;
+    readonly toolNames: readonly string[];
+    readonly skillRefs: readonly ProfileSkillRef[];
+    readonly modelTier: ProfileModelTier;
+    readonly effort: ProfileEffort;
+    readonly maxTurns: number;
+    readonly outputKind: ProfileOutputKind;
+    readonly allowedTriggers: readonly ProfileTrigger[];
 }
 
 /**

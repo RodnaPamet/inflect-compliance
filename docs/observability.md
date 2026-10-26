@@ -236,13 +236,16 @@ export async function myNewJob() {
 
 ## SLOs, Dashboards & Alerting
 
-Production observability infrastructure is defined in `infra/`:
+The observability stack's files are in `infra/observability/`. That stack is
+not recorded as running in production; production's alerts are the GCP Cloud
+Monitoring policies in `infra/alerts/` (see
+[`observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md)).
 
 | Resource | Path | Purpose |
 |---|---|---|
 | **SLO Definitions** | [`docs/slos.md`](slos.md) | Availability, latency, error rate, health check SLOs |
-| **Grafana Dashboard** | `infra/dashboards/grafana-api-slos.json` | Importable dashboard with 14 panels |
-| **Alert Rules** | `infra/alerts/rules.yml` | 10 Prometheus/Grafana alerting rules |
+| **Grafana Dashboards** | `infra/observability/grafana/dashboards/` | API (RED), jobs and queues, business KPIs, stack health |
+| **Alert Rules** | `infra/observability/prometheus/rules/alerting-rules.yml` | Prometheus alerting rules, in five groups |
 | **OTel Collector** | `infra/otel-collector/config.yml` | Collector config (app → Prometheus + traces) |
 
 See `infra/README.md` for deployment instructions and complete metrics inventory.
@@ -334,11 +337,10 @@ OTEL_ENABLED=true npm run dev
 # Generate traffic with varied latency:
 for i in $(seq 1 20); do curl -s http://localhost:3000/api/livez > /dev/null; done
 
-# Open Grafana → import infra/dashboards/grafana-api-slos.json
+# Open Grafana → "Inflect — API Overview (RED)" (inflect-api-overview)
 # Verify panels show data:
-#   ✓ Request Rate should show > 0 req/s
-#   ✓ Latency Percentiles should show P50/P95/P99 lines
-#   ✓ Request Volume should show 2xx bars
+#   ✓ API request rate should show > 0 req/s
+#   ✓ Latency percentiles should show p95 / p99 / mean lines
 ```
 
 ### Verifying job metrics

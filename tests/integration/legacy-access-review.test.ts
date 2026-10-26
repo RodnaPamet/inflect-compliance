@@ -7,7 +7,23 @@
  *
  * Plus the FREEZE: a later pull must change nothing in an open campaign. That
  * one is asserted by actually pulling again, not by reading the code.
+ *
+ * And #3325: the snapshot's population coverage travels from the row, through
+ * the frozen subjects, to the close audit row and the evidence PDF's TEXT —
+ * captured as it reaches `addParagraph`, through the real generator.
  */
+const mockParagraphs: string[] = [];
+jest.mock('@/lib/pdf/sections', () => {
+    const actual = jest.requireActual('@/lib/pdf/sections');
+    return {
+        ...actual,
+        addParagraph: (doc: unknown, text: string, ...rest: unknown[]) => {
+            mockParagraphs.push(text);
+            return actual.addParagraph(doc, text, ...rest);
+        },
+    };
+});
+
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
@@ -18,6 +34,7 @@ import {
     createLegacyAccessReview,
 } from '@/app-layer/usecases/access-review-legacy';
 import { closeConnectedAccessReview } from '@/app-layer/usecases/access-review-connected';
+import { populationCoverageStatement } from '@/app-layer/reports/pdf/accessReview';
 import { verifySnapshotPayloadHash } from '@/app-layer/usecases/legacy-access-verify';
 import { computePayloadHash } from '@/lib/legacy-access/canonical';
 
@@ -52,6 +69,12 @@ async function seedHappyPath(opts: {
     completedAt?: Date | null;
     withAccounts?: boolean;
     withResolution?: boolean;
+    /**
+     * Left unnamed by default, as the pull leaves it, so the schema default
+     * decides. VERIFIED stands in for a transport that observed the whole table
+     * itself — none exists today (#3325).
+     */
+    populationCoverage?: 'VERIFIED';
 } = {}) {
     const snap = await prisma.legacyAccessSnapshot.create({
         data: {
@@ -60,6 +83,7 @@ async function seedHappyPath(opts: {
             payloadHash: 'a'.repeat(64), rowCount: 1, rowsReceived: 1,
             status: opts.status ?? 'COMPLETE',
             completedAt: opts.completedAt === undefined ? new Date() : opts.completedAt,
+            ...(opts.populationCoverage ? { populationCoverage: opts.populationCoverage } : {}),
         },
     });
     if (opts.withAccounts !== false) {
@@ -477,5 +501,110 @@ describe('closing a LEGACY_APP campaign', () => {
         // so or a similarity scorer did.
         expect((d.snapshotJson as Record<string, unknown>).resolution)
             .toMatchObject({ method: 'MANUAL' });
+    });
+});
+
+describe('#3325 — a campaign does not read as a review of the whole application', () => {
+    async function decideAllConfirm(accessReviewId: string) {
+        await prisma.accessReviewConnectedDecision.updateMany({
+            where: { tenantId: T, accessReviewId },
+            data: { decision: 'CONFIRM', decidedAt: new Date(), decidedByUserId: reviewerId },
+        });
+    }
+
+    /** The close's hash-chained row for one campaign. */
+    async function closeRow(accessReviewId: string) {
+        const row = await prisma.auditLog.findFirstOrThrow({
+            where: { tenantId: T, action: 'ACCESS_REVIEW_DECISION_EXECUTED', entityId: accessReviewId },
+            select: { detailsJson: true },
+        });
+        return row.detailsJson as { summary: string; after: Record<string, unknown> };
+    }
+
+    it('an UNKNOWN snapshot still makes a campaign — coverage is a label, not a gate', async () => {
+        // Refusing UNKNOWN would refuse every legacy campaign there is: no
+        // transport can observe a whole application today.
+        await seedHappyPath();
+        const r = await create();
+        expect(r.subjectCount).toBe(1);
+        expect(r.populationCoverage).toBe('UNKNOWN');
+    });
+
+    it('freezes the coverage into every subject, beside the hash, and into the create row', async () => {
+        await seedHappyPath();
+        const r = await create();
+
+        const d = await prisma.accessReviewConnectedDecision.findFirstOrThrow({
+            where: { tenantId: T, accessReviewId: r.accessReviewId },
+        });
+        expect((d.snapshotJson as Record<string, unknown>).provenance).toMatchObject({
+            payloadHash: 'a'.repeat(64),
+            populationCoverage: 'UNKNOWN',
+        });
+
+        const created = await prisma.auditLog.findFirstOrThrow({
+            where: { tenantId: T, action: 'LEGACY_ACCESS_REVIEW_CREATED', entityId: r.accessReviewId },
+            select: { detailsJson: true },
+        });
+        expect(created.detailsJson).toMatchObject({ populationCoverage: 'UNKNOWN' });
+    });
+
+    it('the close says "coverage unverified" in its hash-chained row AND in the evidence text', async () => {
+        await seedHappyPath();
+        const r = await create();
+        await decideAllConfirm(r.accessReviewId);
+
+        mockParagraphs.length = 0;
+        const closed = await closeConnectedAccessReview(ctx(), r.accessReviewId);
+        expect(closed.populationCoverage).toBe('UNKNOWN');
+        expect(closed.evidenceFileRecordId).not.toBeNull();
+
+        const row = await closeRow(r.accessReviewId);
+        expect(row.after.populationCoverage).toBe('UNKNOWN');
+        expect(row.summary).toContain('POPULATION COVERAGE UNVERIFIED');
+
+        // The artefact an auditor is handed, as rendered by the real generator.
+        expect(mockParagraphs).toContain(populationCoverageStatement('UNKNOWN'));
+        expect(mockParagraphs).not.toContain(populationCoverageStatement('VERIFIED'));
+
+        const generated = await prisma.auditLog.findFirstOrThrow({
+            where: { tenantId: T, action: 'ACCESS_REVIEW_EVIDENCE_GENERATED', entityId: r.accessReviewId },
+            select: { detailsJson: true },
+        });
+        expect((generated.detailsJson as { after: Record<string, unknown> }).after.populationCoverage)
+            .toBe('UNKNOWN');
+    });
+
+    it('the coverage is read from the FROZEN subjects, not the snapshot row at close', async () => {
+        // A snapshot changed after create must not change what the campaign
+        // claims — the freeze exists to remove exactly that drift. VERIFIED is
+        // written straight to the row only to prove the close does not read it.
+        const snap = await seedHappyPath();
+        const r = await create();
+        await prisma.legacyAccessSnapshot.update({
+            where: { id: snap.id },
+            data: { populationCoverage: 'VERIFIED' },
+        });
+        await decideAllConfirm(r.accessReviewId);
+
+        const closed = await closeConnectedAccessReview(ctx(), r.accessReviewId);
+        expect(closed.populationCoverage).toBe('UNKNOWN');
+    });
+
+    it('a snapshot a transport had VERIFIED carries no caveat — the label follows the data', async () => {
+        await seedHappyPath({ populationCoverage: 'VERIFIED' });
+        const r = await create();
+        expect(r.populationCoverage).toBe('VERIFIED');
+        await decideAllConfirm(r.accessReviewId);
+
+        mockParagraphs.length = 0;
+        const closed = await closeConnectedAccessReview(ctx(), r.accessReviewId);
+        expect(closed.populationCoverage).toBe('VERIFIED');
+
+        const row = await closeRow(r.accessReviewId);
+        expect(row.after.populationCoverage).toBe('VERIFIED');
+        expect(row.summary).not.toContain('POPULATION COVERAGE UNVERIFIED');
+        expect(mockParagraphs).toContain(populationCoverageStatement('VERIFIED'));
+        expect(mockParagraphs).not.toContain(populationCoverageStatement('UNKNOWN'));
     });
 });

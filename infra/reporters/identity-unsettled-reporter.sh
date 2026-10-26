@@ -23,7 +23,8 @@
 #
 #   1. There is no Prometheus and no Alertmanager. `deploy/docker-compose.prod.yml`
 #      references neither. `infra/alerts/rules.yml` and `infra/alerts/receivers.yml`
-#      describe a stack that is not deployed — 22 rules, none of them running.
+#      described a stack that was never deployed — 22 rules, none of them ever
+#      running. Both were deleted on 2026-10-26.
 #   2. The app container has NO `OTEL_*` environment set, so the OTel meter
 #      exports nowhere. `recordIdentityWritesUnsettled` increments a counter
 #      that is discarded in-process. The metric is DEAD in production, not

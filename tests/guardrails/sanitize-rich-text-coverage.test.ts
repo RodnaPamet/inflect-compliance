@@ -133,6 +133,11 @@ const RICH_TEXT_COVERAGE: Readonly<
     // scanned, hashed and encrypted — the hash is over the sanitised text, so
     // what a reviewer approves is what is stored.
     TenantSkillVersion: { usecases: ['src/app-layer/usecases/tenant-skills.ts'], sanitizer: 'sanitizePlainText' },
+    // An agent profile's instructions (#4143): what a tenant tells its agent,
+    // and the operator's block in every prompt the profile runs under.
+    // Sanitised at the single write seam before they are scanned, hashed and
+    // encrypted, so the pinned hash is over the text that is stored.
+    AgentProfileVersion: { usecases: ['src/app-layer/usecases/agent-profiles.ts'], sanitizer: 'sanitizePlainText' },
     // The kill switch's `reason` / `liftReason` — operator free text written
     // during an incident, sanitised at the single write seam (`requireReason`)
     // before the Epic B middleware encrypts it. Read back by the operator

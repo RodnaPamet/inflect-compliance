@@ -50,6 +50,11 @@ const SEAMS = {
     // the text, the review stamps and the pinned hash.
     tenantSkill: { table: 'TenantSkill', seam: 'src/app-layer/usecases/tenant-skills.ts' },
     tenantSkillVersion: { table: 'TenantSkillVersion', seam: 'src/app-layer/usecases/tenant-skills.ts' },
+    // And for the same reason (#4143): a profile version's approval is what
+    // lets its instructions reach a model, so exactly one file may write the
+    // rows that carry the text, the review stamps and the pointer in force.
+    agentProfile: { table: 'AgentProfile', seam: 'src/app-layer/usecases/agent-profiles.ts' },
+    agentProfileVersion: { table: 'AgentProfileVersion', seam: 'src/app-layer/usecases/agent-profiles.ts' },
     // A2A messaging (#3679). A receipt is evidence of what crossed the
     // boundary, a kill is evidence of a stop, and a credential decides which
     // agent a peer reaches: one writer each, so none can be written by a path
@@ -133,6 +138,7 @@ describe('the harness tables have one write seam each', () => {
             'src/app-layer/usecases/agent-harness-estates.ts',
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
+            'src/app-layer/usecases/agent-profiles.ts',
             'src/app-layer/usecases/peer-agents.ts',
             'src/app-layer/usecases/tenant-skills.ts',
         ]);
