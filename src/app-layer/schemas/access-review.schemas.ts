@@ -30,12 +30,40 @@ const OptionalText = z
     .optional();
 
 /**
- * `parseDate` accepts an ISO string OR a Date. We convert to Date so
- * the usecase never has to second-guess the wire format.
+ * THE date field for every campaign schema — the four creates and the settings
+ * change. It accepts an ISO 8601 date-time string (UTC, `Z`) or a valid `Date`,
+ * and converts the string, so the usecase never has to second-guess the wire
+ * format.
+ *
+ * Shared because the connected, agent and legacy creates each used
+ * `z.coerce.date()`, which is `new Date(input)`: `null` became 1970-01-01, a
+ * boolean became the first millisecond of 1970, and `0` the epoch, each stored
+ * as a real due date or period on the campaign and printed on its evidence.
+ * A field that may be cleared says so with `z.union([DateField, z.null()])`,
+ * as the settings change does; here `null` is refused, never coerced.
  */
-const DateField = z.union([z.string().datetime(), z.date()]).transform((v) =>
+export const DateField = z.union([z.string().datetime(), z.date()]).transform((v) =>
     typeof v === 'string' ? new Date(v) : v,
 );
+
+/**
+ * THE period rule for every campaign schema: a period whose end precedes its
+ * start is refused, on `periodEndAt`. Equal ends are a one-instant period and
+ * are allowed; either end alone is not checked. Used as `.superRefine(...)`,
+ * or called from a schema's own refinement.
+ */
+export function refinePeriodOrder(
+    value: { periodStartAt?: Date; periodEndAt?: Date },
+    ctx: z.RefinementCtx,
+): void {
+    if (value.periodStartAt && value.periodEndAt && value.periodEndAt < value.periodStartAt) {
+        ctx.addIssue({
+            code: 'custom',
+            message: 'periodEndAt must not precede periodStartAt.',
+            path: ['periodEndAt'],
+        });
+    }
+}
 
 // ── createAccessReview ─────────────────────────────────────────────
 
@@ -105,13 +133,7 @@ export const CreateAccessReviewSchema = z
                 path: ['customMembershipIds'],
             });
         }
-        if (value.periodStartAt && value.periodEndAt && value.periodEndAt < value.periodStartAt) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'periodEndAt must not precede periodStartAt.',
-                path: ['periodEndAt'],
-            });
-        }
+        refinePeriodOrder(value, ctx);
     });
 
 export type CreateAccessReviewInput = z.infer<typeof CreateAccessReviewSchema>;
@@ -126,15 +148,17 @@ export type CreateAccessReviewInput = z.infer<typeof CreateAccessReviewSchema>;
  * keys, as the connected and agent create schemas are, and its non-HTTP callers
  * (the proving-run script, the usecase tests) rely on that.
  */
-export const CreateLegacyAccessReviewSchema = z.object({
-    name: z.string().min(1).max(200),
-    description: z.string().max(2000).optional(),
-    connectionId: z.string().min(1).max(64),
-    reviewerUserId: z.string().min(1),
-    dueAt: z.coerce.date().optional(),
-    periodStartAt: z.coerce.date().optional(),
-    periodEndAt: z.coerce.date().optional(),
-});
+export const CreateLegacyAccessReviewSchema = z
+    .object({
+        name: z.string().min(1).max(200),
+        description: z.string().max(2000).optional(),
+        connectionId: z.string().min(1).max(64),
+        reviewerUserId: z.string().min(1),
+        dueAt: DateField.optional(),
+        periodStartAt: DateField.optional(),
+        periodEndAt: DateField.optional(),
+    })
+    .superRefine(refinePeriodOrder);
 
 /**
  * The body of `POST /access-reviews/legacy`: the same fields, `.strict()`.
