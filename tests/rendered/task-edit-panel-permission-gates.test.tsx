@@ -125,7 +125,7 @@ async function loaded() {
 const assignee = () => document.getElementById('task-panel-assignee');
 const title = () => document.getElementById('task-panel-title');
 
-describe('TaskEditPanel — the evidence box follows evidence.upload', () => {
+describe('TaskEditPanel — the file box follows evidence.upload', () => {
     it('a built-in Editor gets the file box and the URL link', async () => {
         mount(gatesFor('EDITOR'));
         await loaded();
@@ -134,12 +134,14 @@ describe('TaskEditPanel — the evidence box follows evidence.upload', () => {
         expect(screen.getByTestId('evidence-link-url-form')).toBeInTheDocument();
     });
 
-    it('a custom role with tasks.edit but not evidence.upload gets no box, and still sees what is attached', async () => {
+    it('a custom role with tasks.edit but not evidence.upload gets no file box, keeps the URL link, and still sees what is attached', async () => {
         mount(gatesFor('EDITOR', { evidenceUpload: false }));
         await loaded();
 
         expect(screen.queryByTestId('evidence-upload-dropzone')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('evidence-link-url-form')).not.toBeInTheDocument();
+        // The URL link posts to the task's own evidence route, which asks
+        // `tasks.edit`, not `evidence.upload`.
+        expect(screen.getByTestId('evidence-link-url-form')).toBeInTheDocument();
         expect(screen.getByTestId('evidence-attached-list')).toHaveTextContent(ATTACHED.title);
         // The task's own fields are untouched by the evidence key.
         expect(title()).toBeEnabled();

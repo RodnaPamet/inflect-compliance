@@ -98,11 +98,11 @@ export function TaskEditPanel({
     /** The task's own edit rights: its fields and status (`tasks.edit`). */
     canWrite: boolean;
     /**
-     * Whether the evidence box is offered. Its file upload POSTs to
+     * Whether the file dropzone is offered. A file upload POSTs to
      * `/evidence/uploads`, which asks `evidence.upload` rather than
-     * `tasks.edit`. The URL link beside it shares this gate, because
-     * `EvidenceUploadSection` offers both on one prop; the attached list
-     * shows either way. Defaults to `canWrite`; never offered without it.
+     * `tasks.edit`. The URL link stays on `canWrite`, because it posts to the
+     * task's own evidence route, and the attached list shows either way.
+     * Defaults to `canWrite`; never offered without it.
      */
     canUploadEvidence?: boolean;
     /**
@@ -538,13 +538,15 @@ export function TaskEditPanel({
                 <div className="space-y-default">
                     {details}
                     {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail).
-                        Its write half (file box + URL link) follows
-                        `evidence.upload`; the attached list shows to every reader. */}
+                        The dropzone also needs `evidence.upload`; the URL link
+                        follows the task's edit rights, and the attached list
+                        shows to every reader. */}
                     <EvidenceUploadSection
                         tenantSlug={tenantSlug}
                         linkField="taskId"
                         linkId={task.id}
-                        canWrite={mayUploadEvidence}
+                        canWrite={canWrite}
+                        canUpload={mayUploadEvidence}
                         compactDropzone
                         listEndpoint={`/tasks/${task.id}/evidence`}
                         urlLinkEndpoint={`/tasks/${task.id}/evidence`}
