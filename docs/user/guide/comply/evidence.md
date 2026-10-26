@@ -28,7 +28,7 @@ Readers, Auditors and AI admins see no **{{ui:evidence.addEvidence}}** button an
 
 Whatever your role, nobody can approve or reject evidence they submitted for review; another Owner or Admin must do it. Only {{ui:evidence.statusLabels.SUBMITTED}} evidence can be approved or rejected, and a rejection needs a reason. Nobody can download archived evidence, so archived evidence shows no download button.
 
-If your workspace uses custom roles, the page shows the add, edit, archive, submit and bulk buttons only when both the built-in role your custom role is based on and the evidence permissions the custom role was given allow them. A custom role that cannot view controls can still open this page, but the {{ui:evidence.filters.controlId}} filter and the control pickers offer no controls.
+If your workspace uses custom roles, the page shows the add, edit, archive, submit and bulk buttons only when both the built-in role your custom role is based on and the evidence permissions the custom role was given allow them. Linking and unlinking a control in the details panel also needs permission to edit controls; without it, the panel shows no control picker and no cross. A custom role that cannot view controls can still open this page, but the {{ui:evidence.filters.controlId}} filter and the control pickers offer no controls.
 
 ## What it is for
 
@@ -148,12 +148,13 @@ Click **{{ui:evidence.list.downloadFile}}** on a row, the download button on a g
 | **{{ui:evidence.list.emptyFilterTitle}}**, **{{ui:evidence.list.emptyArchivedTitle}}** or **{{ui:evidence.list.emptyExpiringTitle}}** | Nothing matches the search, the filters or the retention view | Click **{{ui:evidence.list.clearFilters}}** |
 | **{{ui:evidence.list.archivedNoticeTitle}}** above the list | You are looking at archived evidence, which should not go into active audit packs | Unarchive what you need |
 | A banner saying only the first 5,000 results are shown | The view holds more evidence than the page loads at once | Narrow it with a filter or the search |
-| **{{ui:evidence.list.reviewFailed}}** | The review did not go through: you submitted the evidence yourself, it was reviewed already, or your role cannot review | Ask another Owner or Admin. Reload the page to see the current status |
+| A message when you submit, approve or reject evidence | The review was refused, and the message gives the reason: for example, you submitted the evidence yourself, it was reviewed already, or a rejection has no reason. **{{ui:evidence.list.reviewFailed}}** means no reason came back | If you submitted it, ask another Owner or Admin. Otherwise reload the page to see the current status |
 | A message after a bulk action, or **{{ui:evidence.list.bulkFailed}}** | A bulk action was refused, for example because more than 100 rows were selected. The message gives the reason when Inflect sends one | Follow the reason, or select fewer rows and try again |
 | A red box in a form, with a reason | Nothing was saved. A file can be refused for its type or size, or because the malware scanner rejected it | Follow the reason given |
 | **{{ui:evidence.upload.spProbeErrorTitle}}** | Inflect could not check the SharePoint connection, so its import is hidden | Reopen the form later, or ask an Admin to check the integration |
 | **{{ui:evidence.edit.retentionFailed}}** | Your other changes were saved, but the retention date was not | Click **{{ui:evidence.edit.save}}** again |
-| **{{ui:evidence.edit.updateFailed}}**, **{{ui:evidence.edit.replaceFailed}}** or **{{ui:evidence.detail.linkControlFailed}}** | The change was not saved | Reload the page and try again |
+| **{{ui:evidence.edit.updateFailed}}** or **{{ui:evidence.edit.replaceFailed}}** | The change was not saved | Reload the page and try again |
+| A red message under the control picker in the details panel | The control was not linked, and the message gives the reason, for example that the control was not found. **{{ui:evidence.detail.linkControlFailed}}** means no reason came back | Follow the reason given, or reload the page and try again |
 | A control you unlinked comes back in the details panel, with a message | The unlink did not go through, and the message says why | Follow the reason, or reload the page and try again |
 | A red message in the details panel in place of the record | The record could not be loaded, for example because it was deleted | Close the panel and reload the page |
 | **{{ui:evidence.detail.downloadArchived}}** or **{{ui:evidence.detail.downloadNeedsControl}}** in the details panel | The evidence is archived, or your role needs it linked to a control before you can download it | Unarchive it, or ask an Owner, Admin or Editor to link it to a control |

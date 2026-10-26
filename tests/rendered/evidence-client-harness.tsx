@@ -41,9 +41,9 @@ export const COARSE = {
 
 /** The appPermissions grants the page reads, as the built-in roles hold them. */
 export const GRANTS = {
-    ADMIN: { evidenceEdit: true, evidenceUpload: true, adminManage: true },
-    EDITOR: { evidenceEdit: true, evidenceUpload: true, adminManage: false },
-    READER: { evidenceEdit: false, evidenceUpload: false, adminManage: false },
+    ADMIN: { evidenceEdit: true, evidenceUpload: true, adminManage: true, controlsEdit: true },
+    EDITOR: { evidenceEdit: true, evidenceUpload: true, adminManage: false, controlsEdit: true },
+    READER: { evidenceEdit: false, evidenceUpload: false, adminManage: false, controlsEdit: false },
 } as const;
 
 export function evidenceRow(overrides: Partial<EvidenceRowFixture> = {}): EvidenceRowFixture {

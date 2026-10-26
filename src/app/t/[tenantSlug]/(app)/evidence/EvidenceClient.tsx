@@ -108,6 +108,8 @@ interface EvidenceGrants {
     evidenceUpload: boolean;
     /** `admin.manage` — the bulk-delete route's gate. */
     adminManage: boolean;
+    /** `controls.edit` — the details panel's link and unlink-a-control routes' gate. */
+    controlsEdit: boolean;
 }
 
 // The Freshness column and the gallery badge show the row's freshness
@@ -287,6 +289,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     const canUploadEvidence = permissions.canWrite && grants.evidenceUpload;
     // `bulkDeleteEvidence` asserts canAdmin; its route requires admin.manage.
     const canBulkDelete = permissions.canAdmin && grants.adminManage;
+    // `linkEvidenceToControl` / `unlinkEvidenceFromControl` assert canWrite;
+    // both their routes require controls.edit.
+    const canEditControlLinks = permissions.canWrite && grants.controlsEdit;
     // `downloadEvidenceFile`'s record gates, asked of a list row.
     const mayDownload = useCallback(
         (ev: EvidenceRow) =>
@@ -624,12 +629,24 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     const reviewMutation = useTenantMutation<CappedList<EvidenceRow>, { id: string; action: string; comment: string }, unknown>({
         key: evidenceKey,
         mutationFn: async ({ id, action, comment }) => {
-            const res = await fetch(apiUrl(`/evidence/${id}/review`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, comment }),
-            });
-            if (!res.ok) throw new Error(tx('list.reviewFailed'));
+            // Every failure throws the sentence the toast shows: the SERVER's
+            // reason when it refused (segregation of duties, an illegal
+            // transition, a missing rejection reason), the generic one when
+            // the request got no answer or the answer carried no message.
+            let res: Response;
+            try {
+                res = await fetch(apiUrl(`/evidence/${id}/review`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, comment }),
+                });
+            } catch {
+                throw new Error(tx('list.reviewFailed'));
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => null);
+                throw new Error(apiErrorMessage(err, tx('list.reviewFailed')));
+            }
             return res.json().catch(() => null);
         },
         optimisticUpdate: (current, { id, action }) => {
@@ -647,11 +664,12 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     });
 
     const submitReview = (id: string, action: string, comment = '') => {
-        reviewMutation.trigger({ id, action, comment }).catch(() => {
+        reviewMutation.trigger({ id, action, comment }).catch((err: unknown) => {
             // R5-P2 #2 — surface the failure. The optimistic row already rolled
             // back; swallowing it silently read as a UI glitch (e.g. an EDITOR
             // shown Approve gets a 403, the row flips APPROVED then reverts).
-            toast.error(tx('list.reviewFailed'));
+            // The message is the one `mutationFn` threw — the server's reason.
+            toast.error(err instanceof Error && err.message ? err.message : tx('list.reviewFailed'));
         }).finally(() => {
             // Fan out to sibling filter variants for completeness —
             // status flips affect the "approved-only" / "rejected-
@@ -1643,6 +1661,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 evidenceId={detailEvidenceId}
                 tenantSlug={tenantSlug}
                 canWrite={permissions.canWrite}
+                canEditControlLinks={canEditControlLinks}
                 canEdit={canEditEvidence}
                 canAdmin={permissions.canAdmin}
                 onEdit={(ev) => {

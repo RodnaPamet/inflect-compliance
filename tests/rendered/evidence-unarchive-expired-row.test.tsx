@@ -148,7 +148,7 @@ it('an expired row whose archive flag is off offers Unarchive, and it reaches th
                     tenantSlug="acme"
                     permissions={{ canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true }}
                     // An Editor's grants, as the server page passes them.
-                    grants={{ evidenceEdit: true, evidenceUpload: true, adminManage: false }}
+                    grants={{ evidenceEdit: true, evidenceUpload: true, adminManage: false, controlsEdit: true }}
                     translations={{}}
                 />
             </TooltipProvider>
