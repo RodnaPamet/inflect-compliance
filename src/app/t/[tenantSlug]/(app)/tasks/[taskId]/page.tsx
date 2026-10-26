@@ -333,6 +333,17 @@ export default function TaskDetailPage() {
     // `assertCanCommentOnTasks` refuses it (no `tasks.edit`).
     const canComment = role !== 'READER' && role !== 'AI_ADMIN';
 
+    // #4360 — each write control asks the key its route checks, on top of
+    // the write tier, as the Tasks list does. The write tier alone let a
+    // custom role built on Editor, but without the key, open a control the
+    // server then refused. Built-in roles hold every key their tier implies,
+    // so they see no change.
+    const canEditTask = !!permissions.canWrite && appPermissions.tasks.edit;
+    const canAssignTask = !!permissions.canWrite && appPermissions.tasks.assign;
+    // A file goes to `/evidence/uploads` (`evidence.upload`); a URL link and
+    // an unlink go to the task's own evidence routes (`tasks.edit`).
+    const canUploadTaskEvidence = !!permissions.canWrite && appPermissions.evidence.upload;
+
     // #102 item 5 — the page read the task and each tab via raw
     // useState + useEffect + fetch, and every mutation re-fetched the
     // whole task. Migrated to `useTenantSWR` (Epic 69 — the pattern
@@ -1100,18 +1111,21 @@ export default function TaskDetailPage() {
             actions={
                 permissions.canWrite && (
                     <div className="flex items-center gap-tight">
-                        <Combobox
-                            hideSearch
-                            id="task-status-select"
-                            selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
-                            setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
-                            options={TASK_STATUS_CB_OPTIONS}
-                            disabled={changingStatus}
-                            placeholder={t('detail.statusPlaceholder')}
-                            // Item 29 — brand-color the status action (matches the
-                            // primary "+ …" create buttons).
-                            buttonProps={{ variant: 'primary', className: 'text-sm' }}
-                        />
+                        {/* `POST /tasks/:id/status` asks `tasks.edit`. */}
+                        {canEditTask && (
+                            <Combobox
+                                hideSearch
+                                id="task-status-select"
+                                selected={TASK_STATUS_CB_OPTIONS.find(o => o.value === task.status) ?? null}
+                                setSelected={(opt) => { if (opt) requestStatusChange(opt.value); }}
+                                options={TASK_STATUS_CB_OPTIONS}
+                                disabled={changingStatus}
+                                placeholder={t('detail.statusPlaceholder')}
+                                // Item 29 — brand-color the status action (matches the
+                                // primary "+ …" create buttons).
+                                buttonProps={{ variant: 'primary', className: 'text-sm' }}
+                            />
+                        )}
                         {/* Single-task delete. `deleteTask` has existed in
                             the usecase layer all along with no UI reaching
                             it, so the only way to delete one task was to
@@ -1164,8 +1178,8 @@ export default function TaskDetailPage() {
                 comments, activity). Guarded here so they only show on Overview. */}
             {tab === 'overview' && (
             <>
-            {/* Assignment controls */}
-            {permissions.canWrite && (
+            {/* Assignment controls — `POST /tasks/:id/assign` asks `tasks.assign`. */}
+            {canAssignTask && (
                 <div className={cardVariants({ density: 'compact' })}>
                     <div className="flex items-center gap-compact">
                         <span className="text-sm text-content-muted">{t('detail.assigneeLabel')}</span>
@@ -1195,8 +1209,8 @@ export default function TaskDetailPage() {
             {/* TP-6 — Reviewer assignment. Surfaces the previously
                 dead `reviewerUserId` field: a people-picker to set the
                 reviewer + a display of the current one. Wired through the
-                shared task update path (PATCH /tasks/:id). */}
-            {permissions.canWrite && (
+                shared task update path (PATCH /tasks/:id, `tasks.edit`). */}
+            {canEditTask && (
                 <div className={cardVariants({ density: 'compact' })}>
                     <div className="flex items-center gap-compact">
                         <span className="text-sm text-content-muted">{t('detail.reviewerLabel')}</span>
@@ -1249,11 +1263,11 @@ export default function TaskDetailPage() {
                                 // Unsubscribing YOURSELF needs no write
                                 // permission — it only changes your own
                                 // notification feed. Removing someone else
-                                // still does. Mirrors the split in
-                                // `removeTaskWatcher`.
+                                // still does: `removeTaskWatcher` asserts
+                                // the write tier AND `tasks.edit` for that.
                                 const canRemove =
                                     w.userId === userId ||
-                                    (!!permissions.canWrite &&
+                                    (canEditTask &&
                                         (role === 'OWNER' || role === 'ADMIN'));
                                 return (
                                     <span key={w.id} className="inline-flex items-center gap-tight">
@@ -1311,7 +1325,7 @@ export default function TaskDetailPage() {
                 <div className={cn(cardVariants(), 'space-y-default')}>
                     {/* Overview header with Edit button — mirrors the
                         control detail overview edit affordance. */}
-                    {permissions.canWrite && (
+                    {canEditTask && (
                         <div className="flex justify-end -mt-1 -mb-2">
                             <Button
                                 variant="secondary"
@@ -1389,7 +1403,7 @@ export default function TaskDetailPage() {
                     <TaskChecklistPanel
                         items={parseTaskChecklist(task.checklistJson)}
                         guidance={parseTaskTemplateGuidance(task.metadataJson)}
-                        canEdit={!!permissions.canWrite}
+                        canEdit={canEditTask}
                         onToggle={toggleChecklistItem}
                         pendingItemId={pendingChecklistItemId}
                     />
@@ -1433,7 +1447,9 @@ export default function TaskDetailPage() {
                             error: 'task-evidence-error',
                             submit: 'submit-evidence-btn',
                         }}
-                        canWrite={!!permissions.canWrite}
+                        canWrite={canEditTask || canUploadTaskEvidence}
+                        canUpload={canUploadTaskEvidence}
+                        canLink={canEditTask}
                         show={showEvidenceForm}
                         onToggleShow={() => setShowEvidenceForm(!showEvidenceForm)}
                         file={fileToUpload}
@@ -1470,7 +1486,7 @@ export default function TaskDetailPage() {
                         <EvidenceSubTable
                             data={evidenceQuery.data}
                             loading={evidenceQuery.isLoading && !evidenceQuery.data}
-                            canWrite={!!permissions.canWrite}
+                            canWrite={canEditTask}
                             onUnlinkEvidence={removeEvidence}
                             tenantHref={tenantHref}
                         />
@@ -1481,7 +1497,7 @@ export default function TaskDetailPage() {
             {/* Links Tab */}
             {tab === 'links' && (
                 <div className="space-y-default">
-                    {permissions.canWrite && (
+                    {canEditTask && (
                         <div className="flex justify-end">
                             {/* SECONDARY (#3712), as the vendor page's link
                                 toggle: a disclosure toggle on screen with the
@@ -1493,7 +1509,7 @@ export default function TaskDetailPage() {
                             </Button>
                         </div>
                     )}
-                    {showLinkForm && permissions.canWrite && (
+                    {showLinkForm && canEditTask && (
                         <form onSubmit={addLink} className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
                             <div className="grid grid-cols-3 gap-compact">
                                 <Combobox hideSearch id="link-entity-type" selected={ENTITY_TYPE_CB_OPTIONS.find(o => o.value === linkEntityType) ?? null} setSelected={(opt) => setLinkEntityType(opt?.value ?? linkEntityType)} options={ENTITY_TYPE_CB_OPTIONS} matchTriggerWidth />
@@ -1524,7 +1540,7 @@ export default function TaskDetailPage() {
                     <TaskLinksTable
                         links={links}
                         loading={linksLoading}
-                        canWrite={!!permissions.canWrite}
+                        canWrite={canEditTask}
                         onRemove={removeLink}
                         tenantHref={tenantHref}
                     />
@@ -1726,13 +1742,14 @@ export default function TaskDetailPage() {
                             severity: task.severity,
                             key: task.key ?? undefined,
                         }}
-                        canWrite={!!permissions.canWrite}
+                        // Its fields PATCH `/tasks/:id` (`tasks.edit`).
+                        canWrite={canEditTask}
                         // Its assignee picker POSTs to `/tasks/:id/assign`
                         // (`tasks.assign`). The form variant shows no
                         // evidence box; its gate is passed so it holds if
                         // one is ever shown here.
-                        canUploadEvidence={!!permissions.canWrite && appPermissions.evidence.upload}
-                        canAssign={!!permissions.canWrite && appPermissions.tasks.assign}
+                        canUploadEvidence={canUploadTaskEvidence}
+                        canAssign={canAssignTask}
                         onSaved={() => void taskQuery.mutate()}
                     />
                 </Modal.Body>

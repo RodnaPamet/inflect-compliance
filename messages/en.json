@@ -11230,6 +11230,7 @@
       "placeholderTitle": "Title (defaults to filename)",
       "uploadFile": "Upload a file",
       "orLinkUrl": "…or link a URL",
+      "linkUrl": "Link a URL",
       "linkNeedsTitle": "A link is saved to the evidence library and needs a title.",
       "urlPlaceholder": "https://…",
       "noteOptional": "Note (optional)",
