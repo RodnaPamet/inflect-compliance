@@ -8,10 +8,10 @@
  *     latency split, RPO 1h, RTO 4h)
  *   - Each SLO references the metric/mechanism that powers it
  *   - Incident-response.md has the 7 required playbooks
- *   - Each playbook references the specific alert + dashboard +
- *     command path that drives it
- *   - The runbook's "Operational alignment" section names every
- *     prior epic's deliverable that it depends on
+ *   - Its quick reference routes every deployed GCP alert policy
+ *     (`infra/alerts/policies/*.json`) by display name, and App Down
+ *     probes the path the uptime contract probes
+ *   - The runbook keeps its "Operational alignment" section
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -203,75 +203,64 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(playbooks.toLowerCase()).toContain(label.toLowerCase());
     });
 
-    it('quick-reference table maps every alert to a playbook', () => {
-        // Every alert from rules.yml that pages should appear in the
-        // quick-reference. Lock the OI-3-spec alerts. "In the quick
-        // reference" is the claim, so that is the region: each of these five
-        // occurs 2-3 times document-wide and exactly once here, which is the
-        // difference between "the table routes it" and "the word appears".
+    // ── The deployed alerting contract, read from the files that record it ──
+    //
+    // Production alerts are GCP Cloud Monitoring policies, versioned as
+    // `infra/alerts/policies/*.json`, and the uptime check is recorded in
+    // `infra/alerts/external-uptime.yml`. The two assertions below take their
+    // expectation from those files rather than from a list typed here, so a
+    // policy added to the directory fails this guard until the runbook routes
+    // it, and a change of probe path fails it until App Down follows.
+    const POLICY_DIR = 'infra/alerts/policies';
+    const policyNames = (): string[] =>
+        fs
+            .readdirSync(path.join(ROOT, POLICY_DIR))
+            .filter((f) => f.endsWith('.json'))
+            .sort()
+            .map((f) => (JSON.parse(read(`${POLICY_DIR}/${f}`)) as { displayName: string }).displayName);
+
+    it('quick-reference table routes every GCP alert policy by its display name', () => {
+        // The alert email is titled with the policy's display name, so that is
+        // the string an operator arrives holding. "In the quick reference" is
+        // the claim, so that is the region read.
         const quick = mdSection(read(DOC), 'Quick reference');
-        for (const alert of [
-            'DatabaseConnectionPoolExhausted',
-            'RedisMemoryHighCritical',
-            'RedisMemoryHighWarning',
-            'QueueDepthBacklogCritical',
-            'CertificateExpiryCritical',
-        ]) {
-            expect(quick).toContain(alert);
+        const names = policyNames();
+        expect(names.length).toBeGreaterThan(0);
+        for (const name of names) {
+            expect(quick).toContain(name);
         }
     });
 
-    it('references the four OI-3 dashboards by UID', () => {
-        const dashboards = mdSection(read(DOC), 'Dashboards');
-        for (const uid of [
-            'inflect-app-overview',
-            'inflect-database',
-            'inflect-redis',
-            'inflect-bullmq',
-        ]) {
-            expect(dashboards).toContain(uid);
-        }
-    });
-
-    it('App Down playbook uses /api/livez (matches external uptime contract)', () => {
-        // The playbook must instruct curl/kubectl-curl to /api/livez —
-        // the same endpoint the external uptime monitor probes.
+    it('App Down playbook probes the path the deployed uptime check probes', () => {
+        // Was `/api/livez`, "matching the external uptime contract". The
+        // contract moved to `/api/readyz` on 2026-09-22 (#2745) and this
+        // assertion went on requiring livez, so it held the runbook to a probe
+        // the monitor no longer used. Reading the URL out of the contract
+        // keeps the two together.
+        const contract = read('infra/alerts/external-uptime.yml');
+        const url = contract.match(/^\s*url:\s*(\S+)\s*$/m)?.[1];
+        expect(url).toBeDefined();
+        expect(url).toMatch(/^https:\/\//);
         const appDown = mdSection(read(DOC), '1. App Down');
-        expect(appDown).toMatch(/curl[^`]*\/api\/livez/);
+        expect(appDown).toContain(`curl -s ${url}`);
     });
 
-    it('Rollback playbook uses helm rollback with explicit revision history', () => {
-        // `--namespace inflect-production` appears 20 times across the
-        // runbook and `helm rollback inflect-production` 4; inside the
-        // Rollback playbook, 5 and 2. Every one of the other 15 belonged to
-        // some other playbook's shell block.
-        const rollback = mdSection(read(DOC), '6. Rollback');
-        expect(rollback).toMatch(/helm history inflect-production/);
-        expect(rollback).toMatch(/helm rollback inflect-production/);
-        expect(rollback).toMatch(/--namespace inflect-production/);
-    });
-
-    it('Rollback playbook documents the migration-Job-not-re-run-on-rollback caveat', () => {
+    it('Rollback playbook documents that the schema does not roll back', () => {
         // expand-and-contract is THE mitigation. Without this the
         // rollback playbook is unsafe.
         const rollback = mdSection(read(DOC), '6. Rollback');
         expect(rollback.toLowerCase()).toMatch(/expand[\s-]and[\s-]contract/);
-        // Migration Job is one-way
-        expect(rollback).toMatch(/migration Job is one-way|hooks?\s+are\s+\*?\*?NOT\*?\*?\s+re-run|NOT.{1,5}re-run on rollback/i);
+        // The migration is one-way. The app container runs `prisma migrate
+        // deploy` when it starts, and running an older image does not undo it.
+        // (This read "the migration Job is one-way", a Helm hook on a cluster
+        // that never existed — #4308.)
+        expect(rollback).toMatch(/The schema does not roll back/);
     });
 
     it('Database Unavailable playbook covers PgBouncer pool inspection', () => {
         const database = mdSection(read(DOC), '2. Database Unavailable / Slow');
         expect(database).toMatch(/SHOW POOLS/);
         expect(database).toMatch(/pgbouncer/i);
-    });
-
-    it('Database recovery from PITR uses restore-db-instance-to-point-in-time', () => {
-        // The `###` subsection this test is named after, not the whole
-        // playbook: the command also appears in the Operational alignment
-        // summary, which is a list of deliverables rather than a procedure.
-        const pitr = mdSection(read(DOC), 'DB recovery from PITR');
-        expect(pitr).toMatch(/restore-db-instance-to-point-in-time/);
     });
 
     it('Data Breach playbook references the hash-chained AuditLog (preserves evidence)', () => {
@@ -289,10 +278,9 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(breach).toMatch(/v1.{0,5}v2/i);
     });
 
-    it('Communication templates section has 5 named templates', () => {
+    it('Communication templates section has its named templates', () => {
         const comms = mdSection(read(DOC), 'Communication templates');
         const templates = [
-            'PagerDuty incident',
             'Status page update — initial',
             'Status page update — mitigation in progress',
             'Status page update — resolved',
@@ -306,76 +294,52 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(comms).toMatch(/Customer email\s*[—-]\s*confirmed data breach/);
     });
 
-    it('Severity definitions table includes both CRITICAL and WARNING tiers', () => {
-        // Both needles carry a `[\s\S]{0,200}` span, so read whole-document
-        // they could pair a CRITICAL from one playbook with a PagerDuty 200
-        // characters later in another. 3 matches raw, 1 inside the table.
-        const severity = mdSection(read(DOC), 'Severity definitions');
-        expect(severity).toMatch(/CRITICAL[\s\S]{0,200}PagerDuty/);
-        expect(severity).toMatch(/WARNING[\s\S]{0,200}Slack/);
-    });
-
-    it('Operational alignment section names every prior-epic deliverable', () => {
-        // The closing section MUST call out the dependencies so an
-        // operator reading this doc cold sees the system map — and "the
-        // section names them" is the claim, so reading the whole document for
-        // it answered a different question. `/Epic OI-3/` matched 7 times
-        // document-wide; `restore-test.sh` twice, only one of them here.
-        const alignment = mdSection(read(DOC), 'Operational alignment summary');
+    it('still has an Operational alignment section', () => {
+        // Structure, not content: the closing section maps each runbook step to
+        // where it is defined. See the RETIRED note below for the needles that
+        // used to be asserted inside it.
         expect(headingLines(read(DOC), 2)).toMatch(/Operational alignment/i);
-        expect(alignment).toMatch(/Epic OI-1/);
-        expect(alignment).toMatch(/Epic OI-2/);
-        expect(alignment).toMatch(/Epic OI-3/);
-        // Specific deliverables
-        expect(alignment).toMatch(/restore-test\.sh/);
-        expect(alignment).toMatch(/manage_master_user_password/);
+        const alignment = mdSection(read(DOC), 'Operational alignment summary');
         expect(alignment).toMatch(/external-uptime\.yml/);
     });
+
+    // ── RETIRED 2026-10-26 (#4308): assertions that pinned the EKS/RDS runbook ──
+    //
+    // The runbook was rewritten for the production VM. These assertions
+    // required it to keep text describing an estate that was never provisioned
+    // and was removed on 2026-09-02 (#2226), the same trap the RETIRED block in
+    // the SLO half of this file describes:
+    //
+    //     Rollback:    /helm history inflect-production/, /helm rollback
+    //                  inflect-production/, /--namespace inflect-production/
+    //     PITR:        /restore-db-instance-to-point-in-time/ — there is no
+    //                  RDS and no point-in-time recovery
+    //     Severity:    CRITICAL…PagerDuty, WARNING…Slack — there is no pager;
+    //                  every policy emails one channel
+    //     Templates:   'PagerDuty incident'
+    //     Alignment:   /Epic OI-1/, /Epic OI-2/, /Epic OI-3/,
+    //                  /restore-test\.sh/, /manage_master_user_password/
+    //     Quick ref:   the five `infra/alerts/rules.yml` names
+    //                  (DatabaseConnectionPoolExhausted, RedisMemoryHigh*,
+    //                  QueueDepthBacklogCritical, CertificateExpiryCritical)
+    //     Dashboards:  the four `infra/dashboards/` UIDs
+    //
+    // `infra/alerts/rules.yml` and the dashboards it links describe a
+    // Prometheus/Alertmanager/Grafana deployment that does not run (see
+    // `infra/alerts/gcp-custom-metrics.yml`). Requiring the runbook to route
+    // those alert names meant routing operators from alerts that never fire.
+    // The quick-reference assertion above takes its place, read from the
+    // policies that do fire. The others are not replaced with corrected greps,
+    // for the reason the SLO note gives: a grep verifies mention, not accuracy.
 });
 
 describe('OI-3 — final readiness check (alignment)', () => {
-    it('every alert with severity=critical has a corresponding playbook section', () => {
-        // The runbook half is bound to the quick-reference table: "addressed
-        // in the runbook" means the operator can route from the alert name,
-        // and that table is where routing happens.
-        const quickReference = mdSection(
-            read('docs/incident-response.md'),
-            'Quick reference',
-        );
-        const rulesSrc = read('infra/alerts/rules.yml');
-
-        // Walk the rules YAML for critical alerts
-        const criticalNames: string[] = [];
-        const lines = rulesSrc.split('\n');
-        let pendingAlert: string | null = null;
-        for (const line of lines) {
-            const alertMatch = line.match(/^\s*-\s*alert:\s*(\w+)/);
-            if (alertMatch) {
-                pendingAlert = alertMatch[1];
-                continue;
-            }
-            if (pendingAlert && /severity:\s*critical/.test(line)) {
-                criticalNames.push(pendingAlert);
-                pendingAlert = null;
-            }
-        }
-        expect(criticalNames.length).toBeGreaterThan(0);
-
-        // Subset of criticals that must each be addressed in the runbook.
-        // (Not every critical has a unique section — e.g. ApiP95LatencyCritical
-        // is handled inside the Database playbook. We assert the
-        // OI-3-spec criticals are referenced by NAME in the doc.)
-        const MUST_BE_NAMED = [
-            'DatabaseConnectionPoolExhausted',
-            'RedisMemoryHighCritical',
-            'QueueDepthBacklogCritical',
-            'CertificateExpiryCritical',
-        ];
-        for (const name of MUST_BE_NAMED) {
-            expect(criticalNames).toContain(name);
-            expect(quickReference).toContain(name);
-        }
-    });
+    // RETIRED 2026-10-26 (#4308): 'every alert with severity=critical has a
+    // corresponding playbook section' and 'runbook references the dashboards
+    // UIDs that each alert uses'. Both derived their expectation from
+    // `infra/alerts/rules.yml`, which no production system loads, so both held
+    // the runbook to alerts and dashboards that do not exist. The runbook's
+    // routing is now checked against `infra/alerts/policies/` above.
 
     it('SLO doc references the alert names that protect each SLO', () => {
         // Latency SLO ↔ ApiP95Latency alerts; Error rate SLO ↔ ApiErrorRate
@@ -387,31 +351,5 @@ describe('OI-3 — final readiness check (alignment)', () => {
         const reads = mdSection(read('docs/slos.md'), 'SLO 2: API Latency — Reads (P95)');
         expect(reads).toMatch(/ApiP95LatencyWarning/);
         expect(reads).toMatch(/ApiP95LatencyCritical/);
-    });
-
-    it('runbook references the dashboards UIDs that each alert uses', () => {
-        const dashboards = mdSection(read('docs/incident-response.md'), 'Dashboards');
-        const rules = read('infra/alerts/rules.yml');
-
-        // Extract every `dashboard:` annotation value from rules.yml
-        const annotated = Array.from(
-            rules.matchAll(/dashboard:\s*"([^"]+)"/g),
-            (m) => m[1],
-        );
-        const uniqueUids = new Set(
-            annotated
-                .map((url) => {
-                    const m = url.match(/^\/d\/([^/]+)/);
-                    return m ? m[1] : '';
-                })
-                .filter((u) => u),
-        );
-
-        for (const uid of uniqueUids) {
-            // The runbook's Dashboards section should list every dashboard
-            // the alerts route operators to — a UID buried in some
-            // playbook's shell block is not a directory entry.
-            expect(dashboards).toContain(uid);
-        }
     });
 });

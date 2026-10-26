@@ -24,9 +24,10 @@
  *     Under NODE_ENV=production this is a configuration error and the
  *     probe returns 503 (defense-in-depth past the SKIP_ENV_VALIDATION
  *     escape hatch).
- *   - Storage is skipped when STORAGE_PROVIDER != 's3' (local-dev
- *     using filesystem storage). Production sets STORAGE_PROVIDER=s3
- *     via the chart's runtime ConfigMap.
+ *   - Storage is skipped when STORAGE_PROVIDER != 's3' (filesystem
+ *     storage). Production runs STORAGE_PROVIDER=local, with evidence on
+ *     a Docker volume on the VM (docs/disaster-recovery.md), so this
+ *     check reports `skipped` there.
  *
  * Response shape (machine-readable for probe automation):
  *   {
