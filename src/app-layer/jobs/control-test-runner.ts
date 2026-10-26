@@ -601,6 +601,14 @@ async function handleAutomatedPlan(
  * author. The coarse flags stay exactly as they were — write, but
  * neither admin nor auditor — and `requestId` stays the scheduler's
  * `jobRunId` so the trail is reconstructible end to end.
+ *
+ * The granular set is narrowed to match. It used to be ADMIN's whatever the
+ * coarse flags said, because `buildDelegatedJobContext` had no way to pass
+ * one — so `canAdmin: false` above sat next to `admin.manage: true`, and the
+ * asserts that read only the granular set (`assertCanUploadEvidence` reads
+ * nothing else) were not gated at all. EDITOR is the set that matches this
+ * declaration; it withholds the 28 `admin.*`/`audits.*`/approve keys, none of
+ * which this job's path reads (#4388).
  */
 function buildRunnerCtx(
     plan: { tenantId: string; createdByUserId: string },
@@ -618,6 +626,7 @@ function buildRunnerCtx(
             canAudit: false,
             canExport: false,
         },
+        appPermissions: getPermissionsForRole('EDITOR'),
     });
 }
 

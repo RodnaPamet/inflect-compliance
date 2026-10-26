@@ -130,11 +130,12 @@ jest.mock('@/app-layer/events/audit', () => ({
 // Permissions — the system context build needs this; return a
 // minimal PermissionSet shape that satisfies the runner's call
 // signature without dragging in the full permission graph.
+// Spread the real module. A fixed `mockReturnValue` here is role-INDEPENDENT,
+// which made this job's granular narrowing unobservable: dropping the
+// `getPermissionsForRole('EDITOR')` argument from buildRunnerCtx broke no test
+// (measured, #4388). It also throws on any export it does not list (#4397).
 jest.mock('@/lib/permissions', () => ({
-    getPermissionsForRole: jest.fn().mockReturnValue({
-        controls: { canRead: true, canWrite: true },
-        risks: { canRead: true, canWrite: true },
-    }),
+    ...jest.requireActual('@/lib/permissions'),
 }));
 
 // ─── Imports ───────────────────────────────────────────────────────
@@ -224,6 +225,36 @@ describe('runControlTestRunner — defensive short-circuits', () => {
 });
 
 // ─── 2. MANUAL branch ─────────────────────────────────────────────
+
+/**
+ * The context the runner acts in (#4388).
+ *
+ * `buildRunnerCtx` declares `canAdmin: false, canAudit: false`, and until
+ * #4388 the granular set beside those flags was ADMIN's -- the builder had no
+ * way to pass another. The asserts that read only the granular set
+ * (`assertCanUploadEvidence` reads `appPermissions.evidence.upload` and
+ * nothing else) were therefore not gated by that declaration at all.
+ */
+describe('the runner acts with a granular set that matches its coarse flags', () => {
+    test('withholds the admin and audit keys its coarse flags already deny', async () => {
+        mockPlanFindFirst.mockResolvedValueOnce(makePlan({ automationType: 'MANUAL' }));
+        mockTestRunCreate.mockResolvedValueOnce({ id: 'run-1' });
+        mockTx.evidence.create.mockResolvedValueOnce({ id: 'ev-1' });
+
+        await runControlTestRunner(PAYLOAD_BASE);
+
+        const ctx = mockTestRunCreate.mock.calls[0][1];
+        expect(ctx.permissions.canAdmin).toBe(false);
+        expect(ctx.permissions.canAudit).toBe(false);
+        // The half the coarse flags cannot speak for.
+        expect(ctx.appPermissions.admin.manage).toBe(false);
+        expect(ctx.appPermissions.audits.manage).toBe(false);
+        expect(ctx.appPermissions.policies.approve).toBe(false);
+        // Still able to do its own work.
+        expect(ctx.permissions.canWrite).toBe(true);
+        expect(ctx.appPermissions.controls.edit).toBe(true);
+    });
+});
 
 describe('runControlTestRunner — MANUAL plan', () => {
     test('creates PLANNED run, attaches auto-evidence, no Finding', async () => {
