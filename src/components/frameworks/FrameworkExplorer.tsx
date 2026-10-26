@@ -399,23 +399,27 @@ function FrameworkTreeRow({
             indicator = (
                 <ComplianceStatusIndicator status={status} mode="dot" />
             );
-            // Outside the packs this workspace chose: not a gap, so it says
-            // so instead of wearing the unmapped chip.
-            meta = node.outOfScope ? (
-                <StatusBadge variant="neutral" size="sm">
-                    {t('outOfScope')}
-                </StatusBadge>
-            ) : isMapped ? (
-                <span className="text-[10px] text-content-subtle tabular-nums">
-                    {mappedCount}
-                </span>
-            ) : (
-                <ComplianceStatusIndicator
-                    status="gap"
-                    mode="chip"
-                    labelled={false}
-                />
-            );
+            if (node.outOfScope) {
+                // Outside the packs this workspace chose: not a gap, so it
+                // says so instead of wearing the unmapped chip.
+                meta = (
+                    <StatusBadge variant="neutral" size="sm">
+                        {t('outOfScope')}
+                    </StatusBadge>
+                );
+            } else {
+                meta = isMapped ? (
+                    <span className="text-[10px] text-content-subtle tabular-nums">
+                        {mappedCount}
+                    </span>
+                ) : (
+                    <ComplianceStatusIndicator
+                        status="gap"
+                        mode="chip"
+                        labelled={false}
+                    />
+                );
+            }
         } else {
             // Coverage data missing — fall back to the prompt-2 affordance.
             meta = isMapped ? (
@@ -553,7 +557,7 @@ function RequirementDetail({
                     <p className="text-xs font-semibold text-content-subtle">
                         {t('mappedControls', { count: controls.length })}
                     </p>
-                    {controls.length === 0 && (
+                    {controls.length === 0 && !node.outOfScope && (
                         <span className="text-[10px] text-content-warning">{t('unmapped')}</span>
                     )}
                 </div>
