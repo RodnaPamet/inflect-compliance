@@ -280,6 +280,10 @@
       "json": "JSON",
       "archive": "Archive",
       "file": "File"
+    },
+    "truncationBanner": {
+      "showingFirst": "Showing the first {cap, number} results.",
+      "refine": "Refine your filters to narrow the view and see the rest."
     }
   },
   "login": {
@@ -1881,7 +1885,8 @@
       "total": "Total controls",
       "implemented": "Implemented",
       "inProgress": "In progress",
-      "notStarted": "Not started"
+      "notStarted": "Not started",
+      "notCountedByCategory": "Not counted while a Category filter is on"
     },
     "colHeaders": {
       "code": "Code",
@@ -1917,7 +1922,9 @@
       "entityLabel": "controls",
       "deletedToast": "{count, plural, one {# control deleted} other {# controls deleted}}",
       "actionFailed": "Bulk action failed. Please try again.",
-      "applied": "Changes applied"
+      "applied": "Changes applied",
+      "partlyApplied": "Changes applied to {applied} of {total} selected controls. {skipped} could not be changed and were left as they were.",
+      "noneApplied": "No changes applied. None of the selected controls could be changed."
     },
     "list": {
       "closeQuickView": "Close the control quick view",
@@ -1940,6 +1947,12 @@
       "healthColumn": "Health",
       "flaggedShowing": "Showing {count} flagged controls",
       "flaggedClear": "Clear",
+      "drillDown": {
+        "dueSoon": "Showing only controls with a review due in the next 30 days or overdue",
+        "missingEvidence": "Showing only controls with no approved, unexpired evidence",
+        "both": "Showing only controls with a review due in the next 30 days or overdue, and no approved, unexpired evidence",
+        "clear": "Show all controls"
+      },
       "loadError": "Couldn't load controls. Reload the page to try again."
     },
     "empty": {
@@ -1984,7 +1997,8 @@
       "submit": "Create Control",
       "createFailed": "Failed to create control",
       "nameRequired": "Name is required",
-      "applicabilityFailed": "Control created, but marking it Not Applicable failed. Retry to save the justification."
+      "applicabilityFailed": "Control created, but marking it Not Applicable failed. Retry to save the justification.",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace already has {current}. Upgrade the plan to add more."
     },
     "addControl": "Control",
     "detail": {
@@ -2269,7 +2283,7 @@
       "controlHealthTitle": "Control health",
       "retry": "Retry",
       "controlHealthTileAria": "{count} controls — {verdict}",
-      "controlHealthMeasuredOnly": "Health comes from test runs, the control's status, overdue dates and open exceptions — not from a declared effectiveness estimate, which informs valuation/ROI only. A control with no test runs reads Unknown unless it is Implemented; an Implemented control with no test runs reads Healthy unless it is overdue or has open exceptions.",
+      "controlHealthMeasuredOnly": "Health comes from the control's status, its next test date and its test runs in the last 90 days, checked in this order. Scoped out: Not applicable. No test run in that time and not Implemented: Unknown. Not Started, or under 70% of its tests passed: At risk. Next test overdue, or under 90% passed: Degraded. Otherwise: Healthy — so an Implemented control that has never been tested reads Healthy until its next test is overdue. A declared effectiveness estimate feeds valuation and ROI, not health.",
       "controlHealthTruncated": "Showing health for the first {scanned} controls (scan cap {cap}). Controls beyond the cap have no verdict badge."
     },
     "templates": {

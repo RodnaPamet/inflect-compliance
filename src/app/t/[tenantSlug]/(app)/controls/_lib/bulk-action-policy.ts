@@ -29,17 +29,41 @@ const ADMIN_ONLY: readonly ControlBulkAction[] = ['delete'];
 const WRITER: readonly ControlBulkAction[] = ['status', 'assign'];
 
 /**
+ * The granular keys the bulk routes name in `requirePermission`. A custom
+ * role resolves the coarse tier from its BASE role, so `canWrite`/`canAdmin`
+ * alone say nothing about these: an ADMIN-based role with `admin.manage`
+ * switched off still reads `canAdmin: true`.
+ */
+export interface ControlBulkGranularPermissions {
+    controls?: { edit?: boolean };
+    admin?: { manage?: boolean };
+}
+
+/**
  * The ordered action values available to a viewer.
+ *
+ * Each verb needs BOTH layers the server checks:
+ *   status / assign  `controls.edit` at the route + `canWrite` in the usecase
+ *   delete           `admin.manage` at the route + `canAdmin` in the usecase
+ *
+ * `appPermissions` absent → the coarse tier alone decides (the usecase
+ * policies fall back the same way). Present → each key must be `true`; a
+ * missing key reads as not granted.
  *
  * Order is the display order: the destructive verb last.
  */
-export function controlBulkActionsFor(permissions: {
-    canWrite: boolean;
-    canAdmin?: boolean;
-}): ControlBulkAction[] {
+export function controlBulkActionsFor(
+    permissions: {
+        canWrite: boolean;
+        canAdmin?: boolean;
+    },
+    appPermissions?: ControlBulkGranularPermissions,
+): ControlBulkAction[] {
+    const editGranted = appPermissions ? appPermissions.controls?.edit === true : true;
+    const manageGranted = appPermissions ? appPermissions.admin?.manage === true : true;
     // A reader has no bulk verbs at all — the bar should not appear.
-    if (!permissions.canWrite) return [];
-    return [...WRITER, ...(permissions.canAdmin ? ADMIN_ONLY : [])];
+    if (!permissions.canWrite || !editGranted) return [];
+    return [...WRITER, ...(permissions.canAdmin && manageGranted ? ADMIN_ONLY : [])];
 }
 
 /** True when the verb is one the server will reject for a non-admin. */

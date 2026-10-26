@@ -89,3 +89,53 @@ describe('admin-only classification', () => {
         }
     });
 });
+
+describe('custom roles — the granular keys the bulk routes name', () => {
+    /**
+     * A custom role resolves the coarse tier from its BASE role, while the
+     * bulk routes check granular keys: status/assign `controls.edit`, delete
+     * `admin.manage`. Gating on the coarse tier alone offered verbs the
+     * server then refused with a 403.
+     */
+    const ADMIN_BASE = { canWrite: true, canAdmin: true };
+    const EDITOR_BASE = { canWrite: true, canAdmin: false };
+    const READER_BASE = { canWrite: false, canAdmin: false };
+
+    it('ADMIN-based role with admin.manage off: no delete', () => {
+        const actions = controlBulkActionsFor(ADMIN_BASE, {
+            controls: { edit: true },
+            admin: { manage: false },
+        });
+        expect(actions).toEqual(['status', 'assign']);
+    });
+
+    it('ADMIN-based role with both keys on: every verb', () => {
+        expect(
+            controlBulkActionsFor(ADMIN_BASE, { controls: { edit: true }, admin: { manage: true } }),
+        ).toEqual(['status', 'assign', 'delete']);
+    });
+
+    it('EDITOR-based role with controls.edit off: no verbs at all', () => {
+        // The usecases assert canWrite AND controls.edit, so status/assign
+        // would both 403.
+        expect(
+            controlBulkActionsFor(EDITOR_BASE, { controls: { edit: false }, admin: { manage: false } }),
+        ).toEqual([]);
+    });
+
+    it('READER-based role granted controls.edit: still no verbs', () => {
+        // The coarse tier is the other half — granting the key does not lift
+        // the usecase's canWrite check.
+        expect(
+            controlBulkActionsFor(READER_BASE, { controls: { edit: true }, admin: { manage: true } }),
+        ).toEqual([]);
+    });
+
+    it('a granular layer missing a key reads as not granted', () => {
+        expect(controlBulkActionsFor(ADMIN_BASE, {})).toEqual([]);
+        expect(controlBulkActionsFor(ADMIN_BASE, { controls: { edit: true } })).toEqual([
+            'status',
+            'assign',
+        ]);
+    });
+});
