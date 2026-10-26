@@ -142,9 +142,13 @@ it('an expired row whose archive flag is off offers Unarchive, and it reaches th
                 <EvidenceClient
                     initialEvidence={[STUCK, LIVE]}
                     initialControls={[]}
+                    controlsComplete
+                    canViewControls
                     initialMetrics={METRICS}
                     tenantSlug="acme"
                     permissions={{ canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true }}
+                    // An Editor's grants, as the server page passes them.
+                    grants={{ evidenceEdit: true, evidenceUpload: true, adminManage: false }}
                     translations={{}}
                 />
             </TooltipProvider>

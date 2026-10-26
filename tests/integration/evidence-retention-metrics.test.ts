@@ -8,10 +8,15 @@
  * the loaded rows client-side, so past the 100-row cap they silently
  * under-reported. EP-4 moves the tiles to this server aggregate.
  *
- * The tenant is seeded with 140 non-deleted rows (well over the 100 cap) plus
- * 3 soft-deleted rows, spread across statuses / expiries / archive states.
- * The bucket definitions mirror `evidenceFreshnessBucket`, so the assertions
- * below pin the exact partition the list KPI cards render.
+ * The tenant is seeded with 143 non-deleted rows (133 of them active — well
+ * over the 100 cap) plus 3 soft-deleted rows, spread across statuses /
+ * expiries / archive states. The bucket definitions mirror
+ * `evidenceFreshnessBucket`, so the assertions below pin the exact partition
+ * the list KPI cards render.
+ *
+ * #4277 — the cards count ACTIVE evidence only (not archived, no
+ * `expiredAt`), the rows the list shows by default, so a card counts what its
+ * click shows. Archived and expired rows are counted in `archivedView`.
  *
  * Hits a real DB (project convention). Won't run without a live test DB.
  */
@@ -43,18 +48,21 @@ const SUBMITTED_PLAIN = 30; // SUBMITTED                   → current
 const APPROVED_PLAIN = 20; // APPROVED, no expiry/review   → current
 const REJECTED_PLAIN = 5; // REJECTED                      → current
 const NEEDS_REVIEW = 8; // NEEDS_REVIEW (wins the bucket)  → needsReview
-const APPROVED_EXPIRED = 6; // APPROVED, expiredAt in past → expired
+const APPROVED_EXPIRED = 6; // APPROVED, expiredAt in past → NOT active (Archived view)
+const APPROVED_LAPSED = 3; // APPROVED, nextReviewDate −5d, not yet swept → active, expired bucket
 const APPROVED_EXPIRING = 7; // APPROVED, nextReviewDate +10d → expiringSoon
-const APPROVED_ARCHIVED = 4; // APPROVED, archived, no expiry → archived + current bucket
+const APPROVED_ARCHIVED = 4; // APPROVED, archived, no expiry → NOT active (Archived view)
 const DELETED = 3; // DRAFT, soft-deleted                  → excluded everywhere
 
-const EXPECTED_TOTAL = DRAFT_PLAIN + SUBMITTED_PLAIN + APPROVED_PLAIN + REJECTED_PLAIN + NEEDS_REVIEW + APPROVED_EXPIRED + APPROVED_EXPIRING + APPROVED_ARCHIVED; // 140
-const EXPECTED_APPROVED = APPROVED_PLAIN + APPROVED_EXPIRED + APPROVED_EXPIRING + APPROVED_ARCHIVED; // 37
-const EXPECTED_ACTIVE = EXPECTED_TOTAL - APPROVED_ARCHIVED - APPROVED_EXPIRED; // not archived, not expiredAt
-const EXPECTED_EXPIRED = APPROVED_EXPIRED; // 6
+// Every card count is over the ACTIVE rows.
+const EXPECTED_TOTAL = DRAFT_PLAIN + SUBMITTED_PLAIN + APPROVED_PLAIN + REJECTED_PLAIN + NEEDS_REVIEW + APPROVED_LAPSED + APPROVED_EXPIRING; // 133
+const EXPECTED_APPROVED = APPROVED_PLAIN + APPROVED_LAPSED + APPROVED_EXPIRING; // 30
+const EXPECTED_ACTIVE = EXPECTED_TOTAL; // not archived, not expiredAt
+const EXPECTED_ARCHIVED_VIEW = APPROVED_ARCHIVED + APPROVED_EXPIRED; // 10
+const EXPECTED_EXPIRED = APPROVED_LAPSED; // 3
 const EXPECTED_EXPIRING = APPROVED_EXPIRING; // 7
 const EXPECTED_NEEDS_REVIEW = NEEDS_REVIEW; // 8
-const EXPECTED_CURRENT = EXPECTED_TOTAL - EXPECTED_NEEDS_REVIEW - EXPECTED_EXPIRED - EXPECTED_EXPIRING; // 119
+const EXPECTED_CURRENT = EXPECTED_TOTAL - EXPECTED_NEEDS_REVIEW - EXPECTED_EXPIRED - EXPECTED_EXPIRING; // 115
 
 interface SeedRow {
     n: number;
@@ -114,6 +122,7 @@ describeFn('evidence retention metrics — full-dataset aggregate (integration)'
             { n: REJECTED_PLAIN, status: EvidenceStatus.REJECTED },
             { n: NEEDS_REVIEW, status: EvidenceStatus.NEEDS_REVIEW },
             { n: APPROVED_EXPIRED, status: EvidenceStatus.APPROVED, expiredAt: past },
+            { n: APPROVED_LAPSED, status: EvidenceStatus.APPROVED, nextReviewDate: past },
             { n: APPROVED_EXPIRING, status: EvidenceStatus.APPROVED, nextReviewDate: soon },
             { n: APPROVED_ARCHIVED, status: EvidenceStatus.APPROVED, isArchived: true },
             { n: DELETED, status: EvidenceStatus.DRAFT, deletedAt: new Date() },
@@ -143,7 +152,7 @@ describeFn('evidence retention metrics — full-dataset aggregate (integration)'
         await globalPrisma.$disconnect();
     });
 
-    it('returns the true tenant-wide totals (not the ≤100 SSR slice)', async () => {
+    it('returns the true tenant-wide active totals (not the ≤100 SSR slice)', async () => {
         const m = await getEvidenceRetentionMetrics(ctx);
         expect(m.total).toBe(EXPECTED_TOTAL);
         expect(m.byStatus).toEqual({
@@ -163,11 +172,12 @@ describeFn('evidence retention metrics — full-dataset aggregate (integration)'
         const m = await getEvidenceRetentionMetrics(ctx);
         expect(m.active).toBe(EXPECTED_ACTIVE);
         expect(m.archived).toBe(APPROVED_ARCHIVED);
+        expect(m.archivedView).toBe(EXPECTED_ARCHIVED_VIEW);
         expect(m.expired).toBe(EXPECTED_EXPIRED);
         expect(m.expiringSoon).toBe(EXPECTED_EXPIRING);
         expect(m.needsReview).toBe(EXPECTED_NEEDS_REVIEW);
         expect(m.current).toBe(EXPECTED_CURRENT);
-        // The freshness buckets partition every non-deleted row exactly once.
+        // The freshness buckets partition every active row exactly once.
         expect(m.current + m.expiringSoon + m.expired + m.needsReview).toBe(EXPECTED_TOTAL);
     });
 

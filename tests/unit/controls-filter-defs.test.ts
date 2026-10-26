@@ -31,6 +31,7 @@ import {
     buildControlFilters,
     categoryOptionsFromControls,
     CONTROL_FILTER_KEYS,
+    controlCategoryLabel,
     ownerOptionsFromControls,
 } from '../../src/app/t/[tenantSlug]/(app)/controls/filter-defs';
 
@@ -175,6 +176,34 @@ describe('categoryOptionsFromControls', () => {
                 { category: undefined as unknown as null },
             ]),
         ).toEqual([]);
+    });
+});
+
+describe('category labels — a stored theme constant is never shown raw', () => {
+    // A custom control created on the Controls page stores one of the four
+    // ISO 27002 theme constants, and with an auto-minted `CTL-N` code no
+    // framework rule renames it — so the derived category IS the constant.
+    it('labels a theme constant with its localized categoryLabels entry', () => {
+        expect(controlCategoryLabel('TECHNOLOGICAL', tControls)).toBe(
+            (EN.controls as { categoryLabels: Record<string, string> }).categoryLabels.TECHNOLOGICAL,
+        );
+        expect(controlCategoryLabel('TECHNOLOGICAL', tControls)).not.toBe('TECHNOLOGICAL');
+    });
+
+    it('passes any other derived category through untouched', () => {
+        expect(controlCategoryLabel('Access control', tControls)).toBe('Access control');
+    });
+
+    it('the Category filter option keeps the derived VALUE and shows the label', () => {
+        const live = buildControlFilters(
+            [{ code: 'CTL-7', annexId: null, category: 'TECHNOLOGICAL' }],
+            tControls,
+            tGroup,
+        );
+        const category = live.find((f) => f.key === 'category');
+        // The value is what the client-side category filter compares against;
+        // only the text a reader sees changes.
+        expect(category?.options).toEqual([{ value: 'TECHNOLOGICAL', label: 'Technological' }]);
     });
 });
 

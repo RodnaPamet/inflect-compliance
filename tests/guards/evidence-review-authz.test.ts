@@ -52,11 +52,16 @@ describe('R5-P2 (2) reviewer gate matches the server', () => {
 
 describe('R5-P2 (3) read-only roles get no bulk bar', () => {
     const src = read(CLIENT);
-    it('selection is gated on write and bulk actions on their tier', () => {
-        expect(src).toMatch(/selectionEnabled=\{permissions\.canWrite\}/);
+    it('selection is gated on the bulk actions offered, and each action on its tier', () => {
+        // #4277 — selection follows the action list (shared by the table and
+        // the gallery), so a role offered no action cannot select. Which role
+        // gets which action is asserted by rendering the client:
+        // tests/rendered/evidence-list-role-surface.test.tsx.
+        expect(src).toMatch(/const selectionEnabled = evidenceBulkActions\.length > 0;/);
         expect(src).toMatch(/permissions\.canAdmin \? \[\{[\s\S]{0,120}value: 'approve'/);
-        // handleBulkApply gained a catch that toasts the failure
-        expect(src).toMatch(/\} catch \{[\s\S]{0,300}toast\.error\(tx\('list\.bulkFailed'\)\)/);
+        // handleBulkApply gained a catch that toasts the failure — the
+        // server's reason when there is one, `list.bulkFailed` otherwise.
+        expect(src).toMatch(/\} catch \{[\s\S]{0,300}toast\.error\(failure\)/);
     });
 });
 

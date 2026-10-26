@@ -115,7 +115,7 @@ In the details panel, choose a control in **{{ui:evidence.detail.linkControlPlac
 
 ### Archive and unarchive
 
-Click **{{ui:evidence.list.archiveEvidence}}** on a row, and it leaves the {{ui:evidence.list.retentionActive}} view. To bring it back, choose {{ui:evidence.list.retentionArchived}} under {{ui:evidence.filters.retention}} and click **{{ui:evidence.list.unarchiveEvidence}}**. Evidence archived because its retention date passed comes back too: unarchiving clears its expiry and the retention date that passed, so the nightly run does not archive it again. Set a new retention date afterwards if it needs one.
+Click **{{ui:evidence.list.archiveEvidence}}** on a row, and it leaves the {{ui:evidence.list.retentionActive}} view. To bring it back, choose {{ui:evidence.list.retentionArchived}} under {{ui:evidence.filters.retention}} and click **{{ui:evidence.list.unarchiveEvidence}}**. Evidence archived because its retention date passed cannot be unarchived while that date is still past. The page says so and tells you to set a new retention date first. Open **{{ui:evidence.list.editEvidence}}**, set a retention date that has not passed or clear the date, and save. Then click **{{ui:evidence.list.unarchiveEvidence}}**, and the evidence returns to {{ui:evidence.list.retentionActive}}.
 
 ### Change many records at once
 
@@ -135,7 +135,7 @@ Click **{{ui:evidence.list.downloadFile}}** on a row, the download button on a g
 - **Approval and rejection** send a notification to the evidence's owner, when a member is set as owner. A rejection's notification carries the reason.
 - **Changing approved evidence**, by editing its note or link address or replacing its file, sends it back to {{ui:evidence.statusLabels.SUBMITTED}}. Other edits leave the approval in place.
 - **Review dates.** Once a day, approved evidence whose next review date has passed becomes {{ui:evidence.statusLabels.NEEDS_REVIEW}}. This page has no field for the next review date; evidence that an integration collects automatically carries one.
-- **Retention dates.** Once a day, evidence whose retention date has passed is archived and marked {{ui:evidence.list.retentionExpired}}. Evidence archived that way is deleted for good 365 days after it expired, unless you unarchive it or give it a retention date that has not passed. Evidence you archive yourself is kept.
+- **Retention dates.** Once a day, evidence whose retention date has passed is archived and marked {{ui:evidence.list.retentionExpired}}. Evidence archived that way is deleted for good 365 days after it expired, unless you give it a retention date that has not passed or clear its date. Evidence you archive yourself is kept.
 - **Deleted evidence** leaves the library at once and is removed for good after 90 days. Until then an Owner or Admin can restore it through the Inflect API; this page has no restore button.
 - **The audit log** records adding, editing, uploading, replacing, reviewing, archiving, linking, retention changes, deleting and downloading. An image or PDF shown in the details panel or the gallery is loaded the way a download is, so it is recorded as one too.
 - **Audit packs** take in approved evidence that is linked to controls and is neither expired nor archived.

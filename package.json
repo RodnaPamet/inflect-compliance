@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.323.1",
+  "version": "3.324.0",
   "private": true,
   "license": "BUSL-1.1",
   "workspaces": [
@@ -170,7 +170,7 @@
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.2",
     "ldapts": "^9.2.0",
-    "lucide-react": "^1.60.0",
+    "lucide-react": "^1.61.0",
     "mammoth": "^1.13.0",
     "marked": "^18.1.1",
     "motion": "^13.4.4",

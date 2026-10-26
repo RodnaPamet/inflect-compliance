@@ -280,6 +280,10 @@
       "json": "JSON",
       "archive": "Archive",
       "file": "File"
+    },
+    "truncationBanner": {
+      "showingFirst": "Showing the first {cap, number} results.",
+      "refine": "Refine your filters to narrow the view and see the rest."
     }
   },
   "login": {
@@ -1881,7 +1885,8 @@
       "total": "Total controls",
       "implemented": "Implemented",
       "inProgress": "In progress",
-      "notStarted": "Not started"
+      "notStarted": "Not started",
+      "notCountedByCategory": "Not counted while a Category filter is on"
     },
     "colHeaders": {
       "code": "Code",
@@ -1917,7 +1922,9 @@
       "entityLabel": "controls",
       "deletedToast": "{count, plural, one {# control deleted} other {# controls deleted}}",
       "actionFailed": "Bulk action failed. Please try again.",
-      "applied": "Changes applied"
+      "applied": "Changes applied",
+      "partlyApplied": "Changes applied to {applied} of {total} selected controls. {skipped} could not be changed and were left as they were.",
+      "noneApplied": "No changes applied. None of the selected controls could be changed."
     },
     "list": {
       "closeQuickView": "Close the control quick view",
@@ -1940,6 +1947,12 @@
       "healthColumn": "Health",
       "flaggedShowing": "Showing {count} flagged controls",
       "flaggedClear": "Clear",
+      "drillDown": {
+        "dueSoon": "Showing only controls with a review due in the next 30 days or overdue",
+        "missingEvidence": "Showing only controls with no approved, unexpired evidence",
+        "both": "Showing only controls with a review due in the next 30 days or overdue, and no approved, unexpired evidence",
+        "clear": "Show all controls"
+      },
       "loadError": "Couldn't load controls. Reload the page to try again."
     },
     "empty": {
@@ -1984,7 +1997,8 @@
       "submit": "Create Control",
       "createFailed": "Failed to create control",
       "nameRequired": "Name is required",
-      "applicabilityFailed": "Control created, but marking it Not Applicable failed. Retry to save the justification."
+      "applicabilityFailed": "Control created, but marking it Not Applicable failed. Retry to save the justification.",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace already has {current}. Upgrade the plan to add more."
     },
     "addControl": "Control",
     "detail": {
@@ -2269,7 +2283,7 @@
       "controlHealthTitle": "Control health",
       "retry": "Retry",
       "controlHealthTileAria": "{count} controls — {verdict}",
-      "controlHealthMeasuredOnly": "Health comes from test runs, the control's status, overdue dates and open exceptions — not from a declared effectiveness estimate, which informs valuation/ROI only. A control with no test runs reads Unknown unless it is Implemented; an Implemented control with no test runs reads Healthy unless it is overdue or has open exceptions.",
+      "controlHealthMeasuredOnly": "Health comes from the control's status, its next test date and its test runs in the last 90 days, checked in this order. Scoped out: Not applicable. No test run in that time and not Implemented: Unknown. Not Started, or under 70% of its tests passed: At risk. Next test overdue, or under 90% passed: Degraded. Otherwise: Healthy — so an Implemented control that has never been tested reads Healthy until its next test is overdue. A declared effectiveness estimate feeds valuation and ROI, not health.",
       "controlHealthTruncated": "Showing health for the first {scanned} controls (scan cap {cap}). Controls beyond the cap have no verdict badge."
     },
     "templates": {
@@ -2540,7 +2554,7 @@
     "link": "Link",
     "text": {
       "title": "Add evidence",
-      "description": "Record a narrative or attestation against a control. A note is shown as plain text; to add a clickable link, use Link instead.",
+      "description": "Record a narrative or attestation against a control. A note is shown as plain text; to add a clickable link, use Link / URL instead.",
       "titleLabel": "Title",
       "linkControlLabel": "Link to control",
       "noControlLink": "— No control link",
@@ -2591,13 +2605,18 @@
       "viewList": "List",
       "viewGallery": "Gallery",
       "archivedNoticeTitle": "Archived evidence",
-      "archivedNoticeBody": "Archived evidence should not be used in active audit packs or compliance assessments. Unarchive if you need to reuse this evidence.",
+      "archivedNoticeBody": "Archived evidence should not be used in active audit packs or compliance assessments. To reuse it, unarchive it. Evidence whose retention date has passed needs a new Retention date first: set one in Edit evidence, then unarchive it.",
       "emptyArchivedTitle": "No archived evidence",
       "emptyExpiringTitle": "No evidence expiring soon",
       "emptyFilterTitle": "No evidence matches your filters",
       "emptyFilterDesc": "Try widening your search or clearing one of the active filters.",
       "clearFilters": "Clear filters",
       "emptyRecordsDesc": "Upload screenshots, exports, and attestations that prove your controls work in practice.",
+      "emptyActiveTitle": "No active evidence",
+      "emptyActiveDesc": "All of this workspace's evidence is archived or expired.",
+      "showArchived": "Show archived",
+      "allCurrentMessage": "All evidence is current",
+      "allCurrentDescription": "No evidence is expired, expiring in the next 30 days, or in need of review.",
       "resourceOne": "evidence item",
       "resourceMany": "evidence items",
       "searchPlaceholder": "Search evidence…",
@@ -2664,6 +2683,8 @@
       "loadingBody": "Loading evidence…",
       "errorTitle": "Evidence",
       "loadFailed": "Failed to load evidence.",
+      "downloadArchived": "Archived evidence can't be downloaded.",
+      "downloadNeedsControl": "This file can be downloaded once the evidence is linked to a control.",
       "descriptionLabel": "Description",
       "versionsLabel": "File versions",
       "versionBadge": "v{version}",
@@ -2738,6 +2759,7 @@
       "replaceFileDesc": "Upload a new file to replace the current one.",
       "replacing": "Replacing…",
       "replaceFailed": "Failed to replace file",
+      "replacedKeepEditing": "File replaced. Your other changes are not saved yet.",
       "tagsLabel": "Tags",
       "tagsDesc": "Comma-separated. A second way to organise evidence beside folders.",
       "tagsPlaceholder": "soc2, access-control, q3"
@@ -2756,7 +2778,7 @@
       "titleMultiHint": "Per-file titles default to the filename when uploading multiple files.",
       "retainLabel": "Retain until",
       "retainTooltipAria": "About retention dates",
-      "retainTooltip": "After this date the evidence is archived and leaves the active list. If it is still archived 365 days later, it is deleted for good.",
+      "retainTooltip": "After this date the evidence is archived out of the active set, and 365 days later it is deleted for good. Until then an Editor or Admin can bring it back by setting a new retention date and unarchiving it.",
       "retainPlaceholder": "Select date",
       "retainAria": "Retain until",
       "retainHint": "Optional — applies to every file in the batch.",
@@ -2791,8 +2813,14 @@
       "descriptionHeader": "Drop a .zip and the worker will extract each supported file into its own evidence record.",
       "dropTitle": "Drop a .zip",
       "dropHint": "Up to 100 MB per archive. PDF / Office / image / CSV / JSON entries are extracted; other entries are skipped.",
-      "jobLabel": "Job",
-      "queued": "queued",
+      "statusLine": "Status: {state}",
+      "states": {
+        "queued": "Queued",
+        "running": "Running",
+        "paused": "Paused",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
       "progressLine": "{extracted} extracted · {skipped} skipped · {errored} errored · {total} total entries",
       "extracted": "Extracted: {count}",
       "skipped": "Skipped: {count}",

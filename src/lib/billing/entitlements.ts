@@ -74,6 +74,7 @@ export type Plan = 'FREE' | 'TRIAL' | 'PRO' | 'ENTERPRISE';
 // it locally, and this module CALLS it (see `getEffectivePlan`). Every
 // existing caller still imports it from here and is unaffected.
 import { getBillingMode, type BillingMode } from './billing-mode';
+import { formatPlanLimitMessage } from './plan-limit-message';
 
 export { getBillingMode, type BillingMode };
 
@@ -197,9 +198,6 @@ export async function assertWithinLimit(
         // 403. The message embeds plan + resource + limit so the
         // billing UI can parse it into an "Upgrade" CTA without
         // adding a new error type / shape to the API contract.
-        throw forbidden(
-            `plan_limit_exceeded: ${plan} plan allows ${limit} ${resource}(s); ` +
-                `tenant currently has ${current}. Upgrade to add more.`,
-        );
+        throw forbidden(formatPlanLimitMessage({ plan, resource, limit, current }));
     }
 }

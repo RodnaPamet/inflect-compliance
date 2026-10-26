@@ -249,9 +249,16 @@ describe('bulk Delete is offered only to the roles the server lets delete', () =
             <EvidenceClient
                 initialEvidence={[EVIDENCE]}
                 initialControls={[]}
+                controlsComplete
+                canViewControls
                 initialMetrics={EVIDENCE_METRICS}
                 tenantSlug="acme"
                 permissions={coarse(role)}
+                grants={{
+                    evidenceEdit: getPermissionsForRole(role).evidence.edit,
+                    evidenceUpload: getPermissionsForRole(role).evidence.upload,
+                    adminManage: getPermissionsForRole(role).admin.manage,
+                }}
                 translations={{}}
             />,
         );
@@ -274,6 +281,7 @@ describe('Controls — read-only roles get no row checkboxes', () => {
                 appPermissions={{
                     controls: { create: perms.controls.create, edit: perms.controls.edit },
                     tasks: { edit: perms.tasks.edit },
+                    admin: { manage: perms.admin.manage },
                 }}
             />,
         );
