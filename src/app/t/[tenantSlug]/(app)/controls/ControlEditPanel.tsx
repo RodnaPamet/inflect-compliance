@@ -63,10 +63,11 @@ export function ControlEditPanel({
     control: PanelControl;
     canWrite: boolean;
     /**
-     * Whether to offer the evidence dropzone. SEPARATE from `canWrite`, which
-     * here means `canWrite && controls.edit` — the gate that opens this panel.
-     * An upload POSTs to `/evidence/uploads`, whose usecase asserts
-     * `evidence.upload` alone (#4325).
+     * The viewer's `evidence.upload`, which gates the file dropzone on top of
+     * `canWrite` (here `canWrite && controls.edit`): a file upload POSTs to
+     * `/evidence/uploads`, which asks `evidence.upload` (#4325). It gates only
+     * the dropzone. The attached-evidence list shows for every role, and the
+     * URL link stays on `canWrite`, because its route is the control's own.
      */
     canUploadEvidence: boolean;
     /** Retained for API compatibility (AsidePanel owns the close affordance). */
@@ -287,18 +288,19 @@ export function ControlEditPanel({
                     </div>
 
                     {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail).
-                        Offered on `evidence.upload`, which is what the upload
-                        usecase asserts — not on this panel's own edit gate. */}
-                    {canUploadEvidence && <EvidenceUploadSection
+                        The dropzone also needs `evidence.upload`; the attached
+                        list is always shown. */}
+                    <EvidenceUploadSection
                         tenantSlug={tenantSlug}
                         linkField="controlId"
                         linkId={control.id}
                         canWrite={canWrite}
+                        canUpload={canWrite && canUploadEvidence}
                         compactDropzone
                         listEndpoint={`/controls/${control.id}/evidence`}
                         urlLinkEndpoint={`/controls/${control.id}/evidence`}
                         urlLinkBody={(url, note) => ({ kind: "LINK", url, note: note || undefined })}
-                    />}
+                    />
                 </div>
             ) : (
                 <PanelActivityFeed tenantSlug={tenantSlug} endpoint={`/controls/${control.id}/activity`} />
