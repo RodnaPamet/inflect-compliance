@@ -15,11 +15,11 @@ Open **{{ui:nav.risks}}** under **{{ui:nav.govern}}** in the sidebar. The breadc
 | Action | Roles |
 | --- | --- |
 | View the register, the matrix and the histogram | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
-| Create or import risks | Owner, Admin, Editor |
+| Create or import risks, or add them with {{ui:risks.aiAssist}} | Owner, Admin, Editor |
 | Set status or assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page offers only what your role can do: **{{ui:risks.addRisk}}** and the import appear only for a role that can create risks. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply. A role that can apply none of them sees no actions there.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page offers only what your role can do: **{{ui:risks.addRisk}}**, the import and **{{ui:risks.aiAssist}}** appear only for a role that can create risks. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply. A role that can apply none of them sees no actions there.
 
 ## What it is for
 
@@ -81,7 +81,7 @@ A risk with none of these signals, such as one with no review date, no linked co
 
 **The histogram.** **{{ui:risks.histogram}}**, in the **{{ui:risks.viewsMenu}}** menu, places each quantified risk in a loss bucket on a logarithmic scale, stacked by its matrix band. When your workspace has a risk appetite, a line marks the per-risk appetite. Below the chart, **{{ui:risks.collisions.title}}** lists risks that share a matrix cell while their loss estimates differ by more than ten times. Click one to see those risks in the table.
 
-**{{ui:risks.aiAssist}}.** Owners, Admins and Editors, and custom roles built on them, get a collapsed side panel that opens the AI-assisted risk assessment.
+**{{ui:risks.aiAssist}}.** Roles that can create risks get a collapsed side panel that opens the AI-assisted risk assessment. The suggestions you accept there are added to the register as new risks, so the panel is offered to the same roles as **{{ui:risks.addRisk}}**.
 
 ## What you can do
 
@@ -118,5 +118,5 @@ Open **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}** to load risks f
 | **{{ui:panels.riskFirstRun.title}}** | The workspace has no risks yet | Click **{{ui:panels.riskFirstRun.cta}}**, or import risks. Roles that cannot create risks see no button |
 | **{{ui:risks.emptyFilter.title}}** | Risks exist, but none match the search and filters | Click **{{ui:risks.emptyFilter.clearFilters}}** |
 | **{{ui:risks.bulk.actionFailed}}** | A bulk action did not reach the server, or failed without giving a reason | Try again |
-| Rows that do not match the filters you just set | The list did not load for the new filters, and the table kept showing the rows it had before. The page shows no error | Reload the page |
+| **{{ui:risks.loadError}}** | The list did not load for the filters you set. The table, the matrix and the histogram show this message in place of risks, and the {{ui:riskManager.totalRisks}}, {{ui:riskManager.avgScore}} and {{ui:riskManager.openRisks}} cards show a dash | Check your connection, then reload the page |
 | A banner saying the list is truncated | The register holds more than 5,000 risks, more than the page loads at once | Narrow the list with a filter or the search |

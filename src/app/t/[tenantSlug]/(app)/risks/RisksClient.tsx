@@ -31,6 +31,7 @@ import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ViewsMenu } from '@/components/ui/views-menu';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import {
     DataTable,
@@ -280,7 +281,6 @@ function RisksPageInner({
     initialFilters,
     matrixConfig,
     tenantSlug,
-    permissions,
     bulkPermissions,
     canCreate,
     translations: t,
@@ -1150,12 +1150,13 @@ function RisksPageInner({
 
     // Right-rail Phase 3 — the AI assist co-pilot rail. A persistent,
     // co-resident entry point to the AI risk-assessment flow that
-    // follows the user across the register. Gated on the coarse write
-    // tier, the one check the AI suggestion routes make (they hold no
-    // granular key); `defaultCollapsed`
+    // follows the user across the register. Gated on `canCreate`, like the
+    // Risk button and Import: applying suggestions creates risks, so the
+    // generate and apply routes take `risks.create` and the usecases the
+    // write tier (#4327). `defaultCollapsed`
     // so it lands as a quiet 44px spine, not a 320px land-grab — the
     // user expands it when they want to engage.
-    const aiAssistRail = permissions.canWrite ? (
+    const aiAssistRail = canCreate ? (
         <AsidePanel
             title={tx('aiAssist')}
             surfaceKey="risks-list"
@@ -1210,14 +1211,17 @@ function RisksPageInner({
                                 sparkline?: typeof riskTrends.total;
                             }
                         > = {
-                            total: { value: total, kpi: 'total', sparkline: riskTrends.total },
+                            // After a failed load these figures belong to
+                            // the previous filters' answer, so they show a
+                            // dash rather than a number the list cannot back.
+                            total: { value: listError ? '—' : total, kpi: 'total', sparkline: riskTrends.total },
                             avgScore: {
-                                value: avgScore,
+                                value: listError ? '—' : avgScore,
                                 tone: 'attention',
                                 sparkline: riskTrends.avgScore,
                             },
                             open: {
-                                value: openCount,
+                                value: listError ? '—' : openCount,
                                 tone: 'success',
                                 kpi: 'open',
                                 sparkline: riskTrends.open,
@@ -1393,7 +1397,11 @@ function RisksPageInner({
 
             <ListPageShell.Body aside={aiAssistRail}>
                 <TruncationBanner truncated={truncated} />
-                {view === 'histogram' ? (
+                {/* The table shows the load error itself; the matrix and the
+                    histogram would draw the previous filters' risks. */}
+                {listError && view !== 'register' ? (
+                    <ErrorState description={listError} />
+                ) : view === 'histogram' ? (
                     <div className="space-y-default" data-testid="risk-histogram-view">
                         <div>
                             <Heading level={3} className="mb-1">{tx('histogramView.title')}</Heading>

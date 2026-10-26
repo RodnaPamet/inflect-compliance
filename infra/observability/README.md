@@ -141,9 +141,9 @@ In Grafana (`http://127.0.0.1:3001` or via Caddy) you should see three
 provisioned dashboards under the *inflect-observability* folder:
 
 - **Inflect — API Overview (RED)** — request rate, 5xx %, p95 latency.
-- **Inflect — Jobs & Queues** — job rate/duration/failures, audit-stream
-  delivery failures. No queue-depth panel: the app never registers its
-  `job.queue.depth` gauge (nothing calls `startQueueDepthReporting`).
+- **Inflect — Jobs & Queues** — job rate/duration/failures, BullMQ queue
+  depth by state (the worker reports it, `job_queue_depth_ratio`),
+  audit-stream delivery failures.
 - **Inflect — Observability Stack Health** — collector accepted/refused
   (including `memory_limiter`'s refusals), exporter send failures,
   Prometheus TSDB head series + scrape health, target `up`.
@@ -178,8 +178,9 @@ Alert **rules** are Prometheus-native
 - **stack_health** — collector/Prometheus/Tempo/Grafana down, collector
   export failures, data refused by `memory_limiter`, and a `DeadMansSwitch`
   that always fires (monitor for its *absence* downstream).
-- **app_health** — high 5xx ratio, API p95 SLO breach, job failure rate, and
-  the compliance-critical `AuditStreamDeliveryFailing`.
+- **app_health** — high 5xx ratio, API p95 SLO breach, job failure rate, a
+  growing BullMQ backlog (`JobQueueDepthGrowing`), and the
+  compliance-critical `AuditStreamDeliveryFailing`.
 - **security_controls** — a control that stopped applying or could not be
   verified: sign-ins without session caps, a workflow context failing
   verification, a kill-switch drill that failed or proved nothing, a circuit
@@ -203,8 +204,7 @@ routing, deploy an Alertmanager and uncomment the `alerting:` block in
 
 > There is no disk alert: one would need `node_exporter` metrics
 > (`node_filesystem_*`), and this stack does not deploy node_exporter. Disk
-> pressure is visible operationally via `df` on the VM. There is no
-> queue-depth alert either, for the reason under the dashboards above.
+> pressure is visible operationally via `df` on the VM.
 
 ## Per-environment notes
 

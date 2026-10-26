@@ -78,6 +78,8 @@ import {
     recordAiDecisionOutcome,
     startQueueDepthReporting,
     startAuditStreamBufferReporting,
+    stopQueueDepthReporting,
+    QUEUE_DEPTH_READ_TIMEOUT_MS,
     _resetQueueDepthForTesting,
     _resetAuditStreamBufferGaugeForTesting,
 } from '@/lib/observability/metrics';
@@ -562,6 +564,7 @@ describe('job.queue.depth gauge callback', () => {
 
     afterEach(() => {
         _resetQueueDepthForTesting();
+        jest.useRealTimers();
     });
 
     /** Drive one scrape of the registered gauge and collect what it observed. */
@@ -577,21 +580,45 @@ describe('job.queue.depth gauge callback', () => {
         return observed;
     }
 
-    it('observes exactly the four reportable states, each with the queue label', async () => {
+    it('observes exactly the reportable states, each labelled with the queue it read', async () => {
         startQueueDepthReporting(() => ({
-            getJobCounts: async () => ({ waiting: 5, active: 2, delayed: 1, failed: 0 }),
+            name: 'inflect-jobs',
+            getJobCounts: async () => ({ waiting: 5, prioritized: 4, active: 2, delayed: 1, failed: 0 }),
         }));
 
         expect(await scrape()).toEqual([
             { value: 5, attrs: { 'queue.name': 'inflect-jobs', 'queue.state': 'waiting' } },
+            { value: 4, attrs: { 'queue.name': 'inflect-jobs', 'queue.state': 'prioritized' } },
             { value: 2, attrs: { 'queue.name': 'inflect-jobs', 'queue.state': 'active' } },
             { value: 1, attrs: { 'queue.name': 'inflect-jobs', 'queue.state': 'delayed' } },
             { value: 0, attrs: { 'queue.name': 'inflect-jobs', 'queue.state': 'failed' } },
         ]);
     });
 
+    it('takes the queue.name label from the queue it read, not from a literal', async () => {
+        startQueueDepthReporting(() => ({
+            name: 'some-other-queue',
+            getJobCounts: async () => ({ waiting: 1 }),
+        }));
+
+        expect(await scrape()).toEqual([
+            { value: 1, attrs: { 'queue.name': 'some-other-queue', 'queue.state': 'waiting' } },
+        ]);
+    });
+
+    it('asks Redis for the reportable states only, not every state BullMQ keeps', async () => {
+        // With no argument BullMQ counts `completed` and `waiting-children`
+        // too — work done for a label set the gauge then throws away.
+        const getJobCounts = jest.fn(async (..._states: string[]) => ({}));
+        startQueueDepthReporting(() => ({ name: 'inflect-jobs', getJobCounts }));
+
+        await scrape();
+        expect(getJobCounts.mock.calls).toEqual([['waiting', 'prioritized', 'active', 'delayed', 'failed']]);
+    });
+
     it('ignores BullMQ states outside the reportable list — cardinality discipline', async () => {
         startQueueDepthReporting(() => ({
+            name: 'inflect-jobs',
             getJobCounts: async () => ({
                 waiting: 1,
                 paused: 99,
@@ -609,6 +636,7 @@ describe('job.queue.depth gauge callback', () => {
         // observes `undefined` for every absent state, which OTel turns into
         // NaN data points.
         startQueueDepthReporting(() => ({
+            name: 'inflect-jobs',
             getJobCounts: async () => ({ waiting: 3, failed: 4 }),
         }));
 
@@ -631,12 +659,63 @@ describe('job.queue.depth gauge callback', () => {
 
     it('swallows a rejected getJobCounts too', async () => {
         startQueueDepthReporting(() => ({
+            name: 'inflect-jobs',
             getJobCounts: async () => {
                 throw new Error('ECONNRESET');
             },
         }));
 
         await expect(scrape()).resolves.toStrictEqual([]);
+    });
+
+    it('gives up on a read that hangs, so one stuck Redis call cannot hold back the export', async () => {
+        // The worker's connection has `maxRetriesPerRequest: null`: while
+        // Redis is unreachable a command waits for the reconnect, however
+        // long that takes. The metric reader awaits every callback before it
+        // exports, so without the bound this read would delay every metric.
+        jest.useFakeTimers();
+        startQueueDepthReporting(() => ({
+            name: 'inflect-jobs',
+            getJobCounts: () => new Promise<Record<string, number>>(() => { /* never settles */ }),
+        }));
+
+        const pending = scrape();
+        let settled = false;
+        void pending.then(() => { settled = true; });
+
+        await jest.advanceTimersByTimeAsync(QUEUE_DEPTH_READ_TIMEOUT_MS - 1);
+        expect(settled).toBe(false);
+        await jest.advanceTimersByTimeAsync(1);
+        await expect(pending).resolves.toStrictEqual([]);
+    });
+
+    it('reads nothing once stopped, so the queue can be closed under it', async () => {
+        const getQueue = jest.fn(() => ({
+            name: 'inflect-jobs',
+            getJobCounts: async () => ({ waiting: 1 }),
+        }));
+        startQueueDepthReporting(getQueue);
+        await scrape();
+        expect(getQueue).toHaveBeenCalledTimes(1);
+
+        stopQueueDepthReporting();
+
+        await expect(scrape()).resolves.toStrictEqual([]);
+        expect(getQueue).toHaveBeenCalledTimes(1);
+    });
+
+    it('resumes on the same gauge when started again after a stop', async () => {
+        startQueueDepthReporting(() => ({ name: 'inflect-jobs', getJobCounts: async () => ({ waiting: 1 }) }));
+        const registered = gaugeCallbacks.get('job.queue.depth');
+        stopQueueDepthReporting();
+
+        startQueueDepthReporting(() => ({ name: 'inflect-jobs', getJobCounts: async () => ({ waiting: 2 }) }));
+
+        // No second instrument: the OTel SDK would warn about a duplicate.
+        expect(gaugeCallbacks.get('job.queue.depth')).toBe(registered);
+        expect(await scrape()).toEqual([
+            { value: 2, attrs: { 'queue.name': 'inflect-jobs', 'queue.state': 'waiting' } },
+        ]);
     });
 });
 
