@@ -97,9 +97,9 @@ With the gate skipped, `unresolvable` is still refused, by
 
 ## Production evidence
 
-**Phase 0 has been in production since 19:04:37 UTC.** Its `/api/mcp` limiting has
-been observed there. A Flue run has not, because the image did not carry the skill
-corpus (#4301). The three reads, in order:
+**Phase 0 has run in production.** It was deployed at 19:04:37 UTC on
+2026-10-25, its `/api/mcp` limiting was observed that evening, and a Flue run
+completed after it on 2026-10-26, once #4301 was fixed. The four reads, in order:
 
 **Access.** This session's `gcloud` credentials were refused, and so were a
 fresh session's at 14:04 UTC. The owner then ran the read-only block from Cloud
@@ -159,8 +159,22 @@ of the Skills tab. Nothing in CI could see it, because the suite runs from a
 checkout. It is fixed in its own pull request, with a guardrail that derives every
 `process.cwd()` read and fails when its directory is not in the image.
 
-**Still to do.** A Flue run after 0a, with its step counts against the baseline
-above, once #4301 is deployed.
+**A Flue run after Phase 0, on 2026-10-26.** #4302 shipped the skill corpus in the
+image. The app container was recreated at 09:35:36 UTC, from an image published
+after #4302 merged. The owner started one `access-posture` run the same way, and it
+answered `201`. A read-only query then compared it with the baseline:
+
+| Run | Engine | Status | `MODEL_CALL` | `TOOL_CALL` | Steps | Wall clock |
+| --- | --- | --- | --- | --- | --- | --- |
+| `cmujpuc84000001pgl3rdy9ud` (2026-09-27, the baseline) | FLUE | COMPLETED | 1 | 5 | 6 | 29 s |
+| `cmvp38v9d000001o5526qt04h` (2026-10-26, after Phase 0) | FLUE | COMPLETED | 1 | 2 | 3 | 16 s |
+
+- **Every step of the new run is `DONE`,** and it has no error message.
+- **The engine is recorded as `FLUE`.** That is the label `recordedModeOf` (#4285)
+  writes, so the run went through 0a's engine-neutral tool core and the guards in
+  front of it.
+- **The tool-call count is not expected to match.** The model picks its own calls,
+  so 2 against 5 is the same workflow reading less, not a step lost.
 
 Nothing here is filled from a test.
 

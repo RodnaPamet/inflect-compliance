@@ -709,7 +709,7 @@ Each phase's hardening step fills its row.
 
 | Phase | Has it run in production? | Evidence |
 | --- | --- | --- |
-| 0 — Foundations | deployed; no Flue run yet (#4301) | Read on the VM on 2026-10-25. Phase 0 reached production at 19:04:37 UTC, when Watchtower rolled the `ced48e0` publish. Before that, every image publish after 04:28 had been cancelled by the next push (#4280). `/api/mcp` limiting was observed at about 19:25 UTC: a probe of 610 unauthenticated requests drew 600 `401` and 10 `429`, and exactly 10 `rate-limit.blocked` lines, all `mcp-ip`, none `api-mutation`. The first Flue run start after the deploy answered 500, because the image did not carry the skill corpus (#4301). The last Flue run is still `cmujpuc84000001pgl3rdy9ud` (2026-09-27): 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. That is the baseline. |
+| 0 — Foundations | yes, 2026-10-26 | Deployed at 19:04:37 UTC on 2026-10-25, when Watchtower rolled the `ced48e0` publish. Before that, every image publish after 04:28 had been cancelled by the next push (#4280). **`/api/mcp` limiting**, about 19:25 UTC: a probe of 610 unauthenticated requests drew 600 `401` and 10 `429`, and exactly 10 `rate-limit.blocked` lines, all `mcp-ip`, none `api-mutation`. **A Flue run:** the first start after the deploy answered 500, because the image did not carry the skill corpus (#4301, fixed by #4302). After the fix, `access-posture` run `cmvp38v9d000001o5526qt04h` completed on 2026-10-26: recorded `FLUE`, 1 `MODEL_CALL` and 2 `TOOL_CALL` steps, all `DONE`, in 16 s. The baseline, `cmujpuc84000001pgl3rdy9ud` (2026-09-27), had 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. |
 | 1 — Agent builder | no | — |
 | 2 — Tool Runner engine | no | — |
 | 3 — Connect agents customers run | no | — |
@@ -725,9 +725,10 @@ Make the engine seam ready for more than Flue. #4111 closed the two gaps on
 `/api/mcp` first (Step 0d). #4176 then delivered the engine-neutral tool core
 (Step 0a), #4220 the driver conformance suite (Step 0b), and #4181 the Agent
 engines section (Step 0c). #4248 hardened the phase (Step 0H). **Phase 0 is
-built and mutation-proved.** It is deployed, and its `/api/mcp` limiting has been
-observed in production. A Flue run after it has not been, because the image did
-not carry the skill corpus (#4301). See the Operational evidence table.
+built, mutation-proved and observed in production.** Its `/api/mcp` limiting was
+observed on 2026-10-25, and a Flue run completed after it on 2026-10-26, once
+#4302 shipped the skill corpus in the image (#4301). See the Operational evidence
+table.
 
 #### Step 0a — Engine-neutral tool core
 
@@ -810,7 +811,7 @@ are scanned, and content past depth 64 is refused.
 
 #### Step 0H — Phase 0 hardening
 
-Delivered by #4248 (#4141), except item 3 of the prompt below:
+Delivered by #4248 (#4141):
 
 - **The adversarial read** found the run-engine label (fixed by #4285, `recordedModeOf`) and six
   rendering faults in the Agent engines section, each with a test.
@@ -819,10 +820,11 @@ Delivered by #4248 (#4141), except item 3 of the prompt below:
 - **The mutation sweep** turns each conformance scenario red with exactly its
   own mutation.
 
-Item 3, the production evidence, could not be collected because the session's
-`gcloud` credentials were refused. It stays open, and the prompt keeps its
-queries. Details are in
-`docs/implementation-notes/2026-10-25-phase-0-hardening.md`.
+- **The production evidence** is in the Operational evidence row for Phase 0. The
+  owner read the VM, because the session's `gcloud` credentials were refused. The
+  first Flue run start answered 500, which found #4301 (fixed by #4302).
+
+Details are in `docs/implementation-notes/2026-10-25-phase-0-hardening.md`.
 
 **Goal.** Prove Phase 0 as a whole: Flue runs exactly as before on the new core,
 the conformance suite bites, and the MCP changes behave in production.
