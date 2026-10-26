@@ -3,7 +3,7 @@ name: iam-audit-procedures
 description: Re-perform one library v1 IAM audit procedure for one period from the raw rows given, conclude PASS, FAIL or INCONCLUSIVE by the catalogue's order, and name each exception for a finding proposal; or, given one period's workpapers, draft the short narrative a reviewer reads beside each, stating only what it records. Use when auditing leaver timeliness, recertification completeness, grant expiry, privileged access or agent authority, or when narrating their workpapers.
 license: proprietary
 metadata:
-  sourceRef: original guidance; procedures are Inflect audit catalogue version 1, library v1
+  sourceRef: original guidance; procedures are Inflect audit catalogue version 2, library v1
   version: '4'
   requiredInput: periodLabel
   output: proposal

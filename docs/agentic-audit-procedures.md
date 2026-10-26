@@ -1,6 +1,6 @@
 # Audit procedures for IAM and agent controls
 
-Catalogue version **1**. This document is the procedure catalogue for the
+Catalogue version **2**. This document is the procedure catalogue for the
 agentic auditor (UC4 in [`docs/agentic-iam-roadmap.md`](agentic-iam-roadmap.md)).
 It defines eight audit procedures. Each one names its control identifiers, its
 population as a table and a filter, how its sample is drawn, the attributes it
@@ -13,18 +13,31 @@ provider's agreement are open.** The provider is the managed-service provider
 whose IAM practice runs the use cases
 ([`docs/agentic-iam-managed-service.md`](agentic-iam-managed-service.md)). The
 repository owner's merge of this file's pull request is the repository owner's
-sign-off, and it adopts catalogue version 1 for this repository. The merge does
-not supply the acts of external parties. Neither internal audit's approval nor
-the provider's agreement of version 1 is recorded on issue #3663, and each is
-recorded there when given. While both are open, library v1 is proposed to
+sign-off, and it adopts catalogue version 2 for this repository, as an earlier
+merge adopted version 1. The merge does not supply the acts of external
+parties. Internal audit's approval and the provider's agreement of version 2
+are recorded on issue #4379 when given, and of version 1 on issue #3663; none
+of the four is recorded. While they are open, library v1 is proposed to
 internal audit and the provider, and no procedure here is a definition either
-of them has approved or agreed.
+of them has approved or agreed. "Library v1" names the set, procedures 1 to 5;
+version 2 changes one of their attributes and not the set, so the name stands.
 
 Procedures 1 to 5 run on `main` as handlers on the control-test runner, as the
 registered auditor agent (step `3c`, #3676;
 `src/app-layer/services/audit-procedures/`), and each run writes one
 workpaper. Procedures 6 to 8 have no handler. The gaps the catalogue depends
 on are listed at the end, each with the step that builds it.
+
+**Changes from version 1.** Version 2 (#4379; owner decision, 2026-10-26,
+#3325) changes one attribute, R3 of procedure 2: a legacy application's
+covering campaign that was not truncated still does not meet R3 unless the
+population coverage its subjects were frozen with is `VERIFIED`, and raises
+`POPULATION_COVERAGE_UNVERIFIED`. Every other attribute, population, sample and
+procedure is as in version 1. A workpaper records the version it was run under,
+and one written under version 1 keeps `catalogueVersion: 1`. A period that
+already holds a version 1 workpaper and is run again under version 2 gets a
+second workpaper, recording version 2, on the version 1 sample: the first sample
+for a procedure and period is binding whatever version drew it (see Population).
 
 ## Ownership and approval
 
@@ -73,13 +86,14 @@ sampling of the workpapers.
   standing authorisation for that merge (the repository owner's decision of
   2026-10-17). Internal audit is to approve the catalogue and the provider is
   to agree it, and the merge supplies neither: each is an act of its own, recorded on
-  the version's step issue (#3663 for version 1) when given. Neither is
-  recorded for version 1, so both are open.
+  the version's step issue (#3663 for version 1, #4379 for version 2) when
+  given. Neither is recorded for either version, so all four are open.
 - **The procedure text is Inflect-original.** The provider's methodology
   reference for each procedure is recorded by name only, and none of the
   provider's text is reproduced. The repository holds no provider methodology
   reference names, so every reference is open: the provider supplies it, and it
-  is recorded on issue #3663 when given. The
+  is recorded on issue #3663 when given. #4379 lists the references as open for
+  version 2 too. The
   reference column below states that for each procedure.
 - **Control identifiers are identifiers only.** No ISO/IEC or SOC 2 control
   text is reproduced here. Each identifier is one this repository's framework
@@ -168,7 +182,11 @@ attributes afresh. A run that stopped at a precondition drew no sample and
 fixes nothing. Without this rule a re-run would draw from a different
 population, because `AS_OF_GENERATION` rows are read as they stand and
 `OVER_WINDOW` rows can still be edited (an `Employee.endDate`, a proposal's
-review).
+review). The rule is keyed on the procedure and the period and not on the
+catalogue version, so a run under version 2 of a period first sampled under
+version 1 reuses the version 1 sample and writes its own workpaper, recording
+version 2. Version 2 changes no population or draw, so that is the sample it
+would have drawn.
 
 ### Sample
 
@@ -456,7 +474,7 @@ whose decision rows reach the unit:
     Neither covers the whole population. `ADMIN_ONLY` campaigns count towards
     procedure 4;
   - registered agents. Step `3a` (#3674) added the `AGENT` value to
-    `AccessReviewScope`; catalogue version 1 does not test agent campaigns.
+    `AccessReviewScope`; catalogue versions 1 and 2 do not test agent campaigns.
 
 **Sample.** The whole population, drawn in keyed order with epoch
 `iam.recertification_completeness@YYYY-Qn`. The units are bounded by the number
@@ -475,8 +493,8 @@ rest of the claim unexamined.
 | R6 | Revocations took effect | memberships: each `REVOKE` row's `TenantMembership` (`membershipId`) is absent or has a `status` other than `ACTIVE`, and each `MODIFY` row's membership has `role = modifiedToRole` (and `customRoleId = modifiedToCustomRoleId` when that is set); the `AuditLog` row with `action = ACCESS_REVIEW_DECISION_EXECUTED`, `entity = 'AccessReviewDecision'` and `entityId` = the decision is reported beside it, because its `detailsJson.after.outcome` (`EXECUTED`, `SKIPPED_STALE`, `SKIPPED_LAST_OWNER`) says what the close did; identity connection: each `REVOKE` row's `ConnectedIdentityAccount` is not `ACTIVE` today, provided the connection's latest sync with `status = PASSED` completed more than `remediationWindowDays` after `closedAt`; legacy: each `REVOKE` row's account (`snapshotJson.accountKey`) is not `ACTIVE` in the first `COMPLETE` `LegacyAccessSnapshot` of that connection completed more than `remediationWindowDays` after `closedAt` | EXCEPTION `REVOCATION_NOT_EXECUTED` for a membership, `REVOKED_ACCESS_STILL_ACTIVE` for a connected or legacy account; UNTESTABLE `NO_OBSERVATION_AFTER_CLOSE` when no such sync or snapshot exists |
 | R7 | The close produced its evidence | `AccessReview.evidenceFileRecordId IS NOT NULL` | EXCEPTION `EVIDENCE_NOT_GENERATED` |
 
-Why R3 asks a legacy application a second question (owner decision,
-2026-10-26, #3325). `snapshotTruncated = false` says the campaign took every
+Why R3 asks a legacy application a second question (version 2, #4379; owner
+decision, 2026-10-26, #3325). `snapshotTruncated = false` says the campaign took every
 account its snapshot held. It cannot say the snapshot held every account the
 application has: the operator's server runs the query, and the row count it
 reports is its own claim. That is `LegacyAccessSnapshot.populationCoverage`,
@@ -726,7 +744,8 @@ authorised calls only.
 
 **How `main` reads this version.** Two readings of version 1, made by step
 `3c` and confirmed by the repository owner on 2026-10-19, are not changes to
-the catalogue and are recorded here for internal audit. The windows of agents
+the catalogue, hold unchanged for version 2, and are recorded here for internal
+audit. The windows of agents
 marked `isAuditor` are excluded and their count is reported (rule 8: the
 auditor is not the auditee); the check on the auditor's own conduct is
 internal audit's sampling of its workpapers, step `3d` (#3677). And A1 and A4
@@ -1002,7 +1021,7 @@ names the step that builds it, or says that no step does.
 |---|---|---|
 | No handler runs any procedure | 6 to 8 | no step; adding one is a change to this catalogue and a new step issue |
 | No agent subjects in access reviews: `AccessReviewScope` has no agent value | procedure 2 | step `3a` (#3674) |
-| Internal audit's approval and the provider's agreement of version 1 are open; the repository owner's merge adopts the version and supplies neither | all | internal audit and the provider, each recorded on issue #3663 when given |
+| Internal audit's approval and the provider's agreement of versions 1 and 2 are open; the repository owner's merge adopts a version and supplies neither | all | internal audit and the provider, each recorded on the version's issue when given: #3663 for version 1, #4379 for version 2 |
 | The provider's methodology reference for each procedure is open | all | the provider, recorded on issue #3663 when given |
 | The parameters `leaverWindowHours` and `remediationWindowDays` are agreed 2026-10-19 for the pilot: 24 h and 14 days, entered on each plan (`automationConfig.parameters`, written by `setUpAuditPilotAsOwner` in `usecases/audit-pilot-setup.ts`, from the `/agents/audit-pilot` page or `scripts/audit-pilot-setup.ts`); the library holds no default, so a value beyond the pilot is the second line's to enter on its plan. `killGraceSeconds` has no stored home | 1, 2, 6 | the second line sets the values beyond the pilot; procedure 6 has no step |
 | An account disabled outside Inflect carries no disable time, so L2 is UNTESTABLE for it | procedure 1 | no step; named in the step `3c` pull request (#3676) |

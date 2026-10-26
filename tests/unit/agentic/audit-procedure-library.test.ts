@@ -17,6 +17,9 @@ import {
     latestEndedPeriod,
     LIBRARY_V1_PROCEDURE_IDS,
     LIBRARY_V1_STATUS,
+    LIBRARY_V1_STATUS_SENTENCE,
+    CATALOGUE_VERSION_STATUS,
+    catalogueVersionStatus,
     parseAuditProcedureConfig,
     periodSettled,
     SEED_FINGERPRINT_LABEL,
@@ -26,6 +29,7 @@ import {
     type UnitJudgement,
 } from '@/lib/agentic/audit-procedure-library';
 import {
+    AUDIT_PROCEDURE_CATALOGUE_VERSION,
     AUDIT_PROCEDURE_IDS,
     CODE,
     RecordAuditWorkpaperSchema,
@@ -37,7 +41,7 @@ import { ConflictError } from '@/lib/errors/types';
 const pass = (unitId: string): UnitJudgement => judgeUnit(unitId, [{ attribute: 'X1', result: 'MET' }]);
 
 describe('library v1', () => {
-    it('is the first five procedures of catalogue version 1, each with a definition', () => {
+    it('is the first five procedures of the catalogue, each with a definition', () => {
         expect([...LIBRARY_V1_PROCEDURE_IDS]).toEqual(AUDIT_PROCEDURE_IDS.slice(0, 5));
         expect(Object.keys(AUDIT_PROCEDURE_LIBRARY_V1).sort()).toEqual([...LIBRARY_V1_PROCEDURE_IDS].sort());
         for (const def of Object.values(AUDIT_PROCEDURE_LIBRARY_V1)) {
@@ -47,15 +51,35 @@ describe('library v1', () => {
         }
     });
 
-    it('is PROPOSED, with internal audit, the provider and every provider reference still open', () => {
+    // The version in force is spelled as a literal here, never read off the
+    // constant: a test that read it would pass whatever the build stamped.
+    it('runs under catalogue version 2, and stamps version 2\'s standing, recorded on #4379', () => {
+        expect(AUDIT_PROCEDURE_CATALOGUE_VERSION).toBe(2);
         expect(LIBRARY_V1_STATUS).toEqual({
-            catalogueVersion: 1,
+            catalogueVersion: 2,
             status: 'PROPOSED',
             internalAuditApproval: 'OPEN',
             providerAgreement: 'OPEN',
             providerMethodologyReference: 'OPEN',
-            recordedOn: '#3663',
+            recordedOn: '#4379',
         });
+    });
+
+    it('keeps version 1\'s standing on #3663, every party still open for both versions, and knows no third', () => {
+        const open = { internalAuditApproval: 'OPEN', providerAgreement: 'OPEN', providerMethodologyReference: 'OPEN' };
+        expect(CATALOGUE_VERSION_STATUS).toEqual({
+            1: { ...open, recordedOn: '#3663' },
+            2: { ...open, recordedOn: '#4379' },
+        });
+        expect(catalogueVersionStatus(1)?.recordedOn).toBe('#3663');
+        expect(catalogueVersionStatus(3)).toBeNull();
+        expect(catalogueVersionStatus(0)).toBeNull();
+    });
+
+    it('says, in the sentence every proposal and evidence row carries, where each version\'s acts are recorded', () => {
+        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('catalogue version 2 are open on #4379');
+        expect(LIBRARY_V1_STATUS_SENTENCE).toContain('version 1 on #3663');
+        expect(LIBRARY_V1_STATUS_SENTENCE).not.toMatch(/\b(approved|agreed) (by|on)\b/);
     });
 });
 

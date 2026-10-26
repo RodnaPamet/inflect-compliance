@@ -35,12 +35,14 @@ import { grantAgentTool } from '@/app-layer/usecases/agent-tool-exposure';
 import { updateRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { scheduleTestPlan } from '@/app-layer/usecases/test-scheduling';
 import {
+    AUDIT_PROCEDURE_LIBRARY_V1,
     auditSampleSeedPurpose,
     auditSampleSize,
     drawAuditSample,
     seedFingerprint,
 } from '@/lib/agentic/audit-procedure-library';
 import { populationDigest } from '@/lib/agentic/audit-workpaper';
+import { listAuditWorkpapersForPeriod } from '@/app-layer/usecases/audit-workpaper';
 
 const prisma: PrismaClient = prismaTestClient();
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -701,6 +703,123 @@ describeFn('library v1 audit procedures, run as the registered auditor agent', (
             ]);
             expect(r.proposals).toHaveLength(1);
             expect(r.findings).toBe(0);
+            // Written under the catalogue version that holds this rule (#4379).
+            // A literal, not the constant: reading the constant passes whatever
+            // the build stamps.
+            expect(r.workpapers[0].catalogueVersion).toBe(2);
+        });
+
+        // ── A period audited under version 1, run again under version 2. The
+        // binding key is (tenant, procedure, period), with no catalogue version
+        // in it — in the trigger and in `findBindingSample` alike. So the re-run
+        // is a SECOND workpaper, recording version 2, held to the version 1
+        // sample and re-judging it under version 2's rules. Version 2 changes an
+        // attribute, not the population or the draw, so the sample a version 2
+        // run would have drawn is the same one. The version 1 row is untouched
+        // and still reads as version 1.
+        it('re-runs a period holding a version 1 workpaper as a second workpaper, version 2, on the version 1 sample', async () => {
+            const f = await seedTenant('recert-v1-then-v2');
+            await membershipCampaign(f, (m) => [
+                { membershipId: m.owner, subjectUserId: U_OWNER, snapshotRole: 'OWNER', decision: 'CONFIRM', decidedAt: at('2026-09-10T00:00:00Z'), decidedByUserId: U_SECOND },
+                { membershipId: m.second, subjectUserId: U_SECOND, snapshotRole: 'EDITOR', decision: 'CONFIRM', decidedAt: at('2026-09-10T00:00:00Z'), decidedByUserId: U_OWNER },
+            ]);
+            const legacy = await legacyConnection(f, 'UNKNOWN');
+            await legacyCampaign(f, legacy, 'UNKNOWN', false);
+
+            // The row a version 1 build wrote for the quarter: the whole
+            // population, drawn in keyed order, and a PASS, because version 1's
+            // R3 asked about truncation alone.
+            const procedure = 'iam.recertification_completeness';
+            const units = ['memberships', `legacy:${legacy.conn}`];
+            const seed = deriveSubkey(auditSampleSeedPurpose(f.tenantId)).toString('hex');
+            const epoch = `${procedure}@${QUARTER}`;
+            const sampled = drawAuditSample({ seed, epoch, unitIds: units, size: units.length });
+            const v1 = await prisma.auditWorkpaper.create({
+                data: {
+                    tenantId: f.tenantId,
+                    procedureId: procedure,
+                    catalogueVersion: 1,
+                    periodLabel: QUARTER,
+                    populationDefinition: AUDIT_PROCEDURE_LIBRARY_V1[procedure].populationDefinition,
+                    populationCount: units.length,
+                    populationDigest: populationDigest(procedure, QUARTER, units),
+                    sampleEpoch: epoch,
+                    seedFingerprint: seedFingerprint(seed),
+                    sampleSize: sampled.length,
+                    sampledUnitIds: sampled,
+                    parametersJson: { remediationWindowDays: 14 },
+                    attributesTested: [...AUDIT_PROCEDURE_LIBRARY_V1[procedure].attributes],
+                    itemOutcomesJson: sampled.map((unitId) => ({ unitId, outcome: 'PASS', code: null })),
+                    exceptionsJson: [],
+                    exceptionCount: 0,
+                    conclusion: 'PASS',
+                    conclusionBasis: 'ALL_SAMPLED_UNITS_PASSED',
+                    auditorAgentId: f.auditorId,
+                    controlTestRunId: `${SUITE}-v1-run`,
+                },
+            });
+
+            const r = await run(f, await seedPlan(f, config));
+            expect(r.workpapers).toHaveLength(1);
+            const v2 = r.workpapers[0];
+            expect(v2.id).not.toBe(v1.id);
+            expect([v2.catalogueVersion, v2.sampleEpoch, v2.seedFingerprint, v2.sampledUnitIds]).toEqual([
+                2,
+                v1.sampleEpoch,
+                v1.seedFingerprint,
+                v1.sampledUnitIds,
+            ]);
+            expect([v2.conclusion, exceptionsOf(v2).map((e) => [e.unitId, e.code])]).toEqual([
+                'FAIL',
+                [[`legacy:${legacy.conn}`, 'POPULATION_COVERAGE_UNVERIFIED']],
+            ]);
+            expect(r.evidence).toContain(`the binding sample of workpaper ${v1.id}, reused`);
+
+            // The version 1 row is as it was written, and every reader takes the
+            // version from the row.
+            const stored = await prisma.auditWorkpaper.findUniqueOrThrow({ where: { id: v1.id } });
+            expect([stored.catalogueVersion, stored.conclusion, stored.exceptionCount]).toEqual([1, 'PASS', 0]);
+            const view = await listAuditWorkpapersForPeriod(
+                makeRequestContext('ADMIN', { tenantId: f.tenantId, userId: U_SECOND }),
+                QUARTER,
+            );
+            expect(
+                view.workpapers
+                    .filter((w) => w.procedureId === procedure)
+                    .map((w) => [w.workpaperId, w.catalogueVersion, w.conclusion])
+                    .sort(),
+            ).toEqual(
+                [
+                    [v1.id, 1, 'PASS'],
+                    [v2.id, 2, 'FAIL'],
+                ].sort(),
+            );
+
+            // And the database holds a version 2 row to the version 1 sample
+            // whoever writes it: a different draw is refused.
+            const insertOther = prisma.auditWorkpaper.create({
+                data: {
+                    tenantId: f.tenantId,
+                    procedureId: procedure,
+                    catalogueVersion: 2,
+                    periodLabel: QUARTER,
+                    populationDefinition: AUDIT_PROCEDURE_LIBRARY_V1[procedure].populationDefinition,
+                    populationCount: units.length,
+                    populationDigest: populationDigest(procedure, QUARTER, units),
+                    sampleEpoch: epoch,
+                    seedFingerprint: seedFingerprint(seed),
+                    sampleSize: 1,
+                    sampledUnitIds: [sampled[0]],
+                    itemOutcomesJson: [],
+                    exceptionsJson: [],
+                    exceptionCount: 0,
+                    conclusion: 'INCONCLUSIVE',
+                    conclusionBasis: 'ITEM_UNTESTABLE',
+                    auditorAgentId: f.auditorId,
+                    controlTestRunId: `${SUITE}-v2-other-run`,
+                },
+            });
+            await expect(insertOther).rejects.toThrow(/AUDIT_WORKPAPER_SAMPLE_NOT_BINDING/);
         });
 
         it('has no unit to test when no membership is active (the module, since an auditor\'s owner always is one)', async () => {

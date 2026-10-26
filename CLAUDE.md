@@ -2131,9 +2131,10 @@ registered auditor agent. Six rules, each held by a test or a lint rule:
 
 - **Library v1 is PROPOSED.** `LIBRARY_V1_STATUS` records internal audit's
   approval, the managed-service provider's agreement and each provider
-  methodology reference as OPEN. Changing one is a claim about an external
+  methodology reference as OPEN, for the catalogue version in force (its row of
+  `CATALOGUE_VERSION_STATUS`). Changing one is a claim about an external
   party's act; it belongs only in the pull request that records that act on
-  #3663.
+  the version's issue: #3663 for catalogue version 1, #4379 for version 2.
 - **One runner, one INTEGRATION handler.** `agenticControlTestHandler` sends a
   `procedure` config to `auditProcedureHandler`; never a second runner or a
   second INTEGRATION registration (the registry throws on one).

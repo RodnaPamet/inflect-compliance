@@ -54,7 +54,16 @@ describe('RecordAuditWorkpaperSchema — codes, identifiers and counts', () => {
 
     it('refuses an unknown procedure id and a future catalogue version', () => {
         expect(parse({ procedureId: 'iam.made_up' }).success).toBe(false);
-        expect(parse({ catalogueVersion: 2 }).success).toBe(false);
+        expect(parse({ catalogueVersion: 3 }).success).toBe(false);
+        expect(parse({ catalogueVersion: 0 }).success).toBe(false);
+    });
+
+    it('takes a workpaper of the version in force, 2, and still one of version 1', () => {
+        // Version 1 workpapers are write-once rows a reader keeps meeting; the
+        // contract reads them as they are, version and all.
+        expect(parse({ catalogueVersion: 2 }).success).toBe(true);
+        const v1 = RecordAuditWorkpaperSchema.safeParse(workpaper({ catalogueVersion: 1 }));
+        expect(v1.success && v1.data.catalogueVersion).toBe(1);
     });
 
     it.each(['2026-13', '2026-Q5', '26-09', '2026-9', '2026-09-01'])('refuses period label %s', (periodLabel) => {
