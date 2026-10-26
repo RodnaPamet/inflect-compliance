@@ -203,8 +203,9 @@ interface ControlsClientProps {
         // The inline task edit panel needs the task write permission, and
         // `tasks.assign` for its assignee picker (`/tasks/:id/assign`).
         tasks: { edit: boolean; assign: boolean };
-        // The task panel's evidence box POSTs to `/evidence/uploads`, whose
-        // usecase asserts `evidence.upload`.
+        // The quick views' drag-and-drop upload boxes POST to
+        // `/evidence/uploads`, whose usecase asserts `evidence.upload` — a
+        // DIFFERENT key from the one that opens either panel.
         evidence: { upload: boolean };
         // Bulk delete + the Deleted view's Restore / Purge are
         // `requirePermission('admin.manage')` at their routes.
@@ -261,6 +262,24 @@ function stripDrillDownParams(): void {
         }
     }
     if (changed) window.history.replaceState(null, '', url.toString());
+}
+
+/**
+ * Drop the Health column in the Deleted view (#4325).
+ *
+ * `getControlHealthVerdicts` scans live controls only (`control/health.ts`,
+ * `deletedAt: null`), so a deleted row has no verdict and the cell rendered a
+ * dash on every one. Filtered HERE, inside the columns memo, rather than around
+ * `orderColumns(controlColumns)` — `controls-client-shell-adoption` pins that
+ * expression's shape because `orderColumns` spreads its input, and a fresh
+ * array between a row's two clicks kills double-click navigation.
+ */
+function withoutHealthWhenDeleted<T extends { id?: string }>(
+    columns: readonly T[],
+    showDeleted: boolean,
+): T[] {
+    // guardrail-ignore: filters the COLUMN DEFINITIONS (drops the Health column in the Deleted view, where its verdict scan has nothing to say) — not server-fetched rows.
+    return showDeleted ? columns.filter((col) => col.id !== 'health') : [...columns];
 }
 
 export function ControlsClient(props: ControlsClientProps) {
@@ -336,12 +355,19 @@ function ControlsPageInner({
     // Quick-view edits, bulk status/assign: `controls.edit` at the routes,
     // `assertCanUpdateControl` (canWrite AND controls.edit) in the usecases.
     const canEditControls = permissions.canWrite && appPermissions.controls.edit;
-    // The Task quick view's evidence box: `evidence.upload` at
-    // `/evidence/uploads`. Its assignee picker: `tasks.assign` +
-    // `assertCanAssignTasks` (the write tier) at `/tasks/:id/assign`. Both
-    // sit inside the panel's own `tasks.edit` gate.
-    const canUploadTaskEvidence = appPermissions.tasks.edit && appPermissions.evidence.upload;
-    const canAssignTasks = permissions.canWrite && appPermissions.tasks.edit && appPermissions.tasks.assign;
+
+    // Quick-view TASK edits: `tasks.edit` at the route, and `updateTask` asserts
+    // `assertCanWriteTasks` = canWrite AND tasks.edit. Offering the panel on the
+    // granular key alone gave a custom role on a Reader base an editable form
+    // whose every save was refused (#4325).
+    const canEditTasks = permissions.canWrite && appPermissions.tasks.edit;
+
+    // The upload box is the one gate here that is NOT two-layer, and mirroring
+    // the server means saying so: `assertCanUploadEvidence` checks
+    // `evidence.upload` and nothing else — no route `requirePermission`, no
+    // coarse tier. A custom role with `controls.edit` and no `evidence.upload`
+    // was shown the dropzone and refused (#4325).
+    const canUploadEvidence = appPermissions.evidence.upload;
     // Single source for "which bulk verbs may this viewer use" — see
     // _lib/bulk-action-policy.
     const allowedBulkActions = useMemo(
@@ -684,7 +710,24 @@ function ControlsPageInner({
     );
     // `rawControls` is still narrowed by the SERVER-side filters, Owner among
     // them, so options built from it alone collapse to the owner just picked.
-    const liveFilterDefs = useRetainedFilterOptions(builtFilterDefs, CONTROL_ROW_DERIVED_FILTER_KEYS);
+    const retainedFilterDefs = useRetainedFilterOptions(builtFilterDefs, CONTROL_ROW_DERIVED_FILTER_KEYS);
+
+    // HEALTH IS NOT OFFERED IN THE DELETED VIEW, because it cannot answer there
+    // (#4325). The verdicts come from `getControlHealthVerdicts`, whose scan
+    // reads live controls only (`health.ts`, `deletedAt: null`), so a Health
+    // pick in the Deleted view resolves to an empty `id: { in: [] }` and the
+    // table says "No controls match your filters" — a filter that can only ever
+    // find nothing. The column goes with it rather than showing a dash on every
+    // row. Fixing the scan instead would mean health verdicts for controls
+    // nobody can act on, which is a product decision rather than a bug fix.
+    const liveFilterDefs = useMemo(
+        () =>
+            showDeleted
+                // guardrail-ignore: filters the FILTER DEFINITIONS (withholds a facet that can only ever match nothing in the Deleted view) — not server-fetched rows.
+                ? retainedFilterDefs.filter((f) => f.key !== 'health')
+                : retainedFilterDefs,
+        [retainedFilterDefs, showDeleted],
+    );
 
     // R-filter-gear (#3, 2026-06-07): the "Edit filter cards" gear now
     // controls the QUANTIFIABLE KPI cards above the table (Total /
@@ -848,6 +891,17 @@ function ControlsPageInner({
         ],
         [t],
     );
+    // Same reason as the facet: in the Deleted view Health has no verdict to
+    // show, so it is not offered in the picker either. The stored visibility
+    // map is keyed by id, so a user's preference survives the round trip.
+    const offeredColumnList = useMemo(
+        () =>
+            showDeleted
+                // guardrail-ignore: filters the column PICKER's own list so it stops offering Health in the Deleted view — not server-data filtering.
+                ? controlColumnList.filter((col) => col.id !== 'health')
+                : controlColumnList,
+        [controlColumnList, showDeleted],
+    );
     const {
         columnVisibility,
         setColumnVisibility,
@@ -855,7 +909,7 @@ function ControlsPageInner({
         dropdown: columnsDropdown,
     } = useColumnsDropdown({
         storageKey: 'inflect:col-vis:controls',
-        columns: controlColumnList,
+        columns: offeredColumnList,
     });
     // ─── Row selection → canonical BulkActionBar ───
     // The page owns the selection state; DataTable is controlled via
@@ -1275,7 +1329,7 @@ function ControlsPageInner({
     }, []);
 
     // ── Column definitions ──
-    const controlColumns = useMemo(() => createColumns<ControlListItem>([
+    const controlColumns = useMemo(() => withoutHealthWhenDeleted(createColumns<ControlListItem>([
         {
             accessorFn: (c) => c.code || c.annexId || '',
             id: 'code',
@@ -1596,7 +1650,7 @@ function ControlsPageInner({
     // `canEditControls` and the already-memoised callbacks, not those props
     // directly. They were in the array while the file-wide
     // `react-hooks/exhaustive-deps` disable hid the rule's opinion either way.
-    ]), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors, categoryLabel]);
+    ]), showDeleted), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors, categoryLabel]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call — calling it inline in the `table` object would undo the memo
@@ -1810,7 +1864,7 @@ function ControlsPageInner({
     // by default; the same `<AiAssistRail>` content + `/risks/ai`
     // destination as the Risks page so the panel reads as one
     // shared co-pilot across registers, not a stub.
-    const aiAssistAside = appPermissions.controls.edit ? (
+    const aiAssistAside = canEditControls ? (
         <AsidePanel
             title={t('list.aiAssist')}
             surfaceKey="controls-list-ai"
@@ -1852,9 +1906,12 @@ function ControlsPageInner({
             <TaskEditPanel
                 tenantSlug={tenantSlug}
                 task={selectedTask}
-                canWrite={appPermissions.tasks.edit}
-                canUploadEvidence={canUploadTaskEvidence}
-                canAssign={canAssignTasks}
+                canWrite={canEditTasks}
+                // Its evidence box and assignee picker ask their own keys
+                // (`evidence.upload`; `tasks.assign` + the write tier), inside
+                // the panel's task edit rights.
+                canUploadEvidence={canEditTasks && canUploadEvidence}
+                canAssign={canEditTasks && appPermissions.tasks.assign}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
             />
@@ -1871,6 +1928,7 @@ function ControlsPageInner({
             onClose={closeQuickView}
         >
             <ControlEditPanel
+                canUploadEvidence={canUploadEvidence}
                 tenantSlug={tenantSlug}
                 control={selectedControl}
                 canWrite={canEditControls}
