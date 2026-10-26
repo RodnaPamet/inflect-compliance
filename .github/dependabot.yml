@@ -203,6 +203,27 @@ updates:
       - dependency-name: "@tiptap/core"
         versions: [">=3.0.0"]
 
+      # `motion` is held below 14.0.0 because of what 14.x COSTS in bundle
+      # size, not because anything breaks.
+      #
+      # 14.0.0's only change removed internal APIs, so the major is nominal.
+      # The 14.x minors then add features to the core that this app does not
+      # use (hardware-accelerated independent transforms, a JavaScript drag
+      # API, `scopeMotion`, keyboard `Reorder`), and every route that imports
+      # `motion/react` pays for them. #4334 (14.6.0) took six routes over
+      # their First Load JS budgets in `tests/guardrails/bundle-size-budget.test.ts`:
+      # risk detail +9 KB, controls dashboard +4, policy detail +4, control
+      # test plan +2, risks dashboard and the new-tenant page +1 each.
+      # Owner decision (2026-10-26): hold 13.x rather than raise six budgets
+      # for features nobody asked for.
+      #
+      # Scoped rather than blanket so 13.x minors and patches still come
+      # through (13.5 makes `<m>` 20% smaller). DELETE THIS ENTRY when a 14.x
+      # feature is wanted; the PR that takes it then measures and raises the
+      # budgets it needs.
+      - dependency-name: "motion"
+        versions: [">=14.0.0"]
+
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
     directory: /
