@@ -423,6 +423,22 @@ describe('Tasks list — the write surface each role actually gets', () => {
         expect(document.getElementById('task-panel-title')).toBeEnabled();
     });
 
+    // The WIRING, not the panel (#4389). `TaskEditPanel` is covered by
+    // `task-edit-panel-permission-gates`; what that cannot see is which gates
+    // this page hands it. Reverting the call site to `canEdit && evidence.upload`
+    // left all 65 tests across six caller-level suites green before this case
+    // existed, so the panel's fix was unprotected from its own caller.
+    it('a custom role with the write tier and evidence.upload but no tasks.edit still gets the evidence box', async () => {
+        mountAs('EDITOR', { edit: false }, { upload: true });
+        await openQuickView();
+
+        expect(screen.getByTestId('evidence-upload-dropzone')).toBeInTheDocument();
+        // And the task form stays read-only: `/evidence/uploads` asks
+        // `evidence.upload` and the write tier; `PATCH /tasks/:id` asks
+        // `tasks.edit`, and this viewer does not hold it.
+        expect(document.getElementById('task-panel-title')).toBeDisabled();
+    });
+
     it('a custom role with tasks.edit but not tasks.assign gets a locked assignee picker in the quick view', async () => {
         mountAs('EDITOR', { assign: false });
         await openQuickView();
