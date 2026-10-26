@@ -142,13 +142,24 @@ beforeEach(() => {
     };
 });
 
-/** A built-in Editor, or a custom role built on Editor with `tasks` keys replaced. */
-function viewAsEditor(tasks: Partial<PermissionSet['tasks']> = {}) {
+/**
+ * A built-in Editor, or a custom role built on Editor with some `tasks` or
+ * `evidence` keys replaced. The write tier follows the base, as it does for
+ * a real custom role.
+ */
+function viewAsEditor(
+    tasks: Partial<PermissionSet['tasks']> = {},
+    evidence: Partial<PermissionSet['evidence']> = {},
+) {
     const editor = getPermissionsForRole('EDITOR');
     mockViewer = {
         role: 'EDITOR',
         permissions: { canWrite: true, canAdmin: false },
-        appPermissions: { ...editor, tasks: { ...editor.tasks, ...tasks } },
+        appPermissions: {
+            ...editor,
+            tasks: { ...editor.tasks, ...tasks },
+            evidence: { ...editor.evidence, ...evidence },
+        },
     };
 }
 
@@ -391,6 +402,160 @@ describe('task detail — the edit dialog’s assignee picker follows tasks.assi
 
         expect(document.getElementById('task-panel-assignee')).toBeDisabled();
         expect(document.getElementById('task-panel-title')).toBeEnabled();
+    });
+});
+
+/**
+ * #4360 — every write control on the page follows the write tier AND the key
+ * its route checks. It followed the tier alone, so a custom role built on
+ * Editor without the key was offered the control, and the server refused it.
+ * Built-in roles hold every key their tier implies, so they see no change.
+ */
+describe('task detail — each write control follows its route’s key', () => {
+    const CHECKLIST_STEP = 'step_1';
+    const EVIDENCE_ID = 'ev_1';
+    const LINK_ID = 'link_1';
+
+    beforeEach(() => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) => {
+            const path = url.split('?')[0];
+            if (path === '/api/t/acme/tasks/task_1') {
+                return json({
+                    ...TASK,
+                    checklistJson: [{ id: CHECKLIST_STEP, text: 'Rotate the signing key', done: false }],
+                });
+            }
+            if (path === '/api/t/acme/tasks/task_1/evidence') {
+                return json({
+                    links: [],
+                    evidence: [
+                        {
+                            id: EVIDENCE_ID,
+                            type: 'LINK',
+                            title: 'Rotation runbook',
+                            content: 'https://example.com/runbook',
+                            status: 'SUBMITTED',
+                            fileRecordId: null,
+                            createdAt: '2026-08-01T00:00:00.000Z',
+                        },
+                    ],
+                });
+            }
+            if (path === '/api/t/acme/tasks/task_1/links') {
+                return json([
+                    {
+                        id: LINK_ID,
+                        entityType: 'CONTROL',
+                        entityId: 'ctl_1',
+                        relation: 'RELATES_TO',
+                        createdAt: '2026-08-01T00:00:00.000Z',
+                        name: 'Access control policy',
+                        path: '/controls/ctl_1',
+                    },
+                ]);
+            }
+            return baseGet(url);
+        });
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    const present = (id: string) => document.getElementById(id) !== null;
+
+    /**
+     * Mount the page and read, tab by tab, which write controls it offers.
+     * One record per role, so each test states the whole table at once.
+     */
+    async function offeredControls() {
+        renderPage();
+        await waitForTaskLoaded();
+
+        const checklistStep = await waitFor(() => {
+            const el = document.getElementById(`task-checklist-item-${CHECKLIST_STEP}`);
+            if (!el) throw new Error('checklist not painted yet');
+            return el;
+        });
+        const overview = {
+            statusPicker: present('task-status-select'),
+            assignmentCard: present('assign-task-btn'),
+            reviewerCard: present('assign-reviewer-btn'),
+            editButton: present('task-edit-button'),
+            checklistToggle: !(checklistStep as HTMLButtonElement).disabled,
+        };
+
+        fireEvent.click(screen.getByRole('tab', { name: /evidence/i }));
+        await screen.findByText('Rotation runbook');
+        const evidenceTrigger = present('add-evidence-btn');
+        if (evidenceTrigger) fireEvent.click(document.getElementById('add-evidence-btn') as HTMLElement);
+        const evidence = {
+            evidenceTrigger,
+            evidenceFileUpload: present('evidence-file-input'),
+            evidenceUrlLink: present('evidence-url-input'),
+            evidenceUnlink: present(`unlink-evidence-${EVIDENCE_ID}`),
+        };
+
+        fireEvent.click(screen.getByRole('tab', { name: /links/i }));
+        await screen.findByText('Access control policy');
+        const links = {
+            addLink: present('add-link-btn'),
+            removeLink: present(`remove-link-${LINK_ID}`),
+        };
+
+        return { ...overview, ...evidence, ...links };
+    }
+
+    const EVERYTHING = {
+        statusPicker: true,
+        assignmentCard: true,
+        reviewerCard: true,
+        editButton: true,
+        checklistToggle: true,
+        evidenceTrigger: true,
+        evidenceFileUpload: true,
+        evidenceUrlLink: true,
+        evidenceUnlink: true,
+        addLink: true,
+        removeLink: true,
+    };
+
+    it('a built-in Editor keeps every control', async () => {
+        viewAsEditor();
+        expect(await offeredControls()).toEqual(EVERYTHING);
+    });
+
+    it('a custom role without tasks.edit gets none of the edit controls, and keeps assignment and file upload', async () => {
+        viewAsEditor({ edit: false });
+        expect(await offeredControls()).toEqual({
+            ...EVERYTHING,
+            statusPicker: false,
+            reviewerCard: false,
+            editButton: false,
+            checklistToggle: false,
+            // `POST /tasks/:id/evidence` and its DELETE ask `tasks.edit`;
+            // the file goes to `/evidence/uploads`, which does not.
+            evidenceUrlLink: false,
+            evidenceUnlink: false,
+            addLink: false,
+            removeLink: false,
+        });
+    });
+
+    it('a custom role without tasks.assign gets no assignment card', async () => {
+        viewAsEditor({ assign: false });
+        expect(await offeredControls()).toEqual({ ...EVERYTHING, assignmentCard: false });
+    });
+
+    it('a custom role without evidence.upload gets no file upload, and keeps the URL link', async () => {
+        viewAsEditor({}, { upload: false });
+        expect(await offeredControls()).toEqual({ ...EVERYTHING, evidenceFileUpload: false });
+    });
+
+    it('a custom role with neither tasks.edit nor evidence.upload is not offered the add-evidence form at all', async () => {
+        viewAsEditor({ edit: false }, { upload: false });
+        const offered = await offeredControls();
+        expect(offered.evidenceTrigger).toBe(false);
+        expect(offered.evidenceFileUpload).toBe(false);
+        expect(offered.evidenceUrlLink).toBe(false);
     });
 });
 
