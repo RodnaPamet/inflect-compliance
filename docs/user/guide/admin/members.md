@@ -125,7 +125,7 @@ Deactivating keeps the member's row, marked **DEACTIVATED**. Removing takes the 
 - An invite lasts 7 days and works once. When your colleague accepts it, they appear in the members table as **ACTIVE** with the invite's role.
 - A deactivated member loses access the next time they open a page or take an action. To let them back in, invite them again. They return with the role you choose in the invite, and with any custom role they carried before. That custom role, not the invite's role, then decides what they can do.
 - A removed member's Inflect account is not deleted, only their place in this workspace. To bring them back, invite them again.
-- Deactivating or removing a member does not revoke the API keys they created. A key of theirs that is bound to an agent stops working. Their other keys keep working until someone revokes them on the {{ui:admin.nav.apiKeys}} page.
+- Deactivating or removing a member does not revoke the API keys they created. A key of theirs that is bound to an agent stops working. Their other keys keep working until someone revokes them on the {{ui:admin.nav.apiKeys}} page. Work any of their keys started that is still waiting to run, such as a SharePoint sync, does not run.
 
 ## Empty and error states
 

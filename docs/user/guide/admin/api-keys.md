@@ -87,7 +87,7 @@ The other system sends the key with every request, as a bearer token in the `Aut
 
 ### Revoke a key
 
-Click **{{ui:admin.apiKeys.revokeAria}}**, the bin icon at the end of the key's row. In the dialog, click **{{ui:admin.apiKeys.revokeConfirm}}**. The key stops working at once, and revoking cannot be undone.
+Click **{{ui:admin.apiKeys.revokeAria}}**, the bin icon at the end of the key's row. In the dialog, click **{{ui:admin.apiKeys.revokeConfirm}}**. The key stops working at once, and revoking cannot be undone. Work the key started that is still waiting to run, such as a SharePoint sync, does not run either.
 
 ### Change or replace a key
 
@@ -100,6 +100,7 @@ A key cannot be edited once it exists, and its agent can be chosen only when it 
 - When its expiry passes, a key stops working and moves to the revoked and expired keys, marked **{{ui:admin.apiKeys.expired}}**.
 - A key can do only what its scopes allow. A key bound to an agent also can do no more than the person who created it, and it stops working if that person is deactivated or removed. Retiring the agent revokes its keys.
 - A key with no agent binding keeps working after the person who created it leaves the workspace. Revoke it when its system no longer needs access.
+- Some work a key starts runs later, in the background: a SharePoint sync, a ZIP import of evidence or an agent run. Inflect checks the key again when that work runs. The work does not run if the key has been revoked or has expired by then, or if the person who created the key is no longer an active member. It never does more than both the key and that person may do.
 - Once a day, Inflect checks the keys an agent could use. It raises a finding for a weakness, such as a key that never expires or has gone unused for 30 days. A finding never changes the key. The age at which a key counts as due for rotation is set under {{ui:admin.security.apiKeyRotation.title}} on the **{{ui:admin.nav.security}}** page.
 
 ## Empty and error states

@@ -34,7 +34,7 @@ You cannot edit a key once it exists. To change its scopes, expiry or agent, cre
 2. Click **{{ui:admin.apiKeys.revokeAria}}**, the bin icon at the end of the row.
 3. In the dialog, click **{{ui:admin.apiKeys.revokeConfirm}}**.
 
-The key stops working at once, and revoking cannot be undone. The key moves to the list of revoked and expired keys, marked **{{ui:admin.apiKeys.revoked}}**.
+The key stops working at once, and revoking cannot be undone. Work the key started that is still waiting to run, such as a SharePoint sync, does not run either. The key moves to the list of revoked and expired keys, marked **{{ui:admin.apiKeys.revoked}}**.
 
 To replace a key without a gap, create the new key first. Switch the other system to it, then revoke the old one.
 
@@ -46,6 +46,7 @@ To replace a key without a gap, create the new key first. Switch the other syste
 - Creating or revoking a key adds an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it.
 - A key can do only what its scopes allow. A key bound to an agent also can do no more than the person who created it.
 - A key bound to an agent stops working if the person who created it is removed or deactivated. Retiring the agent revokes the key.
+- Some work a key starts runs later, in the background: a SharePoint sync, a ZIP import of evidence or an agent run. Inflect checks the key again when that work runs. The work does not run if the key has been revoked or has expired by then, or if the person who created the key is no longer an active member. It never does more than both the key and that person may do.
 - Once a day, Inflect checks the keys an agent could use. Those are keys bound to an agent, keys with **{{ui:admin.apiKeys.fullAccess}}**, and keys with **Read** or **Propose** under {{ui:admin.scopeGroup.mcp}}.
 - That check raises a finding when such a key never expires or has gone unused for 30 days. It also raises one for a key older than the rotation age, or with no agent binding. A finding never changes the key.
 - The rotation age is 90 days unless an Owner or Admin sets another. They set it under {{ui:admin.security.apiKeyRotation.title}} on the **{{ui:admin.nav.security}}** page in {{ui:admin.title}}.

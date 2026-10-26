@@ -152,8 +152,17 @@ merged over the base role's defaults on read by `parsePermissionsJson()`.
 3. Admin revokes key
    → Sets revokedAt = now()
    → All future auth attempts fail immediately
-   → An evidence ZIP import the key queued is refused when the worker runs it
+   → Work the key queued is refused when the worker runs it: an evidence ZIP
+     import, a SharePoint "Sync now", a workflow run, a key rotation, and an
+     author-less automation rule fired by the key's request
 ```
+
+Background work a key starts runs as the key AND the member who created it,
+re-read when it runs (`resolveKeyInitiatorContext` in
+`src/app-layer/context-system.ts`), so it never does more than either. A key
+revoked or expired by then, or a member no longer active, stops it with a named
+reason. Work started from a session, or queued before the job carried the key's
+id, runs as the member alone.
 
 ### Key Format
 
