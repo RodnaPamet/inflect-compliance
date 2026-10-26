@@ -14,7 +14,7 @@ An access review is a campaign in which a reviewer looks at each member's access
 | {{ui:accessReviews.scopeAllUsers}} | Every member of the workspace who is active or invited |
 | {{ui:accessReviews.scopeAdminOnly}} | The Owners and Admins only |
 
-- The other two scopes, {{ui:accessReviews.scopeConnectedApp}} and {{ui:accessReviews.scopeAgent}}, review accounts in a connected directory and the workspace's registered agents. Each has a flow of its own, which this guide does not cover.
+- The other three scopes review accounts outside the workspace's membership: {{ui:accessReviews.scopeConnectedApp}} reviews a connected directory, {{ui:accessReviews.scopeLegacyApp}} one legacy application, and {{ui:accessReviews.scopeAgent}} the workspace's registered agents. A legacy application is covered in [Recertify a legacy application](#recertify-a-legacy-application). The other two have flows of their own, which this guide does not cover.
 - The campaign reviews the people who are in scope when you create it, with the role each one has at that moment. Anyone who joins later is not in it.
 - A campaign must cover at least one person. Inflect does not create a campaign whose scope matches nobody.
 - Until the campaign closes, an Owner or Admin can change its reviewer and its due date. See [Change the reviewer or the due date](#change-the-reviewer-or-the-due-date). The name, scope and period cannot change, and a campaign cannot be deleted.
@@ -40,6 +40,32 @@ An access review is a campaign in which a reviewer looks at each member's access
 - If you set a due date, the reviewer gets a reminder email each day while decisions are pending. The reminders run from 7 days before the due date to 3 days after it. A reviewer who is no longer an active member of the workspace gets no reminder; change the campaign's reviewer. Once the campaign is more than 7 days overdue, every active Owner and Admin also gets an email each day. These emails go out only if your workspace sends email notifications.
 - The first decision recorded moves the campaign to **{{ui:accessReviews.statusLabels.IN_REVIEW}}**. The bar at the top of the campaign's page, and the {{ui:accessReviews.colProgress}} column on the {{ui:accessReviews.title}} page, show how many people have a decision, out of the total.
 - Creating the campaign, every change to its reviewer or due date, and every decision recorded or discarded in it, is written to the workspace's audit log.
+
+## Recertify a legacy application
+
+A {{ui:accessReviews.scopeLegacyApp}} campaign reviews the accounts in one older application that Inflect reads through an integration, instead of the members of this workspace.
+
+You need the Owner or Admin role. Before you start, the application must be connected under **{{ui:nav.admin}}** → **{{ui:admin.nav.integrations}}**. Its accounts must also have been read in full within the last 2 days, and the accounts from that read matched to people. Reading the accounts and matching them are not started from this form.
+
+1. Follow steps 1 to 5 of [Steps](#steps).
+2. Under **{{ui:accessReviews.fieldScope}}**, choose **{{ui:accessReviews.scopeLegacyApp}}**.
+3. In **{{ui:accessReviews.fieldLegacyConnection}}**, choose the application. Only legacy applications are listed.
+4. Choose the reviewer, and if you want, the period and the due date, as in steps 7 to 9 of [Steps](#steps).
+5. Click **{{ui:accessReviews.createCampaign}}**.
+
+The campaign reviews every account in the application's latest complete read, as it was when you created the campaign. A later read does not change it. Inflect has no way to confirm that a read holds every account the application has, so the campaign's page and its evidence say its coverage is unverified.
+
+If Inflect refuses to create the campaign, the form shows why:
+
+| What you see | What it means | What to do |
+| --- | --- | --- |
+| {{ui:accessReviews.legacyConnectionsNone}} | No legacy application is connected | Connect one under **{{ui:admin.nav.integrations}}** |
+| A message that begins **NO_SNAPSHOT** | The application's accounts have never been read | Have them read in full and matched to people, then try again |
+| A message that begins **SNAPSHOT_INCOMPLETE** | The latest read did not finish | Find out why it stopped, have the accounts read again and matched, then try again |
+| A message that begins **SNAPSHOT_STALE** | The latest complete read is more than 2 days old | Have the accounts read again and matched, then try again |
+| A message that begins **NOT_RECONCILED** | The accounts were read but not matched to people | Have them matched, then try again |
+| A message that begins **NO_SUBJECTS** | The latest read holds no accounts | Check the application's connection, have the accounts read again, then try again |
+| A message that begins **REVIEWER_NOT_A_MEMBER** | The reviewer is not an active member of the workspace | Choose an active member |
 
 ## Change the reviewer or the due date
 
