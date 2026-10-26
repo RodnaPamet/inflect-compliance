@@ -46,7 +46,11 @@ describe('R5-P2 (2) reviewer gate matches the server', () => {
         expect(src).toMatch(/status === 'SUBMITTED' && permissions\.canAdmin/);
     });
     it('a failed review is surfaced, not swallowed', () => {
-        expect(src).toMatch(/toast\.error\(tx\('list\.reviewFailed'\)\)/);
+        // #4326 — with the server's reason when it gave one; the rendered
+        // proof is tests/rendered/evidence-refusal-reasons.test.tsx.
+        expect(src).toMatch(
+            /toast\.error\(err instanceof Error && err\.message \? err\.message : tx\('list\.reviewFailed'\)\)/,
+        );
     });
 });
 
