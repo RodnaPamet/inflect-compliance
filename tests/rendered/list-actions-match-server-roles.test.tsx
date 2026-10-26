@@ -280,7 +280,8 @@ describe('Controls — read-only roles get no row checkboxes', () => {
                 permissions={coarse(role)}
                 appPermissions={{
                     controls: { create: perms.controls.create, edit: perms.controls.edit },
-                    tasks: { edit: perms.tasks.edit },
+                    tasks: { edit: perms.tasks.edit, assign: perms.tasks.assign },
+                    evidence: { upload: perms.evidence.upload },
                     admin: { manage: perms.admin.manage },
                 }}
             />,

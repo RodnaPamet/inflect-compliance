@@ -189,15 +189,18 @@ function installFetch() {
  * server page uses, so this cannot drift from the permission model the
  * way a hand-written `{ create: true, edit: true }` literal would.
  *
- * `customTasks` overrides the granular `tasks` keys, the way a custom role
- * built on `role` would — the coarse tier stays the base role's.
+ * `customTasks` / `customEvidence` override the granular `tasks` /
+ * `evidence` keys, the way a custom role built on `role` would — the coarse
+ * tier stays the base role's.
  */
 function mountAs(
     role: Role,
     customTasks?: Partial<ReturnType<typeof getPermissionsForRole>['tasks']>,
+    customEvidence?: Partial<ReturnType<typeof getPermissionsForRole>['evidence']>,
 ) {
     const perms = getPermissionsForRole(role);
     const tasks = { ...perms.tasks, ...customTasks };
+    const evidence = { ...perms.evidence, ...customEvidence };
     // The coarse tiers `computePermissions` derives from the base role.
     const canWrite = role === 'OWNER' || role === 'ADMIN' || role === 'EDITOR';
     const canAdmin = role === 'OWNER' || role === 'ADMIN';
@@ -217,6 +220,7 @@ function mountAs(
                     tenantSlug="acme"
                     appPermissions={{
                         tasks: { create: tasks.create, edit: tasks.edit, assign: tasks.assign },
+                        evidence: { upload: evidence.upload },
                         admin: { manage: perms.admin.manage },
                     }}
                     permissions={{ canWrite, canAdmin }}
@@ -385,6 +389,46 @@ describe('Tasks list — the write surface each role actually gets', () => {
         );
         expect(document.getElementById('task-panel-title')).toBeEnabled();
         expect(screen.getByTestId('task-edit-autosave-status')).toBeInTheDocument();
+    });
+
+    /**
+     * #4325 / #4328 — the quick view's evidence box POSTs to
+     * `/evidence/uploads` (`evidence.upload`) and its assignee picker to
+     * `/tasks/:id/assign` (`tasks.assign`), not the `tasks.edit` the rest of
+     * the panel needs. Both followed `tasks.edit`, so a custom role holding
+     * it without the other key was offered controls the server refused.
+     */
+    async function openQuickView() {
+        await screen.findByText(HIGH_TASK.title);
+        fireEvent.click(screen.getByTestId(`task-title-${HIGH_TASK.id}`));
+        await screen.findByRole('button', { name: panelCloseName });
+        await waitFor(() =>
+            expect(document.getElementById('task-panel-title')).toHaveValue(HIGH_TASK.title),
+        );
+    }
+
+    it('an EDITOR’s quick view offers the evidence box and the assignee picker', async () => {
+        mountAs('EDITOR');
+        await openQuickView();
+
+        expect(screen.getByTestId('evidence-upload-dropzone')).toBeInTheDocument();
+        expect(document.getElementById('task-panel-assignee')).toBeEnabled();
+    });
+
+    it('a custom role with tasks.edit but not evidence.upload gets no evidence box in the quick view', async () => {
+        mountAs('EDITOR', undefined, { upload: false });
+        await openQuickView();
+
+        expect(screen.queryByTestId('evidence-upload-dropzone')).not.toBeInTheDocument();
+        expect(document.getElementById('task-panel-title')).toBeEnabled();
+    });
+
+    it('a custom role with tasks.edit but not tasks.assign gets a locked assignee picker in the quick view', async () => {
+        mountAs('EDITOR', { assign: false });
+        await openQuickView();
+
+        expect(document.getElementById('task-panel-assignee')).toBeDisabled();
+        expect(document.getElementById('task-panel-title')).toBeEnabled();
     });
 
     it.each(['OWNER', 'ADMIN'] as const)('%s is offered the Deleted view', async (role) => {

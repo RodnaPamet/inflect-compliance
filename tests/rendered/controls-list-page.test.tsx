@@ -174,7 +174,8 @@ function granular(role: Role): AppPerms {
     const p = getPermissionsForRole(role);
     return {
         controls: p.controls,
-        tasks: { edit: p.tasks.edit },
+        tasks: { edit: p.tasks.edit, assign: p.tasks.assign },
+        evidence: { upload: p.evidence.upload },
         admin: { manage: p.admin.manage },
     };
 }

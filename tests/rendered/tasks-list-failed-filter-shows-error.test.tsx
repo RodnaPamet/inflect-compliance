@@ -162,6 +162,7 @@ it('a filter whose fetch fails shows the load error, not the previous rows', asy
                     tenantSlug="acme"
                     appPermissions={{
                         tasks: { create: perms.tasks.create, edit: perms.tasks.edit, assign: perms.tasks.assign },
+                        evidence: { upload: perms.evidence.upload },
                         admin: { manage: perms.admin.manage },
                     }}
                     permissions={{ canWrite: true, canAdmin: false }}

@@ -233,6 +233,7 @@ function mount() {
                     tenantSlug="acme"
                     appPermissions={{
                         tasks: { create: true, edit: true, assign: true },
+                        evidence: { upload: true },
                         admin: { manage: true },
                     }}
                     permissions={{ canWrite: true, canAdmin: true }}

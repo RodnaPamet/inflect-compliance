@@ -200,8 +200,12 @@ interface ControlsClientProps {
     };
     appPermissions: {
         controls: { create: boolean; edit: boolean };
-        // The inline task edit panel needs the task write permission.
-        tasks: { edit: boolean };
+        // The inline task edit panel needs the task write permission, and
+        // `tasks.assign` for its assignee picker (`/tasks/:id/assign`).
+        tasks: { edit: boolean; assign: boolean };
+        // The task panel's evidence box POSTs to `/evidence/uploads`, whose
+        // usecase asserts `evidence.upload`.
+        evidence: { upload: boolean };
         // Bulk delete + the Deleted view's Restore / Purge are
         // `requirePermission('admin.manage')` at their routes.
         admin: { manage: boolean };
@@ -332,6 +336,12 @@ function ControlsPageInner({
     // Quick-view edits, bulk status/assign: `controls.edit` at the routes,
     // `assertCanUpdateControl` (canWrite AND controls.edit) in the usecases.
     const canEditControls = permissions.canWrite && appPermissions.controls.edit;
+    // The Task quick view's evidence box: `evidence.upload` at
+    // `/evidence/uploads`. Its assignee picker: `tasks.assign` +
+    // `assertCanAssignTasks` (the write tier) at `/tasks/:id/assign`. Both
+    // sit inside the panel's own `tasks.edit` gate.
+    const canUploadTaskEvidence = appPermissions.tasks.edit && appPermissions.evidence.upload;
+    const canAssignTasks = permissions.canWrite && appPermissions.tasks.edit && appPermissions.tasks.assign;
     // Single source for "which bulk verbs may this viewer use" — see
     // _lib/bulk-action-policy.
     const allowedBulkActions = useMemo(
@@ -1843,6 +1853,8 @@ function ControlsPageInner({
                 tenantSlug={tenantSlug}
                 task={selectedTask}
                 canWrite={appPermissions.tasks.edit}
+                canUploadEvidence={canUploadTaskEvidence}
+                canAssign={canAssignTasks}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
             />

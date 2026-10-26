@@ -88,12 +88,30 @@ export function TaskEditPanel({
     tenantSlug,
     task,
     canWrite,
+    canUploadEvidence = canWrite,
+    canAssign = canWrite,
     onSaved,
     variant = "panel",
 }: {
     tenantSlug: string;
     task: ControlTask;
+    /** The task's own edit rights: its fields and status (`tasks.edit`). */
     canWrite: boolean;
+    /**
+     * Whether the evidence box is offered. Its file upload POSTs to
+     * `/evidence/uploads`, which asks `evidence.upload` rather than
+     * `tasks.edit`. The URL link beside it shares this gate, because
+     * `EvidenceUploadSection` offers both on one prop; the attached list
+     * shows either way. Defaults to `canWrite`; never offered without it.
+     */
+    canUploadEvidence?: boolean;
+    /**
+     * Whether the assignee picker is enabled. It POSTs to
+     * `/tasks/:id/assign`, which asks `tasks.assign` (and the write tier)
+     * rather than `tasks.edit`. Defaults to `canWrite`; never enabled
+     * without it.
+     */
+    canAssign?: boolean;
     /** Retained for API compatibility (AsidePanel owns the close affordance). */
     onClose?: () => void;
     onSaved: () => void;
@@ -108,6 +126,9 @@ export function TaskEditPanel({
 }) {
     const tx = useTranslations("sharedPanels");
     const tTask = useTranslations("tasks");
+    // Each sits inside the task's edit rights: a read-only panel offers neither.
+    const mayAssign = canWrite && canAssign;
+    const mayUploadEvidence = canWrite && canUploadEvidence;
     const SEVERITY_OPTIONS = useMemo(() => buildSeverityOptions(tTask), [tTask]);
     const PRIORITY_OPTIONS = useMemo(() => buildPriorityOptions(tTask), [tTask]);
     const TYPE_OPTIONS = useMemo(() => buildTypeOptions(tTask), [tTask]);
@@ -221,7 +242,7 @@ export function TaskEditPanel({
     /** Assignee persists via its own POST endpoint, through the same status line. */
     const commitAssignee = useCallback(
         (userId: string) => {
-            if (!canWrite) return;
+            if (!mayAssign) return;
             void run(async () => {
                 try {
                     const res = await fetch(`${base}/assign`, {
@@ -242,7 +263,7 @@ export function TaskEditPanel({
                 onSaved();
             });
         },
-        [canWrite, base, onSaved, tx, run],
+        [mayAssign, base, onSaved, tx, run],
     );
 
     /**
@@ -457,7 +478,7 @@ export function TaskEditPanel({
                             id="task-panel-assignee"
                             name="assigneeUserId"
                             tenantSlug={tenantSlug}
-                            disabled={!canWrite || loadError}
+                            disabled={!mayAssign || loadError}
                             size="sm"
                             selectedId={assigneeId || null}
                             onChange={(userId) => {
@@ -516,12 +537,14 @@ export function TaskEditPanel({
             {tab === "details" ? (
                 <div className="space-y-default">
                     {details}
-                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail). */}
+                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail).
+                        Its write half (file box + URL link) follows
+                        `evidence.upload`; the attached list shows to every reader. */}
                     <EvidenceUploadSection
                         tenantSlug={tenantSlug}
                         linkField="taskId"
                         linkId={task.id}
-                        canWrite={canWrite}
+                        canWrite={mayUploadEvidence}
                         compactDropzone
                         listEndpoint={`/tasks/${task.id}/evidence`}
                         urlLinkEndpoint={`/tasks/${task.id}/evidence`}
