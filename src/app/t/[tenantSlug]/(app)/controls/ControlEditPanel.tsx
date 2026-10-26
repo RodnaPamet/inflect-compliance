@@ -56,11 +56,19 @@ export function ControlEditPanel({
     tenantSlug,
     control,
     canWrite,
+    canUploadEvidence,
     onSaved,
 }: {
     tenantSlug: string;
     control: PanelControl;
     canWrite: boolean;
+    /**
+     * Whether to offer the evidence dropzone. SEPARATE from `canWrite`, which
+     * here means `canWrite && controls.edit` — the gate that opens this panel.
+     * An upload POSTs to `/evidence/uploads`, whose usecase asserts
+     * `evidence.upload` alone (#4325).
+     */
+    canUploadEvidence: boolean;
     /** Retained for API compatibility (AsidePanel owns the close affordance). */
     onClose?: () => void;
     /** Called after a successful save so the list reflects new name/owner. */
@@ -278,8 +286,10 @@ export function ControlEditPanel({
                         )}
                     </div>
 
-                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail). */}
-                    <EvidenceUploadSection
+                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail).
+                        Offered on `evidence.upload`, which is what the upload
+                        usecase asserts — not on this panel's own edit gate. */}
+                    {canUploadEvidence && <EvidenceUploadSection
                         tenantSlug={tenantSlug}
                         linkField="controlId"
                         linkId={control.id}
@@ -288,7 +298,7 @@ export function ControlEditPanel({
                         listEndpoint={`/controls/${control.id}/evidence`}
                         urlLinkEndpoint={`/controls/${control.id}/evidence`}
                         urlLinkBody={(url, note) => ({ kind: "LINK", url, note: note || undefined })}
-                    />
+                    />}
                 </div>
             ) : (
                 <PanelActivityFeed tenantSlug={tenantSlug} endpoint={`/controls/${control.id}/activity`} />
