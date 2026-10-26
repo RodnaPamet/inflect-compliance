@@ -344,6 +344,28 @@ describe('OI-3 — external uptime contract', () => {
         }
     });
 
+    /**
+     * The record's condition must say what the deployed policy does. On
+     * 2026-09-24 the policy's duration went from 60s to 300s (a deploy took
+     * readyz down long enough to page on every deploy), and this file went on
+     * saying `for 60s` for a month. Read from the policy file, so the two
+     * cannot drift apart again without this failing.
+     */
+    it("states the deployed policy's window and duration in its condition", () => {
+        const u = loadUptime();
+        const policies = fs
+            .readdirSync(path.join(ROOT, 'infra/alerts/policies'))
+            .filter((f) => f.endsWith('.json'))
+            .map((f) => JSON.parse(read(`infra/alerts/policies/${f}`)));
+        for (const m of u.monitors) {
+            const policy = policies.find((p) => p.displayName === m.on_failure.alert_policy);
+            expect(policy).toBeDefined();
+            const threshold = policy.conditions[0].conditionThreshold;
+            const window = threshold.aggregations[0].alignmentPeriod;
+            expect(m.on_failure.condition).toBe(`COUNT_FALSE > 1 over a ${window} window, for ${threshold.duration}`);
+        }
+    });
+
     it('records that no rota exists, so nobody reads a response time into it', () => {
         const src = read('infra/alerts/external-uptime.yml');
         expect(src).toMatch(/not.*a rota|no rota/i);
