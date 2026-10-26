@@ -234,6 +234,7 @@ describe('observable gauges — idempotency + callback safety', () => {
         const getQueueFn = () => {
             factoryCalls++;
             return {
+                name: 'inflect-jobs',
                 getJobCounts: async () => ({
                     waiting: 2,
                     active: 1,
@@ -268,12 +269,14 @@ describe('observable gauges — idempotency + callback safety', () => {
 
     it('can re-register after the testing reset helper clears the flag', () => {
         startQueueDepthReporting(() => ({
+            name: 'inflect-jobs',
             getJobCounts: async () => ({}),
         }));
         _resetQueueDepthForTesting();
         // After reset, a fresh registration is allowed again.
         expect(() =>
             startQueueDepthReporting(() => ({
+                name: 'inflect-jobs',
                 getJobCounts: async () => ({}),
             })),
         ).not.toThrow();

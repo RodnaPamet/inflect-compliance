@@ -202,7 +202,7 @@ exporters:
   `_count` series; `audit_stream.delivery.failures` becomes
   `audit_stream_delivery_failures_total` (the `_total` suffix is
   Prometheus's counter convention); and a gauge whose unit is `1`
-  gets `_ratio`, so `job.queue.depth` would be `job_queue_depth_ratio`
+  gets `_ratio`, so `job.queue.depth` is `job_queue_depth_ratio`
   and `business.tenant.active.daily` is
   `business_tenant_active_daily_ratio`. Attribute keys are
   underscored the same way (`job.status` → `job_status`). All PromQL
@@ -259,9 +259,10 @@ exact. This pipeline carries every instrument the app records from
 (`api_request_count`, `api_request_duration`, `api_request_errors`),
 the repository metrics (`repo_method_duration/calls/errors/result_count`),
 the job metrics (`job_execution_count/duration`), and
-`audit_stream_delivery_failures`. The `job.queue.depth` gauge is
-declared there but never registered: nothing outside the tests calls
-`startQueueDepthReporting`.
+`audit_stream_delivery_failures`. The `job.queue.depth` gauge
+(`job_queue_depth_ratio`) comes from the worker process alone:
+`scripts/worker.ts` calls `startQueueDepthReporting` after
+`initTelemetry()`, and the web tier never registers it.
 
 **Traces pipeline.** App OTLP spans in → `memory_limiter` →
 `resourcedetection` → `resource` → `probabilistic_sampler` →

@@ -19,6 +19,7 @@
 #   repo.method.errors     -> repo_method_errors_total  {repo_method, error_type}
 #   job.execution.count    -> job_execution_count_total {job_name, job_status: success|failure}
 #   job.execution.duration -> job_execution_duration_milliseconds_{bucket,sum,count}
+#   job.queue.depth        -> job_queue_depth_ratio     {queue_name, queue_state}
 #   audit_stream.delivery.failures -> audit_stream_delivery_failures_total {http_status_code}
 #
 # tests/unit/prometheus-rules-match-emitted-metrics.test.ts derives these names
@@ -116,16 +117,21 @@ groups:
 
   # ---------------------------------------------------------------------------
   # Background jobs — BullMQ worker.
-  #
-  # There is no queue-depth rule. The app declares a `job.queue.depth` gauge
-  # (startQueueDepthReporting in src/lib/observability/metrics.ts) but nothing
-  # registers it, so no queue-depth series exists. Once the worker calls it,
-  # the series is `job_queue_depth_ratio{queue_name, queue_state}` — the gauge
-  # has unit `1` — and the backlog is `queue_state="waiting"`.
   # ---------------------------------------------------------------------------
   - name: inflect_jobs
     interval: 30s
     rules:
+      # Queue depth (jobs), per queue and BullMQ state. The worker reports it
+      # (startQueueDepthReporting, called from scripts/worker.ts) as the
+      # `job.queue.depth` gauge; its unit is `1`, hence `_ratio`. Every worker
+      # process reports the same Redis-held counts, so `max` across them is the
+      # depth, where `sum` would multiply it by the number of workers. The
+      # states stay apart: `waiting` and `prioritized` are the backlog,
+      # `delayed` holds every job scheduler's next run, `active` is in
+      # progress and `failed` is retained history.
+      - record: job:job_queue_depth:max
+        expr: max by (queue_name, queue_state) (job_queue_depth_ratio)
+
       # Job execution rate (jobs/s).
       - record: job:job_execution:rate5m
         expr: sum by (service_name) (rate(job_execution_count_total[5m]))
