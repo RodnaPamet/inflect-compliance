@@ -147,6 +147,9 @@ interface ControlListItem {
      *  (rows fetched with `?includeDeleted=true`). */
     deletedAt?: string | null;
     deletedByUserId?: string | null;
+    /** The row's health verdict — supplied only in the Deleted view, whose
+     *  rows the tenant-wide `/controls/health-verdicts` read does not cover. */
+    healthVerdict?: ControlHealthVerdict | null;
     /**
      * Every framework this control is mapped to, deduped from its requirement
      * links server-side. Optional because older cached payloads and the
@@ -578,11 +581,17 @@ function ControlsPageInner({
     const verdictsQuery = useTenantSWR<{
         verdicts: { controlId: string; verdict: ControlHealthVerdict; passRate: number | null }[];
     }>('/controls/health-verdicts');
+    // The tenant-wide read covers live controls only, so the Deleted view
+    // reads each row's own verdict, which `listControlsWithDeleted` attaches.
     const verdictMap = useMemo(() => {
         const m = new Map<string, ControlHealthVerdict>();
+        if (showDeleted) {
+            for (const c of rawControls) if (c.healthVerdict) m.set(c.id, c.healthVerdict);
+            return m;
+        }
         for (const v of verdictsQuery.data?.verdicts ?? []) m.set(v.controlId, v.verdict);
         return m;
-    }, [verdictsQuery.data]);
+    }, [verdictsQuery.data, showDeleted, rawControls]);
 
     // ─── PR-1: org-parity sortable headers ───
     // Client-side sort over the loaded controls. The server returns

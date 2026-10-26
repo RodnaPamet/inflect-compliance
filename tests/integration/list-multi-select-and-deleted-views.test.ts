@@ -7,7 +7,8 @@
  *     string for equality, so picking two values matched nothing (#4275,
  *     #4279).
  *   - The "Deleted controls" view listed every control, deleted or not, and
- *     ignored the page's filters (#4275).
+ *     ignored the page's filters (#4275). Its Health filter still matched
+ *     nothing, because the verdict scan read live controls only (#4325).
  *
  * RUN: npx jest tests/integration/list-multi-select-and-deleted-views.test.ts
  */
@@ -49,7 +50,10 @@ describeFn('multi-select list filters and the deleted-controls view (integration
         await prisma.tenant.delete({ where: { id: tenantId } });
     });
 
-    const mkControl = (name: string, data: { ownerUserId?: string; deletedAt?: Date } = {}) =>
+    const mkControl = (
+        name: string,
+        data: { ownerUserId?: string; deletedAt?: Date; applicability?: 'APPLICABLE' | 'NOT_APPLICABLE' } = {},
+    ) =>
         prisma.control.create({ data: { tenantId, name: `${name} ${runId}`, ...data } });
 
     it('the Owner filter returns the controls of every owner picked', async () => {
@@ -94,6 +98,23 @@ describeFn('multi-select list filters and the deleted-controls view (integration
             id: string;
         }>;
         expect(byOwner.map((r) => r.id)).toEqual([goneB.id]);
+    });
+
+    it('the Health filter narrows the Deleted view, and each deleted row carries its verdict', async () => {
+        const liveNa = await mkControl('Live NA', { applicability: 'NOT_APPLICABLE' });
+        const goneNa = await mkControl('Gone NA', { applicability: 'NOT_APPLICABLE', deletedAt: new Date() });
+        // NOT_STARTED with no test runs: no operating signal at all.
+        const goneUnknown = await mkControl('Gone unknown', { deletedAt: new Date() });
+
+        type Row = { id: string; healthVerdict: string | null };
+        const na = (await listControlsWithDeleted(ctx, { q: runId, health: 'NOT_APPLICABLE' })) as Row[];
+        // The deleted N/A control — not the live one, and not the other deleted one.
+        expect(na.map((r) => r.id)).toEqual([goneNa.id]);
+        expect(na.map((r) => r.id)).not.toContain(liveNa.id);
+        expect(na[0].healthVerdict).toBe('NOT_APPLICABLE');
+
+        const all = (await listControlsWithDeleted(ctx, { q: runId })) as Row[];
+        expect(all.find((r) => r.id === goneUnknown.id)?.healthVerdict).toBe('UNKNOWN');
     });
 
     it('the Category filter returns the policies of every category picked', async () => {

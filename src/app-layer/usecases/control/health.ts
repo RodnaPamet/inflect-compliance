@@ -12,7 +12,9 @@
  */
 import { RequestContext } from '../../types';
 import { assertCanReadControls } from '../../policies/control.policies';
+import { assertCanAdmin } from '../../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
+import { withDeleted } from '@/lib/soft-delete';
 import { notFound } from '@/lib/errors/types';
 import { listExecutionsForControl } from '../integrations';
 import { computeControlEffectivenessMap } from './test-plans';
@@ -184,17 +186,34 @@ export const HEALTH_VERDICT_SCAN_CAP = 5000;
  * Bounded at `HEALTH_VERDICT_SCAN_CAP`; the result reports `truncated` +
  * `scanned` so the UI can say so out loud (see `ControlHealthSummary` tile
  * notice) instead of quietly dropping badges past the cap.
+ *
+ * `scope: 'deleted'` runs the same verdict over the SOFT-DELETED controls
+ * instead, for the Deleted controls view: its Health filter and column. It is
+ * admin-only, like that view, and never mixed into the live counts.
  */
-export async function getControlHealthVerdicts(ctx: RequestContext): Promise<ControlHealthSummary> {
+export async function getControlHealthVerdicts(
+    ctx: RequestContext,
+    options: { scope?: 'live' | 'deleted' } = {},
+): Promise<ControlHealthSummary> {
     assertCanReadControls(ctx);
+    const deleted = options.scope === 'deleted';
+    if (deleted) assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
         // Ask for cap+1 so hitting the sentinel proves truncation (mirrors the
         // list-page backfill-cap pattern), then slice back to the cap.
-        const scannedRows = await db.control.findMany({
-            where: { tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, status: true, applicability: true, nextDueAt: true },
-            take: HEALTH_VERDICT_SCAN_CAP + 1,
-        });
+        const select = { id: true, status: true, applicability: true, nextDueAt: true } as const;
+        const take = HEALTH_VERDICT_SCAN_CAP + 1;
+        const scannedRows = deleted
+            ? await db.control.findMany(withDeleted({
+                where: { tenantId: ctx.tenantId, deletedAt: { not: null } },
+                select,
+                take,
+            }))
+            : await db.control.findMany({
+                where: { tenantId: ctx.tenantId, deletedAt: null },
+                select,
+                take,
+            });
         const truncated = scannedRows.length > HEALTH_VERDICT_SCAN_CAP;
         const controls = truncated ? scannedRows.slice(0, HEALTH_VERDICT_SCAN_CAP) : scannedRows;
         const effMap = await computeControlEffectivenessMap(

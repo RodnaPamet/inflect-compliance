@@ -20,7 +20,7 @@
  *   5. a second owner can be picked in the Owner filter;
  *   6. a custom control's stored theme category reads as its label;
  *   7. the quick views and the AI Assist panel follow the keys their own
- *      routes check (#4325).
+ *      routes check, and the Deleted view shows each row's health (#4325).
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -659,7 +659,7 @@ describe('Controls list — a stored theme category reads as its label', () => {
     });
 });
 
-// ─── 7. The quick views and the AI Assist panel (#4325) ──────────────
+// ─── 7. The quick views, the AI Assist panel, the Deleted view (#4325) ─
 
 /** Click a control's name and return its quick view. */
 async function openControlQuickView(c: ControlRow): Promise<HTMLElement> {
@@ -761,3 +761,30 @@ describe('Controls list — the AI Assist panel needs the write tier as well as 
     });
 });
 
+describe('Controls list — the Deleted view shows each deleted row its health', () => {
+    it("reads the row's own verdict, which the tenant-wide read does not cover", async () => {
+        // The health-verdicts mock answers no verdicts (live controls only),
+        // and the Deleted view's rows carry their own.
+        listRows = [{ ...CUSTOM, deletedAt: '2026-10-01T00:00:00.000Z', deletedByUserId: null, healthVerdict: 'AT_RISK' }];
+        mountAs('ADMIN');
+        // The live list ignores the field: a dash, as before.
+        const liveRow = await rowFor(CUSTOM);
+        await readsSettled();
+        expect(liveRow).not.toHaveTextContent(C.health.verdict.AT_RISK);
+
+        await openViewsMenu();
+        await userEvent.setup().click(document.getElementById('controls-show-deleted-toggle') as HTMLElement);
+        await waitFor(() =>
+            expect(
+                (global.fetch as jest.Mock).mock.calls.some(
+                    ([u]) => new URL(String(u), 'https://test.local').searchParams.get('includeDeleted') === 'true',
+                ),
+            ).toBe(true),
+        );
+        await waitFor(() =>
+            expect(screen.getByTestId(`control-title-${CUSTOM.id}`).closest('tr')).toHaveTextContent(
+                C.health.verdict.AT_RISK,
+            ),
+        );
+    });
+});
