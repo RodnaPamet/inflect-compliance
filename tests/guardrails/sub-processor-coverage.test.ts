@@ -146,6 +146,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // a run may reach ever changes, that is a change to the inventory above,
     // not to this entry — so this flag must not be read as covering it.
     AGENT_INTERACTIVE_RUNS: 'operator feature flag admitting a browser-started agent run — a new starter for the existing engine, not an external endpoint, and not a sub-processor',
+    AGENT_PROFILES: 'operator feature flag exposing the agent profile surface — tables and routes in this deployment, not an external endpoint, and not a sub-processor; no engine sends profile instructions to a model until Step 2c records that data category',
     // AI sovereignty (DS-1) — the local/self-hosted LLM gateway. These configure
     // the TENANT'S OWN in-jurisdiction inference endpoint (Ollama / vLLM), the
     // OPPOSITE of an external sub-processor: a LOCAL_ONLY tenant's inference

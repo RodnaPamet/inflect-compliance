@@ -303,6 +303,15 @@ Deliver per the Definition of done. This step is Significant.
 
 #### Step 2b — Tool Runner driver, reader-only
 
+**Carried from Step 1a (#4143).** This engine is the first that may run an agent
+profile. Its `runsProfiles` entry (`src/lib/agentic/agent-profile.ts`) stays
+false in this step and is set true with the engine in 2c, and the driver must
+already do three things:
+- render `def.profile.instructions` as the operator's fenced block;
+- pass `def.profile.toolNames` to `offerToolSet` as `profileTools`;
+- route resume and settlement through `resolveRunDefinition`, because a profile
+  run key is not in the registry.
+
 **Goal.** Build the complete driver behind `DRIVER_IMPLEMENTED = false`, and ship
 the `TOOL_RUNNER` enum value with no writer.
 

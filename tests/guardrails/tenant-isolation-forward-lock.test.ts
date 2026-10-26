@@ -106,6 +106,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AuditWorkpaperNarrative: "tests/integration/audit-workpaper-narrative.test.ts",
     TenantSkill: "tests/integration/tenant-skills.test.ts",
     TenantSkillVersion: "tests/integration/tenant-skills.test.ts",
+    AgentProfile: "tests/integration/agent-profiles.test.ts",
+    AgentProfileVersion: "tests/integration/agent-profiles.test.ts",
     PeerAgentMessage: "tests/integration/a2a-peer-messaging.test.ts",
     PeerAgentKillSwitch: "tests/integration/a2a-peer-messaging.test.ts",
     TenantA2aSigningKey: "tests/integration/a2a-peer-messaging.test.ts",

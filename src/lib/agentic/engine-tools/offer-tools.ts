@@ -58,9 +58,16 @@ export function asToolArgs(data: unknown): Record<string, unknown> {
 /**
  * Why a tool was not advertised. Diagnostic only — never a refusal.
  * `READ_ONLY_WORKFLOW` is a propose tool withheld because the run's workflow
- * declares `readOnly` (#3749).
+ * declares `readOnly` (#3749). `PROFILE_TOOL_NOT_GRANTED` is a tool an agent
+ * profile names that the agent's current grants no longer reach, typically a
+ * grant revoked after the profile version was approved (#4143).
  */
-export type ToolOmissionReason = 'SCOPE' | 'AUTONOMY' | 'UNCONVERTIBLE_SCHEMA' | 'READ_ONLY_WORKFLOW';
+export type ToolOmissionReason =
+    | 'SCOPE'
+    | 'AUTONOMY'
+    | 'UNCONVERTIBLE_SCHEMA'
+    | 'READ_ONLY_WORKFLOW'
+    | 'PROFILE_TOOL_NOT_GRANTED';
 
 /**
  * One tool that survived the narrowing, handed to the engine to put in its own
@@ -237,6 +244,16 @@ export function offerToolSet<T>(
          * records rather than one inferred from an empty list.
          */
         readonly readOnly?: boolean;
+        /**
+         * The run executes an agent profile (#4143): offer only the tools it
+         * names. The candidates are still the registry's loadable set (the
+         * agent's current grants, its policy card and the exposure), so this
+         * only NARROWS: a tool the profile names that the agent no longer
+         * reaches is not offered and is listed as `PROFILE_TOOL_NOT_GRANTED`,
+         * never failed open. An empty list offers nothing. Absent means the
+         * engine's usual offer.
+         */
+        readonly profileTools?: readonly string[];
     },
 ): OfferedToolSet<T> {
     // One latch for the RUN — review, once required, stays required across
@@ -247,18 +264,23 @@ export function offerToolSet<T>(
     // stop, and on the surface where it would matter most.
     const review = new ReviewLatch(opts.observe);
 
-    const read = offerTools(inv, loadableReadTools(inv), READ_CAPABILITY, review, build, opts.sourcePrefix);
+    const profileTools = opts.profileTools === undefined ? null : new Set(opts.profileTools);
+    const inProfile = (t: OfferableTool): boolean => profileTools === null || profileTools.has(t.name);
+    const readCandidates = loadableReadTools(inv);
+    const proposeCandidates = loadableProposeTools(inv);
+
+    const read = offerTools(inv, readCandidates.filter(inProfile), READ_CAPABILITY, review, build, opts.sourcePrefix);
     // The origin resolver reaches only the propose surface, because only a
     // propose call writes a row that can carry one. Passing it to both would
     // read as though a read were being attributed somewhere.
     const propose: Pick<OfferedToolSet<T>, 'tools' | 'omitted'> = opts.readOnly
         ? {
               tools: [],
-              omitted: loadableProposeTools(inv).map((t) => ({ name: t.name, reason: 'READ_ONLY_WORKFLOW' as const })),
+              omitted: proposeCandidates.filter(inProfile).map((t) => ({ name: t.name, reason: 'READ_ONLY_WORKFLOW' as const })),
           }
         : offerTools(
               inv,
-              loadableProposeTools(inv),
+              proposeCandidates.filter(inProfile),
               PROPOSE_CAPABILITY,
               review,
               build,
@@ -266,9 +288,21 @@ export function offerToolSet<T>(
               opts.originFor,
           );
 
+    // A tool the profile names that neither registry would load for this
+    // agent now: the grant was revoked, the card narrowed or the tool left the
+    // exposure. Recorded, so a profile run that cannot do what its author
+    // chose says why rather than looking incapable.
+    const lost: OfferedToolSet<T>['omitted'] =
+        profileTools === null
+            ? []
+            : [...profileTools]
+                  .filter((name) => !readCandidates.some((t) => t.name === name) && !proposeCandidates.some((t) => t.name === name))
+                  .sort()
+                  .map((name) => ({ name, reason: 'PROFILE_TOOL_NOT_GRANTED' as const }));
+
     return {
         tools: [...read.tools, ...propose.tools],
-        omitted: [...read.omitted, ...propose.omitted],
+        omitted: [...read.omitted, ...propose.omitted, ...lost],
         review,
     };
 }

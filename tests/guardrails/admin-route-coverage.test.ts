@@ -147,6 +147,15 @@ const ADMIN_ONLY_ROUTES = [
     // agent's own (#3671) — the register's key, `admin.agent_registry`: the
     // condition for an unattended disable of that principal.
     'admin/agents/[agentId]/service-principal-link/route.ts',
+    // Agent profiles (#4143) — the register's key, `admin.agent_registry`
+    // (owner decision 3): authoring, review and the read, with the approver
+    // never the author (usecase and CHECK). 404 while AGENT_PROFILES is off.
+    'admin/agents/[agentId]/profile/route.ts',
+    'admin/agents/[agentId]/profile/versions/route.ts',
+    'admin/agents/[agentId]/profile/versions/[version]/submit/route.ts',
+    'admin/agents/[agentId]/profile/versions/[version]/approve/route.ts',
+    'admin/agents/[agentId]/profile/versions/[version]/reject/route.ts',
+    'admin/agents/[agentId]/profile/versions/[version]/retire/route.ts',
     // The versioned runtime policy card (Agentic 5) — its own key,
     // `admin.agent_policy_card`, and the WIDEST of the three: a card declares
     // the permitted tools, the data rung, the autonomy rung and both action

@@ -2076,6 +2076,26 @@ enum HostConsumerStatus {
   RETIRED
 }
 
+/// The lifecycle of one AGENT PROFILE VERSION (Step 1a of
+/// `docs/claude-agent-sdk-design.md`, #4143). A version is created as a DRAFT,
+/// SUBMITTED by its author, then APPROVED or REJECTED by a person other than
+/// its author. Any of the four may be RETIRED; RETIRED is terminal. Held by a
+/// trigger. An edit is a new version, never a change to this one.
+enum AgentProfileVersionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  RETIRED
+}
+
+/// What a run of an agent profile may produce. ANSWER_ONLY compiles to a
+/// `readOnly` definition, which withholds the propose surface from the engine.
+enum AgentProfileOutputKind {
+  ANSWER_ONLY
+  ANSWER_AND_PROPOSALS
+}
+
 /// Lifecycle of one version of a tenant-authored skill (#3680, step 4c). A
 /// version's text never changes: an edit is a NEW version, which starts here at
 /// DRAFT. DRAFT → IN_REVIEW (submitted, with a passing evaluation record) →

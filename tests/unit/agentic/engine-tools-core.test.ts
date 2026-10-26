@@ -224,3 +224,49 @@ describe('4. isReasoningEngine is pinned for every driver', () => {
         expect(answers).toEqual({ static: false, flue: true });
     });
 });
+
+describe('5. an agent profile only narrows what is offered (#4143)', () => {
+    const names = (set: { tools: Array<{ tool: { name: string } }> }) => set.tools.map((t) => t.tool.name).sort();
+
+    beforeEach(() => {
+        mockLoadable.mockReturnValue([readTool('list_risks'), readTool('list_controls')]);
+        mockLoadablePropose.mockReturnValue([proposeTool('propose_risks')]);
+    });
+
+    it('offers only the profile tools the agent still reaches, and nothing else it holds', () => {
+        const set = offerToolSet(invocation(), (offered) => offered, {
+            sourcePrefix: 'probe-engine',
+            profileTools: ['list_risks', 'propose_risks'],
+        });
+        expect(names(set)).toEqual(['list_risks', 'propose_risks']);
+        expect(set.omitted).toEqual([]);
+    });
+
+    it('records a profile tool the agent no longer reaches, and never fails open', () => {
+        // `list_vendors` was approved on the profile and its grant was revoked
+        // since: the registry no longer loads it for this agent.
+        const set = offerToolSet(invocation(), (offered) => offered, {
+            sourcePrefix: 'probe-engine',
+            profileTools: ['list_risks', 'list_vendors'],
+        });
+        expect(names(set)).toEqual(['list_risks']);
+        expect(set.omitted).toEqual([{ name: 'list_vendors', reason: 'PROFILE_TOOL_NOT_GRANTED' }]);
+    });
+
+    it('an empty profile list offers nothing; an absent one is the usual offer', () => {
+        const none = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine', profileTools: [] });
+        expect(names(none)).toEqual([]);
+        const usual = offerToolSet(invocation(), (offered) => offered, { sourcePrefix: 'probe-engine' });
+        expect(names(usual)).toEqual(['list_controls', 'list_risks', 'propose_risks']);
+    });
+
+    it('a read-only profile lists its propose tools as withheld, not the ones it never named', () => {
+        const set = offerToolSet(invocation(), (offered) => offered, {
+            sourcePrefix: 'probe-engine',
+            readOnly: true,
+            profileTools: ['list_risks', 'propose_risks'],
+        });
+        expect(names(set)).toEqual(['list_risks']);
+        expect(set.omitted).toEqual([{ name: 'propose_risks', reason: 'READ_ONLY_WORKFLOW' }]);
+    });
+});

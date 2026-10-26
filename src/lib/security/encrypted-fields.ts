@@ -459,6 +459,15 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // `tests/guardrails/encryption-manifest-coverage.test.ts`.
     TenantSkillVersion: ['instructions', 'evaluationRecordJson'],
 
+    // ─── Step 1a (#4143) — agent profiles ──────────────
+    // `instructions` is what a tenant tells its agent to do: free text that
+    // names its systems, its processes and often its people, and the operator's
+    // own block in every prompt the profile runs under (owner decision 2,
+    // 2026-10-25). Sanitised and scanned at the single write seam
+    // (`usecases/agent-profiles.ts`) before this middleware encrypts it, and
+    // hashed in plaintext so a run can pin it. Not filtered or sorted on.
+    AgentProfileVersion: ['instructions'],
+
     // ─── Epic Agentic — the agent register ─────────────
     // `description` is the operator's own account of what an agent does and
     // what it may touch: it names internal systems, the data the agent reaches
