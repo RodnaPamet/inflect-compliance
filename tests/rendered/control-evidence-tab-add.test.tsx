@@ -67,7 +67,12 @@ let mockControlsEdit = true;
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: { canWrite: true, canAdmin: true, canRead: true },
-        appPermissions: { controls: { view: true, create: true, edit: mockControlsEdit } },
+        // A whole permission set: the page reads other domains' keys too
+        // (the Tasks and Tests tabs, #4387).
+        appPermissions: {
+            ...require('@/lib/permissions').getPermissionsForRole('ADMIN'),
+            controls: { view: true, create: true, edit: mockControlsEdit },
+        },
         role: 'ADMIN',
         tenantSlug: 'acme',
         userId: 'user_1',

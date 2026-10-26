@@ -49,7 +49,12 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const router = useRouter();
-    const { permissions } = useTenantContext();
+    const { permissions, appPermissions } = useTenantContext();
+    // #4387 — each button asks the key its route checks, on top of the write
+    // tier: a new plan is `tests.create`, a new run `tests.execute`. Built-in
+    // roles hold both whenever they hold the tier, so they see no change.
+    const canCreatePlan = permissions.canWrite && appPermissions.tests.create;
+    const canRunTest = permissions.canWrite && appPermissions.tests.execute;
     const t = useTranslations('panels.testPlans');
     const tc = useTranslations('common');
     const tr = useTranslations();
@@ -140,7 +145,7 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
         <div className="space-y-default">
             <div className="flex items-center justify-between">
                 <Heading level={3}>{t('title')}</Heading>
-                {permissions.canWrite && (
+                {canCreatePlan && (
                     <Button
                         variant="primary"
                         icon={showForm ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
@@ -234,7 +239,7 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
                                     <span className="text-xs text-content-subtle">
                                         {t('runs', { count: plan._count?.runs ?? 0 })}
                                     </span>
-                                    {permissions.canWrite && plan.status === 'ACTIVE' && (
+                                    {canRunTest && plan.status === 'ACTIVE' && (
                                         <Button
                                             variant="ghost"
                                             size="xs"

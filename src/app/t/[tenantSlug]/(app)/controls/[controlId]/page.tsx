@@ -163,9 +163,24 @@ export default function ControlDetailPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, appPermissions, tenantSlug } = useTenantContext();
+    // #4387 — each write control asks the key its route checks, on top of
+    // the write tier. The write tier alone let a custom role built on Editor,
+    // but without the key, open a control the server then refused. Built-in
+    // roles hold every key their tier implies, so they see no change.
+    //
+    // `controls.edit`: the status picker, applicability, the Edit button (and
+    // the owner it saves), contributors, the Evidence tab's unlink, the
+    // Requirements tab and its per-requirement applicability, and removing a
+    // risk or asset link on the Traceability tab.
+    const canEditControl = permissions.canWrite && appPermissions.controls.edit;
     // Attaching evidence here links it to this control: the link route takes
     // `controls.edit`, and so does an upload that names a control (#4326).
-    const canAttachEvidence = permissions.canWrite && appPermissions.controls.edit;
+    const canAttachEvidence = canEditControl;
+    // The Tasks tab's "+ Task" creates the task (`POST /tasks`, `tasks.create`)
+    // and then links it to this control (`POST /tasks/:id/links`, `tasks.edit`).
+    // Without `tasks.edit` the task would be created and left off this tab.
+    const canCreateControlTask =
+        permissions.canWrite && appPermissions.tasks.create && appPermissions.tasks.edit;
     const controlId = params?.controlId as string;
     // Ordered ids for the prev/next stepper beside the name — list order,
     // so stepping walks the sequence the user just saw.
@@ -935,7 +950,8 @@ export default function ControlDetailPage() {
             >
                 {tx('detailPage.whereUsed')}
             </Button>
-            {permissions.canWrite && (
+            {/* `POST /status` and `POST /applicability` ask `controls.edit`. */}
+            {canEditControl && (
                 <>
                     <Combobox
                         hideSearch
@@ -997,7 +1013,7 @@ export default function ControlDetailPage() {
                 </div>
             )}
             {/* Applicability modal */}
-            {showApplicability && permissions.canWrite && (
+            {showApplicability && canEditControl && (
                 <div className={cn(cardVariants({ density: 'compact' }), 'space-y-compact')}>
                     <Heading level={3}>{tx('setApplicability')}</Heading>
                     <RadioGroup value={appChoice} onValueChange={setAppChoice} className="flex gap-default">
@@ -1040,8 +1056,10 @@ export default function ControlDetailPage() {
 
             {tab === 'overview' && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
-                    {/* Overview header with Edit button */}
-                    {permissions.canWrite && (
+                    {/* Overview header with Edit button — `PATCH /controls/:id`
+                        and the owner it may save (`POST /owner`) ask
+                        `controls.edit`. */}
+                    {canEditControl && (
                         <div className="flex justify-end -mt-1 -mb-2">
                             <Tooltip content={tx('detailPage.editControl')}>
                                 <Button
@@ -1130,7 +1148,7 @@ export default function ControlDetailPage() {
                                 {(control.contributors?.length ?? 0) > 0 ? control.contributors?.map((c: ContributorDTO) => (
                                     <StatusBadge variant="neutral" key={c.user.id} className="inline-flex items-center gap-1">
                                         {c.user.name ?? '—'}
-                                        {permissions.canWrite && (
+                                        {canEditControl && (
                                             <button
                                                 type="button"
                                                 onClick={() => removeContributor(c.user.id)}
@@ -1145,7 +1163,8 @@ export default function ControlDetailPage() {
                                     </StatusBadge>
                                 )) : <span className="text-content-subtle">—</span>}
                             </div>
-                            {permissions.canWrite && (
+                            {/* Adding and removing a contributor both ask `controls.edit`. */}
+                            {canEditControl && (
                                 <div className="mt-2 flex items-center gap-tight">
                                     <div className="min-w-0 flex-1">
                                         <UserCombobox
@@ -1221,7 +1240,7 @@ export default function ControlDetailPage() {
                         entityType="CONTROL"
                         entityId={controlId}
                         tenantHref={tenantHref}
-                        canWrite={permissions.canWrite}
+                        canWrite={canCreateControlTask}
                     />
                 </div>
             )}
@@ -1265,7 +1284,8 @@ export default function ControlDetailPage() {
                             <EvidenceSubTable
                                 data={evidenceSWR.data}
                                 loading={evidenceSWR.isLoading && !evidenceSWR.data}
-                                canWrite={permissions.canWrite}
+                                // The unlink route takes `controls.edit`.
+                                canWrite={canEditControl}
                                 onUnlink={unlinkEvidence}
                                 tenantHref={tenantHref}
                             />
@@ -1277,7 +1297,9 @@ export default function ControlDetailPage() {
             {tab === 'mappings' && (
                 <ControlMappingsTab
                     controlId={controlId}
-                    canWrite={permissions.canWrite}
+                    // Map, unmap and the per-requirement applicability all
+                    // take `controls.edit`.
+                    canWrite={canEditControl}
                     onMutated={refetch}
                 />
             )}
@@ -1288,7 +1310,11 @@ export default function ControlDetailPage() {
                         apiBase={apiUrl('')}
                         entityType="control"
                         entityId={controlId}
+                        // Linking a risk (`POST /controls/:id/risks`) or an
+                        // asset (`POST /assets/:id/controls`) asks the write
+                        // tier alone; removing either link asks `controls.edit`.
                         canWrite={permissions.canWrite}
+                        canUnlink={canEditControl}
                         tenantHref={tenantHref}
                     />
                     <div className="border-t border-border-subtle pt-default">
@@ -1385,6 +1411,8 @@ export default function ControlDetailPage() {
                         controlId={controlId}
                         compensatingControlChoices={compensatingControlChoices}
                         defaultRiskAcceptedByUserId={control.ownerUserId ?? ''}
+                        // Request and renew ask the write tier, approve and
+                        // reject the admin tier; their usecases name no key.
                         canWrite={permissions.canWrite}
                         canAdmin={permissions.canAdmin}
                     />

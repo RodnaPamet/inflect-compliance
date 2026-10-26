@@ -34,15 +34,18 @@ describe("Control task creation — unified through LinkedTasksPanel", () => {
         const s = src();
         // The panel is the single create+list surface for control
         // tasks now. It must receive entityType CONTROL + the page's
-        // write permission so the "+ Task" affordance shows for
+        // task-create gate so the "+ Task" affordance shows for
         // editors and the created task links back to this control.
+        // The gate is the write tier AND the keys of the two routes the
+        // create calls, `tasks.create` and `tasks.edit` (#4387) — the
+        // rendered suite `control-detail-write-gates` drives it.
         const block = s.slice(
             s.indexOf("entityType=\"CONTROL\""),
             s.indexOf("entityType=\"CONTROL\"") + 400,
         );
         expect(s).toMatch(/<LinkedTasksPanel\b/);
         expect(s).toMatch(/entityType="CONTROL"/);
-        expect(block).toMatch(/canWrite=\{permissions\.canWrite\}/);
+        expect(block).toMatch(/canWrite=\{canCreateControlTask\}/);
     });
 
     it("no longer imports or mounts the bespoke NewControlTaskModal", () => {
