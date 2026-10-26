@@ -202,6 +202,10 @@ interface ControlsClientProps {
         controls: { create: boolean; edit: boolean };
         // The inline task edit panel needs the task write permission.
         tasks: { edit: boolean };
+        // The quick view's drag-and-drop upload box POSTs to
+        // `/evidence/uploads`, whose usecase asserts `evidence.upload` — a
+        // DIFFERENT key from the one that opens the panel.
+        evidence: { upload: boolean };
         // Bulk delete + the Deleted view's Restore / Purge are
         // `requirePermission('admin.manage')` at their routes.
         admin: { manage: boolean };
@@ -332,6 +336,19 @@ function ControlsPageInner({
     // Quick-view edits, bulk status/assign: `controls.edit` at the routes,
     // `assertCanUpdateControl` (canWrite AND controls.edit) in the usecases.
     const canEditControls = permissions.canWrite && appPermissions.controls.edit;
+
+    // Quick-view TASK edits: `tasks.edit` at the route, and `updateTask` asserts
+    // `assertCanWriteTasks` = canWrite AND tasks.edit. Offering the panel on the
+    // granular key alone gave a custom role on a Reader base an editable form
+    // whose every save was refused (#4325).
+    const canEditTasks = permissions.canWrite && appPermissions.tasks.edit;
+
+    // The upload box is the one gate here that is NOT two-layer, and mirroring
+    // the server means saying so: `assertCanUploadEvidence` checks
+    // `evidence.upload` and nothing else — no route `requirePermission`, no
+    // coarse tier. A custom role with `controls.edit` and no `evidence.upload`
+    // was shown the dropzone and refused (#4325).
+    const canUploadEvidence = appPermissions.evidence.upload;
     // Single source for "which bulk verbs may this viewer use" — see
     // _lib/bulk-action-policy.
     const allowedBulkActions = useMemo(
@@ -1800,7 +1817,7 @@ function ControlsPageInner({
     // by default; the same `<AiAssistRail>` content + `/risks/ai`
     // destination as the Risks page so the panel reads as one
     // shared co-pilot across registers, not a stub.
-    const aiAssistAside = appPermissions.controls.edit ? (
+    const aiAssistAside = canEditControls ? (
         <AsidePanel
             title={t('list.aiAssist')}
             surfaceKey="controls-list-ai"
@@ -1842,7 +1859,7 @@ function ControlsPageInner({
             <TaskEditPanel
                 tenantSlug={tenantSlug}
                 task={selectedTask}
-                canWrite={appPermissions.tasks.edit}
+                canWrite={canEditTasks}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
             />
@@ -1859,6 +1876,7 @@ function ControlsPageInner({
             onClose={closeQuickView}
         >
             <ControlEditPanel
+                canUploadEvidence={canUploadEvidence}
                 tenantSlug={tenantSlug}
                 control={selectedControl}
                 canWrite={canEditControls}

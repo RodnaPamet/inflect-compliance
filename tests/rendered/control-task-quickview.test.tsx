@@ -122,13 +122,14 @@ describe("ControlEditPanel (editable control side panel)", () => {
         })) as unknown as typeof fetch;
     });
 
-    const renderPanel = () =>
+    const renderPanel = (canUploadEvidence = true) =>
         render(
             withQuery(
                 <ControlEditPanel
                     tenantSlug="acme"
                     control={CONTROL}
                     canWrite
+                    canUploadEvidence={canUploadEvidence}
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
                 />,
@@ -152,6 +153,25 @@ describe("ControlEditPanel (editable control side panel)", () => {
         expect((screen.getByLabelText(/Name/) as HTMLInputElement).value).toBe(
             "Access control policy",
         );
+    });
+
+    it("withholds the upload box without `evidence.upload`, keeping the form editable (#4325)", () => {
+        // The panel opens on `canWrite && controls.edit`; an upload POSTs to
+        // `/evidence/uploads`, whose usecase asserts `evidence.upload` and
+        // nothing else — no route key, no coarse tier. A custom role with one
+        // and not the other was shown the dropzone and refused.
+        //
+        // The assertion is deliberately BOTH halves: withholding the box must
+        // not withhold the form, or this fix would trade a refused upload for
+        // an uneditable panel. The case above is the positive control, with the
+        // same render and the flag on.
+        renderPanel(false);
+
+        expect(screen.queryByTestId("evidence-upload-section")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
+
+        expect(screen.getByTestId("control-edit-form")).toBeInTheDocument();
+        expect((screen.getByLabelText(/Name/) as HTMLInputElement).disabled).toBe(false);
     });
 
     it("auto-saves the name on blur with a PATCH (no Save click)", async () => {
@@ -198,6 +218,7 @@ describe("ControlEditPanel (editable control side panel)", () => {
                     tenantSlug="acme"
                     control={{ ...CONTROL, status: "NEEDS_REVIEW" }}
                     canWrite
+                canUploadEvidence
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
                 />,
