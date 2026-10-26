@@ -3,7 +3,7 @@ import { RequestContext } from '../../types';
 import { assertCanViewFrameworks, assertCanInstallFrameworkPack } from '../../policies/framework.policies';
 import { logEvent } from '../../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 import { getEffectivePlan } from '@/lib/billing/entitlements';
 import { recordFrameworkInstalled } from '@/lib/observability/business-metrics';
@@ -240,6 +240,70 @@ export async function installPack(ctx: RequestContext, packKey: string) {
     const plan = await getEffectivePlan(ctx);
     recordFrameworkInstalled({ frameworkKey: result.framework, plan });
     return result;
+}
+
+/**
+ * Take a pack out of this workspace's scope for its framework (#4372).
+ *
+ * For a framework with several packs, the packs a workspace installed are what
+ * its coverage counts (`pack-scope.ts`). Removing one deletes only that record,
+ * so its requirements stop counting. No control, task or mapping is touched:
+ * they may serve another pack or framework, and a control is archived on its
+ * own if it is no longer wanted.
+ *
+ * The last chosen pack is refused. With no record the framework falls back to
+ * counting every requirement, so removing it would WIDEN the scope, the
+ * opposite of what removal means; install asks for at least one pack for the
+ * same reason. The count and the delete run under one advisory lock per
+ * (workspace, framework), so two removals racing cannot both see two packs and
+ * leave none.
+ *
+ * Same gate as install: choosing what the workspace has taken on is one act.
+ */
+export async function removeChosenPack(ctx: RequestContext, frameworkKey: string, packKey: string) {
+    assertCanInstallFrameworkPack(ctx);
+    const pack = await prisma.frameworkPack.findUnique({
+        where: { key: packKey },
+        select: { id: true, key: true, name: true, frameworkId: true, framework: { select: { key: true } } },
+    });
+    if (!pack || pack.framework.key !== frameworkKey) throw notFound('Pack not found');
+
+    return runInTenantContext(ctx, async (tdb) => {
+        await tdb.$executeRawUnsafe(
+            `SELECT pg_advisory_xact_lock(hashtext($1))`,
+            `framework-pack-scope:${ctx.tenantId}:${pack.frameworkId}`,
+        );
+        const where = { tenantId_packId: { tenantId: ctx.tenantId, packId: pack.id } };
+        const row = await tdb.tenantFrameworkPack.findUnique({ where, select: { id: true } });
+        if (!row) {
+            throw new ConflictError('This pack is not one of your chosen packs.', { reason: 'PACK_NOT_CHOSEN' });
+        }
+        const chosen = await tdb.tenantFrameworkPack.count({
+            where: { tenantId: ctx.tenantId, frameworkId: pack.frameworkId },
+        });
+        if (chosen <= 1) {
+            throw new ConflictError(
+                'Keep at least one pack. With none chosen, coverage would count every requirement of the framework.',
+                { reason: 'LAST_CHOSEN_PACK' },
+            );
+        }
+        await tdb.tenantFrameworkPack.delete({ where });
+        await logEvent(tdb, ctx, {
+            action: 'FRAMEWORK_PACK_REMOVED',
+            entityType: 'Framework',
+            entityId: pack.frameworkId,
+            details: `Pack "${pack.name}" removed from the workspace's chosen packs`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'FrameworkPack',
+                operation: 'deleted',
+                before: { packKey: pack.key },
+                summary: `Pack "${pack.name}" removed from scope`,
+            },
+            metadata: { packKey: pack.key, remainingChosenPacks: chosen - 1 },
+        });
+        return { packKey: pack.key, framework: frameworkKey, remainingChosenPacks: chosen - 1 };
+    });
 }
 
 /**

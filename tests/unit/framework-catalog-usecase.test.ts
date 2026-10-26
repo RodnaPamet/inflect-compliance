@@ -16,6 +16,12 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
+// listFrameworkPacks reads which packs this workspace chose in its tenant context.
+const tenantDb = { tenantFrameworkPack: { findMany: jest.fn() } };
+jest.mock('@/lib/db-context', () => ({
+    runInTenantContext: jest.fn(async (_ctx: unknown, cb: (db: unknown) => unknown) => cb(tenantDb)),
+}));
+
 import { prisma } from '@/lib/prisma';
 import { notFound } from '@/lib/errors/types';
 import {
@@ -91,10 +97,22 @@ describe('listFrameworkPacks', () => {
     it('resolves the framework (unversioned) then lists its packs', async () => {
         p.framework.findFirst.mockResolvedValue({ id: 'fw1' });
         p.frameworkPack.findMany.mockResolvedValue([{ id: 'pack1' }]);
+        tenantDb.tenantFrameworkPack.findMany.mockResolvedValue([]);
         const r = await listFrameworkPacks(ctx, 'ISO27001');
-        expect(r).toEqual([{ id: 'pack1' }]);
+        expect(r).toEqual([{ id: 'pack1', chosen: false }]);
         expect(p.frameworkPack.findMany).toHaveBeenCalledWith(
             expect.objectContaining({ where: { frameworkId: 'fw1' } }),
+        );
+    });
+
+    it('marks the packs this workspace chose, reading only its own records (#4372)', async () => {
+        p.framework.findFirst.mockResolvedValue({ id: 'fw-uas' });
+        p.frameworkPack.findMany.mockResolvedValue([{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }]);
+        tenantDb.tenantFrameworkPack.findMany.mockResolvedValue([{ packId: 'a2' }, { packId: 'a3' }]);
+        const r = await listFrameworkPacks(ctx, 'EU-UAS-OPS');
+        expect(r.map((x: any) => [x.id, x.chosen])).toEqual([['a1', false], ['a2', true], ['a3', true]]);
+        expect(tenantDb.tenantFrameworkPack.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { tenantId: ctx.tenantId, frameworkId: 'fw-uas' }, take: 3 }),
         );
     });
 

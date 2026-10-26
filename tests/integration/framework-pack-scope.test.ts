@@ -28,6 +28,8 @@ import {
     generateReadinessReport,
     getFrameworkTree,
     installPacks,
+    listFrameworkPacks,
+    removeChosenPack,
 } from '@/app-layer/usecases/framework';
 import { withTenantDb } from '@/lib/db-context';
 import { hashForLookup } from '@/lib/security/encryption';
@@ -214,5 +216,85 @@ describeFn('a multi-pack framework is counted over the packs a workspace chose',
         expect(await prisma.tenantFrameworkPack.count({ where: { tenantId: TENANT_A } })).toBe(1);
         // Tenant B installed nothing, so its audit trail gives it no row.
         expect(await prisma.tenantFrameworkPack.count({ where: { tenantId: TENANT_B } })).toBe(0);
+    });
+});
+
+describeFn('a workspace removes a pack it chose (#4372)', () => {
+    const A3 = 'EU_UAS_OPEN_A3';
+    const TENANT_C = 't-pack-scope-c';
+    const TENANT_D = 't-pack-scope-d';
+    const ctxC = makeRequestContext('ADMIN', { tenantId: TENANT_C, tenantSlug: 'pack-scope-c', userId: 'u-pack-scope-c' });
+    const ctxD = makeRequestContext('ADMIN', { tenantId: TENANT_D, tenantSlug: 'pack-scope-d', userId: 'u-pack-scope-d' });
+    const chosenKeys = async (ctx: typeof ctxC) =>
+        (await listFrameworkPacks(ctx, KEY)).filter((p) => p.chosen).map((p) => p.key).sort();
+
+    beforeAll(async () => {
+        await applyCatalogFile(prisma, file, FIXTURE);
+        for (const ctx of [ctxC, ctxD]) {
+            await prisma.tenant.upsert({
+                where: { id: ctx.tenantId }, update: {},
+                create: { id: ctx.tenantId, name: ctx.tenantId, slug: ctx.tenantSlug! },
+            });
+            const email = `${ctx.userId}@example.test`;
+            await prisma.user.upsert({
+                where: { id: ctx.userId }, update: {},
+                create: { id: ctx.userId, email, emailHash: hashForLookup(email) },
+            });
+            await clearTenant(ctx.tenantId);
+        }
+        await installPacks(ctxC, KEY, [A2, A3]);
+        await installPacks(ctxD, KEY, [A3]);
+    });
+
+    afterAll(async () => {
+        await clearTenant(TENANT_C);
+        await clearTenant(TENANT_D);
+        await prisma.$disconnect();
+    });
+
+    it('narrows the scope to the packs left, and leaves every control in place', async () => {
+        const controlsBefore = await prisma.control.count({ where: { tenantId: TENANT_C } });
+        expect((await computeCoverage(ctxC, KEY)).scope).toEqual({ kind: 'CHOSEN_PACKS', packKeys: [A2, A3] });
+
+        const result = await removeChosenPack(ctxC, KEY, A3);
+
+        expect(result).toEqual({ packKey: A3, framework: KEY, remainingChosenPacks: 1 });
+        const after = await computeCoverage(ctxC, KEY);
+        expect(after.scope).toEqual({ kind: 'CHOSEN_PACKS', packKeys: [A2] });
+        expect(after.total).toBe(A2_CODES.length);
+        expect(await chosenKeys(ctxC)).toEqual([A2]);
+        expect(await prisma.control.count({ where: { tenantId: TENANT_C } })).toBe(controlsBefore);
+    });
+
+    it('records the removal in the audit trail', async () => {
+        const row = await prisma.auditLog.findFirst({
+            where: { tenantId: TENANT_C, action: 'FRAMEWORK_PACK_REMOVED' },
+            orderBy: { createdAt: 'desc' },
+            select: { entity: true, metadataJson: true },
+        });
+        expect(row?.entity).toBe('Framework');
+        expect(row?.metadataJson).toMatchObject({ packKey: A3, remainingChosenPacks: 1 });
+    });
+
+    it('refuses to remove the last chosen pack, and changes nothing', async () => {
+        await expect(removeChosenPack(ctxC, KEY, A2)).rejects.toMatchObject({
+            status: 409, details: { reason: 'LAST_CHOSEN_PACK' },
+        });
+        expect(await chosenKeys(ctxC)).toEqual([A2]);
+        expect((await computeCoverage(ctxC, KEY)).scope).toEqual({ kind: 'CHOSEN_PACKS', packKeys: [A2] });
+    });
+
+    it("cannot remove another workspace's choice", async () => {
+        // D never chose A2; C did. D asking to remove it reaches only D's records.
+        await expect(removeChosenPack(ctxD, KEY, A2)).rejects.toMatchObject({
+            status: 409, details: { reason: 'PACK_NOT_CHOSEN' },
+        });
+        expect(await chosenKeys(ctxC)).toEqual([A2]);
+        // And C's removal of A3 left D's own A3 choice alone.
+        expect(await chosenKeys(ctxD)).toEqual([A3]);
+    });
+
+    it('a pack of another framework is not found', async () => {
+        await expect(removeChosenPack(ctxC, 'ISO27001', A2)).rejects.toThrow(/Pack not found/);
     });
 });

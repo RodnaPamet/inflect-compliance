@@ -24,6 +24,7 @@ export {
     previewPacksInstall,
     installPack,
     installPacks,
+    removeChosenPack,
     installSingleTemplate,
     bulkInstallTemplates,
     bulkMapControls,

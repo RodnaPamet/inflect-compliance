@@ -51,6 +51,16 @@ The wizard shows no preview and no count of what it created. If a framework coul
 - You can run the install again later. It creates only the controls that are missing, and the controls you already have keep their details.
 - The installation is recorded in the workspace's audit log, with the number of controls, tasks and mappings it created.
 
+## Remove a pack you no longer need
+
+When a framework has more than one pack, you can take one you installed back out of its coverage, for example when you stop flying in a subcategory.
+
+1. Open the framework and click the **{{ui:frameworks.detail.packsTab}}** tab. Each pack you installed is marked {{ui:frameworks.detail.packChosen}}.
+2. Click **{{ui:frameworks.detail.removePack}}** beside the pack. A message confirms the removal and offers **{{ui:frameworks.detail.undo}}** for a few seconds. Click it to keep the pack.
+3. Once the message closes, the pack's requirements no longer count towards coverage. They move to {{ui:frameworks.detail.outOfScope}} on the **{{ui:frameworks.detail.coverageTab}}** tab.
+
+Removing a pack does not delete or change any control, task or mapping it installed, because they may also serve another pack or framework. Archive a control yourself if you no longer want it. You must keep at least one pack: with none chosen, coverage would count every requirement of the framework. To bring a pack back, install it again.
+
 ## If something goes wrong
 
 | What you see | What it means | What to do |
@@ -62,6 +72,8 @@ The wizard shows no preview and no count of what it created. If a framework coul
 | {{ui:frameworks.templates.installFailed}} in the template library | The install did not finish | Reload the page. Controls that now exist read {{ui:frameworks.templates.installed}}. Install the rest again |
 | The install button reads {{ui:frameworks.install.allInstalled}} and is greyed out | Every control in the pack is already in your workspace | Nothing to do. The framework is already in place |
 | {{ui:frameworks.install.choosePacksRequired}} | The framework has more than one pack and you have not ticked any | Tick at least one pack, then click the preview button |
+| **{{ui:frameworks.detail.removePack}}** is greyed out | It is the only pack you have chosen for this framework | Install the pack you want first, then remove this one |
+| No **{{ui:frameworks.detail.removePack}}** button on the {{ui:frameworks.detail.packsTab}} tab | Your role cannot add frameworks, or the framework has only one pack | Ask an Owner or Admin. A single-pack framework always counts all of its requirements |
 | {{ui:frameworks.install.packsEmpty}} | This framework has no pack to install | Its requirements can still be read. Map your own controls to them on each control's **{{ui:controls.detailPage.tabRequirements}}** tab |
 | {{ui:frameworks.install.installFailed}} or {{ui:frameworks.install.networkError}} | The install did not finish | Reload the page. The preview shows which controls now exist. Install again to add any that are missing |
 | {{ui:frameworks.install.notFound}} | The page could not find the framework | Go back to the {{ui:frameworks.list.heading}} page and open the framework from there |

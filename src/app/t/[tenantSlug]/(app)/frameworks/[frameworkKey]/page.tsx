@@ -9,7 +9,9 @@ import { FrameworkExplorer } from '@/components/frameworks/FrameworkExplorer';
 import { FrameworkBuilder } from '@/components/ui/FrameworkBuilder';
 import { InheritedCoveragePanel } from '@/components/frameworks/InheritedCoveragePanel';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { useCelebration } from '@/components/ui/hooks';
+import { useCelebration, useToast, useToastWithUndo } from '@/components/ui/hooks';
+import { Button } from '@/components/ui/button';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { celebrationDedupe, MILESTONES, scopedMilestone } from '@/lib/celebrations';
 import type { FrameworkTreePayload } from '@/lib/framework-tree/types';
 import { Heading, Caption } from '@/components/ui/typography';
@@ -76,6 +78,8 @@ interface FrameworkPackSummary {
     description: string | null;
     version: string | null;
     _count: { templateLinks: number };
+    /** This workspace installed it: in scope for a multi-pack framework (#4372). */
+    chosen?: boolean;
 }
 
 export default function FrameworkDetailPage() {
@@ -93,6 +97,8 @@ export default function FrameworkDetailPage() {
     const [coverage, setCoverage] = useState<FrameworkCoverage | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
 
     // #98 — ordered framework SLUGS for the prev/next stepper beside the name.
     // The list page publishes the order it rendered; `frameworkOrderKey` is the
@@ -152,6 +158,48 @@ export default function FrameworkDetailPage() {
         })();
     }, [apiUrl, frameworkKey, t]);
 
+    // After the chosen packs change, the scope does too: the packs, the
+    // requirements tree and the coverage all reread it.
+    const refreshScope = useCallback(async () => {
+        const [treeRes, packRes, covRes] = await Promise.all([
+            fetch(apiUrl(`/frameworks/${frameworkKey}/tree`)),
+            fetch(apiUrl(`/frameworks/${frameworkKey}?action=packs`)),
+            fetch(apiUrl(`/frameworks/${frameworkKey}?action=coverage`)),
+        ]);
+        if (treeRes.ok) setTree((await treeRes.json()) as FrameworkTreePayload);
+        if (packRes.ok) setPacks(await packRes.json());
+        if (covRes.ok) setCoverage(await covRes.json());
+    }, [apiUrl, frameworkKey]);
+
+    // #4372 — take a chosen pack out of scope. Its controls stay; only its
+    // requirements stop counting. The POST goes out when the undo window
+    // closes, so Undo sends nothing.
+    function removePack(pack: FrameworkPackSummary) {
+        const snapshot = packs;
+        setPacks((current) => current.map((p) => (p.key === pack.key ? { ...p, chosen: false } : p)));
+        triggerUndoToast({
+            message: t('detail.packRemoved', { name: pack.name }),
+            undoMessage: t('detail.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/frameworks/${frameworkKey}?action=remove-pack`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ packKey: pack.key }),
+                });
+                if (!res.ok) {
+                    const j: unknown = await res.json().catch(() => ({}));
+                    throw new Error(apiErrorMessage(j, t('detail.packRemoveFailed')));
+                }
+                await refreshScope();
+            },
+            undoAction: () => setPacks(snapshot),
+            onError: (e) => {
+                setPacks(snapshot);
+                toast.error(e instanceof Error && e.message ? e.message : t('detail.packRemoveFailed'));
+            },
+        });
+    }
+
     const breadcrumbs = [
         { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
         { label: t('crumb.frameworks'), href: tenantHref('/frameworks') },
@@ -171,6 +219,8 @@ export default function FrameworkDetailPage() {
             </EntityDetailLayout>
         );
     }
+
+    const chosenPackCount = packs.filter((p) => p.chosen).length;
 
     const tabs: { key: Tab; label: string; count?: number }[] = [
         { key: 'requirements', label: t('detail.reqTab'), count: tree?.totals.requirements },
@@ -277,16 +327,35 @@ export default function FrameworkDetailPage() {
                                     <div className="flex items-center gap-compact mt-2 text-xs text-content-subtle">
                                         <span>{t('detail.templatesCount', { count: p._count?.templateLinks || 0 })}</span>
                                         {p.version && <span>v{p.version}</span>}
+                                        {/* Scope is per pack only when there are several. */}
+                                        {packs.length > 1 && p.chosen && (
+                                            <StatusBadge variant="success" size="sm">{t('detail.packChosen')}</StatusBadge>
+                                        )}
                                     </div>
                                 </div>
                                 <RequirePermission resource="frameworks" action="install">
-                                    <Link
-                                        href={tenantHref(`/frameworks/${frameworkKey}/install?pack=${p.key}`)}
-                                        className={buttonVariants({ variant: 'primary' })}
-                                        id={`install-pack-${p.key}`}
-                                    >
-                                        {t('detail.installPack')}
-                                    </Link>
+                                    <div className="flex items-center gap-compact">
+                                        {packs.length > 1 && p.chosen && (
+                                            <Button
+                                                variant="secondary"
+                                                id={`remove-pack-${p.key}`}
+                                                onClick={() => removePack(p)}
+                                                // The Button renders its disabled shell whenever it
+                                                // is given a disabledTooltip, so it gets one only
+                                                // for the last chosen pack.
+                                                disabledTooltip={chosenPackCount <= 1 ? t('detail.packRemoveLast') : undefined}
+                                            >
+                                                {t('detail.removePack')}
+                                            </Button>
+                                        )}
+                                        <Link
+                                            href={tenantHref(`/frameworks/${frameworkKey}/install?pack=${p.key}`)}
+                                            className={buttonVariants({ variant: 'primary' })}
+                                            id={`install-pack-${p.key}`}
+                                        >
+                                            {t('detail.installPack')}
+                                        </Link>
+                                    </div>
                                 </RequirePermission>
                             </div>
                         </div>

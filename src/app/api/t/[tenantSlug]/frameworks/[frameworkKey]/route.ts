@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     getFramework, getFrameworkRequirements, listFrameworkPacks,
-    installPack, installPacks, computeCoverage, computeInheritedCoverage,
+    installPack, installPacks, removeChosenPack, computeCoverage, computeInheritedCoverage,
     previewPackInstall, previewPacksInstall,
     listTemplates, installSingleTemplate, bulkMapControls,
     bulkInstallTemplates, exportCoverageData,
@@ -19,6 +19,11 @@ const InstallSchema = z.union([
     z.object({ packKeys: z.array(z.string().min(1)).min(1).max(20) }).strip(),
     z.object({ packKey: z.string().min(1) }).strip(),
 ]);
+
+// Take one chosen pack out of this workspace's scope (#4372).
+const RemovePackSchema = z.object({
+    packKey: z.string().min(1),
+}).strip();
 
 const InstallTemplateSchema = z.object({
     templateCode: z.string().min(1),
@@ -123,6 +128,10 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     if (action === 'bulk-map') {
         const body = BulkMapSchema.parse(raw);
         return jsonResponse(await bulkMapControls(ctx, params.frameworkKey, body.mappings), { status: 200 });
+    }
+    if (action === 'remove-pack') {
+        const body = RemovePackSchema.parse(raw);
+        return jsonResponse(await removeChosenPack(ctx, params.frameworkKey, body.packKey));
     }
     if (action === 'bulk-install') {
         const body = BulkInstallSchema.parse(raw);
