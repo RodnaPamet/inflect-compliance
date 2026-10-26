@@ -9,13 +9,17 @@
  *   - so is a READER-based role that grants it: a granted key does not lift the
  *     base role's coarse write flag, which `assertCanWritePolicies` asks too;
  *   - nobody qualifying is a named reason in the job's result and a warn log;
- *   - a built-in role's context is exactly the one these jobs built before.
+ *   - every member's context, built-in roles included, is what a request from
+ *     them resolves to (owner decision 2026-10-26, as #4375 did for initiator
+ *     jobs). Against the old builder nothing moved for OWNER or ADMIN, the
+ *     only roles the query reads.
  *
  * `findFirst` answers as the old query did (the oldest of the same rows), so
  * every test here also runs meaningfully against the code before the fix.
  */
 const prismaMock = {
-    tenantMembership: { findMany: jest.fn(), findFirst: jest.fn() },
+    tenant: { findUnique: jest.fn() },
+    tenantMembership: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn() },
     policy: { findFirst: jest.fn(), findMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock, prisma: prismaMock }));
@@ -33,7 +37,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import type { Role } from '@prisma/client';
 import { runSharePointPolicyPull, runSharePointSubscriptionRenew } from '@/app-layer/jobs/sharepoint-policy-jobs';
-import { initiatorAuthority } from '@/app-layer/context-system';
+import { resolveTenantContext } from '@/lib/tenant-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 
 const BUILT_IN: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'AI_ADMIN'];
@@ -79,6 +83,39 @@ function contextBefore4388(tenantId: string, m: { userId: string; role: Role }) 
     };
 }
 
+const REQUEST_ID = 'sharepoint-policy-tenant-A';
+
+/** What a request from this member resolves to (`resolveTenantContext`). */
+async function requestAuthority(m: ReturnType<typeof member>) {
+    prismaMock.tenant.findUnique.mockResolvedValue({ id: 'tenant-A', slug: 'acme', deletedAt: null });
+    prismaMock.tenantMembership.findUnique.mockResolvedValue({
+        id: 'm-1',
+        tenantId: 'tenant-A',
+        userId: m.userId,
+        role: m.role,
+        status: 'ACTIVE',
+        customRoleId: m.customRole ? 'cr-1' : null,
+        customRole: m.customRole
+            ? { id: 'cr-1', tenantId: 'tenant-A', name: 'Custom', isActive: true, ...m.customRole }
+            : null,
+    });
+    const t = await resolveTenantContext({ tenantId: 'tenant-A' }, m.userId);
+    return { role: t.role, permissions: t.permissions, appPermissions: t.appPermissions };
+}
+
+/** The context the job should act as: what a request from this member gets. */
+async function requestContext(m: ReturnType<typeof member>) {
+    return { requestId: REQUEST_ID, userId: m.userId, tenantId: 'tenant-A', ...(await requestAuthority(m)) };
+}
+
+/** Each coarse flag that differs from the old builder, as `ROLE.flag:before->now`. */
+function movedFrom4388(role: Role, ctx: { permissions: Record<string, boolean> }) {
+    const before = contextBefore4388('tenant-A', { userId: 'member-1', role }).permissions as Record<string, boolean>;
+    return Object.keys(before)
+        .filter((flag) => ctx.permissions[flag] !== before[flag])
+        .map((flag) => `${role}.${flag}:${before[flag]}->${ctx.permissions[flag]}`);
+}
+
 const pull = () => runSharePointPolicyPull({ tenantId: 'tenant-A', policyId: 'p1' } as never);
 
 beforeEach(() => {
@@ -95,7 +132,7 @@ describe('the jobs act as the oldest OWNER/ADMIN who may write a policy version'
 
         await expect(pull()).resolves.toEqual({ pulled: true });
 
-        expect(pulledAs()).toEqual(contextBefore4388('tenant-A', member('next-admin', 'ADMIN')));
+        expect(pulledAs()).toEqual(await requestContext(member('next-admin', 'ADMIN')));
         expect(prismaMock.tenantMembership.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: { tenantId: 'tenant-A', status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
@@ -120,12 +157,7 @@ describe('the jobs act as the oldest OWNER/ADMIN who may write a policy version'
 
         await pull();
 
-        expect(pulledAs()).toEqual({
-            requestId: 'sharepoint-policy-tenant-A',
-            userId: 'custom-admin',
-            tenantId: 'tenant-A',
-            ...initiatorAuthority(editorBased),
-        });
+        expect(pulledAs()).toEqual(await requestContext(editorBased));
         expect(pulledAs().role).toBe('EDITOR');
     });
 
@@ -180,7 +212,7 @@ describe('nobody to act as is a named reason, never a silent skip', () => {
     });
 });
 
-describe('a built-in role’s context is the one these jobs built before #4388', () => {
+describe('a built-in role’s context is what a request from that member gets', () => {
     // The query reads OWNER and ADMIN only. EDITOR is pinned too, so a change
     // to the rule cannot hide behind the query. READER, AUDITOR and AI_ADMIN
     // hold no policies.edit, so the pull's write gate refused them before and
@@ -196,6 +228,23 @@ describe('a built-in role’s context is the one these jobs built before #4388',
 
         await pull();
 
-        expect(pulledAs()).toEqual(contextBefore4388('tenant-A', member('member-1', role)));
+        expect(pulledAs()).toEqual(await requestContext(member('member-1', role)));
+    });
+
+    it('against the context these jobs built before #4388: only EDITOR’s canAudit moved, to a request’s false', async () => {
+        const moved: string[] = [];
+        for (const role of writers) {
+            jest.clearAllMocks();
+            sync.pullPolicyFromSharePoint.mockResolvedValue({ pulled: true });
+            admins([member('member-1', role)]);
+            await pull();
+            const ctx = pulledAs();
+            const before = contextBefore4388('tenant-A', member('member-1', role));
+            // The role and the granular set did not move; only coarse flags can.
+            expect({ ...ctx, permissions: null }).toEqual({ ...before, permissions: null });
+            moved.push(...movedFrom4388(role, ctx));
+        }
+        // Nothing for OWNER or ADMIN, the only roles the query reads.
+        expect(moved).toEqual(['EDITOR.canAudit:true->false']);
     });
 });

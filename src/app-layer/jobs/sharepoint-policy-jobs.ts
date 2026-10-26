@@ -12,7 +12,7 @@ import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
 import type { PermissionSet } from '@/lib/permissions';
 import type { Permissions } from '@/lib/tenant-context';
-import { borrowedMemberAuthority } from '@/app-layer/context-system';
+import { initiatorAuthority } from '@/app-layer/context-system';
 import {
     pullPolicyFromSharePoint,
     getSharePointClientForTenant,
@@ -44,20 +44,10 @@ export const POLICY_SYNC_UNROUTABLE = {
 } as const;
 export type PolicySyncUnroutableReason = (typeof POLICY_SYNC_UNROUTABLE)[keyof typeof POLICY_SYNC_UNROUTABLE];
 
-/** The coarse flags these jobs have always projected for a built-in role. */
-function builtInCoarseFlags(appPermissions: PermissionSet): Permissions {
-    return {
-        canRead: appPermissions.policies.view,
-        canWrite: appPermissions.policies.edit,
-        canAdmin: appPermissions.admin.manage,
-        canAudit: appPermissions.audits.view,
-        canExport: appPermissions.reports.export,
-    };
-}
-
 /**
  * Build a write-capable tenant context for a job actor: the oldest active
- * OWNER/ADMIN whose resolved authority, custom role included (#4388), passes
+ * OWNER/ADMIN whose authority, resolved as a request from them resolves it
+ * (`initiatorAuthority`, custom role and coarse flags included, #4388), passes
  * `mayRunPolicySync`. An admin whose custom role withholds `policies.edit` is
  * passed over for the next one. Exported for its test.
  */
@@ -77,7 +67,7 @@ export async function buildPolicyJobContext(
     });
     if (admins.length === 0) return { ok: false, reason: POLICY_SYNC_UNROUTABLE.NO_ACTIVE_ADMIN };
     for (const admin of admins) {
-        const authority = borrowedMemberAuthority(admin, builtInCoarseFlags);
+        const authority = initiatorAuthority(admin);
         if (!mayRunPolicySync(authority)) continue;
         return {
             ok: true,

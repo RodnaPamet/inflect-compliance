@@ -11,7 +11,7 @@ import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
 import type { PermissionSet } from '@/lib/permissions';
 import type { Permissions } from '@/lib/tenant-context';
-import { borrowedMemberAuthority } from '@/app-layer/context-system';
+import { initiatorAuthority } from '@/app-layer/context-system';
 import {
     checkPortfolioAppetite,
     recordBreaches,
@@ -42,20 +42,10 @@ export const RISK_APPETITE_UNROUTABLE = {
 } as const;
 export type RiskAppetiteUnroutableReason = keyof typeof RISK_APPETITE_UNROUTABLE;
 
-/** The coarse flags this monitor has always projected for a built-in role. */
-function builtInCoarseFlags(appPermissions: PermissionSet): Permissions {
-    return {
-        canRead: appPermissions.risks.view,
-        canWrite: appPermissions.risks.edit,
-        canAdmin: appPermissions.admin.manage,
-        canAudit: appPermissions.audits.view,
-        canExport: appPermissions.reports.export,
-    };
-}
-
 /**
  * The context the monitor scans a tenant as: its oldest active OWNER/ADMIN whose
- * resolved authority, custom role included (#4388), passes
+ * authority, resolved as a request from them resolves it (`initiatorAuthority`,
+ * custom role and coarse flags included, #4388), passes
  * `mayMonitorRiskAppetite`. An admin whose custom role withholds the read is
  * passed over for the next one. Exported for its test.
  */
@@ -75,7 +65,7 @@ export async function buildRiskAppetiteContext(
     });
     if (admins.length === 0) return { ok: false, reason: RISK_APPETITE_UNROUTABLE.NO_ACTIVE_ADMIN };
     for (const admin of admins) {
-        const authority = borrowedMemberAuthority(admin, builtInCoarseFlags);
+        const authority = initiatorAuthority(admin);
         if (!mayMonitorRiskAppetite(authority)) continue;
         return {
             ok: true,

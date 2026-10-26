@@ -8,17 +8,18 @@
  * `frameworks.view` made the job throw at its framework read. Now:
  *   - such a member is passed over for the next one;
  *   - nobody qualifying is a named reason in the job's result and a warn log;
- *   - a built-in role's context is exactly the one the job built before, for
- *     all six roles. This job can pick any of them, and its projection gives
- *     EDITOR, READER and AI_ADMIN a `canAudit` a request does not, so a
- *     request's coarse flags would have changed theirs.
+ *   - every member's context, built-in roles included, is what a request from
+ *     them resolves to (owner decision 2026-10-26, as #4375 did for initiator
+ *     jobs). This job can pick any role, and its old projection gave EDITOR,
+ *     READER and AI_ADMIN a `canAudit` a request does not; that is the one
+ *     thing that moved, and nothing on this job's path reads it.
  *
  * `findFirst` answers as the old query did (the first of the same rows), so
  * every test here also runs meaningfully against the code before the fix.
  */
 const prismaMock = {
-    tenant: { findMany: jest.fn() },
-    tenantMembership: { findMany: jest.fn(), findFirst: jest.fn() },
+    tenant: { findMany: jest.fn(), findUnique: jest.fn() },
+    tenantMembership: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock, prisma: prismaMock }));
 
@@ -34,7 +35,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import type { Role } from '@prisma/client';
 import { runCompliancePostureSummary } from '@/app-layer/jobs/compliance-posture-summary';
-import { initiatorAuthority } from '@/app-layer/context-system';
+import { resolveTenantContext } from '@/lib/tenant-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 
 const BUILT_IN: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'AI_ADMIN'];
@@ -81,6 +82,39 @@ function contextBefore4388(tenantId: string, m: { userId: string; role: Role }) 
     };
 }
 
+const REQUEST_ID = 'compliance-posture-tenant-A';
+
+/** What a request from this member resolves to (`resolveTenantContext`). */
+async function requestAuthority(m: ReturnType<typeof member>) {
+    prismaMock.tenant.findUnique.mockResolvedValue({ id: 'tenant-A', slug: 'acme', deletedAt: null });
+    prismaMock.tenantMembership.findUnique.mockResolvedValue({
+        id: 'm-1',
+        tenantId: 'tenant-A',
+        userId: m.userId,
+        role: m.role,
+        status: 'ACTIVE',
+        customRoleId: m.customRole ? 'cr-1' : null,
+        customRole: m.customRole
+            ? { id: 'cr-1', tenantId: 'tenant-A', name: 'Custom', isActive: true, ...m.customRole }
+            : null,
+    });
+    const t = await resolveTenantContext({ tenantId: 'tenant-A' }, m.userId);
+    return { role: t.role, permissions: t.permissions, appPermissions: t.appPermissions };
+}
+
+/** The context the job should act as: what a request from this member gets. */
+async function requestContext(m: ReturnType<typeof member>) {
+    return { requestId: REQUEST_ID, userId: m.userId, tenantId: 'tenant-A', ...(await requestAuthority(m)) };
+}
+
+/** Each coarse flag that differs from the old builder, as `ROLE.flag:before->now`. */
+function movedFrom4388(role: Role, ctx: { permissions: Record<string, boolean> }) {
+    const before = contextBefore4388('tenant-A', { userId: 'member-1', role }).permissions as Record<string, boolean>;
+    return Object.keys(before)
+        .filter((flag) => ctx.permissions[flag] !== before[flag])
+        .map((flag) => `${role}.${flag}:${before[flag]}->${ctx.permissions[flag]}`);
+}
+
 const run = () => runCompliancePostureSummary({ tenantId: 'tenant-A' } as never);
 
 beforeEach(() => {
@@ -98,7 +132,7 @@ describe('the summary is generated as the most senior member whose resolved perm
 
         await expect(run()).resolves.toMatchObject({ generated: true });
 
-        expect(generatedAs()).toEqual(contextBefore4388('tenant-A', member('next-editor', 'EDITOR')));
+        expect(generatedAs()).toEqual(await requestContext(member('next-editor', 'EDITOR')));
         expect(prismaMock.tenantMembership.findMany).toHaveBeenCalledWith(
             expect.objectContaining({ where: { tenantId: 'tenant-A', status: 'ACTIVE' }, orderBy: { role: 'asc' } }),
         );
@@ -113,12 +147,7 @@ describe('the summary is generated as the most senior member whose resolved perm
 
         await run();
 
-        expect(generatedAs()).toEqual({
-            requestId: 'compliance-posture-tenant-A',
-            userId: 'custom-editor',
-            tenantId: 'tenant-A',
-            ...initiatorAuthority(narrowed),
-        });
+        expect(generatedAs()).toEqual(await requestContext(narrowed));
         expect(generatedAs().appPermissions.controls.create).toBe(false);
     });
 });
@@ -151,12 +180,34 @@ describe('nobody to generate the summary as is a named reason, never a silent sk
     });
 });
 
-describe('a built-in role’s context is the one the job built before #4388', () => {
+describe('a built-in role’s context is what a request from that member gets', () => {
     it.each(BUILT_IN)('%s', async (role) => {
         members([member('member-1', role)]);
 
         await run();
 
-        expect(generatedAs()).toEqual(contextBefore4388('tenant-A', member('member-1', role)));
+        expect(generatedAs()).toEqual(await requestContext(member('member-1', role)));
+    });
+});
+
+describe('what moved for a built-in role, against the context the job built before #4388', () => {
+    it('only canAudit, for EDITOR, READER and AI_ADMIN, from true to a request’s false (owner decision 2026-10-26)', async () => {
+        const moved: string[] = [];
+        for (const role of BUILT_IN) {
+            jest.clearAllMocks();
+            posture.generateCompliancePostureSummary.mockResolvedValue({ provider: 'stub', postureLabel: 'DEVELOPING' });
+            members([member('member-1', role)]);
+            await run();
+            const ctx = generatedAs();
+            const before = contextBefore4388('tenant-A', member('member-1', role));
+            // The role and the granular set did not move; only coarse flags can.
+            expect({ ...ctx, permissions: null }).toEqual({ ...before, permissions: null });
+            moved.push(...movedFrom4388(role, ctx));
+        }
+        expect(moved).toEqual([
+            'EDITOR.canAudit:true->false',
+            'READER.canAudit:true->false',
+            'AI_ADMIN.canAudit:true->false',
+        ]);
     });
 });

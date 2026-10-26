@@ -41,8 +41,7 @@
  *                             request id and sets no `tenantSlug`.
  *
  * A sweep that BORROWS a member (the oldest admin, the most senior member)
- * builds its context from `borrowedMemberAuthority`, which reads that member's
- * custom role.
+ * resolves that member through `initiatorAuthority` too, custom role included.
  *
  * And one that is the initiator's context narrowed by a credential:
  *
@@ -195,8 +194,8 @@ export function buildSystemContext(input: {
  * workspace relies on, and for a built-in role it would change the authority
  * the job has today. When the named user is the accountable actor, use one of
  * the builders that read their real role instead: `resolveInitiatorContext`
- * for work they asked for, `borrowedMemberAuthority` for a sweep that acts as
- * a member it picks.
+ * for work they asked for, `initiatorAuthority` for a sweep that acts as a
+ * member it picks.
  */
 export function buildDelegatedJobContext(input: {
     tenantId: string;
@@ -303,6 +302,10 @@ export async function resolveMemberContext(input: {
  * that granular set, which gave a built-in EDITOR, READER or AI_ADMIN a
  * `canAudit` its own request does not hold; they are a request's now (owner
  * decision, 2026-10-26).
+ *
+ * A sweep that BORROWS a member to act as (the risk-appetite monitor, the
+ * SharePoint policy jobs, the posture summary) resolves that member here too,
+ * built-in roles included (#4388, owner decision 2026-10-26).
  */
 export function initiatorAuthority(membership: {
     role: Role;
@@ -314,35 +317,6 @@ export function initiatorAuthority(membership: {
         permissions: computePermissions(role),
         appPermissions: permissionsForMembership(membership),
     };
-}
-
-/**
- * The authority a sweep carries for a member it BORROWS: the oldest OWNER or
- * ADMIN, or the most senior member, picked to act as because the work has no
- * initiator (#4388). Those sweeps read `getPermissionsForRole(membership.role)`,
- * so a custom role on the member they picked was ignored.
- *
- * - **A custom role** resolves exactly as a request resolves it
- *   (`initiatorAuthority`): the base role, the base role's coarse flags, and the
- *   custom role's granular set. A key the custom role withholds is withheld
- *   here, and a key it grants never lifts the base role's coarse tier.
- * - **A built-in role** keeps exactly what the sweep carried before: the role,
- *   its granular set, and the coarse flags the sweep projects from that set
- *   (`builtInCoarseFlags`). For OWNER and ADMIN that projection equals a
- *   request's coarse flags. For EDITOR, READER and AI_ADMIN the sweeps'
- *   projections give `canAudit` where a request does not. Aligning that would
- *   change a built-in role's authority, so it is not done here.
- *
- * The sweep picks the first candidate whose result passes the sweep's own
- * predicate, and reports a named reason when none does.
- */
-export function borrowedMemberAuthority(
-    membership: { role: Role; customRole: { baseRole: Role; permissionsJson: unknown } | null },
-    builtInCoarseFlags: (appPermissions: PermissionSet) => Permissions,
-): { role: Role; permissions: Permissions; appPermissions: PermissionSet } {
-    const authority = initiatorAuthority(membership);
-    if (membership.customRole) return authority;
-    return { ...authority, permissions: builtInCoarseFlags(authority.appPermissions) };
 }
 
 /**

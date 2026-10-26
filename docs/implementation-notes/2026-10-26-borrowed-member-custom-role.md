@@ -13,12 +13,14 @@ these jobs respect custom roles.
 
 ```
 candidates (oldest / most senior first)
-  └─ borrowedMemberAuthority(m, builtInCoarseFlags)
-       custom role → initiatorAuthority(m)          (a request's authority)
-       built-in    → role, its set, the job's own projection   (unchanged)
+  └─ initiatorAuthority(m)      a request's role, coarse flags and granular set
   └─ first one passing the job's predicate → the context
   └─ none → a named reason in the result, and a warn log
 ```
+
+This is the rule #4375 gave the jobs that act for their initiator, applied to
+the jobs that borrow a member. No second helper: a borrowed member is resolved
+by the same function.
 
 | Job | Predicate | Reasons |
 | --- | --- | --- |
@@ -40,7 +42,7 @@ for a foreign key or attribution on a system act, and now says so in a comment.
 
 | File | Role |
 | --- | --- |
-| `src/app-layer/context-system.ts` | `borrowedMemberAuthority`; `buildDelegatedJobContext` docblock says when to use it |
+| `src/app-layer/context-system.ts` | `initiatorAuthority`'s docblock names the borrowing sweeps; `buildDelegatedJobContext`'s says when not to use it |
 | `src/app-layer/jobs/risk-appetite-jobs.ts` | actor choice, predicate, `RISK_APPETITE_UNROUTABLE` |
 | `src/app-layer/jobs/sharepoint-policy-jobs.ts` | actor choice, predicate, `POLICY_SYNC_UNROUTABLE` |
 | `src/app-layer/jobs/compliance-posture-summary.ts` | actor choice, predicate, `POSTURE_SUMMARY_UNROUTABLE` |
@@ -49,21 +51,26 @@ for a foreign key or attribution on a system act, and now says so in a comment.
 
 ## Decisions
 
-- **A built-in role keeps the job's own coarse flags.** The posture summary can
-  pick any role, and its projection (`canAudit: audits.view`) gives EDITOR,
-  READER and AI_ADMIN a `canAudit` that a request does not. #4375 aligned that
-  for initiator jobs on an owner decision; nothing decided it for these, so a
-  built-in role's context here is byte-for-byte what it was. For OWNER and
-  ADMIN the projection already equals a request's flags. The tests pin all six
-  roles against the old builders.
-- **A custom role takes a request's coarse flags, not the projection.**
+- **A built-in role gets a request's coarse flags too** (owner decision,
+  2026-10-26, the rule #4375 set for initiator jobs). The jobs projected their
+  coarse flags from the granular set (`canAudit: audits.view`, which every
+  built-in role holds). Against that, the one change is `canAudit` from true to
+  false for EDITOR, READER and AI_ADMIN. The risk and policy jobs read only
+  OWNER and ADMIN, for whom nothing moves; the posture summary can pick any
+  role. Nothing on these jobs' paths reads `canAudit`: `assertCanAudit` is
+  asked only by the audit-log list, the policy acknowledgement roster and the
+  legacy snapshot verify, each reached from an HTTP route;
+  `assertCanViewHistory` has no caller; and `assertCanReadAutomationHistory`
+  admits on `canRead`, which every role holds. The tests pin every role equal
+  to a request and record that one difference from the old builders.
+- **A custom role takes a request's coarse flags, not a projection.**
   Projecting from the custom role's set would let a READER-based role that
   grants `policies.edit` write a policy version, which `assertCanWritePolicies`
   refuses for that member's own request ("tighten, never loosen").
 - **The posture predicate is the job's reads, not `controls.edit`.** The manual
   regenerate route asks `controls.edit`. Using it would stop the summary for a
-  tenant whose only members are READER, AUDITOR or AI_ADMIN, which changes a
-  built-in role's outcome. That choice is left to the owner.
+  tenant whose only members are READER, AUDITOR or AI_ADMIN (owner decision,
+  2026-10-26: keep the reads). The risk monitor likewise stays on `risks.view`.
 - **The candidate reads are per tenant and uncapped.** A cap could leave out
   the member who qualifies and report the tenant as having nobody. Each read is
   bounded by one tenant's OWNER/ADMIN rows, or its active members for the daily
@@ -74,4 +81,5 @@ for a foreign key or attribution on a system act, and now says so in a comment.
   pass somebody asked to run early are the platform's work too. Reading the
   named user's role in any of them could stop work a workspace relies on, and
   for a built-in role it would change today's authority. The control-test
-  runner is the case closest to the line, and it is left to the owner.
+  runner is the case closest to the line; the owner chose on 2026-10-26 to keep
+  it on ADMIN.

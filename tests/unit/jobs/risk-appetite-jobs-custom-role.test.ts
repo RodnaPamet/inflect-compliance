@@ -9,14 +9,18 @@
  *     next one;
  *   - a tenant with nobody qualifying is not scanned, and is returned and
  *     logged with a named reason (it was skipped in silence);
- *   - a built-in role's context is exactly the one the monitor built before.
+ *   - every member's context, built-in roles included, is what a request from
+ *     them resolves to (owner decision 2026-10-26, as #4375 did for initiator
+ *     jobs). Against the old builder that moved only `canAudit` for EDITOR,
+ *     READER and AI_ADMIN, which the OWNER/ADMIN query never returns.
  *
  * `findFirst` answers as the old query did (the oldest of the same rows), so
  * every test here also runs meaningfully against the code before the fix.
  */
 const prismaMock = {
+    tenant: { findUnique: jest.fn() },
     riskAppetiteConfig: { findMany: jest.fn() },
-    tenantMembership: { findMany: jest.fn(), findFirst: jest.fn() },
+    tenantMembership: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock, prisma: prismaMock }));
 
@@ -34,7 +38,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import type { Role } from '@prisma/client';
 import { runRiskAppetiteMonitor } from '@/app-layer/jobs/risk-appetite-jobs';
-import { initiatorAuthority } from '@/app-layer/context-system';
+import { resolveTenantContext } from '@/lib/tenant-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 
 const BUILT_IN: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'AI_ADMIN'];
@@ -77,6 +81,39 @@ function contextBefore4388(tenantId: string, m: { userId: string; role: Role }) 
     };
 }
 
+const REQUEST_ID = 'risk-appetite-tenant-A';
+
+/** What a request from this member resolves to (`resolveTenantContext`). */
+async function requestAuthority(m: ReturnType<typeof member>) {
+    prismaMock.tenant.findUnique.mockResolvedValue({ id: 'tenant-A', slug: 'acme', deletedAt: null });
+    prismaMock.tenantMembership.findUnique.mockResolvedValue({
+        id: 'm-1',
+        tenantId: 'tenant-A',
+        userId: m.userId,
+        role: m.role,
+        status: 'ACTIVE',
+        customRoleId: m.customRole ? 'cr-1' : null,
+        customRole: m.customRole
+            ? { id: 'cr-1', tenantId: 'tenant-A', name: 'Custom', isActive: true, ...m.customRole }
+            : null,
+    });
+    const t = await resolveTenantContext({ tenantId: 'tenant-A' }, m.userId);
+    return { role: t.role, permissions: t.permissions, appPermissions: t.appPermissions };
+}
+
+/** The context the job should act as: what a request from this member gets. */
+async function requestContext(m: ReturnType<typeof member>) {
+    return { requestId: REQUEST_ID, userId: m.userId, tenantId: 'tenant-A', ...(await requestAuthority(m)) };
+}
+
+/** Each coarse flag that differs from the old builder, as `ROLE.flag:before->now`. */
+function movedFrom4388(role: Role, ctx: { permissions: Record<string, boolean> }) {
+    const before = contextBefore4388('tenant-A', { userId: 'member-1', role }).permissions as Record<string, boolean>;
+    return Object.keys(before)
+        .filter((flag) => ctx.permissions[flag] !== before[flag])
+        .map((flag) => `${role}.${flag}:${before[flag]}->${ctx.permissions[flag]}`);
+}
+
 beforeEach(() => {
     jest.clearAllMocks();
     prismaMock.riskAppetiteConfig.findMany.mockResolvedValue([{ tenantId: 'tenant-A' }]);
@@ -91,7 +128,7 @@ describe('the monitor acts as the oldest OWNER/ADMIN whose resolved permissions 
 
         const r = await runRiskAppetiteMonitor({} as never);
 
-        expect(scannedAs()).toEqual(contextBefore4388('tenant-A', member('next-admin', 'ADMIN')));
+        expect(scannedAs()).toEqual(await requestContext(member('next-admin', 'ADMIN')));
         expect(r).toMatchObject({ tenants: 1, scanned: 1, unroutable: [] });
         expect(prismaMock.tenantMembership.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -109,12 +146,7 @@ describe('the monitor acts as the oldest OWNER/ADMIN whose resolved permissions 
 
         await runRiskAppetiteMonitor({} as never);
 
-        expect(scannedAs()).toEqual({
-            requestId: 'risk-appetite-tenant-A',
-            userId: 'custom-admin',
-            tenantId: 'tenant-A',
-            ...initiatorAuthority(readerBased),
-        });
+        expect(scannedAs()).toEqual(await requestContext(readerBased));
         expect(scannedAs().role).toBe('READER');
     });
 });
@@ -150,15 +182,36 @@ describe('a tenant with nobody to act as is reported with a named reason, never 
     });
 });
 
-describe('a built-in role’s context is the one the monitor built before #4388', () => {
-    // The query reads OWNER and ADMIN only, so the other four never reach the
-    // builder; they are pinned too, so a change to the rule cannot hide behind
-    // the query.
+describe('a built-in role’s context is what a request from that member gets', () => {
+    // The query reads OWNER and ADMIN only; the other four are pinned too, so a
+    // change to the rule cannot hide behind the query.
     it.each(BUILT_IN)('%s', async (role) => {
         admins([member('member-1', role)]);
 
         await runRiskAppetiteMonitor({} as never);
 
-        expect(scannedAs()).toEqual(contextBefore4388('tenant-A', member('member-1', role)));
+        expect(scannedAs()).toEqual(await requestContext(member('member-1', role)));
+    });
+});
+
+describe('what moved for a built-in role, against the context the monitor built before #4388', () => {
+    it('only canAudit, for EDITOR, READER and AI_ADMIN, from true to a request’s false; nothing for OWNER or ADMIN', async () => {
+        const moved: string[] = [];
+        for (const role of BUILT_IN) {
+            jest.clearAllMocks();
+            usecase.checkPortfolioAppetite.mockResolvedValue({ breaches: [] });
+            admins([member('member-1', role)]);
+            await runRiskAppetiteMonitor({} as never);
+            const ctx = scannedAs();
+            const before = contextBefore4388('tenant-A', member('member-1', role));
+            // The role and the granular set did not move; only coarse flags can.
+            expect({ ...ctx, permissions: null }).toEqual({ ...before, permissions: null });
+            moved.push(...movedFrom4388(role, ctx));
+        }
+        expect(moved).toEqual([
+            'EDITOR.canAudit:true->false',
+            'READER.canAudit:true->false',
+            'AI_ADMIN.canAudit:true->false',
+        ]);
     });
 });

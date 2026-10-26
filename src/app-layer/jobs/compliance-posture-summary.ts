@@ -18,7 +18,7 @@ import { logger } from '@/lib/observability/logger';
 import type { PermissionSet } from '@/lib/permissions';
 import type { Permissions } from '@/lib/tenant-context';
 import type { RequestContext } from '@/app-layer/types';
-import { borrowedMemberAuthority } from '@/app-layer/context-system';
+import { initiatorAuthority } from '@/app-layer/context-system';
 import { generateCompliancePostureSummary } from '@/app-layer/usecases/compliance-posture';
 import { enqueue } from './queue';
 import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
@@ -51,24 +51,19 @@ export const POSTURE_SUMMARY_UNROUTABLE = {
 } as const;
 export type PostureSummaryUnroutableReason = keyof typeof POSTURE_SUMMARY_UNROUTABLE;
 
-/** The coarse flags this job has always projected for a built-in role. */
-function builtInCoarseFlags(appPermissions: PermissionSet): Permissions {
-    return {
-        canRead: appPermissions.controls.view,
-        canWrite: appPermissions.controls.create,
-        canAdmin: appPermissions.admin.manage,
-        canAudit: appPermissions.audits.view,
-        canExport: appPermissions.reports.export,
-    };
-}
-
 /**
  * Build a tenant-scoped read RequestContext for the daily cron actor.
  *
- * Picks the most senior active member (OWNER/ADMIN first) whose resolved
- * authority, custom role included (#4388), passes `mayGeneratePostureSummary`,
+ * Picks the most senior active member (OWNER/ADMIN first) whose authority,
+ * resolved as a request from them resolves it (`initiatorAuthority`, custom
+ * role and coarse flags included, #4388), passes `mayGeneratePostureSummary`,
  * so RLS + the read policies resolve against a real user. A member whose custom
- * role withholds a read is passed over for the next one. Lives in the job
+ * role withholds a read is passed over for the next one.
+ *
+ * The coarse flags used to be projected from the granular set, which gave a
+ * built-in EDITOR, READER or AI_ADMIN a `canAudit` their own request does not
+ * hold. They carry a request's `false` now (owner decision, 2026-10-26, as for
+ * the initiator jobs in #4375); nothing on this job's path reads it. Lives in the job
  * layer (not the usecase) because it needs a cross-tenant/global read before
  * any tenant context exists — tenant-scoped usecase code must never import
  * global prisma. Exported for its test.
@@ -94,7 +89,7 @@ export async function buildPostureCronContext(
     });
     if (members.length === 0) return { ok: false, reason: POSTURE_SUMMARY_UNROUTABLE.NO_ACTIVE_MEMBER };
     for (const member of members) {
-        const authority = borrowedMemberAuthority(member, builtInCoarseFlags);
+        const authority = initiatorAuthority(member);
         if (!mayGeneratePostureSummary(authority)) continue;
         return {
             ok: true,

@@ -602,11 +602,11 @@ async function handleAutomatedPlan(
  * neither admin nor auditor — and `requestId` stays the scheduler's
  * `jobRunId` so the trail is reconstructible end to end.
  *
- * The granular set stays ADMIN's (#4388). The scheduler runs the plan, and the
- * author is named for attribution and for `Evidence.ownerUserId`. Running it
- * with the author's own role would stop a scheduled test, internal audit's
- * procedures included, when the author's role changes or they leave. Whether
- * that should happen is an owner decision, not a fix.
+ * The granular set stays ADMIN's: the owner chose this on 2026-10-26 (#4388).
+ * The scheduler runs the plan, and the author is named for attribution and for
+ * `Evidence.ownerUserId`. Running it with the author's own role would stop a
+ * scheduled test, internal audit's procedures included, when the author's role
+ * changes or they leave.
  */
 function buildRunnerCtx(
     plan: { tenantId: string; createdByUserId: string },
