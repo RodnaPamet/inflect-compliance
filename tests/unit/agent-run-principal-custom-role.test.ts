@@ -57,8 +57,8 @@ describe('the run carries the custom role a request from its principal carries',
     });
 });
 
-describe('a built-in role is rebuilt exactly as before', () => {
-    it('EDITOR keeps the coarse flags the run projected from the granular set', async () => {
+describe('a built-in role is rebuilt as a request resolves it', () => {
+    it('EDITOR gets exactly what a request from it gets', async () => {
         db.tenantMembership.findFirst.mockResolvedValue({ role: 'EDITOR', customRole: null });
 
         const ctx = await rebuildRunContext(RUN);
@@ -68,13 +68,10 @@ describe('a built-in role is rebuilt exactly as before', () => {
             userId: 'user-1',
             tenantId: 'tenant-A',
             role: 'EDITOR',
-            permissions: {
-                canRead: EDITOR.risks.view,
-                canWrite: EDITOR.risks.edit,
-                canAdmin: EDITOR.admin.manage,
-                canAudit: EDITOR.audits.view,
-                canExport: EDITOR.reports.export,
-            },
+            // A request's coarse flags (owner decision, 2026-10-26): the run
+            // used to project them from the granular set, which gave EDITOR a
+            // `canAudit` its own request does not hold.
+            permissions: computePermissions('EDITOR'),
             appPermissions: EDITOR,
             agentId: 'agent-1',
         });

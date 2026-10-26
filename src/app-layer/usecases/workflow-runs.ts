@@ -1659,12 +1659,8 @@ export async function rebuildRunContext(row: {
         requestId: `agent-run-${row.tenantId}-${row.startedByUserId}`,
         userId: row.startedByUserId,
         tenantId: row.tenantId,
-        // The principal's authority as a request resolves it, custom role
-        // included. For a built-in role the coarse five are what this run
-        // always carried: the projection it used to compute from the granular
-        // set (`risks.view`, `risks.edit`, ...) agrees with a request in every
-        // flag but `canAudit`, kept until the owner decides (see
-        // `initiatorAuthority`).
+        // The principal's authority exactly as a request resolves it, custom
+        // role and coarse flags included (`initiatorAuthority`, #4362).
         ...initiatorAuthority(membership),
         // NOT `actorType: 'JOB'`. The worker is only where this runs; the run
         // was asked for by a person or a key, and the audit trail must keep

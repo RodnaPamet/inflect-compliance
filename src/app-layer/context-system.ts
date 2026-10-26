@@ -37,9 +37,8 @@
  *   resolveInitiatorContext   the same, for a job that does what one member
  *                             ASKED for (an evidence import, a SharePoint
  *                             sync; a queued workflow run reads its
- *                             `initiatorAuthority`). It keeps those jobs'
- *                             coarse `canAudit` for a built-in role; see
- *                             `initiatorAuthority`.
+ *                             `initiatorAuthority`). Keeps the caller's
+ *                             request id and sets no `tenantSlug`.
  */
 import type { Role } from '@prisma/client';
 import { computePermissions, type Permissions } from '@/lib/tenant-context';
@@ -255,8 +254,8 @@ export async function resolveMemberContext(input: {
 }
 
 /**
- * The authority a job carries for the member who STARTED it: the role, coarse
- * flags and granular set a request from that member gets, with one exception.
+ * The authority a job carries for the member who STARTED it: exactly the
+ * role, coarse flags and granular set a request from that member gets.
  *
  * A request's rule (`resolveTenantContext`): the role is the custom role's
  * base when the membership has one, the coarse flags are `computePermissions`
@@ -271,31 +270,20 @@ export async function resolveMemberContext(input: {
  * queued it, and a role changed while the job sat in the queue applies when it
  * runs. These jobs read `getPermissionsForRole(membership.role)` until #4362,
  * so a custom role that withheld `evidence.upload` or `controls.edit` was
- * ignored by the work it had queued.
- *
- * THE EXCEPTION, FOR A BUILT-IN ROLE ONLY. These jobs projected their coarse
- * flags from the granular set (`canRead: evidence.view`, `canWrite:
- * evidence.upload`, ...). For every built-in role that agrees with a request's
- * `computePermissions` in four flags of five, and differs in `canAudit`, which
- * they took from `audits.view`: true for every built-in role, where a request
- * gives EDITOR, READER and AI_ADMIN false. Dropping it to the request's value
- * changes what a built-in role's job carries, so it waits for the owner; until
- * then a built-in role keeps exactly the context it had. A custom role gets the
- * request's flags, with no exception.
+ * ignored by the work it had queued. Their coarse flags were a projection of
+ * that granular set, which gave a built-in EDITOR, READER or AI_ADMIN a
+ * `canAudit` its own request does not hold; they are a request's now (owner
+ * decision, 2026-10-26).
  */
 export function initiatorAuthority(membership: {
     role: Role;
     customRole: { baseRole: Role; permissionsJson: unknown } | null;
 }): { role: Role; permissions: Permissions; appPermissions: PermissionSet } {
     const role = membership.customRole?.baseRole ?? membership.role;
-    const appPermissions = permissionsForMembership(membership);
-    const permissions = computePermissions(role);
     return {
         role,
-        permissions: membership.customRole
-            ? permissions
-            : { ...permissions, canAudit: appPermissions.audits.view },
-        appPermissions,
+        permissions: computePermissions(role),
+        appPermissions: permissionsForMembership(membership),
     };
 }
 
@@ -307,9 +295,8 @@ export function initiatorAuthority(membership: {
  * is a REFUSAL, exactly as for `resolveMemberContext`: the caller stops, and
  * never falls back to a system context.
  *
- * Differs from `resolveMemberContext` in what these jobs always carried: the
- * caller's own `requestId`, no `tenantSlug`, and the built-in role's coarse
- * `canAudit` (`initiatorAuthority`).
+ * Differs from `resolveMemberContext` only in what these jobs always carried:
+ * the caller's own `requestId`, and no `tenantSlug`.
  */
 export async function resolveInitiatorContext(input: {
     tenantId: string;

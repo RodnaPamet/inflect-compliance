@@ -1,17 +1,17 @@
 /**
  * `resolveInitiatorContext` — the context a job builds for the member who
- * started it — resolves a membership the way a REQUEST does (#4362).
+ * started it — resolves a membership exactly as a REQUEST does (#4362).
  *
- * Two properties, each against its own baseline:
+ * For the same membership row it gives the role, coarse flags and granular set
+ * `resolveTenantContext` gives:
  *
- *   - A CUSTOM role resolves exactly as `resolveTenantContext` resolves it: the
- *     same role, coarse flags and granular set, for the same membership row.
- *     That includes a soft-deleted custom role the membership is still linked
- *     to, which a request applies.
- *   - A BUILT-IN role keeps exactly the context these jobs built before: the
- *     coarse flags they projected from the granular set. Those agree with a
- *     request's in every flag but `canAudit` (see the last block), which is an
- *     owner decision and is not changed here.
+ *   - for a CUSTOM role, including a soft-deleted one the membership is still
+ *     linked to, which a request applies;
+ *   - for every BUILT-IN role, coarse flags included. The jobs used to project
+ *     their coarse flags from the granular set, which gave EDITOR, READER and
+ *     AI_ADMIN a `canAudit` their own request does not hold; the owner decided
+ *     on 2026-10-26 that a job matches the request, and the last block records
+ *     that this is the only thing that moved for a built-in role.
  */
 const prismaMock = {
     tenant: { findUnique: jest.fn() },
@@ -133,35 +133,35 @@ describe('a custom role resolves as a request resolves it', () => {
     });
 });
 
-describe('a built-in role keeps exactly the context these jobs built before', () => {
+describe('a built-in role resolves as a request resolves it, coarse flags included', () => {
     it.each(BUILT_IN)('%s', async (role) => {
-        const job = await jobAuthority(row(role, null));
+        const membership = row(role, null);
+        const job = await jobAuthority(membership);
+        expect(job).toEqual(await requestAuthority(membership));
         expect(job).toEqual({
             role,
-            permissions: evidenceJobProjection(role),
+            permissions: computePermissions(role),
             appPermissions: getPermissionsForRole(role),
         });
-        // The workflow run's old projection read other keys, and lands on the
-        // same five flags for every built-in role.
-        expect(initiatorAuthority({ role, customRole: null }).permissions).toEqual(
-            workflowRunProjection(role),
-        );
     });
 });
 
-describe('the built-in difference from a request, held open for the owner', () => {
-    it('is canAudit for EDITOR, READER and AI_ADMIN, and nothing else', () => {
-        const differing = BUILT_IN.flatMap((role) => {
-            const job = initiatorAuthority({ role, customRole: null }).permissions;
-            const request = computePermissions(role);
-            return (Object.keys(request) as Array<keyof typeof request>)
-                .filter((flag) => job[flag] !== request[flag])
-                .map((flag) => `${role}.${flag}:${job[flag]}/${request[flag]}`);
+describe('what moved for a built-in role, against the context these jobs built before', () => {
+    it('only canAudit, for EDITOR, READER and AI_ADMIN, from true to a request\'s false', () => {
+        // Both old projections — the evidence jobs' and the queued run's — land
+        // on the same five flags for every built-in role.
+        const moved = BUILT_IN.flatMap((role) => {
+            const now = initiatorAuthority({ role, customRole: null }).permissions;
+            const before = evidenceJobProjection(role);
+            expect(workflowRunProjection(role)).toEqual(before);
+            return (Object.keys(before) as Array<keyof typeof before>)
+                .filter((flag) => now[flag] !== before[flag])
+                .map((flag) => `${role}.${flag}:${before[flag]}->${now[flag]}`);
         });
-        expect(differing).toEqual([
-            'EDITOR.canAudit:true/false',
-            'READER.canAudit:true/false',
-            'AI_ADMIN.canAudit:true/false',
+        expect(moved).toEqual([
+            'EDITOR.canAudit:true->false',
+            'READER.canAudit:true->false',
+            'AI_ADMIN.canAudit:true->false',
         ]);
     });
 });

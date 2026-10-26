@@ -30,6 +30,7 @@ jest.mock('@/lib/db-context', () => ({
 
 import { runSharePointDeltaSyncJob } from '@/app-layer/jobs/sharepoint-delta-sync';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { computePermissions } from '@/lib/tenant-context';
 import type { RequestContext } from '@/app-layer/types';
 
 const EDITOR = getPermissionsForRole('EDITOR');
@@ -98,8 +99,8 @@ describe('a custom role that grants evidence.upload over a READER base may sync,
     });
 });
 
-describe('a built-in EDITOR syncs exactly as before', () => {
-    it('runs the sync with the EDITOR context the job always built', async () => {
+describe('a built-in EDITOR syncs, with the context a request from it gets', () => {
+    it('runs the sync with the EDITOR context', async () => {
         prismaMock.tenantMembership.findFirst.mockResolvedValue({ role: 'EDITOR', customRole: null });
 
         const r = await runSharePointDeltaSyncJob(PAYLOAD);
@@ -110,14 +111,8 @@ describe('a built-in EDITOR syncs exactly as before', () => {
             userId: 'actor-1',
             tenantId: 'tenant-A',
             role: 'EDITOR',
-            // The projection the job computed from the granular set.
-            permissions: {
-                canRead: EDITOR.evidence.view,
-                canWrite: EDITOR.evidence.upload,
-                canAdmin: EDITOR.admin.manage,
-                canAudit: EDITOR.audits.view,
-                canExport: EDITOR.reports.export,
-            },
+            // A request's coarse flags (owner decision, 2026-10-26).
+            permissions: computePermissions('EDITOR'),
             appPermissions: EDITOR,
         });
         expect(releaseSyncLock).toHaveBeenCalledWith(expect.anything(), 'conn-1', 'token-1');

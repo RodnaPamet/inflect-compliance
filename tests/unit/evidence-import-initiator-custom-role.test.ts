@@ -192,7 +192,7 @@ describe('a custom role that withholds controls.edit cannot import into a defaul
     });
 });
 
-describe('a built-in EDITOR imports exactly as before', () => {
+describe('a built-in EDITOR still imports into a default control', () => {
     it('imports every entry into the default control', async () => {
         prismaMock.tenantMembership.findFirst.mockResolvedValue(builtIn('EDITOR'));
 
