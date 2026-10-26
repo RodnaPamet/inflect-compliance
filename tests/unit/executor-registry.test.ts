@@ -204,7 +204,7 @@ jest.mock('@/app-layer/jobs/sharepoint-delta-sync', () => ({
 }));
 jest.mock('@/app-layer/jobs/sharepoint-policy-jobs', () => ({
     runSharePointPolicyPull: jest.fn(async () => ({ pulled: true })),
-    runSharePointSubscriptionRenew: jest.fn(async () => ({ subscriptions: 0, renewed: 0 })),
+    runSharePointSubscriptionRenew: jest.fn(async () => ({ subscriptions: 0, renewed: 0, unroutable: [] })),
 }));
 jest.mock('@/app-layer/jobs/report-delivery-jobs', () => ({
     runReportDelivery: jest.fn(async () => ({
@@ -212,7 +212,7 @@ jest.mock('@/app-layer/jobs/report-delivery-jobs', () => ({
     })),
 }));
 jest.mock('@/app-layer/jobs/risk-appetite-jobs', () => ({
-    runRiskAppetiteMonitor: jest.fn(async () => ({ scanned: 0, newBreaches: 0, tenants: 0, resolved: 0 })),
+    runRiskAppetiteMonitor: jest.fn(async () => ({ scanned: 0, newBreaches: 0, tenants: 0, resolved: 0, unroutable: [] })),
 }));
 jest.mock('@/app-layer/jobs/risk-snapshot-jobs', () => ({
     runRiskSnapshot: jest.fn(async () => ({ scanned: 0, riskSnapshots: 0, tenants: 0, pruned: 0 })),

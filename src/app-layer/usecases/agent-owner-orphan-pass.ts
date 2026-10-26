@@ -485,6 +485,8 @@ async function openTransferTask(
         // cannot be created by the system principal. Delegated to the manager
         // it is assigned to — the policy-review reminder's precedent — with
         // actor type JOB, so the trail reads "a job raised this for <manager>".
+        // A system act, so ADMIN stays (#4388): the task is raised FOR the
+        // manager, and their own role must not decide whether it is raised.
         const taskCtx = buildDelegatedJobContext({
             tenantId: ctx.tenantId,
             job: 'agent-owner-orphan-pass',

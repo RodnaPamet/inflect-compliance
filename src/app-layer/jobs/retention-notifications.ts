@@ -32,6 +32,10 @@ import { buildDelegatedJobContext } from '../context-system';
  * die on `Task_createdByUserId_fkey`. `actorType: 'JOB'` is the half that
  * IS fixable — the row now says a job raised the reminder rather than
  * claiming the owner did. See `buildDelegatedJobContext`.
+ *
+ * A system act, so ADMIN stays (#4388): the reminder is raised FOR the owner,
+ * not by them. Their own role would drop the reminder for evidence a READER
+ * owns, a built-in role included.
  */
 function buildRetentionCtx(tenantId: string, actorUserId: string): RequestContext {
     return buildDelegatedJobContext({

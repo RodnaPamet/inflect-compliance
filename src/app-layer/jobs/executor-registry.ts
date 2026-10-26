@@ -1122,10 +1122,13 @@ executorRegistry.register('sharepoint-policy-pull', async (payload) => {
     const startMs = performance.now();
     const { runSharePointPolicyPull } = await import('./sharepoint-policy-jobs');
     const r = await runSharePointPolicyPull(payload);
+    // A pull that did not run says why: the policy is not linked, or the
+    // tenant has no admin able to act for it (`POLICY_SYNC_UNROUTABLE`, #4388).
     return makeResult('sharepoint-policy-pull', startedAt, startMs, 1, r.pulled ? 1 : 0, r.pulled ? 0 : 1, {
         tenantId: payload.tenantId,
         policyId: payload.policyId,
         pulled: r.pulled,
+        reason: r.reason,
     });
 });
 
@@ -1135,9 +1138,12 @@ executorRegistry.register('sharepoint-subscription-renew', async (payload) => {
     const startMs = performance.now();
     const { runSharePointSubscriptionRenew } = await import('./sharepoint-policy-jobs');
     const r = await runSharePointSubscriptionRenew(payload);
+    // A tenant with no admin able to act for its policy sync is reported with
+    // its named reason (`POLICY_SYNC_UNROUTABLE`, #4388).
     return makeResult('sharepoint-subscription-renew', startedAt, startMs, r.subscriptions, r.renewed, 0, {
         subscriptions: r.subscriptions,
         renewed: r.renewed,
+        unroutable: r.unroutable,
     });
 });
 
@@ -1158,11 +1164,14 @@ executorRegistry.register('risk-appetite-monitor', async (payload) => {
     const startMs = performance.now();
     const { runRiskAppetiteMonitor } = await import('./risk-appetite-jobs');
     const r = await runRiskAppetiteMonitor(payload);
-    return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, 0, {
+    // A tenant with no admin able to run the monitor is not scanned, and is
+    // reported here with its named reason (`RISK_APPETITE_UNROUTABLE`, #4388).
+    return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, r.unroutable.length, {
         tenants: r.tenants,
         scanned: r.scanned,
         newBreaches: r.newBreaches,
         resolved: r.resolved,
+        unroutable: r.unroutable,
     });
 });
 
@@ -1243,12 +1252,14 @@ executorRegistry.register('compliance-posture-summary', async (payload) => {
     const startMs = performance.now();
     const { runCompliancePostureSummary } = await import('./compliance-posture-summary');
     const r = await runCompliancePostureSummary({ tenantId: payload.tenantId });
+    // A summary not generated says why (`POSTURE_SUMMARY_UNROUTABLE`, #4388).
     return makeResult('compliance-posture-summary', startedAt, startMs, 1, r.generated ? 1 : 0, r.generated ? 0 : 1, {
         tenantId: r.tenantId,
         generated: r.generated,
         provider: r.provider,
         postureLabel: r.postureLabel,
         isFallback: r.isFallback,
+        reason: r.reason,
     });
 });
 

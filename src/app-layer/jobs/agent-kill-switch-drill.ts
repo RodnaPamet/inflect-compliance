@@ -494,6 +494,10 @@ async function recordDrill(
         return result;
     }
 
+    // A system act, so ADMIN stays (#4388): the drill runs on its own
+    // schedule, and the member is named only because the drill row and its
+    // Evidence need a real user. Their own role must not decide whether a
+    // failed stop control gets recorded.
     const ctx = buildDelegatedJobContext({
         tenantId,
         job: 'agent-kill-switch-drill',

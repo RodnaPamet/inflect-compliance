@@ -976,6 +976,12 @@ export async function runIdentityLeaverPass(input: {
     // including rows a named admin caused. `buildDelegatedJobContext` exists
     // for exactly this shape of work, and every write below inherits the
     // attribution without another parameter to forget.
+    //
+    // A system act, so ADMIN stays (#4388): it is the same pass the 05:00
+    // schedule runs under a system context, and the requester only chose when.
+    // The run route checked the requester's own key (`admin.tenant_lifecycle`,
+    // custom role included) at the request. Their role here would change a
+    // built-in OWNER's context and could stop a pass somebody asked for.
     const ctx = input.requestedByUserId
         ? buildDelegatedJobContext({
               tenantId: input.tenantId,

@@ -152,6 +152,10 @@ export async function runIntegrationPassportSweepForTenants(
             count('NO_ACTOR');
             continue;
         }
+        // A system act, so ADMIN stays (#4388): the weekly sweep builds and
+        // emits the passports itself, and the member is named only because the
+        // emitted `Evidence` needs a real owner. Their own role would make the
+        // week's evidence depend on one person's custom role.
         const ctx = buildDelegatedJobContext({
             tenantId,
             job: 'integration-passport-sweep',

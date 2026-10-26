@@ -167,6 +167,10 @@ export async function runAgenticEvidenceEmission(
             continue;
         }
 
+        // A system act, so ADMIN stays (#4388): the platform emits this
+        // evidence on its own schedule, and the member is named only because
+        // `Evidence.ownerUserId` needs a real user. Their own role would make
+        // the tenant's automatic evidence depend on one person's custom role.
         const ctx = buildDelegatedJobContext({
             tenantId,
             job: 'agentic-evidence-emission',

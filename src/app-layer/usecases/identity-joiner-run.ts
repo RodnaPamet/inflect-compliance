@@ -526,6 +526,12 @@ export async function runIdentityJoinerPass(input: {
     // waiting to be misattributed — but the execution row is the artefact an
     // operator reads to reconstruct a run, and it said `scheduled` for a run a
     // named admin started from the button.
+    //
+    // A system act, so ADMIN stays (#4388): it is the same pass the 04:30
+    // schedule runs under a system context, and the requester only chose when.
+    // The run route checked the requester's own key (`admin.tenant_lifecycle`,
+    // custom role included) at the request. Their role here would change a
+    // built-in OWNER's context and could stop a pass somebody asked for.
     const ctx = input.requestedByUserId
         ? buildDelegatedJobContext({
               tenantId: input.tenantId,

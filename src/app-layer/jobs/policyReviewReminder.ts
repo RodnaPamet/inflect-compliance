@@ -45,6 +45,10 @@ import { buildDelegatedJobContext } from '../context-system';
  * the owner raised a reminder for themselves. The ADMIN role is a known
  * remaining gap — see `buildDelegatedJobContext` for why closing it needs
  * a real SYSTEM user row rather than dropping reminders for READER owners.
+ *
+ * A system act, so ADMIN stays (#4388): the reminder is raised FOR the owner,
+ * not by them, and the owner's own role, built-in or custom, must not decide
+ * whether it is raised.
  */
 function buildReminderCtx(tenantId: string, ownerUserId: string): RequestContext {
     return buildDelegatedJobContext({
