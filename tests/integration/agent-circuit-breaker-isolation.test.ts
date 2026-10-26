@@ -49,6 +49,15 @@ import {
     type BreakerLatch,
 } from '@/lib/agentic/circuit-breaker-store';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { recordAgentBreakerTrip } from '@/lib/observability/integration-metrics';
+
+// The trip counter the AgenticCircuitBreakerTripped alert reads. Nothing
+// incremented it until the latch did; asserted beside the bell below.
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    ...jest.requireActual('@/lib/observability/integration-metrics'),
+    recordAgentBreakerTrip: jest.fn(),
+}));
+const tripsCounted = recordAgentBreakerTrip as jest.MockedFunction<typeof recordAgentBreakerTrip>;
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -400,10 +409,12 @@ describe('a read-only agent that starts proposing latches OPEN, and a human clos
         });
 
         const latch = await readBreakerLatch(T2, seeded[T2].agentId);
+        tripsCounted.mockClear();
         const outcome = await evaluateWindow(T2, seeded[T2].agentId, at(-2), latch!);
 
         expect(outcome.evaluated).toBe(true);
         expect(outcome.verdict?.code).toBe('ARMED');
+        expect(tripsCounted).not.toHaveBeenCalled();
         expect(outcome.verdict?.firing).toEqual(['TOOL_MIX']);
 
         const after = await readBreakerLatch(T2, seeded[T2].agentId);
@@ -421,6 +432,7 @@ describe('a read-only agent that starts proposing latches OPEN, and a human clos
         await seedWindow(T2, -2, { read: 3, propose: 2, tools: ['agent.propose_risk'] });
 
         const latch = await readBreakerLatch(T2, seeded[T2].agentId);
+        tripsCounted.mockClear();
         const outcome = await evaluateWindow(T2, seeded[T2].agentId, at(-1), latch!);
 
         expect(outcome.verdict?.code).toBe('TRIP');
@@ -429,6 +441,15 @@ describe('a read-only agent that starts proposing latches OPEN, and a human clos
         expect(after?.state).toBe('OPEN');
         expect(after?.trippedSignals).toEqual(['TOOL_MIX']);
         expect(after?.trippedAt).not.toBeNull();
+
+        // Counted once, for the signal that latched it.
+        const agent = await prisma.registeredAgent.findUniqueOrThrow({
+            where: { id: seeded[T2].agentId },
+            select: { riskTier: true },
+        });
+        expect(tripsCounted.mock.calls).toEqual([
+            [{ agentId: seeded[T2].agentId, signal: 'TOOL_MIX', riskTier: agent.riskTier }],
+        ]);
 
         // The window that armed it is flagged, which is what kept `propose` a
         // class this agent has never used. Without it the signal would have

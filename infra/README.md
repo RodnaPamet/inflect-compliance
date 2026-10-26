@@ -9,9 +9,8 @@ Most of this directory describes a Prometheus / Alertmanager / Grafana stack
 that **is not deployed**. Nothing in `deploy/docker-compose.prod.yml` references
 Prometheus or Alertmanager, and the running app container carries no `OTEL_*`
 environment, so the OTel instruments in `src/lib/observability/` export nowhere.
-`alerts/rules.yml`, `alerts/receivers.yml`, `otel-collector/`, `observability/`
-and `dashboards/` are all of that kind: a provisioning recipe for a stack
-somebody could stand up, not a record of one that exists.
+`otel-collector/` and `observability/` are of that kind: a provisioning recipe
+for a stack somebody could stand up, not a record of one that exists.
 
 The files that describe what IS deployed name themselves:
 
@@ -22,9 +21,12 @@ The files that describe what IS deployed name themselves:
 | `alerts/policies/*.json` | those policies as applyable JSON |
 | `reporters/` | the host scripts and systemd units that feed them |
 
-Adding a rule to `rules.yml` does not create an alert. It was believed to, for
-months, by the `ALERT ON` instruction in `integration-metrics.ts` that #2842
-corrected — which is why this section exists and why it is first.
+Adding a Prometheus rule does not create a production alert. It was believed
+to, for months, by the `ALERT ON` instruction in `integration-metrics.ts` that
+#2842 corrected — which is why this section exists and why it is first. The
+rule file that instruction pointed at, `alerts/rules.yml`, was never loaded by
+anything and was deleted on 2026-10-26, with `alerts/receivers.yml` and
+`dashboards/`.
 
 ## Directory Structure
 
@@ -32,15 +34,11 @@ corrected — which is why this section exists and why it is first.
 infra/
 ├── README.md                          ← This file
 ├── alerts/
-│   ├── rules.yml                      ← Prometheus rules — NOT DEPLOYED
-│   ├── receivers.yml                  ← Alertmanager routing — NOT DEPLOYED
 │   ├── external-uptime.yml            ← DEPLOYED: GCP uptime check contract
 │   ├── gcp-custom-metrics.yml         ← DEPLOYED: custom-metric alert contract
 │   └── policies/*.json                ← GCP alert policies, as applyable JSON
 ├── reporters/                         ← DEPLOYED: host scripts + systemd units
-├── dashboards/
-│   └── grafana-api-slos.json          ← Grafana dashboard (importable)
-├── observability/                     ← the stack's compose project and config
+├── observability/                     ← the stack's compose project, rules and dashboards
 ├── scripts/
 └── otel-collector/
     └── config.yml                     ← OpenTelemetry Collector config
@@ -76,27 +74,14 @@ OTEL_SERVICE_NAME=inflect-compliance
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 ```
 
-### 3. Import the Grafana Dashboard
+### 3. Dashboards and alert rules
 
-1. Open Grafana → Dashboards → Import
-2. Upload `infra/dashboards/grafana-api-slos.json`
-3. Select your Prometheus datasource when prompted
-4. The dashboard UID is `inflect-compliance-slos`
-
-### 4. Load Alert Rules
-
-**Prometheus Alertmanager:**
-```bash
-# Copy to Prometheus rules directory:
-cp infra/alerts/rules.yml /etc/prometheus/rules/inflect-compliance.yml
-# Reload Prometheus:
-curl -X POST http://prometheus:9090/-/reload
-```
-
-**Grafana Unified Alerting:**
-1. Open Grafana → Alerting → Alert rules
-2. Import from `infra/alerts/rules.yml` via the Provisioning API
-3. Or create rules manually using the PromQL expressions from the file
+The compose project in `observability/` provisions its Grafana dashboards
+(`observability/grafana/dashboards/`) and loads its Prometheus rules
+(`observability/prometheus/rules/`) when it starts; there is nothing to import
+by hand. See [`observability/README.md`](observability/README.md) and
+[`docs/observability/03-prometheus-grafana.md`](../docs/observability/03-prometheus-grafana.md),
+which lists every rule.
 
 ## Telemetry Pipeline
 
@@ -158,98 +143,15 @@ See [docs/slos.md](../docs/slos.md) for complete SLO definitions including:
 - Alert threshold rationale
 - Error budget calculations
 
-## Dashboard Panels (14)
-
-### SLO Overview
-
-| Panel | Type | Description |
-|---|---|---|
-| API Availability | Stat | Current availability % (SLO: ≥ 99.9%) |
-| P95 Latency | Stat | Current P95 response time (SLO: < 500ms) |
-| Error Rate | Stat | Current 5xx error rate (SLO: < 1%) |
-| Request Rate | Stat | Current requests/sec |
-
-### Latency & Throughput
-
-| Panel | Type | Description |
-|---|---|---|
-| API Latency Percentiles | Time series | P50/P95/P99 over time with threshold line |
-| Request Volume by Status | Time series | 2xx/4xx/5xx stacked bars |
-
-### Route-Level Detail
-
-| Panel | Type | Description |
-|---|---|---|
-| Top Slow Routes (P95) | Table | Top 10 routes by P95 latency |
-| Top Failing Routes (5xx) | Table | Top 10 routes by 5xx count |
-
-### Health & Readiness
-
-| Panel | Type | Description |
-|---|---|---|
-| Readiness Probe | Stat | UP/DOWN from synthetic monitoring |
-| Liveness Probe | Stat | UP/DOWN from synthetic monitoring |
-| Process Uptime | Stat | Seconds since last restart |
-
-### Job Execution Metrics
-
-| Panel | Type | Description |
-|---|---|---|
-| Job Execution Rate | Time series | Success/failure rate per job name |
-| Job Duration (P95) | Time series | P95 execution duration per job |
-| Queue Depth | Time series | Waiting/active/delayed/failed job counts |
-
-## Alert Rules (10)
-
-### API Alerts
-
-| Alert | Severity | Condition | For |
-|---|---|---|---|
-| ApiErrorRateWarning | warning | 5xx rate > 1% | 10m |
-| ApiErrorRateCritical | critical | 5xx rate > 5% | 5m |
-| ApiP95LatencyWarning | warning | P95 > 500ms | 10m |
-| ApiP95LatencyCritical | critical | P95 > 2s | 5m |
-| ApiAvailabilityBurnRateHigh | critical | Multi-window burn rate | 2m |
-
-### Health Alerts
-
-| Alert | Severity | Condition | For |
-|---|---|---|---|
-| ReadyzProbeFailure | warning | readyz fails | 30s |
-| ReadyzProbeCritical | critical | readyz fails | 45s |
-| LivezProbeFailure | critical | livez fails | 15s |
-
-### Job Alerts
-
-| Alert | Severity | Condition | For |
-|---|---|---|---|
-| JobFailureRateWarning | warning | Job failure rate > 50% | 5m |
-| QueueDepthBacklogWarning | warning | > 100 waiting jobs | 10m |
-
-### Alert Routing Assumptions
-
-Alerts use two severity tiers for routing:
-
-- **`warning`** — Investigate during business hours. Email or Slack channel.
-- **`critical`** — Page the on-call engineer immediately. PagerDuty/Opsgenie.
-
-All alerts carry the label `service: inflect-compliance` for routing rules.
-All alerts link to the dashboard via `dashboard: "/d/inflect-compliance-slos"`.
-
 ## Verification
 
-### Validate alert rules syntax
+### Validate the alert rules
 
 ```bash
-# Using promtool (from Prometheus distribution):
-promtool check rules infra/alerts/rules.yml
-```
-
-### Validate dashboard JSON
-
-```bash
-# Using Node.js:
-node -e "JSON.parse(require('fs').readFileSync('infra/dashboards/grafana-api-slos.json', 'utf-8')); console.log('Valid JSON')"
+# Syntax, using promtool (from the Prometheus distribution):
+promtool check rules infra/observability/prometheus/rules/*.yml
+# That every rule and panel selects a series the stack exports:
+npx jest tests/unit/prometheus-rules-match-emitted-metrics.test.ts
 ```
 
 ### Test end-to-end telemetry

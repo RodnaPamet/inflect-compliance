@@ -5,9 +5,13 @@
  *   - readyz route imports HeadBucket + uses 2s per-check timeout
  *   - traceRepository helper exists, exported from the barrel
  *   - repository metrics have the bounded label set (no tenant_id)
- *   - the four OI-3 dashboards exist + parse as Grafana JSON v8+
- *   - dashboards have UIDs (importable + provisionable)
  *   - sample repos use traceRepository on their public methods
+ *
+ * It also checked the four dashboards in infra/dashboards/, which no Grafana
+ * loaded and which charted series nothing exports (`aws_elasticache_*`, and
+ * `job_queue_depth` under a name the collector does not produce). They were
+ * deleted on 2026-10-26. The dashboards Grafana does provision are held to the
+ * app's metrics by tests/unit/prometheus-rules-match-emitted-metrics.test.ts.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -15,11 +19,7 @@ import * as path from 'path';
 // #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
 // longer be satisfied by a COMMENT naming the thing its assertion is about.
 //
-// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
-// through `read` and are masked. The JSON fixtures go through `readRaw` and
-// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
-// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
-// not that language.
+// Everything this file reads is TypeScript, through `read`, and is masked.
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -172,70 +172,5 @@ describe('OI-3 — sample repository instrumentation', () => {
                 new RegExp(`traceRepository\\(\\s*'${method.replace(/\./g, '\\.')}'\\s*,\\s*ctx`),
             );
         }
-    });
-});
-
-describe('OI-3 — dashboards', () => {
-    const DASH_DIR = 'infra/dashboards';
-    const REQUIRED = ['app-overview.json', 'database.json', 'redis.json', 'bullmq.json'] as const;
-
-    it.each(REQUIRED)('%s exists', (filename) => {
-        expect(exists(`${DASH_DIR}/${filename}`)).toBe(true);
-    });
-
-    it.each(REQUIRED)('%s parses as JSON', (filename) => {
-        expect(() => JSON.parse(readRaw(`${DASH_DIR}/${filename}`))).not.toThrow();
-    });
-
-    it.each(REQUIRED)('%s has a stable uid (importable/provisionable)', (filename) => {
-        const dash = JSON.parse(readRaw(`${DASH_DIR}/${filename}`));
-        expect(typeof dash.uid).toBe('string');
-        expect(dash.uid.length).toBeGreaterThan(0);
-        expect(dash.uid).toMatch(/^[a-z0-9-]+$/);
-    });
-
-    it.each(REQUIRED)('%s declares a Prometheus datasource input ($DS_PROMETHEUS)', (filename) => {
-        const dash = JSON.parse(readRaw(`${DASH_DIR}/${filename}`));
-        expect(Array.isArray(dash.__inputs)).toBe(true);
-        const promInput = dash.__inputs.find(
-            (i: { pluginId?: string }) => i.pluginId === 'prometheus',
-        );
-        expect(promInput).toBeDefined();
-        expect(promInput.name).toBe('DS_PROMETHEUS');
-    });
-
-    it.each(REQUIRED)('%s has at least one panel and a title', (filename) => {
-        const dash = JSON.parse(readRaw(`${DASH_DIR}/${filename}`));
-        expect(typeof dash.title).toBe('string');
-        expect(dash.title.length).toBeGreaterThan(0);
-        expect(Array.isArray(dash.panels)).toBe(true);
-        expect(dash.panels.length).toBeGreaterThan(0);
-    });
-
-    it('app-overview queries api.request.* metrics', () => {
-        const src = read(`${DASH_DIR}/app-overview.json`);
-        expect(src).toMatch(/api_request_count/);
-        expect(src).toMatch(/api_request_duration_bucket/);
-    });
-
-    it('database dashboard queries repo.method.* metrics (the new OI-3 instruments)', () => {
-        const src = read(`${DASH_DIR}/database.json`);
-        expect(src).toMatch(/repo_method_calls/);
-        expect(src).toMatch(/repo_method_duration_bucket/);
-        expect(src).toMatch(/repo_method_errors/);
-        expect(src).toMatch(/repo_method_result_count_bucket/);
-    });
-
-    it('redis dashboard queries job_queue_depth (BullMQ on Redis) + AWS ElastiCache CW metrics', () => {
-        const src = read(`${DASH_DIR}/redis.json`);
-        expect(src).toMatch(/job_queue_depth/);
-        expect(src).toMatch(/aws_elasticache_/);
-    });
-
-    it('bullmq dashboard queries job_execution_* + job_queue_depth', () => {
-        const src = read(`${DASH_DIR}/bullmq.json`);
-        expect(src).toMatch(/job_execution_count/);
-        expect(src).toMatch(/job_execution_duration_bucket/);
-        expect(src).toMatch(/job_queue_depth/);
     });
 });

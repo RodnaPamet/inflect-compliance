@@ -1,10 +1,12 @@
 # =============================================================================
 # Prometheus alerting rules — inflect-compliance.
 # -----------------------------------------------------------------------------
-# Three groups:
-#   stack_health  — is the observability pipeline itself healthy?
-#   app_health    — is the inflect-compliance app healthy?
-#   resource      — is Prometheus' own storage/scraping healthy?
+# Five groups:
+#   stack_health      — is the observability pipeline itself healthy?
+#   app_health        — is the inflect-compliance app healthy?
+#   security_controls — has a control stopped applying, or failed its drill?
+#   agentic_runs      — is agentic work finishing, or being stopped?
+#   resource          — is Prometheus' own storage/scraping healthy?
 #
 # Every alert carries `severity` (warning|critical) and the annotations
 # `summary` and `description`. An alert carries `runbook_url` only where a doc
@@ -20,6 +22,12 @@
 #                             queue-depth series exists. See recording-rules.yml.
 #   PrometheusDiskFillingUp — read node_filesystem_*, which needs node_exporter;
 #                             this stack does not run it.
+#
+# The security_controls and agentic_runs groups came from infra/alerts/rules.yml,
+# a file nothing deployed (2026-10-26). Two of its rules read names the
+# exporter does not produce — `session_policy_resolution` without `_total`, and
+# `agent_runs_in_flight` without the `_ratio` a unit-1 gauge gets — and the
+# breaker-trip counter had no caller. All three are fixed here.
 # =============================================================================
 
 groups:
@@ -152,6 +160,200 @@ groups:
             for 10 minutes ({{ $value | humanize }} failures/s). Audit events
             may not be reaching customer SIEMs — treat as a compliance
             incident, not a routine ops alert.
+
+  # ===========================================================================
+  # SECURITY CONTROLS — a control stopped applying, or could not be verified.
+  # These fire when a control LAPSES. A control acting (a guard block, a kill)
+  # is not one of them; that is in agentic_runs.
+  # ===========================================================================
+  - name: security_controls
+    rules:
+
+      # --- Sign-ins proceeding with no session caps. The session tracker is
+      # --- non-blocking on purpose: a policy read that fails (after one retry)
+      # --- lets the sign-in through with NO concurrent-session cap and NO
+      # --- lifetime cap, rather than turning a database blip into a sign-in
+      # --- outage. Two controls lapse silently, so any sustained rate alerts.
+      - alert: SessionPolicyResolutionFailing
+        expr: sum(rate(session_policy_resolution_total{outcome="failed"}[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tenant session policy not applying for some sign-ins"
+          description: >-
+            {{ $value | humanize }}/s of sign-ins could not read their tenant's
+            session policy and proceeded with no concurrent-session limit and
+            no session-lifetime cap. Sign-in is not blocked by design, which is
+            why this alerts. Check database reachability from the auth path.
+
+      # --- A workflow run halted because its context failed verification.
+      # --- Zero in normal operation, so any occurrence fires: a rate threshold
+      # --- would hide the single event that matters. CONTEXT_CHAIN_BROKEN and
+      # --- CONTEXT_REPLAYED mean something wrote to the database underneath a
+      # --- running agent; CONTEXT_SIZE_CAP_EXCEEDED is the benign one.
+      - alert: AgenticWorkflowContextIntegrityHalt
+        expr: sum by (code) (increase(agentic_workflow_context_integrity_halt_total[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent workflow context failed integrity verification ({{ $labels.code }})"
+          description: >-
+            A workflow run halted because its context could not be verified
+            (code {{ $labels.code }}). Find the run: WorkflowRun with
+            status FAILED and errorMessage starting "context integrity halt".
+            Its WORKFLOW_CONTEXT_INTEGRITY_HALTED audit row carries the
+            sequence numbers and hashes, never content. For CONTEXT_REPLAYED,
+            compare WorkflowStep.contextSeq (append-only) with the run's
+            envelope seq. Rule out a database restore or a manual UPDATE
+            before escalating.
+
+      # --- The scheduled kill-switch drill FAILED: a kill was in force and
+      # --- the tool boundary let a call through, or refused it for the wrong
+      # --- reason. The stop control is not stopping.
+      - alert: AgenticKillSwitchDrillFailed
+        expr: sum(increase(agentic_kill_switch_drill_total{outcome="FAILED"}[24h])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent kill-switch drill FAILED: the boundary did not refuse a killed agent"
+          description: >-
+            Read the newest AgentKillSwitchDrill row (scopesHonoured,
+            scopesFailed, boundaryRefusalReason); the CRITICAL Finding raised
+            on a failed drill carries the same detail. Do not wait for the next
+            drill: engage a kill on a canary agent by hand and confirm the
+            boundary refuses.
+
+      # --- The drill proved nothing. ERROR: it could not run. SWEPT_NOBODY: it
+      # --- found no agent to drill, which is expected on a deployment with no
+      # --- registered agents and a filter gap anywhere else. Either way the
+      # --- kill switch is unverified, not known broken.
+      - alert: AgenticKillSwitchDrillUnverified
+        expr: sum by (outcome) (increase(agentic_kill_switch_drill_total{outcome=~"ERROR|SWEPT_NOBODY"}[24h])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent kill-switch drill did not verify the kill switch ({{ $labels.outcome }})"
+          description: >-
+            The drill reported {{ $labels.outcome }}, so the kill switch went
+            untested. ERROR: read the drill job's log for the failure.
+            SWEPT_NOBODY: the worker log line "kill-switch drill swept ZERO
+            tenants" says whether any tenant has only placeholder agents.
+
+      # --- An agent's behavioural circuit breaker latched OPEN, halting it at
+      # --- the tool boundary. A claim about CHANGE, not volume. TOOL_MIX (the
+      # --- agent started doing a kind of thing it has never done) is the
+      # --- rogue-agent shape; GUARD_BLOCK is the content guard's own latch.
+      - alert: AgenticCircuitBreakerTripped
+        expr: sum by (signal, risk_tier) (increase(agentic_circuit_breaker_trip_total[1h])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "An agent's circuit breaker tripped ({{ $labels.signal }}, risk tier {{ $labels.risk_tier }})"
+          description: >-
+            An agent's recent behaviour diverged from its own baseline and the
+            breaker halted it, reads included. Find what changed: a new
+            workflow, a new tool grant, a widened policy card, or a compromise.
+            The agent's Circuit breaker tab shows the latch and the signals.
+            Closing it is a decision: "Accepted as the new baseline" adopts the
+            behaviour, "Resolved" keeps the old baseline.
+
+      # --- A fan-out stopped with members never attempted: silent work loss.
+      # --- Isolated member failures are a different series
+      # --- (agentic_fanout_member_failed_total) and are expected.
+      - alert: AgenticFanOutHalted
+        expr: sum by (component, kind) (increase(agentic_fanout_halted_total[1h])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "An agentic fan-out halted with members unattempted ({{ $labels.component }}, {{ $labels.kind }})"
+          description: >-
+            A fan-out in {{ $labels.component }} stopped on a fatal failure
+            ({{ $labels.kind }}) instead of isolating it. The members behind
+            it are not retried by the same tick; the next scheduled run
+            reaches them.
+
+  # ===========================================================================
+  # AGENTIC RUNS — is agentic work finishing, being stopped, or accumulating.
+  # Rates, not totals: a tenant that runs more agents has more failures in
+  # absolute terms and is not less healthy for it.
+  # ===========================================================================
+  - name: agentic_runs
+    rules:
+
+      # --- More than a quarter of settled runs failing. The denominator is
+      # --- guarded so a deployment with no agentic traffic does not page.
+      - alert: AgenticRunFailureRateWarning
+        expr: |
+          (
+            sum(rate(agent_run_settled_total{outcome="failed"}[15m]))
+            /
+            (sum(rate(agent_run_settled_total[15m])) > 0)
+          ) > 0.25
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 25% of agentic runs are failing ({{ $value | humanizePercentage }})"
+          description: >-
+            A run fails when its walk threw, or when the reaper settled it as
+            having no executor. The second means a deploy stranded runs, which
+            looks identical here and is not a model problem: check the
+            deployment timeline first. /agents/runs lists failures with their
+            error messages. outcome="aborted" is a run stopped on purpose (a
+            guard block or a kill) and is not counted here.
+
+      # --- The content guard QUARANTINED more than five runs in an hour.
+      # --- FLAGGED (parked for human review) is the control working and is
+      # --- not counted. Three blocks in a window also latch an agent's breaker.
+      - alert: AgenticGuardBlocksRising
+        expr: sum(increase(agent_guard_blocks_total{guard_verdict="QUARANTINED"}[1h])) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: "The content guard blocked more than 5 agentic runs in an hour"
+          description: >-
+            Either an agent is reaching for something it should not, or a
+            guard rule is too broad for a tenant's content. Nothing was
+            committed. Each blocked run's error message names the rule ids
+            that fired; the content that matched is not recorded anywhere.
+
+      # --- More than 20 runs executing at once, for 30 minutes. A per-process
+      # --- gauge, summed across processes. Runs parked at a human checkpoint
+      # --- are not executing and are not counted.
+      - alert: AgenticRunsInFlightSustained
+        expr: sum(agent_runs_in_flight_ratio) > 20
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20 agentic runs in flight for 30 minutes"
+          description: >-
+            The per-tenant cap (TenantSecuritySettings.agentMaxConcurrentRuns)
+            bounds one tenant, so a number this high with no tenant near its
+            cap means many tenants at once. The steps-per-run histogram
+            distinguishes slower runs from more runs.
+
+      # --- Runs starting faster than they settle, for an hour. A standing gap
+      # --- is normal (runs parked at a checkpoint have started and not
+      # --- settled); a sustained rate difference is runs going missing.
+      - alert: AgenticRunsStartedNotSettling
+        expr: |
+          (
+            sum(rate(agent_run_started_total[30m]))
+            - sum(rate(agent_run_settled_total[30m]))
+          ) > 0.05
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agentic runs have been starting faster than they settle for an hour"
+          description: >-
+            A run settles on COMPLETED, FAILED or ABORTED, not when it parks at
+            a checkpoint or is paused by a deploy. The in-flight gauge says
+            whether the unsettled runs are executing or parked; the governance
+            pack's runs.awaiting_approval and runs.paused give per-status
+            counts.
 
   # ===========================================================================
   # RESOURCE — Prometheus' own storage and scraping health.

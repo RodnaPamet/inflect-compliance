@@ -91,7 +91,7 @@ All HTTP requests that pass through `withApiErrorHandling` — this covers:
 
 - **Primary**: `api_request_count` counter with `http_status_code` label
 - **Exporter**: OTel Collector → Prometheus remote-write
-- **Dashboard**: "API Availability" panel in Grafana
+- **Dashboard**: `inflect-api-overview` ("API 5xx %"), in the observability stack, which is not recorded as running in production
 
 ### Alert Thresholds
 
@@ -146,8 +146,8 @@ GET + HEAD requests through `withApiErrorHandling`. Per-route exclusions identic
 ### Telemetry Source
 
 - **Primary**: `api_request_duration` histogram, filtered by `http_method=~"GET|HEAD"`
-- **Dashboard**: `inflect-app-overview` (panel 5: "Latency percentiles")
-- **Alert**: `ApiP95LatencyWarning` (>500ms 10m), `ApiP95LatencyCritical` (>2000ms 5m). Both currently match on full traffic; future PR splits the alert by method to avoid write-induced false positives on the read SLO.
+- **Dashboard**: `inflect-api-overview` ("Latency percentiles (p95 / p99 / mean)")
+- **Alert**: none in production. `ApiLatencySloBreach` in `infra/observability/prometheus/rules/alerting-rules.yml` fires when p95 over all requests is above 750ms for 15 minutes: looser than this SLO, and not split by method. The stack that would evaluate it is not recorded as running; see [`observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md).
 
 ---
 
@@ -182,8 +182,8 @@ Same as SLO 2 (reads), plus:
 ### Telemetry Source
 
 - **Primary**: `api_request_duration` histogram, filtered by `http_method=~"POST|PUT|PATCH|DELETE"`
-- **Dashboard**: `inflect-app-overview` (panel 5: "Latency percentiles") — split by method via the panel's `legendFormat`
-- **Alert**: same thresholds as SLO 2 today; per-method split is a follow-up
+- **Dashboard**: `inflect-api-overview` ("Latency percentiles (p95 / p99 / mean)"), which does not split by method
+- **Alert**: none in production. The same `ApiLatencySloBreach` rule as SLO 2, which does not split by method.
 
 ---
 
@@ -218,7 +218,7 @@ Same as SLO 1.
 
 - **Primary**: `api_request_count` counter, partitioned by `http_status_code`
 - **Secondary**: `api_request_errors` counter for error-code breakdown
-- **Dashboard**: "Error Rate" panel in Grafana
+- **Dashboard**: `inflect-api-overview` ("API 5xx %", "5xx ratio by service")
 
 ### Alert Thresholds
 
@@ -267,7 +267,7 @@ None — if the probe fails, the service is unhealthy.
 
 - **Primary**: External synthetic monitoring (Blackbox Exporter or platform probe)
 - **Secondary**: Container orchestrator health check results (K8s, Docker, Fly.io)
-- **Dashboard**: "Health Check Status" panel in Grafana
+- **Dashboard**: none. The GCP uptime check on `/api/readyz` keeps its own history in Cloud Monitoring; see `infra/alerts/external-uptime.yml`
 
 ### Alert Thresholds
 
@@ -305,8 +305,8 @@ All methods wrapped with `traceRepository(...)` from `src/lib/observability/repo
 ### Telemetry Source
 
 - **Metric**: `repo_method_duration` histogram (Epic OI-3 part 2)
-- **Dashboard**: `inflect-database` (panel 5: "Repo duration percentiles", panel 7: "Top slow repo methods (P95)")
-- **Alert**: indirect — `DatabaseConnectionPoolExhausted` fires on Prisma error rate, which correlates with sustained slow queries
+- **Dashboard**: none. The `inflect-database` dashboard that charted these was in `infra/dashboards/`, which no Grafana loaded and which was deleted on 2026-10-26
+- **Alert**: none
 
 ---
 
@@ -422,9 +422,10 @@ are the real ones.
 
 ### Verification
 
-- **Detection** is by alerting on the metrics described in this document. There
-  is no PagerDuty integration — earlier revisions claimed one; `infra/alerts/`
-  is an in-cluster Alertmanager config with no cluster to run in.
+- **Detection** is by the GCP Cloud Monitoring policies in `infra/alerts/`:
+  the uptime check on `/api/readyz`, and the container-health and disk
+  policies. They email; there is no PagerDuty integration — earlier revisions
+  claimed one.
 - **The restore mechanism is exercised** by the agri-saas drill described under
   SLO 6 — a snapshot-to-working-Postgres restore, which is the 60–120 minute
   row above. What it does not exercise is the rest of the scenario: attaching

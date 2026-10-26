@@ -15,6 +15,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'js-yaml';
 
 import { headingLines, mdSection } from '../helpers/markdown-regions';
 
@@ -324,8 +325,9 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
     //                  QueueDepthBacklogCritical, CertificateExpiryCritical)
     //     Dashboards:  the four `infra/dashboards/` UIDs
     //
-    // `infra/alerts/rules.yml` and the dashboards it links describe a
-    // Prometheus/Alertmanager/Grafana deployment that does not run (see
+    // `infra/alerts/rules.yml` and the dashboards it linked (both deleted
+    // 2026-10-26) described a Prometheus/Alertmanager/Grafana deployment that
+    // did not run (see
     // `infra/alerts/gcp-custom-metrics.yml`). Requiring the runbook to route
     // those alert names meant routing operators from alerts that never fire.
     // The quick-reference assertion above takes its place, read from the
@@ -337,19 +339,23 @@ describe('OI-3 — final readiness check (alignment)', () => {
     // RETIRED 2026-10-26 (#4308): 'every alert with severity=critical has a
     // corresponding playbook section' and 'runbook references the dashboards
     // UIDs that each alert uses'. Both derived their expectation from
-    // `infra/alerts/rules.yml`, which no production system loads, so both held
+    // `infra/alerts/rules.yml`, which no production system loaded, so both held
     // the runbook to alerts and dashboards that do not exist. The runbook's
     // routing is now checked against `infra/alerts/policies/` above.
 
-    it('SLO doc references the alert names that protect each SLO', () => {
-        // Latency SLO ↔ ApiP95Latency alerts; Error rate SLO ↔ ApiErrorRate
-        // alerts. "Protects each SLO" is a claim about WHERE the alert is
-        // named — beside the objective it guards. Measured, both names occur
-        // exactly once in the document and both are in the read-latency SLO's
-        // Telemetry Source, so binding here asserts the pairing rather than
-        // the mention.
+    it('SLO doc names, beside the latency SLO, an alert rule that exists', () => {
+        // "Protects the SLO" is a claim about WHERE the alert is named: beside
+        // the objective it guards, in the read-latency SLO's Telemetry Source.
+        // Until 2026-10-26 this required `ApiP95LatencyWarning` and
+        // `ApiP95LatencyCritical`, rules in `infra/alerts/rules.yml`, which
+        // nothing loaded. The name is now checked against the rule file the
+        // Prometheus stack reads, so the doc cannot name a rule that is gone.
         const reads = mdSection(read('docs/slos.md'), 'SLO 2: API Latency — Reads (P95)');
-        expect(reads).toMatch(/ApiP95LatencyWarning/);
-        expect(reads).toMatch(/ApiP95LatencyCritical/);
+        expect(reads).toMatch(/ApiLatencySloBreach/);
+        const rules = yaml.load(read('infra/observability/prometheus/rules/alerting-rules.yml')) as {
+            groups: { rules: { alert?: string }[] }[];
+        };
+        const alerts = rules.groups.flatMap((g) => g.rules.map((r) => r.alert));
+        expect(alerts).toContain('ApiLatencySloBreach');
     });
 });

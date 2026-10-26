@@ -5,8 +5,9 @@ signal that nothing else can see, and POST it to GCP Cloud Monitoring as a
 custom metric. A GCP alert policy then watches it.
 
 This is the alerting mechanism that **actually works on this deployment**. The
-Prometheus/Alertmanager configuration in `infra/alerts/rules.yml` and
-`infra/alerts/receivers.yml` describes a stack that is not deployed — see
+Prometheus/Alertmanager configuration that was in `infra/alerts/rules.yml` and
+`infra/alerts/receivers.yml` (deleted 2026-10-26) described a stack that was
+never deployed — see
 `infra/alerts/gcp-custom-metrics.yml` for the contract these reporters satisfy
 and the full argument for why a PromQL rule is the wrong answer here.
 

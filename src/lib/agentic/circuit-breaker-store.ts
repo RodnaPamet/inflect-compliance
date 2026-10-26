@@ -43,6 +43,7 @@
 import prisma from '@/lib/prisma';
 import type { PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
+import { recordAgentBreakerTrip } from '@/lib/observability/integration-metrics';
 import {
     createAgenticNotification,
     resolveAgenticRecipients,
@@ -399,6 +400,7 @@ async function applyVerdict(
         // shut — and a bell announcing a stop that did not happen is exactly
         // the wrong thing to send about a stop control.
         if (latched.count > 0) {
+            await meterBreakerTrip({ tenantId, agentId, signals: verdict.streakSignals });
             await notifyBreakerTrip({ tenantId, agentId, signals: verdict.streakSignals, now });
         }
         return;
@@ -414,6 +416,41 @@ async function applyVerdict(
             lastVerdictAt: now,
         },
     });
+}
+
+/**
+ * Count the breaker latching OPEN, once per signal that carried it.
+ *
+ * `agentic.circuit_breaker.trip` was declared, with advice on what to alert on,
+ * and nothing incremented it: the trip wrote its row and rang its bell, and the
+ * alert on the counter could never fire. Both latch sites call this, gated on
+ * the same `count > 0` as the bell, so a close that won the race counts nothing.
+ *
+ * One add per signal, so a trip carried by TOOL_MIX and PROPOSAL_RATE together
+ * is seen by an alert on either. A trip with no signal still counts, as `none`.
+ *
+ * Never throws. The latch is already written, and a failed tier read labels the
+ * trip `unscored` rather than dropping it.
+ */
+async function meterBreakerTrip(trip: {
+    tenantId: string;
+    agentId: string;
+    signals: readonly string[];
+}): Promise<void> {
+    let riskTier: string | null = null;
+    try {
+        const agent = await prisma.registeredAgent.findFirst({
+            where: { id: trip.agentId, tenantId: trip.tenantId },
+            select: { riskTier: true },
+        });
+        riskTier = agent?.riskTier ?? null;
+    } catch {
+        // Counted below without a tier.
+    }
+    const signals = trip.signals.length === 0 ? ['none'] : trip.signals;
+    for (const signal of signals) {
+        recordAgentBreakerTrip({ agentId: trip.agentId, signal, riskTier });
+    }
 }
 
 /**
@@ -749,6 +786,7 @@ export async function latchOnGuardBlock(
         });
 
         if (latched.count > 0) {
+            await meterBreakerTrip({ tenantId, agentId, signals: [GUARD_BLOCK_TRIP] });
             await notifyBreakerTrip({
                 tenantId,
                 agentId,

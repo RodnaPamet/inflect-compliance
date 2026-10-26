@@ -173,13 +173,19 @@ Everything. Nothing is configured by hand in the UI:
 ## Alerting model
 
 Alert **rules** are Prometheus-native
-(`prometheus/rules/alerting-rules.yml`), in three groups:
+(`prometheus/rules/alerting-rules.yml`), in five groups:
 
 - **stack_health** — collector/Prometheus/Tempo/Grafana down, collector
   export failures, data refused by `memory_limiter`, and a `DeadMansSwitch`
   that always fires (monitor for its *absence* downstream).
 - **app_health** — high 5xx ratio, API p95 SLO breach, job failure rate, and
   the compliance-critical `AuditStreamDeliveryFailing`.
+- **security_controls** — a control that stopped applying or could not be
+  verified: sign-ins without session caps, a workflow context failing
+  verification, a kill-switch drill that failed or proved nothing, a circuit
+  breaker trip, a fan-out halted with members unattempted.
+- **agentic_runs** — agentic work failing, being quarantined by the content
+  guard, piling up in flight, or starting faster than it settles.
 - **resource** — TSDB head series, scrape duration.
 
 The rules and dashboards use the metric names the collector's Prometheus
