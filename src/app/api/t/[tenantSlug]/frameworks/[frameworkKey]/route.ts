@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     getFramework, getFrameworkRequirements, listFrameworkPacks,
-    installPack, computeCoverage, computeInheritedCoverage, previewPackInstall,
+    installPack, installPacks, computeCoverage, computeInheritedCoverage,
+    previewPackInstall, previewPacksInstall,
     listTemplates, installSingleTemplate, bulkMapControls,
     bulkInstallTemplates, exportCoverageData,
     computeRequirementsDiff, exportReadinessReport,
@@ -12,9 +13,12 @@ import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 import { contentDispositionHeader } from '@/lib/http/content-disposition';
 
-const InstallSchema = z.object({
-    packKey: z.string().min(1),
-}).strip();
+// One pack (`packKey`), or several packs of THIS framework (`packKeys`) —
+// the subcategories a tenant chose. At least one is required either way.
+const InstallSchema = z.union([
+    z.object({ packKeys: z.array(z.string().min(1)).min(1).max(20) }).strip(),
+    z.object({ packKey: z.string().min(1) }).strip(),
+]);
 
 const InstallTemplateSchema = z.object({
     templateCode: z.string().min(1),
@@ -52,6 +56,10 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         return jsonResponse(await computeInheritedCoverage(ctx, params.frameworkKey));
     }
     if (action === 'preview') {
+        const packKeys = url.searchParams.get('packKeys');
+        if (packKeys !== null) {
+            return jsonResponse(await previewPacksInstall(ctx, params.frameworkKey, packKeys.split(',')));
+        }
         const packKey = url.searchParams.get('packKey');
         if (!packKey) return jsonResponse({ error: 'packKey required' }, { status: 400 });
         return jsonResponse(await previewPackInstall(ctx, packKey));
@@ -128,7 +136,10 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
     // framework for every other workspace, unaudited, and no screen called it
     // (#4125 follow-up). It now falls through like any unknown action.
 
-    // Default: install full pack
+    // Default: install the chosen pack(s)
     const body = InstallSchema.parse(raw);
+    if ('packKeys' in body) {
+        return jsonResponse(await installPacks(ctx, params.frameworkKey, body.packKeys), { status: 201 });
+    }
     return jsonResponse(await installPack(ctx, body.packKey), { status: 201 });
 });

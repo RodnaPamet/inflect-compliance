@@ -23,7 +23,7 @@ import { computePayloadHash } from '@/lib/legacy-access/canonical';
 
 const prisma: PrismaClient = prismaTestClient();
 const T = 'lar-tenant';
-const ctx = (role = 'ADMIN') => makeRequestContext(role, { tenantId: T });
+const ctx = (role = 'ADMIN') => makeRequestContext(role, { userId: 'lar-user-1', tenantId: T });
 
 let connectionId = '';
 let reviewerId = '';
@@ -108,10 +108,10 @@ beforeAll(async () => {
         create: { id: T, name: 'Legacy Review Tenant', slug: T },
     });
     await prisma.user.upsert({
-        where: { id: 'user-1' }, update: {},
-        create: { id: 'user-1', email: 'reviewer@lar.test', name: 'Reviewer' },
+        where: { id: 'lar-user-1' }, update: {},
+        create: { id: 'lar-user-1', email: 'reviewer@lar.test', name: 'Reviewer' },
     });
-    reviewerId = 'user-1';
+    reviewerId = 'lar-user-1';
 });
 
 beforeEach(async () => {

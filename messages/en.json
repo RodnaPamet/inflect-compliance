@@ -156,7 +156,10 @@
       "treeExpansionControls": "Tree expansion controls",
       "kpiTrend30Day": "{label} 30-day trend",
       "kpiTrend": "{label} trend",
-      "trend": "Trend"
+      "trend": "Trend",
+      "devtoolsClose": "Close devtools panel",
+      "devtoolsHits": "Cache fills since panel mount (a key transitioned out of validating with data and no error)",
+      "devtoolsErrors": "Cache errors since panel mount"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -216,7 +219,9 @@
       "lineChartAria": "Line chart",
       "radarChartAria": "Radar chart",
       "lossExceedanceAria": "Loss exceedance curve",
-      "lossBucketsAria": "Loss buckets"
+      "lossBucketsAria": "Loss buckets",
+      "rangeAria": "{label}: {start} → {end}",
+      "pointAria": "{label}: {value}"
     },
     "sections": {
       "accessReviews": "Access reviews",
@@ -7748,6 +7753,10 @@
       "viewControls": "View Controls →",
       "backToFramework": "Back to Framework",
       "packsEmpty": "No packs available for this framework.",
+      "choosePacks": "Choose what to install",
+      "choosePacksHint": "This framework is split into packs. Tick every one that applies to you; at least one is required. A control that several packs share is installed once.",
+      "choosePacksRequired": "Choose at least one pack to continue.",
+      "previewChosen": "Preview {count} selected",
       "restrictedTitle": "You cannot install frameworks",
       "restricted": "Only an Owner or Admin can install a framework pack, or a member whose custom role allows installing frameworks. Ask one of them to install it. You can still read this framework's requirements."
     },
@@ -12668,6 +12677,9 @@
         "requirements": "{count} requirements",
         "selected": "Selected",
         "selectAtLeastOne": "Select at least one framework to continue.",
+        "choosePacks": "Choose what to install from {name}",
+        "choosePacksHint": "This framework is split into packs. Tick every one that applies; controls the packs share are installed once.",
+        "choosePacksRequired": "Choose at least one pack from {name} to continue.",
         "badgeMostPopular": "Most Popular",
         "badgeEu": "EU",
         "installFailedTitle": "Some frameworks were not installed",

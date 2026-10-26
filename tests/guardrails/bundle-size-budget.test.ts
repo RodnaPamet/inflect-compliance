@@ -191,12 +191,29 @@ const BUDGETS_KB: Record<string, number> = {
         rot a third time the comment is not the right home for the number.
         They did rot a third time, and it isn't: #4041 deleted them and derives
         the headroom at run time instead.
+
+        ─── `dashboard` RAISED 2026-10-25 BY ONE KB, FOR THE RETAINED FILTER OPTIONS (#4305) ───
+
+        Measured on CI's webpack build, main (a docs-only PR the same hour)
+        against this branch:
+
+              route                              main     branch   delta
+              controls/dashboard/page            615.8    616.1    +0.3
+              risks/[riskId]/page                652.9    653.2    +0.3
+
+        `risks` is not raised here: #4300 raised it to 654 the same evening
+        for its own +0.3, which leaves room for this one.
+
+        What grew: `useRetainedFilterOptions`, about 0.3 KB gzipped, which
+        keeps a list filter's options from collapsing to the value just picked.
+        Four list pages use it, and webpack places it in a chunk the tenant
+        layout loads: every tenant route grew by 0.3-0.4 KB in the same build.
+        Neither of these two routes uses it. Importing it by its own module
+        path instead of the filter barrel was tried and measured the same.
+        Main had 0.2 KB left in `dashboard`, so no change to shared client
+        code could pass it. The raise is the measured delta rounded up, not
+        measured + 4.
     */
-    // Raised 616 → 617 in the Controls list fixes (#4298, #4275; owner
-    // decision). Main measured this route at 615.8 KB (0.2 KB left); the PR
-    // measured 616.5. The growth is in the Control health card, whose hint
-    // now states the verdict rule in full, and the truncation banner every
-    // list shares, now translated into en and bg.
     'dashboard': 617,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured

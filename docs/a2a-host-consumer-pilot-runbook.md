@@ -11,13 +11,21 @@ there governs anything below that looks merely procedural.
 
 ## There is no staging environment to pilot in
 
-Checked 2026-10-24 against the live repository rather than the docs:
+Checked 2026-10-24 against the live repository rather than the docs, and
+re-checked 2026-10-25. **Both docs have since been corrected (#4267), so the
+rows below no longer describe a documentation defect — they describe the
+pipeline**, which is what a pilot has to plan around:
 
-| claim | reality |
+| what a pilot needs | what exists |
 | --- | --- |
-| `CLAUDE.md:912` "staging auto-deploys" | nothing in the repo references `docker-compose.staging.yml` — no workflow, script or deploy path |
-| `docs/change-management-policy.md:41` "GitHub Environment approval for production" | `GET /repos/.../environments` returns `{"total_count":0}` |
-| a deploy workflow | `release.yml` runs `semantic-release` only; images reach the VM through Watchtower |
+| a staging deploy | none. Nothing deploys `docker-compose.staging.yml`; the `staging:up` / `staging:down` scripts are local `docker compose` commands and `npm run smoke:staging` targets `localhost:3000` |
+| an approval between merge and production | **half-built.** A `production` GitHub Environment with a required reviewer was created 2026-10-24, but the only workflow bound to it is `scanner-vm.yml` (the scanner VM). No application deploy runs through it, so a merge still reaches production unapproved |
+| a deploy workflow | none. `release.yml` runs `semantic-release`; images reach the VM through `ghcr-publish.yml` and Watchtower |
+
+The approval row changed between those two dates, which is why it is worth
+stating as a mechanism rather than as a count: `{"total_count":0}` became 1
+without anything gaining a gate. #4056 tracks the binding, and its blocker is
+that CI has no credential path to the production VM.
 
 So `docker-compose.staging.yml` is a self-hosted stack template, not a running
 environment, and `npm run smoke:staging` targets `localhost:3000`. A pilot has

@@ -42,6 +42,7 @@
 
 import * as React from 'react';
 import { useSWRConfig } from 'swr';
+import { useTranslations } from 'next-intl';
 
 interface KeyState {
     /** Cache key as SWR holds it (the resolved absolute URL). */
@@ -79,6 +80,12 @@ const REFRESH_INTERVAL_MS = 1_000;
  * file gates render so production never reaches this code path.
  */
 function SWRDevToolsImpl() {
+    // The panel is dead code in production -- the public entry returns null
+    // unless NODE_ENV is 'development', and Next inlines that -- but the a11y
+    // props still have to come from the catalogue (#3209): the ratchet's
+    // subject is the PROP, not whether a user can reach it. The provider is an
+    // ancestor (the root layout wraps everything), so the hook is safe here.
+    const t = useTranslations('common.ui');
     const { cache } = useSWRConfig();
     const [open, setOpen] = React.useState(false);
     const [snapshot, setSnapshot] = React.useState<CacheSnapshot>({
@@ -283,7 +290,7 @@ function SWRDevToolsImpl() {
                         fontSize: 14,
                         lineHeight: 1,
                     }}
-                    aria-label="Close devtools panel"
+                    aria-label={t('devtoolsClose')}
                 >
                     ×
                 </button>
@@ -305,13 +312,13 @@ function SWRDevToolsImpl() {
                 </span>
                 <span
                     data-testid="swr-devtools-hits"
-                    title="Cache fills since panel mount (a key transitioned out of validating with data and no error)"
+                    title={t('devtoolsHits')}
                 >
                     hit: <strong>{snapshot.hits}</strong>
                 </span>
                 <span
                     data-testid="swr-devtools-misses"
-                    title="Cache errors since panel mount"
+                    title={t('devtoolsErrors')}
                 >
                     miss: <strong>{snapshot.misses}</strong>
                 </span>

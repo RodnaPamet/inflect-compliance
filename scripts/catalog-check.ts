@@ -78,6 +78,7 @@ function readExpectation(): Expectation {
             templates?: unknown[];
             framework?: { key?: unknown };
             pack?: { key?: unknown };
+            packs?: Array<{ key?: unknown }>;
         };
         // Bare array, `{ templates }` (CatalogFile), or `{ controls }`
         // (internal-controls). Reading only one shape is how 151 templates
@@ -89,6 +90,7 @@ function readExpectation(): Expectation {
 
         if (typeof obj.framework?.key === 'string') frameworkKeys.add(obj.framework.key);
         if (typeof obj.pack?.key === 'string') packKeys.add(obj.pack.key);
+        for (const p of obj.packs ?? []) if (typeof p?.key === 'string') packKeys.add(p.key);
 
         for (const t of list) {
             if (typeof t?.code !== 'string') continue;

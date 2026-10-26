@@ -809,6 +809,11 @@
   "derivation": "audited",
   "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/filters. Audited note: A view adapter over `@/lib/filters/filter-presets`, and I checked that module: `presetsStorageKey()` returns `uiStorageKey('filters', tenantSlug, page)`, so the storage key IS built through the seam and there is no `storage-key` finding. `src/lib/filters` is UI-preference persistence (it imports FROM `@/components/ui/filter/filter-state` at filter-presets.ts:21), not a compliance domain module, so I did not count it as `domain-import` — the mechanical pass overrules that judgement and the entry stands MIXED, which is the audit/grep asymmetry working as designed."
  },
+ "src/components/ui/filter/use-retained-filter-options.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A pure merge over caller-supplied filter definitions plus a hook that stores the result. Its only imports are `react` and the sibling `./types`, it renders nothing and writes no storage, so there is no copy, no storage key and no brand token. The facet keys it acts on are a parameter; the product facet names live in each page's filter-defs, not here. The docblock describes the problem in neutral terms (owners and categories of the rows on screen)."
+ },
  "src/components/ui/form-description.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",

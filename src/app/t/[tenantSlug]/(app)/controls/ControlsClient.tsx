@@ -56,6 +56,7 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
     type FilterOption,
     type FilterType,
@@ -84,11 +85,10 @@ import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import {
     buildControlFilters,
+    CONTROL_ROW_DERIVED_FILTER_KEYS,
     buildControlStatusLabels,
     controlCategoryLabel,
     CONTROL_FILTER_KEYS,
-    mergeOwnerOptions,
-    ownerOptionsFromControls,
 } from './filter-defs';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import {
@@ -668,31 +668,13 @@ function ControlsPageInner({
     // Options are derived from `rawControls` (the full server-returned set),
     // NOT the client-filtered `controls` — otherwise selecting one derived
     // category would collapse the Category picker to just that value.
-    //
-    // Owner options are the exception: Owner is a SERVER filter, so after the
-    // first pick `rawControls` holds only that owner's controls and options
-    // derived from it alone collapsed to the one owner already chosen — a
-    // second could never be picked. The pool below only grows: every owner
-    // seen on any load stays pickable. (Adjusted during render, the React
-    // pattern for state derived from a changing input — no effect, no extra
-    // pass through stale options.)
-    const [ownerPool, setOwnerPool] = useState<{
-        source: ControlListItem[];
-        options: ReadonlyArray<FilterOption>;
-    }>(() => ({
-        source: rawControls,
-        options: ownerOptionsFromControls(rawControls),
-    }));
-    if (ownerPool.source !== rawControls) {
-        setOwnerPool({
-            source: rawControls,
-            options: mergeOwnerOptions(ownerPool.options, ownerOptionsFromControls(rawControls)),
-        });
-    }
-    const liveFilterDefs: FilterType[] = useMemo(
-        () => buildControlFilters(rawControls, tAdapter, tGroupAdapter, ownerPool.options),
-        [rawControls, tAdapter, tGroupAdapter, ownerPool.options],
+    const builtFilterDefs: FilterType[] = useMemo(
+        () => buildControlFilters(rawControls, tAdapter, tGroupAdapter),
+        [rawControls, tAdapter, tGroupAdapter],
     );
+    // `rawControls` is still narrowed by the SERVER-side filters, Owner among
+    // them, so options built from it alone collapse to the owner just picked.
+    const liveFilterDefs = useRetainedFilterOptions(builtFilterDefs, CONTROL_ROW_DERIVED_FILTER_KEYS);
 
     // R-filter-gear (#3, 2026-06-07): the "Edit filter cards" gear now
     // controls the QUANTIFIABLE KPI cards above the table (Total /

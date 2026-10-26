@@ -154,6 +154,7 @@ async function main(): Promise<number> {
             requirements: result.requirements,
             templates: result.templates,
             pack: result.pack ?? null,
+            packs: result.packs,
         };
         process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
         return 0;

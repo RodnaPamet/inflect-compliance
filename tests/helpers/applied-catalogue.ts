@@ -152,6 +152,8 @@ export interface AppliedCatalog {
     readonly requirements: Array<Record<string, unknown>>;
     readonly templates: Array<Record<string, unknown>>;
     readonly pack?: Record<string, unknown>;
+    /** Every pack the file declares — `packs` when it has several, else `[pack]`. */
+    readonly packs: Array<Record<string, unknown>>;
 }
 
 /**
@@ -176,8 +178,12 @@ export function appliedCatalogFor(frameworkKey: string): AppliedCatalog | null {
             requirements?: unknown;
             templates?: unknown;
             pack?: unknown;
+            packs?: unknown;
         };
         if (obj.framework?.key !== frameworkKey) continue;
+        const packs = (Array.isArray(obj.packs) ? obj.packs : obj.pack ? [obj.pack] : []) as Array<
+            Record<string, unknown>
+        >;
         return {
             file: s.file,
             framework: obj.framework as Record<string, unknown>,
@@ -187,7 +193,8 @@ export function appliedCatalogFor(frameworkKey: string): AppliedCatalog | null {
             templates: (Array.isArray(obj.templates) ? obj.templates : []) as Array<
                 Record<string, unknown>
             >,
-            pack: obj.pack as Record<string, unknown> | undefined,
+            pack: (obj.pack as Record<string, unknown> | undefined) ?? packs[0],
+            packs,
         };
     }
     return null;
