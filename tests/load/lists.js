@@ -1,10 +1,12 @@
 // k6 load-test scenario — authenticated list-read baseline.
 //
 // Each VU logs in once at iteration 0 and reuses the resulting
-// session-token cookie (carried automatically by the per-VU jar)
-// for all subsequent iterations, so we measure the steady-state
-// list-read path rather than the cold login path. (auth.js covers
-// the cold-login throughput separately.)
+// session-token cookie for all subsequent iterations, so we measure the
+// steady-state list-read path rather than the cold login path. (auth.js
+// covers the cold-login throughput separately.) k6 empties a VU's cookie
+// jar at the start of every iteration unless `noCookiesReset` is set, so
+// without it each VU was signed out after its first iteration and every
+// later request was a 401 from the middleware (#4307).
 //
 // Per iteration each VU exercises the three highest-traffic list
 // endpoints with realistic filter combinations:
@@ -44,6 +46,8 @@ const listSuccessRate = new Rate('list_success_rate');
 let loggedIn = false;
 
 export const options = {
+    // Keep the session cookie across iterations; see the header.
+    noCookiesReset: true,
     scenarios: {
         list_baseline: {
             executor: 'ramping-vus',
@@ -70,10 +74,12 @@ export const options = {
         // Aggregate success rate across all list endpoints.
         list_success_rate: ['rate>0.99'],
 
-        // Per-endpoint check rates.
-        'checks{check:controls_ok}': ['rate>0.99'],
-        'checks{check:risks_ok}': ['rate>0.99'],
-        'checks{check:evidence_ok}': ['rate>0.99'],
+        // Per-endpoint check rates. The tag is `probe`, not `check`: k6
+        // writes its own `check` tag (the check's name) over a custom one,
+        // so `checks{check:…}` matched no sample and passed over nothing.
+        'checks{probe:controls}': ['rate>0.99'],
+        'checks{probe:risks}': ['rate>0.99'],
+        'checks{probe:evidence}': ['rate>0.99'],
 
         // Login-step health (gate the warm-up, not the steady state).
         'http_req_failed{step:login}': ['rate<0.05'],
@@ -161,7 +167,7 @@ export default function listsIteration() {
                     }
                 },
             },
-            { check: 'controls_ok' },
+            { probe: 'controls' },
         );
         controlsRequests.add(1);
         listSuccessRate.add(ok);
@@ -185,7 +191,7 @@ export default function listsIteration() {
                     }
                 },
             },
-            { check: 'risks_ok' },
+            { probe: 'risks' },
         );
         risksRequests.add(1);
         listSuccessRate.add(ok);
@@ -209,7 +215,7 @@ export default function listsIteration() {
                     }
                 },
             },
-            { check: 'evidence_ok' },
+            { probe: 'evidence' },
         );
         evidenceRequests.add(1);
         listSuccessRate.add(ok);
