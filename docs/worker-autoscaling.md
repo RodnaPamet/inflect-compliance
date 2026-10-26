@@ -1,110 +1,101 @@
-# Worker autoscaling — KEDA on queue depth
+# Worker scaling
 
 > **New to the codebase?** Start at [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-The BullMQ worker Deployment autoscales by **queue depth** via KEDA. Off by
-default; production enables it. When off, the worker keeps its fixed
-`replicaCount` (manual scaling, as before).
+Production runs one `worker` container under Docker Compose, on the one
+production VM ([`docs/deployment.md`](deployment.md)). The `worker` service in
+[`deploy/docker-compose.prod.yml`](../deploy/docker-compose.prod.yml) has no
+replica setting, and nothing scales it. Every background job runs in that one
+container.
 
-## Why KEDA (not the Prometheus Adapter)
+## What the worker is
 
-The `job.queue.depth` metric already exists (OTel observable gauge,
-`src/lib/observability/metrics.ts`) and surfaces in Prometheus. Two ways to feed
-it into HPA:
+- **One container.** It uses the same image as `app`. Its command is
+  `node dist/scheduler.mjs && node dist/worker.mjs`: the scheduler registers
+  the repeatable jobs in `src/app-layer/jobs/schedules.ts`, and then the BullMQ
+  worker (`scripts/worker.ts`) runs until it is stopped.
+- **One queue,** `inflect-jobs` (`QUEUE_NAME` in `src/app-layer/jobs/types.ts`).
+- **Two limits, both constants in `scripts/worker.ts`:** `concurrency: 5`, and
+  a `limiter` of 50 jobs per 60 seconds. No environment variable changes
+  either.
+- **A health check that needs work to happen.** The compose healthcheck runs
+  `dist/worker-healthcheck.mjs`, which reads a heartbeat key that the worker
+  refreshes each time it completes a job. A worker that is running but takes no
+  jobs reports unhealthy.
 
-- **Prometheus Adapter** — expose `job.queue.depth` to `external.metrics.k8s.io`;
-  HPA consumes it. Reuses the observability stack, but **couples observability to
-  scaling policy** — the metric pipeline becomes load-bearing for enforcement.
-- **KEDA** (chosen) — a purpose-built `redis` scaler reads the BullMQ list length
-  directly and drives an HPA. The queue-depth *metric* stays informational; the
-  ScaledObject is the canonical scaler. Decoupled, ~one ScaledObject of YAML.
+## Adding capacity
 
-KEDA wins here: the scaling signal (Redis list length) is read at the source, so
-a broken metrics pipeline never silently disables autoscaling.
+[`docs/sizing.md`](sizing.md#worker-throughput) has the signals and the first
+change for each. In short:
 
-## How it scales
+- If more than 50 jobs a minute arrive for a long time, the queue grows
+  whatever the machine's size. Raise the `limiter` in code.
+- If jobs wait while host CPU is idle, raise `concurrency` in code.
+- If jobs wait and host CPU is busy, the machine is the limit. Move to a larger
+  machine type.
 
-- **Trigger:** KEDA `redis` scaler on `bull:inflect-jobs:wait` (the BullMQ waiting
-  list — `<prefix>:<QUEUE_NAME>:wait`).
-- **Target:** `targetQueueDepth` waiting jobs per worker (default 50). Replicas =
-  `ceil(waiting / targetQueueDepth)`, clamped to `[minReplicas, maxReplicas]`.
-- **Cadence:** polls every `pollingInterval` (30s). A burst sustains ~30s before
-  the scaler reacts — this is **not** sub-30s reactive.
-- **Shape:** scale **up fast** (100%/30s, no stabilization), scale **down slow**
-  (50%/60s, 300s stabilization) — absorb bursts immediately, drain gradually.
-- **Prod:** `minReplicas 4 → maxReplicas 50`. Staging: disabled.
+A second `worker` container would be a change to the compose file, applied with
+`deploy/apply.sh`. It would not raise the 50-a-minute limit: BullMQ keeps the
+rate limiter in Redis, per queue, so every worker on `inflect-jobs` shares it.
+It would also run the scheduler a second time, which registers the same
+schedules again; registration is idempotent (`docs/deployment.md`,
+"Background worker").
 
-## Prerequisites (operator)
+## Restarts and shutdown
 
-1. **KEDA installed cluster-wide** (PATH A — the app chart does NOT manage the
-   KEDA controller):
+The worker stops when Watchtower moves it onto a new image, when
+`deploy/apply.sh` recreates it, and when the VM stops. Jobs queued while it is
+down wait in Redis, which keeps them on disk (AOF), and run when it is back.
 
-   ```
-   helm repo add kedacore https://kedacore.github.io/charts
-   helm install keda kedacore/keda -n keda --create-namespace
-   ```
+On SIGTERM, `shutdown()` in `scripts/worker.ts`:
 
-2. **Redis host + password as separate keys.** The app connects via a single
-   `REDIS_URL`, but KEDA's redis scaler **cannot parse a URL** — it needs
-   `address` (host:port) + password separately. Before enabling, ensure the
-   worker's env/secret exposes them (or override the knobs):
-   - `worker.autoscaling.redis.addressFromEnv` (default `REDIS_HOST`) must resolve
-     to **host:port** in the worker pod's env.
-   - `worker.autoscaling.redis.passwordSecretKey` (default `REDIS_PASSWORD`) must
-     be a key in the envFrom secret.
+1. pauses in-flight agentic runs, so they can resume from their last completed
+   step;
+2. calls `worker.close()`, which takes no new jobs and waits for the running
+   ones;
+3. closes the Redis connection and flushes telemetry.
 
-   If your secret only has `REDIS_URL`, add `REDIS_HOST` (host:port) + a
-   `REDIS_PASSWORD` secret key, or point these knobs at whatever keys you do
-   expose. **This is the most common enablement failure.**
+Two things limit what that achieves:
 
-## Graceful shutdown (scale-down correctness)
+- **About 10 seconds.** The compose file sets no `stop_grace_period` for
+  `worker` and no stop timeout for Watchtower, so both use their default of 10
+  seconds before they kill the container. A job still running then is killed
+  mid-run.
+- **A shell is PID 1.** The command runs under `/bin/sh -c`, with node as the
+  shell's child. Nothing in the repository shows that the stop signal reaches
+  node through that shell. After a restart, look for
+  `shutdown signal received` in the worker's log. If it is missing, the worker
+  was killed, not shut down.
 
-Scale-down sends SIGTERM to a worker pod. `scripts/worker.ts` handles it:
-`shutdown()` calls `await worker.close()` (BullMQ stops accepting new jobs and
-finishes in-flight ones) then drains telemetry. This is bounded by the pod's
-`terminationGracePeriodSeconds` (default **60s**, `worker.terminationGracePeriodSeconds`).
+A job that was killed mid-run is not lost. Its lock expires (30 seconds),
+BullMQ's stalled-job check puts it back in the queue, and it runs again from
+the start. `scripts/worker.ts` keeps BullMQ's default `maxStalledCount` of 1,
+so a job that stalls a second time fails instead of running a third time. A job
+that can run twice must be safe to run twice.
 
-**Set the grace period ≥ your longest job.** Most jobs finish in seconds; the
-heaviest (framework-pack install ~60s, key/DEK-rotation sweeps) can run longer.
-If a job exceeds the grace period it's SIGKILLed mid-run — BullMQ marks it
-**stalled and retries** it (correct, but noisy). Tune `terminationGracePeriodSeconds`
-up in prod if your job mix runs long.
+## When the queue stops draining
 
-## Failure modes
+More workers do not help when jobs are not being taken or keep failing: a bug,
+a job that fails on every attempt, or a dependency that is down. Find out why
+before changing capacity. The production alerts that cover the worker are GCP
+Cloud Monitoring policies, listed in
+[`infra/alerts/gcp-custom-metrics.yml`](../infra/alerts/gcp-custom-metrics.yml):
 
-- **Queue stuck (Redis up, jobs not being claimed).** KEDA sees a growing list and
-  scales to `maxReplicas` even though adding workers won't help (the jobs aren't
-  being claimed — a bug, a poisoned job, a dependency outage). Symptom: an
-  autoscale-to-max that doesn't drain. **Operator action required** — this is not
-  a scaling problem; investigate why jobs aren't being processed.
-- **BullMQ key layout changes.** The trigger is pinned to `bull:<queue>:wait`. If
-  a BullMQ upgrade changes that key, the scaler reads an empty/missing list and
-  **silently never scales up**. Pin the BullMQ version this list-name targets;
-  re-verify on every BullMQ major bump.
+- `docker/container_health` reports the worker unhealthy when its heartbeat
+  goes stale.
+- `jobs/work_overdue` counts rows whose own schedule says they are late.
+- `jobs/work_abandoned` counts work given up on in the last 24 hours.
 
-## Cost ceiling
+`/api/readyz` does not cover the worker. It checks the web tier's view of the
+database and Redis, and stays green while the worker does nothing.
 
-Worst case = `maxReplicas × worker pod resources`. Prod: 50 × (1 vCPU / 512Mi
-limit) = 50 vCPU / 25Gi at full scale. Size `maxReplicas` to the **worst-hour job
-arrival rate**, not the absolute peak — KEDA will ride to max under sustained
-load, and that's the bill.
+## What was designed and never built
 
-## Out of scope
-
-- **Per-priority scaling** — BullMQ supports priority; the redis scaler reads
-  total list length only.
-- **Cross-queue scaling** — one queue today (`inflect-jobs`); a second queue adds
-  a second trigger.
-- **Spot instances for workers** — a node-pool design, not a chart change.
-
-## Verification
-
-- `helm lint infra/helm/inflect --values values-production.yaml` — clean.
-- `helm template ... --values values-production.yaml` renders one `ScaledObject`
-  (min 4 / max 50) + one `TriggerAuthentication`, and the worker Deployment OMITS
-  `spec.replicas`. Staging renders neither and keeps `replicas`.
-- In a cluster: enqueue 500 jobs → `kubectl get hpa -n inflect-production` shows
-  the KEDA-managed HPA scaling the worker toward `targetQueueDepth`.
-- Drain test: `kubectl delete pod <worker>` mid-job → BullMQ marks the job for
-  retry, not failure.
-- `npx jest tests/guardrails/worker-autoscaling-coverage.test.ts`.
+A KEDA `ScaledObject` for the Helm chart (`infra/helm/inflect`) once scaled a
+worker Deployment on the length of `bull:inflect-jobs:wait`, from 4 to 50
+replicas in `values-production.yaml`. No cluster ever ran it. The chart, its
+values files and the guard test for this design were removed with the unapplied
+AWS estate on 2026-09-02
+([#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226)). The
+design is recorded in
+[`docs/implementation-notes/2026-06-26-worker-autoscaling.md`](implementation-notes/2026-06-26-worker-autoscaling.md).
