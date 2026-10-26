@@ -26,6 +26,7 @@ import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
 import { mayReadAgentSubjects } from '@/lib/access-review/scope';
+import { frozenCampaignCoverage, type PopulationCoverage } from '@/lib/legacy-access/coverage';
 import { assertNotAgentCampaign } from './access-review-scope-gate';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
@@ -289,6 +290,12 @@ export interface CloseConnectedResult {
     snapshotTruncated: boolean;
     /** The hashed evidence PDF, or null when generation failed (the close still stands). */
     evidenceFileRecordId: string | null;
+    /**
+     * LEGACY_APP only: whether the certified snapshot is KNOWN to be the
+     * application's whole population, read off the frozen subjects (#3325).
+     * Null for a CONNECTED_APP campaign, which has no such question to answer.
+     */
+    populationCoverage: PopulationCoverage | null;
 }
 
 /**
@@ -380,6 +387,32 @@ function legacyProvenanceOf(
         }
     }
     return null;
+}
+
+/**
+ * A LEGACY_APP campaign's population coverage, from its frozen subjects; null
+ * for every other scope (#3325).
+ *
+ * Keyed on the SCOPE, not on whether a subject happens to carry provenance:
+ * `legacyProvenanceOf` returns null for a legacy campaign whose subjects lost
+ * theirs, and the coverage caveat must not disappear with it — a legacy
+ * campaign that cannot show its provenance can still less show a whole
+ * population. `frozenCampaignCoverage` reads such a campaign as UNKNOWN.
+ */
+function legacyCoverageOf(
+    scope: string,
+    decisions: readonly { snapshotJson: unknown }[]
+): PopulationCoverage | null {
+    return scope === 'LEGACY_APP' ? frozenCampaignCoverage(decisions.map((d) => d.snapshotJson)) : null;
+}
+
+/** The close audit row's coverage sentence, or '' when there is nothing to say. */
+function legacyCoverageCaveat(coverage: PopulationCoverage | null): string {
+    return coverage === 'UNKNOWN'
+        ? ' — POPULATION COVERAGE UNVERIFIED: nothing confirmed that the snapshot held every account '
+            + 'the legacy application has, so this campaign evidences that these accounts were reviewed — '
+            + 'not that every account of the application was'
+        : '';
 }
 
 /** How the account was attributed to a person, if it was. */
@@ -482,6 +515,12 @@ export async function closeConnectedAccessReview(
             await db.accessReviewConnectedDecision.updateMany({ where: { id: d.id, tenantId: ctx.tenantId, executedAt: null }, data: { executedAt: now, executedByUserId: ctx.userId } });
         }
 
+        // #3325 — the same reasoning as truncation, one level up: a legacy
+        // campaign whose snapshot is not KNOWN to be the whole application must
+        // say so in the row that records it claiming completion. The key is
+        // added for LEGACY_APP only, so a connected campaign's row is unchanged.
+        const populationCoverage = legacyCoverageOf(review.scope, decisions);
+
         await logEvent(db, ctx, {
             action: 'ACCESS_REVIEW_DECISION_EXECUTED',
             entityType: 'AccessReview',
@@ -490,7 +529,7 @@ export async function closeConnectedAccessReview(
             // create row: this is the entry an auditor reads to find out what
             // the campaign attested, and a campaign that covered a prefix of
             // the directory must say so at the moment it claims completion.
-            detailsJson: { category: 'access', entityName: 'AccessReview', operation: 'close', summary: `Closed connected-app review "${review.name}" — ${decisions.length} decision(s), ${remediationTasks} remediation task(s)${review.snapshotTruncated ? ` — SNAPSHOT TRUNCATED at the ${MAX_SUBJECTS}-subject cap, so this campaign does not cover the whole directory` : ''}`, after: { executed: decisions.length, remediationTasks, snapshotTruncated: review.snapshotTruncated } },
+            detailsJson: { category: 'access', entityName: 'AccessReview', operation: 'close', summary: `Closed connected-app review "${review.name}" — ${decisions.length} decision(s), ${remediationTasks} remediation task(s)${review.snapshotTruncated ? ` — SNAPSHOT TRUNCATED at the ${MAX_SUBJECTS}-subject cap, so this campaign does not cover the whole directory` : ''}${legacyCoverageCaveat(populationCoverage)}`, after: { executed: decisions.length, remediationTasks, snapshotTruncated: review.snapshotTruncated, ...(populationCoverage ? { populationCoverage } : {}) } },
         });
 
         // Inside the tenant-bound transaction: `db`, not the global prisma
@@ -506,6 +545,7 @@ export async function closeConnectedAccessReview(
         remediationTasks: phase1.remediationTasks,
         snapshotTruncated: phase1.review.snapshotTruncated,
         evidenceFileRecordId: null,
+        populationCoverage: legacyCoverageOf(phase1.review.scope, phase1.decisions),
     };
     if (phase1.alreadyClosed) return result;
 
@@ -530,6 +570,11 @@ export async function closeConnectedAccessReview(
             // row here would reintroduce exactly the drift the freeze removed:
             // the mapping version could have moved since.
             legacyProvenance: legacyProvenanceOf(phase1.decisions),
+            // From the frozen subjects too, and for the same reason. Rendered in
+            // the source section, before the decisions: what an auditor is told
+            // was certified must not read as the whole application when nothing
+            // established that it was (#3325).
+            legacyPopulationCoverage: result.populationCoverage,
             decisions: phase1.decisions.map((d) => {
                 const snap = (d.snapshotJson ?? {}) as Record<string, unknown>;
                 return {
@@ -605,7 +650,7 @@ export async function closeConnectedAccessReview(
                     entityName: 'FileRecord',
                     operation: 'create',
                     summary: `Generated connected-app access-review evidence PDF (sha256=${writeResult.sha256})`,
-                    after: { fileRecordId: record.id, pathKey, sizeBytes: writeResult.sizeBytes, sha256: writeResult.sha256, snapshotTruncated: phase1.review.snapshotTruncated },
+                    after: { fileRecordId: record.id, pathKey, sizeBytes: writeResult.sizeBytes, sha256: writeResult.sha256, snapshotTruncated: phase1.review.snapshotTruncated, ...(result.populationCoverage ? { populationCoverage: result.populationCoverage } : {}) },
                 },
             });
             return record.id;

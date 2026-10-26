@@ -2208,6 +2208,34 @@ enum LegacyAccessSnapshotStatus {
   PARTIAL
 }
 
+/// Whether a snapshot is KNOWN to hold the application's whole account
+/// population (#3325). A separate fact from `LegacyAccessSnapshotStatus`, and
+/// the two must not be folded together.
+///
+/// `COMPLETE` says the pull finished and every row it was given is stored; it is
+/// a statement about OUR read. This says whether the rows given were all the
+/// rows there are, which is a statement about THE APPLICATION — and the MCP
+/// transport cannot make it. The shim runs the query, not us, and the manifest's
+/// `rowCount` is the far end's own claim, so a shim that can see one of twelve
+/// workstations produces a manifest indistinguishable from one that saw all
+/// twelve. Overloading `status` would make every reader refuse every MCP
+/// snapshot; leaving it alone with no second fact made a recertification over
+/// one workstation attest to the whole application.
+///
+/// UNKNOWN is the column's SCHEMA default and no present caller writes either
+/// value (owner decision, 2026-10-09). VERIFIED is for a transport that observes
+/// the whole table itself — a single query returning it, with a row count the
+/// pull counted — and no such transport exists yet. A default of VERIFIED with
+/// every caller overriding it would be one new transport away from a silent
+/// false claim, because the next transport's author has no reason to suspect a
+/// default is an assertion.
+///
+/// UNKNOWN declared first so a reader of this file meets the default first.
+enum LegacyAccessPopulationCoverage {
+  UNKNOWN
+  VERIFIED
+}
+
 /// Why a pull did not produce a complete snapshot.
 ///
 /// A closed set rather than free text because the operator surface has to say
