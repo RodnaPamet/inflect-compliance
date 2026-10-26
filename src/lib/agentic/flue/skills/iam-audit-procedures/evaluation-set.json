@@ -61,7 +61,6 @@
                     "legacy:conn_7"
                 ],
                 "mustNotInclude": [
-                    "CAMPAIGN_TRUNCATED",
                     "conclusion: pass",
                     "conclusion:** pass",
                     "conclusion**: pass",
@@ -70,7 +69,7 @@
                     "verdict**: pass"
                 ]
             },
-            "rationale": "Tests R3's question for a legacy application: the campaign is not truncated and every other attribute is met, but its subjects were frozen with populationCoverage UNKNOWN, so the only correct answer is the exception POPULATION_COVERAGE_UNVERIFIED on legacy:conn_7 and a FAIL. The snapshot's COMPLETE status and a row count that matches the manifest are what an answer reading R3 as truncation alone would cite for a PASS; CAMPAIGN_TRUNCATED is the code an answer that conflated the two would write."
+            "rationale": "Tests R3's question for a legacy application: the campaign is not truncated and every other attribute is met, but its subjects were frozen with populationCoverage UNKNOWN, so the only correct answer is the exception POPULATION_COVERAGE_UNVERIFIED on legacy:conn_7 and a FAIL. The snapshot's COMPLETE status and a row count that matches the manifest are what an answer reading R3 as truncation alone would cite for a PASS, and that answer misses both the code and the FAIL. CAMPAIGN_TRUNCATED is not forbidden: a correct answer may name it to say it was not raised, and a substring cannot tell naming a code from raising it."
         },
         {
             "id": "privileged-without-mfa",
