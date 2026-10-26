@@ -62,6 +62,10 @@ export function login(cfg) {
         },
         { tags: { step: 'login' } },
     );
+    if (__VU <= 2) {
+        const jar = http.cookieJar().cookiesForURL(cfg.baseUrl);
+        console.log(JSON.stringify({ vu: __VU, step: 'login', status: loginRes.status, body: String(loginRes.body || '').slice(0, 200), jar: Object.keys(jar).map((k) => `${k}(${String(jar[k]).length})`) }));
+    }
     if (loginRes.status < 200 || loginRes.status >= 400) return false;
 
     let url;

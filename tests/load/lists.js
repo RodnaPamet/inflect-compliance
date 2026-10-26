@@ -118,6 +118,24 @@ const EVIDENCE_FILTERS = [
     'limit=20&q=audit',
 ];
 
+
+// DEBUG (#4307) — print what the server answered, without cookie values.
+let debugPrinted = 0;
+function debugResponse(endpoint, r) {
+    const jar = http.cookieJar().cookiesForURL(`${cfg.baseUrl}/api/t/${cfg.tenant}`);
+    const jarShape = Object.keys(jar).map((k) => `${k}(${String(jar[k]).length})`);
+    const setCookie = (r.headers['Set-Cookie'] || '').split(/,(?=[^ ;]+=)/).map((c) => c.split('=')[0] + ' ' + (c.match(/;.*/) || [''])[0]);
+    if (__ITER <= 1 || (r.status !== 200 && debugPrinted < 4)) {
+        if (r.status !== 200) debugPrinted++;
+        console.log(JSON.stringify({
+            vu: __VU, iter: __ITER, endpoint, status: r.status, ms: r.timings.duration,
+            location: r.headers['Location'] || null,
+            body: String(r.body || '').slice(0, 300),
+            setCookie, jarShape,
+        }));
+    }
+}
+
 function pickFilter(filters, iter) {
     return filters[iter % filters.length];
 }
@@ -163,6 +181,7 @@ export default function listsIteration() {
             },
             { check: 'controls_ok' },
         );
+        debugResponse('controls', r);
         controlsRequests.add(1);
         listSuccessRate.add(ok);
     });
@@ -187,6 +206,7 @@ export default function listsIteration() {
             },
             { check: 'risks_ok' },
         );
+        debugResponse('risks', r);
         risksRequests.add(1);
         listSuccessRate.add(ok);
     });
@@ -211,6 +231,7 @@ export default function listsIteration() {
             },
             { check: 'evidence_ok' },
         );
+        debugResponse('evidence', r);
         evidenceRequests.add(1);
         listSuccessRate.add(ok);
     });
