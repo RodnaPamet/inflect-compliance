@@ -56,11 +56,19 @@ export function ControlEditPanel({
     tenantSlug,
     control,
     canWrite,
+    canUploadEvidence,
     onSaved,
 }: {
     tenantSlug: string;
     control: PanelControl;
     canWrite: boolean;
+    /**
+     * The viewer's `evidence.upload`. The file box POSTs to
+     * `/evidence/uploads`, which asks that key and not `controls.edit`, so
+     * `canWrite` alone offered it to a custom role the upload then refused.
+     * The URL link stays on `canWrite`: its route is the control's own.
+     */
+    canUploadEvidence: boolean;
     /** Retained for API compatibility (AsidePanel owns the close affordance). */
     onClose?: () => void;
     /** Called after a successful save so the list reflects new name/owner. */
@@ -284,6 +292,7 @@ export function ControlEditPanel({
                         linkField="controlId"
                         linkId={control.id}
                         canWrite={canWrite}
+                        canUpload={canWrite && canUploadEvidence}
                         compactDropzone
                         listEndpoint={`/controls/${control.id}/evidence`}
                         urlLinkEndpoint={`/controls/${control.id}/evidence`}

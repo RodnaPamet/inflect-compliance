@@ -130,6 +130,13 @@ export interface EvidenceUploadSectionProps {
     linkId: string;
     canWrite: boolean;
     /**
+     * Whether the file dropzone is offered. Defaults to `canWrite`. A file
+     * upload POSTs to `/evidence/uploads`, which asks `evidence.upload`, while
+     * the URL link asks the parent entity's own key, so a caller whose two
+     * gates differ passes this as well.
+     */
+    canUpload?: boolean;
+    /**
      * Optional tenant-scoped GET (no `/api/t/<slug>` prefix) returning
      * `{ links?, evidence? }`. When set, the section renders the attached
      * list below the dropzone and refreshes it after each upload.
@@ -162,6 +169,7 @@ export function EvidenceUploadSection({
     linkField,
     linkId,
     canWrite,
+    canUpload = canWrite,
     listEndpoint,
     onUploaded,
     label,
@@ -292,7 +300,7 @@ export function EvidenceUploadSection({
 
     return (
         <div className="space-y-default" data-testid="evidence-upload-section">
-            {canWrite && (
+            {canUpload && (
                 <div>
                     <label className="mb-1 block text-xs font-medium text-content-muted">
                         {labelText}

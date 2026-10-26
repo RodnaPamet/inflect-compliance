@@ -129,6 +129,7 @@ describe("ControlEditPanel (editable control side panel)", () => {
                     tenantSlug="acme"
                     control={CONTROL}
                     canWrite
+                    canUploadEvidence
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
                 />,
@@ -152,6 +153,43 @@ describe("ControlEditPanel (editable control side panel)", () => {
         expect((screen.getByLabelText(/Name/) as HTMLInputElement).value).toBe(
             "Access control policy",
         );
+    });
+
+    it("offers the file box only with evidence.upload; the URL link stays on the edit gate", () => {
+        // The file box POSTs to /evidence/uploads, which asserts
+        // `evidence.upload` — not the `controls.edit` that `canWrite` carries
+        // (#4325). The URL link is the control's own route.
+        render(
+            withQuery(
+                <ControlEditPanel
+                    tenantSlug="acme"
+                    control={CONTROL}
+                    canWrite
+                    canUploadEvidence={false}
+                    onClose={jest.fn()}
+                    onSaved={jest.fn()}
+                />,
+            ),
+        );
+        expect(screen.getByTestId("evidence-link-url-form")).toBeInTheDocument();
+        expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
+    });
+
+    it("offers neither to a viewer who cannot edit the control, whatever evidence.upload says", () => {
+        render(
+            withQuery(
+                <ControlEditPanel
+                    tenantSlug="acme"
+                    control={CONTROL}
+                    canWrite={false}
+                    canUploadEvidence
+                    onClose={jest.fn()}
+                    onSaved={jest.fn()}
+                />,
+            ),
+        );
+        expect(screen.queryByTestId("evidence-link-url-form")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
     });
 
     it("auto-saves the name on blur with a PATCH (no Save click)", async () => {
@@ -198,6 +236,7 @@ describe("ControlEditPanel (editable control side panel)", () => {
                     tenantSlug="acme"
                     control={{ ...CONTROL, status: "NEEDS_REVIEW" }}
                     canWrite
+                    canUploadEvidence
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
                 />,

@@ -76,6 +76,9 @@ export default async function ControlsPage({
             appPermissions={{
                 controls: ctx.appPermissions.controls,
                 tasks: { edit: ctx.appPermissions.tasks.edit },
+                // The quick view's file upload: `/evidence/uploads` asserts
+                // `evidence.upload`, not `controls.edit`.
+                evidence: { upload: ctx.appPermissions.evidence.upload },
                 // Bulk delete and the Deleted view's Restore / Purge routes
                 // are `requirePermission('admin.manage')`.
                 admin: { manage: ctx.appPermissions.admin.manage },
