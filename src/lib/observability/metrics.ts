@@ -20,7 +20,7 @@
  * ── JOB METRICS ──
  *   job.execution.count    — Counter   (job_name, status: success|failure)
  *   job.execution.duration — Histogram (job_name, status) [ms]
- *   job.queue.depth        — Observable Gauge (queue_name, state)
+ *   job.queue.depth        — Observable Gauge (queue.name, queue.state)
  *
  * ── AUDIT-STREAM METRICS ──
  *   audit_stream.delivery.success  — Counter   (http.status_code)
@@ -926,30 +926,84 @@ export function _resetAuditStreamBufferGaugeForTesting(): void {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// QUEUE DEPTH GAUGE — Observable (push-based)
+// QUEUE DEPTH GAUGE — Observable
+//
+// Registered by the BullMQ worker (`scripts/worker.ts`), the only
+// long-running process that holds the queue. Its exported series is
+// `job_queue_depth_ratio{queue_name, queue_state}`: the exporter adds
+// `_ratio` to a gauge whose unit is `1`.
 // ════════════════════════════════════════════════════════════════════════
 
-let _queueDepthStarted = false;
+/**
+ * The BullMQ states the gauge reports, and the only ones it asks Redis for.
+ *
+ * `waiting` and `prioritized` together are the BACKLOG: jobs ready to run
+ * that no worker has taken. BullMQ keeps a job enqueued with a `priority` in
+ * `prioritized`, not `waiting`, so a backlog read from `waiting` alone misses
+ * it. `delayed` is not backlog: it holds the next run of every job scheduler
+ * and every retry's backoff, so it never drops below the number of schedules.
+ * `active` is work in progress and `failed` is retained history. Anything
+ * else BullMQ counts (`completed`, `waiting-children`) is left out.
+ */
+const QUEUE_DEPTH_STATES = ['waiting', 'prioritized', 'active', 'delayed', 'failed'] as const;
+type QueueDepthState = (typeof QUEUE_DEPTH_STATES)[number];
 
 /**
- * Start periodic queue depth reporting.
- *
- * Uses OTel's ObservableGauge which is read by the metric reader
- * at export time. This avoids polling overhead — the gauge callback
- * is only invoked when the collector scrapes.
- *
- * Reports counts for: waiting, active, delayed, failed states.
- *
- * Call this once from the worker/scheduler entrypoint (not from
- * every request). Safe to call multiple times — only initializes once.
- *
- * @param getQueueFn — function that returns the BullMQ Queue instance
+ * How long one read of the queue's counts may take. The metric reader waits
+ * for every gauge callback before it exports, so a read that hangs on a
+ * Redis outage would hold back every other metric of that export with it.
  */
-export function startQueueDepthReporting(
-    getQueueFn: () => { getJobCounts: () => Promise<Record<string, number>> },
-): void {
-    if (_queueDepthStarted) return;
-    _queueDepthStarted = true;
+export const QUEUE_DEPTH_READ_TIMEOUT_MS = 5_000;
+
+/** What the gauge reads. A BullMQ `Queue` is one. */
+export interface QueueDepthSource {
+    /** Becomes the `queue.name` label, so the label names the queue that was read. */
+    readonly name: string;
+    getJobCounts(...states: QueueDepthState[]): Promise<Record<string, number>>;
+}
+
+/** The queue the gauge reads; `null` while reporting is stopped. */
+let _queueDepthSource: (() => QueueDepthSource) | null = null;
+/** The gauge is created once per process; stop/start only swaps its source. */
+let _queueDepthGaugeRegistered = false;
+
+function rejectAfter(ms: number): { promise: Promise<never>; cancel: () => void } {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const promise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`queue depth read timed out after ${ms}ms`)), ms);
+        // Never the reason the process stays alive.
+        timer.unref?.();
+    });
+    return { promise, cancel: () => clearTimeout(timer) };
+}
+
+/**
+ * Report the depth of a BullMQ queue, by state, on the `job.queue.depth`
+ * observable gauge.
+ *
+ * The callback runs when the metric reader collects: every export interval
+ * (30s, `instrumentation.ts`) and once more on the meter provider's shutdown
+ * flush. Each run is one `getJobCounts` round trip, bounded by
+ * `QUEUE_DEPTH_READ_TIMEOUT_MS`. A read that fails or times out observes
+ * nothing rather than failing the export. The SDK's storage is cumulative,
+ * so an unobserved state is exported again at the last value it was read
+ * at: the series holds its last reading, it does not disappear.
+ *
+ * PRECONDITION: call it AFTER `initTelemetry()`. The OTel metrics API has no
+ * proxy provider, so a gauge created before the global MeterProvider is set
+ * is a no-op for the life of the process, and the once-only registration
+ * below would keep it that way.
+ *
+ * Idempotent: a second call while reporting is a no-op. `getQueueFn` is not
+ * called here, only at collection.
+ *
+ * @param getQueueFn — returns the queue to read, e.g. a BullMQ `Queue`
+ */
+export function startQueueDepthReporting(getQueueFn: () => QueueDepthSource): void {
+    if (_queueDepthSource) return;
+    _queueDepthSource = getQueueFn;
+    if (_queueDepthGaugeRegistered) return;
+    _queueDepthGaugeRegistered = true;
 
     const gauge = getMeter().createObservableGauge('job.queue.depth', {
         description: 'Number of jobs in the queue by state',
@@ -957,33 +1011,55 @@ export function startQueueDepthReporting(
     });
 
     gauge.addCallback(async (result) => {
+        const getQueue = _queueDepthSource;
+        if (!getQueue) return; // stopped: read nothing
+        const timeout = rejectAfter(QUEUE_DEPTH_READ_TIMEOUT_MS);
         try {
-            const counts = await getQueueFn().getJobCounts();
+            const queue = getQueue();
+            const counts = await Promise.race([
+                queue.getJobCounts(...QUEUE_DEPTH_STATES),
+                timeout.promise,
+            ]);
 
-            // Only report meaningful states — avoid high-cardinality from
-            // BullMQ's internal states like 'unknown' or 'paused'.
-            const reportableStates = ['waiting', 'active', 'delayed', 'failed'];
-
-            for (const state of reportableStates) {
+            for (const state of QUEUE_DEPTH_STATES) {
                 if (counts[state] !== undefined) {
                     result.observe(counts[state], {
-                        'queue.name': 'inflect-jobs',
+                        'queue.name': queue.name,
                         'queue.state': state,
                     });
                 }
             }
         } catch {
-            // Queue may not be available — noop. Gauge simply won't report.
+            // Queue unavailable, or the read timed out: observe nothing this
+            // time. The export goes ahead with the last values read.
+        } finally {
+            timeout.cancel();
         }
     });
 }
 
 /**
- * Reset queue depth reporting flag (for testing only).
+ * Stop reading the queue. After this returns the gauge's callback reads
+ * nothing, so the caller may close the queue and its Redis connection. Call
+ * it on shutdown BEFORE closing them: the meter provider's shutdown flush
+ * runs the callback once more. That flush still exports the last values
+ * read, from the SDK's memory, not from Redis.
+ *
+ * The gauge itself stays registered (OTel offers no way to delete an
+ * instrument), and observes nothing until `startQueueDepthReporting` is
+ * called again.
+ */
+export function stopQueueDepthReporting(): void {
+    _queueDepthSource = null;
+}
+
+/**
+ * Reset queue depth reporting (for testing only).
  * @internal
  */
 export function _resetQueueDepthForTesting(): void {
-    _queueDepthStarted = false;
+    _queueDepthSource = null;
+    _queueDepthGaugeRegistered = false;
 }
 
 // ════════════════════════════════════════════════════════════════════════
