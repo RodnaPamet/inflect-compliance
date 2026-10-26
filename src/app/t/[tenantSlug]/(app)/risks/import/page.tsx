@@ -13,6 +13,7 @@ import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
 import { cn } from '@inflect/ui/lib/cn';
 import { extractMutationError } from '@/lib/mutations';
+import { riskCanCreate } from '../_shared/bulk-permissions';
 
 type ParsedRow = {
     title: string;
@@ -31,7 +32,8 @@ export default function RiskImportPage() {
     const apiUrl = useTenantApiUrl();
     const href = useTenantHref();
     const tenant = useTenantContext();
-    const canWrite = tenant.permissions.canWrite;
+    // The import route checks `risks.create` and the usecase the write tier.
+    const canWrite = riskCanCreate(tenant);
     const t = useTranslations('riskManager');
     // Clamp imported L/I to the tenant's configured scale, not a hardcoded
     // 5 — a 6-level tenant's "6" is valid and must not be silently dropped.

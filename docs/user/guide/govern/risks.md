@@ -19,7 +19,7 @@ Open **{{ui:nav.risks}}** under **{{ui:nav.govern}}** in the sidebar. The breadc
 | Set status or assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply. A role that can apply none of them sees no actions there.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page offers only what your role can do: **{{ui:risks.addRisk}}** and the import appear only for a role that can create risks. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply. A role that can apply none of them sees no actions there.
 
 ## What it is for
 
@@ -81,7 +81,7 @@ A risk with none of these signals, such as one with no review date, no linked co
 
 **The histogram.** **{{ui:risks.histogram}}**, in the **{{ui:risks.viewsMenu}}** menu, places each quantified risk in a loss bucket on a logarithmic scale, stacked by its matrix band. When your workspace has a risk appetite, a line marks the per-risk appetite. Below the chart, **{{ui:risks.collisions.title}}** lists risks that share a matrix cell while their loss estimates differ by more than ten times. Click one to see those risks in the table.
 
-**{{ui:risks.aiAssist}}.** Roles that can create risks get a collapsed side panel that opens the AI-assisted risk assessment.
+**{{ui:risks.aiAssist}}.** Owners, Admins and Editors, and custom roles built on them, get a collapsed side panel that opens the AI-assisted risk assessment.
 
 ## What you can do
 
@@ -97,7 +97,9 @@ Tick the rows you want, up to 100 at a time, and pick an action in the selection
 - **{{ui:risks.bulk.assignOwner}}** gives them all one owner. Leave the owner empty to unassign them.
 - **{{ui:risks.bulk.delete}}** removes them from the register. For five seconds a message offers **{{ui:risks.bulk.undo}}**. Nothing is deleted until that time runs out.
 
-A failed status or owner change leaves the rows selected, so you can try again without picking them again. A failed deletion puts the rows back in the table.
+If an action is refused, the message gives the reason, for example an owner who is no longer a member of the workspace. A failed status or owner change leaves the rows selected, so you can try again without picking them again. A failed deletion puts the rows back in the table.
+
+If more than 100 rows are selected, nothing is sent and a message asks you to select fewer.
 
 ### Import risks
 
@@ -113,7 +115,7 @@ Open **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}** to load risks f
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:panels.riskFirstRun.title}}** | The workspace has no risks yet | Click **{{ui:panels.riskFirstRun.cta}}**, or import risks |
+| **{{ui:panels.riskFirstRun.title}}** | The workspace has no risks yet | Click **{{ui:panels.riskFirstRun.cta}}**, or import risks. Roles that cannot create risks see no button |
 | **{{ui:risks.emptyFilter.title}}** | Risks exist, but none match the search and filters | Click **{{ui:risks.emptyFilter.clearFilters}}** |
-| **{{ui:risks.bulk.actionFailed}}** | A bulk action did not go through, usually because more than 100 rows were selected | Select fewer rows and try again |
+| **{{ui:risks.bulk.actionFailed}}** | A bulk action did not reach the server, or failed without giving a reason | Try again |
 | A banner saying the list is truncated | The register holds more than 5,000 risks, more than the page loads at once | Narrow the list with a filter or the search |
