@@ -9,6 +9,9 @@
  * success either way, so an operator setting both got neither and had no
  * signal that anything was dropped.
  *
+ * The last block is the same seam for the API key a request was made with
+ * (#4369): the worker acts as the key only if the key's id reaches it.
+ *
  * These assert on the ENQUEUED PAYLOAD rather than on source text, because a
  * key-name mismatch is invisible to a grep for `controlId` — both spellings
  * are present in the codebase and both look right in isolation. The payload is
@@ -125,5 +128,29 @@ describe('evidence import — operator metadata reaches the job', () => {
         const p = enqueuedPayload();
         expect(p.controlId).toBeNull();
         expect(p.folder).toBeNull();
+    });
+});
+
+describe('evidence import — the API key a request was made with reaches the job', () => {
+    it('carries the key id of a key-authenticated request, so the worker acts as the key', async () => {
+        getTenantCtxMock.mockResolvedValue({
+            ...(await getTenantCtxMock()),
+            apiKeyId: 'key-1',
+            apiKeyScopes: ['evidence:write'],
+        });
+
+        await POST(zipRequest({}), {
+            params: Promise.resolve({ tenantSlug: 'acme' }),
+        });
+
+        expect(enqueuedPayload()).toMatchObject({ initiatedByUserId: 'u1', apiKeyId: 'key-1' });
+    });
+
+    it('carries no key id for a session request, so the payload is the one it always was', async () => {
+        await POST(zipRequest({}), {
+            params: Promise.resolve({ tenantSlug: 'acme' }),
+        });
+
+        expect(enqueuedPayload()).not.toHaveProperty('apiKeyId');
     });
 });
