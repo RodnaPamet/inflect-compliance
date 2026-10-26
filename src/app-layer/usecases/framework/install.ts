@@ -200,6 +200,15 @@ async function installPacksInTenant(ctx: RequestContext, packs: PackForInstall[]
                 await linkPolicies(control.id, tmpl.relatedPolicies);
             }
 
+            // Record the choice. For a framework with several packs, the packs
+            // a workspace installed are the scope its coverage is counted over
+            // (pack-scope.ts). Only ever added: a later pack widens the scope.
+            await tdb.tenantFrameworkPack.upsert({
+                where: { tenantId_packId: { tenantId: ctx.tenantId, packId: pack.id } },
+                create: { tenantId: ctx.tenantId, frameworkId: pack.frameworkId, packId: pack.id },
+                update: {},
+            });
+
             const packKey = pack.key;
             await logEvent(tdb, ctx, {
                 action: 'FRAMEWORK_PACK_INSTALLED',

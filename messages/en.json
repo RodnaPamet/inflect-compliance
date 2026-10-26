@@ -7701,6 +7701,9 @@
       "overallCoverage": "Overall Coverage",
       "coverageBySection": "Coverage by Section",
       "unmappedRequirements": "Unmapped Requirements ({count})",
+      "outOfScope": "Outside your chosen packs",
+      "outOfScopeRequirements": "Outside your chosen packs ({count})",
+      "outOfScopeHint": "These belong to packs you did not install, so the coverage above does not count them. Install a pack that covers them to bring them into scope.",
       "reorderRestricted": "Reordering is restricted to OWNER / ADMIN roles.",
       "packsEmpty": "No packs available for this framework.",
       "inherited": {
@@ -11485,7 +11488,9 @@
       "requirement": "Requirement",
       "subRequirements": "Sub-requirements ({count})",
       "mappedControls": "Mapped Controls ({count})",
-      "mappedControlsEmpty": "No controls are currently mapped to this requirement."
+      "mappedControlsEmpty": "No controls are currently mapped to this requirement.",
+      "outOfScope": "Out of scope",
+      "outOfScopeDetail": "No pack you installed covers this requirement, so coverage does not count it. It counts once you install a pack that does."
     },
     "reverseLookup": {
       "title": "Where this control is used",

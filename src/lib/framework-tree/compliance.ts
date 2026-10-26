@@ -125,6 +125,12 @@ export function aggregateComplianceStatus(
 export function decorateTreeWithCompliance(
     nodes: ReadonlyArray<FrameworkTreeNode>,
     controlsByRequirementId: ReadonlyMap<string, ReadonlyArray<ControlForCompliance>>,
+    /**
+     * Requirement ids outside the packs the workspace chose. Each reads as
+     * `na` whatever is mapped to it, so it is neither a gap nor counted as
+     * covered, and is flagged `outOfScope` for the explorer's label.
+     */
+    outOfScopeRequirementIds: ReadonlySet<string> = new Set(),
 ): FrameworkTreeNode[] {
     function emptyCounts() {
         return { compliant: 0, partial: 0, gap: 0, na: 0, unknown: 0 };
@@ -141,9 +147,10 @@ export function decorateTreeWithCompliance(
         const counts = emptyCounts();
 
         let status: ComplianceStatus;
+        const outOfScope = node.kind === 'requirement' && outOfScopeRequirementIds.has(node.id);
         if (node.kind === 'requirement') {
             const ownControls = controlsByRequirementId.get(node.id) ?? [];
-            status = computeRequirementComplianceStatus(ownControls);
+            status = outOfScope ? 'na' : computeRequirementComplianceStatus(ownControls);
             bump(counts, status);
             // Descendant requirement counts (sub-requirements)
             for (const c of children) {
@@ -186,6 +193,7 @@ export function decorateTreeWithCompliance(
             children,
             complianceStatus: status,
             statusCounts: counts,
+            ...(outOfScope ? { outOfScope: true } : {}),
         };
     }
 

@@ -957,6 +957,8 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     FrameworkRequirementOrder:
         'ordering side-table — fetched by tenantId plus a leading-indexed FK; Layers A/B cover it; no curated composite index needed.',
+    TenantFrameworkPack:
+        'read only by pack-scope.ts as findMany({ tenantId, frameworkId }), take = the framework\'s pack count — served by @@index([tenantId, frameworkId]); no sort, so no curated composite needed.',
     IntegrationConnection:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     IntegrationExecution:
