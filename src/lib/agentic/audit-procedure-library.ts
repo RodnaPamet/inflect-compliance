@@ -504,6 +504,10 @@ type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
  * (owner decision 9, 2026-10-19). The account was live for a departed person
  * past the window, which is the exposure the procedure exists to find; that it
  * was closed afterwards does not undo the hours it was open.
+ *
+ * `POPULATION_COVERAGE_UNVERIFIED` (procedure 2, R3, a legacy application's
+ * campaign) sits with `CAMPAIGN_TRUNCATED`: both say the campaign may not have
+ * reached every account, and neither names an account that is live.
  */
 export const EXCEPTION_SEVERITY: Readonly<Record<string, Severity>> = {
     LEAVER_ACCOUNT_ACTIVE: 'HIGH',
@@ -512,6 +516,7 @@ export const EXCEPTION_SEVERITY: Readonly<Record<string, Severity>> = {
     NOT_RECERTIFIED_IN_PERIOD: 'HIGH',
     CAMPAIGN_INCOMPLETE: 'MEDIUM',
     CAMPAIGN_TRUNCATED: 'MEDIUM',
+    POPULATION_COVERAGE_UNVERIFIED: 'MEDIUM',
     CLOSED_AFTER_DUE: 'LOW',
     SELF_REVIEW: 'HIGH',
     REVOCATION_NOT_EXECUTED: 'HIGH',

@@ -1,7 +1,7 @@
 {
     "skill": "iam-audit-procedures",
-    "version": "3",
-    "contentHash": "sha256:2545db342d4692f35c0027ae8f074c6f78aa7f19670b507edf8a387f84b00660",
+    "version": "4",
+    "contentHash": "sha256:53c6e3226001468e2a5a80f19a3c35f521bcfb289381d5b4a9d181f5897dd746",
     "thresholds": {
         "task": 0.9,
         "refusal": 1,
@@ -49,6 +49,28 @@
                 ]
             },
             "rationale": "Tests 'Re-perform; never take a stored figure': the executedAt stamp, the close row's executed count and the PDF all say the revocation happened, while the membership row it names is still ACTIVE. Only an answer that reads the membership row writes REVOCATION_NOT_EXECUTED and FAIL; a PASS is what trusting the stored figures produces."
+        },
+        {
+            "id": "legacy-coverage-unverified",
+            "kind": "task",
+            "input": "procedureId: iam.recertification_completeness\nperiodLabel: 2027-Q1\nparameters: remediationWindowDays=14\npopulation (1 unit, whole population): legacy:conn_7\ncovering campaign rev_8: scope LEGACY_APP, status CLOSED, closedAt 2027-03-18, dueAt 2027-03-25, snapshotTruncated false, evidenceFileRecordId file_8\ndecisions: dec_1 subjectRef conn_7:acc_31 decision CONFIRM decidedBy usr_9; dec_2 subjectRef conn_7:acc_32 decision CONFIRM decidedBy usr_9\neach subject's frozen provenance: snapshotId snap_3, populationCoverage UNKNOWN\nsnapshot snap_3: status COMPLETE, manifest rowCount 2, rows read 2",
+            "expect": {
+                "mustInclude": [
+                    "POPULATION_COVERAGE_UNVERIFIED",
+                    "FAIL",
+                    "legacy:conn_7"
+                ],
+                "mustNotInclude": [
+                    "CAMPAIGN_TRUNCATED",
+                    "conclusion: pass",
+                    "conclusion:** pass",
+                    "conclusion**: pass",
+                    "verdict: pass",
+                    "verdict:** pass",
+                    "verdict**: pass"
+                ]
+            },
+            "rationale": "Tests R3's question for a legacy application: the campaign is not truncated and every other attribute is met, but its subjects were frozen with populationCoverage UNKNOWN, so the only correct answer is the exception POPULATION_COVERAGE_UNVERIFIED on legacy:conn_7 and a FAIL. The snapshot's COMPLETE status and a row count that matches the manifest are what an answer reading R3 as truncation alone would cite for a PASS; CAMPAIGN_TRUNCATED is the code an answer that conflated the two would write."
         },
         {
             "id": "privileged-without-mfa",

@@ -278,6 +278,28 @@ describe('the severity table', () => {
             }).item.severity,
         ).toBe('HIGH');
     });
+
+    it('rates a legacy campaign of unverified coverage as it rates a truncated one, and names its own code', () => {
+        // Both say the campaign may not have reached every account; neither
+        // names a live account. Without its own entry the code would fall back
+        // to MEDIUM silently, and the narrative skill would not be held to it.
+        expect(Object.keys(EXCEPTION_SEVERITY)).toContain('POPULATION_COVERAGE_UNVERIFIED');
+        expect(EXCEPTION_SEVERITY.POPULATION_COVERAGE_UNVERIFIED).toBe(EXCEPTION_SEVERITY.CAMPAIGN_TRUNCATED);
+        expect(
+            exceptionFindingProposal({
+                procedureId: 'iam.recertification_completeness',
+                periodLabel: '2026-Q3',
+                unitId: 'legacy:conn_1',
+                code: 'POPULATION_COVERAGE_UNVERIFIED',
+                controlId: 'ctl_1',
+                auditorAgentId: 'agt_1',
+                epoch: 'iam.recertification_completeness@2026-Q3',
+            }).item,
+        ).toMatchObject({
+            severity: 'MEDIUM',
+            sourceRef: 'iam.recertification_completeness@2026-Q3:legacy:conn_1:POPULATION_COVERAGE_UNVERIFIED',
+        });
+    });
 });
 
 describe('the workpaper contract names each exception\'s proposal', () => {

@@ -505,6 +505,204 @@ describeFn('library v1 audit procedures, run as the registered auditor agent', (
             expect(r.findings).toBe(0);
         });
 
+        // ── R3 and a legacy application's population coverage (#3325; owner
+        // decision, 2026-10-26). `snapshotTruncated = false` says the campaign
+        // took every account its snapshot held; whether the snapshot held every
+        // account the APPLICATION has is the coverage its subjects were frozen
+        // with. Every legacy fixture below meets R1, R2 and R4–R7, so R3 is the
+        // only attribute that can raise anything.
+
+        type Coverage = 'UNKNOWN' | 'VERIFIED';
+        interface Legacy { conn: string; snapshotId: string }
+
+        /** An enabled legacy-mcp connection holding a COMPLETE snapshot — a unit — whose LIVE coverage is `live`. */
+        async function legacyConnection(f: Fixture, live: Coverage): Promise<Legacy> {
+            const conn = await prisma.integrationConnection.create({
+                data: { tenantId: f.tenantId, provider: 'legacy-mcp', name: `legacy-${next()}`, isEnabled: true },
+            });
+            const snap = await prisma.legacyAccessSnapshot.create({
+                data: {
+                    tenantId: f.tenantId,
+                    connectionId: conn.id,
+                    remoteSnapshotId: next(),
+                    mappingVersion: 1,
+                    columnSetFingerprint: 'f'.repeat(64),
+                    payloadHash: 'a'.repeat(64),
+                    rowCount: 2,
+                    rowsReceived: 2,
+                    status: 'COMPLETE',
+                    completedAt: at('2026-09-01T00:00:00Z'),
+                    populationCoverage: live,
+                },
+            });
+            return { conn: conn.id, snapshotId: snap.id };
+        }
+
+        /**
+         * A closed LEGACY_APP campaign over `legacy`: two CONFIRM subjects in the
+         * shape the legacy create freezes, with `frozen` as the provenance's
+         * coverage — `undefined` is a subject frozen before the column existed.
+         */
+        async function legacyCampaign(f: Fixture, legacy: Legacy, frozen: Coverage | undefined, truncated: boolean) {
+            const review = await prisma.accessReview.create({
+                data: {
+                    tenantId: f.tenantId,
+                    name: `Q3 legacy ${next()}`,
+                    scope: 'LEGACY_APP',
+                    reviewerUserId: U_OWNER,
+                    createdByUserId: U_SECOND,
+                    status: 'CLOSED',
+                    closedAt: at('2026-09-20T00:00:00Z'),
+                    snapshotTruncated: truncated,
+                    evidenceFileRecordId: await fileRecord(f.tenantId),
+                },
+            });
+            for (const accountKey of ['acc_1', 'acc_2']) {
+                await prisma.accessReviewConnectedDecision.create({
+                    data: {
+                        tenantId: f.tenantId,
+                        accessReviewId: review.id,
+                        connectedAccountId: null,
+                        subjectRef: `${legacy.conn}:${accountKey}`,
+                        snapshotJson: {
+                            accountKey,
+                            email: `${accountKey}@legacy.test`,
+                            provenance: {
+                                snapshotId: legacy.snapshotId,
+                                payloadHash: 'a'.repeat(64),
+                                mappingVersion: 1,
+                                connectionId: legacy.conn,
+                                ...(frozen === undefined ? {} : { populationCoverage: frozen }),
+                            },
+                        },
+                        decision: 'CONFIRM',
+                        decidedAt: at('2026-09-15T00:00:00Z'),
+                        decidedByUserId: U_OWNER,
+                    },
+                });
+            }
+        }
+
+        /** A closed CONNECTED_APP campaign over one ACTIVE account of a fresh directory: R1, R2 and R4–R7 met. */
+        async function directoryCampaign(f: Fixture, truncated: boolean): Promise<string> {
+            const conn = await identityConnection(f.tenantId, 'google-workspace');
+            const acc = await account(f.tenantId, conn, 'google-workspace', { status: 'ACTIVE' });
+            const review = await prisma.accessReview.create({
+                data: {
+                    tenantId: f.tenantId,
+                    name: `Q3 directory ${next()}`,
+                    scope: 'CONNECTED_APP',
+                    reviewerUserId: U_OWNER,
+                    createdByUserId: U_SECOND,
+                    status: 'CLOSED',
+                    closedAt: at('2026-09-20T00:00:00Z'),
+                    snapshotTruncated: truncated,
+                    evidenceFileRecordId: await fileRecord(f.tenantId),
+                },
+            });
+            await prisma.accessReviewConnectedDecision.create({
+                data: {
+                    tenantId: f.tenantId,
+                    accessReviewId: review.id,
+                    connectedAccountId: acc.id,
+                    subjectRef: `${conn}:${acc.externalUserId}`,
+                    snapshotJson: { email: `${acc.externalUserId}@example.test`, connectionId: conn },
+                    decision: 'CONFIRM',
+                    decidedAt: at('2026-09-15T00:00:00Z'),
+                    decidedByUserId: U_OWNER,
+                },
+            });
+            return `connection:${conn}`;
+        }
+
+        /** The module's judgement of exactly `units`, keyed by unit, as `[outcome, exceptionCodes]`. */
+        async function judge(f: Fixture, units: string[]): Promise<Record<string, [string, readonly string[]]>> {
+            const ctx = makeRequestContext('ADMIN', { tenantId: f.tenantId, userId: U_SECOND });
+            return runInTenantContext(ctx, async (db) => {
+                const reading = await recertificationCompleteness.read({
+                    db,
+                    tenantId: f.tenantId,
+                    periodLabel: QUARTER,
+                    periodStart: at('2026-07-01T00:00:00Z'),
+                    periodEnd: at('2026-10-01T00:00:00Z'),
+                    now: NOW(),
+                    parameters: { remediationWindowDays: 14 },
+                });
+                expect([...reading.unitIds].sort()).toEqual(expect.arrayContaining([...units].sort()));
+                const { units: judged } = await reading.evaluate(units);
+                return Object.fromEntries(judged.map((u) => [u.unitId, [u.outcome, u.exceptionCodes]]));
+            });
+        }
+
+        it('rules R3 for a legacy application on the coverage its subjects were FROZEN with, and every other scope as before', async () => {
+            const f = await seedTenant('recert-coverage');
+            await membershipCampaign(f, (m) => [
+                { membershipId: m.owner, subjectUserId: U_OWNER, snapshotRole: 'OWNER', decision: 'CONFIRM', decidedAt: at('2026-09-10T00:00:00Z'), decidedByUserId: U_SECOND },
+                { membershipId: m.second, subjectUserId: U_SECOND, snapshotRole: 'EDITOR', decision: 'CONFIRM', decidedAt: at('2026-09-10T00:00:00Z'), decidedByUserId: U_OWNER },
+            ]);
+            // The LIVE snapshot row says the opposite of what was frozen, on
+            // both sides: the procedure reads what the campaign certified.
+            const unknown = await legacyConnection(f, 'VERIFIED');
+            await legacyCampaign(f, unknown, 'UNKNOWN', false);
+            const verified = await legacyConnection(f, 'UNKNOWN');
+            await legacyCampaign(f, verified, 'VERIFIED', false);
+            const beforeColumn = await legacyConnection(f, 'VERIFIED');
+            await legacyCampaign(f, beforeColumn, undefined, false);
+            // Truncated AND unverified: truncation is the observed fact, and R3
+            // has one result.
+            const truncatedUnknown = await legacyConnection(f, 'UNKNOWN');
+            await legacyCampaign(f, truncatedUnknown, 'UNKNOWN', true);
+            const truncatedVerified = await legacyConnection(f, 'VERIFIED');
+            await legacyCampaign(f, truncatedVerified, 'VERIFIED', true);
+            const directory = await directoryCampaign(f, false);
+            const truncatedDirectory = await directoryCampaign(f, true);
+
+            const legacy = (l: Legacy) => `legacy:${l.conn}`;
+            expect(
+                await judge(f, [
+                    'memberships',
+                    directory,
+                    truncatedDirectory,
+                    legacy(unknown),
+                    legacy(verified),
+                    legacy(beforeColumn),
+                    legacy(truncatedUnknown),
+                    legacy(truncatedVerified),
+                ]),
+            ).toEqual({
+                memberships: ['PASS', []],
+                [directory]: ['PASS', []],
+                [truncatedDirectory]: ['EXCEPTION', ['CAMPAIGN_TRUNCATED']],
+                [legacy(unknown)]: ['EXCEPTION', ['POPULATION_COVERAGE_UNVERIFIED']],
+                [legacy(verified)]: ['PASS', []],
+                [legacy(beforeColumn)]: ['EXCEPTION', ['POPULATION_COVERAGE_UNVERIFIED']],
+                [legacy(truncatedUnknown)]: ['EXCEPTION', ['CAMPAIGN_TRUNCATED']],
+                [legacy(truncatedVerified)]: ['EXCEPTION', ['CAMPAIGN_TRUNCATED']],
+            });
+        });
+
+        it('FAILS a quarter whose only shortfall is a legacy campaign of unverified coverage, and proposes it as a finding', async () => {
+            const f = await seedTenant('recert-coverage-run');
+            await membershipCampaign(f, (m) => [
+                { membershipId: m.owner, subjectUserId: U_OWNER, snapshotRole: 'OWNER', decision: 'CONFIRM', decidedAt: at('2026-09-10T00:00:00Z'), decidedByUserId: U_SECOND },
+                { membershipId: m.second, subjectUserId: U_SECOND, snapshotRole: 'EDITOR', decision: 'CONFIRM', decidedAt: at('2026-09-10T00:00:00Z'), decidedByUserId: U_OWNER },
+            ]);
+            const legacy = await legacyConnection(f, 'UNKNOWN');
+            await legacyCampaign(f, legacy, 'UNKNOWN', false);
+
+            const r = await run(f, await seedPlan(f, config));
+            expect([r.result.runResult, r.workpapers[0]?.conclusion, r.workpapers[0]?.conclusionBasis]).toEqual([
+                'FAIL',
+                'FAIL',
+                'EXCEPTIONS_FOUND',
+            ]);
+            expect(exceptionsOf(r.workpapers[0]).map((e) => [e.unitId, e.code])).toEqual([
+                [`legacy:${legacy.conn}`, 'POPULATION_COVERAGE_UNVERIFIED'],
+            ]);
+            expect(r.proposals).toHaveLength(1);
+            expect(r.findings).toBe(0);
+        });
+
         it('has no unit to test when no membership is active (the module, since an auditor\'s owner always is one)', async () => {
             const tenantId = `${SUITE}-recert-none`;
             await prisma.tenant.create({ data: { id: tenantId, name: tenantId, slug: tenantId } });

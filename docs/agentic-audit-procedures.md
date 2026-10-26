@@ -469,11 +469,23 @@ rest of the claim unexamined.
 |---|---|---|---|
 | R1 | A covering campaign exists | `AccessReview` and its decision rows, as above | EXCEPTION `NOT_RECERTIFIED_IN_PERIOD` |
 | R2 | The campaign is non-empty and fully decided: `subjectCount > 0 && decided === subjectCount`, where `decided` counts rows with `decision IS NOT NULL` and `decidedAt IS NOT NULL` | `AccessReviewDecision` or `AccessReviewConnectedDecision` rows of the campaign | EXCEPTION `CAMPAIGN_INCOMPLETE` |
-| R3 | The campaign covered its whole population | `AccessReview.snapshotTruncated = false` | EXCEPTION `CAMPAIGN_TRUNCATED` |
+| R3 | The campaign covered its whole population | `AccessReview.snapshotTruncated = false`; for a legacy application also the population coverage its subjects were frozen with: every `AccessReviewConnectedDecision.snapshotJson.provenance.populationCoverage` of the campaign is `VERIFIED`, read through `frozenCampaignCoverage` (`src/lib/legacy-access/coverage.ts`) and never from the live `LegacyAccessSnapshot` row | EXCEPTION `CAMPAIGN_TRUNCATED`; for a legacy application that is not truncated and whose coverage is not `VERIFIED`, EXCEPTION `POPULATION_COVERAGE_UNVERIFIED` |
 | R4 | The campaign closed on time | `dueAt IS NULL` or `closedAt ≤ dueAt` | EXCEPTION `CLOSED_AFTER_DUE` |
 | R5 | Nobody decided their own access | memberships: no row with `decidedByUserId = subjectUserId`; connected and legacy: no row whose `decidedByUserId` resolves to a `User` whose `email` equals `snapshotJson.email` ignoring case | EXCEPTION `SELF_REVIEW` |
 | R6 | Revocations took effect | memberships: each `REVOKE` row's `TenantMembership` (`membershipId`) is absent or has a `status` other than `ACTIVE`, and each `MODIFY` row's membership has `role = modifiedToRole` (and `customRoleId = modifiedToCustomRoleId` when that is set); the `AuditLog` row with `action = ACCESS_REVIEW_DECISION_EXECUTED`, `entity = 'AccessReviewDecision'` and `entityId` = the decision is reported beside it, because its `detailsJson.after.outcome` (`EXECUTED`, `SKIPPED_STALE`, `SKIPPED_LAST_OWNER`) says what the close did; identity connection: each `REVOKE` row's `ConnectedIdentityAccount` is not `ACTIVE` today, provided the connection's latest sync with `status = PASSED` completed more than `remediationWindowDays` after `closedAt`; legacy: each `REVOKE` row's account (`snapshotJson.accountKey`) is not `ACTIVE` in the first `COMPLETE` `LegacyAccessSnapshot` of that connection completed more than `remediationWindowDays` after `closedAt` | EXCEPTION `REVOCATION_NOT_EXECUTED` for a membership, `REVOKED_ACCESS_STILL_ACTIVE` for a connected or legacy account; UNTESTABLE `NO_OBSERVATION_AFTER_CLOSE` when no such sync or snapshot exists |
 | R7 | The close produced its evidence | `AccessReview.evidenceFileRecordId IS NOT NULL` | EXCEPTION `EVIDENCE_NOT_GENERATED` |
+
+Why R3 asks a legacy application a second question (owner decision,
+2026-10-26, #3325). `snapshotTruncated = false` says the campaign took every
+account its snapshot held. It cannot say the snapshot held every account the
+application has: the operator's server runs the query, and the row count it
+reports is its own claim. That is `LegacyAccessSnapshot.populationCoverage`,
+`UNKNOWN` unless a transport observed the whole table itself, and no transport
+does today, so every legacy application's unit raises
+`POPULATION_COVERAGE_UNVERIFIED` until one can. A truncated campaign is
+`CAMPAIGN_TRUNCATED` whatever its coverage: R3 has one result, and truncation is
+the observed fact. Memberships and identity connections have no such coverage
+and rule R3 on truncation alone.
 
 Two facts behind R2 and R6. `closeConnectedAccessReview` refuses a campaign with
 zero decision rows and one with pending rows; `closeAccessReview`, the
@@ -498,7 +510,8 @@ field to compare.
 **Exception.** A population with no complete closed campaign in the quarter, or
 a covering campaign that was empty, partly decided, truncated, late,
 self-reviewed or unexecuted, whose revocations did not take effect, or that
-produced no evidence. Zero campaigns closed in a quarter in which populations exist is a
+produced no evidence; or, for a legacy application, a covering campaign whose
+population coverage was not verified. Zero campaigns closed in a quarter in which populations exist is a
 FAIL: it is the control not operating.
 
 **INCONCLUSIVE when**, besides the common preconditions: a unit is UNTESTABLE,

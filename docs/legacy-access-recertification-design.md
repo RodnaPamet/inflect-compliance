@@ -122,6 +122,15 @@ snapshot now carries a second fact beside its status:
 - **It is a label, not a gate.** Refusing `UNKNOWN` would refuse every legacy
   campaign there is. A reviewer who sees "coverage unverified" can go and ask the
   application's owner; a reviewer who saw `COMPLETE` could not.
+- **The auditor does not read it as a pass** (owner decision, 2026-10-26). Audit
+  procedure 2, `iam.recertification_completeness`, asks R3 — "the campaign
+  covered its whole population" — of a legacy application's campaign through the
+  same reader, off the same frozen subjects. Anything but `VERIFIED` is the
+  exception `POPULATION_COVERAGE_UNVERIFIED`, so the unit is not MET and the
+  procedure FAILs by the catalogue's order. That is still not a gate: the campaign
+  runs and closes as before; what changes is that the audit no longer attests to
+  a whole population nobody observed. See `docs/agentic-audit-procedures.md`,
+  procedure 2.
 
 What this deliberately does **not** do is say how much is missing. A
 forty-workstation desktop application reads "coverage unverified", not "1 of 40":
