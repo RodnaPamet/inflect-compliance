@@ -3,6 +3,7 @@ import { RequestContext } from '../../types';
 import { assertCanViewFrameworks } from '../../policies/framework.policies';
 import { notFound } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
+import { runInTenantContext } from '@/lib/db-context';
 import { withoutReferenceTwins } from '../../domain/framework-representation';
 
 // в”Ђв”Ђв”Ђ Framework Catalog (global, no tenant filter needed) в”Ђв”Ђв”Ђ
@@ -141,8 +142,21 @@ export async function listFrameworkPacks(ctx: RequestContext, frameworkKey: stri
         ? await db.framework.findUnique({ where: { key_version: { key: frameworkKey, version } } })
         : await db.framework.findFirst({ where: { key: frameworkKey } });
     if (!fw) throw notFound('Framework not found');
-    return db.frameworkPack.findMany({
+    const packs = await db.frameworkPack.findMany({
         where: { frameworkId: fw.id },
         include: { _count: { select: { templateLinks: true } } },
     });
+    if (packs.length === 0) return [];
+    // Which of them this workspace chose (`TenantFrameworkPack`, written by
+    // the install): the scope a multi-pack framework's coverage counts, and
+    // the packs the Packs tab offers to remove (#4372).
+    const chosen = await runInTenantContext(ctx, (tdb) =>
+        tdb.tenantFrameworkPack.findMany({
+            where: { tenantId: ctx.tenantId, frameworkId: fw.id },
+            select: { packId: true },
+            take: packs.length,
+        }),
+    );
+    const chosenIds = new Set(chosen.map((c) => c.packId));
+    return packs.map((p) => ({ ...p, chosen: chosenIds.has(p.id) }));
 }

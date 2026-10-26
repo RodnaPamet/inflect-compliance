@@ -7705,6 +7705,12 @@
       "outOfScope": "Outside your chosen packs",
       "outOfScopeRequirements": "Outside your chosen packs ({count})",
       "outOfScopeHint": "These belong to packs you did not install, so the coverage above does not count them. Install a pack that covers them to bring them into scope.",
+      "packChosen": "Chosen",
+      "removePack": "Remove pack",
+      "packRemoveLast": "Keep at least one pack. With none chosen, coverage would count every requirement of the framework.",
+      "packRemoved": "Removed \"{name}\" from your chosen packs. Its controls stay.",
+      "undo": "Undo",
+      "packRemoveFailed": "The pack could not be removed. Reload the page and try again.",
       "reorderRestricted": "Reordering is restricted to OWNER / ADMIN roles.",
       "packsEmpty": "No packs available for this framework.",
       "inherited": {

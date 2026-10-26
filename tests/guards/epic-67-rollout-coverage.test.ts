@@ -40,6 +40,13 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['revoke'],
     },
     {
+        // #4372 — taking a chosen pack out of a workspace's scope. It deletes
+        // only the scope record; the POST is sent when the window closes.
+        file: 'src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx',
+        name: 'Framework pack removal from scope (framework detail, Packs tab)',
+        handlers: ['removePack'],
+    },
+    {
         file: 'src/components/TraceabilityPanel.tsx',
         name: 'Cross-entity unlink (TraceabilityPanel)',
         handlers: ['handleUnlink'],

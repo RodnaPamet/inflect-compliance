@@ -46,6 +46,7 @@ import {
     installSingleTemplate,
     bulkMapControls,
     bulkInstallTemplates,
+    removeChosenPack,
 } from '@/app-layer/usecases/framework/install';
 import { runInTenantContext } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
@@ -775,5 +776,85 @@ describe('bulkMapControls — stage-3c additions', () => {
         await expect(
             bulkMapControls(makeRequestContext('ADMIN'), 'iso', undefined as any),
         ).rejects.toThrow(/at least one mapping/i);
+    });
+});
+
+describe('removeChosenPack — taking a pack out of scope (#4372)', () => {
+    const PACK = { id: 'pack-a3', key: 'EU_UAS_OPEN_A3', name: 'A3', frameworkId: 'fw-uas', framework: { key: 'EU-UAS-OPS' } };
+
+    function scopeDb(opts: { chosen: boolean; count: number }) {
+        const calls: string[] = [];
+        const db = {
+            $executeRawUnsafe: jest.fn(async (sql: string, key: string) => { calls.push(`lock ${key}`); return 1; }),
+            tenantFrameworkPack: {
+                findUnique: jest.fn(async () => { calls.push('find'); return opts.chosen ? { id: 'tfp-1' } : null; }),
+                count: jest.fn(async () => { calls.push('count'); return opts.count; }),
+                delete: jest.fn(async () => { calls.push('delete'); return { id: 'tfp-1' }; }),
+            },
+        };
+        return { db, calls };
+    }
+
+    it('takes the install gate: READER and AUDITOR are refused before anything is read', async () => {
+        for (const role of ['READER', 'AUDITOR'] as const) {
+            await expect(removeChosenPack(makeRequestContext(role), 'EU-UAS-OPS', PACK.key)).rejects.toThrow();
+        }
+        expect(mockPackFind).not.toHaveBeenCalled();
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('refuses a pack that does not exist, or belongs to another framework, as not found', async () => {
+        mockPackFind.mockResolvedValueOnce(null);
+        await expect(removeChosenPack(makeRequestContext('ADMIN'), 'EU-UAS-OPS', 'NOPE')).rejects.toThrow(/Pack not found/);
+        mockPackFind.mockResolvedValueOnce({ ...PACK, framework: { key: 'ISO27001' } } as never);
+        await expect(removeChosenPack(makeRequestContext('ADMIN'), 'EU-UAS-OPS', PACK.key)).rejects.toThrow(/Pack not found/);
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('refuses a pack this workspace did not choose (PACK_NOT_CHOSEN), deleting nothing', async () => {
+        mockPackFind.mockResolvedValueOnce(PACK as never);
+        const { db } = scopeDb({ chosen: false, count: 2 });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        await expect(removeChosenPack(makeRequestContext('ADMIN'), 'EU-UAS-OPS', PACK.key)).rejects.toMatchObject({
+            status: 409, details: { reason: 'PACK_NOT_CHOSEN' },
+        });
+        expect(db.tenantFrameworkPack.delete).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+    });
+
+    it('refuses the last chosen pack (LAST_CHOSEN_PACK): none chosen would widen the scope', async () => {
+        mockPackFind.mockResolvedValueOnce(PACK as never);
+        const { db } = scopeDb({ chosen: true, count: 1 });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        await expect(removeChosenPack(makeRequestContext('ADMIN'), 'EU-UAS-OPS', PACK.key)).rejects.toMatchObject({
+            status: 409, details: { reason: 'LAST_CHOSEN_PACK' },
+        });
+        expect(db.tenantFrameworkPack.delete).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+    });
+
+    it('locks first, deletes only the record, and audits FRAMEWORK_PACK_REMOVED', async () => {
+        mockPackFind.mockResolvedValueOnce(PACK as never);
+        const ctx = makeRequestContext('ADMIN');
+        const { db, calls } = scopeDb({ chosen: true, count: 2 });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+
+        const result = await removeChosenPack(ctx, 'EU-UAS-OPS', PACK.key);
+
+        expect(result).toEqual({ packKey: PACK.key, framework: 'EU-UAS-OPS', remainingChosenPacks: 1 });
+        // The lock is per (workspace, framework) and comes before the count it protects.
+        expect(calls).toEqual([`lock framework-pack-scope:${ctx.tenantId}:fw-uas`, 'find', 'count', 'delete']);
+        expect(db.tenantFrameworkPack.delete).toHaveBeenCalledWith({
+            where: { tenantId_packId: { tenantId: ctx.tenantId, packId: PACK.id } },
+        });
+        expect(mockLog).toHaveBeenCalledWith(
+            db,
+            ctx,
+            expect.objectContaining({
+                action: 'FRAMEWORK_PACK_REMOVED',
+                entityId: 'fw-uas',
+                metadata: { packKey: PACK.key, remainingChosenPacks: 1 },
+            }),
+        );
     });
 });
