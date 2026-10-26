@@ -609,3 +609,77 @@ describe('task detail — removing someone else as a watcher follows tasks.edit'
         expect(document.getElementById('remove-watcher-user_2')).toBeNull();
     });
 });
+
+describe('task detail — delete, comments and the reviewer (owner decisions, 2026-10-26)', () => {
+    beforeEach(() => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) => {
+            const path = url.split('?')[0];
+            if (path === '/api/t/acme/tasks/task_1') {
+                return json({
+                    ...TASK,
+                    reviewerUserId: 'user_9',
+                    reviewer: { id: 'user_9', name: 'Rada Ivanova', email: 'rada@example.com' },
+                });
+            }
+            return baseGet(url);
+        });
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    /** A built-in role as the page receives it: its tier and its own key set. */
+    function viewAs(role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'AUDITOR' | 'READER') {
+        const tier = { OWNER: 5, ADMIN: 4, EDITOR: 3, AUDITOR: 2, READER: 1 }[role];
+        mockViewer = {
+            role,
+            permissions: { canWrite: tier >= 3, canAdmin: tier >= 4 },
+            appPermissions: getPermissionsForRole(role),
+        };
+    }
+
+    async function openComments() {
+        fireEvent.click(screen.getByRole('tab', { name: /comments/i }));
+        await waitFor(() => expect(getCount('/api/t/acme/tasks/task_1/comments')).toBeGreaterThan(0));
+    }
+
+    it('Delete is offered to an Admin', async () => {
+        viewAs('ADMIN');
+        renderPage();
+        await waitForTaskLoaded();
+        expect(document.getElementById('delete-task-btn')).not.toBeNull();
+    });
+
+    it('Delete is not offered to an Editor, which the server would refuse', async () => {
+        viewAs('EDITOR');
+        renderPage();
+        await waitForTaskLoaded();
+        // The status picker beside it still shows: only Delete is withheld.
+        expect(document.getElementById('task-status-select')).not.toBeNull();
+        expect(document.getElementById('delete-task-btn')).toBeNull();
+    });
+
+    it('an Editor gets the comment box', async () => {
+        viewAs('EDITOR');
+        renderPage();
+        await waitForTaskLoaded();
+        await openComments();
+        await waitFor(() => expect(document.getElementById('comment-body')).not.toBeNull());
+    });
+
+    it('an Auditor gets no comment box, which the server would refuse', async () => {
+        viewAs('AUDITOR');
+        renderPage();
+        await waitForTaskLoaded();
+        await openComments();
+        expect(document.getElementById('comment-body')).toBeNull();
+    });
+
+    it('a Reader sees who the reviewer is, without the picker', async () => {
+        viewAs('READER');
+        renderPage();
+        await waitForTaskLoaded();
+        expect(document.getElementById('task-reviewer')).toHaveTextContent('Rada Ivanova');
+        expect(document.getElementById('task-reviewer-input')).toBeNull();
+        expect(document.getElementById('assign-reviewer-btn')).toBeNull();
+    });
+});
