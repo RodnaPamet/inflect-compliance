@@ -63,11 +63,16 @@ export interface EvidenceDetailSheetProps {
     /** Tenant slug — needed for the control link picker. */
     tenantSlug: string;
     /**
-     * The coarse write tier — gates linking and unlinking controls (which
-     * assert it), and is the tier that may download a file linked to no
-     * control.
+     * The coarse write tier — gates linking a control (which asserts it), and
+     * is the tier that may download a file linked to no control.
      */
     canWrite: boolean;
+    /**
+     * The unlink cross. The unlink route also requires `controls.edit`, which
+     * a custom role on a write-tier base can lack, so the parent passes the
+     * coarse tier AND that grant. Defaults to `canWrite`.
+     */
+    canUnlinkControl?: boolean;
     /**
      * Edit and Submit — `updateEvidence` and the SUBMITTED review assert the
      * custom-role `evidence.edit` grant, which a custom role on a write-tier
@@ -184,6 +189,7 @@ export function EvidenceDetailSheet({
     evidenceId,
     tenantSlug,
     canWrite,
+    canUnlinkControl = canWrite,
     canEdit = canWrite,
     canAdmin,
     onEdit,
@@ -282,7 +288,10 @@ export function EvidenceDetailSheet({
                 },
             );
             if (!res.ok) {
-                setLinkError(t('detail.linkControlFailed'));
+                // The server's reason (e.g. a control from another tenant);
+                // the generic sentence only when it gave none.
+                const err = await res.json().catch(() => null);
+                setLinkError(apiErrorMessage(err, t('detail.linkControlFailed')));
                 return;
             }
             setLinkControlId('');
@@ -549,7 +558,7 @@ export function EvidenceDetailSheet({
                                                             ? `${prefix}: ${l.control.name}`
                                                             : l.control.name}
                                                     </Link>
-                                                    {canWrite && (
+                                                    {canUnlinkControl && (
                                                         <button
                                                             type="button"
                                                             aria-label={t(
