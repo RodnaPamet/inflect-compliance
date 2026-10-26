@@ -100,3 +100,11 @@ export type {
   UseFilterCardVisibilityOptions,
   UseFilterCardVisibilityResult,
 } from "./use-filter-card-visibility";
+
+// Options built from loaded rows, kept from shrinking when those rows are filtered.
+export {
+  mergeRetainedOptions,
+  useRetainedFilterOptions,
+  withRetainedOptions,
+} from "./use-retained-filter-options";
+export type { RetainedFilterOptions } from "./use-retained-filter-options";

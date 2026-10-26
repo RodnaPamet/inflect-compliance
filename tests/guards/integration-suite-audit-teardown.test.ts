@@ -141,12 +141,23 @@ const verdicts = new Map<string, Verdict>(
  * scanned only inside `afterAll` blocks and missed that file entirely, because
  * its delete sat in a helper the teardown called.
  */
+/**
+ * FIVE SUITES LEFT THIS LIST on 2026-10-25 (#3343): `framework-delta`,
+ * `onboarding-automation-runstepaction`, `risk-bulk-ops`,
+ * `risk-velocity-orchestrator` and `risks-list-asset-column` now clear their
+ * audit rows through `deleteAuditRowsForTenants` before deleting the tenant.
+ *
+ * They were delisted because this guard FAILED and named them — removing a
+ * `.catch(() => {})` from their tenant delete turned each one red with
+ * `AuditLog_tenantId_fkey`, which is what the handler had been discarding, so
+ * fixing it made them `protected` and the no-stale-entries test demanded they
+ * go. That is the loop this guard and #3343 are supposed to form.
+ */
 const GRANDFATHERED: ReadonlySet<string> = new Set([
     'agent-amend.test.ts',
     'agent-monthly-budget-enforcement.test.ts',
     'agentic-art14-run-closes-the-loop.test.ts',
     'agentic-engine.test.ts',
-    'asset-update-round-trip.test.ts',
     'auth-signin-no-auto-join.test.ts',
     'bowtie-api.test.ts',
     'canned-workflows.test.ts',
@@ -160,22 +171,17 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'external-write-policy.test.ts',
     'fair-recompute.test.ts',
     'finding-create-modal.test.ts',
-    'framework-delta.test.ts',
     'invite-redemption.test.ts',
     'invite-routes.test.ts',
     'kri-readings.test.ts',
     'last-owner-usecase-guard.test.ts',
     'loss-event.test.ts',
-    'mcp-propose.test.ts',
     'monte-carlo-job.test.ts',
     'multi-tenant-jwt.test.ts',
-    'onboarding-automation-runstepaction.test.ts',
     'org-dashboard-widget.test.ts',
-    'org-lifecycle.test.ts',
     'org-maturity-threat-branches.test.ts',
     'org-members-list.test.ts',
     'org-provisioning.test.ts',
-    'org-role-change.test.ts',
     'per-tenant-role-resolution.test.ts',
     'portfolio-drilldown-pagination.test.ts',
     'portfolio-drilldown.test.ts',
@@ -186,13 +192,9 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'require-registered-agent-enablement.test.ts',
     'risk-appetite-monitor.test.ts',
     'risk-asset-evidence-usecase.test.ts',
-    'risk-bulk-ops.test.ts',
     'risk-hierarchy-crud.test.ts',
     'risk-matrix-config.test.ts',
     'risk-snapshot-job.test.ts',
-    'risk-update-round-trip.test.ts',
-    'risk-velocity-orchestrator.test.ts',
-    'risks-list-asset-column.test.ts',
     'risks-list-owner-attach.test.ts',
     'rls-middleware.test.ts',
     'scenario-simulation.test.ts',
@@ -284,8 +286,68 @@ describe('integration suites clear audit rows before deleting their parents', ()
  * incidentally, so any allowance is pure headroom for the next regression.
  * Remove a handler, lower the number in the same diff.
  */
-const SWALLOWED_FILES_BASELINE = 35;
-const SWALLOWED_SITES_BASELINE = 65;
+/**
+ * 35 -> 20 files and 65 -> 37 sites on 2026-10-25 (#3343): the fifteen suites
+ * that ALREADY cleared their audit rows and swallowed anyway had the handler
+ * removed, since it was suppressing nothing for them.
+ *
+ * Fourteen passed unchanged. The fifteenth,
+ * `workflow-run-steps-feed-is-bounded`, went RED with
+ * `Foreign key constraint violated on AuditLog_tenantId_fkey` — its handler had
+ * been discarding exactly that, so its tenants survived every teardown and
+ * whichever suite ran next in the shard inherited them. It now clears audit
+ * rows first.
+ *
+ * WORTH KNOWING ABOUT `CLEARS_AUDIT_ROWS` ABOVE: that suite matched it only
+ * because it drops to `session_replication_role` for `TenantMembership`, and it
+ * never cleared `AuditLog`. So `protected` is not proof the audit rows are
+ * handled — it is proof the file contains one of four spellings. The remaining
+ * 20 should be drained by running them, not by trusting that classification.
+ *
+ * 20 -> 10 files and 37 -> 21 sites, same day: the handlers came off all twenty
+ * remaining suites and each was RUN. Ten were dead and are drained. TEN WERE
+ * NOT, and every one of them failed in its teardown with every test passing —
+ * five distinct constraints, counted by SUITE (jest prints each failure twice,
+ * so the raw log line count reads one higher for AuditLog):
+ *
+ *   5 suites  AuditLog_tenantId_fkey          the classic case
+ *   2 suites  TenantMembership_tenantId_fkey  memberships outliving the tenant
+ *   1 suite   TenantMembership_userId_fkey    the same, on the user side
+ *   1 suite   Risk_tenantId_fkey              business rows left behind
+ *   1 suite   Asset_tenantId_fkey             likewise
+ *
+ * So HALF the remaining population had a teardown that could not complete, and
+ * the handler was the only reason nobody knew. Those ten keep their handlers
+ * for now — each needs its own teardown completed, which is three different
+ * fixes, not one — and they are listed with their constraints on #3343.
+ *
+ * 10 -> 0 files and 14 -> 0 sites, same day: the ten were fixed by RUNNING them
+ * wall by wall, which is the only way this came out. Two had THREE walls in one
+ * teardown, each hidden by the same handler:
+ *
+ *   mcp-propose             memberships before the user
+ *   org-lifecycle           memberships -> tenant audit -> org audit -> user audit
+ *   org-role-change         the same four
+ *   risk-update-round-trip  Risk rows -> audit rows
+ *   asset-update-round-trip Asset rows -> audit rows
+ *
+ * The membership ones needed `session_replication_role = 'replica'`: a plain
+ * `tenantMembership.deleteMany` raises P0001 from
+ * `tenant_membership_last_owner_guard`, so one handler was hiding two distinct
+ * failures stacked on each other.
+ *
+ * AND THE FIVE USER-DELETE HANDLERS TRANCHE 2 LEFT WERE DEAD — all five suites
+ * pass without them. That was not knowable without removing them, which is
+ * exactly why tranche 2 left them rather than guessing: a user delete fails on
+ * different constraints than the tenant one, and `deleteAuditRowsForUsers` did
+ * not exist yet to fix it with if it had failed.
+ *
+ * BOTH CAPS ARE NOW 0, which changes what they mean. They stop being a drain
+ * and become a floor: `toBe(0)` fails CI on the next `.catch(() => {})` added
+ * to a teardown parent delete, rather than tolerating it under a budget.
+ */
+const SWALLOWED_FILES_BASELINE = 0;
+const SWALLOWED_SITES_BASELINE = 0;
 
 /**
  * A `.catch(` attached to THIS delete's own statement.

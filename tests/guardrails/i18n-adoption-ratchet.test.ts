@@ -347,7 +347,7 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx': 1, // partial, 1 prop
     'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop
-    'src/components/dev/swr-devtools.tsx': 9, // no-intl, 6 jsx + 3 prop
+    'src/components/dev/swr-devtools.tsx': 6, // 6 jsx; the 3 a11y props left for common.ui (#3209 tranche 4)
     'src/components/layout/MobileNavDrawer.tsx': 1, // partial, 1 prop
     'src/components/layout/org-workspace-switcher.tsx': 5, // intl wired #3209; 5 jsx remain
     'src/components/layout/tenant-switcher.tsx': 4, // intl wired #3209; 4 jsx remain
@@ -366,7 +366,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/ui/RichTextEditor.tsx': 1, // partial, 1 jsx
     'src/components/ui/SankeyChart.tsx': 2, // intl wired #3209; 1 jsx + 1 prop remain
     'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
-    'src/components/ui/TruncationBanner.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
     'src/components/ui/date-picker/date-range-picker.tsx': 3, // no-intl, 1 jsx + 2 prop
     'src/components/ui/filter/filter-list.tsx': 3, // no-intl, 2 jsx + 1 prop

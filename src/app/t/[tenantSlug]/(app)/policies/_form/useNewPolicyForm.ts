@@ -12,6 +12,7 @@
  * consumes the same hook + fields.
  */
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
@@ -42,6 +43,13 @@ export interface NewPolicyFormReturn {
     ) => void;
     /** Templates loaded when `isTemplateMode` is true. Empty otherwise. */
     templates: PolicyTemplate[];
+    /**
+     * Where the template fetch stands. An empty `templates` alone cannot say
+     * "none exist" — it is also what loading and a failed load look like.
+     */
+    templatesStatus: 'loading' | 'ready' | 'error';
+    /** Why the template fetch failed (the server's reason when it gave one). */
+    templatesError: string | null;
     /** Selects a template — assigns templateId and pre-fills title/category. */
     selectTemplate: (tpl: PolicyTemplate) => void;
     isTemplateMode: boolean;
@@ -78,6 +86,7 @@ export function useNewPolicyForm({
 }: UseNewPolicyFormOptions): NewPolicyFormReturn {
     const apiUrl = useTenantApiUrl();
     const telemetry = useFormTelemetry('NewPolicyPage');
+    const t = useTranslations('policies');
 
     const [fields, setFields] = useState<NewPolicyFormFields>({
         title: '',
@@ -87,7 +96,13 @@ export function useNewPolicyForm({
         contentType: 'MARKDOWN',
         templateId: '',
     });
-    const [templates, setTemplates] = useState<PolicyTemplate[]>([]);
+    // null until the first answer arrives — that IS the loading state, so the
+    // effect below never sets state synchronously.
+    const [templatesLoad, setTemplatesLoad] = useState<
+        | { status: 'ready'; templates: PolicyTemplate[] }
+        | { status: 'error'; message: string | null }
+        | null
+    >(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
@@ -95,18 +110,40 @@ export function useNewPolicyForm({
     useEffect(() => {
         if (!isTemplateMode) return;
         let cancelled = false;
+        // A refused or failed load used to map to `[]`, and the picker then
+        // said "No templates available." — a claim about the library, made
+        // when nothing was known about it.
         fetch(apiUrl('/policies/templates'))
-            .then((r) => (r.ok ? r.json() : []))
-            .then((data) => {
-                if (!cancelled) setTemplates(data);
+            .then(async (r) => {
+                if (!r.ok) {
+                    // The server's reason when it gave one; null → our own.
+                    const body = await r.json().catch(() => null);
+                    return { status: 'error' as const, message: apiErrorMessage(body, '') || null };
+                }
+                const data: unknown = await r.json();
+                return {
+                    status: 'ready' as const,
+                    templates: Array.isArray(data) ? (data as PolicyTemplate[]) : [],
+                };
+            })
+            .then((result) => {
+                if (!cancelled) setTemplatesLoad(result);
             })
             .catch(() => {
-                /* swallow — empty list is the right fallback */
+                // Network failure or an unreadable body — the browser's own
+                // message is untranslated, so say it in ours.
+                if (!cancelled) setTemplatesLoad({ status: 'error', message: null });
             });
         return () => {
             cancelled = true;
         };
     }, [isTemplateMode, apiUrl]);
+    const templates = templatesLoad?.status === 'ready' ? templatesLoad.templates : [];
+    const templatesStatus = templatesLoad?.status ?? 'loading';
+    const templatesError =
+        templatesLoad?.status === 'error'
+            ? templatesLoad.message ?? t('new.templatesLoadFailed')
+            : null;
 
     const setField = <K extends keyof NewPolicyFormFields>(
         key: K,
@@ -162,7 +199,7 @@ export function useNewPolicyForm({
                 // The server's own message — this used to fall back to
                 // `JSON.stringify(data.error)`, so the canonical
                 // `{ error: { code, message } }` envelope showed as raw JSON.
-                throw new Error(apiErrorMessage(data, 'Failed to create policy'));
+                throw new Error(apiErrorMessage(data, t('new.createFailed')));
             }
 
             const policy = await res.json();
@@ -173,7 +210,7 @@ export function useNewPolicyForm({
             onSuccess(policy);
         } catch (err) {
             telemetry.trackError(err);
-            setError(err instanceof Error ? err.message : 'Failed to create policy');
+            setError(err instanceof Error && err.message ? err.message : t('new.createFailed'));
         } finally {
             setSubmitting(false);
         }
@@ -183,6 +220,8 @@ export function useNewPolicyForm({
         fields,
         setField,
         templates,
+        templatesStatus,
+        templatesError,
         selectTemplate,
         isTemplateMode,
         submitting,

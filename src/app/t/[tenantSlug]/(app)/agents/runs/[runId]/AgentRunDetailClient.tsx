@@ -16,6 +16,7 @@ import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { delegationSpans, delegatesClaiming } from '@/lib/agentic/delegation-spans';
 import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
+import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
 
 /**
  * ONE definition, in the usecase that produces it.
@@ -36,7 +37,8 @@ export interface RunHeader {
     workflowKey: string;
     workflowName: string;
     status: string;
-    driver: 'STATIC' | 'FLUE';
+    /** As recorded, or `UNRECOGNISED` for an engine this build does not know (#4241). */
+    driver: RecordedRunDriver;
     stepCount: number;
     costTokens: number;
     startedAt: string;

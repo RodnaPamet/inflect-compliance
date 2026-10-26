@@ -143,6 +143,29 @@ describe('Tasks filter config', () => {
         expect(opts.find((o) => o.value === 'c2')?.displayLabel).toBe('CUS-1');
     });
 
+    it('controlOptionsFromTasks also offers controls linked only through Links (#4278)', () => {
+        // The filter matches a CONTROL TaskLink as well as the Control
+        // field, so a control reachable only through Links must be on
+        // offer — it used to be missing, and so unfilterable.
+        const opts = controlOptionsFromTasks([
+            {
+                controlId: 'c1',
+                control: { id: 'c1', name: 'Scope', annexId: 'A.4.3', code: null },
+                linkedControls: [
+                    { id: 'c1', name: 'Scope', annexId: 'A.4.3', code: null },
+                    { id: 'c3', name: 'Backups', annexId: null, code: 'AC-2' },
+                ],
+            },
+            {
+                controlId: null,
+                control: null,
+                linkedControls: [{ id: 'c3', name: 'Backups', annexId: null, code: 'AC-2' }],
+            },
+        ]);
+        expect(opts.map((o) => o.value).sort()).toEqual(['c1', 'c3']);
+        expect(opts.find((o) => o.value === 'c3')?.label).toBe('AC-2: Backups');
+    });
+
     it('buildTaskFilters swaps entity-ref options without mutating static defs', () => {
         const live = buildTaskFilters(
             [

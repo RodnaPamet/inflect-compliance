@@ -99,7 +99,7 @@ describe('TaskRepository.list + _buildWhere filter branches', () => {
         expect(db.task.findMany.mock.calls[0][0].take).toBe(25);
     });
 
-    it('scalar filters (status/type/severity/priority/assignee/control) each map onto where', async () => {
+    it('scalar filters (status/type/severity/priority/assignee) each map onto where', async () => {
         await TaskRepository.list(db as any, ctx, {
             status: 'OPEN',
             type: 'TASK',
@@ -114,7 +114,9 @@ describe('TaskRepository.list + _buildWhere filter branches', () => {
         expect(where.severity).toBe('HIGH');
         expect(where.priority).toBe('P1');
         expect(where.assigneeUserId).toBe('u9');
-        expect(where.controlId).toBe('ctrl9');
+        // `controlId` is NOT a bare field match any more — see the
+        // Linked control describe block below (#4278).
+        expect(where.controlId).toBeUndefined();
     });
 
     it('comma-joined multi-select facets become { in: [...] }', async () => {
@@ -219,6 +221,65 @@ describe('TaskRepository.list + _buildWhere filter branches', () => {
         await TaskRepository.list(db as any, ctx, { q: 'x', linkedEntityType: 'RISK', linkedEntityId: 'r1' });
         const where = db.task.findMany.mock.calls[0][0].where;
         expect(where.AND).toHaveLength(2);
+    });
+});
+
+describe('TaskRepository — the Linked control filter and its options (#4278)', () => {
+    it('controlId matches the Control field OR a CONTROL link — the control Tasks tab rule', async () => {
+        await TaskRepository.list(db as any, ctx, { controlId: 'ctrl9' });
+        const where = db.task.findMany.mock.calls[0][0].where;
+        expect(where.controlId).toBeUndefined();
+        expect(where.AND).toEqual([
+            {
+                OR: [
+                    { links: { some: { entityType: 'CONTROL', entityId: 'ctrl9' } } },
+                    { controlId: 'ctrl9' },
+                ],
+            },
+        ]);
+
+        // …and it is the SAME clause the control's own Tasks tab builds.
+        db.task.findMany.mockClear();
+        await TaskRepository.list(db as any, ctx, { linkedEntityType: 'CONTROL', linkedEntityId: 'ctrl9' });
+        expect(db.task.findMany.mock.calls[0][0].where.AND).toEqual(where.AND);
+    });
+
+    it('each row names the controls it is linked to through Links, in one bounded read', async () => {
+        db.task.findMany.mockResolvedValue([
+            { id: 't1', controlId: null, control: null, links: [{ entityId: 'c-link' }, { entityId: 'c-gone' }] },
+            { id: 't2', controlId: 'c-field', control: { id: 'c-field' }, links: [{ entityId: 'c-link' }] },
+            { id: 't3', controlId: null, control: null, links: [] },
+        ]);
+        db.control.findMany.mockResolvedValue([
+            { id: 'c-link', code: 'AC-2', name: 'Backups', annexId: null },
+        ]);
+
+        const rows = (await TaskRepository.list(db as any, ctx)) as unknown as Array<Record<string, unknown>>;
+
+        // The task read asks only for CONTROL links, bounded per task.
+        const select = db.task.findMany.mock.calls[0][0].select;
+        expect(select.links.where).toEqual({ entityType: 'CONTROL' });
+        expect(typeof select.links.take).toBe('number');
+        // ONE control read, tenant-scoped, for the distinct ids, bounded.
+        expect(db.control.findMany).toHaveBeenCalledTimes(1);
+        const controlArg = db.control.findMany.mock.calls[0][0];
+        expect(controlArg.where).toEqual({ tenantId: ctx.tenantId, id: { in: ['c-link', 'c-gone'] } });
+        expect(controlArg.take).toBe(2);
+
+        // A control the read did not return (deleted) drops out; the raw
+        // link ids do not reach the payload.
+        expect(rows.map((r) => r.linkedControls)).toEqual([
+            [{ id: 'c-link', code: 'AC-2', name: 'Backups', annexId: null }],
+            [{ id: 'c-link', code: 'AC-2', name: 'Backups', annexId: null }],
+            [],
+        ]);
+        expect(rows.every((r) => !('links' in r))).toBe(true);
+    });
+
+    it('no CONTROL links on the page means no control read at all', async () => {
+        db.task.findMany.mockResolvedValue([{ id: 't1', links: [] }]);
+        await TaskRepository.list(db as any, ctx);
+        expect(db.control.findMany).not.toHaveBeenCalled();
     });
 });
 

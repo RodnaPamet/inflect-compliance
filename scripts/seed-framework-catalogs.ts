@@ -40,7 +40,7 @@
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { loadAndValidateCatalogFile } from '../prisma/catalog-loader';
+import { catalogPacks, loadAndValidateCatalogFile } from '../prisma/catalog-loader';
 import { applyCatalogFile } from '../prisma/catalog-applier';
 
 const prisma = new PrismaClient({
@@ -86,6 +86,12 @@ const CATALOG_FIXTURES = [
     // requirements are generated from that file, so the library import and this
     // fixture write identical rows instead of fighting over two.
     'prisma/fixtures/aiuc-1-control-templates.json',
+    // EU drone operations (Implementing Regulation (EU) 2019/947). The third
+    // framework to converge on ONE row with its library, for AIUC-1's reason,
+    // and the first to declare several packs: one per operating subcategory
+    // (A1, A2, A3, STS-01, STS-02, operational authorisation, LUC), which the
+    // install wizard makes a tenant choose among.
+    'prisma/fixtures/eu-uas-ops-control-templates.json',
     // Last on purpose. This one carries no standard of its own — it gives the
     // 151-control internal-controls library a framework and a pack so a tenant
     // can install it deliberately, instead of receiving it as a side effect of
@@ -113,7 +119,7 @@ async function main(): Promise<void> {
                 `  ✓ ${rel}: ${file.framework.key}, ${file.requirements.length} requirements, ` +
                     `${file.templates.length} templates, ` +
                     `${file.templates.reduce((n, t) => n + t.tasks.length, 0)} authored tasks` +
-                    (file.pack ? `, pack ${file.pack.key}` : ''),
+                    catalogPacks(file).map((p) => `, pack ${p.key}`).join(''),
             );
         }
         console.log('✅ Validation passed. No writes attempted.');
@@ -135,7 +141,7 @@ async function main(): Promise<void> {
                 // tasks on every production start and reported none of them,
                 // so "no number" has meant both "none" and "not looked at".
                 `, tasks ${r.tasks.created}c/${r.tasks.updated}u/${r.tasks.unchanged}=/${r.tasks.deprecated}d` +
-                (r.pack ? `, pack ${r.pack.key} (${r.pack.templatesLinked} linked)` : ''),
+                r.packs.map((p) => `, pack ${p.key} (${p.templatesLinked} linked)`).join(''),
         );
     }
 

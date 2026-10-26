@@ -21,6 +21,7 @@ import {
 import { importLibrary } from '@/app-layer/services/library-importer';
 import type { LoadedLibrary } from '@/app-layer/libraries';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -74,12 +75,13 @@ describeFn('Framework delta-gap engine (real DB)', () => {
             await prisma.notification.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.tenantMembership.deleteMany({ where: { tenantId: t } }).catch(() => {});
         }
-        await prisma.user.deleteMany({ where: { id: USER_A } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: USER_A } });
         if (frameworkId) {
             await prisma.frameworkRequirement.deleteMany({ where: { frameworkId } }).catch(() => {});
             await prisma.framework.delete({ where: { id: frameworkId } }).catch(() => {});
         }
-        for (const t of [TENANT_A, TENANT_B]) await prisma.tenant.deleteMany({ where: { id: t } }).catch(() => {});
+        await deleteAuditRowsForTenants(prisma, [TENANT_A, TENANT_B]);
+        for (const t of [TENANT_A, TENANT_B]) await prisma.tenant.deleteMany({ where: { id: t } });
         await prisma.$disconnect();
     });
 
@@ -184,7 +186,8 @@ describeFn('Framework delta — importLibrary auto-propagates on a version updat
             await prisma.frameworkRequirement.deleteMany({ where: { frameworkId: fw.id } }).catch(() => {});
             await prisma.framework.delete({ where: { id: fw.id } }).catch(() => {});
         }
-        await prisma.tenant.deleteMany({ where: { id: TENANT_W } }).catch(() => {});
+        await deleteAuditRowsForTenants(prisma, [TENANT_W]);
+        await prisma.tenant.deleteMany({ where: { id: TENANT_W } });
         await prisma.$disconnect();
     });
 

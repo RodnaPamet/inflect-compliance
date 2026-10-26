@@ -11,7 +11,6 @@ import { RuleTester } from 'eslint';
 
 // CommonJS on purpose — see eslint-rules/index.js for why `.mjs` and `.cjs`
 // both fail in this repo.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const rule = require('../rules/require-mcp-tool-authorization');
 
 const ruleTester = new RuleTester({

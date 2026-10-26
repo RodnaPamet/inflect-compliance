@@ -13,6 +13,7 @@ import {
     isTerminalStatus,
     isActiveStatus,
     ALL_TASK_STATUSES,
+    TASK_STATUS_DISPLAY_NAMES,
 } from '@/app-layer/domain/task-status';
 
 describe('TASK_TRANSITIONS — legal graph', () => {
@@ -85,18 +86,33 @@ describe('checkTaskTransition', () => {
 
 describe('formatTransitionError', () => {
     it('renders a precise message for every error kind', () => {
-        expect(formatTransitionError({ kind: 'no_op', status: 'OPEN' })).toMatch(
-            /already OPEN/,
+        // The message reaches the user verbatim as the refusal's reason,
+        // so statuses are named as the UI names them — never the enum
+        // value, and never the internal word "work-item".
+        expect(formatTransitionError({ kind: 'no_op', status: 'IN_PROGRESS' })).toBe(
+            'The task is already In Progress.',
         );
         expect(
-            formatTransitionError({ kind: 'illegal', from: 'CLOSED', to: 'OPEN' }),
-        ).toMatch(/Illegal work-item transition: CLOSED → OPEN/);
+            formatTransitionError({ kind: 'illegal', from: 'TRIAGED', to: 'OPEN' }),
+        ).toBe('A task cannot move from Triaged to Open.');
         expect(
             formatTransitionError({ kind: 'unknown_from', from: 'NEW' }),
         ).toMatch(/Unknown current status "NEW"/);
         expect(
             formatTransitionError({ kind: 'unknown_to', to: 'DONE_DONE' }),
         ).toMatch(/Unknown target status "DONE_DONE"/);
+    });
+});
+
+describe('TASK_STATUS_DISPLAY_NAMES — the names server refusals use', () => {
+    it('names every status exactly as the UI labels it (en.json tasks.statusLabels)', () => {
+        const en = require('../../../messages/en.json') as {
+            tasks: { statusLabels: Record<string, string> };
+        };
+        expect(TASK_STATUS_DISPLAY_NAMES).toEqual(en.tasks.statusLabels);
+        expect(Object.keys(TASK_STATUS_DISPLAY_NAMES).sort()).toEqual(
+            [...ALL_TASK_STATUSES].sort(),
+        );
     });
 });
 

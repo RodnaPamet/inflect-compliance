@@ -98,8 +98,8 @@ export const options = {
         // Correctness — relaxed to 80% on the smoke tier (a single
         // retried request can move 200-sample rate noticeably). The
         // full baseline still asserts >98%.
-        'checks{check:control_created}': ['rate>0.80'],
-        'checks{check:evidence_uploaded}': ['rate>0.80'],
+        'checks{probe:create_control}': ['rate>0.80'],
+        'checks{probe:upload_evidence}': ['rate>0.80'],
 
         // E2E loop — wide enough to absorb cold-start noise but
         // tight enough to catch a doubling regression.
@@ -185,7 +185,7 @@ export default function mutationsIteration(data) {
                 }
             },
         },
-        { check: 'control_created' },
+        { probe: 'create_control' },
     );
     if (controlOk) createControlOk.add(1);
     else createControlFail.add(1);
@@ -226,7 +226,7 @@ export default function mutationsIteration(data) {
                 }
             },
         },
-        { check: 'evidence_uploaded' },
+        { probe: 'upload_evidence' },
     );
     if (uploadOk) uploadEvidenceOk.add(1);
     else uploadEvidenceFail.add(1);

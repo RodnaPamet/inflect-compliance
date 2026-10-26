@@ -128,10 +128,13 @@ interface Step {
 }
 interface Job {
     steps?: Step[];
+    concurrency?: Workflow['concurrency'];
 }
 interface Workflow {
     env?: Record<string, unknown>;
     jobs?: Record<string, Job>;
+    /** A bare string is a group name with GitHub's default, which cancels nothing. */
+    concurrency?: string | { group?: unknown; 'cancel-in-progress'?: unknown };
 }
 
 interface WorkflowDoc {
@@ -942,5 +945,45 @@ describe('the detector itself — driven by synthetic workflows', () => {
         const noPushes = auditPushSites([synthetic('f.yml', [BUILD_NO_PUSH, BLOCKING_SCAN])]);
         expect(noPushes).toEqual([]);
         expect(() => assertPopulation(noPushes)).toThrow(/no image-push site/i);
+    });
+});
+
+/**
+ * A publish that starts must finish (#4280).
+ *
+ * The publish workflow is the only way a change reaches production, and it
+ * used to carry `cancel-in-progress: true`. A publish takes about 22 minutes,
+ * longer than the gap between merges on a busy day, so each push to `main`
+ * cancelled the one still building and none finished. On 2026-10-25 nothing
+ * published after 04:28 UTC, and production ran a 13-hour-old image while CI
+ * and the release workflow both read green. Nothing turns red when a run is
+ * cancelled, which is why this is pinned here rather than noticed.
+ *
+ * `false` lets the running publish finish, and GitHub keeps only the newest
+ * pending run behind it, so the newest commit is always the next one built.
+ */
+describe('a running publish is never cancelled by the next push (#4280)', () => {
+    const publish = workflowDocs().find((d) => path.basename(d.file) === PUBLISH_WORKFLOW);
+
+    it('reads the publish workflow (positive control)', () => {
+        expect(publish?.wf.jobs?.[PUBLISH_JOB]).toBeDefined();
+    });
+
+    it('serialises publishes in a group, and does not cancel the one in progress', () => {
+        const concurrency = publish?.wf.concurrency;
+        // The object form, spelled out. A bare group string would also cancel
+        // nothing, but a later edit adding the key to it is the edit that
+        // brought the cancellation in the first time.
+        expect(typeof concurrency).toBe('object');
+        const block = concurrency as { group?: unknown; 'cancel-in-progress'?: unknown };
+        expect(typeof block.group).toBe('string');
+        expect(block['cancel-in-progress']).toBe(false);
+    });
+
+    it('no job overrides it with a concurrency block of its own', () => {
+        const overrides = Object.entries(publish?.wf.jobs ?? {})
+            .filter(([, job]) => job.concurrency !== undefined)
+            .map(([id]) => id);
+        expect(overrides).toEqual([]);
     });
 });

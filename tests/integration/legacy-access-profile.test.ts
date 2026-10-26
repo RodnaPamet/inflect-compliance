@@ -40,7 +40,7 @@ import { isDeniedColumn } from '@/lib/legacy-access/canonical';
 
 const prisma: PrismaClient = prismaTestClient();
 const TENANT = 'lgpr-tenant';
-const ctx = () => makeRequestContext('OWNER', { tenantId: TENANT });
+const ctx = () => makeRequestContext('OWNER', { userId: 'lgpr-user-1', tenantId: TENANT });
 
 let connectionId: string;
 
@@ -69,9 +69,9 @@ beforeAll(async () => {
     // riding on another suite's leftovers. CI's fresh database is the honest
     // environment, and it failed there (#3332, shard 3/4).
     await prisma.user.upsert({
-        where: { id: 'user-1' },
+        where: { id: 'lgpr-user-1' },
         update: {},
-        create: { id: 'user-1', email: 'profiler@lgpr.test', name: 'Profiler' },
+        create: { id: 'lgpr-user-1', email: 'profiler@lgpr.test', name: 'Profiler' },
     });
 });
 

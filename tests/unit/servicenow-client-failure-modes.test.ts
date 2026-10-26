@@ -118,7 +118,6 @@ describe('testConnection never throws out of the Test button', () => {
         // somewhere down the stack) must still land in `message`, because the
         // admin-facing Test button renders `message` and nothing else.
         const fetchImpl = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>(async () => {
-            // eslint-disable-next-line no-throw-literal -- deliberately not an Error
             throw 'instance hibernating';
         });
         const r = await client({}, fetchImpl).testConnection();

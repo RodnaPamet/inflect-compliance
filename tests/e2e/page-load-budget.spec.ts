@@ -126,7 +126,6 @@ test.describe('Page-load budget probe', () => {
         const lines = results.map(
             (r) => `${r.ok ? '✓' : '✗'} ${String(r.ttfbMs).padStart(5)}ms  (≤${r.target})  ${r.route}`,
         );
-        // eslint-disable-next-line no-console
         console.log('\n=== Page-load budget (server TTFB) ===\n' + lines.join('\n'));
         try {
             const dir = path.resolve(process.cwd(), 'test-results');

@@ -26,6 +26,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { runStepAction, storeActionResult } from '@/app-layer/usecases/onboarding-automation';
 
 const globalPrisma = new PrismaClient({
@@ -126,8 +127,9 @@ describeFn('onboarding-automation — runStepAction & storeActionResult (integra
         await cleanTenant();
         await cleanCatalog();
         await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: TENANT_ID } }).catch(() => {});
-        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } }).catch(() => {});
-        await globalPrisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
+        await deleteAuditRowsForTenants(globalPrisma, [TENANT_ID]);
+        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
+        await globalPrisma.user.deleteMany({ where: { id: userId } });
         await globalPrisma.$disconnect().catch(() => {});
     });
 

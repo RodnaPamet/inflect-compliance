@@ -2,11 +2,10 @@
 /**
  * Decide whether this Release run cuts a release, and tell the workflow.
  *
- * Counts the coverage floors in the checked-out tree, reads the merge queue
- * for the branch, applies `decideRelease` from `./lib/release-queue-gate.js`
- * (which carries the measurements and the rule), and writes
- * `release=true|false` to `$GITHUB_OUTPUT`. The workflow skips semantic-release
- * only on an explicit `false`.
+ * Reads the merge queue for the branch, applies `decideRelease` from
+ * `./lib/release-queue-gate.js` (which carries the measurements and the rule),
+ * and writes `release=true|false` to `$GITHUB_OUTPUT`. The workflow skips
+ * semantic-release only on an explicit `false`.
  *
  * It never fails the run. Anything that goes wrong is a warning and a
  * release, because a release held by a broken gate is a release nobody asked
@@ -22,11 +21,9 @@
  */
 import fs from 'node:fs';
 
-import floorsLib from './lib/coverage-floors.js';
 import gate from './lib/release-queue-gate.js';
 
 const { decideRelease } = gate;
-const { FLOOR_KEYS, countCoverage, raisedFloors, readFloors } = floorsLib;
 
 const READ_TIMEOUT_MS = 15_000;
 const PAGE = 100;
@@ -67,17 +64,6 @@ async function readMergeQueue() {
     }
 }
 
-/** Each floor a release would raise in the tree at `root`, or null when they cannot be counted. */
-function floorsBehind(root) {
-    try {
-        const floors = readFloors(root);
-        const next = raisedFloors(floors, countCoverage(root));
-        return FLOOR_KEYS.filter((k) => next[k] !== floors[k]);
-    } catch {
-        return null;
-    }
-}
-
 function pushedCommitMessages() {
     try {
         const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH ?? '', 'utf8'));
@@ -100,17 +86,12 @@ function report(release, reason) {
 
 try {
     const eventName = process.env.GITHUB_EVENT_NAME || 'push';
-    const behind = eventName === 'push' ? floorsBehind(process.cwd()) : [];
     const queue = eventName === 'push' ? await readMergeQueue() : null;
     const decision = decideRelease({
         eventName,
         queue,
         pushedCommitMessages: pushedCommitMessages(),
-        floorsBehind: behind,
     });
-    if (behind === null) {
-        console.log('::warning title=Coverage floors uncountable::The release gate could not count the coverage floors, so this push releases without waiting for the merge queue.');
-    }
     if (eventName === 'push' && queue === null) {
         console.log('::warning title=Merge queue unreadable::The release gate could not read the merge queue, so this push releases without waiting for it.');
     }

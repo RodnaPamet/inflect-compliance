@@ -58,52 +58,46 @@ export async function previewPackInstall(ctx: RequestContext, packKey: string) {
     };
 }
 
-export async function installPack(ctx: RequestContext, packKey: string) {
-    assertCanInstallFrameworkPack(ctx);
-    const db = prisma;
-    const pack = await db.frameworkPack.findUnique({
-        where: { key: packKey },
+type PackForInstall = Prisma.FrameworkPackGetPayload<{ include: typeof PACK_INSTALL_INCLUDE }>;
+
+const PACK_INSTALL_INCLUDE = {
+    templateLinks: {
         include: {
-            templateLinks: {
-                include: {
-                    template: {
-                        include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: true },
-                    },
-                },
+            template: {
+                include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: true },
             },
-            framework: true,
         },
-    });
-    if (!pack) throw notFound('Pack not found');
+    },
+    framework: true,
+} satisfies Prisma.FrameworkPackInclude;
 
-    // A pack installs EXACTLY the controls its standard defines, and nothing
-    // else: 93 for ISO/IEC 27001:2022 Annex A, and likewise for every other
-    // framework. The number a customer sees must be the number in the standard.
-    //
-    // This previously also swept in every global ControlTemplate carrying a
-    // requirement link into this framework, on the reasoning that the
-    // internal-controls library is not a standalone pack and is otherwise
-    // unreachable. The effect: installing ISO 27001 created 233 controls --
-    // the 93 Annex A controls plus the 140 internal controls whose related
-    // policies happen to map, policy-mediated, to some Annex A requirement.
-    // `previewPackInstall` counted only the pack's own templates, so the
-    // wizard promised 93 and delivered 233.
-    //
-    // Reachability for the internal-controls library is a real problem but a
-    // separate one, and it needs its own install path -- see
-    // prisma/control-template-seed.ts. It is not a decision a framework pack
-    // should make on the tenant's behalf.
-    const installedTemplates = pack.templateLinks.map((l) => l.template);
+interface PackInstallCounts {
+    packKey: string;
+    packName: string;
+    controlsCreated: number;
+    tasksCreated: number;
+    mappingsCreated: number;
+    policyLinksCreated: number;
+}
 
+/**
+ * Install the templates of several packs in ONE tenant transaction, each
+ * template at most once.
+ *
+ * Packs over one framework may share templates — a framework whose packs are
+ * its subcategories links its common controls into every one — so a template
+ * already handled by an earlier pack in this call is skipped, and a pack's
+ * counts are what IT added. Each pack gets its own FRAMEWORK_PACK_INSTALLED
+ * audit row, exactly as a single-pack install always has.
+ */
+async function installPacksInTenant(ctx: RequestContext, packs: PackForInstall[]) {
     // ISO27001 has 93 controls × (lookup + create + 5 default tasks +
     // requirement-link upserts), which is too much work for the default
     // 5 s Prisma interactive-transaction timeout. Bump it to 60 s so the
     // entire pack install runs atomically.
-    const result = await runInTenantContext(ctx, async (tdb) => {
-        let controlsCreated = 0;
-        let tasksCreated = 0;
-        let mappingsCreated = 0;
-        let policyLinksCreated = 0;
+    return runInTenantContext(ctx, async (tdb) => {
+        const handled = new Set<string>();
+        const results: PackInstallCounts[] = [];
 
         // Tenant policies by normalised title — the internal controls carry
         // their related-policy NAMES; link each to the tenant's matching policy
@@ -113,92 +107,247 @@ export async function installPack(ctx: RequestContext, packKey: string) {
             select: { id: true, title: true },
         });
         const policyByTitle = new Map(tenantPolicies.map((p) => [p.title.trim().toLowerCase(), p.id]));
-        const linkPolicies = async (controlId: string, relatedPolicies: string | null) => {
-            if (!relatedPolicies) return;
-            const policyIds = resolveRelatedPolicyIds(relatedPolicies, policyByTitle);
-            if (!policyIds.length) return;
-            const res = await tdb.policyControlLink.createMany({
-                data: policyIds.map((policyId) => ({ tenantId: ctx.tenantId, policyId, controlId })),
-                skipDuplicates: true,
-            });
-            policyLinksCreated += res.count;
-        };
 
-        for (const tmpl of installedTemplates) {
+        for (const pack of packs) {
+            let controlsCreated = 0;
+            let tasksCreated = 0;
+            let mappingsCreated = 0;
+            let policyLinksCreated = 0;
 
-            // Idempotent: skip if control with this code already exists
-            const existing = await tdb.control.findFirst({
-                where: { tenantId: ctx.tenantId, code: tmpl.code },
-            });
-            if (existing) {
-                // Still ensure requirement links exist
-                for (const rl of tmpl.requirementLinks) {
-                    await tdb.controlRequirementLink.upsert({
-                        where: { controlId_requirementId: { controlId: existing.id, requirementId: rl.requirementId } },
-                        create: { tenantId: ctx.tenantId, controlId: existing.id, requirementId: rl.requirementId },
-                        update: {},
-                    });
+            const linkPolicies = async (controlId: string, relatedPolicies: string | null) => {
+                if (!relatedPolicies) return;
+                const policyIds = resolveRelatedPolicyIds(relatedPolicies, policyByTitle);
+                if (!policyIds.length) return;
+                const res = await tdb.policyControlLink.createMany({
+                    data: policyIds.map((policyId) => ({ tenantId: ctx.tenantId, policyId, controlId })),
+                    skipDuplicates: true,
+                });
+                policyLinksCreated += res.count;
+            };
+
+            // A pack installs EXACTLY the controls its standard defines, and
+            // nothing else: 93 for ISO/IEC 27001:2022 Annex A, and likewise for
+            // every other framework. The number a customer sees must be the
+            // number in the standard.
+            //
+            // This previously also swept in every global ControlTemplate
+            // carrying a requirement link into this framework, on the reasoning
+            // that the internal-controls library is not a standalone pack and
+            // is otherwise unreachable. The effect: installing ISO 27001 created
+            // 233 controls -- the 93 Annex A controls plus the 140 internal
+            // controls whose related policies happen to map, policy-mediated,
+            // to some Annex A requirement. `previewPackInstall` counted only the
+            // pack's own templates, so the wizard promised 93 and delivered 233.
+            //
+            // Reachability for the internal-controls library is a real problem
+            // but a separate one, and it needs its own install path -- see
+            // prisma/control-template-seed.ts. It is not a decision a framework
+            // pack should make on the tenant's behalf.
+            for (const { template: tmpl } of pack.templateLinks) {
+                // By code: it is the template's unique key and the one the
+                // idempotency check below matches controls on.
+                if (handled.has(tmpl.code)) continue;
+                handled.add(tmpl.code);
+
+                // Idempotent: skip if control with this code already exists
+                const existing = await tdb.control.findFirst({
+                    where: { tenantId: ctx.tenantId, code: tmpl.code },
+                });
+                if (existing) {
+                    // Still ensure requirement links exist
+                    for (const rl of tmpl.requirementLinks) {
+                        await tdb.controlRequirementLink.upsert({
+                            where: { controlId_requirementId: { controlId: existing.id, requirementId: rl.requirementId } },
+                            create: { tenantId: ctx.tenantId, controlId: existing.id, requirementId: rl.requirementId },
+                            update: {},
+                        });
+                    }
+                    await linkPolicies(existing.id, tmpl.relatedPolicies);
+                    continue;
                 }
-                await linkPolicies(existing.id, tmpl.relatedPolicies);
-                continue;
+
+                // Create control from template
+                const control = await tdb.control.create({
+                    data: {
+                        // Shared with POST /controls/templates/install — see
+                        // control/template-projection.ts. The two paths produced
+                        // different controls from the same template until
+                        // 2026-08-06.
+                        ...controlDataFromTemplate(tmpl, {
+                            tenantId: ctx.tenantId,
+                            userId: ctx.userId,
+                        }),
+                    },
+                });
+                controlsCreated++;
+
+                // Create tasks from template tasks
+                for (const tt of installableTemplateTasks(tmpl.tasks)) {
+                    await tdb.task.create({
+                        data: taskFromTemplateTask(tt, ctx, control.id),
+                    });
+                    tasksCreated++;
+                }
+
+                // Create requirement mappings
+                for (const rl of tmpl.requirementLinks) {
+                    await tdb.controlRequirementLink.create({
+                        data: { tenantId: ctx.tenantId, controlId: control.id, requirementId: rl.requirementId },
+                    });
+                    mappingsCreated++;
+                }
+
+                await linkPolicies(control.id, tmpl.relatedPolicies);
             }
 
-            // Create control from template
-            const control = await tdb.control.create({
-                data: {
-                    // Shared with POST /controls/templates/install — see
-                    // control/template-projection.ts. The two paths produced
-                    // different controls from the same template until
-                    // 2026-08-06.
-                    ...controlDataFromTemplate(tmpl, {
-                        tenantId: ctx.tenantId,
-                        userId: ctx.userId,
-                    }),
-                },
+            const packKey = pack.key;
+            await logEvent(tdb, ctx, {
+                action: 'FRAMEWORK_PACK_INSTALLED',
+                entityType: 'Framework',
+                entityId: pack.frameworkId,
+                details: `Pack "${pack.name}" installed: ${controlsCreated} controls, ${tasksCreated} tasks, ${mappingsCreated} mappings, ${policyLinksCreated} policy links`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'FrameworkPack', operation: 'created', after: { packKey, controlsCreated, tasksCreated, mappingsCreated, policyLinksCreated }, summary: `Pack "${pack.name}" installed` },
+                metadata: { packKey, controlsCreated, tasksCreated, mappingsCreated, policyLinksCreated },
             });
-            controlsCreated++;
 
-            // Create tasks from template tasks
-            for (const tt of installableTemplateTasks(tmpl.tasks)) {
-                await tdb.task.create({
-                    data: taskFromTemplateTask(tt, ctx, control.id),
-                });
-                tasksCreated++;
-            }
-
-            // Create requirement mappings
-            for (const rl of tmpl.requirementLinks) {
-                await tdb.controlRequirementLink.create({
-                    data: { tenantId: ctx.tenantId, controlId: control.id, requirementId: rl.requirementId },
-                });
-                mappingsCreated++;
-            }
-
-            await linkPolicies(control.id, tmpl.relatedPolicies);
+            results.push({ packKey, packName: pack.name, controlsCreated, tasksCreated, mappingsCreated, policyLinksCreated });
         }
-
-        await logEvent(tdb, ctx, {
-            action: 'FRAMEWORK_PACK_INSTALLED',
-            entityType: 'Framework',
-            entityId: pack.frameworkId,
-            details: `Pack "${pack.name}" installed: ${controlsCreated} controls, ${tasksCreated} tasks, ${mappingsCreated} mappings, ${policyLinksCreated} policy links`,
-            detailsJson: { category: 'entity_lifecycle', entityName: 'FrameworkPack', operation: 'created', after: { packKey, controlsCreated, tasksCreated, mappingsCreated, policyLinksCreated }, summary: `Pack "${pack.name}" installed` },
-            metadata: { packKey, controlsCreated, tasksCreated, mappingsCreated, policyLinksCreated },
-        });
-
-        return {
-            packKey: pack.key,
-            packName: pack.name,
-            framework: pack.framework.key,
-            controlsCreated,
-            tasksCreated,
-            mappingsCreated,
-            policyLinksCreated,
-        };
+        return results;
     }, { timeout: 60_000, maxWait: 10_000 });
+}
+
+export async function installPack(ctx: RequestContext, packKey: string) {
+    assertCanInstallFrameworkPack(ctx);
+    const db = prisma;
+    const pack = await db.frameworkPack.findUnique({
+        where: { key: packKey },
+        include: PACK_INSTALL_INCLUDE,
+    });
+    if (!pack) throw notFound('Pack not found');
+
+    const [counts] = await installPacksInTenant(ctx, [pack]);
+    const result = { ...counts, framework: pack.framework.key };
 
     const plan = await getEffectivePlan(ctx);
     recordFrameworkInstalled({ frameworkKey: result.framework, plan });
+    return result;
+}
+
+/**
+ * Validate the chosen packs of ONE framework for a preview or an install, and
+ * return their keys deduplicated, in the order chosen.
+ *
+ * This is where "choose at least one" is enforced on the server: an empty
+ * choice is refused, as is a key that names no pack or names a pack of a
+ * different framework — the wizard asks for the packs of the framework in its
+ * URL, and a request mixing in another framework's pack is not that choice.
+ */
+async function assertChosenPacks(frameworkKey: string, packKeys: readonly string[]): Promise<string[]> {
+    const keys = [...new Set(packKeys.map((k) => k.trim()).filter(Boolean))];
+    if (keys.length === 0) throw badRequest('Choose at least one pack to install.');
+    const found = await prisma.frameworkPack.findMany({
+        where: { key: { in: keys } },
+        select: { key: true, framework: { select: { key: true } } },
+    });
+    const known = new Set(found.map((p) => p.key));
+    const missing = keys.filter((k) => !known.has(k));
+    if (missing.length > 0) throw notFound(`Pack not found: ${missing.join(', ')}`);
+    const foreign = found.filter((p) => p.framework.key !== frameworkKey).map((p) => p.key);
+    if (foreign.length > 0) {
+        throw badRequest(`Not a pack of ${frameworkKey}: ${foreign.sort().join(', ')}`);
+    }
+    return keys;
+}
+
+/** Rows back in the order the caller chose, so audit rows and counts read that way. */
+function inChosenOrder<P extends { key: string }>(keys: readonly string[], rows: P[]): P[] {
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    return keys.map((k) => byKey.get(k)).filter((r): r is P => r !== undefined);
+}
+
+/**
+ * Preview installing several packs of one framework together: the union of
+ * their templates, each counted once.
+ */
+export async function previewPacksInstall(ctx: RequestContext, frameworkKey: string, packKeys: readonly string[]) {
+    assertCanViewFrameworks(ctx);
+    const keys = await assertChosenPacks(frameworkKey, packKeys);
+    const packs = inChosenOrder(
+        keys,
+        await prisma.frameworkPack.findMany({
+            where: { key: { in: keys } },
+            include: {
+                templateLinks: {
+                    include: {
+                        template: {
+                            include: { tasks: LIVE_TEMPLATE_TASKS, requirementLinks: { include: { requirement: true } } },
+                        },
+                    },
+                },
+                framework: true,
+            },
+        }),
+    );
+    const templates = new Map<string, (typeof packs)[number]['templateLinks'][number]['template']>();
+    for (const pack of packs) {
+        for (const l of pack.templateLinks) {
+            if (!templates.has(l.template.code)) templates.set(l.template.code, l.template);
+        }
+    }
+    const existingControls = await runInTenantContext(ctx, (db) =>
+        db.control.findMany({
+            where: { tenantId: ctx.tenantId, code: { in: [...templates.keys()] } },
+            select: { code: true },
+        })
+    );
+    const existingCodes = new Set(existingControls.map((c) => c.code));
+    const list = [...templates.values()];
+    const fw = packs[0].framework;
+
+    return {
+        packKeys: packs.map((p) => p.key),
+        packs: packs.map((p) => ({ key: p.key, name: p.name })),
+        framework: { key: fw.key, name: fw.name, version: fw.version },
+        totalTemplates: list.length,
+        newControls: list.filter((t) => !existingCodes.has(t.code)).length,
+        existingControls: list.filter((t) => existingCodes.has(t.code)).length,
+        templates: list.map((t) => ({
+            code: t.code,
+            title: t.title,
+            tasks: t.tasks.length,
+            requirements: t.requirementLinks.map((rl) => ({ code: rl.requirement.code, title: rl.requirement.title })),
+            alreadyInstalled: existingCodes.has(t.code),
+        })),
+    };
+}
+
+/**
+ * Install several packs of one framework — the subcategories a tenant chose —
+ * atomically. A template the packs share is installed once.
+ */
+export async function installPacks(ctx: RequestContext, frameworkKey: string, packKeys: readonly string[]) {
+    assertCanInstallFrameworkPack(ctx);
+    const keys = await assertChosenPacks(frameworkKey, packKeys);
+    const packs = inChosenOrder(
+        keys,
+        await prisma.frameworkPack.findMany({ where: { key: { in: keys } }, include: PACK_INSTALL_INCLUDE }),
+    );
+    const perPack = await installPacksInTenant(ctx, packs);
+    const sum = (k: 'controlsCreated' | 'tasksCreated' | 'mappingsCreated' | 'policyLinksCreated') =>
+        perPack.reduce((n, p) => n + p[k], 0);
+    const result = {
+        framework: frameworkKey,
+        packKeys: perPack.map((p) => p.packKey),
+        packName: perPack.map((p) => p.packName).join(', '),
+        packs: perPack,
+        controlsCreated: sum('controlsCreated'),
+        tasksCreated: sum('tasksCreated'),
+        mappingsCreated: sum('mappingsCreated'),
+        policyLinksCreated: sum('policyLinksCreated'),
+    };
+
+    const plan = await getEffectivePlan(ctx);
+    recordFrameworkInstalled({ frameworkKey, plan });
     return result;
 }
 

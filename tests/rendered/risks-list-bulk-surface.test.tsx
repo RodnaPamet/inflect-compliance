@@ -123,6 +123,7 @@ function mount(bulkPermissions: Props['bulkPermissions']) {
                     tenantSlug="acme"
                     permissions={{ canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true }}
                     bulkPermissions={bulkPermissions}
+                    canCreate
                     translations={translations}
                 />
             </TooltipProvider>

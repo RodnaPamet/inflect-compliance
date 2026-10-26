@@ -100,12 +100,15 @@ describe('ControlsClient — EntityListPage adoption', () => {
         expect(source).toContain("'data-testid': 'controls-table'");
     });
 
-    it('preserves all four header actions gated by appPermissions.controls.create', () => {
+    it('preserves all four header actions gated by the create permission', () => {
         // Regression guard — the refactor must not silently drop the
         // permission gate or any of the four buttons. Accept both
         // ternary (`? :`) and short-circuit (`&&`) gating styles —
         // both correctly hide the actions when the permission is false.
-        expect(source).toMatch(/appPermissions\.controls\.create\s*[?&]/);
+        // The gate is `canCreateControls`: canWrite AND controls.create,
+        // the two layers `assertCanCreateControl` checks (#4275). What each
+        // role is shown is asserted in tests/rendered/controls-list-page.test.tsx.
+        expect(source).toMatch(/canCreateControls\s*[?&]/);
         expect(source).toContain('controls-dashboard-btn');
         // UI-15: the standalone "Frameworks" header button was removed.
         expect(source).not.toContain('frameworks-btn');

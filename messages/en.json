@@ -153,7 +153,13 @@
       "regulatorWording": "Show the regulator wording",
       "frameworkSectionNavigator": "Framework section navigator",
       "sankeyFlow": "Cross-tier traceability flow (Sankey)",
-      "treeExpansionControls": "Tree expansion controls"
+      "treeExpansionControls": "Tree expansion controls",
+      "kpiTrend30Day": "{label} 30-day trend",
+      "kpiTrend": "{label} trend",
+      "trend": "Trend",
+      "devtoolsClose": "Close devtools panel",
+      "devtoolsHits": "Cache fills since panel mount (a key transitioned out of validating with data and no error)",
+      "devtoolsErrors": "Cache errors since panel mount"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -213,7 +219,9 @@
       "lineChartAria": "Line chart",
       "radarChartAria": "Radar chart",
       "lossExceedanceAria": "Loss exceedance curve",
-      "lossBucketsAria": "Loss buckets"
+      "lossBucketsAria": "Loss buckets",
+      "rangeAria": "{label}: {start} → {end}",
+      "pointAria": "{label}: {value}"
     },
     "sections": {
       "accessReviews": "Access reviews",
@@ -272,6 +280,10 @@
       "json": "JSON",
       "archive": "Archive",
       "file": "File"
+    },
+    "truncationBanner": {
+      "showingFirst": "Showing the first {cap, number} results.",
+      "refine": "Refine your filters to narrow the view and see the rest."
     }
   },
   "login": {
@@ -544,7 +556,9 @@
         "incident": "incident",
         "issue": "issue"
       }
-    }
+    },
+    "kpiTrend30Day": "{label} 30-day trend",
+    "kpiLoading": "{label} loading"
   },
   "clauses": {
     "title": "ISO 27001:2022 Clause Tracker",
@@ -666,10 +680,10 @@
       "businessProcessesPlaceholder": "Processes this asset supports",
       "dependenciesNote": "Free-text notes — not linked to assets or controls.",
       "businessProcessesNote": "Free-text notes. Use the process-map canvas for actual linkage.",
-      "retentionNote": "Human-readable policy note (e.g. “7 years”). The structured date below drives auto-retirement.",
+      "retentionNote": "Human-readable policy note (e.g. “7 years”). The structured date below drives automatic deletion.",
       "retentionUntil": "Retention until",
       "retentionUntilPlaceholder": "Select a date…",
-      "retentionUntilNote": "Structured expiry date — the asset is auto-retired after it.",
+      "retentionUntilNote": "Structured expiry date — once it passes, the asset is deleted automatically. It can be restored from Deleted assets for 90 days, then it is purged permanently.",
       "saveFailed": "Couldn't save the asset. Please try again.",
       "createFailed": "Couldn't create the asset. Please try again."
     },
@@ -870,23 +884,23 @@
       }
     },
     "assetTypes": {
-      "INFORMATION": "INFORMATION",
-      "APPLICATION": "APPLICATION",
-      "SYSTEM": "SYSTEM",
-      "SERVICE": "SERVICE",
-      "DATA_STORE": "DATA STORE",
-      "INFRASTRUCTURE": "INFRASTRUCTURE",
-      "VENDOR": "VENDOR",
-      "PROCESS": "PROCESS",
-      "PEOPLE_PROCESS": "PEOPLE PROCESS",
-      "OTHER": "OTHER"
+      "INFORMATION": "Information",
+      "APPLICATION": "Application",
+      "SYSTEM": "System",
+      "SERVICE": "Service",
+      "DATA_STORE": "Data Store",
+      "INFRASTRUCTURE": "Infrastructure",
+      "VENDOR": "Vendor",
+      "PROCESS": "Process",
+      "PEOPLE_PROCESS": "People / Process",
+      "OTHER": "Other"
     },
     "rowInteractionHint": "Click to preview · double-click the row to open the full page",
     "importAssets": "Import assets",
     "import": {
       "title": "Import assets from CSV",
       "csvFormat": "CSV format",
-      "csvDesc": "Upload a CSV file with at minimum a Name column. Optional columns: Type, Status, Owner, Classification, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (YYYY-MM-DD), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
+      "csvDesc": "Upload a CSV file with at minimum Name and Type columns. Optional columns: Status, Owner, Classification, Location, Confidentiality, Integrity, Availability (1-5), Retention, RetentionUntil (YYYY-MM-DD), ExternalRef, Dependencies, BusinessProcesses, DataResidency, CPE, Vendor, Product, Version.",
       "chooseFile": "Choose CSV file",
       "assetsToImport": "{count} asset(s) to import",
       "importing": "Importing… ({count})",
@@ -903,6 +917,7 @@
       "moreRows": "+{count} more…",
       "invalidCsv": "No valid rows found. Ensure the CSV has a \"Name\" column header.",
       "importComplete": "Import complete — {created} of {total} assets created",
+      "importFailed": "Import failed — no assets were created",
       "errors": "Errors",
       "viewRegister": "View asset register →",
       "importMore": "Import more",
@@ -921,7 +936,14 @@
       }
     },
     "list": {
-      "ownerImported": "imported"
+      "ownerImported": "imported",
+      "loadError": "Couldn't load assets. Reload the page to try again."
+    },
+    "vulnSeverity": {
+      "CRITICAL": "Critical",
+      "HIGH": "High",
+      "MEDIUM": "Medium",
+      "LOW": "Low"
     },
     "viewVulnerabilities": "View vulnerabilities",
     "openVulnsAria": "{count} open vulnerabilities",
@@ -1131,6 +1153,7 @@
       "ownerBlank": "Owner (blank = unassign)",
       "delete": "Delete",
       "actionFailed": "Bulk action failed. Please try again.",
+      "tooMany": "Select at most {max} risks at a time.",
       "applied": "{count, plural, one {# risk updated} other {# risks updated}}",
       "deletedToast": "{count, plural, one {# risk deleted} other {# risks deleted}}",
       "undo": "Undo"
@@ -1863,7 +1886,8 @@
       "total": "Total controls",
       "implemented": "Implemented",
       "inProgress": "In progress",
-      "notStarted": "Not started"
+      "notStarted": "Not started",
+      "notCountedByCategory": "Not counted while a Category filter is on"
     },
     "colHeaders": {
       "code": "Code",
@@ -1899,7 +1923,9 @@
       "entityLabel": "controls",
       "deletedToast": "{count, plural, one {# control deleted} other {# controls deleted}}",
       "actionFailed": "Bulk action failed. Please try again.",
-      "applied": "Changes applied"
+      "applied": "Changes applied",
+      "partlyApplied": "Changes applied to {applied} of {total} selected controls. {skipped} could not be changed and were left as they were.",
+      "noneApplied": "No changes applied. None of the selected controls could be changed."
     },
     "list": {
       "closeQuickView": "Close the control quick view",
@@ -1922,6 +1948,12 @@
       "healthColumn": "Health",
       "flaggedShowing": "Showing {count} flagged controls",
       "flaggedClear": "Clear",
+      "drillDown": {
+        "dueSoon": "Showing only controls with a review due in the next 30 days or overdue",
+        "missingEvidence": "Showing only controls with no approved, unexpired evidence",
+        "both": "Showing only controls with a review due in the next 30 days or overdue, and no approved, unexpired evidence",
+        "clear": "Show all controls"
+      },
       "loadError": "Couldn't load controls. Reload the page to try again."
     },
     "empty": {
@@ -1966,7 +1998,8 @@
       "submit": "Create Control",
       "createFailed": "Failed to create control",
       "nameRequired": "Name is required",
-      "applicabilityFailed": "Control created, but marking it Not Applicable failed. Retry to save the justification."
+      "applicabilityFailed": "Control created, but marking it Not Applicable failed. Retry to save the justification.",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace already has {current}. Upgrade the plan to add more."
     },
     "addControl": "Control",
     "detail": {
@@ -2251,7 +2284,7 @@
       "controlHealthTitle": "Control health",
       "retry": "Retry",
       "controlHealthTileAria": "{count} controls — {verdict}",
-      "controlHealthMeasuredOnly": "Health reflects MEASURED test operating-effectiveness only. A declared effectiveness estimate informs valuation/ROI — not health — so a control with a declared score but no tests reads Unknown here.",
+      "controlHealthMeasuredOnly": "Health comes from the control's status, its next test date and its test runs in the last 90 days, checked in this order. Scoped out: Not applicable. No test run in that time and not Implemented: Unknown. Not Started, or under 70% of its tests passed: At risk. Next test overdue, or under 90% passed: Degraded. Otherwise: Healthy — so an Implemented control that has never been tested reads Healthy until its next test is overdue. A declared effectiveness estimate feeds valuation and ROI, not health.",
       "controlHealthTruncated": "Showing health for the first {scanned} controls (scan cap {cap}). Controls beyond the cap have no verdict badge."
     },
     "templates": {
@@ -2522,7 +2555,7 @@
     "link": "Link",
     "text": {
       "title": "Add evidence",
-      "description": "Record a link, narrative, or attestation against a control.",
+      "description": "Record a narrative or attestation against a control. A note is shown as plain text; to add a clickable link, use Link / URL instead.",
       "titleLabel": "Title",
       "linkControlLabel": "Link to control",
       "noControlLink": "— No control link",
@@ -2534,7 +2567,7 @@
       "folderOptional": "(optional)",
       "folderPlaceholder": "e.g. SOC2/2026 or Quarterly access reviews",
       "contentLabel": "Content",
-      "contentPlaceholder": "Paste a link or narrative…",
+      "contentPlaceholder": "Write a narrative or attestation…",
       "cancel": "Cancel",
       "creating": "Creating…",
       "submit": "Add evidence",
@@ -2573,13 +2606,18 @@
       "viewList": "List",
       "viewGallery": "Gallery",
       "archivedNoticeTitle": "Archived evidence",
-      "archivedNoticeBody": "Archived evidence should not be used in active audit packs or compliance assessments. Unarchive if you need to reuse this evidence.",
+      "archivedNoticeBody": "Archived evidence should not be used in active audit packs or compliance assessments. To reuse it, unarchive it. Evidence whose retention date has passed needs a new Retention date first: set one in Edit evidence, then unarchive it.",
       "emptyArchivedTitle": "No archived evidence",
       "emptyExpiringTitle": "No evidence expiring soon",
       "emptyFilterTitle": "No evidence matches your filters",
       "emptyFilterDesc": "Try widening your search or clearing one of the active filters.",
       "clearFilters": "Clear filters",
       "emptyRecordsDesc": "Upload screenshots, exports, and attestations that prove your controls work in practice.",
+      "emptyActiveTitle": "No active evidence",
+      "emptyActiveDesc": "All of this workspace's evidence is archived or expired.",
+      "showArchived": "Show archived",
+      "allCurrentMessage": "All evidence is current",
+      "allCurrentDescription": "No evidence is expired, expiring in the next 30 days, or in need of review.",
       "resourceOne": "evidence item",
       "resourceMany": "evidence items",
       "searchPlaceholder": "Search evidence…",
@@ -2605,7 +2643,7 @@
     },
     "reject": {
       "title": "Reject evidence",
-      "description": "Explain why this evidence is being rejected. The reason is shared with the owner.",
+      "description": "Explain why this evidence is being rejected. If its owner is a member of this workspace, they are notified with the reason.",
       "reasonLabel": "Rejection reason",
       "reasonPlaceholder": "e.g. Screenshot is outdated — please re-capture with the current date visible.",
       "cancel": "Cancel",
@@ -2646,6 +2684,8 @@
       "loadingBody": "Loading evidence…",
       "errorTitle": "Evidence",
       "loadFailed": "Failed to load evidence.",
+      "downloadArchived": "Archived evidence can't be downloaded.",
+      "downloadNeedsControl": "This file can be downloaded once the evidence is linked to a control.",
       "descriptionLabel": "Description",
       "versionsLabel": "File versions",
       "versionBadge": "v{version}",
@@ -2720,6 +2760,7 @@
       "replaceFileDesc": "Upload a new file to replace the current one.",
       "replacing": "Replacing…",
       "replaceFailed": "Failed to replace file",
+      "replacedKeepEditing": "File replaced. Your other changes are not saved yet.",
       "tagsLabel": "Tags",
       "tagsDesc": "Comma-separated. A second way to organise evidence beside folders.",
       "tagsPlaceholder": "soc2, access-control, q3"
@@ -2738,7 +2779,7 @@
       "titleMultiHint": "Per-file titles default to the filename when uploading multiple files.",
       "retainLabel": "Retain until",
       "retainTooltipAria": "About retention dates",
-      "retainTooltip": "After this date the evidence is archived out of the active set. It stays in the audit log — admins can still recover it.",
+      "retainTooltip": "After this date the evidence is archived out of the active set, and 365 days later it is deleted for good. Until then an Editor or Admin can bring it back by setting a new retention date and unarchiving it.",
       "retainPlaceholder": "Select date",
       "retainAria": "Retain until",
       "retainHint": "Optional — applies to every file in the batch.",
@@ -2773,8 +2814,14 @@
       "descriptionHeader": "Drop a .zip and the worker will extract each supported file into its own evidence record.",
       "dropTitle": "Drop a .zip",
       "dropHint": "Up to 100 MB per archive. PDF / Office / image / CSV / JSON entries are extracted; other entries are skipped.",
-      "jobLabel": "Job",
-      "queued": "queued",
+      "statusLine": "Status: {state}",
+      "states": {
+        "queued": "Queued",
+        "running": "Running",
+        "paused": "Paused",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
       "progressLine": "{extracted} extracted · {skipped} skipped · {errored} errored · {total} total entries",
       "extracted": "Extracted: {count}",
       "skipped": "Skipped: {count}",
@@ -3007,7 +3054,8 @@
       "emptyDesc": "Author the documents that govern how your organisation operates — security, privacy, acceptable use, incident response.",
       "kpiOutstandingAck": "Outstanding acknowledgements",
       "ackOutstandingBadge": "Outstanding",
-      "ackProgress": "{acknowledged}/{assigned}"
+      "ackProgress": "{acknowledged}/{assigned}",
+      "loadError": "Couldn't load policies. Reload the page to try again."
     },
     "colHeaders": {
       "title": "Title",
@@ -3023,6 +3071,8 @@
       "assignOwner": "Assign owner",
       "ownerBlank": "Owner (blank = unassign)",
       "archive": "Archive",
+      "archiveConfirmLabel": "Archive",
+      "archiveConfirmDesc": "They stay on the list as Archived. While a policy is archived it cannot get a new version, an approval request or a rollback. You can restore each one from its page; it comes back as a draft.",
       "delete": "Delete",
       "failed": "Bulk action failed",
       "deletedToast": "{count, plural, one {# policy deleted} other {# policies deleted}}",
@@ -3046,6 +3096,21 @@
       "creating": "Creating…",
       "chooseTemplate": "Choose a Template",
       "templatesEmpty": "No templates available.",
+      "templatesLoading": "Loading templates…",
+      "templatesLoadFailed": "Couldn't load templates.",
+      "createFailed": "Couldn't create the policy.",
+      "categories": {
+        "informationSecurity": "Information Security",
+        "accessControl": "Access Control",
+        "hr": "HR",
+        "physical": "Physical",
+        "compliance": "Compliance",
+        "operations": "Operations",
+        "riskManagement": "Risk Management",
+        "businessContinuity": "Business Continuity",
+        "supplier": "Supplier",
+        "other": "Other"
+      },
       "fieldTitle": "Title",
       "titleEmpty": "Title cannot be empty.",
       "titlePlaceholder": "e.g. Information Security Policy",
@@ -3220,7 +3285,7 @@
       "versionProposedToast": "Saved as a proposed version. The published version is still live.",
       "versionCreatedToast": "New version saved.",
       "archiveConfirmTitle": "Archive this policy?",
-      "archiveConfirmBody": "It will be withdrawn from the library and cannot be edited, reviewed or published while archived. You can restore it afterwards.",
+      "archiveConfirmBody": "It stays on the list as Archived. While it is archived it cannot get a new version, an approval request or a rollback. You can restore it afterwards.",
       "archiveConfirmLabel": "Archive policy",
       "restoreFromArchive": "Restore",
       "restoring": "Restoring…",
@@ -6855,14 +6920,12 @@
       "requiredLabel": "Required value",
       "policyPathLabel": "Policy path",
       "sectionExecution": "Sandboxed execution",
-      "executionPendingHeading": "Not switchable from this page",
-      "executionPendingBody": "This switch is installed with the sandbox runtime itself. Until then the row reports what the deployment permits and offers no control.",
       "status": {
         "not-configured": "Not installed",
         "set-in-code": "Set in code",
         "unreachable": "No answer",
         "declared-not-observed": "Declared",
-        "tenant-switch": "Available"
+        "unconfirmable": "Cannot be confirmed"
       },
       "execution": {
         "name": "Run agent tools in a sandbox",
@@ -6896,7 +6959,11 @@
           "description": "Landlock must be a hard requirement rather than best effort. Best effort means a host without Landlock runs the sandbox with no filesystem isolation and still reports success."
         }
       },
-      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below."
+      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below.",
+      "executionUnconfirmableHeading": "Turned on, with no runtime declared",
+      "executionUnconfirmableBody": "This deployment says agent tools run in a sandbox, but it has declared no sandbox runtime for them to run in. Sandboxed execution is therefore not available, and this is not the same as the setting being off - someone turned it on and it cannot work.",
+      "executionPlatformHeading": "Not switchable from this page",
+      "executionPlatformBody": "Whether agent tools run in a sandbox is set for the whole deployment, not per workspace. The row reports what the deployment permits."
     }
   },
   "riskManager": {
@@ -7701,6 +7768,10 @@
       "viewControls": "View Controls →",
       "backToFramework": "Back to Framework",
       "packsEmpty": "No packs available for this framework.",
+      "choosePacks": "Choose what to install",
+      "choosePacksHint": "This framework is split into packs. Tick every one that applies to you; at least one is required. A control that several packs share is installed once.",
+      "choosePacksRequired": "Choose at least one pack to continue.",
+      "previewChosen": "Preview {count} selected",
       "restrictedTitle": "You cannot install frameworks",
       "restricted": "Only an Owner or Admin can install a framework pack, or a member whose custom role allows installing frameworks. Ask one of them to install it. You can still read this framework's requirements."
     },
@@ -7891,7 +7962,8 @@
       "linksFailedDetail": "Task created, but {count, plural, one {# link} other {# links}} failed to attach: {detail}. Add them from the task page.",
       "linksFailed": "Task created, but {count, plural, one {# link} other {# links}} failed to attach.",
       "requiresControlOrLink": "Audit Finding / Control Gap requires a control or framework requirement link.",
-      "requiresAssetOrControl": "Incident requires an asset or control link."
+      "requiresAssetOrControl": "Incident requires an asset or control link.",
+      "linkedRecord": "Linked record"
     },
     "detail": {
       "notFound": "Task not found",
@@ -7977,6 +8049,7 @@
       "reviewerLabel": "Reviewer:",
       "noReviewer": "No reviewer",
       "setReviewer": "Set reviewer",
+      "reviewerCannotSignOff": "This reviewer cannot sign the task off — only an active member whose role can edit tasks can. Choose another reviewer.",
       "reviewerFailed": "Failed to set reviewer",
       "watchersLabel": "Watchers:",
       "noWatchers": "No watchers",
@@ -9226,7 +9299,8 @@
       "abortConfirmBody": "This stops the {workflow} run mid-execution. Work already completed is not rolled back, and the run cannot be resumed afterwards — a new run starts from the beginning.",
       "driver": {
         "STATIC": "Static engine",
-        "FLUE": "Flue engine"
+        "FLUE": "Flue engine",
+        "UNRECOGNISED": "Unrecognised engine"
       },
       "detail": {
         "delegation": {
@@ -12618,6 +12692,9 @@
         "requirements": "{count} requirements",
         "selected": "Selected",
         "selectAtLeastOne": "Select at least one framework to continue.",
+        "choosePacks": "Choose what to install from {name}",
+        "choosePacksHint": "This framework is split into packs. Tick every one that applies; controls the packs share are installed once.",
+        "choosePacksRequired": "Choose at least one pack from {name} to continue.",
         "badgeMostPopular": "Most Popular",
         "badgeEu": "EU",
         "installFailedTitle": "Some frameworks were not installed",

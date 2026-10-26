@@ -204,7 +204,6 @@ describe('the directory identity tables have one write seam each', () => {
      */
     it('scans the tree and finds the writers that exist today', () => {
         const writers = scanned.filter((s) => s.writes.length > 0).map((s) => s.rel);
-        // eslint-disable-next-line no-console
         console.log(`scanned ${files.length} files under src/; ${writers.length} write a directory table`);
         expect(files.length).toBeGreaterThan(500);
         expect(writers.sort()).toEqual([

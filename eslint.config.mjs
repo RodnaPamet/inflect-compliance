@@ -102,6 +102,16 @@ const HARNESS_SCANNER_IMPORT_PATTERNS = [
 const config = [
     ...nextCoreWebVitals,
     {
+        // A suppression comment that suppresses nothing is an error, not a
+        // warning. It was a warning, and over a hundred built up: some for rules
+        // switched off for the file, some a line away from the finding they
+        // were written for, which left that finding live and the comment
+        // claiming otherwise (#4228 found ten). An unused one is also a
+        // standing licence for whatever lands on that line next. Delete it,
+        // or move it onto the line the rule reports.
+        linterOptions: { reportUnusedDisableDirectives: 'error' },
+    },
+    {
         ignores: [
             '.next/**',
             // Local E2E (`scripts/e2e-local.mjs`) writes a Next build
@@ -206,6 +216,15 @@ const config = [
             // NAMED, not non-null: `agentId: null` and `policyCardVersion:
             // NO_POLICY_CARD` are correct values, silence is not.
             'local/require-agent-attribution': 'error',
+            // `WorkflowRun.driver` is the enum `AgentDriverMode`, and a Prisma
+            // client meeting a value it was not generated with fails the WHOLE
+            // operation. After a rollback past a third engine, every run read
+            // naming no `select` — the run store, the run list, the run page —
+            // and every `update` that returns the row failed with it (#4241).
+            // So every record-returning `workflowRun` call omits the column or
+            // selects around it, and a reader that needs the engine reads it as
+            // text. See eslint-rules/rules/no-typed-run-driver-read.js.
+            'local/no-typed-run-driver-read': 'error',
 
             // An MCP tool DECLARES the authorization its human equivalent
             // applies and never performs its own. The funnel is the one gate;
@@ -583,6 +602,11 @@ const config = [
         files: ['tests/**/*.ts', 'tests/**/*.tsx'],
         rules: {
             'local/require-agent-attribution': 'off',
+            // Same reasoning again: a production invariant, and the suite that
+            // proves it has to break it. The #4241 integration test's CONTROL is
+            // an unqualified `workflowRun.findFirst` that must throw, and fixture
+            // writes read back whole rows of runs this build wrote itself.
+            'local/no-typed-run-driver-read': 'off',
             // Same reasoning, same shape. `require-mcp-tool-authorization`'s
             // companion guard is `tests/guards/mcp-tools-use-shared-authz.test.ts`,
             // whose population is `repoFiles({ under: 'src' })` — it runs the

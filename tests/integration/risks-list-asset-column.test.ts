@@ -24,6 +24,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { listRisks } from '@/app-layer/usecases/risk';
 
 const globalPrisma = new PrismaClient({
@@ -91,8 +92,9 @@ describeFn('risks list — the Asset column has data (B1-3)', () => {
     });
 
     afterAll(async () => {
-        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } }).catch(() => {});
-        await globalPrisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
+        await deleteAuditRowsForTenants(globalPrisma, [TENANT_ID]);
+        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
+        await globalPrisma.user.deleteMany({ where: { id: userId } });
         await globalPrisma.$disconnect().catch(() => {});
     });
 
@@ -165,6 +167,7 @@ describeFn('risks list — the Asset column has data (B1-3)', () => {
         expect(row._count?.assetLinks).toBe(0);
 
         await globalPrisma.asset.deleteMany({ where: { tenantId: otherTenant } }).catch(() => {});
-        await globalPrisma.tenant.deleteMany({ where: { id: otherTenant } }).catch(() => {});
+        await deleteAuditRowsForTenants(globalPrisma, [otherTenant]);
+        await globalPrisma.tenant.deleteMany({ where: { id: otherTenant } });
     });
 });

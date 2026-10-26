@@ -127,12 +127,12 @@ describeFn('Epic O-2 — org-provisioning lifecycle (DB-backed)', () => {
 
     afterAll(async () => {
         await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } }).catch(() => {});
-        await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } }).catch(() => {});
+        await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });
         await prisma.orgMembership.deleteMany({ where: { organizationId: { in: [orgId, otherOrgId] } } }).catch(() => {});
         await prisma.organization.deleteMany({ where: { id: { in: [orgId, otherOrgId] } } }).catch(() => {});
         await prisma.user.deleteMany({
             where: { id: { in: [cisoUserId, secondCisoUserId, manualAdminUserId] } },
-        }).catch(() => {});
+        });
         await prisma.$disconnect();
     });
 
@@ -213,7 +213,7 @@ describeFn('Epic O-2 — org-provisioning lifecycle (DB-backed)', () => {
             expect(secondCisoMem!.provisionedByOrgId).toBe(orgId);
         } finally {
             await prisma.tenantMembership.deleteMany({ where: { tenantId: newTenant.id } }).catch(() => {});
-            await prisma.tenant.delete({ where: { id: newTenant.id } }).catch(() => {});
+            await prisma.tenant.delete({ where: { id: newTenant.id } });
         }
     });
 

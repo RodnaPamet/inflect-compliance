@@ -125,14 +125,15 @@ describe('Controls list — Sankey pill', () => {
     it('mounts the pill OUTSIDE the create-permission gate (read-only surface for everyone)', () => {
         // The pill must be reachable for READER / AUDITOR / EDITOR
         // alike — it's a glance-and-leave informational view.
-        // Locating the pill inside the `appPermissions.controls.create`
-        // ternary would silently hide it from non-admins.
+        // Locating the pill inside the create-permission (`canCreateControls`,
+        // canWrite AND controls.create — #4275) gate would silently hide it
+        // from non-admins.
         //
         // The Sankey pill lives in the FilterToolbar `toolbarActions` slot;
         // the create button lives (gated) in `toolbarLeading`, which now
-        // references `appPermissions.controls.create` EARLIER in the source.
-        // So the invariant is checked WITHIN the actions slot: the pill must
-        // render before the create-gated block inside `toolbarActions`.
+        // references `canCreateControls` EARLIER in the source. So the
+        // invariant is checked WITHIN the actions slot: the pill must render
+        // before the create-gated block inside `toolbarActions`.
         const pillIdx = src.indexOf('controls-sankey-btn');
         const actionsIdx = src.indexOf('toolbarActions');
         expect(pillIdx).toBeGreaterThan(0);
@@ -140,8 +141,8 @@ describe('Controls list — Sankey pill', () => {
         // The pill renders inside the (ungated) toolbarActions slot…
         expect(pillIdx).toBeGreaterThan(actionsIdx);
         // …and BEFORE any create-permission gate within that slot, so it is
-        // not hidden behind `appPermissions.controls.create`.
-        const gateInActions = src.indexOf('appPermissions.controls.create', actionsIdx);
+        // not hidden behind `canCreateControls`.
+        const gateInActions = src.indexOf('canCreateControls &&', actionsIdx);
         expect(gateInActions).toBeGreaterThan(0);
         expect(pillIdx).toBeLessThan(gateInActions);
     });

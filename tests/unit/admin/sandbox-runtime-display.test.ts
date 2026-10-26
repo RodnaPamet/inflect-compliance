@@ -18,6 +18,7 @@ import {
     displayForExecutionSwitch,
     RUNTIME_ROW_KINDS,
     type RuntimeRowKind,
+    type RuntimeRowDisplay,
 } from '../../../src/app/t/[tenantSlug]/(app)/admin/sandbox-runtime/sandbox-runtime-display';
 import {
     ENFORCEMENT_SETTINGS,
@@ -46,7 +47,7 @@ describe('1. every kind is reachable, and the set is exhausted', () => {
             displayForChannel('otlp-traces', declaration({ reachableVersion: null })).kind,
             displayForChannel('otlp-traces', declaration()).kind,
             displayForEnforcement().kind,
-            displayForExecutionSwitch(true).kind,
+            displayForExecutionSwitch(true, false).kind,
         ]);
         expect([...produced].sort()).toEqual([...RUNTIME_ROW_KINDS].sort());
     });
@@ -59,7 +60,7 @@ describe('1. every kind is reachable, and the set is exhausted', () => {
     });
 });
 
-describe('2. only the switch this product owns is actionable', () => {
+describe('2. nothing on this page is actionable', () => {
     it.each(REPORTING_CHANNELS.map((c) => c.key))('the %s channel is never actionable', (key) => {
         for (const d of [declaration(), declaration({ configured: false }), declaration({ reachableVersion: null })]) {
             expect(displayForChannel(key, d).actionable).toBe(false);
@@ -71,14 +72,54 @@ describe('2. only the switch this product owns is actionable', () => {
         expect(ENFORCEMENT_SETTINGS.map((s) => s.required)).toEqual(['enforce', 'hard_requirement']);
     });
 
-    it('the execution switch is actionable only when the platform permits it', () => {
-        expect(displayForExecutionSwitch(true)).toEqual({ kind: 'tenant-switch', actionable: true });
-        expect(displayForExecutionSwitch(false)).toEqual({ kind: 'not-configured', actionable: false });
+    it('the execution row reports the platform state and offers no control', () => {
+        // Owner ruling 2026-10-25: platform-only. Not a tenant switch, so not
+        // actionable in ANY of its three states.
+        expect(displayForExecutionSwitch(false, false)).toEqual({
+            kind: 'not-configured',
+            actionable: false,
+        });
+        expect(displayForExecutionSwitch(true, false)).toEqual({
+            kind: 'unconfirmable',
+            actionable: false,
+        });
+        expect(displayForExecutionSwitch(true, true)).toEqual({
+            kind: 'declared-not-observed',
+            actionable: false,
+        });
     });
 
-    it('exactly one of the row kinds is ever actionable', () => {
-        const actionable = RUNTIME_ROW_KINDS.filter((k) => k === 'tenant-switch');
-        expect(actionable).toEqual(['tenant-switch']);
+    it('"turned on with no runtime" is NOT reported as the feature being off', () => {
+        // The distinction #3996 asks for, asserted as a difference rather than
+        // as a label: the two un-available states must not collapse, because
+        // "off" is the reassuring half of a contradiction and the half an
+        // operator would act on.
+        const enabledNoRuntime = displayForExecutionSwitch(true, false);
+        const notEnabled = displayForExecutionSwitch(false, false);
+        expect(enabledNoRuntime.kind).not.toBe(notEnabled.kind);
+        expect(enabledNoRuntime.kind).toBe('unconfirmable');
+    });
+
+    it('NO row kind is actionable, in any state — this page is read-only', () => {
+        // Inverted deliberately. `actionable` is now false everywhere, which
+        // would make it dead weight if nothing asserted it; this turns the
+        // always-false field into a guarded property, so adding a control to
+        // this page fails here and forces the conversation rather than
+        // shipping a button over a decision the page does not own.
+        const every: RuntimeRowDisplay[] = [
+            ...REPORTING_CHANNELS.flatMap((c) => [
+                displayForChannel(c.key, declaration()),
+                displayForChannel(c.key, declaration({ configured: false })),
+                displayForChannel(c.key, declaration({ reachableVersion: null })),
+            ]),
+            displayForEnforcement(),
+            displayForExecutionSwitch(false, false),
+            displayForExecutionSwitch(true, false),
+            displayForExecutionSwitch(true, true),
+        ];
+        expect(every.map((r) => r.actionable)).toEqual(every.map(() => false));
+        // And the vocabulary itself no longer names a flippable kind.
+        expect(RUNTIME_ROW_KINDS).not.toContain('tenant-switch');
     });
 });
 
@@ -102,7 +143,7 @@ describe('3. the order is the contract', () => {
         // The channel's declared value is true, and the row still does not
         // claim the runtime is using it. That is the whole point.
         expect(d.channels['anonymous-telemetry']).toBe(true);
-        expect(row.kind).not.toBe('tenant-switch');
+        expect(row.kind).not.toBe('unconfirmable');
     });
 
     it('enforcement stays set-in-code even when the runtime is unreachable', () => {

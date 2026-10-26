@@ -76,6 +76,9 @@ export default async function ControlsPage({
             appPermissions={{
                 controls: ctx.appPermissions.controls,
                 tasks: { edit: ctx.appPermissions.tasks.edit },
+                // Bulk delete and the Deleted view's Restore / Purge routes
+                // are `requirePermission('admin.manage')`.
+                admin: { manage: ctx.appPermissions.admin.manage },
             }}
         />
     );

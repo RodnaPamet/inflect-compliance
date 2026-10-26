@@ -336,3 +336,33 @@ because `tsc` reports nothing for one under `allowJs`.
 
 **What it cannot see.** A pattern built at run time (`new RegExp(src, 's')`).
 `tsc` does not check those either, so jest and the compiler agree about them.
+
+### `no-typed-run-driver-read`
+
+Every record-returning `workflowRun` call (`find*`, `create`, `update`,
+`upsert`, `delete`, `*AndReturn`) names a `select` that leaves `driver` out, or
+carries `omit: { driver: true }`. A `groupBy` may not group `by` it. A relation
+read of a run from a parent (`include: { run: … }`, `workflowRuns`, and `runs` on
+`registeredAgent`) is held to the same shape and is never `true`. Off under
+`tests/`, like `require-agent-attribution`.
+
+**Why.** `WorkflowRun.driver` is the enum `AgentDriverMode`, and a Prisma client
+that meets a value it was not generated with does not return the string. Its
+data mapper throws (`Value 'X' not found in enum 'AgentDriverMode'`) and the
+whole operation fails. That happens after a rollback past a third engine
+(#4241). Prisma returns every scalar when a call names no `select`, so the run
+store, the run list, the run page, and every `update` that returns the row
+failed with it. Readers that need the engine read it as text with
+`readRecordedRunDrivers`, which coerces an unknown value to `UNRECOGNISED`.
+
+**Why a rule rather than a selector.** Several config blocks replace
+`no-restricted-syntax` for their own files, and a selector would silently stop
+applying there.
+
+**What it cannot see.** An argument, `select` or `include` built outside the
+call and passed by name is reported as unverifiable rather than trusted. A
+relation `include` assembled in a variable, and `runs` nested below another
+relation, are out of reach, because telling `runs` (WorkflowRun) from `runs`
+(ControlTestRun, ReportRun) needs the schema. The audit extension's prior-state
+reader reaches the delegate by computed name, so it is out of reach too. It
+catches its own failure and reports the write as undiffed.

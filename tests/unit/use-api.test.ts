@@ -140,7 +140,6 @@ describe('useMutation', () => {
 
     it('wraps a non-Error throw into an Error before surfacing it', async () => {
         const fn = jest.fn(async () => {
-            // eslint-disable-next-line @typescript-eslint/only-throw-error
             throw 'plain string failure';
         });
         const { result } = renderHook(() => useMutation(fn));

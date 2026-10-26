@@ -10,6 +10,7 @@
  * unchanged; the wrapper supplies its own submit button + chrome.
  */
 import dynamic from 'next/dynamic';
+import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
@@ -26,21 +27,28 @@ const RichTextEditor = dynamic(
     { ssr: false },
 );
 
-const POLICY_CATEGORIES: ComboboxOption[] = [
-    'Information Security',
-    'Access Control',
-    'HR',
-    'Physical',
-    'Compliance',
-    'Operations',
-    'Risk Management',
-    'Business Continuity',
-    'Supplier',
-    'Other',
-].map((c) => ({ value: c, label: c }));
+// The VALUE is what `Policy.category` stores (and what templates and the
+// list's Category filter carry), so it stays the English name; only the
+// LABEL is translated. Keyed by message id so the two cannot drift.
+const POLICY_CATEGORIES = [
+    ['Information Security', 'informationSecurity'],
+    ['Access Control', 'accessControl'],
+    ['HR', 'hr'],
+    ['Physical', 'physical'],
+    ['Compliance', 'compliance'],
+    ['Operations', 'operations'],
+    ['Risk Management', 'riskManagement'],
+    ['Business Continuity', 'businessContinuity'],
+    ['Supplier', 'supplier'],
+    ['Other', 'other'],
+] as const;
 
 export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
     const t = useTranslations('policies');
+    const categoryOptions: ComboboxOption[] = useMemo(
+        () => POLICY_CATEGORIES.map(([value, key]) => ({ value, label: t(`new.categories.${key}`) })),
+        [t],
+    );
     return (
         <>
             {/* Template picker — only in template mode. */}
@@ -52,7 +60,15 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                     )}
                 >
                     <Heading level={3}>{t('new.chooseTemplate')}</Heading>
-                    {form.templates.length === 0 ? (
+                    {form.templatesStatus === 'loading' ? (
+                        <p className="text-sm text-content-subtle" id="policy-templates-loading" role="status">
+                            {t('new.templatesLoading')}
+                        </p>
+                    ) : form.templatesStatus === 'error' ? (
+                        <p className="text-sm text-content-error" id="policy-templates-error" role="alert">
+                            {form.templatesError ?? t('new.templatesLoadFailed')}
+                        </p>
+                    ) : form.templates.length === 0 ? (
                         <p className="text-sm text-content-subtle">
                             {t('new.templatesEmpty')}
                         </p>
@@ -132,9 +148,9 @@ export function NewPolicyFields({ form }: { form: NewPolicyFormReturn }) {
                 <Combobox
                     id="policy-category-select"
                     name="category"
-                    options={POLICY_CATEGORIES}
+                    options={categoryOptions}
                     selected={
-                        POLICY_CATEGORIES.find(
+                        categoryOptions.find(
                             (o) => o.value === form.fields.category,
                         ) ?? null
                     }

@@ -7,7 +7,8 @@
  * `src/app-layer/usecases` is invisible to it. Three did:
  *
  *   - `listRisksWithDeleted` (risk.ts) — while its direct Controls twin
- *     `listControlsWithDeleted` was capped at FULL_SCAN_CAP. Worse than the
+ *     `listControlsWithDeleted` was capped at FULL_SCAN_CAP (its read has
+ *     since moved into `ControlRepository.listDeleted`). Worse than the
  *     twin: no `select`, so it returns full rows, and `Risk` carries
  *     encrypted columns, so the Epic-B middleware decrypts `treatmentNotes`
  *     on every row.
@@ -24,7 +25,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { functionBodyOf } from '../../helpers/source-blocks';
+import { braceBlockAfter, functionBodyOf } from '../../helpers/source-blocks';
 
 // #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
 // no longer be satisfied by a COMMENT naming the thing its assertion is about.
@@ -42,6 +43,7 @@ const stripComments = (s: string) =>
 const RISK = stripComments(read('src/app-layer/usecases/risk.ts'));
 const CONTROL = stripComments(read('src/app-layer/usecases/control/queries.ts'));
 const TENANT_ADMIN = stripComments(read('src/app-layer/usecases/tenant-admin.ts'));
+const CONTROL_REPO = stripComments(read('src/app-layer/repositories/ControlRepository.ts'));
 
 describe('usecase-layer whole-tenant scans are bounded', () => {
     it.each([
@@ -55,10 +57,24 @@ describe('usecase-layer whole-tenant scans are bounded', () => {
     it('the recycle-bin twins agree — risks is capped like controls', () => {
         // These two are the same view over two entities. Only one was capped,
         // which is the shape of a fix applied to one side of a pair.
+        //
+        // Controls' read moved into `ControlRepository.listDeleted` (#4275),
+        // where it carries its own `take:` and sits inside the D2 budget's
+        // population. So the usecase must reach the repository, and the
+        // repository method must be capped.
         const risks = functionBodyOf(RISK, 'listRisksWithDeleted');
         const controls = functionBodyOf(CONTROL, 'listControlsWithDeleted');
         expect(risks).toMatch(/take:\s*FULL_SCAN_CAP/);
-        expect(controls).toMatch(/take:\s*FULL_SCAN_CAP/);
+        expect(controls).toMatch(/ControlRepository\.listDeleted\(/);
+        // Anchored on the method body's own opening brace, past the
+        // signature, so the `options` parameter's type literal is not taken
+        // for the body.
+        const repoRead = braceBlockAfter(
+            CONTROL_REPO,
+            '(?<=static async listDeleted\\([^)]*\\)\\s*)\\{',
+        );
+        expect(repoRead).toMatch(/where\.deletedAt\s*=\s*\{\s*not:\s*null\s*\}/);
+        expect(repoRead).toMatch(/take:\s*options\.take\s*\?\?\s*\d+/);
     });
 
     it('the caps are real constants, not inline magic numbers', () => {

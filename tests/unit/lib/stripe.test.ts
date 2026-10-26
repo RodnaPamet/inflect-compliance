@@ -59,7 +59,6 @@ afterAll(() => {
 describe('getStripe', () => {
     it('throws when STRIPE_SECRET_KEY is unset', () => {
         jest.isolateModules(() => {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const lib = require('@/lib/stripe');
             delete process.env.STRIPE_SECRET_KEY;
             expect(() => lib.getStripe()).toThrow('STRIPE_SECRET_KEY is not configured');
@@ -77,7 +76,6 @@ describe('getPriceId', () => {
     it('returns the configured price id', () => {
         jest.isolateModules(() => {
             process.env.STRIPE_PRICE_ID_PRO = 'price_pro';
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const lib = require('@/lib/stripe');
             expect(lib.getPriceId('PRO')).toBe('price_pro');
         });
@@ -86,7 +84,6 @@ describe('getPriceId', () => {
     it('throws when no price is configured for the plan', () => {
         jest.isolateModules(() => {
             delete process.env.STRIPE_PRICE_ID_ENTERPRISE;
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const lib = require('@/lib/stripe');
             expect(() => lib.getPriceId('ENTERPRISE')).toThrow(/No Stripe price configured/);
         });
@@ -118,10 +115,8 @@ describe('createCheckoutSession / createPortalSession', () => {
     // must be present BEFORE the module is required → isolateModules.
     function freshLib() {
         process.env.STRIPE_PRICE_ID_PRO = 'price_pro';
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         let lib!: typeof import('@/lib/stripe');
         jest.isolateModules(() => {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             lib = require('@/lib/stripe');
         });
         return lib;
@@ -150,7 +145,6 @@ describe('constructWebhookEvent', () => {
     it('throws when the webhook secret is unset', () => {
         jest.isolateModules(() => {
             delete process.env.STRIPE_WEBHOOK_SECRET;
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const lib = require('@/lib/stripe');
             expect(() => lib.constructWebhookEvent('p', 'sig')).toThrow(
                 'STRIPE_WEBHOOK_SECRET is not configured',

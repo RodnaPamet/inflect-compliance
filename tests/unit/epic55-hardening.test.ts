@@ -140,12 +140,14 @@ describe('clauses/ClausesBrowser — status', () => {
 // ─── policies/new category ──────────────────────────────────────
 
 describe('policies/new — category', () => {
-    it('imports Combobox + declares POLICY_CATEGORIES as ComboboxOption[]', () => {
+    it('imports Combobox + builds the category options as ComboboxOption[]', () => {
         expect(POLICIES_NEW_SRC).toMatch(
             /from ["']@\/components\/ui\/combobox["']/,
         );
+        // Labels are translated since #4279 (the stored value stays English),
+        // so the options are built per render from POLICY_CATEGORIES.
         expect(POLICIES_NEW_SRC).toMatch(
-            /POLICY_CATEGORIES:\s*ComboboxOption\[\]/,
+            /categoryOptions:\s*ComboboxOption\[\]/,
         );
     });
 

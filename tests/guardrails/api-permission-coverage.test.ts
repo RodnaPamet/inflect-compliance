@@ -138,6 +138,10 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/assets/[id]/purge',
         why: 'Irreversible asset hard-delete — admin.manage, matching the usecase assertCanAdmin. Narrow leaf root so only the purge handler is in scope (its assets/[id] siblings are not).',
     },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/assets/[id]/restore',
+        why: 'Undo of an asset soft-delete — admin.manage, matching the assertCanAdmin reached via restoreEntity. It declared assets.edit until #4276, so an EDITOR was refused by the usecase with no AUTHZ_DENIED row.',
+    },
     // The PLATFORM admin surface — create a tenant, transfer its ownership,
     // read process diagnostics. Its two tenant-lifecycle routes had carried
     // EXCLUDED_ROUTES entries since Epic 1 PR 2, but no root covered the

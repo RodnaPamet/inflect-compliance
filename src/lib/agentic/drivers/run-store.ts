@@ -17,7 +17,17 @@ import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools'
 
 export async function getRunRow(ctx: RequestContext, runId: string) {
     const run = await runInTenantContext(ctx, (db) =>
-        db.workflowRun.findFirst({ where: { id: runId, tenantId: ctx.tenantId } }),
+        db.workflowRun.findFirst({
+            where: { id: runId, tenantId: ctx.tenantId },
+            // WITHOUT `driver` (#4241). The row is read whole, and a whole row
+            // carrying an engine this build's enum does not know — a later image
+            // started the run, production rolled back to this one — fails the
+            // read before any of our code sees it: the driver could not read its
+            // own run, so it could neither continue it nor settle it. Nothing
+            // here needs the column; a reader that does asks
+            // `readRecordedRunDrivers` for it as text.
+            omit: { driver: true },
+        }),
     );
     if (!run) throw notFound('Workflow run not found');
     return run;

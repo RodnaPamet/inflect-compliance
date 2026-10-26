@@ -18,6 +18,7 @@ import {
     scopedMilestone,
     type MilestoneKey,
 } from '@/lib/celebrations';
+import { EVIDENCE_EXPIRING_SOON_DAYS } from '@/app-layer/repositories/EvidenceRepository';
 
 const ALL_KEYS: MilestoneKey[] = [
     'framework-100',
@@ -51,6 +52,17 @@ describe('MILESTONES registry', () => {
             'first-control-mapped',
             'framework-100',
         ]);
+    });
+});
+
+describe("'evidence-all-current' names the window it is checked against", () => {
+    it('says the same number of days as the expiring-soon window', () => {
+        // The celebration fires when nothing is expiring soon, and "soon" is
+        // EVIDENCE_EXPIRING_SOON_DAYS. It said "this week" while the window
+        // was 30 days (#4277); a window change must move the text with it.
+        expect(MILESTONES['evidence-all-current'].description).toContain(
+            `${EVIDENCE_EXPIRING_SOON_DAYS} days`,
+        );
     });
 });
 

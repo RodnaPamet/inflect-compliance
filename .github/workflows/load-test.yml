@@ -24,7 +24,8 @@ on:
         default: '2m'
   schedule:
     # 03:30 UTC daily — light smoke baseline on main for trend tracking.
-    # Doesn't block anything; alerts via the artifact diff if budgets drift.
+    # Latency budgets are reported, not enforced; the run fails only when
+    # the scenarios did not measure what they claim (see the gate steps).
     - cron: '30 3 * * *'
 
 jobs:
@@ -163,13 +164,15 @@ jobs:
       - name: Prepare k6 results dir
         run: mkdir -p tests/load/results
 
-      # continue-on-error: the load test is a trend tracker, not a gate
-      # ("Doesn't block anything; alerts via the artifact diff if budgets
-      # drift" — see the header comment). A crossed threshold makes k6
-      # exit 99; without this the scheduled run goes red on a known
-      # budget drift (e.g. bcrypt-bound login latency under VU
-      # concurrency on CI's 2 vCPUs). The thresholds still evaluate and
-      # the ✓/✗ + numbers land in the uploaded artifact for trend review.
+      # continue-on-error: for latency the load test is a trend tracker,
+      # not a gate. A crossed threshold makes k6 exit 99; without this the
+      # scheduled run goes red on a known budget drift (e.g. bcrypt-bound
+      # login latency under VU concurrency on CI's 2 vCPUs). The thresholds
+      # still evaluate and the ✓/✗ + numbers land in the uploaded artifact.
+      #
+      # The same flag hid a broken test for at least a month (#4307): 99.7%
+      # of the list requests failed and every run was green. So the gate
+      # steps after the k6 steps fail the run on correctness, not latency.
       - name: Run k6 — auth scenario
         if: steps.params.outputs.scenario == 'auth' || steps.params.outputs.scenario == 'both'
         continue-on-error: true
@@ -187,6 +190,18 @@ jobs:
             -e VUS=${{ steps.params.outputs.vus }} \
             -e DURATION=${{ steps.params.outputs.duration }} \
             tests/load/lists.js
+
+      # A scenario whose requests fail, or whose thresholds matched no
+      # sample, measured nothing, whatever its latency says. Each gate reads
+      # the summary its k6 step wrote; a missing summary fails too.
+      # `!cancelled()` so the lists gate still runs when the auth gate fails.
+      - name: "Gate: auth scenario measured, and its checks pass"
+        if: ${{ !cancelled() && (steps.params.outputs.scenario == 'auth' || steps.params.outputs.scenario == 'both') }}
+        run: node scripts/k6-summary-gate.mjs tests/load/results/auth-summary.json --min checks=0.95
+
+      - name: "Gate: lists scenario measured, and its requests succeed"
+        if: ${{ !cancelled() && (steps.params.outputs.scenario == 'lists' || steps.params.outputs.scenario == 'both') }}
+        run: node scripts/k6-summary-gate.mjs tests/load/results/lists-summary.json --min list_success_rate=0.95 --min checks=0.95
 
       - name: Stop app
         if: always()

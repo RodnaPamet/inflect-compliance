@@ -158,6 +158,48 @@ const taskListSelect = {
 } as const;
 
 /**
+ * How many of a task's CONTROL links the list reads (#4278). The Tasks
+ * list's "Linked control" filter offers the controls on the listed tasks,
+ * and a control linked through Links — not the Control field — was never
+ * among them. Bounded per task; a task linked to more controls than this
+ * still MATCHES the filter for every one of them (the filter is a query,
+ * see `linkedToControl`), it just lists the first ones as options.
+ */
+const LIST_LINKED_CONTROL_TAKE = 20;
+
+/**
+ * The list select plus the ids of the task's CONTROL links, which
+ * `attachLinkedControls` resolves into `linkedControls`. Only the list
+ * reads that feed the Tasks page use it — the paginated read and the
+ * detail read keep their own shapes.
+ */
+const taskListPageSelect = {
+    ...taskListSelect,
+    links: {
+        where: { entityType: TaskLinkEntityType.CONTROL },
+        select: { entityId: true },
+        take: LIST_LINKED_CONTROL_TAKE,
+    },
+} as const;
+
+/**
+ * "Linked to this control" — the Control field OR a CONTROL TaskLink. One
+ * rule for the Tasks list's Linked control filter (`controlId`) and the
+ * control's own Tasks tab (`linkedEntityType=CONTROL`), so the filter and
+ * the tab cannot disagree about which tasks a control has. Both arms are
+ * indexed: `TaskLink(tenantId, entityType, entityId)` and
+ * `Task(tenantId, controlId)`.
+ */
+function linkedToControl(controlId: string): Prisma.TaskWhereInput {
+    return {
+        OR: [
+            { links: { some: { entityType: TaskLinkEntityType.CONTROL, entityId: controlId } } },
+            { controlId },
+        ],
+    };
+}
+
+/**
  * Cap on the child rows the task DETAIL read inlines (links / comments /
  * watchers). The accompanying `_count` still reports the true totals, so a
  * truncated relation is visible to the caller rather than silently short.
@@ -174,12 +216,44 @@ export class TaskRepository {
         options: { take?: number } = {},
     ) {
         const where = TaskRepository._buildWhere(ctx, filters);
-        return db.task.findMany({
+        const rows = await db.task.findMany({
             where,
             orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }],
-            select: taskListSelect,
+            select: taskListPageSelect,
             ...(options.take ? { take: options.take } : {}),
         });
+        return TaskRepository.attachLinkedControls(db, ctx, rows);
+    }
+
+    /**
+     * Replace each row's CONTROL link ids with the controls they name —
+     * `linkedControls: [{ id, code, name, annexId }]`, the shape `control`
+     * already has. ONE control read for the whole page, bounded by the
+     * distinct ids; a soft-deleted control drops out (the extension
+     * filters it), as it does from `control`.
+     */
+    private static async attachLinkedControls<T extends { links: { entityId: string }[] }>(
+        db: PrismaTx,
+        ctx: RequestContext,
+        rows: T[],
+    ) {
+        const ids = [...new Set(rows.flatMap((r) => r.links.map((l) => l.entityId)))];
+        const controls =
+            ids.length === 0
+                ? []
+                : await db.control.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: ids } },
+                      select: { id: true, code: true, name: true, annexId: true },
+                      take: ids.length,
+                  });
+        const byId = new Map(controls.map((c) => [c.id, c]));
+        return rows.map(({ links, ...row }) => ({
+            ...row,
+            linkedControls: links.flatMap((l) => {
+                const control = byId.get(l.entityId);
+                return control ? [control] : [];
+            }),
+        }));
     }
 
     /**
@@ -200,7 +274,7 @@ export class TaskRepository {
     ) {
         const where = TaskRepository._buildWhere(ctx, filters);
         where.deletedAt = { not: null };
-        return db.task.findMany(
+        const rows = await db.task.findMany(
             withDeleted({
                 where,
                 orderBy: { deletedAt: 'desc' as const },
@@ -210,12 +284,13 @@ export class TaskRepository {
                 // itself so the live list doesn't ship two always-null
                 // columns on every row.
                 select: {
-                    ...taskListSelect,
+                    ...taskListPageSelect,
                     deletedAt: true,
                     deletedByUserId: true,
                 },
             }),
         );
+        return TaskRepository.attachLinkedControls(db, ctx, rows);
     }
 
     /**
@@ -416,7 +491,12 @@ export class TaskRepository {
                 status: REVIEW_TASK_STATUS,
             });
         }
-        if (filters.controlId) where.controlId = filters.controlId;
+        // #4278 — the Linked control filter matches the Control field OR a
+        // CONTROL link, the rule the control's own Tasks tab uses. It
+        // matched the field alone, so a task linked through Links was
+        // missing from a filter described as "tasks attached to this
+        // control". On AND so it composes with the other clauses.
+        if (filters.controlId) and.push(linkedToControl(filters.controlId));
         if (filters.due === 'overdue') {
             where.dueAt = { lt: new Date() };
             if (!filters.status) where.status = { notIn: [...TERMINAL_TASK_STATUSES] as TaskStatus[] };
@@ -458,9 +538,8 @@ export class TaskRepository {
                 // control — so the control's Tasks tab must mirror it.
                 // Without this, pack-installed tasks (controlId set, no
                 // TaskLink row) never appear in the control's Tasks tab.
-                and.push({
-                    OR: [viaLink, { controlId: filters.linkedEntityId }],
-                });
+                // The same rule as the list's `controlId` filter.
+                and.push(linkedToControl(filters.linkedEntityId));
             } else {
                 and.push(viaLink);
             }
@@ -725,7 +804,19 @@ export class TaskRepository {
             // `reviewerUserId` is selected because the BULK status path must
             // apply the same reviewer sign-off gate the single-task path does
             // (TP-2) — without it, /tasks/bulk/status was an escape hatch.
-            select: { id: true, status: true, reviewerUserId: true },
+            // `title` names the task in a bulk refusal, which reaches the
+            // user verbatim — the id it used to name means nothing to them.
+            // `key` / `type` / `assigneeUserId` let bulk Assign notify only
+            // the tasks whose assignee actually changes, and name them.
+            select: {
+                id: true,
+                key: true,
+                title: true,
+                type: true,
+                status: true,
+                assigneeUserId: true,
+                reviewerUserId: true,
+            },
         });
     }
 

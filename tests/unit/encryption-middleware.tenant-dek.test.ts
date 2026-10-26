@@ -440,7 +440,6 @@ describe('read path — per-value dispatch on v1 / v2', () => {
         process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED = '0';
         jest.resetModules();
         try {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { _internals } = require('@/lib/db/encryption-middleware');
             const writtenUnder = generateDek();
             const readWith = generateDek();

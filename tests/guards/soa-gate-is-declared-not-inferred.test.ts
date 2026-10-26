@@ -116,15 +116,15 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
         // The path that reaches production. Asserted separately and by NAME,
         // because its absence is what made the first version of this guard
         // green while the gate was wrong.
-        // 17, and that is the measured figure rather than a margin below it.
+        // 18, and that is the measured figure rather than a margin below it.
         // It was 18 with a floor of 17; deleting the ISO 9001 / 39001 / 28000
         // fixtures on retirement took three away, leaving a floor of 15. COSO
         // ICF 2013 then added one without moving the floor, which left a margin
-        // of one — exactly the slack this line exists to refuse — and AIUC-1
-        // added another. Set to the population itself so a fixture silently
-        // dropping out of the production seeder reddens here instead of being
-        // absorbed by slack.
-        expect(applied.length).toBeGreaterThanOrEqual(17);
+        // of one — exactly the slack this line exists to refuse — AIUC-1 added
+        // another, and EU drone operations a third. Set to the population
+        // itself so a fixture silently dropping out of the production seeder
+        // reddens here instead of being absorbed by slack.
+        expect(applied.length).toBeGreaterThanOrEqual(18);
         expect(applied.map((a) => a.key)).toEqual(
             expect.arrayContaining(['ISO27701', 'ISO42001', 'ISO27001', 'SOC2']),
         );
@@ -191,6 +191,11 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
             'DORA-2022',
             'EU-AI-ACT',
             'EU-AI-ACT-2024',
+            // EU drone operations gets NO Statement of Applicability. Its
+            // scoping is the subcategory choice made at install, and the
+            // artifact this gate turns on is Annex-A-shaped by construction;
+            // 2019/947 has no annex of controls to accept or exclude.
+            'EU-UAS-OPS',
             'GDPR',
             'IMDA-MGF',
             'IMDA-MGF-2026',

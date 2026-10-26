@@ -39,9 +39,6 @@ describe('Epic 43.2 — view toggle wiring', () => {
         expect(src).toMatch(
             /import\s*\{[^}]*\bToggleGroup\b[^}]*\}\s*from\s*['"]@\/components\/ui\/toggle-group['"]/,
         );
-        expect(src).toMatch(
-            /import\s*\{[^}]*\bFreshnessBadge\b[^}]*\}\s*from\s*['"]@\/components\/ui\/FreshnessBadge['"]/,
-        );
     });
 
     it('keeps the view selector in useUrlFilters, not in filter context', () => {
@@ -127,7 +124,11 @@ describe('Epic 43.2 — view toggle wiring', () => {
         // evidenceColumnDropdown so the column reads cleanly through
         // the existing visibility plumbing.
         expect(src).toContain("id: 'freshness'");
-        expect(src).toMatch(/<FreshnessBadge[\s\S]{0,400}lastRefreshedAt=/);
+        // #4277 — the cell names the row's freshness BUCKET (the one the
+        // Freshness filter and cards count), not a last-refreshed age fed a
+        // review due date. What it says is asserted by
+        // tests/rendered/evidence-list-display.test.tsx.
+        expect(src).toMatch(/evidenceFreshnessBucket\(ev, hydratedNow\)/);
     });
 
     it('passes a fileUrl resolver that pins to the existing download route', () => {
