@@ -38,6 +38,7 @@ const LOCAL_RULES = [
     'no-translucent-focus-indicator',
     'regex-within-ts-target',
     'no-typed-run-driver-read',
+    'observable-gauge-rebinds',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

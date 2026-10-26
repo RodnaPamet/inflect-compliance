@@ -335,3 +335,48 @@ describe('the BullMQ worker stops the queue-depth reporter on shutdown', () => {
         expect(events).toContain('shutdownTelemetry');
     });
 });
+
+describe('the boot-time schedule registration closes what it opened', () => {
+    // It builds its Queue on a connection of its own. BullMQ treats an ioredis
+    // instance it is handed as shared and leaves it open on close(), so the
+    // connection stayed open, idle, for the life of the worker until the
+    // registration quit it itself.
+    const scheduleQueue = (): FakeQueue => {
+        const others = queues.filter((q) => q.opts.connection !== workers[0].opts.connection);
+        if (others.length !== 1) throw new Error(`expected one Queue off the worker's connection, found ${others.length}`);
+        return others[0];
+    };
+
+    it('quits its own connection once the schedules are registered, without waiting for shutdown', async () => {
+        await bootWorker();
+        const queue = scheduleQueue();
+        const own = queue.opts.connection as FakeRedis;
+        const queueClosed = `queue ${queues.indexOf(queue)} closed`;
+
+        expect(own).not.toBe(workers[0].opts.connection);
+        expect(events).toContain(`redis ${own.id} quit`);
+        expect(events.indexOf(queueClosed)).toBeLessThan(events.indexOf(`redis ${own.id} quit`));
+        // The worker's own connection is untouched until shutdown.
+        expect(events).not.toContain(`redis ${(workers[0].opts.connection as FakeRedis).id} quit`);
+    });
+
+    it('still quits it when closing the Queue fails', async () => {
+        // The registration's Queue is the first one the worker constructs: its
+        // block runs at module load, before bootstrap() awaits telemetry.
+        const realPush = queues.push.bind(queues);
+        queues.push = ((q: FakeQueue) => {
+            if (queues.length === 0) q.close.mockRejectedValueOnce(new Error('Connection is closed.'));
+            return realPush(q);
+        }) as typeof queues.push;
+        try {
+            await bootWorker();
+        } finally {
+            queues.push = realPush;
+        }
+        const queue = scheduleQueue();
+
+        expect(queue).toBe(queues[0]);
+        expect(queue.close).toHaveBeenCalled();
+        expect(events).toContain(`redis ${(queue.opts.connection as FakeRedis).id} quit`);
+    });
+});

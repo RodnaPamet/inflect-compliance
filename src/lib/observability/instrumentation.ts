@@ -15,6 +15,8 @@
 
 import { DiagConsoleLogger, DiagLogLevel, diag } from '@opentelemetry/api';
 
+import { rebindObservables } from './observable-registry';
+
 let _initialized = false;
 /**
  * Populated by initTelemetry when providers are successfully created.
@@ -131,6 +133,10 @@ export async function initTelemetry(): Promise<void> {
     // Register the meter provider globally
     const { metrics } = await import('@opentelemetry/api');
     metrics.setGlobalMeterProvider(meterProvider);
+    // Gauges registered before this line sit on the API's no-op meter, which
+    // never hands them to a provider. Re-run those registrations against the
+    // one just installed. See observable-registry.ts.
+    rebindObservables();
 
     _shutdown = async () => {
         // Drain exporters in parallel — both independently bounded by

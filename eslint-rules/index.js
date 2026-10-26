@@ -62,5 +62,6 @@ module.exports = {
         'no-translucent-focus-indicator': require('./rules/no-translucent-focus-indicator'),
         'regex-within-ts-target': require('./rules/regex-within-ts-target'),
         'no-typed-run-driver-read': require('./rules/no-typed-run-driver-read'),
+        'observable-gauge-rebinds': require('./rules/observable-gauge-rebinds'),
     },
 };
