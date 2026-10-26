@@ -33,8 +33,9 @@ import { runAutomationEventDispatch } from '@/app-layer/jobs/automation-event-di
 import { toDispatchPayload } from '@/app-layer/automation';
 import type { AutomationEventDispatchPayload } from '@/app-layer/jobs/types';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const TAG = `aaa-${randomUUID().slice(0, 8)}`;

@@ -35,9 +35,11 @@ import {
 } from '@/app-layer/usecases/sso';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { SSO_SECRET_MASK, UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 

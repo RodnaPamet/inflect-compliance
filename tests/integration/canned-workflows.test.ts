@@ -14,8 +14,9 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { startWorkflowRun, resumeWorkflowRun, getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { makeRequestContext } from '../helpers/make-context';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `cw-${randomUUID().slice(0, 8)}`;

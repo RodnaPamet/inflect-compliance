@@ -30,8 +30,9 @@ import type { RequestContext } from '@/app-layer/types';
 // is written through the real write path instead.
 import { prisma as encryptingPrisma } from '@/lib/prisma';
 import { getUnifiedSearch } from '@/app-layer/usecases/search';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `srch-${randomUUID().slice(0, 8)}`;

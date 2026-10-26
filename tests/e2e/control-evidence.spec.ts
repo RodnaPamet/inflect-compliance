@@ -15,6 +15,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
+import { TENANT_TX_OPTIONS } from '../../src/lib/db/concurrency-limits';
 
 /** Create a control on the isolated tenant; return its detail path. */
 async function createControl(page: Page, slug: string): Promise<string> {
@@ -45,6 +46,7 @@ async function seedPlainLink(
     const controlId = controlDetailPath.split('/').filter(Boolean).pop() ?? '';
     const prisma = new PrismaClient({
         adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
+        transactionOptions: TENANT_TX_OPTIONS,
     });
     try {
         await prisma.controlEvidenceLink.create({

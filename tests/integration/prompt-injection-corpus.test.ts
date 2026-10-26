@@ -60,8 +60,9 @@ import {
     type InjectionCase,
     type InjectionSurface,
 } from '../fixtures/prompt-injection-corpus';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `inj-${randomUUID().slice(0, 8)}`;

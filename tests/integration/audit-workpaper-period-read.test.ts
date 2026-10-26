@@ -27,8 +27,9 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { generateApiKey } from '@/lib/auth/api-key-auth';
 import { POST } from '@/app/api/mcp/route';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(120_000);
 

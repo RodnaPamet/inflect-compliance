@@ -60,10 +60,12 @@ import {
     purgeControl,
 } from '@/app-layer/usecases/control';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 /** Raw client — no soft-delete extension, so `.delete()` really deletes. */
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 
 /**
@@ -75,6 +77,7 @@ const appPrisma = withPiiEncryptionExtension(
     withSoftDeleteExtension(
         new PrismaClient({
             adapter: new PrismaPg({ connectionString: DB_URL }),
+            transactionOptions: TENANT_TX_OPTIONS,
         }),
     ),
 );

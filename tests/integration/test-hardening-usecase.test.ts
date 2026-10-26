@@ -42,8 +42,9 @@ import {
 // PR-R — hashing on evidence link moved to the live linkEvidenceToRun path.
 import { linkEvidenceToRun } from '@/app-layer/usecases/control';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `th-${randomUUID().slice(0, 8)}`;

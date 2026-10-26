@@ -36,8 +36,9 @@ import { makeRequestContext } from '../helpers/make-context';
 import { installPack } from '@/app-layer/usecases/framework';
 import { ControlRepository } from '@/app-layer/repositories/ControlRepository';
 import { runInTenantContext } from '@/lib/db-context';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `icfw-${randomUUID().slice(0, 8)}`;

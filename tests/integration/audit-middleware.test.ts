@@ -25,6 +25,7 @@ import { redactSensitiveFields, extractChangedFields } from '@/lib/audit-redact'
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const RealDbUrl = DB_URL;
 
@@ -64,6 +65,7 @@ function buildDiffJson(action: string, data: any, result: any) {
 function createTestPrismaWithMiddleware() {
     const client = new PrismaClient({
         adapter: new PrismaPg({ connectionString: RealDbUrl }),
+        transactionOptions: TENANT_TX_OPTIONS,
     });
 
     const handle = async ({
@@ -150,7 +152,7 @@ function createTestPrismaWithMiddleware() {
 }
 
 // Raw client for verification queries (no middleware)
-const rawPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: RealDbUrl }) });
+const rawPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: RealDbUrl }), transactionOptions: TENANT_TX_OPTIONS });
 const appPrisma = createTestPrismaWithMiddleware();
 
 const testRunId = randomUUID();

@@ -15,8 +15,9 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createFinding, updateFinding, getFinding } from '@/app-layer/usecases/finding';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(30_000);
 

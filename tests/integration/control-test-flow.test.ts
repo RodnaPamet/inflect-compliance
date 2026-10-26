@@ -13,9 +13,11 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { computeNextDueAt } from '@/app-layer/utils/cadence';
 import { withPiiEncryptionExtension } from '@/lib/security/pii-middleware';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const prisma = withPiiEncryptionExtension(new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 }));
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;

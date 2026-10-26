@@ -11,8 +11,9 @@ import { makeRequestContext } from '../helpers/make-context';
 import { listTemplates, generateReport, getReport, deliverReportByEmail } from '@/app-layer/usecases/risk-report';
 import { getStorageProvider } from '@/lib/storage';
 import { setEmailProvider, StubEmailProvider } from '@/lib/mailer';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(30_000);
 

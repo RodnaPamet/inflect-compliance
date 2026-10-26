@@ -96,11 +96,13 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
 import { ERASURE_EXECUTED_ACTION } from '@/lib/audit/erasure-record';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 
 const SUFFIX = randomUUID().slice(0, 8);

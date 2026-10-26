@@ -16,8 +16,9 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createTask, setTaskStatus, bulkSetTaskStatus, updateTask, assignTask, addTaskWatcher, addTaskComment } from '@/app-layer/usecases/task';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const TAG = `trw-${randomUUID().slice(0, 8)}`;

@@ -32,9 +32,11 @@ import {
     unlinkAssetEvidence,
 } from '@/app-layer/usecases/asset';
 import { uploadEvidenceFile } from '@/app-layer/usecases/evidence';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(30_000);
