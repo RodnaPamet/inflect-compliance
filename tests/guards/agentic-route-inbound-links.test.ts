@@ -262,6 +262,16 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // read and made by an operator holding admin.agent_registry, and no page
     // drives it yet.
     't/[tenantSlug]/admin/agents/[agentId]/service-principal-link/route.ts',
+    // #4143 (Claude agents 1a) — agent profiles: what an agent should do,
+    // approved by a second person. API-only and behind AGENT_PROFILES until the
+    // builder page lands in Step 1b, which links them; no engine runs a profile
+    // yet, so nothing in the product reaches for these routes first.
+    't/[tenantSlug]/admin/agents/[agentId]/profile/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/profile/versions/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/submit/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/approve/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/reject/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/profile/versions/[version]/retire/route.ts',
     't/[tenantSlug]/admin/agents/kill-switch/route.ts',
     // #3670 — the owner-orphan pass's mode and its recorded passes. API-only
     // until a page renders them, like the ownership transfer it hands its

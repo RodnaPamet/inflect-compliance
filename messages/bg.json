@@ -5871,7 +5871,8 @@
         "decideFailed": "Решението не можа да бъде записано: {reason}",
         "superseded": "По-ново изпълнение замени този резултат. Отворете опашката отново, преди да решавате.",
         "filterOutcome": "Резултат",
-        "filterAll": "Всички"
+        "filterAll": "Всички",
+        "filterReasonEXTERNAL_EXPIRED": "Външната класификация е изтекла"
       },
       "legacyMapping": {
         "application": "{name}, собственост на {owner}",
