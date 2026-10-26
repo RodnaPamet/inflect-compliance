@@ -38,7 +38,7 @@ function run(...files: string[]) {
     return runWithEnv({}, ...files);
 }
 
-function runWithEnv(env: NodeJS.ProcessEnv, ...files: string[]) {
+function runWithEnv(env: Readonly<Record<string, string>>, ...files: string[]) {
     const result = spawnSync('bash', [SCRIPT, ...files], {
         encoding: 'utf8',
         env: { ...process.env, NO_COLOR: '1', ...env },
