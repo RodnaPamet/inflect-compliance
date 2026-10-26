@@ -58,9 +58,9 @@ columns, pages and layout. There is no source identifier, no partial flag and no
 "1 of N". So a shim that can see **one of twelve workstations** produces a
 manifest structurally indistinguishable from one that saw the whole estate: the
 fingerprint matches, no row is unkeyable, no key repeats, nothing is denylisted.
-That pull satisfies every check and is written `COMPLETE` with a payload hash,
-and a campaign over it then attests that every account in scope was reviewed —
-**true of its rows and false of the application.**
+That pull satisfies every check and is written `COMPLETE` with a payload hash.
+Until #3325, a campaign over it then attested that every account in scope was
+reviewed — **true of its rows and false of the application.**
 
 **So a source that cannot produce one authoritative population is out of scope.**
 A thick client over a shared RDBMS is in scope, and is often *easier* to
@@ -83,6 +83,49 @@ property — `decided === subjectCount` holds, the artefact is produced, and wha
 claims is wrong. The only difference is that an empty population is detectable
 from inside and a partial one is not, which is why this is a documented limit
 rather than a check.
+
+### Coverage is recorded as UNKNOWN unless it was observed
+
+**Owner decision, 2026-10-09 (#3325).** The limit above is documented, and it is
+also no longer asserted away. `COMPLETE` was a default posing as a measurement:
+nothing in the pull ever verified that the rows were the whole application. So a
+snapshot now carries a second fact beside its status:
+
+- **`LegacyAccessSnapshot.status`** keeps its meaning — the pull finished and
+  every row it was handed is stored. Every reader still gates on it (invariant 4).
+  It is not overloaded: a `PARTIAL` that also meant "never the whole thing" would
+  make the one status that gates every reader ambiguous.
+- **`LegacyAccessSnapshot.populationCoverage`** (`UNKNOWN` | `VERIFIED`) says
+  whether the rows are known to be the application's whole population. `VERIFIED`
+  is reserved for a transport that can prove it — a single query returning a whole
+  table, with a row count the pull observed itself. The MCP transport cannot: the
+  shim runs the query, and the manifest's `rowCount` is the shim's own claim. So
+  every snapshot records `UNKNOWN`, and so does every snapshot taken before the
+  column existed — accurately, since none of them was ever verified.
+- **The default carries it, at the schema level.** `@default(UNKNOWN)` in
+  `prisma/schema/legacy-access.prisma` and `DEFAULT 'UNKNOWN'` in the migration,
+  and the pull does not name the column on any write. The owner's reason: a column
+  defaulting to a full-population claim with every present caller overriding it is
+  one new transport away from regressing silently, because the next transport's
+  author has no reason to suspect that a default is an assertion. The pull reads
+  the value back from the row and reports it in its audit event and job result.
+- **The review surface says "coverage unverified" rather than implying a full
+  population.** A `LEGACY_APP` campaign freezes the snapshot's coverage into each
+  subject's provenance beside the payload hash. The campaign page shows a
+  "Coverage unverified" notice, the evidence PDF states under *Source snapshot*
+  that the artefact evidences a review of the accounts listed and not of the
+  application's whole population, and the close's hash-chained audit row records
+  the coverage and says so in its summary. All three read the FROZEN subjects
+  through one function (`frozenCampaignCoverage` in
+  `src/lib/legacy-access/coverage.ts`), which is an allowlist: `VERIFIED` only
+  when there is at least one subject and every one says so.
+- **It is a label, not a gate.** Refusing `UNKNOWN` would refuse every legacy
+  campaign there is. A reviewer who sees "coverage unverified" can go and ask the
+  application's owner; a reviewer who saw `COMPLETE` could not.
+
+What this deliberately does **not** do is say how much is missing. A
+forty-workstation desktop application reads "coverage unverified", not "1 of 40":
+that is the honest state of our knowledge.
 
 ### Reconciliation is exact email, by design
 
@@ -608,6 +651,7 @@ Three operational facts, all measured on the deployed service rather than inferr
 | Who builds the MCP servers | **The operator builds each one.** Inflect publishes a contract and servers conform to it. |
 | May a model help reconcile names | **Per tenant: `OFF` / `LOCAL_ONLY` / `EXTERNAL`, default `OFF`.** In every mode the model decides quickly and a person confirms every link. |
 | Which models | **`LOCAL_ONLY` → Laya** (Convai Innovations; open weights, run on our own infrastructure). **`EXTERNAL` → Jev** (TypeSafe AI; hosted in the US). Both answer typed questions with calibrated probabilities, and neither generates text. |
+| What a snapshot claims about its population | **`UNKNOWN` unless the transport observed the whole table itself** (2026-10-09, #3325), by schema default, and the review surface says "coverage unverified". An operator-declared source count was considered and not taken. See *Coverage is recorded as UNKNOWN unless it was observed*. |
 
 ### Architecture: a separate snapshot subsystem
 
@@ -1314,23 +1358,24 @@ These fire by design. They belong in each phase's estimate, not its surprises.
 - A first-party outbound relay for servers that cannot be exposed at all.
 - Campaigns routed to each subject's manager with several reviewers; `AccessReview`
   holds a single `reviewerUserId` today.
-- **An operator-declared source count, for applications with per-workstation
-  stores.** See *A snapshot is a claim about a whole application* — the limit is
-  documented rather than enforced, because only the operator knows whether a
-  connection's store is the authoritative one. Two shapes if a real customer ever
-  arrives in this position, in order of cost:
-  - the connection asserts "this application has one authoritative store", refused
-    at save time if it cannot — the same shape as `assertMappingUsable` refusing a
-    mapping that cannot produce a reviewable snapshot, and it keeps the decision
-    with the person who knows while leaving a record of who said so;
-  - a contract field (`snapshot.sourceOf: { index, total }`) so a conforming shim
-    can declare partiality and the pull can refuse. Needs a contract version bump,
-    and it only helps when the shim's author is honest — the same trust model as
-    the rest of the contract, so not an objection, but not free either.
+- **Considered and NOT taken: an operator-declared source count** (owner decision,
+  2026-10-09, #3325). The connection would assert "this application has one
+  authoritative store", refused at save time if it could not. It buys a real
+  `37/40` signal, but only ever as good as the number somebody typed, and it costs
+  a config field, a validator rule and a reconcile gate. The smaller option was
+  taken instead — see *Coverage is recorded as UNKNOWN unless it was observed*. Do
+  not build this without a new owner decision.
+- **A contract field for partiality** (`snapshot.sourceOf: { index, total }`), so a
+  conforming shim can declare that it is one source of several and the pull can
+  refuse. Needs a contract version bump, and it only helps when the shim's author
+  is honest — the same trust model as the rest of the contract, so not an
+  objection, but not free either. Even then it could only make a snapshot
+  *refused*, never `VERIFIED`: a shim saying "1 of 1" is still the far end's claim.
 
   **`PARTIAL` is not the answer** and must not be overloaded for this. It means "we
   tried to read the whole thing and could not"; making it also mean "this was never
   the whole thing" would make the one status that gates every reader ambiguous.
+  The coverage of a snapshot is its own column, `populationCoverage`.
 - Pre-existing gaps recorded but out of scope: connection secrets under the global
   key; the missing `config-field-classification` guard; two email normalisers that
   bypass `emailKey`.

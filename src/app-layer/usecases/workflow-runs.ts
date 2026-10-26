@@ -68,6 +68,7 @@ import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { assertEngineRunsProfiles, resolveRunDefinition } from './agent-profile-runs';
 import { isApprovalExpired } from '@/lib/agentic/approval-window';
 import { evaluateAgentRegistration } from '@/lib/agentic/agent-registration-gate';
 import {
@@ -273,13 +274,17 @@ export async function startWorkflowRun(
         assertCanWrite(ctx);
     }
 
-    const def = getWorkflowDefinition(workflowKey);
-    if (!def) throw badRequest(`Unknown workflow: ${workflowKey}`);
+    // A registered workflow, or an APPROVED agent profile version compiled
+    // into one, read inside the caller's tenant (Step 1a, #4143). Any key that
+    // does not ask for a profile resolves exactly as the registry lookup did,
+    // and is refused as `Unknown workflow` when the registry has nothing.
+    const { def } = await resolveRunDefinition(ctx, workflowKey);
 
     // THE CARVE-OUT, VERIFIED. Deliberately here and not above: keeping the
     // authority check first means an unauthorised caller still cannot learn
-    // whether a workflow key exists. Nothing happens between the two but a
-    // registry lookup — no database read, no side effect — so a caller that
+    // whether a workflow key exists. Nothing happens between the two but the
+    // definition lookup — a registry read, or for a profile key one read
+    // inside the caller's own tenant, and no side effect — so a caller that
     // claimed read authority for a propose-capable workflow passes the first
     // check and gains nothing from it.
     if (opts.readOnlyAuthority && def.readOnly !== true) {
@@ -456,6 +461,14 @@ export async function startWorkflowRun(
     const requested: AgentDriver = requestedDriver(def);
     const chosenDriver: AgentDriver = selectRunDriver(def, driverDecision.driver).driver;
 
+    // AN AGENT PROFILE RUNS ONLY ON AN ENGINE THAT RUNS PROFILES (Step 1a,
+    // #4143): one that renders the pinned instructions as the operator's own
+    // block and offers only the profile's tools. Here, as soon as the engine is
+    // known and before the run row exists, so the refusal leaves nothing behind
+    // and names its reason. No engine runs a profile yet (owner decision,
+    // 2026-10-26), so every profile run stops here until Phase 2.
+    if (def.profile) assertEngineRunsProfiles(chosenDriver);
+
     // ── A FLUE RUN MUST BE VOUCHED FOR BY THE REGISTER ──────────────────────
     //
     // Plan point 1: "A Flue run must resolve an ACTIVE RegisteredAgent and
@@ -516,6 +529,7 @@ export async function startWorkflowRun(
     const run = await createSealedRun(
         ctx, workflowKey, context, policyCardVersion, chosenDriver, concurrencyCap,
         opts.parentExecutionId ?? null, mountedSkills,
+        def.profile ? { versionId: def.profile.versionId, instructionsHash: def.profile.instructionsHash } : null,
     );
 
     await appendAuditEntry({
@@ -1277,6 +1291,12 @@ async function createSealedRun(
      * at the database from the moment the row exists.
      */
     mountedSkills: readonly MountedSkillPin[],
+    /**
+     * The agent profile version the run executes and the hash of its
+     * instructions, or null for a registered workflow. Written in the CREATE
+     * and never after: a trigger refuses any later change (Step 1a, #4143).
+     */
+    profilePin: { versionId: string; instructionsHash: string } | null,
 ): Promise<{ id: string }> {
     try {
         return await runInTenantContext(ctx, async (db) => {
@@ -1341,6 +1361,8 @@ async function createSealedRun(
                     // …and what it was TAUGHT. `[]` for a run that mounts no
                     // skill, never NULL: NULL means the row predates the pin.
                     mountedSkills: mountedSkills.map(pinForRow),
+                    profileVersionId: profilePin?.versionId ?? null,
+                    profileInstructionsHash: profilePin?.instructionsHash ?? null,
                 },
                 select: { id: true },
             });

@@ -10671,6 +10671,8 @@
     "hrContradicted": "HR link contradicted by a later sync",
     "truncatedTitle": "Partial coverage.",
     "truncatedBody": "The directory held more accounts than this campaign could snapshot, so these subjects are the first {count} and not the whole population. Closing it evidences that these accounts were reviewed — not that every account was.",
+    "coverageUnverifiedTitle": "Coverage unverified.",
+    "coverageUnverifiedBody": "These subjects are every account the application's connector returned, but nothing confirmed that it returned every account the application has — a connector that can read only one of several stores looks exactly like one that reads them all. Closing this campaign evidences that these accounts were reviewed — not that every account of the application was.",
     "crumbTests": "Tests",
     "undoVerdict": "Discard",
     "undoDialogTitle": "Discard the verdict on {email}",

@@ -19,6 +19,22 @@
  * ran". A `PENDING` row says somebody tried and did not finish.
  *
  * ═══════════════════════════════════════════════════════════════════════════
+ * COMPLETE IS ABOUT OUR READ, NOT THE APPLICATION (#3325)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `COMPLETE` means every page was read and every row stored. It does NOT mean
+ * the rows are the application's whole population: the shim runs the query and
+ * the manifest's `rowCount` is its own claim, so a shim that sees one store of
+ * several is indistinguishable from one that sees them all. That second fact is
+ * `populationCoverage`, and this file DOES NOT NAME IT on any write — the schema
+ * default, UNKNOWN, carries it. Owner decision, 2026-10-09: a default that
+ * claimed a whole population with every caller overriding it would be one new
+ * transport away from a silent false claim. Only a transport that observes the
+ * whole table ITSELF may write VERIFIED, and this one cannot. The value is read
+ * BACK from the row and reported, so the audit trail states what the row holds
+ * rather than what this file assumed.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
  * WHERE THE ROW BOUND IS AUTHORITATIVE
  * ═══════════════════════════════════════════════════════════════════════════
  *
@@ -32,7 +48,7 @@
  * @module app-layer/usecases/legacy-access-pull
  */
 
-import type { LegacyAccessRefusalReason, Prisma } from '@prisma/client';
+import type { LegacyAccessPopulationCoverage, LegacyAccessRefusalReason, Prisma } from '@prisma/client';
 
 import { buildSystemContext } from '@/app-layer/context-system';
 import {
@@ -99,6 +115,12 @@ export interface LegacyPullResult {
     readonly refusalReason: LegacyAccessRefusalReason | null;
     readonly refusalDetail: string | null;
     readonly overshared: readonly string[];
+    /**
+     * Whether the snapshot is known to be the application's whole population,
+     * READ BACK from the row this pull wrote — never chosen here. Null when no
+     * snapshot row was written. See the module docblock.
+     */
+    readonly populationCoverage: LegacyAccessPopulationCoverage | null;
 }
 
 /** Transport failure kind → the reason recorded on the snapshot. */
@@ -344,8 +366,11 @@ async function pullUnderLock(
     const payloadHash = computePayloadHash(ingest.accounts);
     const remoteSnapshotId = pull.manifest.snapshot.id;
 
-    const snapshotId = await bookkeeping(async (db) => {
-        const snap = await db.legacyAccessSnapshot.create({
+    // `populationCoverage` is deliberately NOT in `data`. The schema default
+    // (UNKNOWN) is the claim this transport can make — see the module docblock —
+    // and it is selected back so what gets reported is what the row holds.
+    const { id: snapshotId, populationCoverage } = await bookkeeping(async (db) =>
+        db.legacyAccessSnapshot.create({
             data: {
                 tenantId: ctx.tenantId,
                 connectionId: conn.id,
@@ -359,10 +384,9 @@ async function pullUnderLock(
                 status: 'PENDING',
                 pulledAt: now,
             },
-            select: { id: true },
-        });
-        return snap.id;
-    });
+            select: { id: true, populationCoverage: true },
+        })
+    );
 
     for (let i = 0; i < ingest.accounts.length; i += ACCOUNT_WRITE_CHUNK) {
         const batch = ingest.accounts.slice(i, i + ACCOUNT_WRITE_CHUNK);
@@ -449,6 +473,10 @@ async function pullUnderLock(
                 payloadHashAlgorithmVersion: PAYLOAD_HASH_ALGORITHM_VERSION,
                 rowCount: stored,
                 rowsReceived: pull.rows.length,
+                // Beside the hash, because the hash certifies the rows and this
+                // says whether the rows are the application. A reader of the trail
+                // must not take the first for the second.
+                populationCoverage,
                 oversharedColumns: ingest.overshared,
                 unparsedDateCount: ingest.unparsedDates,
             },
@@ -464,6 +492,7 @@ async function pullUnderLock(
         refusalReason: stored === ingest.accounts.length ? null : 'INTERNAL_ERROR',
         refusalDetail: null,
         overshared: [...new Set([...pull.overshared, ...ingest.overshared])].sort(),
+        populationCoverage,
     };
 }
 
@@ -479,6 +508,7 @@ function emptyResult(status: LegacyPullResult['status']): LegacyPullResult {
         refusalReason: null,
         refusalDetail: null,
         overshared: [],
+        populationCoverage: null,
     };
 }
 
@@ -533,8 +563,8 @@ async function recordRefusal(
     input: RefusalInput
 ): Promise<LegacyPullResult> {
     const completedAt = new Date();
-    const snapshotId = await bookkeeping(async (db) => {
-        const snap = await db.legacyAccessSnapshot.create({
+    const snap = await bookkeeping(async (db) => {
+        const created = await db.legacyAccessSnapshot.create({
             data: {
                 tenantId: ctx.tenantId,
                 connectionId: input.conn.id,
@@ -553,7 +583,8 @@ async function recordRefusal(
                 pulledAt: completedAt,
                 completedAt,
             },
-            select: { id: true },
+            // No `populationCoverage` here either: the default is the claim.
+            select: { id: true, populationCoverage: true },
         });
         await db.integrationExecution.update({
             where: { id: input.executionId },
@@ -567,14 +598,14 @@ async function recordRefusal(
         });
         await logEvent(db, ctx, {
             entityType: 'LegacyAccessSnapshot',
-            entityId: snap.id,
+            entityId: created.id,
             action: 'LEGACY_ACCESS_SNAPSHOT_REFUSED',
             details: `Legacy access pull refused: ${input.reason}`,
             detailsJson: {
                 category: 'custom',
                 event: 'legacy_access_snapshot_refused',
                 connectionId: input.conn.id,
-                snapshotId: snap.id,
+                snapshotId: created.id,
                 reason: input.reason,
                 // System-generated, and never a cell value — the rule
                 // `LegacyIngestError.detail` enforces.
@@ -583,7 +614,7 @@ async function recordRefusal(
                 rowsReceived: input.rowsReceived,
             },
         });
-        return snap.id;
+        return created;
     });
 
     logger.warn('legacy access pull refused', {
@@ -594,13 +625,14 @@ async function recordRefusal(
 
     return {
         executionId: input.executionId,
-        snapshotId,
+        snapshotId: snap.id,
         status: 'PARTIAL',
         rowCount: 0,
         payloadHash: null,
         refusalReason: input.reason,
         refusalDetail: input.detail,
         overshared: [],
+        populationCoverage: snap.populationCoverage,
     };
 }
 

@@ -1295,6 +1295,10 @@ executorRegistry.register('legacy-access-pull', async (payload) => {
         // /admin/jobs sees without opening it.
         payloadHash: r.payloadHash,
         refusalReason: r.refusalReason,
+        // #3325 — beside `status`, so an operator reading COMPLETE here also
+        // reads whether the rows are known to be the whole application. UNKNOWN
+        // for every pull today; nothing in the transport can observe it.
+        populationCoverage: r.populationCoverage,
     }, {
         // JobOutcome's vocabulary, which is NOT the snapshot's. Mapped rather
         // than collapsed to ok/not-ok: a pull that found the lock held
