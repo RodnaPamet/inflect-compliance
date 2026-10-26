@@ -54,7 +54,7 @@ import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { useKpiTrends, buildKpiSparklines, buildKpiSparklineNullable, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
-import { useCurrentUserId, useTenantHref } from '@/lib/tenant-context-provider';
+import { useCurrentUserId, useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
@@ -271,7 +271,8 @@ function TasksPageInner({
     // arrow here would rebuild the table model mid-double-click and kill
     // row navigation (the PoliciesClient regression, #1678).
     const tenantHref = useTenantHref();
-    const { mutate: swrMutate } = useSWRConfig();
+    const { mutate: swrMutate, cache: swrCache } = useSWRConfig();
+    const buildApiUrl = useTenantApiUrl();
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     const router = useRouter();
@@ -410,11 +411,20 @@ function TasksPageInner({
     // A failed list fetch leaves `rows` empty, which the table would
     // otherwise render as the "no tasks yet" empty state — telling the
     // user their register is empty when it is merely unreachable.
-    // Suppressed while stale data is still on screen: SWR keeps serving
-    // the last good page during a background refresh, and replacing a
-    // readable table with an error card would be a downgrade.
+    //
+    // `!data` alone does not catch a failed FILTER change on the live list:
+    // `useTenantSWR` keeps the previous key's rows (`keepPreviousData`), so
+    // `data` is the earlier filter's answer and the table went on showing it
+    // under the new filters. The test is whether the CURRENT key has rows of
+    // its own: the SSR fallback, or a cached answer for this exact URL. A
+    // failed background refresh of a key that did load keeps its readable
+    // table. The same check as the Assets list. The Deleted view's query
+    // keeps nothing from another key, so `data` is already its own.
+    const currentKeyHasRows = showDeleted
+        ? tasksQuery.data !== undefined
+        : filtersMatchInitial || swrCache.get(buildApiUrl(tasksKey))?.data !== undefined;
     const listError =
-        tasksQuery.error && !tasksQuery.data ? t('list.loadError') : undefined;
+        tasksQuery.error && !currentKeyHasRows ? t('list.loadError') : undefined;
 
     // ─── Sortable headers (parity with the Controls table) ───
     // Clicking a sortable header re-orders the in-memory rows; `sortBy`
