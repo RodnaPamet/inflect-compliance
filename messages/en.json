@@ -1834,7 +1834,8 @@
       "emptyFilteredDesc": "Clear a filter to see the rest of the register.",
       "resourceSingular": "arrangement",
       "resourcePlural": "arrangements"
-    }
+    },
+    "loadError": "Couldn't load risks. Check your connection and try again."
   },
   "controls": {
     "title": "Controls Library",
