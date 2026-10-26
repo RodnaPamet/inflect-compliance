@@ -24,7 +24,7 @@ Older links to a separate new-policy page or policy-templates page still work: t
 
 Owners and Admins get three actions in the selection bar, and Editors get only **{{ui:policies.bulk.assignOwner}}**. The other roles cannot tick rows.
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page chooses its buttons from the built-in role your custom role is based on, so it can offer an action that then fails.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page offers a button only when both those permissions and the built-in role your custom role is based on allow it.
 
 Asking for approval, approving, publishing and collecting acknowledgements happen on each policy's own page. The how-tos under Related say who can do each.
 
@@ -42,10 +42,10 @@ Use the library to see which policies exist, which are live, and which need atte
 | {{ui:policies.list.kpiDraft}} | Policies that are {{ui:policies.filterEnums.status.draft}} | Filters to that status |
 | {{ui:policies.list.kpiInReview}} | Policies that are {{ui:policies.filterEnums.status.inReview}} | Filters to that status |
 | {{ui:policies.list.kpiApproved}} | Policies that are {{ui:policies.filterEnums.status.approved}} or {{ui:policies.filterEnums.status.published}} | Filters to those two statuses |
-| {{ui:policies.list.kpiOverdueReview}} | Policies whose next review date has passed, archived ones included | Filters to {{ui:policies.filterEnums.reviewBucket.overdue}} |
-| {{ui:policies.list.kpiOutstandingAck}} | Policies where someone asked to acknowledge the current version has not done so, archived ones included | Filters to {{ui:policies.filters.acknowledgement}} › {{ui:policies.filterEnums.acknowledgement.outstanding}} |
+| {{ui:policies.list.kpiOverdueReview}} | Policies whose next review date has passed, archived ones left out | Filters to {{ui:policies.filterEnums.reviewBucket.overdue}} |
+| {{ui:policies.list.kpiOutstandingAck}} | Published policies where someone asked to acknowledge the current version has not done so | Filters to {{ui:policies.filters.acknowledgement}} › {{ui:policies.filterEnums.acknowledgement.outstanding}} |
 
-Apart from {{ui:policies.list.kpiTotal}}, each count follows the search and the filters you have set. Click a selected card again to drop its filter. Clicking a card replaces any status, review-cycle or acknowledgement filter with its own, and keeps the search and the category. So while one of those filters is set, a card's number can differ from the rows its click shows.
+Apart from {{ui:policies.list.kpiTotal}}, each card counts the rows its click would show. Clicking a card replaces any status, review-cycle or acknowledgement filter with its own, and keeps the search and the category, so each count follows the search and the category but not those other filters. Click a selected card again to drop its filter.
 
 **The toolbar.** From left to right:
 
@@ -53,8 +53,8 @@ Apart from {{ui:policies.list.kpiTotal}}, each count follows the search and the 
 - The **{{ui:common.ui.filter}}** button holds the search and the filters. Its search box, **{{ui:policies.list.searchPlaceholder}}**, filters the table as you type and matches the title and the description. The filters are:
     - **{{ui:policies.filters.status}}**: one or more statuses.
     - **{{ui:policies.filters.category}}**: lists every category the workspace's policies use, so choosing one leaves the others on offer.
-    - **{{ui:policies.filters.reviewBucket}}**: {{ui:policies.filterEnums.reviewBucket.overdue}} or {{ui:policies.filterEnums.reviewBucket.upcoming}}.
-    - **{{ui:policies.filters.acknowledgement}}**: {{ui:policies.filterEnums.acknowledgement.outstanding}}.
+    - **{{ui:policies.filters.reviewBucket}}**: {{ui:policies.filterEnums.reviewBucket.overdue}} or {{ui:policies.filterEnums.reviewBucket.upcoming}}. Neither includes archived policies.
+    - **{{ui:policies.filters.acknowledgement}}**: {{ui:policies.filterEnums.acknowledgement.outstanding}}, for published policies only.
 - Two settings buttons close the row. The first chooses which table columns are shown, the second which summary cards.
 
 Each active filter shows as a pill beside the **{{ui:common.ui.filter}}** button; remove a pill to drop that filter. Filters are kept in the page address, so a filtered view can be bookmarked or shared with a colleague who has access to the workspace.
@@ -67,7 +67,7 @@ Each active filter shows as a pill beside the **{{ui:common.ui.filter}}** button
 | {{ui:policies.colHeaders.status}} | Where the policy is in its life, as described below |
 | {{ui:policies.colHeaders.category}} | The category chosen when the policy was created, or a dash |
 | {{ui:policies.colHeaders.owner}} | The person accountable for the policy: their name, or the first part of their email address if their account has no name. A dash means nobody |
-| {{ui:policies.colHeaders.version}} | The number of the published version, or of the last one published. A policy that has never been published shows v1, however many versions it has, and even if it has none |
+| {{ui:policies.colHeaders.version}} | For a published policy, the number of its live version. For any other policy, the number of its newest version. A dash means the policy has no version yet |
 | {{ui:policies.colHeaders.acknowledgement}} | For a published policy, how many people have acknowledged the published version out of how many were asked: amber while someone still owes it, green when everyone has. A dash means nobody was asked, or the policy is not published |
 | {{ui:policies.colHeaders.nextReview}} | When the policy is next due for review. **{{ui:policies.list.overdue}}** marks a date that has passed, except on an archived policy |
 | {{ui:policies.colHeaders.updated}} | When the policy last changed. This date and the review date show as a relative time, such as "in 3 days"; hover one for the exact date |
@@ -78,7 +78,7 @@ The statuses are:
 - **{{ui:policies.filterEnums.status.inReview}}**: someone asked for approval of a version.
 - **{{ui:policies.filterEnums.status.approved}}**: an Owner or Admin approved a version, which waits to be published.
 - **{{ui:policies.filterEnums.status.published}}**: live. Staff follow it and can acknowledge it. A published policy keeps this status while a new version of it goes through approval, so a pending revision shows only on the policy's page.
-- **{{ui:policies.filterEnums.status.archived}}**: taken out of use. Its text cannot be changed and it cannot be sent for approval until an Owner or Admin restores it.
+- **{{ui:policies.filterEnums.status.archived}}**: taken out of use. Until an Owner or Admin restores it, it cannot get a new version, an approval request or a rollback, and it cannot be marked reviewed.
 
 Click a policy's title to open it. For roles that can tick rows, a single click on a row ticks it and a double-click opens the policy; for the others, a single click opens it. On a policy's page, the arrows at the top step to the previous or next policy in the order this list showed them.
 
@@ -86,7 +86,7 @@ Click a policy's title to open it. For roles that can tick rows, a single click 
 
 ### Create a policy
 
-Click **{{ui:policies.list.addBtn}}**. The **{{ui:policies.new.titleBlank}}** dialog opens on **{{ui:policies.new.modeNew}}**, also when you arrive from an older templates link. In **{{ui:policies.new.startWith}}**, keep **{{ui:policies.new.modeNew}}** for a blank policy, or choose **{{ui:policies.new.modeFromTemplate}}** and click a template under **{{ui:policies.new.chooseTemplate}}**.
+Click **{{ui:policies.list.addBtn}}**. The **{{ui:policies.new.titleBlank}}** dialog opens on **{{ui:policies.new.modeNew}}**; an older templates link opens it on **{{ui:policies.new.modeFromTemplate}}** instead. In **{{ui:policies.new.startWith}}**, keep **{{ui:policies.new.modeNew}}** for a blank policy, or choose **{{ui:policies.new.modeFromTemplate}}** and click a template under **{{ui:policies.new.chooseTemplate}}**.
 
 Fill in **{{ui:policies.new.fieldTitle}}**, which is required, and if you like **{{ui:policies.new.fieldDescription}}** and **{{ui:policies.new.fieldCategory}}**. A blank policy can also take its first text under **{{ui:policies.new.fieldContent}}**. Click **{{ui:policies.createPolicy}}**. The policy's page opens.
 
@@ -98,7 +98,7 @@ Tick the rows, up to 100 at a time. In the selection bar, choose **{{ui:policies
 
 ### Archive many policies
 
-Owners and Admins only. Tick the rows, choose **{{ui:policies.bulk.archive}}**, click **{{ui:common.table.apply}}**, then confirm with **{{ui:policies.bulk.archiveConfirmLabel}}**. The policies stay on the list as {{ui:policies.filterEnums.status.archived}}.
+Owners and Admins only. Tick the rows, choose **{{ui:policies.bulk.archive}}**, click **{{ui:common.table.apply}}**, then confirm with **{{ui:policies.bulk.archiveConfirmLabel}}**. The confirmation says what archiving does: the policies stay on the list as {{ui:policies.filterEnums.status.archived}}, with the limits described under the statuses above, and each can be restored from its own page.
 
 ### Delete many policies
 
@@ -120,12 +120,13 @@ A failed owner change or archive leaves the rows selected, so you can try again 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:policies.noPolicies}}** | The workspace has no policies | Click **{{ui:policies.list.addBtn}}**, or ask an Owner, Admin or Editor |
-| **{{ui:policies.list.emptyFilterTitle}}** | Policies exist, but none match the search and filters | Click **{{ui:policies.list.clearFilters}}**. If you chose two categories, keep one |
-| The table does not change after you set a filter | The list could not be reloaded. The page shows no message and keeps the rows it showed before | Reload the page |
-| **{{ui:policies.new.templatesEmpty}}** in the dialog | The templates have not loaded, could not load, or your workspace has none | Wait a moment. If it stays, choose **{{ui:policies.new.modeNew}}** and write the policy yourself |
+| **{{ui:policies.list.emptyFilterTitle}}** | Policies exist, but none match the search and filters | Click **{{ui:policies.list.clearFilters}}** |
+| **{{ui:policies.list.loadError}}**, or another message, in place of the table | The list could not be loaded | Reload the page |
+| **{{ui:policies.new.templatesEmpty}}** in the dialog | Your workspace has no policy templates | Choose **{{ui:policies.new.modeNew}}** and write the policy yourself |
+| **{{ui:policies.new.templatesLoadFailed}}**, or another red message, in place of the templates | The templates could not be loaded | Try again later, or choose **{{ui:policies.new.modeNew}}** and write the policy yourself |
 | A red message at the top of the dialog after **{{ui:policies.createPolicy}}** | Inflect did not create the policy. The message says why | Fix what it names, then try again |
 | **{{ui:policies.templates.linkFailed}}** or another red message in the suggested-controls dialog | The policy was created, but the controls were not linked | Try again, or click **{{ui:policies.templates.skip}}** and link them later on the policy's **{{ui:policies.detail.tabTraceability}}** tab |
-| **{{ui:policies.bulk.failed}}** | A bulk change did not go through, for example because more than 100 rows were selected or your role cannot apply it. The message gives no reason | Select fewer rows, reload the page and try again |
+| A red message after a bulk change, or **{{ui:policies.bulk.failed}}** | A bulk change did not go through, for example because more than 100 rows were selected or the new owner is not an active member. The message gives the reason when Inflect sends one | Follow the reason, or select fewer rows and try again |
 | A banner reading **Showing the first 5,000 results.** | More than 5,000 policies match, more than the page loads at once | Narrow the list with a filter or the search |
 
 ## Related

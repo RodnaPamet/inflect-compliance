@@ -19,7 +19,7 @@ Open **{{ui:nav.risks}}** under **{{ui:nav.govern}}** in the sidebar. The breadc
 | Set status or assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply. A role that can apply none of them sees no actions there.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply. A role that can apply none of them sees no actions there. The **{{ui:risks.addRisk}}** button, **{{ui:risks.importRisks}}** and the **{{ui:risks.aiAssist}}** panel follow the built-in role your custom role is based on, so they can appear and creating a risk still be refused.
 
 ## What it is for
 
@@ -39,7 +39,7 @@ Use the register to answer three questions: what could hurt the business, how ba
 **The toolbar.** From left to right:
 
 - **{{ui:risks.addRisk}}** opens the new-risk dialog. Only roles that can create risks see it.
-- The **Filter** button holds the search and the filters. Its search box, **{{ui:risks.searchPlaceholder}}**, filters the table as you type. The filters are {{ui:risks.filters.status}}, {{ui:risks.filters.category}}, {{ui:risks.filters.owner}}, {{ui:risks.filters.score}}, {{ui:risks.filters.residualScore}}, {{ui:risks.filters.treatment}}, {{ui:risks.filters.quantified}}, {{ui:risks.filters.stale}} and {{ui:risks.filters.cell}}. Each active filter shows as a pill beside the button; remove a pill to drop that filter.
+- The **{{ui:common.ui.filter}}** button holds the search and the filters. Its search box, **{{ui:risks.searchPlaceholder}}**, filters the table as you type. The filters are {{ui:risks.filters.status}}, {{ui:risks.filters.category}}, {{ui:risks.filters.owner}}, {{ui:risks.filters.score}}, {{ui:risks.filters.residualScore}}, {{ui:risks.filters.treatment}}, {{ui:risks.filters.quantified}}, {{ui:risks.filters.stale}} and {{ui:risks.filters.cell}}. Each active filter shows as a pill beside the button; remove a pill to drop that filter.
 - **{{ui:risks.register}}** and **{{ui:risks.heatmap}}** switch between the table and the risk matrix. The page remembers your choice.
 - **{{ui:risks.viewsMenu}}** holds the other views, in three groups:
     - **{{ui:risks.viewsAnalytics}}:** {{ui:risks.histogram}}, {{ui:risks.viewLinks.board}}, {{ui:risks.viewLinks.scenarios}}, {{ui:risks.viewLinks.hierarchy}}, {{ui:risks.viewLinks.kri}}, {{ui:risks.viewLinks.correlations}}, {{ui:risks.viewLinks.lossEvents}} and {{ui:risks.viewLinks.reports}}.
@@ -113,7 +113,8 @@ Open **{{ui:risks.viewsMenu}}** › **{{ui:risks.importRisks}}** to load risks f
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:panels.riskFirstRun.title}}** | The workspace has no risks yet | Click **{{ui:panels.riskFirstRun.cta}}**, or import risks |
+| **{{ui:panels.riskFirstRun.title}}** | The workspace has no risks yet | Click **{{ui:panels.riskFirstRun.cta}}**, or import risks. The button does nothing for roles that cannot create risks |
 | **{{ui:risks.emptyFilter.title}}** | Risks exist, but none match the search and filters | Click **{{ui:risks.emptyFilter.clearFilters}}** |
 | **{{ui:risks.bulk.actionFailed}}** | A bulk action did not go through, usually because more than 100 rows were selected | Select fewer rows and try again |
+| Rows that do not match the filters you just set | The list did not load for the new filters, and the table kept showing the rows it had before. The page shows no error | Reload the page |
 | A banner saying the list is truncated | The register holds more than 5,000 risks, more than the page loads at once | Narrow the list with a filter or the search |
