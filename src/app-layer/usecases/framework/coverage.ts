@@ -200,7 +200,13 @@ export async function isFrameworkInUse(ctx: RequestContext, frameworkKey: string
     });
     if (requirements.length === 0) return false;
     return runInTenantContext(ctx, async (tdb) => {
-        const { lookupIds } = await resolveFamilyRequirementAliases(tdb, fw, requirements);
+        // Over the same requirements `computeCoverage` counts: a framework with
+        // several packs is scoped to the packs this workspace chose
+        // (`pack-scope.ts`), or "Installed" could sit beside 0 mapped (#4373).
+        const scope = await resolveRequirementScope(tdb, ctx.tenantId, fw.id);
+        const { inScope } = partitionByScope(scope, requirements);
+        if (inScope.length === 0) return false;
+        const { lookupIds } = await resolveFamilyRequirementAliases(tdb, fw, inScope);
         const link = await tdb.controlRequirementLink.findFirst({
             where: {
                 tenantId: ctx.tenantId,
