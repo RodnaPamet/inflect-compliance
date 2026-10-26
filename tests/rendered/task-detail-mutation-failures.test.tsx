@@ -59,10 +59,18 @@ jest.mock('next/navigation', () => ({
     useSearchParams: () => new URLSearchParams(),
 }));
 
+/** The viewer — an Admin unless a test says otherwise. */
+let mockViewer: {
+    role: string;
+    permissions: { canWrite: boolean; canAdmin: boolean };
+    appPermissions: PermissionSet;
+};
+
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
-        permissions: { canWrite: true, canAdmin: true },
-        role: 'ADMIN',
+        permissions: mockViewer.permissions,
+        appPermissions: mockViewer.appPermissions,
+        role: mockViewer.role,
         tenantSlug: 'acme',
         userId: 'user_1',
     }),
@@ -85,6 +93,7 @@ jest.mock('@/components/ui/hooks', () => ({
 }));
 
 import TaskDetailPage from '@/app/t/[tenantSlug]/(app)/tasks/[taskId]/page';
+import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 
@@ -123,6 +132,24 @@ const EN = (require('../../messages/en.json') as {
  */
 function refusal(message: string, code = 'FORBIDDEN') {
     return { error: { code, message, requestId: 'req-1' } };
+}
+
+beforeEach(() => {
+    mockViewer = {
+        role: 'ADMIN',
+        permissions: { canWrite: true, canAdmin: true },
+        appPermissions: getPermissionsForRole('ADMIN'),
+    };
+});
+
+/** A built-in Editor, or a custom role built on Editor with `tasks` keys replaced. */
+function viewAsEditor(tasks: Partial<PermissionSet['tasks']> = {}) {
+    const editor = getPermissionsForRole('EDITOR');
+    mockViewer = {
+        role: 'EDITOR',
+        permissions: { canWrite: true, canAdmin: false },
+        appPermissions: { ...editor, tasks: { ...editor.tasks, ...tasks } },
+    };
 }
 
 /** Fetch stub: GETs succeed from a fixture map; writes are per-test. */
@@ -325,6 +352,45 @@ describe('task detail — a reviewer who cannot sign off is called out', () => {
         await screen.findByText('Rex Reader');
 
         expect(document.getElementById('task-reviewer-cannot-sign-off')).toBeNull();
+    });
+});
+
+/**
+ * #4325 / #4328 — the edit dialog hosts the Task panel, whose assignee picker
+ * POSTs to `/tasks/:id/assign` (`tasks.assign`), not the task's own edit
+ * route. It followed the page's write tier alone, so a custom role without
+ * `tasks.assign` could pick an assignee the server then refused.
+ */
+describe('task detail — the edit dialog’s assignee picker follows tasks.assign', () => {
+    beforeEach(() => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) => baseGet(url));
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    /** Open the edit dialog and wait for its form to load the task. */
+    async function openEditDialog() {
+        renderPage();
+        await waitForTaskLoaded();
+        fireEvent.click(document.getElementById('task-edit-button') as HTMLElement);
+        await waitFor(() =>
+            expect(document.getElementById('task-panel-title')).toHaveValue(TASK.title),
+        );
+    }
+
+    it('a built-in Editor can pick an assignee there', async () => {
+        viewAsEditor();
+        await openEditDialog();
+
+        expect(document.getElementById('task-panel-assignee')).toBeEnabled();
+    });
+
+    it('a custom role with tasks.edit but not tasks.assign gets a locked picker, and the fields stay editable', async () => {
+        viewAsEditor({ assign: false });
+        await openEditDialog();
+
+        expect(document.getElementById('task-panel-assignee')).toBeDisabled();
+        expect(document.getElementById('task-panel-title')).toBeEnabled();
     });
 });
 
