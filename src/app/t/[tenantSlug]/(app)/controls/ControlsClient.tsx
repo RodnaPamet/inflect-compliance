@@ -361,11 +361,11 @@ function ControlsPageInner({
     // whose every save was refused (#4325).
     const canEditTasks = permissions.canWrite && appPermissions.tasks.edit;
 
-    // The upload box is the one gate here that is NOT two-layer, and mirroring
-    // the server means saying so: `assertCanUploadEvidence` checks
-    // `evidence.upload` and nothing else — no route `requirePermission`, no
-    // coarse tier. A custom role with `controls.edit` and no `evidence.upload`
-    // was shown the dropzone and refused (#4325).
+    // The upload box's own key: `assertCanUploadEvidence` checks
+    // `evidence.upload`. A custom role with `controls.edit` and no
+    // `evidence.upload` was shown the dropzone and refused (#4325). The panel
+    // ANDs it with its edit gate and applies it to the dropzone only, so the
+    // attached-evidence list still shows for every role.
     const canUploadEvidence = appPermissions.evidence.upload;
     // Single source for "which bulk verbs may this viewer use" — see
     // _lib/bulk-action-policy.
