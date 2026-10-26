@@ -10,6 +10,8 @@
  * the key ∧ its user before it writes the started row or touches any key
  * material. A rotation with no key id runs exactly as before.
  */
+import { strictMock } from '../helpers/strict-mock';
+
 jest.mock('@/lib/observability/job-runner', () => ({
     runJob: jest.fn(async (_name: string, fn: () => Promise<unknown>) => fn()),
 }));
@@ -20,9 +22,11 @@ jest.mock('@/lib/audit/audit-writer', () => ({
 }));
 // The AUTHZ_DENIED row an agent-bound key whose principal left writes.
 const mockAppendAuditEntry = jest.fn(async (_entry: unknown) => undefined);
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntry: (entry: unknown) => mockAppendAuditEntry(entry),
-}));
+jest.mock('@/lib/audit', () =>
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntry: (entry: unknown) => mockAppendAuditEntry(entry),
+    }),
+);
 
 jest.mock('@/lib/security/tenant-key-manager', () => ({ clearTenantDekCache: jest.fn() }));
 

@@ -14,6 +14,7 @@
  * queued before the route carried the id — runs as the actor, as before.
  */
 import { NextRequest } from 'next/server';
+import { strictMock } from '../helpers/strict-mock';
 
 const prismaMock = {
     tenant: { findUnique: jest.fn() },
@@ -40,10 +41,12 @@ jest.mock('@/lib/db-context', () => ({
 
 // The AUTHZ_DENIED row an agent-bound key whose principal left writes.
 const mockAppendAuditEntry = jest.fn(async (_entry: unknown) => undefined);
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntry: (entry: unknown) => mockAppendAuditEntry(entry),
-    appendAuditEntryOrQueue: jest.fn(async () => ({ recorded: 'chain', auditId: 'a' })),
-}));
+jest.mock('@/lib/audit', () =>
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntry: (entry: unknown) => mockAppendAuditEntry(entry),
+        appendAuditEntryOrQueue: async () => ({ recorded: 'chain' as const, auditId: 'a' }),
+    }),
+);
 
 // The route half.
 const getTenantCtxMock = jest.fn();

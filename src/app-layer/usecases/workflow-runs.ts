@@ -1565,8 +1565,8 @@ export async function executeQueuedWorkflowRun(
     }
     if (!rebuilt.ok) {
         // The API key the run was started with would no longer authorise a
-        // request — revoked, expired, gone, or its agent's principal no longer
-        // resolving (#4386). Named, because "revoke the key" and "the key ran
+        // request — revoked, expired, gone, another tenant's or another
+        // user's (#4386). Named, because "revoke the key" and "the key ran
         // out" are different answers to an operator, and neither is the
         // membership message above.
         await failRun(
@@ -1676,12 +1676,15 @@ export async function rebuildRunContext(row: {
             requestId,
         });
         if (!keyed.ok) {
-            // The member half of the intersection refusing is the refusal this
-            // function always made, and keeps its message.
-            return {
-                ok: false,
-                reason: keyed.reason === 'initiator_not_a_member' ? 'principal_not_a_member' : keyed.reason,
-            };
+            // The member no longer resolving is the refusal this function
+            // always made, and keeps its message: for a plain key the member
+            // half of the intersection says so (`initiator_not_a_member`), for
+            // an agent-bound key the request tail does, first and with the
+            // AUTHZ_DENIED row a request writes (`principal_unresolved`).
+            if (keyed.reason === 'initiator_not_a_member' || keyed.reason === 'principal_unresolved') {
+                return { ok: false, reason: 'principal_not_a_member' };
+            }
+            return { ok: false, reason: keyed.reason };
         }
         // The key's agent binding is dropped in favour of the run's (above).
         const authority: RequestContext = { ...keyed.ctx };
@@ -1716,13 +1719,14 @@ export async function rebuildRunContext(row: {
 
 /**
  * Why `rebuildRunContext` refused. `principal_not_a_member`: the member who
- * started the run has no ACTIVE membership, the refusal it always made. Every
- * other value is the API key the run was started with no longer authorising a
- * request, in `resolveKeyInitiatorContext`'s words (#4386).
+ * started the run no longer resolves, the refusal it always made, whichever
+ * way the key path learns it. Every other value is the API key the run was
+ * started with no longer authorising a request, in
+ * `resolveKeyInitiatorContext`'s words (#4386).
  */
 export type RunPrincipalRefusal =
     | 'principal_not_a_member'
-    | Exclude<KeyInitiatorRefusal, 'initiator_not_a_member'>;
+    | Exclude<KeyInitiatorRefusal, 'initiator_not_a_member' | 'principal_unresolved'>;
 
 /**
  * What `rebuildRunContext` returns. A named type rather than an inline one in

@@ -204,9 +204,11 @@ describe('a key that no longer authorises a request stops the run, by name', () 
         });
     });
 
-    it('an agent-bound key whose principal left is principal_unresolved, with the denial a request writes', async () => {
+    it('an agent-bound key whose principal left keeps the membership refusal, with the denial a request writes', async () => {
         prismaMock.tenantMembership.findUnique.mockResolvedValue(null);
-        await expect(rebuildRunContext(RUN)).resolves.toEqual({ ok: false, reason: 'principal_unresolved' });
+        await expect(rebuildRunContext(RUN)).resolves.toEqual({ ok: false, reason: 'principal_not_a_member' });
+        // The request tail refused it as `principal_unresolved`, and wrote the
+        // row a request with this key would.
         expect(mockAppendAuditEntry).toHaveBeenCalledWith(
             expect.objectContaining({ action: 'AUTHZ_DENIED', entityId: 'key-1' }),
         );
@@ -258,6 +260,16 @@ describe('a key that no longer authorises a request stops the run, by name', () 
 
             await expect(executeQueuedWorkflowRun('tenant-A', 'run-1')).resolves.toEqual({ skipped: 'AGENT_NOT_ACTIVE' });
             expect(prismaMock.tenantApiKey.findUnique).not.toHaveBeenCalled();
+        });
+
+        it('a key-started run whose member left keeps the membership message and code', async () => {
+            prismaMock.tenantMembership.findUnique.mockResolvedValue(null);
+
+            await expect(executeQueuedWorkflowRun('tenant-A', 'run-1')).resolves.toEqual({ skipped: 'PRINCIPAL_REVOKED' });
+            expect(failRunMock.mock.calls[0][2]).toBe(
+                'run_principal_no_longer_authorised: the principal that started this run ' +
+                    'no longer holds an active membership in this workspace.',
+            );
         });
 
         it('a session-started run whose member left keeps its message and code', async () => {
