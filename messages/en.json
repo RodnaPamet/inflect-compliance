@@ -153,7 +153,10 @@
       "regulatorWording": "Show the regulator wording",
       "frameworkSectionNavigator": "Framework section navigator",
       "sankeyFlow": "Cross-tier traceability flow (Sankey)",
-      "treeExpansionControls": "Tree expansion controls"
+      "treeExpansionControls": "Tree expansion controls",
+      "kpiTrend30Day": "{label} 30-day trend",
+      "kpiTrend": "{label} trend",
+      "trend": "Trend"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -544,7 +547,9 @@
         "incident": "incident",
         "issue": "issue"
       }
-    }
+    },
+    "kpiTrend30Day": "{label} 30-day trend",
+    "kpiLoading": "{label} loading"
   },
   "clauses": {
     "title": "ISO 27001:2022 Clause Tracker",
@@ -666,10 +671,10 @@
       "businessProcessesPlaceholder": "Processes this asset supports",
       "dependenciesNote": "Free-text notes — not linked to assets or controls.",
       "businessProcessesNote": "Free-text notes. Use the process-map canvas for actual linkage.",
-      "retentionNote": "Human-readable policy note (e.g. “7 years”). The structured date below decides when the asset is deleted automatically.",
+      "retentionNote": "Human-readable policy note (e.g. “7 years”). The structured date below drives automatic deletion.",
       "retentionUntil": "Retention until",
       "retentionUntilPlaceholder": "Select a date…",
-      "retentionUntilNote": "Structured expiry date — after it, the asset is deleted automatically and can be restored for 90 days.",
+      "retentionUntilNote": "Structured expiry date — once it passes, the asset is deleted automatically. It can be restored from Deleted assets for 90 days, then it is purged permanently.",
       "saveFailed": "Couldn't save the asset. Please try again.",
       "createFailed": "Couldn't create the asset. Please try again."
     },
@@ -870,16 +875,16 @@
       }
     },
     "assetTypes": {
-      "INFORMATION": "INFORMATION",
-      "APPLICATION": "APPLICATION",
-      "SYSTEM": "SYSTEM",
-      "SERVICE": "SERVICE",
-      "DATA_STORE": "DATA STORE",
-      "INFRASTRUCTURE": "INFRASTRUCTURE",
-      "VENDOR": "VENDOR",
-      "PROCESS": "PROCESS",
-      "PEOPLE_PROCESS": "PEOPLE PROCESS",
-      "OTHER": "OTHER"
+      "INFORMATION": "Information",
+      "APPLICATION": "Application",
+      "SYSTEM": "System",
+      "SERVICE": "Service",
+      "DATA_STORE": "Data Store",
+      "INFRASTRUCTURE": "Infrastructure",
+      "VENDOR": "Vendor",
+      "PROCESS": "Process",
+      "PEOPLE_PROCESS": "People / Process",
+      "OTHER": "Other"
     },
     "rowInteractionHint": "Click to preview · double-click the row to open the full page",
     "importAssets": "Import assets",
@@ -903,6 +908,7 @@
       "moreRows": "+{count} more…",
       "invalidCsv": "No valid rows found. Ensure the CSV has a \"Name\" column header.",
       "importComplete": "Import complete — {created} of {total} assets created",
+      "importFailed": "Import failed — no assets were created",
       "errors": "Errors",
       "viewRegister": "View asset register →",
       "importMore": "Import more",
@@ -921,7 +927,14 @@
       }
     },
     "list": {
-      "ownerImported": "imported"
+      "ownerImported": "imported",
+      "loadError": "Couldn't load assets. Reload the page to try again."
+    },
+    "vulnSeverity": {
+      "CRITICAL": "Critical",
+      "HIGH": "High",
+      "MEDIUM": "Medium",
+      "LOW": "Low"
     },
     "viewVulnerabilities": "View vulnerabilities",
     "openVulnsAria": "{count} open vulnerabilities",
@@ -3021,7 +3034,8 @@
       "emptyDesc": "Author the documents that govern how your organisation operates — security, privacy, acceptable use, incident response.",
       "kpiOutstandingAck": "Outstanding acknowledgements",
       "ackOutstandingBadge": "Outstanding",
-      "ackProgress": "{acknowledged}/{assigned}"
+      "ackProgress": "{acknowledged}/{assigned}",
+      "loadError": "Couldn't load policies. Reload the page to try again."
     },
     "colHeaders": {
       "title": "Title",
@@ -3038,7 +3052,7 @@
       "ownerBlank": "Owner (blank = unassign)",
       "archive": "Archive",
       "archiveConfirmLabel": "Archive",
-      "archiveConfirmDesc": "Archived policies stay on the list, but cannot get a new version or an approval request until an Owner or Admin restores them.",
+      "archiveConfirmDesc": "They stay on the list as Archived. While a policy is archived it cannot get a new version, an approval request or a rollback. You can restore each one from its page; it comes back as a draft.",
       "delete": "Delete",
       "failed": "Bulk action failed",
       "deletedToast": "{count, plural, one {# policy deleted} other {# policies deleted}}",
@@ -3062,6 +3076,21 @@
       "creating": "Creating…",
       "chooseTemplate": "Choose a Template",
       "templatesEmpty": "No templates available.",
+      "templatesLoading": "Loading templates…",
+      "templatesLoadFailed": "Couldn't load templates.",
+      "createFailed": "Couldn't create the policy.",
+      "categories": {
+        "informationSecurity": "Information Security",
+        "accessControl": "Access Control",
+        "hr": "HR",
+        "physical": "Physical",
+        "compliance": "Compliance",
+        "operations": "Operations",
+        "riskManagement": "Risk Management",
+        "businessContinuity": "Business Continuity",
+        "supplier": "Supplier",
+        "other": "Other"
+      },
       "fieldTitle": "Title",
       "titleEmpty": "Title cannot be empty.",
       "titlePlaceholder": "e.g. Information Security Policy",
@@ -3236,7 +3265,7 @@
       "versionProposedToast": "Saved as a proposed version. The published version is still live.",
       "versionCreatedToast": "New version saved.",
       "archiveConfirmTitle": "Archive this policy?",
-      "archiveConfirmBody": "It stays on the list, but cannot get a new version or an approval request while archived. You can restore it afterwards.",
+      "archiveConfirmBody": "It stays on the list as Archived. While it is archived it cannot get a new version, an approval request or a rollback. You can restore it afterwards.",
       "archiveConfirmLabel": "Archive policy",
       "restoreFromArchive": "Restore",
       "restoring": "Restoring…",
@@ -6871,14 +6900,12 @@
       "requiredLabel": "Required value",
       "policyPathLabel": "Policy path",
       "sectionExecution": "Sandboxed execution",
-      "executionPendingHeading": "Not switchable from this page",
-      "executionPendingBody": "This switch is installed with the sandbox runtime itself. Until then the row reports what the deployment permits and offers no control.",
       "status": {
         "not-configured": "Not installed",
         "set-in-code": "Set in code",
         "unreachable": "No answer",
         "declared-not-observed": "Declared",
-        "tenant-switch": "Available"
+        "unconfirmable": "Cannot be confirmed"
       },
       "execution": {
         "name": "Run agent tools in a sandbox",
@@ -6912,7 +6939,11 @@
           "description": "Landlock must be a hard requirement rather than best effort. Best effort means a host without Landlock runs the sandbox with no filesystem isolation and still reports success."
         }
       },
-      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below."
+      "sectionChannelsNote": "What the runtime itself reports, and where to. Traffic from the sandboxed workload is a separate mechanism, governed by the network rules below.",
+      "executionUnconfirmableHeading": "Turned on, with no runtime declared",
+      "executionUnconfirmableBody": "This deployment says agent tools run in a sandbox, but it has declared no sandbox runtime for them to run in. Sandboxed execution is therefore not available, and this is not the same as the setting being off - someone turned it on and it cannot work.",
+      "executionPlatformHeading": "Not switchable from this page",
+      "executionPlatformBody": "Whether agent tools run in a sandbox is set for the whole deployment, not per workspace. The row reports what the deployment permits."
     }
   },
   "riskManager": {
@@ -7907,7 +7938,8 @@
       "linksFailedDetail": "Task created, but {count, plural, one {# link} other {# links}} failed to attach: {detail}. Add them from the task page.",
       "linksFailed": "Task created, but {count, plural, one {# link} other {# links}} failed to attach.",
       "requiresControlOrLink": "Audit Finding / Control Gap requires a control or framework requirement link.",
-      "requiresAssetOrControl": "Incident requires an asset or control link."
+      "requiresAssetOrControl": "Incident requires an asset or control link.",
+      "linkedRecord": "Linked record"
     },
     "detail": {
       "notFound": "Task not found",
@@ -7993,6 +8025,7 @@
       "reviewerLabel": "Reviewer:",
       "noReviewer": "No reviewer",
       "setReviewer": "Set reviewer",
+      "reviewerCannotSignOff": "This reviewer cannot sign the task off — only an active member whose role can edit tasks can. Choose another reviewer.",
       "reviewerFailed": "Failed to set reviewer",
       "watchersLabel": "Watchers:",
       "noWatchers": "No watchers",

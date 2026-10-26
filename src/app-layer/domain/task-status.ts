@@ -169,9 +169,35 @@ export function checkTaskTransition(
 }
 
 /**
+ * The English display name of each status, for SERVER-side messages that
+ * reach a user verbatim (a refused status change is shown as the API
+ * error's message). It matches the UI's `tasks.statusLabels` in
+ * `messages/en.json`, so a refusal names a status the way the picker the
+ * user just used does — never as the enum value.
+ */
+export const TASK_STATUS_DISPLAY_NAMES: Record<TaskStatusValue, string> = {
+    OPEN: 'Open',
+    TRIAGED: 'Triaged',
+    IN_PROGRESS: 'In Progress',
+    IN_REVIEW: 'In review',
+    BLOCKED: 'Blocked',
+    RESOLVED: 'Resolved',
+    CLOSED: 'Closed',
+    CANCELED: 'Canceled',
+};
+
+/** A status's display name; an unknown value is quoted as-is. */
+export function taskStatusDisplayName(status: string): string {
+    return status in TASK_STATUS_DISPLAY_NAMES
+        ? TASK_STATUS_DISPLAY_NAMES[status as TaskStatusValue]
+        : `"${status}"`;
+}
+
+/**
  * Render a transition error into a human-readable message.
  * Used by the usecase shim to keep the wording consistent across
- * task + issue setStatus paths.
+ * task + issue setStatus paths. The message reaches the user as the
+ * refusal's reason, so it names statuses by their display names.
  */
 export function formatTransitionError(
     err: TaskTransitionError,
@@ -182,8 +208,8 @@ export function formatTransitionError(
         case 'unknown_to':
             return `Unknown target status "${err.to}".`;
         case 'no_op':
-            return `Status is already ${err.status}.`;
+            return `The task is already ${taskStatusDisplayName(err.status)}.`;
         case 'illegal':
-            return `Illegal work-item transition: ${err.from} → ${err.to}.`;
+            return `A task cannot move from ${taskStatusDisplayName(err.from)} to ${taskStatusDisplayName(err.to)}.`;
     }
 }

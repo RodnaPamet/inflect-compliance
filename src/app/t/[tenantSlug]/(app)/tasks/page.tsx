@@ -67,8 +67,12 @@ export default async function TasksPage({
             tenantSlug={tenantSlug}
             appPermissions={{
                 tasks: ctx.appPermissions.tasks,
+                admin: { manage: ctx.appPermissions.admin.manage },
             }}
-            canAdmin={ctx.permissions.canAdmin}
+            permissions={{
+                canWrite: ctx.permissions.canWrite,
+                canAdmin: ctx.permissions.canAdmin,
+            }}
         />
     );
 }

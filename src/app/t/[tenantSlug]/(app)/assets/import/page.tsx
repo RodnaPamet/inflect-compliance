@@ -13,6 +13,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { getAssetCriticality } from '@/lib/asset-criticality';
 import { cn } from '@inflect/ui/lib/cn';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
+import { apiErrorMessage } from '@/lib/api-error';
 
 const ASSET_TYPES = [
     'INFORMATION', 'APPLICATION', 'SYSTEM', 'SERVICE', 'DATA_STORE',
@@ -48,7 +49,10 @@ export default function AssetImportPage() {
     const apiUrl = useTenantApiUrl();
     const href = useTenantHref();
     const tenant = useTenantContext();
-    const canWrite = tenant.permissions.canWrite;
+    // The import route checks `assets.create` (and the usecase the coarse
+    // write tier). The tier alone comes from a custom role's BASE role, so it
+    // let a custom role without `assets.create` reach a form that always 403'd.
+    const canWrite = tenant.permissions.canWrite && tenant.appPermissions.assets.create;
     const t = useTranslations('assets');
 
     const fileRef = useRef<HTMLInputElement>(null);
@@ -59,6 +63,9 @@ export default function AssetImportPage() {
         skipped: number;
         errors: string[];
         skippedRows: { row: number; name: string; reason: string }[];
+        /** The bulk request itself was refused or never answered — nothing
+         *  was imported, whatever the per-row outcomes would have been. */
+        failed: boolean;
     } | null>(null);
 
     const parseCSV = (text: string): ParsedRow[] => {
@@ -175,6 +182,7 @@ export default function AssetImportPage() {
 
         let created = 0;
         let skipped = 0;
+        let failed = false;
         // Per-row skipped-duplicate reasons surfaced from the server so the
         // user sees WHICH rows were dropped and why, not just a bare count.
         const skippedRows: { row: number; name: string; reason: string }[] = [];
@@ -187,7 +195,7 @@ export default function AssetImportPage() {
                 });
                 if (!res.ok) {
                     const data = await res.json().catch(() => ({}));
-                    throw new Error(data.error?.message || data.message || `Status ${res.status}`);
+                    throw new Error(apiErrorMessage(data, `Status ${res.status}`));
                 }
                 const data = await res.json();
                 created = data.created ?? 0;
@@ -199,10 +207,11 @@ export default function AssetImportPage() {
                     skippedRows.push(s);
                 }
             } catch (err) {
+                failed = true;
                 errors.push(err instanceof Error ? err.message : String(err));
             }
         }
-        setResult({ created, skipped, errors, skippedRows });
+        setResult({ created, skipped, errors, skippedRows, failed });
         setImporting(false);
     };
 
@@ -311,9 +320,17 @@ Prod DB,DATA_STORE,ACTIVE,DBA,Confidential,eu-west-1,5,5,4,CMDB-1042,"Auth servi
             {/* Result */}
             {result && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
-                    <p className="text-lg font-semibold text-content-success">
-                        {t('import.importComplete', { created: result.created, total: rows.length })}
-                    </p>
+                    {/* A refused request (e.g. over the 500-row cap) imported
+                        nothing — it must not read as a completed import. */}
+                    {result.failed ? (
+                        <p className="text-lg font-semibold text-content-error" id="asset-import-result" role="alert">
+                            {t('import.importFailed', { total: rows.length })}
+                        </p>
+                    ) : (
+                        <p className="text-lg font-semibold text-content-success" id="asset-import-result">
+                            {t('import.importComplete', { created: result.created, total: rows.length })}
+                        </p>
+                    )}
                     {result.skipped > 0 && (
                         <div className="space-y-1">
                             <p className="text-sm text-content-muted">

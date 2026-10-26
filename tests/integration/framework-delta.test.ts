@@ -75,7 +75,7 @@ describeFn('Framework delta-gap engine (real DB)', () => {
             await prisma.notification.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.tenantMembership.deleteMany({ where: { tenantId: t } }).catch(() => {});
         }
-        await prisma.user.deleteMany({ where: { id: USER_A } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: USER_A } });
         if (frameworkId) {
             await prisma.frameworkRequirement.deleteMany({ where: { frameworkId } }).catch(() => {});
             await prisma.framework.delete({ where: { id: frameworkId } }).catch(() => {});

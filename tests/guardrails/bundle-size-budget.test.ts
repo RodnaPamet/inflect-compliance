@@ -193,7 +193,13 @@ const BUDGETS_KB: Record<string, number> = {
         the headroom at run time instead.
     */
     'dashboard': 616,
-    'risks': 653,
+    // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
+    // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
+    // 653.2. The growth is in the task form and edit panel that the risk
+    // page's Linked tasks panel loads, and the people picker: refusals now
+    // show the server's reason, the reviewer picker asks for members who can
+    // sign a task off, and staged links show labels instead of raw codes.
+    'risks': 654,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this

@@ -20,12 +20,13 @@
  *     field of the form. The hook ANDs the validation message into
  *     canSubmit so the legacy contract holds.
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useToast } from '@/components/ui/hooks';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
     NewTaskFormSchema,
     type NewTaskFormValues,
@@ -36,7 +37,21 @@ export type TaskType = NewTaskFormValues['type'];
 export interface PendingLink {
     entityType: string;
     entityId: string;
+    /**
+     * The linked record's display name (`AC-1: Access policy`), as the
+     * entity picker showed it. A preset link from a control / risk / asset
+     * page arrives without one; `NewTaskFields` resolves it on open. The
+     * staged list and the link-failure warning show this, never the id.
+     */
+    label?: string;
 }
+
+/**
+ * The entity types a task link can be staged for in this form — each has
+ * a label at `tasks.linkEntity.<TYPE>`. The preset links the control /
+ * risk / asset pages stage are a subset.
+ */
+export const LINK_ENTITY_TYPES = ['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'RISK', 'EVIDENCE'] as const;
 
 // Extra type-conditional fields kept outside Zod (see file
 // header). Combined with NewTaskFormValues for the field surface.
@@ -59,9 +74,14 @@ export interface NewTaskFormReturn {
     linkEntityType: string;
     setLinkEntityType: (entityType: string) => void;
     linkEntityId: string;
-    setLinkEntityId: (entityId: string) => void;
+    /** `label` is the picked record's display name, kept for the staged list. */
+    setLinkEntityId: (entityId: string, label?: string) => void;
     addPendingLink: () => void;
     removePendingLink: (index: number) => void;
+    /** Fill in the display name of a staged link that arrived without one. */
+    labelPendingLink: (entityType: string, entityId: string, label: string) => void;
+    /** The translated label for a link entity type (`CONTROL` → "Control"). */
+    linkTypeLabel: (entityType: string) => string;
     submitting: boolean;
     error: string | null;
     canSubmit: boolean;
@@ -117,8 +137,31 @@ export function useNewTaskForm({
         initialPendingLinks ?? [],
     );
     const [linkEntityType, setLinkEntityType] = useState('CONTROL');
-    const [linkEntityId, setLinkEntityId] = useState('');
+    const [linkEntityId, setLinkEntityIdState] = useState('');
+    const [linkEntityLabel, setLinkEntityLabel] = useState<string | undefined>(undefined);
     const [extrasDirty, setExtrasDirty] = useState(false);
+
+    const setLinkEntityId = (entityId: string, label?: string) => {
+        setLinkEntityIdState(entityId);
+        setLinkEntityLabel(entityId ? label : undefined);
+    };
+    const linkTypeLabel = (entityType: string): string =>
+        (LINK_ENTITY_TYPES as readonly string[]).includes(entityType)
+            ? t(`linkEntity.${entityType}`)
+            : entityType;
+    // Stable: `NewTaskFields` calls it from an effect.
+    const labelPendingLink = useCallback(
+        (entityType: string, entityId: string, label: string) => {
+            setPendingLinks((prev) =>
+                prev.map((l) =>
+                    l.entityType === entityType && l.entityId === entityId && !l.label
+                        ? { ...l, label }
+                        : l,
+                ),
+            );
+        },
+        [],
+    );
 
     const zod = useZodForm({
         schema: NewTaskFormSchema,
@@ -164,12 +207,12 @@ export function useNewTaskForm({
                     body: JSON.stringify(body),
                 });
                 if (!res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    const msg =
-                        typeof data.error === 'string'
-                            ? data.error
-                            : data.message || t('new.createFailed');
-                    throw new Error(msg);
+                    // The refusal's reason (reviewer = assignee, an
+                    // inactive member, …) is at `error.message` in the API
+                    // envelope; reading only a string `error` fell through
+                    // to the generic fallback on every real refusal.
+                    const data = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(data, t('new.createFailed')));
                 }
                 const task = await res.json();
 
@@ -200,8 +243,15 @@ export function useNewTaskForm({
                 }
 
                 if (failedLinks.length > 0) {
+                    // Named as the user saw them in the staged list —
+                    // "Control: AC-1: Access policy" — not as the raw
+                    // enum and database id.
                     const detail = failedLinks
-                        .map((l) => `${l.entityType} ${l.entityId}`)
+                        .map((l) =>
+                            l.label
+                                ? `${linkTypeLabel(l.entityType)}: ${l.label}`
+                                : linkTypeLabel(l.entityType),
+                        )
                         .join(', ');
                     // PARTIAL SUCCESS — the task row exists; only some of
                     // the staged links failed to attach.
@@ -286,7 +336,11 @@ export function useNewTaskForm({
         if (!linkEntityId.trim()) return;
         setPendingLinks((prev) => [
             ...prev,
-            { entityType: linkEntityType, entityId: linkEntityId.trim() },
+            {
+                entityType: linkEntityType,
+                entityId: linkEntityId.trim(),
+                label: linkEntityLabel,
+            },
         ]);
         setLinkEntityId('');
         setExtrasDirty(true);
@@ -331,6 +385,8 @@ export function useNewTaskForm({
         setLinkEntityId,
         addPendingLink,
         removePendingLink,
+        labelPendingLink,
+        linkTypeLabel,
         submitting: zod.submitting,
         error: zod.error,
         canSubmit: zod.canSubmit && !validationMessage,

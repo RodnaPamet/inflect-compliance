@@ -229,9 +229,22 @@ interface TaskAssigneeLike {
     assignee?: { id: string; name: string | null; email: string | null } | null;
 }
 
+interface ControlRef {
+    id: string;
+    name: string | null;
+    annexId: string | null;
+    code: string | null;
+}
+
 interface TaskControlLike {
     controlId?: string | null;
-    control?: { id: string; name: string | null; annexId: string | null; code: string | null } | null;
+    control?: ControlRef | null;
+    /**
+     * Controls the task is linked to through Links (CONTROL TaskLinks),
+     * resolved by the list read. The Linked control filter matches these
+     * as well as the Control field (#4278), so it offers them too.
+     */
+    linkedControls?: ReadonlyArray<ControlRef>;
 }
 
 export function assigneeOptionsFromTasks(
@@ -256,14 +269,15 @@ export function controlOptionsFromTasks(
 ): FilterOption[] {
     const seen = new Map<string, FilterOption>();
     for (const t of tasks) {
-        const c = t.control;
-        if (!c?.id || seen.has(c.id)) continue;
-        const prefix = c.annexId || c.code || '';
-        seen.set(c.id, {
-            value: c.id,
-            label: prefix ? `${prefix}: ${c.name ?? ''}` : (c.name ?? c.id),
-            displayLabel: prefix || c.name || c.id,
-        });
+        for (const c of [t.control, ...(t.linkedControls ?? [])]) {
+            if (!c?.id || seen.has(c.id)) continue;
+            const prefix = c.annexId || c.code || '';
+            seen.set(c.id, {
+                value: c.id,
+                label: prefix ? `${prefix}: ${c.name ?? ''}` : (c.name ?? c.id),
+                displayLabel: prefix || c.name || c.id,
+            });
+        }
     }
     return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label));
 }

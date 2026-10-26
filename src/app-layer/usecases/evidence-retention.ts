@@ -37,8 +37,9 @@ export async function updateEvidenceRetention(
         if (!evidence) throw notFound('Evidence not found');
 
         const updateData: Prisma.EvidenceUpdateInput = {};
+        let nextRetentionUntil: Date | null | undefined;
         if (data.retentionUntil !== undefined) {
-            updateData.retentionUntil = data.retentionUntil ? new Date(data.retentionUntil) : null;
+            nextRetentionUntil = data.retentionUntil ? new Date(data.retentionUntil) : null;
         }
         if (data.retentionPolicy !== undefined) {
             updateData.retentionPolicy = data.retentionPolicy as RetentionPolicy;
@@ -47,27 +48,30 @@ export async function updateEvidenceRetention(
             updateData.retentionDays = data.retentionDays;
         }
 
-        // If retentionPolicy is DAYS_AFTER_UPLOAD and retentionDays set, compute retentionUntil
+        // If the policy after this edit is DAYS_AFTER_UPLOAD and retentionDays
+        // is set, compute retentionUntil. The policy the request names wins:
+        // a row moved to FIXED_DATE or NONE keeps the date it was given, where
+        // the stored policy alone would overwrite it with createdAt + days.
         if (
-            (data.retentionPolicy === 'DAYS_AFTER_UPLOAD' || evidence.retentionPolicy === 'DAYS_AFTER_UPLOAD') &&
+            (data.retentionPolicy ?? evidence.retentionPolicy) === 'DAYS_AFTER_UPLOAD' &&
             (data.retentionDays ?? evidence.retentionDays)
         ) {
             const days = data.retentionDays ?? evidence.retentionDays ?? 0;
             const base = evidence.createdAt;
-            updateData.retentionUntil = new Date(base.getTime() + days * 86_400_000);
+            nextRetentionUntil = new Date(base.getTime() + days * 86_400_000);
+        }
+        if (nextRetentionUntil !== undefined) {
+            updateData.retentionUntil = nextRetentionUntil;
         }
 
-        // #4277 — a retention date that is empty or still ahead is the way
-        // back for evidence its old date archived. `expiredAt` is the
-        // retention sweep's stamp; while it stays set the row belongs to the
-        // Archived view, so unarchiving alone could never return it to the
-        // active list. A past date leaves the stamp: the row really has
-        // expired, and the nightly sweep would archive it again anyway.
-        const nextRetention = updateData.retentionUntil as Date | null | undefined;
-        if (
-            nextRetention !== undefined &&
-            (nextRetention === null || nextRetention.getTime() > Date.now())
-        ) {
+        // A new retention date that has not passed, or none at all, ends the
+        // lapse. Left set, `expiredAt` keeps the row under Archived and keeps
+        // the 365-day purge clock running for evidence somebody chose to keep.
+        const clearsExpiry =
+            !!evidence.expiredAt &&
+            nextRetentionUntil !== undefined &&
+            !retentionHasLapsed(nextRetentionUntil, new Date());
+        if (clearsExpiry) {
             updateData.expiredAt = null;
         }
 
@@ -92,6 +96,7 @@ export async function updateEvidenceRetention(
                 retentionUntil: updateData.retentionUntil ? String(updateData.retentionUntil) : null,
                 retentionPolicy: updateData.retentionPolicy,
                 retentionDays: updateData.retentionDays,
+                clearedExpiredAt: clearsExpiry ? evidence.expiredAt?.toISOString() ?? null : null,
             },
         });
 
@@ -189,7 +194,26 @@ export async function archiveEvidence(ctx: RequestContext, evidenceId: string) {
 }
 
 /**
- * Unarchive evidence. ADMIN/EDITOR only.
+ * The nightly sweep archives a row whose `retentionUntil` is before the run
+ * (`lt: now`, `jobs/retention.ts`). A date equal to now counts as lapsed here
+ * so that a row this module keeps active is never one the next run archives.
+ */
+function retentionHasLapsed(retentionUntil: Date | string | null, now: Date): boolean {
+    if (retentionUntil === null) return false;
+    return new Date(retentionUntil).getTime() <= now.getTime();
+}
+
+/**
+ * Unarchive evidence, returning it to the active list. ADMIN/EDITOR only.
+ *
+ * Evidence the retention sweep archived carries `expiredAt` as well as the
+ * flag, and the Archived view lists a row with either set, so both are
+ * cleared. While the retention date has passed, unarchive is REFUSED
+ * (`RETENTION_DATE_PASSED`, owner decision on #4277): the next nightly sweep
+ * would archive the row again, and clearing the date here would erase a
+ * retention policy as a side effect of a different action. A new or empty
+ * date set in Edit evidence (`updateEvidenceRetention`) is the way back.
+ * The audit row keeps the expiry stamp it cleared.
  */
 export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string) {
     assertCanWrite(ctx);
@@ -199,13 +223,12 @@ export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string)
             where: { id: evidenceId, tenantId: ctx.tenantId },
         });
         if (!evidence) throw notFound('Evidence not found');
-        if (!evidence.isArchived) return evidence; // idempotent
+        if (!evidence.isArchived && !evidence.expiredAt) return evidence; // idempotent
 
-        // #4277 — refuse while the retention date has passed. Unarchiving such
-        // a row used to leave it under Archived (its `expiredAt` stayed set)
-        // and the nightly sweep archived it again; the user is told what to do
-        // instead.
-        if (evidence.retentionUntil && evidence.retentionUntil.getTime() <= Date.now()) {
+        // #4277 — refuse while the retention date has passed, and say what to
+        // do instead. Unarchiving such a row used to leave it under Archived
+        // (its `expiredAt` stayed set) and the nightly sweep archived it again.
+        if (retentionHasLapsed(evidence.retentionUntil, new Date())) {
             throw new ConflictError(
                 "This evidence's retention date has passed. Set a new retention date first, then unarchive it.",
                 { reason: 'RETENTION_DATE_PASSED' },
@@ -229,6 +252,7 @@ export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string)
                 category: 'data_lifecycle',
                 operation: 'unarchived',
                 model: 'Evidence',
+                clearedExpiredAt: evidence.expiredAt?.toISOString() ?? null,
             },
         });
 

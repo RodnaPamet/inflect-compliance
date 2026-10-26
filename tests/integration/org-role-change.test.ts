@@ -36,6 +36,11 @@
  */
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
+import {
+    deleteAuditRowsForTenants,
+    deleteAuditRowsForUsers,
+    deleteOrgAuditRowsForOrganizations,
+} from '../helpers/audit-cleanup';
 import type { PrismaClient } from '@prisma/client';
 
 import { changeOrgMemberRole } from '@/app-layer/usecases/org-members';
@@ -133,22 +138,48 @@ describeFn('Epic O-2 — atomic org member role change (DB-backed)', () => {
     });
 
     afterAll(async () => {
-        await prisma.tenantMembership.deleteMany({
-            where: { tenantId: { in: tenantIds } },
-        }).catch(() => {});
+        // MEMBERSHIPS, PAST THE LAST-OWNER GUARD (#3343). The plain
+        // `tenantMembership.deleteMany` here raised P0001 from
+        // `tenant_membership_last_owner_guard` — a tenant may not be left with
+        // zero ACTIVE OWNERs — and the old `.catch(() => {})` discarded it, so
+        // the memberships survived and the tenant delete below then failed on
+        // `TenantMembership_tenantId_fkey`. Both failures were invisible.
+        //
+        // The replica role is the sanctioned escape hatch for this, kept inline
+        // per `audit-cleanup`'s note that membership cleanup is not its business:
+        // those sites "keep their own transaction; they disable a different
+        // trigger".
+        await prisma.$transaction(async (tx) => {
+            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+            await tx.$executeRawUnsafe(
+                `DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`,
+                tenantIds,
+            );
+        });
         await prisma.tenantOnboarding.deleteMany({
             where: { tenantId: { in: tenantIds } },
         }).catch(() => {});
+        // AND THEN THE AUDIT ROWS (#3343). Clearing the memberships moved this
+        // teardown from one FK wall straight to the next — exactly the shape
+        // `tests/helpers/db.ts` records for #3597 — so both have to go before
+        // the tenant can.
+        await deleteAuditRowsForTenants(prisma, tenantIds);
         await prisma.tenant.deleteMany({
             where: { id: { in: tenantIds } },
-        }).catch(() => {});
+        });
         await prisma.orgMembership.deleteMany({
             where: { organizationId: orgId },
         }).catch(() => {});
+        // THE ORG SIDE, AND THE USERS' OWN ROWS (#3343). Clearing memberships
+        // and tenant audit rows moved the failure to the USER delete, which
+        // `OrgAuditLog` and any `AuditLog` row keyed on the user still blocked —
+        // the third wall in one teardown, each hidden by its own handler.
+        await deleteOrgAuditRowsForOrganizations(prisma, [orgId]);
         await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
+        await deleteAuditRowsForUsers(prisma, [creatorUserId, targetUserId].filter(Boolean));
         await prisma.user.deleteMany({
             where: { id: { in: [creatorUserId, targetUserId].filter(Boolean) } },
-        }).catch(() => {});
+        });
         await prisma.$disconnect();
     });
 

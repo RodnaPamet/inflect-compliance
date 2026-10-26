@@ -14,6 +14,7 @@ import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import {
     buildTaskAssignedEmail,
+    buildTaskAssignedDigestEmail,
     buildEvidenceExpiringEmail,
     buildPolicyApprovalRequestedEmail,
     buildPolicyDecisionEmail,
@@ -25,6 +26,7 @@ import {
     buildAccessReviewOverdueEscalationEmail,
     buildExceptionExpiringEmail,
     type TaskAssignedPayload,
+    type TaskAssignedDigestPayload,
     type EvidenceExpiringPayload,
     type PolicyApprovalRequestedPayload,
     type PolicyDecisionPayload,
@@ -52,6 +54,7 @@ export interface EnqueueEmailInput {
     entityId: string;
     payload:
         | TaskAssignedPayload
+        | TaskAssignedDigestPayload
         | EvidenceExpiringPayload
         | PolicyApprovalRequestedPayload
         | PolicyDecisionPayload
@@ -190,6 +193,7 @@ function buildEmailContent(
     type: EmailNotificationType,
     payload:
         | TaskAssignedPayload
+        | TaskAssignedDigestPayload
         | EvidenceExpiringPayload
         | PolicyApprovalRequestedPayload
         | PolicyDecisionPayload
@@ -206,7 +210,13 @@ function buildEmailContent(
 ): { subject: string; bodyText: string; bodyHtml: string } {
     switch (type) {
         case 'TASK_ASSIGNED':
-            return buildTaskAssignedEmail(payload as TaskAssignedPayload);
+            // A bulk Assign's digest rides the same type (#4278): adding an
+            // `EmailNotificationType` value is a migration, and a container
+            // whose Prisma client predates the value fails reading the row.
+            // The payload's shape says which body to build.
+            return 'tasks' in payload
+                ? buildTaskAssignedDigestEmail(payload as TaskAssignedDigestPayload)
+                : buildTaskAssignedEmail(payload as TaskAssignedPayload);
         case 'EVIDENCE_EXPIRING':
             return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload);
         case 'POLICY_APPROVAL_REQUESTED':

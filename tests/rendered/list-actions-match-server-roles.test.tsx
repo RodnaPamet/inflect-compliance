@@ -229,6 +229,7 @@ describe('bulk Delete is offered only to the roles the server lets delete', () =
                 initialFilters={{}}
                 tenantSlug="acme"
                 permissions={coarse(role)}
+                appPermissions={getPermissionsForRole(role)}
                 translations={assetTranslations}
             />,
         );

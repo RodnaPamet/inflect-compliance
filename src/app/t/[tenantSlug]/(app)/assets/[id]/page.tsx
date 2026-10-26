@@ -4,7 +4,7 @@ import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMembers, UserCombobox, type Member } from '@/components/ui/user-combobox';
@@ -175,7 +175,19 @@ export default function AssetDetailPage() {
         | 'traceability'
         | 'activity'
         | 'tests';
-    const [activeTab, setActiveTab] = useState<Tab>('overview');
+    // Seed the active tab from `?tab=` so other surfaces can deep-link to a
+    // section — the list's Vulns badge lands here on `?tab=vulnerabilities`,
+    // the one view that lists both sources its count adds up (CVE matches and
+    // scanner findings). Same pattern as the vendor and risk detail pages: an
+    // unknown or absent value falls back to Overview, so old links still work.
+    const ASSET_TABS: readonly Tab[] = [
+        'overview', 'vulnerabilities', 'tasks', 'evidence',
+        'mappings', 'traceability', 'activity', 'tests',
+    ];
+    const tabParam = useSearchParams()?.get('tab');
+    const [activeTab, setActiveTab] = useState<Tab>(() =>
+        ASSET_TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'overview',
+    );
     const tabs: ReadonlyArray<{ key: Tab; label: string }> = [
         { key: 'overview', label: t('detail.tabs.overview') },
         { key: 'vulnerabilities', label: t('detail.tabs.vulnerabilities') },
@@ -500,7 +512,12 @@ export default function AssetDetailPage() {
                     items={[
                         {
                             label: t('detail.type'),
-                            value: asset.type?.replace(/_/g, ' '),
+                            // The label, not the enum code ("DATA STORE") —
+                            // the same `assetTypes.*` strings the list, the
+                            // preview and the forms show.
+                            value: asset.type
+                                ? t(`assetTypes.${asset.type}` as Parameters<typeof t>[0])
+                                : undefined,
                         },
                         ...(asset.criticality
                             ? [

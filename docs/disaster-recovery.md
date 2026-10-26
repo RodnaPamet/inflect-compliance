@@ -35,12 +35,19 @@ disk `inflect-compliance` to a temporary disk and validates it.
 | 2026-08-01 | manual | restored |
 | 2026-08-21 | `workflow_dispatch` | passed |
 | 2026-09-01 | `workflow_dispatch` | passed — Postgres up after 2 s WAL recovery, 258 migrations, 167 `tenant_isolation` policies, `app_user` present |
+| 2026-10-03 | not recorded in this repo | passed — the newest success `restore-drill-freshness.yml` reported on 2026-10-19 |
 
-> **⚠ No SCHEDULED run has ever succeeded.** All three were human-started. The
-> 2026-09-01 scheduled attempt died on `ZONE_RESOURCE_POOL_EXHAUSTED`; a zone
-> fallback has since been added upstream and its first unattended test is
-> 2026-10-01. `.github/workflows/restore-drill-freshness.yml` in this repo now
-> watches that drill and fails if no successful run lands within 45 days.
+> **⚠ No SCHEDULED run has succeeded.** The first three runs were started by
+> hand. The 2026-09-01 scheduled attempt died on `ZONE_RESOURCE_POOL_EXHAUSTED`,
+> and a zone fallback was added upstream after it. On 2026-10-19,
+> `.github/workflows/restore-drill-freshness.yml` in this repo still warned
+> that no scheduled run of the drill had succeeded. That check runs weekly and
+> fails if no successful run lands within 45 days.
+
+The drill covers the disk restore and the database check. It does not create a
+VM, start the Compose stack or move DNS, so the
+[runbook below](#runbook-the-vm-its-disk-or-its-zone-is-lost) has never been
+run end to end.
 
 ### What was designed and never built
 
@@ -53,169 +60,253 @@ default (`db_dr_region = ""` → zero DR resources) even in intent. There is no
 RDS, no S3 and no cross-region copy in the recovery path. Do not plan against
 it; see [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).
 
-### How it's wired
-
-- `db_dr_region = ""` (default) → **disabled**, zero DR resources, zero cost.
-- Set `db_dr_region` + `db_dr_kms_key_arn` (a multi-region CMK replica in
-  the DR region) → the copy + retention Lambdas are created.
-- Snapshots land in the DR region as **manual** snapshots tagged
-  `dr-copy=true`, named `dr-<source-snapshot-id>`. The terraform output
-  `dr_snapshot_arn_pattern` is the discovery glob.
-
-### The multi-region KMS prerequisite (path b)
-
-Encrypted cross-region snapshot copy **requires a KMS key in the
-destination region**. The current posture is single-region. Two paths:
-
-- **(a)** flip the existing key to `multi_region = true` — a one-time
-  migration that **recreates the key** (re-encrypting all existing
-  snapshots + secrets). Atomic but disruptive.
-- **(b)** create a *second*, multi-region CMK specifically for the
-  snapshot copy; snapshots are re-encrypted with it on copy. **We chose
-  (b)** — safer for an existing prod environment (no recreation of the
-  in-use key). The DR-region replica ARN is passed as
-  `db_dr_kms_key_arn`. Land the CMK in a sibling PR first if your team
-  prefers atomic applies.
-
 ## What this does NOT protect against
 
-- **Sub-24h data loss in a regional outage.** The writes since the last
-  snapshot (up to 24h) are gone. If the business cannot tolerate that,
-  the next rung is a cross-region read-replica (seconds of RPO).
-- **Cache state.** Redis is **not** replicated; sessions + rate-limit
-  counters reset on failover. Acceptable — sessions re-auth, rate-limits
-  reset harmlessly.
-- **In-flight jobs.** BullMQ queue state lives in Redis; jobs enqueued
-  since the last snapshot are lost on failover.
-- **The evidence object store.** S3 Cross-Region Replication for the
-  evidence bucket is a separate, related follow-up (the bucket already
-  has versioning + lifecycle).
+- **Up to 24 hours of writes.** Everything written after the last snapshot is
+  lost with the disk or the zone. There is no WAL archive to replay and no
+  replica. The ways to shrink that window are in
+  [the DR ladder](#the-dr-ladder); none is built.
+- **Loss of the GCP project.** The snapshots are in the same project as the VM,
+  so a project-level loss or compromise reaches both. No copy of the data is
+  kept outside the project.
+- **Loss of `DATA_ENCRYPTION_KEY`.** Its only copy is in
+  `/opt/inflect/.env.prod`, on the same disk. A snapshot taken before the loss
+  is the only way back (`docs/slos.md`, SLO 7).
+- **Redis state.** Redis's AOF is a Docker volume on the same disk, so a
+  restore brings Redis back as it was at snapshot time. Jobs enqueued after the
+  snapshot are gone. Jobs that were queued at snapshot time can run again,
+  including ones that had already run before the outage. Rate-limit counters
+  roll back too.
+- **Effects outside the VM.** Emails sent, audit-stream batches delivered to
+  tenants' SIEMs and identity-directory writes made after the snapshot stay
+  done. The restored database has no record of them, and a job that runs again
+  can repeat them.
+- **Evidence uploads.** They are on the same disk (`STORAGE_PROVIDER=local`),
+  so they share the snapshot's recovery point. There is no object store and no
+  separate copy.
 
-## Runbook: "primary region is down for >2h"
+## Runbook: the VM, its disk or its zone is lost
 
-> Written to be runnable by a stranger on-call at 03:00. Replace
-> `<...>` placeholders from the terraform outputs / environment secrets.
-> Prereq: the DR-region VPC + SGs are already applied via terraform
-> (`terraform apply` with `db_dr_region` set), and you have **break-glass
-> IAM** with `rds:RestoreDBInstanceFromDBSnapshot`, `rds:Describe*`,
-> Route53, and the Helm/k8s credentials for the DR cluster.
-
-### 0. Decision criteria — cut over or wait?
-
-Cut over only if **all** hold, else wait (cutover is itself disruptive
-and failback costs another window):
-- The primary region is confirmed down (AWS Health Dashboard / support)
-  AND ETA to recovery is **> 2h** or unknown.
-- `/api/readyz` on the primary has been failing for **> 15 min** and is
-  not a deploy/config issue.
-- A responsible owner (on-call lead) has approved cutover in the incident
-  channel. Record the decision + timestamp.
-
-### 1. Pre-flight — confirm a restorable DR snapshot exists
+> Written for an on-call engineer doing this for the first time. It needs a
+> Google account with Compute Engine admin rights on project
+> `hazel-design-419410`, and `gcloud` authenticated on an operator's machine.
+> Run the commands from the repository root and replace every `<...>`. The
+> whole runbook has never been run (see [Restore evidence](#restore-evidence)),
+> so write down anything that differs.
 
 ```bash
-DR_REGION=<db_dr_region>          # e.g. us-west-2
-SRC_DB=<SOURCE_DB_INSTANCE_ID>    # e.g. inflect-compliance-production-db
-
-aws rds describe-db-snapshots --region "$DR_REGION" \
-  --snapshot-type manual \
-  --db-instance-identifier "$SRC_DB" \
-  --query 'sort_by(DBSnapshots,&SnapshotCreateTime)[-1].[DBSnapshotIdentifier,SnapshotCreateTime,Status]' \
-  --output text
+PROJECT=hazel-design-419410
+gcloud config set project "$PROJECT"   # deploy/apply.sh and deploy/check-drift.sh read the project from here
+ZONE=<a zone that is up>               # chosen in step 2
 ```
-Expected: a snapshot id `dr-...`, a timestamp within the last ~24h, and
-status `available`. **If the newest is stale (>36h) or absent, STOP** —
-the copy pipeline is broken; escalate, and consider restoring from
-whatever copy exists (older RPO) vs. waiting for the primary.
 
-### 2. Restore the snapshot to a new instance (DR region)
+### 0. Restore, or wait?
+
+Restore only if all of these hold. Otherwise wait.
+
+- The VM, its disk or `europe-west1-b` is down, confirmed in the Compute
+  Engine console or on Google Cloud's service health page, and recovery is more
+  than 2 hours away or unknown.
+- `/api/readyz` has failed for more than 15 minutes, and the cause is not a
+  deploy or a config change. A bad image is a rollback (`docs/deployment.md`,
+  "Rolling back"), not a restore.
+- The on-call lead has approved the restore in the incident channel. Record the
+  decision and the time.
+
+If the disk survives, waiting for the zone loses no data. A restore loses every
+write since the snapshot it starts from.
+
+### 1. Find the newest snapshot
 
 ```bash
-SNAP=<dr-snapshot-id-from-step-1>
-NEW_DB="${SRC_DB}-dr-$(date -u +%Y%m%d%H%M)"
-
-aws rds restore-db-instance-from-db-snapshot --region "$DR_REGION" \
-  --db-instance-identifier "$NEW_DB" \
-  --db-snapshot-identifier "$SNAP" \
-  --db-instance-class <db_instance_class> \
-  --db-subnet-group-name <DR subnet group> \
-  --vpc-security-group-ids <DR db SG> \
-  --no-publicly-accessible --multi-az
-
-aws rds wait db-instance-available --region "$DR_REGION" --db-instance-identifier "$NEW_DB"
-aws rds describe-db-instances --region "$DR_REGION" \
-  --db-instance-identifier "$NEW_DB" --query 'DBInstances[0].Endpoint.Address' --output text
+gcloud compute snapshots list --project "$PROJECT" \
+  --filter="sourceDisk~inflect-compliance AND status=READY" \
+  --sort-by=~creationTimestamp --limit=3 \
+  --format="table(name,creationTimestamp,sourceDisk.basename(),status)"
 ```
 
-### 3. App redeploy in the DR region
+Take the newest one whose source disk is `inflect-compliance`. It should be
+less than about 24 hours old. If the newest is older than 36 hours, the
+schedule has stopped; that snapshot is still the best recovery point there is,
+so record its age in the incident channel. Its `creationTimestamp` is the
+recovery point: everything written after it is lost.
+
+### 2. Create a disk from it in another zone
+
+Choose the zone:
+
+- **Zone lost:** another zone of `europe-west1`, i.e. `europe-west1-c` or
+  `europe-west1-d`.
+- **Region lost:** a zone in another EU region. The snapshots are stored in the
+  `eu` multi-region. `docs/sub-processors.md` names `europe-west1` as the
+  hosting region, so a move to another region is recorded there.
 
 ```bash
-# DR cluster context; the DR VPC/SG come from terraform applied with db_dr_region.
-helm upgrade --install inflect infra/helm/inflect \
-  -n inflect --create-namespace \
-  --values infra/helm/inflect/values-production.yaml \
-  --values infra/helm/inflect/values-dr.yaml \
-  --set env.DATABASE_URL="postgres://<user>:<pw>@<NEW_DB endpoint>:5432/inflect_compliance?sslmode=require" \
-  --set env.OTEL_EXPORTER_OTLP_ENDPOINT=<DR collector endpoint>
-```
-The DB password is the source instance's master credential (restored
-instances inherit it) — read it from Secrets Manager
-(`DB_PASSWORD_SECRET_ID`). Create `values-dr.yaml` as a thin overlay on
-`values-production.yaml` overriding only the DR-region endpoints.
+SNAPSHOT=<name from step 1>
+DISK=inflect-compliance-restore-$(date -u +%Y%m%d)
 
-### 4. DNS cutover (Route53)
-
-Shift the weighted/failover record for the app hostname to the DR
-load balancer; drop the primary weight to 0.
-```bash
-aws route53 change-resource-record-sets --hosted-zone-id <zone> \
-  --change-batch file://dr-cutover.json   # DR LB alias, TTL 60
+gcloud compute disks create "$DISK" --project "$PROJECT" --zone "$ZONE" \
+  --source-snapshot "$SNAPSHOT"
 ```
 
-### 5. Post-cutover validation
+Add `--type <type>` to match the lost disk's type, which the console shows.
+
+### 3. Create a VM on that disk
+
+The disk is a boot disk. It holds the OS, Docker, the Ops Agent, `/opt/inflect/`
+and every Docker volume.
 
 ```bash
-curl -fsS https://<app-host>/api/livez   # 200
-curl -fsS https://<app-host>/api/readyz  # 200 (DB reachable)
+gcloud compute instances create inflect-compliance-restore \
+  --project "$PROJECT" --zone "$ZONE" \
+  --machine-type <the lost VM's machine type> \
+  --disk "name=$DISK,boot=yes,auto-delete=no"
 ```
-Then a one-tenant smoke: log in, open the dashboard, create + read one
-Risk. Confirm the audit row is hash-chained correctly.
 
-### 6. Failback (when the source region recovers)
+Give the new VM what the lost one had. Read it from the console, or with
+`gcloud compute instances describe inflect-compliance --zone europe-west1-b`
+if the API still answers for it:
 
-1. Bring the source DB current: restore the latest DR snapshot back into
-   the source region (or take a fresh snapshot of the DR instance and
-   copy it back). Accept the DR-window writes as the new baseline.
-2. Redeploy the app in the source region; validate `/api/readyz`.
-3. Reverse the Route53 weights (gradually — 10% → 50% → 100%).
-4. Decommission the DR instance once traffic is fully back and a clean
-   source snapshot exists.
+- **Network tags** (`--tags`), so the firewall rules that admit ports 80 and
+  443, and SSH through IAP, apply to it.
+- **Service account and scopes** (`--service-account`, `--scopes`), so the Ops
+  Agent can write to Cloud Logging.
+- **External address.** The VM gets a new address unless a reserved static
+  address that is free in the same region is attached (`--address`). Plan for a
+  new one.
+
+### 4. Check that the stack came up
+
+The restored disk carries `/opt/inflect/` as it was at snapshot time: the
+compose file, both host env files and the volumes. Docker starts on boot and
+every service is `restart: unless-stopped`, so the stack that was running at
+snapshot time starts again by itself. Postgres replays its WAL first.
+
+```bash
+gcloud compute ssh inflect-compliance-restore --zone "$ZONE" --tunnel-through-iap \
+  --command "sudo docker ps --format '{{.Names}}\t{{.Status}}'"
+```
+
+Expect the eight services of `deploy/docker-compose.prod.yml`, plus the
+observability stack's four if it was running. `worker` reports `healthy` only
+after its 300-second start period. If a service is missing, start the stack
+with the command `deploy/apply.sh` itself uses:
+
+```bash
+gcloud compute ssh inflect-compliance-restore --zone "$ZONE" --tunnel-through-iap \
+  --command "cd /opt/inflect && sudo docker compose --env-file .env --env-file .env.prod -f docker-compose.prod.yml up -d"
+```
+
+### 5. Repoint DNS
+
+Point the A record for `app.inflect.bg` at the new VM's external address. The
+record is held by the DNS provider for `inflect.bg`; nothing in this repository
+manages it.
+
+```bash
+gcloud compute instances describe inflect-compliance-restore --zone "$ZONE" \
+  --format="value(networkInterfaces[0].accessConfigs[0].natIP)"
+```
+
+Caddy's certificate for `app.inflect.bg` is in the restored `caddy-data`
+volume, so TLS works as soon as the record resolves to the new address. The
+`*.34-140-180-255.sslip.io` hostnames in `deploy/caddy/Caddyfile` encode the old
+address and no longer reach this VM.
+
+Sign-in redirects follow `NEXTAUTH_URL` and `AUTH_URL`. If either names an
+sslip.io host, OAuth sign-in breaks until it names `app.inflect.bg`. This counts
+the matching lines without printing a value:
+
+```bash
+gcloud compute ssh inflect-compliance-restore --zone "$ZONE" --tunnel-through-iap \
+  --command "sudo grep -cE '^(NEXTAUTH_URL|AUTH_URL)=.*sslip' /opt/inflect/.env.prod"
+```
+
+### 6. Verify
+
+```bash
+curl -fsS https://app.inflect.bg/api/livez    # 200
+curl -fsS https://app.inflect.bg/api/readyz   # 200: the database and Redis answer
+```
+
+Then a one-tenant smoke test: sign in, open the dashboard, create a Risk and
+read it back, and check that the audit log shows the new entry. Confirm that
+`worker` is `healthy` and `watchtower` is running, so scheduled jobs run and the
+next merge reaches the VM.
+
+### 7. Bring the host in line with `main`
+
+The snapshot's compose file is whatever the VM ran that day. Once the service
+is back, apply the canonical set from the repository, in a service window:
+
+```bash
+export VM_NAME=inflect-compliance-restore VM_ZONE="$ZONE"
+export HEALTH_ORIGINS="https://app.inflect.bg"
+deploy/check-drift.sh        # what differs from the repo
+deploy/apply.sh              # preflight only
+CONFIRM=1 deploy/apply.sh    # apply
+```
+
+`HEALTH_ORIGINS` leaves out the sslip.io origin, which no longer reaches this
+VM. `apply.sh` stops in preflight while `REDIS_PASSWORD` is absent from the host
+env files (`docs/deployment.md`, "Outstanding operator actions"). That stop
+changes nothing, and the stack from step 4 keeps running.
+
+### 8. Make the restored VM the production VM
+
+- **Snapshots.** The new disk has no snapshot schedule, so production has no
+  backup until one is attached:
+
+  ```bash
+  gcloud compute disks add-resource-policies "$DISK" --zone "$ZONE" \
+    --resource-policies inflect-daily-snapshot
+  ```
+
+  A snapshot schedule belongs to one region. For a disk in another region,
+  create a schedule there with the settings in the table above, and attach
+  that.
+- **The drill.** `restore-test.yml` in `RodnaPamet/agri-saas` restores
+  snapshots of disk `inflect-compliance`. Point it at the new disk, or it keeps
+  testing a disk production no longer uses.
+- **Names of the old VM.** `deploy/apply.sh` and `deploy/check-drift.sh`
+  default to VM `inflect-compliance` in `europe-west1-b`. `HEALTH_ORIGINS` in
+  `apply.sh` and the Caddyfile name the old sslip.io address. This doc,
+  `docs/deployment.md`, `docs/slos.md`, `docs/sub-processors.md` and
+  `CLAUDE.md` name the VM and its zone. Change them in one pull request.
+- **The old VM.** If it comes back, its stack starts with it. Stop it at once:
+  `gcloud compute instances stop inflect-compliance --zone europe-west1-b`.
+  Otherwise two workers each run every scheduled job, each against its own
+  database, and both reach tenants' directories, SIEMs and mailboxes. The old
+  disk holds the writes made between the snapshot and the outage, and nothing
+  merges them into the restored database. Snapshot the old disk and keep it
+  until the incident review decides what to do with it.
 
 ## Open operational questions
 
 These block raising the customer SLA above "RTO 4h"; decide explicitly:
 
-- **Which region is the DR region?** Trade-offs: `us-east-1 ↔ us-west-2`
-  (low latency, both US data residency); `ap-east-1` for APAC customer
-  coverage; a GDPR-aware EU region for EU tenants (data must not leave
-  the EU). This is a data-residency decision, not just a latency one.
-- **Who can perform the restore?** The monthly restore-test is
-  *configured* to assume a CI-only OIDC role, but it has never
-  *completed* that step — every run reaches it and fails inside it, on
-  the missing `aws-region` input (see the warning at the top of this
-  document) — so no restore has been performed by CI under any
-  identity. The DR runbook
-  separately needs a **human with break-glass access** (time-boxed,
-  audited). Define + provision that role.
-- **What is the contracted RTO with enterprise customers?** If the SLA
-  is "4h RTO", this PR meets it. If it's "1h RTO", this is not
-  sufficient — the next rung (cross-region read-replica) must land.
+- **Which region for a region loss?** The snapshots are in the `eu`
+  multi-region, and `docs/sub-processors.md` names `europe-west1` as the
+  hosting region. A restore outside the EU moves tenant data out of the EU. A
+  restore to another EU region changes the declared hosting location. Pick the
+  region before it is needed.
+- **Who can perform the restore?** The runbook needs a person with Compute
+  Engine admin rights on the project and SSH access through IAP. The drill runs
+  from another repository and does not exercise a person's access. Name the
+  people, and decide how break-glass access is granted and audited.
+- **What is the contracted RTO with enterprise customers?** `docs/slos.md`
+  SLO 7 states 4 hours, and the full runbook has never been timed. If a
+  contract says 1 hour, this posture does not meet it.
 
 ## The DR ladder
 
-1. **Cross-region snapshot copy** *(this)* — RPO 24h, RTO 4h, ~$20/mo. Cold.
-2. **Cross-region read-replica** — RPO seconds, RTO ~1h, ~3× cost. Hot (continuous WAL replication).
-3. **Warm-standby** (Aurora Global + Redis Global Datastore + traffic routing) — RPO seconds, RTO minutes. See `docs/multi-region.md`.
+1. **Daily disk snapshot** *(today)* — RPO 24 hours, RTO 2–4 hours, never
+   timed end to end. Cold.
+2. **Postgres WAL archiving plus a scheduled dump off the VM** — brings the
+   recovery point to minutes (`docs/slos.md`, SLO 6).
+   `infra/scripts/pg-dump-to-s3.sh` is in the repo but is not deployed.
+3. **A standby database in another zone or region**, fed by continuous WAL
+   replication — RPO seconds. It needs a second machine.
 4. **Active-active** — not on the roadmap. <!-- docs-accuracy-allow: DR ladder tail listing higher rungs we have deliberately not built -->
 
 Climb a rung only when the RTO/RPO contract demands it; each rung is a

@@ -150,7 +150,16 @@ describeFn('MCP propose-not-commit (real route + approval)', () => {
             await prisma.agentProposalApproval.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.agentProposal.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.risk.deleteMany({ where: { tenantId: t } }).catch(() => {});
-            await prisma.user.deleteMany({ where: { id: { in: [`u-${t}`, `u2-${t}`] } } }).catch(() => {});
+            // MEMBERSHIPS BEFORE THE USER (#3343). Nothing here cleared them,
+            // so the user delete failed on `TenantMembership_userId_fkey` and the
+            // old `.catch(() => {})` discarded it — the users survived every run.
+            // The replica role gets past `tenant_membership_last_owner_guard`,
+            // which refuses to leave a tenant without an ACTIVE OWNER.
+            await prisma.$transaction(async (tx) => {
+                await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+                await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, t);
+            });
+            await prisma.user.deleteMany({ where: { id: { in: [`u-${t}`, `u2-${t}`] } } });
         }
         await prisma.$disconnect();
     });
