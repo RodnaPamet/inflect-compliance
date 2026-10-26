@@ -13,6 +13,7 @@ import { PolicyCardTab } from './tabs/PolicyCardTab';
 import { ToolsTab } from './tabs/ToolsTab';
 import { CoverageTab } from './tabs/CoverageTab';
 import { SkillsTab } from './tabs/SkillsTab';
+import { BehaviourTab } from './tabs/BehaviourTab';
 import { RunsTab } from './tabs/RunsTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
@@ -103,8 +104,12 @@ export interface AgentDetailPermissions {
 // `runs` is LAST-BUT-ONE deliberately: it sits after the tabs that describe
 // what the agent MAY do and before the breaker, because it is the record of
 // what it DID — the order a reviewer reads the page in (#3472).
+//
+// `behaviour` (Step 1b, #4144) sits after `skills`: what the agent should DO,
+// written in terms of the tools and skills the two tabs before it govern. It is
+// in the list only while AGENT_PROFILES is on (`profilesEnabled`).
 const TAB_KEYS = [
-    'overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'runs', 'breaker',
+    'overview', 'risk', 'policy', 'tools', 'skills', 'behaviour', 'coverage', 'runs', 'breaker',
 ] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
@@ -123,6 +128,7 @@ export function AgentDetailClient({
     owners,
     vendors,
     viewerUserId,
+    profilesEnabled = false,
 }: {
     tenantSlug: string;
     agent: AgentSummary;
@@ -131,6 +137,11 @@ export function AgentDetailClient({
     vendors: VendorChoice[];
     /** The signed-in person; the transfer card says which side of an open transfer they are on. */
     viewerUserId?: string;
+    /**
+     * `AGENT_PROFILES`, read on the server (Step 1b, #4144). With it off there
+     * is no Behaviour tab at all, as the profile routes answer 404.
+     */
+    profilesEnabled?: boolean;
 }) {
     const t = useTranslations('admin');
     // The register's copy lives in the top-level `agents` namespace now that
@@ -251,6 +262,11 @@ export function AgentDetailClient({
                     disabled: !perms.canReadRegistry && !perms.canGrantTools,
                 },
                 { key: 'skills', label: t('agentDetail.tabSkills'), disabled: !perms.canReadRegistry },
+                // The profile read and every act take the register key, so a
+                // view-key reader finds the tab disabled, like Skills.
+                ...(profilesEnabled
+                    ? [{ key: 'behaviour' as const, label: t('agentDetail.tabBehaviour'), disabled: !perms.canReadRegistry }]
+                    : []),
                 { key: 'coverage', label: t('agentDetail.tabCoverage'), disabled: !perms.canReadRegistry },
                 // NOT disabled: the runs read is `/agent-runs`, which the view
                 // key reads (#3710) — this agent's runs are part of what an
@@ -313,6 +329,9 @@ export function AgentDetailClient({
                     canReviewSkills={perms.canReviewSkills === true}
                     canAuthorSkills={perms.canAuthorSkills === true}
                 />}
+            {tab === 'behaviour' && profilesEnabled && (
+                <BehaviourTab {...props} retired={agent.status === 'RETIRED'} />
+            )}
             {tab === 'coverage' && <CoverageTab {...props} />}
             {/* Read-only, and no `onChanged`: resuming or aborting a run
                 happens on the run itself, where the steps are. */}

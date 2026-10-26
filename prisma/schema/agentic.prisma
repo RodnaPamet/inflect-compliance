@@ -3173,6 +3173,10 @@ model AgentProfileVersion {
   /// Who approved or rejected it. Never `authoredByUserId` (CHECK).
   decidedAt         DateTime?
   decidedByUserId   String?
+  /// Why it was rejected, in the reviewer's words (Step 1b). Written once, in
+  /// the move to REJECTED, which requires it (trigger). Encrypted at rest
+  /// (Epic B) and sanitised at the write seam.
+  rejectionReason   String?
   retiredAt         DateTime?
   retiredByUserId   String?
 
