@@ -73,7 +73,10 @@ const BADGE_VARIANT: Record<RuntimeRowKind, 'success' | 'neutral' | 'warning'> =
     // The normal state, and not a warning: the declaration is the best
     // available answer and the runtime offers no way to confirm it.
     'declared-not-observed': 'neutral',
-    'tenant-switch': 'success',
+    // A WARNING, and the strongest signal this page can give: the deploy
+    // claims sandboxed execution and declared no runtime for it. Neutral
+    // would read as "fine", which is the one thing it is not.
+    unconfirmable: 'warning',
 };
 
 export function SandboxRuntimeClient({
@@ -252,15 +255,24 @@ export function SandboxRuntimeClient({
                 'execution',
                 t('sandboxRuntime.execution.name'),
                 t('sandboxRuntime.execution.description'),
-                displayForExecutionSwitch(platformEnabled),
-                // NO control, even when the platform permits it. The switch and
-                // its storage land with #3996, which also has to settle whether
-                // a platform-wide capability may be flipped from a TENANT
-                // surface at all. A button here would answer that question by
-                // accident.
-                <InlineNotice variant="info" title={t('sandboxRuntime.executionPendingHeading')}>
-                    {t('sandboxRuntime.executionPendingBody')}
-                </InlineNotice>,
+                displayForExecutionSwitch(platformEnabled, view.configured),
+                // NO control, by the owner ruling of 2026-10-25: this switch is
+                // platform-only, so there is nothing a workspace administrator
+                // could flip here and a button would misrepresent who owns the
+                // decision. #3996.
+                displayForExecutionSwitch(platformEnabled, view.configured).kind ===
+                'unconfirmable' ? (
+                    <InlineNotice
+                        variant="warning"
+                        title={t('sandboxRuntime.executionUnconfirmableHeading')}
+                    >
+                        {t('sandboxRuntime.executionUnconfirmableBody')}
+                    </InlineNotice>
+                ) : (
+                    <InlineNotice variant="info" title={t('sandboxRuntime.executionPlatformHeading')}>
+                        {t('sandboxRuntime.executionPlatformBody')}
+                    </InlineNotice>
+                ),
             )}
         </div>
     );

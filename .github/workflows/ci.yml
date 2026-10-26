@@ -240,7 +240,7 @@ permissions:
 env:
   NODE_VERSION: "24"
   SKIP_ENV_VALIDATION: "1"
-  # The Jest test job runs ~1/6 of ~1650 test files per shard with
+  # The Jest test job runs ~1/7 of ~1650 test files per shard with
   # `jest --runInBand`, which holds every file's module graph in ONE
   # process for the whole shard (no worker recycling —
   # `workerIdleMemoryLimit` is inert in-band), and the coverage job runs
@@ -567,8 +567,17 @@ jobs:
         # the block these numbers came from, and its `shape` verdict is only
         # trustworthy in-band — in workers mode it samples the parent, which
         # runs no tests and therefore never recedes.
-        shard: [1, 2, 3, 4, 5, 6]
-        total: [6]
+        #
+        # SEVEN since 2026-10-25 (#3977), and the first of these legs added with
+        # the measurement in hand rather than instead of it. The block above
+        # records it: the growth is cumulative module-graph weight held once per
+        # in-band shard, it is not a leak (post-GC retained heap plateaus), the
+        # cap is not the consumer (quartering it moves peak rss 4%), and forcing
+        # GC costs 79% wall clock for 19% peak. A smaller share per shard is
+        # therefore the only lever that works, which makes this leg the right
+        # answer rather than the third guess.
+        shard: [1, 2, 3, 4, 5, 6, 7]
+        total: [7]
 
     env:
       DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
@@ -680,8 +689,8 @@ jobs:
       # database is safe from CONCURRENT interference — two suites writing the
       # same row at the same instant. It is NOT safe from ORDERING dependence: a
       # suite that reads a row a sibling created, or deletes one a sibling still
-      # needs, is decided by which sibling ran first. `--shard=K/4` hashes file
-      # paths, so adding any test file re-partitions all four shards and changes
+      # needs, is decided by which sibling ran first. `--shard=K/N` hashes file
+      # paths, so adding any test file re-partitions every shard and changes
       # that ordering — which is how a PR touching none of this reddens suites it
       # has never heard of (#3336, measured on #3332).
       #
@@ -1055,7 +1064,7 @@ jobs:
       # make the gate stricter-looking while measuring less.
       # Semantics are pinned by tests/unit/scripts/check-merged-coverage.test.ts.
       - name: "Gate: test coverage thresholds"
-        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 8
+        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 9
 
       # Only kept for post-mortem on a RED run.
       - name: Upload merged coverage inputs
@@ -2390,6 +2399,13 @@ jobs:
             -e RUN_ID=ci-${{ github.run_id }}-${{ github.run_attempt }} \
             tests/load/mutations.js
 
+      # k6 passes a threshold that no sample matched. Until #4307 the
+      # `checks{check:…}` thresholds above matched nothing, because k6
+      # writes its own `check` tag over a custom one, and passed every run.
+      # This fails the job when a thresholded metric is empty.
+      - name: "Gate: every k6 threshold measured something"
+        run: node scripts/k6-summary-gate.mjs tests/load/results/mutations-summary.json
+
       - name: Stop app
         if: always()
         run: |
@@ -2587,7 +2603,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.39.0
+        uses: github/codeql-action/init@v4.39.1
         with:
           languages: ${{ matrix.language }}
           # `.github/codeql/codeql-config.yml` pins the language list,
@@ -2602,10 +2618,10 @@ jobs:
       # CodeQL auto-builds JavaScript/TypeScript — no manual build needed.
       # The autobuild step handles source extraction.
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4.39.0
+        uses: github/codeql-action/autobuild@v4.39.1
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.39.0
+        uses: github/codeql-action/analyze@v4.39.1
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -2909,7 +2925,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         if: ${{ always() && vars.CODE_SCANNING_ENABLED == 'true' }}
-        uses: github/codeql-action/upload-sarif@v4.39.0
+        uses: github/codeql-action/upload-sarif@v4.39.1
         with:
           sarif_file: "trivy-results.sarif"
           category: "trivy-container-scan"

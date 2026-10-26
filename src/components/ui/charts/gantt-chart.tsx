@@ -362,7 +362,11 @@ function GanttChartInner({
                             onBlur={() => setHoveredKey(null)}
                             tabIndex={0}
                             role="img"
-                            aria-label={`${r.label}: ${r.start.toISOString().slice(0, 10)} → ${r.end.toISOString().slice(0, 10)}`}
+                            aria-label={t('rangeAria', {
+                                label: r.label,
+                                start: r.start.toISOString().slice(0, 10),
+                                end: r.end.toISOString().slice(0, 10),
+                            })}
                         />
                     );
                 })}

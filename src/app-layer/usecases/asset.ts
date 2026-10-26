@@ -4,7 +4,8 @@ import { TaskRepository } from '../repositories/TaskRepository';
 import type { TaskLinkEntityType, AssetType, AssetStatus, Prisma } from '@prisma/client';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
+import { ASSET_NAME_TAKEN } from '@/lib/asset-name-taken';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -257,6 +258,21 @@ async function assertActiveOwner(db: PrismaTx, tenantId: string, ownerUserId: st
     if (!member) throw badRequest('Owner must be an active member of this tenant');
 }
 
+/**
+ * Refuse a name another live asset already holds (#4324). The partial unique
+ * index refuses it anyway, but as Prisma's P2002 — answered with the generic
+ * "A resource with that unique constraint already exists", which does not say
+ * the name is the problem. The reason lets the form say so in the user's
+ * language.
+ */
+async function assertAssetNameFree(db: PrismaTx, ctx: RequestContext, name: string) {
+    if (await AssetRepository.findLiveByName(db, ctx, name)) {
+        throw new ConflictError('Another asset already has this name. Choose a different name.', {
+            reason: ASSET_NAME_TAKEN,
+        });
+    }
+}
+
 export async function createAsset(ctx: RequestContext, data: CreateAssetInput) {
     assertCanWrite(ctx);
 
@@ -270,6 +286,7 @@ export async function createAsset(ctx: RequestContext, data: CreateAssetInput) {
 
     return runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
+        await assertAssetNameFree(db, ctx, data.name);
         const asset = await AssetRepository.create(db, ctx, {
             name: data.name,
             type: data.type as AssetType,
@@ -791,12 +808,16 @@ export async function purgeAsset(ctx: RequestContext, id: string) {
     return purgeEntity(ctx, 'Asset', id);
 }
 
-export async function listAssetsWithDeleted(ctx: RequestContext, filters?: AssetFilters) {
+export async function listAssetsWithDeleted(
+    ctx: RequestContext,
+    filters?: AssetFilters,
+    options: { take?: number } = {},
+) {
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
         // ONLY soft-deleted rows (the repository adds `deletedAt: { not: null }`),
         // honouring the same type/status/criticality/q filters as the live list.
-        const rows = await AssetRepository.listDeleted(db, ctx, filters);
+        const rows = await AssetRepository.listDeleted(db, ctx, filters, options);
         // Same rollups as listAssets so the deleted-assets view renders with the
         // identical column set (task counts + open-vuln signal).
         return enrichAssetRows(db, ctx, rows);

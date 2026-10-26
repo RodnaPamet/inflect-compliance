@@ -70,6 +70,9 @@ jest.mock('@/app-layer/repositories/AssetRepository', () => ({
         listDeleted: jest.fn(),
         listPaginated: jest.fn(),
         getById: jest.fn(),
+        // createAsset asks first whether a live asset holds the name; the
+        // default (undefined) is "nobody does".
+        findLiveByName: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
@@ -230,6 +233,33 @@ describe('createAsset', () => {
         await createAsset(editorCtx, { name: 'X', type: 'SYSTEM', ownerUserId: '' });
         const createArgs = (AssetRepository.create as jest.Mock).mock.calls[0][2];
         expect(createArgs.ownerUserId).toBeNull();
+    });
+
+    // #4324 — the partial unique index refused a taken name as a bare P2002,
+    // answered with "A resource with that unique constraint already exists".
+    it('refuses a name a live asset holds with a named 409, before writing', async () => {
+        (AssetRepository.findLiveByName as jest.Mock).mockResolvedValueOnce({ id: 'a-holder' });
+
+        const err = await createAsset(editorCtx, { name: 'Server', type: 'SYSTEM' }).catch((e) => e);
+
+        expect(err).toMatchObject({
+            status: 409,
+            code: 'CONFLICT',
+            details: { reason: 'ASSET_NAME_TAKEN' },
+        });
+        expect(AssetRepository.findLiveByName).toHaveBeenCalledWith(mockDb, editorCtx, 'Server');
+        expect(AssetRepository.create).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('creates when no live asset holds the name (a deleted one does not count)', async () => {
+        (AssetRepository.findLiveByName as jest.Mock).mockResolvedValueOnce(null);
+        (AssetRepository.create as jest.Mock).mockResolvedValue({ id: 'a-4', name: 'Server' });
+
+        await expect(createAsset(editorCtx, { name: 'Server', type: 'SYSTEM' })).resolves.toEqual({
+            id: 'a-4',
+            name: 'Server',
+        });
     });
 });
 
@@ -448,7 +478,7 @@ describe('listAssetsWithDeleted', () => {
         await listAssetsWithDeleted(adminCtx, { q: 'srv' });
         // The deleted-only scoping + withDeleted wrapper now live in the
         // repository; the usecase must delegate there and forward the filters.
-        expect(AssetRepository.listDeleted).toHaveBeenCalledWith(mockDb, adminCtx, { q: 'srv' });
+        expect(AssetRepository.listDeleted).toHaveBeenCalledWith(mockDb, adminCtx, { q: 'srv' }, {});
     });
 
     it('rejects AUDITOR', async () => {

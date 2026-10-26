@@ -1,9 +1,10 @@
 'use client';
 import { useCallback, useState, useMemo, useEffect } from 'react';
-import { useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
@@ -54,6 +55,8 @@ import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
+import { apiErrorMessage } from '@/lib/api-error';
+import { isAssetNameTaken } from '@/lib/asset-name-taken';
 
 
 /** CVSS severity → StatusBadge variant (for the per-asset open-vuln badge). */
@@ -101,6 +104,15 @@ interface AssetsClientProps {
     initialFilters: Record<string, string>;
     tenantSlug: string;
     permissions: { canWrite: boolean; canAdmin?: boolean };
+    /**
+     * The granular keys the asset routes' `requirePermission` names. A
+     * custom role's `permissions` tier comes from its BASE role, while the
+     * routes check these — so every write affordance gates on both.
+     */
+    appPermissions: {
+        assets: { view: boolean; create: boolean; edit: boolean };
+        admin: { manage: boolean };
+    };
     translations: {
         title: string;
         listDescription: string;
@@ -138,11 +150,21 @@ export function AssetsClient(props: AssetsClientProps) {
     );
 }
 
-function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permissions, translations: t }: AssetsClientProps) {
+function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permissions, appPermissions, translations: t }: AssetsClientProps) {
     // `t` above is the server-threaded resolved-strings object (existing
     // pattern). `tx` is the live next-intl translator for the strings this
     // island localizes directly under the `assets` namespace.
     const tx = useTranslations('assets');
+    // Each gate is what the server checks: the coarse tier the usecase
+    // asserts AND the granular key the route's `requirePermission` names.
+    //   create  — POST /assets, /assets/bulk/import: assets.create + assertCanWrite
+    //   edit    — /assets/bulk/{status,assign}: assets.edit + assertCanWrite
+    //   view deleted — GET ?includeDeleted: assets.view + assertCanAdmin
+    //   manage lifecycle — bulk delete, restore, purge: admin.manage + assertCanAdmin
+    const canCreate = permissions.canWrite && appPermissions.assets.create;
+    const canEdit = permissions.canWrite && appPermissions.assets.edit;
+    const canViewDeleted = !!permissions.canAdmin && appPermissions.assets.view;
+    const canManageLifecycle = !!permissions.canAdmin && appPermissions.admin.manage;
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     // Modal-form follow-up — create-asset modal mounted off the list,
@@ -179,7 +201,13 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     const router = useRouter();
     const guardedPush = useGuardedPush();
     const prefetchData = usePrefetchTenant();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/assets`);
+    // `/assets/new` redirects here with `?create=1`. Open the dialog only for
+    // a role that may create — the Asset button is gated the same way, and a
+    // Reader following an old link otherwise filled in the whole form before
+    // learning the server refuses it. The param is stripped either way.
+    useCreateQueryParam(() => {
+        if (canCreate) setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/assets`);
 
     // Stable across renders — a bare arrow here rebuilds the table model
     // mid-double-click and kills row navigation (#1678).
@@ -228,16 +256,30 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // The route returns `{ rows, truncated }` (the shape every sibling list
     // uses). SSR seeds `truncated: false` because the server cap is well
     // below the backfill cap.
+    // The SSR initial payload never contains soft-deleted rows, so the
+    // deleted view must always fetch fresh (no fallback).
+    const ssrFallbackApplies = filtersMatchInitial && !showDeleted;
     const assetsQuery = useTenantSWR<AssetListResponse>(assetsKey, {
-        // The SSR initial payload never contains soft-deleted rows, so the
-        // deleted view must always fetch fresh (no fallback).
-        fallbackData:
-            filtersMatchInitial && !showDeleted
-                ? { rows: initialAssets, truncated: false }
-                : undefined,
+        fallbackData: ssrFallbackApplies
+            ? { rows: initialAssets, truncated: false }
+            : undefined,
     });
     const assets = assetsQuery.data?.rows ?? [];
     const truncated = assetsQuery.data?.truncated ?? false;
+    // A failed load must read as a failure, not as "No assets match your
+    // filters" / "No deleted assets" — nor as the previous query's rows.
+    // `useTenantSWR` keeps the PREVIOUS key's data on screen
+    // (`keepPreviousData`), so after a failed filter change or a failed
+    // Deleted-view load `data` is another query's answer and `!data` alone
+    // never fires. The list is unreachable when the CURRENT key has no rows
+    // of its own: nothing cached for it and no SSR fallback. A failed
+    // background refresh of a key that did load keeps its readable table.
+    const { cache: swrCache } = useSWRConfig();
+    const buildApiUrl = useTenantApiUrl();
+    const currentKeyHasRows =
+        ssrFallbackApplies || swrCache.get(buildApiUrl(assetsKey))?.data !== undefined;
+    const listError =
+        assetsQuery.error && !currentKeyHasRows ? tx('list.loadError') : undefined;
 
     // ─── Sortable headers (per-column asc/desc, parity with Controls) ───
     // Clicking a sortable header re-orders the in-memory rows; sort runs
@@ -255,17 +297,25 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     );
     // Sort accessors return the value each column DISPLAYS, so sorting groups
     // same-displayed-value rows contiguously and can never drift from the
-    // rendered cell. The drift-prone columns are `type` (cell strips
-    // underscores) and `tasks` (cell renders the `done/total` string while the
+    // rendered cell. The drift-prone columns are `type` (cell renders the
+    // translated label) and `tasks` (cell renders the `done/total` string while the
     // old comparator sorted by total only). `criticality` + `tasks` point
     // their column `accessorFn` at the SAME function below.
+    // The Type cell's label — the same `assets.assetTypes.*` strings the
+    // create form's options read. The cell used to print the enum with its
+    // underscores replaced ("DATA STORE"), while the Type filter offered
+    // "Data Store".
+    const typeLabel = useCallback(
+        (type: string | null | undefined) =>
+            type ? tx(`assetTypes.${type}` as Parameters<typeof tx>[0]) : '',
+        [tx],
+    );
     const sortAccessors = useMemo<SortAccessors<AssetListRow>>(
         () => ({
             code: (a) => a.key || '',
             name: (a) => a.name || '',
-            // Cell renders `String(type).replace(/_/g, ' ')` — sort on the same
-            // de-underscored label, not the raw enum.
-            type: (a) => (a.type ?? '').replace(/_/g, ' '),
+            // Sort on the label the cell renders, not the raw enum.
+            type: (a) => typeLabel(a.type),
             // Sort on the STORED band's rank, matching what the cell shows
             // and what the server filter selected on. Re-deriving here from
             // the C/I/A triad could order rows by a value the filter never
@@ -277,7 +327,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             // Cell renders the `done/total` fraction — sort on that, not total.
             tasks: (a) => `${a.taskDone ?? 0}/${a.taskTotal ?? 0}`,
         }),
-        [],
+        [typeLabel],
     );
     const sortedAssets = useMemo(
         () => sortRowsByDisplay(assets, sortAccessors, sortBy, sortOrder),
@@ -366,55 +416,67 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
             setBulkApplying(false);
         }
     };
+    // Each verb is offered only to a role its route admits: status + assign
+    // are `assets.edit`, delete is `admin.manage` (bulkDeleteAsset asserts
+    // admin). Delete used to be offered to every writer, so an EDITOR saw the
+    // rows vanish under an Undo toast and come back five seconds later with
+    // "Bulk action failed".
     const assetBulkActions: BulkActionDef[] = useMemo(
         () => [
-            {
-                value: 'status',
-                label: tx('bulk.setStatus'),
-                canApply: (v) => v !== '',
-                renderInput: ({ value, setValue }) => {
-                    const statusOpts = [
-                        { value: 'ACTIVE', label: tx('statusOption.ACTIVE') },
-                        { value: 'RETIRED', label: tx('statusOption.RETIRED') },
-                    ];
-                    return (
-                        <Combobox
-                            hideSearch
-                            id="bulk-value-input"
-                            selected={statusOpts.find((o) => o.value === value) ?? null}
-                            setSelected={(opt) => setValue(opt?.value ?? '')}
-                            options={statusOpts}
-                            placeholder={tx('bulk.selectStatus')}
-                            matchTriggerWidth
-                            buttonProps={{ className: 'text-sm' }}
-                        />
-                    );
-                },
-            },
-            {
-                value: 'assign',
-                label: tx('bulk.assignOwner'),
-                renderInput: ({ value, setValue, setLabel }) => (
-                    <UserCombobox
-                        tenantSlug={tenantSlug}
-                        selectedId={value || null}
-                        onChange={(id, m) => {
-                            setValue(id ?? '');
-                            setLabel(ownerDisplayName(m?.name, m?.email) ?? '');
-                        }}
-                        forceDropdown
-                        matchTriggerWidth
-                        placeholder={tx('bulk.ownerPlaceholder')}
-                        className="w-full sm:w-44"
-                        id="bulk-value-input"
-                    />
-                ),
-            },
+            ...(canEdit
+                ? ([
+                    {
+                        value: 'status',
+                        label: tx('bulk.setStatus'),
+                        canApply: (v) => v !== '',
+                        renderInput: ({ value, setValue }) => {
+                            const statusOpts = [
+                                { value: 'ACTIVE', label: tx('statusOption.ACTIVE') },
+                                { value: 'RETIRED', label: tx('statusOption.RETIRED') },
+                            ];
+                            return (
+                                <Combobox
+                                    hideSearch
+                                    id="bulk-value-input"
+                                    selected={statusOpts.find((o) => o.value === value) ?? null}
+                                    setSelected={(opt) => setValue(opt?.value ?? '')}
+                                    options={statusOpts}
+                                    placeholder={tx('bulk.selectStatus')}
+                                    matchTriggerWidth
+                                    buttonProps={{ className: 'text-sm' }}
+                                />
+                            );
+                        },
+                    },
+                    {
+                        value: 'assign',
+                        label: tx('bulk.assignOwner'),
+                        renderInput: ({ value, setValue, setLabel }) => (
+                            <UserCombobox
+                                tenantSlug={tenantSlug}
+                                selectedId={value || null}
+                                onChange={(id, m) => {
+                                    setValue(id ?? '');
+                                    setLabel(ownerDisplayName(m?.name, m?.email) ?? '');
+                                }}
+                                forceDropdown
+                                matchTriggerWidth
+                                placeholder={tx('bulk.ownerPlaceholder')}
+                                className="w-full sm:w-44"
+                                id="bulk-value-input"
+                            />
+                        ),
+                    },
+                  ] satisfies BulkActionDef[])
+                : []),
             // No `confirm` — bulk delete is a soft delete surfaced through the
             // Epic 67 undo-toast (handleBulkApply), not a blocking confirm.
-            { value: 'delete', label: tx('bulk.delete') },
+            // Owners and Admins only: the route requires `admin.manage` and the
+            // usecase `assertCanAdmin`, so an Editor offered it watched the
+            // rows vanish and come back when the undo window ran out (#4276).
+            ...(canManageLifecycle ? [{ value: 'delete', label: tx('bulk.delete') }] : []),
         ],
-        [tenantSlug, tx],
+        [tenantSlug, tx, canEdit, canManageLifecycle],
     );
 
     // Item 32 — the asset row backing the open quick-look panel.
@@ -444,12 +506,16 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     // in the current (filtered, sorted) list while the panel stays open,
     // so a reviewer can walk the register without reaching for the mouse.
     // Only active while the panel is open; clamped at the ends.
+    //
+    // Walks `sortedAssets` — the order the table renders — not the raw
+    // fetch order in `assets`, which after a column sort put the next arrow
+    // press on a row that was not adjacent on screen.
     const moveSelection = (delta: number) => {
-        if (selectedAssetId == null || assets.length === 0) return;
-        const idx = assets.findIndex((a: { id: string }) => a.id === selectedAssetId);
+        if (selectedAssetId == null || sortedAssets.length === 0) return;
+        const idx = sortedAssets.findIndex((a: { id: string }) => a.id === selectedAssetId);
         if (idx === -1) return;
-        const next = Math.min(assets.length - 1, Math.max(0, idx + delta));
-        setSelectedAssetId(assets[next].id);
+        const next = Math.min(sortedAssets.length - 1, Math.max(0, idx + delta));
+        setSelectedAssetId(sortedAssets[next].id);
     };
     useKeyboardShortcut('ArrowDown', () => moveSelection(1), {
         enabled: selectedAssetId != null,
@@ -631,13 +697,24 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     });
 
     // ─── Deleted-asset lifecycle actions ───
-    const handleRestore = async (id: string) => {
+    const handleRestore = async (id: string, name: string) => {
         try {
             const res = await fetch(apiUrl(`/assets/${id}/restore`), {
                 method: 'POST',
                 credentials: 'same-origin',
             });
-            if (!res.ok) throw new Error('Restore failed');
+            if (!res.ok) {
+                // The server's reason, not a "try again" no retry can
+                // satisfy — a name reused since the delete refuses every
+                // time (#4324).
+                const body: unknown = await res.json().catch(() => null);
+                toast.error(
+                    isAssetNameTaken(body)
+                        ? tx('deleted.restoreNameTaken', { name })
+                        : apiErrorMessage(body, tx('deleted.restoreFailed')),
+                );
+                return;
+            }
             await assetsQuery.mutate();
             toast.success(tx('deleted.restoredToast'));
         } catch {
@@ -741,7 +818,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         {
             accessorKey: 'type',
             header: t.type,
-            cell: ({ getValue }) => <StatusBadge variant="info" size="sm">{String(getValue()).replace(/_/g, ' ')}</StatusBadge>,
+            cell: ({ row }) => <StatusBadge variant="info" size="sm">{typeLabel(row.original.type)}</StatusBadge>,
         },
         {
             // Shows the STORED `Asset.criticality`, which is derived on write
@@ -798,7 +875,12 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
         },
         {
             // Per-asset OPEN-vulnerability signal — count tinted by the top
-            // severity, deep-linking to the filtered global Vulnerabilities view.
+            // severity. It counts open CVE matches AND open scanner findings,
+            // so it links to the asset's own Vulnerabilities tab, which lists
+            // both (open only, by default). The global Vulnerabilities page it
+            // used to open lists CVE matches alone, of every status, so an
+            // asset whose open items were scanner findings showed a number the
+            // linked page did not contain.
             id: 'vulnerabilities',
             header: tx('colHeaders.vulnerabilities'),
             accessorFn: (a) => a.openVulnCount ?? 0,
@@ -807,7 +889,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 if (!a.openVulnCount) return <span className="text-content-muted text-xs">—</span>;
                 return (
                     <Link
-                        href={tenantHref(`/vulnerabilities?assetId=${a.id}`)}
+                        href={tenantHref(`/assets/${a.id}?tab=vulnerabilities`)}
                         onClick={(e) => e.stopPropagation()}
                         aria-label={tx('openVulnsAria', { count: a.openVulnCount })}
                         className="inline-flex"
@@ -859,26 +941,32 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                                       <StatusBadge variant="neutral" size="sm">
                                           {tx('deleted.badge')}
                                       </StatusBadge>
-                                      <Button
-                                          type="button"
-                                          variant="secondary"
-                                          size="xs"
-                                          onClick={(e) => {
-                                              e.stopPropagation();
-                                              void handleRestore(a.id);
-                                          }}
-                                          text={tx('deleted.restore')}
-                                      />
-                                      <Button
-                                          type="button"
-                                          variant="destructive"
-                                          size="xs"
-                                          onClick={(e) => {
-                                              e.stopPropagation();
-                                              setPurgeTarget(a);
-                                          }}
-                                          text={tx('deleted.purge')}
-                                      />
+                                      {/* Restore + Purge are `admin.manage` routes;
+                                          the view itself only needs to read. */}
+                                      {canManageLifecycle && (
+                                          <>
+                                              <Button
+                                                  type="button"
+                                                  variant="secondary"
+                                                  size="xs"
+                                                  onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      void handleRestore(a.id, a.name);
+                                                  }}
+                                                  text={tx('deleted.restore')}
+                                              />
+                                              <Button
+                                                  type="button"
+                                                  variant="destructive"
+                                                  size="xs"
+                                                  onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setPurgeTarget(a);
+                                                  }}
+                                                  text={tx('deleted.purge')}
+                                              />
+                                          </>
+                                      )}
                                   </div>
                                   {/* Who / when — the lifecycle audit trail for the row. */}
                                   <span className="text-xs text-content-subtle">
@@ -893,7 +981,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                   },
               ]
             : []),
-    ]), [t, tx, sortAccessors, showDeleted]);
+    ]), [t, tx, sortAccessors, typeLabel, showDeleted, canManageLifecycle]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call. Calling it inline in JSX would hand DataTable a fresh
@@ -1008,7 +1096,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                         // its empty-state CTA — the primary create button was
                         // simply missed, so a READER saw a button that always
                         // 403'd on submit.
-                        permissions.canWrite ? (
+                        canCreate ? (
                             <Button variant="primary" icon={<Plus className="-ml-0.5 -mr-2.5" />} onClick={() => setIsCreateOpen(true)} id="new-asset-btn">{t.addAsset}</Button>
                         ) : undefined
                     }
@@ -1036,16 +1124,17 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                                                 icon: <AppIcon name="bug" size={16} />,
                                                 href: tenantHref('/vulnerabilities'),
                                             },
-                                            permissions.canWrite && {
+                                            canCreate && {
                                                 id: 'asset-import-btn',
                                                 label: tx('importAssets'),
                                                 icon: <AppIcon name="upload" size={16} />,
                                                 href: tenantHref('/assets/import'),
                                             },
                                             // Deleted-assets view — admin only
-                                            // (only admins can Restore / Purge
-                                            // server-side).
-                                            permissions.canAdmin && {
+                                            // (the list usecase asserts admin;
+                                            // Restore / Purge additionally need
+                                            // admin.manage, gated per row).
+                                            canViewDeleted && {
                                                 id: 'assets-show-deleted-toggle',
                                                 label: tx('deleted.toggle'),
                                                 icon: <Trash className="size-4" />,
@@ -1097,9 +1186,10 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                         setSelected(new Set(rows.map((r) => r.original.id)))
                     }
                     // Selection itself stays available to readers (it drives
-                    // the quick-look panel); only the MUTATING bar is gated.
+                    // the quick-look panel); only the MUTATING bar is gated —
+                    // shown when the role holds at least one bulk verb.
                     selectionControls={
-                        permissions.canWrite
+                        assetBulkActions.length > 0
                             ? () => (
                                   <BulkActionBar
                                       actions={assetBulkActions}
@@ -1113,6 +1203,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                     }
                     onRowClick={handleAssetRowClick}
                     onRowPrefetch={handleAssetRowPrefetch}
+                    error={listError}
                     emptyState={
                         showDeleted && !hasActive ? (
                             // Deleted view with nothing soft-deleted — a distinct
@@ -1142,7 +1233,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                                 title={t.noAssets}
                                 description={tx('empty.recordsHint')}
                                 primaryAction={
-                                    permissions.canWrite
+                                    canCreate
                                         ? {
                                               label: tx('empty.addAssetAction'),
                                               onClick: () => setIsCreateOpen(true),

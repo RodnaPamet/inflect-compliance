@@ -77,22 +77,31 @@ monitors:
       # a monitor becomes noise and then gets ignored.
       body_contains: '"status":"ready"'
       ssl_valid: true
-    # GCP's global setting probes from six regions. Recorded because a
-    # single-region check cannot tell an outage from a network partition, and
-    # because the alert threshold below is expressed in regions.
+    # GCP's global setting probed from six regions; since 2026-09-24 the check
+    # probes five. Recorded because a single-region check cannot tell an
+    # outage from a network partition, and because the alert threshold below
+    # is expressed in regions.
+    #
+    # sa-brazil-sao_paulo was removed on 2026-09-24. It failed every check
+    # (#2752, closed as an accepted limitation), and with one region always
+    # false, COUNT_FALSE > 1 fired on ANY second region blinking. This list was
+    # not updated then; it is reconciled with the policy's own 2026-09-24 note
+    # (`policies/readyz-uptime.json`), not re-read from GCP.
     locations_observed:
       - apac-singapore
       - eur-belgium
-      - sa-brazil-sao_paulo
       - usa-iowa
       - usa-oregon
       - usa-virginia
     on_failure:
       alert_policy: 'inflect production is not ready (#2745)'
       alert_policy_id: '7157888297974373220'
-      # More than one region failing, sustained 60s. One region failing is a
-      # network partition to that region; two is the service.
-      condition: COUNT_FALSE > 1 over a 300s window, for 60s
+      # More than one region failing, sustained 300s. One region failing is a
+      # network partition to that region; two is the service. 300s, not 60s,
+      # since 2026-09-24: a deploy takes readyz down for 1-3 minutes on the one
+      # VM, so at 60s every deploy paged. Must equal the policy file's
+      # `alignmentPeriod` and `duration` (`tests/guards/oi-3-alerting.test.ts`).
+      condition: COUNT_FALSE > 1 over a 300s window, for 300s
       auto_close_seconds: 1800
 
 # ─── NOTIFICATION ──────────────────────────────────────────────────────
@@ -123,7 +132,8 @@ monitors:
 # ─── WHAT THIS STILL IS NOT ─────────────────────────────────────────────
 #
 # A rota, or a pager. One address, one person, and email. So detection latency
-# is bounded (~2 minutes) and time from the alert landing in an inbox to a human
+# is bounded (about 6 minutes since the 2026-09-24 change to a 300s duration)
+# and time from the alert landing in an inbox to a human
 # acting on it is NOT — nobody is on call, and an outage at 03:00 waits for
 # someone to wake up and read email. Do not write an acknowledge or response
 # time anywhere on the strength of this channel.

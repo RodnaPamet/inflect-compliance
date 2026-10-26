@@ -18,9 +18,15 @@
  * Visual: subtle warning surface with an icon, the cap value, and a
  * one-line nudge to refine filters. Token-driven so the dark/light
  * theme switch lands automatically.
+ *
+ * Copy comes from `common.truncationBanner` (it was hard-coded English on
+ * every list page). The translator is read only in the TRUNCATED branch, so
+ * the usual not-truncated render needs no intl provider — a page test that
+ * never trips the cap does not have to supply one.
  */
 
 import { AlertTriangle } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { LIST_BACKFILL_CAP } from '@/lib/list-backfill-cap';
 
 interface Props {
@@ -31,6 +37,14 @@ interface Props {
 
 export function TruncationBanner({ truncated, cap = LIST_BACKFILL_CAP }: Props) {
     if (!truncated) return null;
+    return <TruncationBannerNotice cap={cap} />;
+}
+
+function TruncationBannerNotice({ cap }: { cap: number }) {
+    // The message formats the cap for the viewer's locale (`{cap, number}`:
+    // "5,000" / "5000"), so the banner needs no `useFormatter` — page tests
+    // that mock next-intl with `useTranslations` alone still render it.
+    const t = useTranslations('common.truncationBanner');
     return (
         <div
             role="status"
@@ -41,11 +55,9 @@ export function TruncationBanner({ truncated, cap = LIST_BACKFILL_CAP }: Props) 
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-content-warning" aria-hidden="true" />
             <div>
                 <span className="font-medium">
-                    Showing the first {cap.toLocaleString()} results.
+                    {t('showingFirst', { cap })}
                 </span>{' '}
-                <span className="text-content-muted">
-                    Refine your filters to narrow the view and see the rest.
-                </span>
+                <span className="text-content-muted">{t('refine')}</span>
             </div>
         </div>
     );

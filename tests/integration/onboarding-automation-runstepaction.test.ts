@@ -129,7 +129,7 @@ describeFn('onboarding-automation — runStepAction & storeActionResult (integra
         await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: TENANT_ID } }).catch(() => {});
         await deleteAuditRowsForTenants(globalPrisma, [TENANT_ID]);
         await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
-        await globalPrisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
+        await globalPrisma.user.deleteMany({ where: { id: userId } });
         await globalPrisma.$disconnect().catch(() => {});
     });
 

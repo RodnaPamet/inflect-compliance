@@ -35,6 +35,7 @@ jest.mock('@/app-layer/repositories/PolicyRepository', () => ({
         getById: jest.fn(),
         setCurrentVersion: jest.fn(),
         updateStatus: jest.fn(),
+        updateMetadata: jest.fn(),
     },
 }));
 
@@ -53,7 +54,8 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
     logEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { createPolicy, createPolicyVersion } from '@/app-layer/usecases/policy';
+import { createPolicy, createPolicyVersion, markPolicyReviewed } from '@/app-layer/usecases/policy';
+import { ConflictError } from '@/lib/errors/types';
 import { PolicyRepository } from '@/app-layer/repositories/PolicyRepository';
 import { PolicyVersionRepository } from '@/app-layer/repositories/PolicyVersionRepository';
 import { sanitizePolicyContent } from '@/lib/security/sanitize';
@@ -196,5 +198,28 @@ describe('createPolicyVersion — sanitisation + lifecycle', () => {
             contentText: 'body',
         });
         expect(mockUpdateStatus).not.toHaveBeenCalled();
+    });
+});
+
+describe('markPolicyReviewed — an archived policy is not reviewed (#4279)', () => {
+    const mockUpdateMetadata = PolicyRepository.updateMetadata as jest.MockedFunction<typeof PolicyRepository.updateMetadata>;
+
+    it('refuses an ARCHIVED policy with a 409 and moves no review date', async () => {
+        mockGetById.mockResolvedValue({ id: 'p1', status: 'ARCHIVED', reviewFrequencyDays: 365, nextReviewAt: null } as never);
+        const attempt = markPolicyReviewed(makeRequestContext('EDITOR'), 'p1');
+        await expect(attempt).rejects.toBeInstanceOf(ConflictError);
+        await expect(attempt).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/archived/i) });
+        expect(mockUpdateMetadata).not.toHaveBeenCalled();
+    });
+
+    it('still marks a live policy reviewed', async () => {
+        mockGetById.mockResolvedValue({ id: 'p1', status: 'PUBLISHED', reviewFrequencyDays: 365, nextReviewAt: null } as never);
+        await markPolicyReviewed(makeRequestContext('EDITOR'), 'p1');
+        expect(mockUpdateMetadata).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            'p1',
+            expect.objectContaining({ lastReviewedAt: expect.any(Date) }),
+        );
     });
 });

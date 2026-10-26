@@ -78,9 +78,9 @@ export const options = {
 
         // Check rates — one failed check shouldn't tank the run, but
         // sustained failure (>1%) means something's broken.
-        'checks{check:csrf_ok}': ['rate>0.99'],
-        'checks{check:login_ok}': ['rate>0.99'],
-        'checks{check:session_ok}': ['rate>0.99'],
+        'checks{probe:csrf}': ['rate>0.99'],
+        'checks{probe:login}': ['rate>0.99'],
+        'checks{probe:session}': ['rate>0.99'],
     },
     summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
     // Cookie jar isolation: each iteration creates its own jar inside
@@ -115,7 +115,7 @@ export default function authIteration() {
                 }
             },
         },
-        { check: 'csrf_ok' },
+        { probe: 'csrf' },
     );
     if (!csrfOk) {
         authFailureCount.add(1);
@@ -149,7 +149,7 @@ export default function authIteration() {
                 }
             },
         },
-        { check: 'login_ok' },
+        { probe: 'login' },
     );
     if (!loginOk) {
         authFailureCount.add(1);
@@ -175,7 +175,7 @@ export default function authIteration() {
                 }
             },
         },
-        { check: 'session_ok' },
+        { probe: 'session' },
     );
 
     if (sessionOk) {

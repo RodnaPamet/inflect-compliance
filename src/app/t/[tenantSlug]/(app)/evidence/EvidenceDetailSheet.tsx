@@ -31,7 +31,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { CopyText } from '@/components/ui/copy-text';
 import { EntityPicker } from '@/components/ui/entity-picker';
-import { useToastWithUndo } from '@/components/ui/hooks';
+import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import {
     FileTypeIcon,
     resolveFileTypeIcon,
@@ -45,6 +45,8 @@ import { normaliseHref } from '@/lib/security/safe-url';
 import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { ownerLabel } from '@/lib/evidence-owner-label';
 import { formatBytes } from '@/lib/evidence-upload-limits';
+import { mayDownloadEvidenceFile } from '@/lib/evidence-download-access';
+import { apiErrorMessage } from '@/lib/api-error';
 
 // formatBytes now comes from @/lib/evidence-upload-limits. Its comment used
 // to say it mirrored FileDropzone's local helper — which it did, and a third
@@ -60,8 +62,23 @@ export interface EvidenceDetailSheetProps {
     evidenceId: string | null;
     /** Tenant slug — needed for the control link picker. */
     tenantSlug: string;
-    /** Allowed write surfaces — gates the edit + review buttons. */
+    /**
+     * The coarse write tier — the tier that may download a file linked to no
+     * control.
+     */
     canWrite: boolean;
+    /**
+     * The link picker and the unlink cross. Both routes require
+     * `controls.edit`, which a custom role on a write-tier base can lack, so
+     * the parent passes the coarse tier AND that grant. Defaults to `canWrite`.
+     */
+    canEditControlLinks?: boolean;
+    /**
+     * Edit and Submit — `updateEvidence` and the SUBMITTED review assert the
+     * custom-role `evidence.edit` grant, which a custom role on a write-tier
+     * base can lack. Defaults to `canWrite`.
+     */
+    canEdit?: boolean;
     canAdmin: boolean;
     /** Open the edit modal for the loaded evidence. */
     onEdit: (evidence: EditEvidenceInitial) => void;
@@ -114,6 +131,8 @@ interface EvidenceDetailPayload {
     nextReviewDate: string | null;
     retentionUntil: string | null;
     expiredAt: string | null;
+    /** Archived evidence's file is refused by the download route. */
+    isArchived?: boolean;
     reviewCycle: string | null;
     owner: string | null;
     ownerUserId: string | null;
@@ -170,11 +189,14 @@ export function EvidenceDetailSheet({
     evidenceId,
     tenantSlug,
     canWrite,
+    canEditControlLinks = canWrite,
+    canEdit = canWrite,
     canAdmin,
     onEdit,
     onReview,
 }: EvidenceDetailSheetProps) {
     const t = useTranslations('evidence');
+    const toast = useToast();
     const tenantHref = useTenantHref();
     const tenantApiUrl = useTenantApiUrl();
     const triggerUndoToast = useToastWithUndo();
@@ -191,6 +213,17 @@ export function EvidenceDetailSheet({
 
     const evidence = detailQuery.data;
     const { mutate: mutateDetail } = detailQuery;
+    // `downloadEvidenceFile`'s record gates. The preview reads the same
+    // route, so it is gated with the download rather than left to 403.
+    const downloadAllowed = evidence
+        ? mayDownloadEvidenceFile(
+              {
+                  isArchived: evidence.isArchived,
+                  controlLinkCount: (evidence.evidenceControlLinks ?? []).length,
+              },
+              { canWrite },
+          )
+        : false;
     // What `content` means for this row — note / url / internal pathKey.
     const contentRole = evidenceContentRole(evidence?.type);
 
@@ -222,14 +255,20 @@ export function EvidenceDetailSheet({
                     ),
                     { method: 'DELETE' },
                 );
-                if (!res.ok) throw new Error(t('detail.unlinkFailed'));
+                if (!res.ok) {
+                    const err = await res.json().catch(() => null);
+                    throw new Error(apiErrorMessage(err, t('detail.unlinkFailed')));
+                }
                 await mutateDetail();
             },
             undoAction: () => {
                 void mutateDetail(previous, { revalidate: false });
             },
-            onError: () => {
+            onError: (err) => {
+                // The control comes back AND the user is told why — restoring
+                // it silently read as the unlink having been undone.
                 void mutateDetail(previous, { revalidate: false });
+                toast.error(err instanceof Error ? err.message : t('detail.unlinkFailed'));
             },
         });
     };
@@ -249,7 +288,10 @@ export function EvidenceDetailSheet({
                 },
             );
             if (!res.ok) {
-                setLinkError(t('detail.linkControlFailed'));
+                // The server's reason (e.g. a control from another tenant);
+                // the generic sentence only when it gave none.
+                const err = await res.json().catch(() => null);
+                setLinkError(apiErrorMessage(err, t('detail.linkControlFailed')));
                 return;
             }
             setLinkControlId('');
@@ -352,16 +394,11 @@ export function EvidenceDetailSheet({
             size="md"
             title={evidence?.title ?? t('detail.sheetTitle')}
         >
-            {detailQuery.isLoading || !evidence ? (
-                <>
-                    <Sheet.Header title={t('detail.loadingTitle')} />
-                    <Sheet.Body>
-                        <div className="flex h-40 items-center justify-center text-sm text-content-muted">
-                            {t('detail.loadingBody')}
-                        </div>
-                    </Sheet.Body>
-                </>
-            ) : detailQuery.error ? (
+            {/* The error branch comes FIRST. A failed first load leaves
+                `evidence` undefined, so a loading-first check (`isLoading ||
+                !evidence`) always won and a `?ev=` link to a deleted record
+                showed "Loading…" for ever. */}
+            {detailQuery.error ? (
                 <>
                     <Sheet.Header title={t('detail.errorTitle')} />
                     <Sheet.Body>
@@ -373,6 +410,15 @@ export function EvidenceDetailSheet({
                             {detailQuery.error instanceof Error
                                 ? detailQuery.error.message
                                 : t('detail.loadFailed')}
+                        </div>
+                    </Sheet.Body>
+                </>
+            ) : detailQuery.isLoading || !evidence ? (
+                <>
+                    <Sheet.Header title={t('detail.loadingTitle')} />
+                    <Sheet.Body>
+                        <div className="flex h-40 items-center justify-center text-sm text-content-muted">
+                            {t('detail.loadingBody')}
                         </div>
                     </Sheet.Body>
                 </>
@@ -396,13 +442,16 @@ export function EvidenceDetailSheet({
                             {/* EP-2 — inline file preview (image / PDF /
                                 icon fallback), reusing the shared file-type
                                 resolver. Uses the existing tenant-scoped
-                                download route as the source URL. */}
+                                download route as the source URL, asked as a
+                                PREVIEW: it loads with no click, so it is
+                                recorded as EVIDENCE_PREVIEWED rather than as
+                                a download (#4277). */}
                             <EvidenceFilePreview
                                 evidence={evidence}
                                 fileUrl={
-                                    evidence.fileRecordId
+                                    evidence.fileRecordId && downloadAllowed
                                         ? tenantApiUrl(
-                                              `/evidence/files/${evidence.fileRecordId}/download`,
+                                              `/evidence/files/${evidence.fileRecordId}/download?purpose=preview`,
                                           )
                                         : null
                                 }
@@ -412,7 +461,19 @@ export function EvidenceDetailSheet({
                             {/* Download affordance — R5-P2 #1: gated on the AV
                                 scan verdict so an infected/pending file shows its
                                 state instead of a link that 404/403s. */}
-                            {evidence.fileRecordId && (
+                            {evidence.fileRecordId && !downloadAllowed && (
+                                // The route would refuse — say why instead of
+                                // offering a download that fails silently.
+                                <p
+                                    className="text-sm text-content-muted"
+                                    id="evidence-sheet-download-refused"
+                                >
+                                    {evidence.isArchived
+                                        ? t('detail.downloadArchived')
+                                        : t('detail.downloadNeedsControl')}
+                                </p>
+                            )}
+                            {evidence.fileRecordId && downloadAllowed && (
                                 isScanServable(evidence.fileRecord?.scanStatus) ? (
                                     <a
                                         href={tenantApiUrl(
@@ -497,7 +558,7 @@ export function EvidenceDetailSheet({
                                                             ? `${prefix}: ${l.control.name}`
                                                             : l.control.name}
                                                     </Link>
-                                                    {canWrite && (
+                                                    {canEditControlLinks && (
                                                         <button
                                                             type="button"
                                                             aria-label={t(
@@ -519,7 +580,7 @@ export function EvidenceDetailSheet({
                                         })}
                                     </ul>
                                 )}
-                                {canWrite && (
+                                {canEditControlLinks && (
                                     <div className="flex items-end gap-tight pt-tight">
                                         <div className="min-w-0 flex-1">
                                             <EntityPicker
@@ -652,6 +713,7 @@ export function EvidenceDetailSheet({
                                     open={open}
                                     t={t}
                                     tenantApiUrl={tenantApiUrl}
+                                    downloadAllowed={downloadAllowed}
                                 />
                             )}
 
@@ -683,7 +745,7 @@ export function EvidenceDetailSheet({
                     </Sheet.Body>
                     <Sheet.Footer>
                         <div className="flex flex-wrap items-center gap-tight">
-                            {canWrite && (
+                            {canEdit && (
                                 <Button
                                     variant="secondary"
                                     size="icon"
@@ -740,7 +802,7 @@ export function EvidenceDetailSheet({
                                     branch is the most-affirmative
                                     action (matches the modal-
                                     action-order rule). */}
-                            {canWrite && evidence.status === 'DRAFT' && (
+                            {canEdit && evidence.status === 'DRAFT' && (
                                 <Button
                                     variant="secondary"
                                     size="sm"
@@ -750,7 +812,7 @@ export function EvidenceDetailSheet({
                                     {t('detail.submitForReview')}
                                 </Button>
                             )}
-                            {canWrite && evidence.status === 'REJECTED' && (
+                            {canEdit && evidence.status === 'REJECTED' && (
                                 <Button
                                     variant="secondary"
                                     size="sm"
@@ -760,7 +822,7 @@ export function EvidenceDetailSheet({
                                     {t('detail.resubmit')}
                                 </Button>
                             )}
-                            {canWrite && evidence.status === 'NEEDS_REVIEW' && (
+                            {canEdit && evidence.status === 'NEEDS_REVIEW' && (
                                 // EP-2 Part 5 — first-class "Re-review"
                                 // affordance (distinct label from the generic
                                 // Submit). Functionally NEEDS_REVIEW →
@@ -1070,11 +1132,14 @@ function EvidenceFileVersions({
     open,
     t,
     tenantApiUrl,
+    downloadAllowed,
 }: {
     evidenceId: string;
     open: boolean;
     t: ReturnType<typeof useTranslations>;
     tenantApiUrl: (path: string) => string;
+    /** Every version is served under the record's gates (see the sheet). */
+    downloadAllowed: boolean;
 }) {
     const versionsQuery = useTenantSWR<{
         fileVersion: number;
@@ -1121,6 +1186,7 @@ function EvidenceFileVersions({
                                     {formatDateTime(v.createdAt)} · {formatBytes(v.sizeBytes)}
                                 </span>
                             </span>
+                            {downloadAllowed && (
                             <a
                                 href={tenantApiUrl(`/evidence/files/${v.id}/download`)}
                                 download
@@ -1130,6 +1196,7 @@ function EvidenceFileVersions({
                             >
                                 <Download className="size-4" />
                             </a>
+                            )}
                         </li>
                     ))}
                 </ul>

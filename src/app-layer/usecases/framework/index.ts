@@ -21,7 +21,9 @@ export { getFrameworkTree, reorderFrameworkRequirements } from './tree';
 // Install operations (pack, template, bulk)
 export {
     previewPackInstall,
+    previewPacksInstall,
     installPack,
+    installPacks,
     installSingleTemplate,
     bulkInstallTemplates,
     bulkMapControls,

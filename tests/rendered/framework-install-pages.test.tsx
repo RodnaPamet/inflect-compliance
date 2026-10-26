@@ -76,6 +76,16 @@ const TEMPLATES = [
 
 type Handler = (url: string, init?: RequestInit) => { ok: boolean; status?: number; body: unknown } | undefined;
 let postHandler: Handler = () => undefined;
+let packsResponse: unknown = PACKS;
+let previewResponse: unknown = null;
+const PREVIEW = {
+    packKeys: ['iso-base', 'iso-extra'], packs: [], framework: { key: 'ISO27001', name: 'ISO 27001', version: '2022' },
+    totalTemplates: 2, newControls: 2, existingControls: 0,
+    templates: [
+        { code: 'A-5.1', title: 'Policies', tasks: 3, requirements: [], alreadyInstalled: false },
+        { code: 'A-5.2', title: 'Roles', tasks: 1, requirements: [], alreadyInstalled: false },
+    ],
+};
 
 function json(ok: boolean, body: unknown, status = ok ? 200 : 400) {
     return { ok, status, json: async () => body } as unknown as Response;
@@ -83,6 +93,8 @@ function json(ok: boolean, body: unknown, status = ok ? 200 : 400) {
 
 beforeEach(() => {
     postHandler = () => undefined;
+    packsResponse = PACKS;
+    previewResponse = null;
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (init?.method === 'POST') {
@@ -90,9 +102,9 @@ beforeEach(() => {
             if (r) return json(r.ok, r.body, r.status);
             return json(true, {});
         }
-        if (url.includes('action=packs')) return json(true, PACKS);
+        if (url.includes('action=packs')) return json(true, packsResponse);
         if (url.includes('action=templates')) return json(true, TEMPLATES);
-        if (url.includes('action=preview')) return json(true, null);
+        if (url.includes('action=preview')) return json(true, previewResponse);
         return json(true, FRAMEWORK);
     }) as unknown as typeof fetch;
 });
@@ -114,10 +126,47 @@ describe('the install wizard', () => {
 
     it('offers the steps to a member who holds it', async () => {
         permissions.frameworks.install = true;
+        packsResponse = [PACKS[0]];
         render(<InstallWizardPage />);
         expect(await screen.findByText(en.frameworks.install.selectAPack)).toBeTruthy();
         expect(screen.queryByText(en.frameworks.install.restrictedTitle)).toBeNull();
-        expect(document.querySelectorAll('input[type="radio"]').length).toBe(2);
+        expect(document.querySelectorAll('input[type="radio"]').length).toBe(1);
+    });
+
+    it('asks for at least one pack when the framework has several, and installs only those chosen', async () => {
+        // The EU drone framework's packs are its subcategories: nothing is
+        // installed until the tenant has chosen which it operates in.
+        permissions.frameworks.install = true;
+        previewResponse = PREVIEW;
+        render(<InstallWizardPage />);
+
+        expect(await screen.findByText(en.frameworks.install.choosePacks)).toBeTruthy();
+        expect(screen.getByText(en.frameworks.install.choosePacksRequired)).toBeTruthy();
+        expect(document.querySelectorAll('input[type="radio"]').length).toBe(0);
+        const boxes = screen.getAllByRole('checkbox');
+        expect(boxes).toHaveLength(2);
+        const preview = document.getElementById('preview-chosen-packs-btn') as HTMLButtonElement;
+        expect(preview.disabled).toBe(true);
+
+        // Ticking the second pack only: the first is never sent.
+        fireEvent.click(boxes[1]);
+        await waitFor(() => expect(preview.disabled).toBe(false));
+        expect(screen.queryByText(en.frameworks.install.choosePacksRequired)).toBeNull();
+        await act(async () => { fireEvent.click(preview); });
+
+        const fetchMock = global.fetch as jest.Mock;
+        const previewUrl = fetchMock.mock.calls.map((c) => String(c[0])).find((u) => u.includes('action=preview'));
+        expect(previewUrl).toContain('packKeys=iso-extra');
+        expect(previewUrl).not.toContain('iso-base');
+
+        const install = await waitFor(() => {
+            const b = document.getElementById('confirm-install-btn');
+            if (!b) throw new Error('no install button yet');
+            return b;
+        });
+        await act(async () => { fireEvent.click(install); });
+        const post = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
+        expect(JSON.parse(String((post![1] as RequestInit).body))).toEqual({ packKeys: ['iso-extra'] });
     });
 });
 

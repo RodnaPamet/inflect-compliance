@@ -26,6 +26,7 @@ import { EvidenceUploadSection } from "@/components/evidence/EvidenceUploadSecti
 import { PanelTabs } from "@/components/controls-shared/PanelTabs";
 import { PanelActivityFeed } from "@/components/controls-shared/PanelActivityFeed";
 import { choiceOrNull, textOrNull } from './_lib/control-write-values';
+import { buildControlStatusLabels } from './filter-defs';
 
 /** The subset of control row fields the panel needs to seed + display. */
 export interface PanelControl {
@@ -55,11 +56,20 @@ export function ControlEditPanel({
     tenantSlug,
     control,
     canWrite,
+    canUploadEvidence,
     onSaved,
 }: {
     tenantSlug: string;
     control: PanelControl;
     canWrite: boolean;
+    /**
+     * The viewer's `evidence.upload`, which gates the file dropzone on top of
+     * `canWrite` (here `canWrite && controls.edit`): a file upload POSTs to
+     * `/evidence/uploads`, which asks `evidence.upload` (#4325). It gates only
+     * the dropzone. The attached-evidence list shows for every role, and the
+     * URL link stays on `canWrite`, because its route is the control's own.
+     */
+    canUploadEvidence: boolean;
     /** Retained for API compatibility (AsidePanel owns the close affordance). */
     onClose?: () => void;
     /** Called after a successful save so the list reflects new name/owner. */
@@ -67,6 +77,12 @@ export function ControlEditPanel({
 }) {
     const tx = useTranslations("controls");
     const FREQUENCY_OPTIONS = buildFrequencyOptions(tx);
+    // The same localized status copy the table's Status column shows — the
+    // badge used to print the enum with underscores swapped for spaces.
+    const STATUS_LABELS = useMemo(
+        () => buildControlStatusLabels((key) => tx(key as Parameters<typeof tx>[0])),
+        [tx],
+    );
     const [tab, setTab] = useState<Tab>("details");
     const base = `/api/t/${tenantSlug}/controls/${control.id}`;
 
@@ -163,7 +179,7 @@ export function ControlEditPanel({
                     </span>
                 )}
                 {control.status && (
-                    <StatusBadge size="sm">{control.status.replace(/_/g, " ")}</StatusBadge>
+                    <StatusBadge size="sm">{STATUS_LABELS[control.status] ?? control.status}</StatusBadge>
                 )}
             </div>
 
@@ -271,12 +287,15 @@ export function ControlEditPanel({
                         )}
                     </div>
 
-                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail). */}
+                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail).
+                        The dropzone also needs `evidence.upload`; the attached
+                        list is always shown. */}
                     <EvidenceUploadSection
                         tenantSlug={tenantSlug}
                         linkField="controlId"
                         linkId={control.id}
                         canWrite={canWrite}
+                        canUpload={canWrite && canUploadEvidence}
                         compactDropzone
                         listEndpoint={`/controls/${control.id}/evidence`}
                         urlLinkEndpoint={`/controls/${control.id}/evidence`}

@@ -88,6 +88,12 @@ interface BaseUserComboboxProps {
      * into options. Useful for scoping ("only ACTIVE members").
      */
     filter?: (member: Member) => boolean;
+    /**
+     * Server-side roster narrowing. `"task-reviewer"` lists only the
+     * members a task's reviewer may be — those whose role can edit tasks
+     * (#4278). The server decides, from roles the client never sees.
+     */
+    audience?: "task-reviewer";
     className?: string;
 }
 
@@ -109,16 +115,18 @@ export type UserComboboxProps = SingleProps | MultipleProps;
 
 export function useTenantMembers(
     tenantSlug: string,
-    options?: { enabled?: boolean },
+    options?: { enabled?: boolean; audience?: "task-reviewer" },
 ) {
     const enabled = options?.enabled ?? true;
+    const rosterUrl = `/api/t/${tenantSlug}/users/assignable`;
+    const audienceQuery = options?.audience ? `?audience=${options.audience}` : "";
     // Raw `useSWR` (not `useTenantSWR`) because this hook needs a custom
     // fetcher: it fails SILENTLY to an empty roster on a non-OK response
     // (the picker must never crash on an auth miss) and projects the raw
     // payload into `Member[]` — neither fits useTenantSWR's fixed apiGet
     // fetcher. The tenant slug is in the URL, so the cache is per-tenant.
     return useSWR<Member[]>(
-        enabled ? `/api/t/${tenantSlug}/users/assignable` : null,
+        enabled ? `${rosterUrl}${audienceQuery}` : null,
         async (url: string): Promise<Member[]> => {
             // B1 — the picker reads from the non-admin `/users/assignable`
             // endpoint (gated by `assertCanRead`, which every signed-in
@@ -226,6 +234,7 @@ export function UserCombobox(props: UserComboboxProps) {
         size,
         preloadedMembers,
         filter,
+        audience,
         className,
     } = props;
 
@@ -237,6 +246,7 @@ export function UserCombobox(props: UserComboboxProps) {
 
     const query = useTenantMembers(tenantSlug, {
         enabled: !preloadedMembers,
+        audience,
     });
 
     const members = preloadedMembers ?? query.data ?? [];

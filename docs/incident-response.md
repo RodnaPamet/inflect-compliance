@@ -1,454 +1,509 @@
 # Incident Response Runbook
 
-> **⚠ Read this first — the recovery commands below are being rewritten.**
-> Procedures in this runbook that invoke `kubectl`, `helm rollback`,
-> `restore-db-instance` or PagerDuty describe an EKS/RDS estate that was
-> **never provisioned** and was removed on 2026-09-02. **Production is a single
-> GCP VM running Docker Compose.** The real equivalents are:
->
-> | If the runbook says | Actually do |
-> |---|---|
-> | `helm rollback inflect-production …` | `gcloud compute ssh inflect-compliance --zone europe-west1-b` then `sudo docker compose -f /opt/inflect/docker-compose.prod.yml up -d` with the previous GHCR tag pinned |
-> | `kubectl rollout restart deployment/…` | `sudo docker compose -f /opt/inflect/docker-compose.prod.yml restart app worker` |
-> | `kubectl get pods` | `sudo docker ps` on the VM |
-> | `restore-db-instance-to-point-in-time` | **There is no PITR.** Restore the newest `inflect-daily-snapshot` disk snapshot — see [`docs/disaster-recovery.md`](./disaster-recovery.md). Recovery point is up to 24h. |
-> | "page via PagerDuty" | **There is no paging path.** `infra/alerts/` was an in-cluster Alertmanager config with no cluster. Detection depends on somebody looking. |
->
-> Tracked in
-> [#2226](https://github.com/RodnaPamet/inflect-compliance/issues/2226).
-
-
 > **New to the codebase?** Start at [CONTRIBUTING.md](../CONTRIBUTING.md) — the developer onboarding guide.
-
-> This runbook owns the on-call rotation that
-> [`docs/change-management-policy.md`](change-management-policy.md) references for
-> out-of-hours production approval + the EMERGENCY change procedure.
 
 > For the scope of data potentially involved in a breach — which entities hold
 > PII, how long each is retained, and the cleanup mechanisms — see
 > [`docs/data-retention.md`](data-retention.md).
 
-> Production operational playbook for inflect-compliance.
->
-> Epic OI-3 — final operational layer. Tied directly to the
-> alerts (`infra/alerts/rules.yml`), dashboards (`infra/dashboards/`),
-> deployment workflow (`.github/workflows/deploy.yml`), and recovery
-> scripts (`infra/scripts/`) shipped earlier in OI-3.
+Production is one GCP VM, `inflect-compliance` in `europe-west1-b`, running the
+Compose stack in [`deploy/docker-compose.prod.yml`](../deploy/docker-compose.prod.yml)
+from `/opt/inflect/`. [`docs/deployment.md`](deployment.md) describes how it is
+deployed. This runbook is for that VM. There is no Kubernetes, no RDS, no
+ElastiCache, no S3 and no PagerDuty.
 
----
+The services and their containers:
 
-> **Regional failover:** recovery today is in-region (restore from
-> backup — SLO 6/7). The cross-region warm-standby design + the
-> promote-and-cut-over sequence live in
-> [`multi-region.md`](multi-region.md); the step-by-step **failover
-> runbook** is filled into this playbook tree during that effort's
-> Phase 3.
+| Service | Container | What it does |
+|---|---|---|
+| `caddy` | `inflect-caddy-1` | TLS and reverse proxy; the only public ports, 80 and 443 |
+| `app` | `inflect-app-1` | Next.js; runs `prisma migrate deploy` when it starts |
+| `worker` | `inflect-worker-1` | BullMQ worker and scheduler |
+| `pgbouncer` | `inflect-pgbouncer-1` | connection pool in front of Postgres |
+| `postgres` | `inflect-postgres-1` | the database (`inflect_compliance`) |
+| `redis` | `inflect-redis-1` | job queue, rate limits, cache; `--maxmemory 256mb`, `noeviction` |
+| `clamav` | `inflect-clamav-1` | virus scan of uploads |
+| `watchtower` | `inflect-watchtower-1` | moves `app` and `worker` onto each new `:latest` image |
+
+If the VM, its disk or its zone is lost, go to
+[`docs/disaster-recovery.md`](disaster-recovery.md). Cross-region failover is a
+design only, in [`docs/multi-region.md`](multi-region.md).
+
+## On-call
+
+There is no on-call rotation and no pager. Every production alert is a GCP
+Cloud Monitoring policy that emails one notification channel
+([`infra/alerts/external-uptime.yml`](../infra/alerts/external-uptime.yml),
+[`infra/alerts/gcp-custom-metrics.yml`](../infra/alerts/gcp-custom-metrics.yml)).
+The uptime alert fires within about six minutes of an outage. How long the
+email then waits for a person is not bounded, and no acknowledgement or
+response time is committed. An outage at 03:00 waits until someone reads it.
+
+[`docs/change-management-policy.md`](change-management-policy.md#on-call-coverage)
+says what that means for changes: out of hours, nobody is assigned to review
+or merge, and an emergency fix waits for a reviewer like any other change.
+
+## Getting onto the VM
+
+You need a Google account with access to the VM, and `gcloud` authenticated on
+your machine.
+
+```bash
+gcloud compute ssh inflect-compliance --zone europe-west1-b
+```
+
+Docker commands on the VM need `sudo`. Most steps below use plain `docker`
+with the container names above. When you need Compose, run it the way
+`deploy/apply.sh` does, naming both host env files. The repository's compose
+file reads its secrets from them and refuses to run without them.
+
+```bash
+cd /opt/inflect
+sudo docker compose --env-file .env --env-file .env.prod -f docker-compose.prod.yml ps
+```
+
+**Things that print secrets. Do not run them:**
+
+- `cat` or `less` on `/opt/inflect/.env` or `/opt/inflect/.env.prod`;
+- `cat` on the host's `/opt/inflect/docker-compose.prod.yml`: the host copy
+  has carried inline credentials before (#2849);
+- `docker compose config` without `-q`;
+- `docker inspect` on `app` or `worker` without `--format`: the output
+  includes the container's environment.
+
+`deploy/check-drift.sh`, run from your own machine, compares the host's files
+with the repository by hash and prints no content.
 
 ## Quick reference
 
-| You see... | Page severity | First-look dashboard | Playbook |
-|---|---|---|---|
-| External uptime monitor 503 | **CRITICAL** (PagerDuty) | [App Overview](#dashboards) | [App Down](#1-app-down) |
-| `ApiP95LatencyCritical` (>2s) | **CRITICAL** | App Overview + Database | [Database Unavailable / Slow](#2-database-unavailable--slow) |
-| `DatabaseConnectionPoolExhausted` | **CRITICAL** | Database | [Database Unavailable / Slow](#2-database-unavailable--slow) |
-| `RedisMemoryHighCritical` (>95%) | **CRITICAL** | Redis | [Redis OOM / Degraded Queueing](#3-redis-oom--degraded-queueing) |
-| `RedisMemoryHighWarning` (>80%) | warning (Slack) | Redis | [Redis OOM / Degraded Queueing](#3-redis-oom--degraded-queueing) |
-| `QueueDepthBacklogCritical` (>1000) | **CRITICAL** | BullMQ | [Queue Backlog](#4-queue-backlog) |
-| `CertificateExpiryCritical` (<3d) | **CRITICAL** | App Overview | [Certificate Expiry](#5-certificate-expiry) |
-| Bad deploy detected (smoke fail / 5xx spike post-merge) | varies | App Overview | [Rollback](#6-rollback) |
-| Suspected unauthorised data access | **CRITICAL** + escalate | n/a | [Data Breach Response](#7-data-breach-response) |
+Each alert email is titled with the policy's display name.
 
-**On-call channel**: PagerDuty service `inflect-compliance-prod`. The integration key + Slack webhook live in the cluster's Alertmanager Secret (env-var-substituted via `${PAGERDUTY_SERVICE_KEY}` and `${SLACK_WEBHOOK_URL}` in `infra/alerts/receivers.yml`).
+| You see | Playbook |
+|---|---|
+| `inflect production is not ready (#2745)` — `/api/readyz` failing from more than one probe region for 5 minutes | [App Down](#1-app-down). The `failed` array in the readyz response names the component. |
+| `inflect container unhealthy, or health reporting stopped (#2745)` | `worker`: [Queue Backlog](#4-queue-backlog). `postgres` or `pgbouncer`: [Database](#2-database-unavailable--slow). `redis`: [Redis](#3-redis-oom--degraded-queueing). Any other: [App Down](#1-app-down). If no container is named, the reporter itself stopped: see the alert text. |
+| `inflect disk filling — act before postgres cannot write` | [Disk Full](#8-disk-full) |
+| `inflect scheduled work is overdue — a job is not doing its job (#3558)` | [Queue Backlog](#4-queue-backlog) |
+| `inflect work was ABANDONED — something gave up and nobody was told (#3558)` | [Queue Backlog](#4-queue-backlog), "Abandoned work" |
+| `inflect identity writes unsettled — an account is in unknown state (#2842)` | Not a platform fault. Follow the alert text, then the `identity-chain-diagnostic` skill. |
+| `inflect assistant is REFUSING most attempts — users blocked from a working feature (#3856)` | Not installed: [`infra/reporters/README.md`](../infra/reporters/README.md) lists its reporter as not deployed. If it is installed and fires, follow the alert text. |
+| `inflect agent proposals are FLOODING the review queue (#3856)` | Not installed, as above. |
+| Errors start right after a new image reached the VM | [Rollback](#6-rollback) |
+| A browser or `curl` rejects the certificate | [Certificate Expiry](#5-certificate-expiry) |
+| `OOM command not allowed` in the `app` or `worker` log | [Redis](#3-redis-oom--degraded-queueing) |
+| Suspected unauthorised access to data | [Data Breach Response](#7-data-breach-response) |
 
----
+The Prometheus rules in `infra/alerts/rules.yml` and
+`infra/observability/prometheus/rules/` alert nobody in production; see
+[`docs/observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md).
+A name from them (`DatabaseConnectionPoolExhausted`,
+`QueueDepthBacklogCritical`, …) did not come from a production alert.
 
 ## Severity definitions
 
-| Severity | Routing | Response time (acknowledge) | Resolution time budget |
-|---|---|---|---|
-| **CRITICAL** | PagerDuty page → on-call | 15 minutes | 4 hours (SLO 7 — RTO) |
-| **WARNING** | Slack `#alerts-warnings` | Next business day | One sprint |
+The policies carry no severity, and every one sends the same email. The person
+responding decides.
 
-**Severity is set by the alert rule's `labels.severity` field, not by the responder.** If you need to escalate a warning to critical, file a manual PagerDuty incident referencing the alert.
+| Severity | Means | For example |
+|---|---|---|
+| **CRITICAL** | Users are getting errors, or data is at risk. | the readyz alert; Postgres down; the disk full; a suspected breach |
+| **WARNING** | The product works, but something is degrading or late. | overdue or abandoned work; the disk above 85% |
 
----
+`docs/slos.md` SLO 7 sets a 4-hour recovery time for a critical incident.
 
 ## Dashboards
 
-All four are shipped under `infra/dashboards/` and importable via Grafana JSON UI:
+No Grafana is recorded as running in production
+([`docs/observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md)).
+The places to look are:
 
-| Dashboard | UID | Used for |
-|---|---|---|
-| API SLOs (pre-OI-3) | `inflect-compliance-slos` | Long-term SLO burn-down — availability + latency + error budget |
-| App Overview | `inflect-app-overview` | API health: rate, P95, error rate, top-N slow/failing routes |
-| Database (repository layer) | `inflect-database` | Repo-method P95, calls/s, errors by method, result-count distribution |
-| Redis / ElastiCache | `inflect-redis` | Queue depth, ElastiCache CPU + memory, hit rate, evictions |
-| BullMQ | `inflect-bullmq` | Job throughput, failure rate, queue depth by state, P95 duration |
+- **GCP Monitoring console:** the uptime check `inflect-readyz` and the custom
+  metrics under `custom.googleapis.com/` (`docker/container_health`,
+  `host/disk_percent_used`, `jobs/work_overdue`, `jobs/work_abandoned`,
+  `identity/write_unsettled`).
+- **Cloud Logging:** the Ops Agent ships the app's JSON log lines from the
+  Docker log files (`deploy/ops-agent-config.yaml`).
+- **The VM:** `sudo docker ps`, `sudo docker logs`, `sudo docker stats
+  --no-stream`. Each container keeps three 10 MB log files, so a busy
+  container's local history is short.
+- **The reporters' journals:** for example
+  `journalctl -u work-overdue-reporter.service -n 50`
+  ([`infra/reporters/README.md`](../infra/reporters/README.md)).
 
-Every alert annotation carries a `dashboard:` field linking straight to the right one.
-
----
+The Grafana dashboards in `infra/dashboards/` and
+`infra/observability/grafana/dashboards/` are for the observability stack,
+which is not recorded as running.
 
 ## Common first steps (every incident)
 
-1. **Acknowledge in PagerDuty** within 15 minutes (silences re-pages, signals to the team that someone owns it).
-2. **Open the dashboard** linked from the alert annotation.
-3. **Check the deploy timeline**: `gh run list --workflow=Deploy --limit=5`. A new incident immediately after a deploy almost always points at the deploy as cause.
-4. **Decide between** mitigation (rollback / scale) vs investigation (debug live):
-   - If the issue is **clearly correlated with a deploy** → rollback first, investigate after.
-   - If the issue is **not clearly deploy-correlated** → start investigation, keep rollback as a parallel option.
-5. **Open an incident channel** in Slack (`#incident-YYYYMMDD-<short-name>`) and post running commentary.
+1. **Write down the time and what you saw**, and post it in the incident
+   channel.
+2. **Ask the app what is wrong:**
+   ```bash
+   curl -s https://app.inflect.bg/api/readyz | jq .
+   ```
+   `failed` lists `database`, `redis` or `storage`. `storage` is skipped in
+   production, because evidence is on a local volume.
+3. **Check whether a new image just arrived.** Watchtower rolls `app` and
+   `worker` onto each image GHCR publishes, within a minute. Each rollout
+   takes readyz down for 1–3 minutes, which is why the uptime alert waits 5
+   minutes.
+   ```bash
+   gh run list --workflow ghcr-publish.yml --branch main --limit 5
+   # on the VM:
+   sudo docker ps --format 'table {{.Names}}\t{{.Status}}'
+   sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' inflect-app-1
+   sudo docker logs --since 2h inflect-watchtower-1
+   ```
+4. **Decide between mitigation and investigation:**
+   - If it started with a new image, roll back first and investigate after
+     ([Rollback](#6-rollback)).
+   - If not, investigate, and keep rollback as an option.
+5. **Before anything destructive, snapshot the disk.** It holds the database,
+   the uploads and the env files, so one snapshot keeps all of them:
+   ```bash
+   gcloud compute disks snapshot inflect-compliance --zone europe-west1-b \
+     --snapshot-names "inflect-incident-$(date -u +%Y%m%d%H%M)"
+   ```
 
 ---
 
 ## 1. App Down
 
-**Trigger**: external uptime monitor alarm (UptimeRobot/Pingdom 503 from multi-region) → PagerDuty critical. The internal `LivezProbeFailure` alert may also fire.
+**Trigger:** `inflect production is not ready (#2745)`, or users report the
+site is down.
 
-**What it means**: external probes can't reach `/api/livez`. Either the app process is dead across all pods, OR the network path (DNS, ALB, Ingress) is broken.
+**What it means:** `https://app.inflect.bg/api/readyz` did not return 200 with
+`"status":"ready"` from at least two probe regions for 5 minutes. Either the
+app cannot serve, or a dependency it checks (Postgres or Redis) is down, or
+the path in (DNS, Caddy, TLS) is broken. There is one `app` container and
+nothing routes around it, so a failing readyz means users are getting errors.
 
 ### Triage
 
 ```bash
-# 1. Are pods running?
-kubectl --namespace inflect-production get pods \
-  -l "app.kubernetes.io/instance=inflect-production"
-
-# Look for: 0/N Ready, CrashLoopBackOff, Pending
+# 1. From your machine. readyz names the failed dependency; livez answers
+#    whenever the process is running.
+curl -s https://app.inflect.bg/api/readyz | jq .
+curl -s -o /dev/null -w '%{http_code}\n' https://app.inflect.bg/api/livez
 ```
 
-```bash
-# 2. Is the Ingress healthy?
-kubectl --namespace inflect-production get ingress
-kubectl --namespace ingress-nginx get pods
-# Check the controller's logs for cert / upstream errors:
-kubectl --namespace ingress-nginx logs -l app.kubernetes.io/name=ingress-nginx --tail=200
-```
+If the VM does not answer SSH either, check it in the Compute Engine console.
+If the VM, its disk or its zone is gone, go to
+[`docs/disaster-recovery.md`](disaster-recovery.md).
 
 ```bash
-# 3. Can YOU reach /api/livez from inside the cluster?
-kubectl --namespace inflect-production run --rm -it --image=curlimages/curl debug -- \
-  curl -v http://inflect-production.inflect-production.svc.cluster.local/api/livez
-# 200 with body {"status":"alive",...} → app is up; problem is INGRESS or DNS
-# 503 / timeout → app process is down
-```
+# 2. On the VM. Look for Restarting, Exited or (unhealthy).
+sudo docker ps -a --format 'table {{.Names}}\t{{.Status}}'
+sudo docker inspect --format '{{.Name}} restarts={{.RestartCount}}' inflect-app-1 inflect-postgres-1 inflect-redis-1
 
-```bash
-# 4. Recent events?
-kubectl --namespace inflect-production get events \
-  --sort-by='.lastTimestamp' | tail -20
+# 3. The app's own log.
+sudo docker logs --tail 100 inflect-app-1
+
+# 4. Is the app answering inside the VM? Caddy reaches it as app:3000.
+sudo docker exec inflect-caddy-1 wget -qO- http://app:3000/api/livez
 ```
 
 ### Decide
 
 | Symptom | Next action |
 |---|---|
-| All pods CrashLoopBackOff | Likely bad image / config. → [Rollback](#6-rollback) |
-| 0 pods, ReplicaSet has 0 desired | HPA scaled to 0 or Deployment misconfigured. Check `helm get values inflect-production -n inflect-production` for `autoscaling.minReplicas` |
-| Pods Ready, in-cluster /livez returns 200, but external 503 | Ingress / DNS issue. Check ingress controller logs + DNS records. |
-| Cert error in browser/curl | → [Certificate Expiry](#5-certificate-expiry) |
+| `app` restarting, `P3009` in its log | A half-applied migration. [`docs/runbooks/failed-migration-recovery.md`](runbooks/failed-migration-recovery.md). Read all of it first. |
+| `app` restarting after a new image arrived | [Rollback](#6-rollback) |
+| readyz `failed` includes `database` | [Database](#2-database-unavailable--slow) |
+| readyz `failed` includes `redis` | [Redis](#3-redis-oom--degraded-queueing) |
+| `No space left on device` in any log | [Disk Full](#8-disk-full) |
+| The app answers inside the VM but not from outside | Caddy, DNS or TLS. `sudo docker logs --tail 100 inflect-caddy-1`, then [Certificate Expiry](#5-certificate-expiry). Check that `app.inflect.bg` still resolves to the VM's external address. |
+| Containers missing after a reboot | Bring the stack up as defined (next section). |
 
 ### Mitigate
 
-- **If clearly a bad deploy** (CrashLoopBackOff after a recent rollout):
+- **Restart one container:** `sudo docker restart inflect-app-1`. Use the
+  container for the failing service.
+- **Bring the whole stack up as defined on the host** (no image or structure
+  change):
   ```bash
-  helm rollback inflect-production --namespace inflect-production --wait --timeout 5m
+  cd /opt/inflect
+  sudo docker compose --env-file .env --env-file .env.prod -f docker-compose.prod.yml up -d
   ```
-  See [Rollback](#6-rollback) for full procedure.
-
-- **If image puller fails** (e.g. GHCR credentials rotated, image pruned):
-  Restore the image pull secret + restart pods:
-  ```bash
-  kubectl --namespace inflect-production rollout restart deployment/inflect-production
-  ```
-
-- **If completely opaque** and time-to-mitigate is exceeding 30 minutes:
-  Restart the Deployment AND scale to known-good replica count manually:
-  ```bash
-  kubectl --namespace inflect-production scale deployment/inflect-production --replicas=3
-  kubectl --namespace inflect-production rollout restart deployment/inflect-production
-  kubectl --namespace inflect-production rollout status deployment/inflect-production --timeout=5m
-  ```
+  If it stops with `REDIS_PASSWORD is required`, the host env files lack that
+  variable. See "Outstanding operator actions" in
+  [`docs/deployment.md`](deployment.md).
+- **A bad image:** [Rollback](#6-rollback).
 
 ### Verify recovery
 
-- External uptime monitor returns to healthy (PagerDuty incident auto-resolves via `send_resolved: true`).
-- `kubectl get pods` shows N/N Ready.
-- `curl https://app.example.com/api/livez` returns 200 from your machine.
+- `curl -s https://app.inflect.bg/api/readyz` returns `"status":"ready"`.
+- `sudo docker ps` shows every container `Up` and none `(unhealthy)`.
+- The alert's incident closes in GCP Monitoring once the check passes again.
 
 ---
 
 ## 2. Database Unavailable / Slow
 
-**Trigger**: `DatabaseConnectionPoolExhausted` (>20% Prisma errors for 3m), `ApiP95LatencyCritical`, or the Database dashboard's `repo_method_duration` P95 spike.
+**Trigger:** readyz `failed` includes `database`; `postgres` or `pgbouncer`
+reported unhealthy; requests time out.
 
-**What it means**: queries are timing out, the connection pool is saturated, OR the upstream RDS instance is unhealthy.
+**What it means:** Postgres is down or restarting, the PgBouncer pool is full,
+or queries are slow.
 
 ### Triage
 
 ```bash
-# 1. Is the RDS instance healthy?
-aws rds describe-db-instances \
-  --db-instance-identifier inflect-compliance-production-db \
-  --query 'DBInstances[0].{Status:DBInstanceStatus,MultiAZ:MultiAZ,Endpoint:Endpoint.Address}'
-# Want: Status=available, MultiAZ=true
-```
+# 1. Is Postgres running, and what does it say?
+sudo docker ps -a --filter name=inflect-postgres-1 --format '{{.Status}}'
+sudo docker logs --tail 100 inflect-postgres-1
 
-```bash
-# 2. Check the Database dashboard
-# /d/inflect-database — look at:
-#   - "Top slow repo methods (P95)" table  → which method is slow?
-#   - "Repo errors by method"               → all-methods spike or one?
-#   - "Result-count P95 by repo method"    → caller forgot pagination?
-```
+# 2. Can it answer? The container trusts its local socket, so no password is needed.
+sudo docker exec inflect-postgres-1 psql -U postgres -d inflect_compliance -c 'SELECT 1;'
 
-```bash
-# 3. PgBouncer pool stats — what's actually happening at the pool layer?
-APP_POD=$(kubectl --namespace inflect-production get pod \
-  -l "app.kubernetes.io/component=app" \
-  -o jsonpath='{.items[0].metadata.name}')
+# 3. PgBouncer pool state. cl_waiting > 0 for long means clients are queueing.
+#    POSTGRES_PASSWORD is expanded inside the container and never printed.
+sudo docker exec inflect-postgres-1 sh -c \
+  'PGPASSWORD=$POSTGRES_PASSWORD psql -h pgbouncer -p 5432 -U postgres pgbouncer -c "SHOW POOLS;"'
 
-kubectl --namespace inflect-production exec "$APP_POD" -c pgbouncer -- \
-  psql "host=127.0.0.1 port=5432 dbname=pgbouncer user=postgres" \
-  -c "SHOW POOLS;"
-# Look at: cl_waiting (clients waiting for a connection — high = pool saturated)
-#          sv_active  (server connections currently busy)
-#          sv_idle    (server connections idle, available)
-```
+# 4. What is the database doing? Longest-running statements first.
+sudo docker exec inflect-postgres-1 psql -U postgres -d inflect_compliance -c \
+  "SELECT pid, now() - query_start AS age, state, left(query, 80) AS query
+     FROM pg_stat_activity WHERE state <> 'idle' ORDER BY age DESC LIMIT 10;"
 
-```bash
-# 4. RDS connection count via CloudWatch
-aws cloudwatch get-metric-statistics \
-  --namespace AWS/RDS \
-  --metric-name DatabaseConnections \
-  --dimensions Name=DBInstanceIdentifier,Value=inflect-compliance-production-db \
-  --statistics Maximum \
-  --start-time $(date -u -d '15 minutes ago' +%FT%TZ) \
-  --end-time $(date -u +%FT%TZ) \
-  --period 60
+# 5. Is the host short of CPU or memory? No container has a limit.
+sudo docker stats --no-stream
 ```
 
 ### Decide
 
 | Symptom | Mitigate |
 |---|---|
-| RDS Status != `available` (failing-over, modifying, etc.) | Wait. Multi-AZ failover takes 60-180s. Customer impact is bounded. |
-| RDS available; PgBouncer `cl_waiting > 0` sustained | Pool saturated. Scale app DOWN (back-pressure) OR increase PgBouncer `default_pool_size` in `values-production.yaml` and `helm upgrade`. |
-| RDS available; PgBouncer healthy; `repo_method_duration` P95 spike on ONE method | A specific query is slow. Investigate via `pg_stat_statements`: `SELECT query, mean_exec_time, calls FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10;` (use the read-only `inflect_readonly` user). Likely missing index. |
-| RDS available; ALL repo methods slow simultaneously | RDS underlying performance issue (CPU, IOPS exhaustion). Check CloudWatch RDS dashboard. Scale instance class up via Terraform. |
-| RDS instance unrecoverable | → [DB recovery from PITR](#db-recovery-from-pitr) below. |
+| `postgres` restarting, `No space left on device` | [Disk Full](#8-disk-full). Postgres restarts by itself once it can write. |
+| `postgres` restarting for another reason | Read its log. If it does not come back, see [below](#when-the-database-cannot-be-recovered-on-the-vm). |
+| `cl_waiting > 0` for long | The pool is full. Find the long-running statements (step 4). Raising the pool is a compose change applied with `deploy/apply.sh`; see [`docs/sizing.md`](sizing.md#database-connections). |
+| One query is slow | Find it in step 4 and look for a missing index. |
+| Everything is slow and host CPU is busy | The machine is the limit. A larger machine type needs the VM stopped; see [`docs/sizing.md`](sizing.md#the-machine-type). |
 
-### DB recovery from PITR
+### When the database cannot be recovered on the VM
 
-Last resort. Used when the live RDS instance is corrupt or unrecoverable.
+There is no point-in-time recovery. `archive_mode` is off and there is no WAL
+archive or replica. If Postgres cannot be brought back on the VM, the only
+recovery is the newest daily disk snapshot, which loses every write since it
+was taken (up to 24 hours). Follow
+[`docs/disaster-recovery.md`](disaster-recovery.md). It restores the whole
+disk, so the uploads and env files come back from the same moment.
 
-```bash
-# 1. Find the latest restorable time
-aws rds describe-db-instances \
-  --db-instance-identifier inflect-compliance-production-db \
-  --query 'DBInstances[0].LatestRestorableTime'
-
-# 2. Restore to a NEW instance (don't overwrite the source)
-aws rds restore-db-instance-to-point-in-time \
-  --source-db-instance-identifier inflect-compliance-production-db \
-  --target-db-instance-identifier inflect-compliance-production-db-restored-$(date +%s) \
-  --restore-time <latest-restorable-time-from-step-1> \
-  --db-instance-class db.m6g.large \
-  --multi-az \
-  --no-publicly-accessible \
-  --vpc-security-group-ids <prod-db-sg> \
-  --db-subnet-group-name inflect-compliance-production-db-subnet-group
-
-# 3. Wait for the new instance to be available (~30-60 minutes)
-aws rds wait db-instance-available \
-  --db-instance-identifier inflect-compliance-production-db-restored-...
-
-# 4. Update the chart values to point at the new endpoint
-# Edit values-production.yaml: pgbouncer.config.POSTGRESQL_HOST → new endpoint
-# Then: gh workflow run Deploy --field environment=production --field ref=main
-
-# 5. Verify via /api/readyz
-curl https://app.example.com/api/readyz | jq .
-
-# 6. Once verified, schedule the OLD instance for deletion (after retention)
-```
-
-The monthly `infra/scripts/restore-test.sh` exercises this path (without the swap-the-app step). If the monthly test has been failing, **assume PITR is broken** and do not use as a primary mitigation — restore from the latest manual snapshot instead.
+Before you restore, snapshot the current disk (step 5 of the common first
+steps). It holds the writes the restore will not have.
 
 ---
 
 ## 3. Redis OOM / Degraded Queueing
 
-**Trigger**: `RedisMemoryHighWarning` (>80%), `RedisMemoryHighCritical` (>95%).
+**Trigger:** readyz `failed` includes `redis`; `redis` reported unhealthy;
+`OOM command not allowed` in the `app` or `worker` log.
 
-**What it means**: ElastiCache memory is filling up. The chart enforces `maxmemory-policy=noeviction` (BullMQ requirement — jobs cannot be evicted). Reaching 100% memory means **writes are REJECTED** — workers fail to enqueue new jobs.
+**What it means:** Redis is down, restarting, or at its memory cap. It runs
+with `--maxmemory 256mb` and `--maxmemory-policy noeviction`, so at the cap it
+refuses writes: enqueueing a job fails rather than losing one. Rate limiting
+and the cache depend on it too.
 
 ### Triage
 
 ```bash
-# 1. Confirm via CloudWatch (alert is CW-derived)
-aws cloudwatch get-metric-statistics \
-  --namespace AWS/ElastiCache \
-  --metric-name DatabaseMemoryUsagePercentage \
-  --dimensions Name=ReplicationGroupId,Value=inflect-compliance-production-redis \
-  --statistics Average \
-  --start-time $(date -u -d '15 minutes ago' +%FT%TZ) \
-  --end-time $(date -u +%FT%TZ) \
-  --period 60
-```
+# 1. Running? What does it say?
+sudo docker ps -a --filter name=inflect-redis-1 --format '{{.Status}}'
+sudo docker logs --tail 100 inflect-redis-1
 
-```bash
-# 2. What's actually in Redis?
-APP_POD=$(kubectl --namespace inflect-production get pod \
-  -l "app.kubernetes.io/component=app" \
-  -o jsonpath='{.items[0].metadata.name}')
+# 2. Memory against the cap. redis-cli reads the password from REDISCLI_AUTH
+#    in the container, so it is never on the command line.
+sudo docker exec inflect-redis-1 redis-cli INFO memory | grep -E '^(used_memory_human|maxmemory_human)'
 
-# Need a redis-cli with TLS. Easiest: exec into the pgbouncer container
-# (it's based on bitnami which has redis-cli) OR run a debug pod:
-kubectl --namespace inflect-production run --rm -it --image=redis:7-alpine debug -- \
-  redis-cli -h <redis-primary-endpoint> --tls -a "$REDIS_AUTH_TOKEN" INFO memory
-
-# Look at: used_memory_human, maxmemory_human, used_memory_peak_human
-# Then: redis-cli ... MEMORY DOCTOR
+# 3. Where the queue's memory is.
+sudo docker exec inflect-redis-1 sh -c '
+  redis-cli LLEN bull:inflect-jobs:wait
+  redis-cli ZCARD bull:inflect-jobs:delayed
+  redis-cli ZCARD bull:inflect-jobs:completed
+  redis-cli ZCARD bull:inflect-jobs:failed'
 ```
 
 ### Mitigate
 
-| Stage | Action |
+| Cause | Action |
 |---|---|
-| First (warning, 80%) | Identify largest BullMQ jobs in the queue and clean completed/failed: `await queue.clean(0, 'completed')` + `await queue.clean(0, 'failed')`. Run via `kubectl exec` in a worker pod. |
-| Second (sustained warning) | Scale up the cache node class: edit `values-production.yaml`'s `redis_node_type` (it's a chart input that maps to the OI-1 redis module's `node_type`). Run a fresh terraform apply for the OI-1 stack. |
-| Third (critical, 95%) | Scale node UP IMMEDIATELY via Terraform — don't wait for the next maintenance window. ElastiCache scaling is online (rolling node replacement). Expect ~30 minutes. |
+| At the memory cap | Raise `--maxmemory` in the `redis` service's `command:` and apply it with `deploy/apply.sh`, if the host has memory to spare ([`docs/sizing.md`](sizing.md#redis-memory)). Applying restarts Redis; the AOF keeps queued jobs. If one queue state holds most of the memory, find out why before raising the cap. |
+| Restarting, and its log reports a bad append-only file | The 2026-09-20 outage had this shape: Redis crash-looped for 39 hours on a corrupt AOF. The AOF needs repair with `redis-check-aof`. The repository records no tested procedure for it. Snapshot the disk first. |
+| Restarting for another reason | Read the log. A full disk stops AOF writes too: [Disk Full](#8-disk-full). |
 
 ### Verify recovery
 
-- CloudWatch metric returns below 80%.
-- `RedisMemoryHighWarning` resolves (Slack notification).
-- BullMQ worker logs show successful enqueues.
+- readyz no longer lists `redis` in `failed`.
+- The `worker` log shows jobs completing, and its healthcheck passes:
+  `sudo docker exec inflect-worker-1 node dist/worker-healthcheck.mjs; echo $?`.
 
 ---
 
 ## 4. Queue Backlog
 
-**Trigger**: `QueueDepthBacklogWarning` (>100 waiting for 10m), `QueueDepthBacklogCritical` (>1000 for 5m).
+**Trigger:** `inflect scheduled work is overdue — a job is not doing its job
+(#3558)`, `inflect work was ABANDONED — something gave up and nobody was told
+(#3558)`, or the `worker` container reported unhealthy.
 
-**What it means**: BullMQ workers can't keep up with the rate of new jobs. At >100 the system is bottlenecked but recoverable; at >1000 the operator must intervene.
+**What it means:** background work is not happening. Either the worker is
+stuck or down, a job fails on every attempt, a dependency is down, or work
+arrives faster than the worker's limits allow. `/api/readyz` stays green
+through all of these.
 
 ### Triage
 
-Open the [BullMQ dashboard](#dashboards). Key panels:
-- **Backlog (waiting)** stat — current depth
-- **Jobs/sec by name + status** — which job type is slow / failing?
-- **Job duration percentiles** — has P95 spiked?
-- **Top failing jobs** — same job type repeatedly retrying?
-
 ```bash
-# Worker logs — grep for the slow job name
-kubectl --namespace inflect-production logs \
-  -l "app.kubernetes.io/component=worker" \
-  --tail=500 \
-  | grep -E "<slow-job-name>"
+# 1. Which rows are late? The reporter's journal names the family.
+journalctl -u work-overdue-reporter.service -n 50
+
+# 2. Is the worker alive and taking jobs? Exit 1 means its heartbeat is stale.
+sudo docker ps -a --filter name=inflect-worker-1 --format '{{.Status}}'
+sudo docker exec inflect-worker-1 node dist/worker-healthcheck.mjs; echo $?
+
+# 3. What is it doing? Look for one job name failing over and over.
+sudo docker logs --tail 300 inflect-worker-1
+
+# 4. How deep is the queue? See step 3 of the Redis playbook.
 ```
 
 ### Mitigate
 
 | Cause | Action |
 |---|---|
-| Single job type backed up | Scale workers: `helm upgrade --reuse-values --set worker.replicaCount=N inflect-production`. Worker autoscaling isn't wired (per OI-2 spec); manual. |
-| Poison-pill job (retrying forever) | Identify via top-failing-jobs panel. Kill via BullMQ admin API or directly via Redis: `redis-cli LPOP bull:<queue>:wait` (DON'T do this without a quick recovery plan; jobs may be load-bearing). |
-| Underlying dependency slow (Redis OOM, DB slow) | → [Redis OOM](#3-redis-oom--degraded-queueing) or [DB slow](#2-database-unavailable--slow) first; queue drains naturally once the dep recovers. |
+| Worker stuck (stale heartbeat, nothing in the log) | `sudo docker restart inflect-worker-1`. A job killed mid-run goes back on the queue and runs again from the start. |
+| One job type fails every attempt | Find the error in the worker log and fix it forward. Restarting does not help. |
+| A dependency is down | [Database](#2-database-unavailable--slow) or [Redis](#3-redis-oom--degraded-queueing) first. The queue drains once it recovers. |
+| More work than the worker's limits | There is one worker container and nothing scales it. Its limits (`concurrency: 5`, at most 50 jobs a minute) are constants in `scripts/worker.ts`. See [`docs/worker-autoscaling.md`](worker-autoscaling.md). |
+
+**Abandoned work** has used up its retries and will not run again. The
+reporter's journal names the family and the error. For abandoned email, one
+cause usually explains the whole batch: on 2026-06-03 to 2026-08-31 an SMTP
+`550` rejecting the sender domain abandoned 520 notifications. Fix the cause,
+then decide which items to send again.
+
+Do not delete keys from Redis by hand to clear the queue. Some jobs are
+load-bearing, and a deleted job is gone without a record.
 
 ### Verify recovery
 
-- Backlog depth trending down on the BullMQ dashboard.
-- `QueueDepthBacklogCritical` resolves.
-- Job throughput (jobs/sec stat) returns to normal range.
+- `jobs/work_overdue` returns to 0, and the alert's incident closes.
+- The worker's healthcheck passes.
 
 ---
 
 ## 5. Certificate Expiry
 
-**Trigger**: `CertificateExpiryWarning` (<14d), `CertificateExpiryCritical` (<3d).
+**Trigger:** a browser or `curl` rejects the certificate, or the readyz alert
+fires because the check's `ssl_valid` failed.
 
-**What it means**: cert-manager (or equivalent) hasn't renewed the cert. By default cert-manager renews at 30 days remaining; <14 days means automation has failed; <3 days means imminent service-down (browsers refuse).
+**What it means:** Caddy obtains and renews Let's Encrypt certificates for
+`app.inflect.bg` and the sslip.io fallback name by itself, and keeps them in
+the `caddy-data` volume. A certificate that is about to expire means renewal
+has been failing. No alert watches the expiry date; the uptime check only
+notices once the served certificate is invalid.
 
 ### Triage
 
 ```bash
-# 1. Check cert-manager state
-kubectl get certificate -A
-kubectl describe certificate <name> -n <namespace>
-
-# 2. Check ACME order/challenge state (look for stuck or failing)
-kubectl describe order -A
-kubectl describe challenge -A
-
-# 3. What's the actual cert serving?
-echo | openssl s_client -showcerts -servername app.example.com -connect app.example.com:443 2>/dev/null \
+# 1. What certificate is being served, and until when?
+echo | openssl s_client -servername app.inflect.bg -connect app.inflect.bg:443 2>/dev/null \
   | openssl x509 -noout -dates -subject -issuer
+
+# 2. Why is renewal failing? On the VM:
+sudo docker logs --since 48h inflect-caddy-1 2>&1 | grep -i -E 'acme|certificate|tls' | tail -50
+
+# 3. Does the name still point at this VM?
+dig +short app.inflect.bg
 ```
 
 ### Mitigate
 
 | Cause | Action |
 |---|---|
-| ACME challenge failing (DNS / HTTP-01) | Fix the underlying DNS or HTTP routing. Manually trigger renewal: `kubectl annotate certificate <name> cert-manager.io/issue-temporary-certificate="$(date +%s)" --overwrite` |
-| cert-manager pod down | Check `kubectl get pods -n cert-manager`. Restart if needed. |
-| Issuer rate-limited (Let's Encrypt 5 certs/week per FQDN) | Wait, OR cut over to a different ACME issuer (Buypass, ZeroSSL). |
-| <3d remaining and cert-manager is stuck | **EMERGENCY**: issue a manual cert via `acme.sh` or equivalent, drop it into the K8s Secret directly. The Ingress's `tls.secretName` is operator-managed; replace the Secret content + the Ingress picks it up automatically. |
+| `app.inflect.bg` no longer resolves to the VM's external address | Fix the DNS record. Caddy retries by itself. |
+| Ports 80 or 443 not reachable | Check the VM's network tags and firewall rules in the console. The ACME challenge needs them. |
+| Let's Encrypt rate limit | Wait for the limit to reset, as the error message says. |
+| Renewal still stuck after the cause is fixed | `sudo docker restart inflect-caddy-1` makes Caddy try again. Restarting keeps the `caddy-data` volume. |
+
+The VM serves its own copy of the Caddyfile. `CADDY_ONLY=1 CONFIRM=1
+deploy/apply.sh` pushes the repository's copy and reloads Caddy; see the
+header of `deploy/apply.sh`.
 
 ### Verify recovery
 
-- `kubectl get certificate <name>` shows `READY: True`.
-- `openssl s_client` against the production hostname shows the new cert dates.
-- `CertificateExpiryWarning` (or Critical) resolves.
+- `openssl s_client` shows the new dates.
+- readyz passes from your machine with normal certificate checks.
 
 ---
 
 ## 6. Rollback
 
-**Trigger**: smoke test failure post-deploy, error spike post-deploy, or operator decision after another runbook recommends it.
+**Trigger:** errors start right after a new image reached the VM, or another
+playbook sends you here.
 
-**What it means**: undo the most recent (or chosen) Helm release.
+**What it means:** run a previous image of `app` and `worker` again. Every
+published image keeps its `:sha-<short>` tag in GHCR (`ghcr-publish.yml`), so a
+rollback needs no rebuild.
 
 ### Procedure
 
 ```bash
-# 1. Confirm namespace + release
-helm list --namespace inflect-production
+# 1. Which revision is running now?
+#    (on the VM)
+sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' inflect-app-1
 
-# 2. Show the revision history
-helm history inflect-production --namespace inflect-production --max 10
-# Output: REVISION  STATUS      CHART          APP VERSION  DESCRIPTION
-#         5         deployed    inflect-0.1.0  1.36.0       Upgrade complete  ← current
-#         4         superseded  inflect-0.1.0  1.35.1       Upgrade complete  ← target
-
-# 3. Roll back to the immediately prior revision
-helm rollback inflect-production --namespace inflect-production --wait --timeout 5m
-
-# OR roll back to a specific revision
-helm rollback inflect-production 4 --namespace inflect-production --wait --timeout 5m
-
-# 4. Verify
-kubectl --namespace inflect-production rollout status deployment/inflect-production
-curl https://app.example.com/api/readyz | jq .
-
-# 5. Run smoke against the rolled-back service
-SMOKE_URL=https://app.example.com node scripts/smoke-prod.mjs
+# 2. Which one was before it? A run that succeeded published its commit as the tag
+#    sha-<first 7 characters of the commit>.
+gh run list --workflow ghcr-publish.yml --branch main --limit 10
 ```
 
-### What rollback re-applies — and what it doesn't
+Then pick one of three ways back. They are the ones
+[`docs/change-management-policy.md`](change-management-policy.md) lists.
 
-| ✅ Re-applied | ❌ NOT re-applied |
+- **Point `:latest` at the previous image.** Watchtower follows `:latest`, so
+  it moves `app` and `worker` back within about a minute. You need push access
+  to the package in GHCR.
+  ```bash
+  docker buildx imagetools create \
+    -t ghcr.io/rodnapamet/inflect-compliance:latest \
+    ghcr.io/rodnapamet/inflect-compliance:sha-<short>
+  ```
+  Any push to `main` publishes a new `:latest` and moves production forward
+  again (`ghcr-publish.yml` runs on every push to `main`), so land the revert
+  or the fix next.
+- **Pin the tag in the compose file.** Set `app` and `worker` to
+  `ghcr.io/rodnapamet/inflect-compliance:sha-<short>` in
+  `deploy/docker-compose.prod.yml` and apply it with `CONFIRM=1
+  deploy/apply.sh`. A pinned tag never moves, so Watchtower leaves both alone
+  until the pin is removed. `apply.sh` preflights first; while `REDIS_PASSWORD`
+  is absent from the host env files it stops there, changing nothing (see
+  "Outstanding operator actions" in [`docs/deployment.md`](deployment.md)).
+- **Merge a revert.** It goes through the merge queue and builds a new image,
+  so it is the slowest. Under the EMERGENCY procedure in
+  `docs/change-management-policy.md` it still goes through the queue.
+
+```bash
+# 3. Verify, from your machine.
+curl -s https://app.inflect.bg/api/readyz | jq .
+SMOKE_URL=https://app.inflect.bg node scripts/smoke-prod.mjs
+```
+
+### What a rollback changes — and what it doesn't
+
+| ✅ Rolled back | ❌ Not rolled back |
 |---|---|
-| Deployment image tag, replicas, env, resources | Pre-install/upgrade hooks (the migration Job is **NOT** re-run on rollback) |
-| ConfigMap / Secret content (chart-managed) | Externally-managed resources (RDS state, S3 bucket contents, Secrets Manager) |
-| HPA bounds + metrics | Schema migrations |
-| Ingress + NetworkPolicy + Service | |
+| The `app` and `worker` image | The database schema: migrations that ran stay applied |
+| | Data written by the newer image |
+| | The host env files, the compose file and the Caddyfile |
+| | Anything the newer image sent outside: emails, audit-stream batches, directory writes |
 
 ### Migration safety on rollback
 
-The migration Job is one-way. Rolling back the app image to a revision that **pre-dates** a schema migration leaves the OLD app code reading the NEW schema — broken (missing columns, wrong types).
+The schema does not roll back. The `app` container runs
+`prisma migrate deploy` each time it starts, so a merged migration is applied
+when the new image first starts, and it stays applied when you run an older
+image. The older code then runs against the newer schema.
 
 **Mitigation pattern: expand-and-contract migrations.**
 
@@ -458,56 +513,63 @@ The migration Job is one-way. Rolling back the app image to a revision that **pr
 | PR2 (Migrate) | (no schema change) | Use the new shape |
 | PR3 (Contract) | Drop old shape | Use the new shape exclusively |
 
-A rollback after PR2 (Migrate) is safe — the schema accommodates both. A rollback after PR3 (Contract) is a data-loss event; **flag it in PR descriptions so reviewers see the constraint explicitly**.
+A rollback after PR2 (Migrate) is safe — the schema accommodates both. A
+rollback after PR3 (Contract) is a data-loss event; **flag it in PR
+descriptions so reviewers see the constraint explicitly**.
 
-If you rollback past a Contract-style PR by accident:
-1. Stop the pods (`kubectl scale deployment/... --replicas=0`).
-2. Restore the database from the latest snapshot taken before the Contract migration applied.
-3. Cut over the app to the restored DB endpoint.
-4. Communicate data loss window to customers.
+If you have rolled back past a Contract migration:
+1. Roll forward instead, with a fix, if you can.
+2. If you cannot, the only way back to the old schema is to restore the disk
+   from a snapshot taken before the migration ran
+   ([`docs/disaster-recovery.md`](disaster-recovery.md)). Everything written
+   since that snapshot is lost.
+3. Tell customers the data-loss window.
 
 ---
 
 ## 7. Data Breach Response
 
-**Trigger**: log audit reveals unauthorised access, suspicious access patterns, leaked credentials, third-party security disclosure, or anomaly in the audit log.
+**Trigger:** log review shows unauthorised access, suspicious access patterns,
+leaked credentials, a third-party security disclosure, or an anomaly in the
+audit log.
 
-**What it means**: confidentiality of customer data may be compromised. Speed + traceability matter equally.
+**What it means:** confidentiality of customer data may be compromised. Speed
+and traceability matter equally.
 
 ### Phase 1 — Contain (within 30 minutes)
 
+**1. Preserve evidence first.** The audit log is hash-chained (Epic A.4): do
+not change it. Snapshot the disk (common first steps, step 5), then dump the
+`AuditLog` table to the VM:
+
 ```bash
-# 1. STOP THE BLEED. If a credential is the root cause, rotate immediately.
-#    The blast radius depends on which credential.
-
-# Compromised AWS account credential:
-#    Disable the IAM role/user via AWS console.
-#    Rotate every secret in AWS Secrets Manager for the affected env.
-aws secretsmanager update-secret \
-  --secret-id inflect-compliance-production-data-encryption-key \
-  --description "ROTATING - incident #..."
-
-# Compromised app session token:
-#    Bump AUTH_SECRET — invalidates all active sessions.
-#    Edit infra/terraform/modules/secrets/main.tf, change `keepers` on
-#    random_id.auth_secret, terraform apply, kubectl rollout restart.
+sudo docker exec inflect-postgres-1 pg_dump -U postgres -d inflect_compliance \
+  -t '"AuditLog"' --data-only --column-inserts \
+  > "audit-log-incident-$(date -u +%Y%m%dT%H%MZ).sql"
 ```
 
-```bash
-# 2. Preserve evidence. The audit log is hash-chained (Epic A.4) — do
-#    NOT manipulate it. Take a snapshot of the live AuditLog table for
-#    forensics:
-kubectl --namespace inflect-production exec <app-pod> -c inflect -- \
-  pg_dump -t '"AuditLog"' --data-only --column-inserts \
-  -h <db-host> -U postgres inflect_compliance \
-  > audit-log-incident-$(date +%s).sql
-```
+The dump holds tenant data. Keep it on the VM, or copy it only to a place with
+restricted access. `scripts/verify-audit-chain.ts` recomputes each tenant's
+chain and reports any break.
+
+**2. Stop the bleed.** Revoke or rotate whatever was compromised:
+
+| Compromised | Action |
+|---|---|
+| A user's account or sessions | Revoke the user's sessions on `/admin/members`, or use Revoke All. Deactivate the member if needed. |
+| A tenant API key | Revoke it on `/admin/api-keys`. |
+| `AUTH_SECRET` | Generate a new one (`openssl rand -base64 32`) and set it in `/opt/inflect/.env.prod`. Every session ends. |
+| An OAuth client secret | Rotate it with the provider, then set it in `/opt/inflect/.env.prod`. |
+| A Google account or service-account key with access to the project | Disable it in IAM. The project holds the VM and its snapshots. |
+| `DATA_ENCRYPTION_KEY` | Do **not** replace it in place. See Phase 4. |
+
+Edit the host env files by hand on the VM, with an editor, without printing
+them. A changed `.env.prod` reaches the containers only when they are
+recreated:
 
 ```bash
-# 3. Take an out-of-band snapshot of the database for forensics
-aws rds create-db-snapshot \
-  --db-instance-identifier inflect-compliance-production-db \
-  --db-snapshot-identifier inflect-prod-incident-$(date +%s)
+cd /opt/inflect
+sudo docker compose --env-file .env --env-file .env.prod -f docker-compose.prod.yml up -d app worker
 ```
 
 ### Phase 2 — Assess (within 4 hours)
@@ -515,15 +577,15 @@ aws rds create-db-snapshot \
 | Question | How to answer |
 |---|---|
 | Which tenants are affected? | Query `AuditLog` for the suspect actor's `userId` / `tenantId` over the relevant window. |
-| Which records were accessed? | `AuditLog` records every read+write with `entityType` + `entityId`. Cross-reference. |
+| Which records were accessed? | `AuditLog` rows carry `entity` and `entityId`. Cross-reference them with the actor's window. |
 | When did access start? | `AuditLog.createdAt` minimum timestamp for the actor. |
-| Is the breach ongoing? | If credential rotated in Phase 1: no. Verify by failed-auth logs since the rotation. |
+| Is the breach ongoing? | If the credential was rotated in Phase 1: no. Verify with the failed-auth logs since the rotation. |
 
 ### Phase 3 — Notify (per regulatory requirement)
 
 | Audience | Channel | Timing |
 |---|---|---|
-| Internal: leadership + legal | Slack `#incident-secrets` + email to `legal@` | Within 4 hours |
+| Internal: leadership + legal | The incident channel, and email | Within 4 hours |
 | Affected customers | Email + status page | Per contract (typically within 72h for GDPR-eligible customers) |
 | Regulator (if required) | Per jurisdiction (GDPR Art. 33: 72h to supervisory authority) | Per regulatory clock |
 
@@ -531,9 +593,16 @@ Use the [communication templates](#communication-templates) below.
 
 ### Phase 4 — Recover
 
-- Rotate ALL secrets (cascading: app, OAuth, database master, Redis AUTH, encryption keys).
-- For DATA_ENCRYPTION_KEY rotation specifically: follow the Epic B v1→v2 sweep procedure in `docs/epic-b-encryption.md`. **Do NOT regenerate the KEK without the sweep** — encrypted data becomes unrecoverable.
-- Audit access to the breach-vector before re-enabling.
+- Rotate every secret the attacker could have read: the app's secrets, OAuth,
+  the database password, the Redis password and the encryption key.
+- For `DATA_ENCRYPTION_KEY` specifically: follow the Epic B v1→v2 sweep
+  procedure in [`docs/epic-b-encryption.md`](epic-b-encryption.md) ("Rotating
+  keys safely" and "Key-compromise incident response"). Deploy the new key as
+  `DATA_ENCRYPTION_KEY` and the old one as `DATA_ENCRYPTION_KEY_PREVIOUS`, then
+  run the sweep. **Do NOT regenerate the KEK without the sweep** — encrypted
+  data becomes unrecoverable. The host env file is the key's only copy, and
+  the disk snapshots hold the old one.
+- Audit access to the breach vector before re-enabling it.
 
 ### Phase 5 — Post-mortem
 
@@ -546,15 +615,55 @@ Within 7 days:
 
 ---
 
+## 8. Disk Full
+
+**Trigger:** `inflect disk filling — act before postgres cannot write` (the
+root filesystem above 85% for 5 minutes), or `No space left on device` in a
+log.
+
+**What it means:** one disk holds the OS, the images, the database, Redis, the
+uploads and the logs. On 2026-09-24 it reached 100%: Postgres could not write
+its WAL and crash-looped eight times, and readyz went down with it. 14 GB of it
+was old images from registry paths Watchtower no longer manages.
+
+### Triage
+
+```bash
+df -h /
+sudo docker system df          # "reclaimable" is usually the answer
+sudo docker images             # look for images from old registry paths
+sudo du -xh --max-depth=1 / | sort -rh | head
+```
+
+### Mitigate
+
+- Remove images no container uses: `sudo docker rmi <image>`, or
+  `sudo docker image prune` for dangling ones.
+- Never delete files under a Docker volume by hand, least of all the Postgres
+  or Redis data.
+- If nothing can be freed, grow the disk:
+  ```bash
+  gcloud compute disks resize inflect-compliance --zone europe-west1-b --size <GB>
+  ```
+  The filesystem then has to be grown on the VM. Check the device and the
+  filesystem type with `lsblk` and `df -T /` first.
+
+### Verify recovery
+
+- `df -h /` is below 85%, and the alert's incident closes.
+- Postgres and Redis are `Up` and readyz passes.
+
+---
+
 ## Communication templates
 
-### PagerDuty incident (auto-generated by the alerting pipeline)
+### Alert email (GCP Monitoring)
 
-The PagerDuty incident description is auto-populated by the alert
-annotation. **Do not edit the alert annotation in flight** — that
-would cause every future fire of the same alert to inherit your
-in-incident notes. Use the PagerDuty incident's own `Notes` field
-for the running commentary.
+GCP Monitoring puts the policy's `documentation` field from
+`infra/alerts/policies/*.json` into the email. To change what the email says,
+change the policy file in the repository and update the deployed policy from
+it. An edit made only in the console leaves the repository describing a
+policy that no longer exists.
 
 ### Status page update — initial
 
@@ -596,7 +705,6 @@ Total customer-visible impact window: <start UTC> to <end UTC>
 - IC: <name>     SME: <name>     Comms: <name>
 - Affected service: <service>
 - Initial symptom: <one-liner>
-- Dashboard: <URL>
 - Runbook: docs/incident-response.md#<section>
 
 Posting commentary every 15 minutes here.
@@ -675,23 +783,21 @@ or your account manager.
 
 ## Operational alignment summary
 
-This runbook is the **handle** by which an operator drives the
-underlying machinery shipped across OI-1 / OI-2 / OI-3:
+What this runbook relies on, and where each piece is defined:
 
-| Runbook section uses... | ...which is shipped by |
+| Runbook step uses... | ...which is defined in |
 |---|---|
-| `helm rollback`, `kubectl rollout restart` | Epic OI-2 (Helm chart, deploy workflow) |
-| `restore-db-instance-from-db-snapshot` | Epic OI-1 (RDS module with PITR) + Epic OI-3 (`infra/scripts/restore-test.sh` validates the path monthly) |
-| Secrets Manager rotation (KEK, AUTH, DB) | Epic OI-1 (secrets module, `manage_master_user_password=true` for RDS) |
-| Database / Redis / BullMQ dashboards | Epic OI-3 part 2 (`infra/dashboards/`) |
-| Alert annotations link to dashboards | Epic OI-3 part 3 (`infra/alerts/rules.yml`) |
-| External uptime monitor on `/api/livez` | Epic OI-3 part 3 (`infra/alerts/external-uptime.yml`) |
-| `/api/readyz` dep-aware probe | Epic OI-3 part 1 (the route + tests) |
-| Audit log integrity (hash-chained) | Epic A.4 (pre-OI-3) — referenced from the breach response |
-
-Each runbook section names the **specific alert** that fires it and
-the **specific dashboard** that diagnoses it, so an operator
-landing on this doc cold can act without prior context.
+| The services and container names | `deploy/docker-compose.prod.yml` (the compose project in `/opt/inflect/`) |
+| Pushing a compose change; the drift check | `deploy/apply.sh`, `deploy/check-drift.sh` ([`docs/deployment.md`](deployment.md)) |
+| A new image reaching the VM | `.github/workflows/ghcr-publish.yml` and the `watchtower` service |
+| The uptime alert on `/api/readyz` | `infra/alerts/external-uptime.yml`, `infra/alerts/policies/readyz-uptime.json` |
+| The custom-metric alerts | `infra/alerts/gcp-custom-metrics.yml`, `infra/alerts/policies/`, `infra/reporters/` |
+| `/api/readyz` and `/api/livez` | `src/app/api/readyz/route.ts`, `src/app/api/livez/route.ts` |
+| The worker's healthcheck | `scripts/worker-healthcheck.ts`, bundled as `dist/worker-healthcheck.mjs`; see [`docs/worker-autoscaling.md`](worker-autoscaling.md) |
+| Restoring from a snapshot | [`docs/disaster-recovery.md`](disaster-recovery.md) |
+| A half-applied migration | [`docs/runbooks/failed-migration-recovery.md`](runbooks/failed-migration-recovery.md) |
+| Audit log integrity (hash-chained) | Epic A.4; `scripts/verify-audit-chain.ts` |
+| Encryption-key rotation | Epic B; [`docs/epic-b-encryption.md`](epic-b-encryption.md) |
 
 ---
 
@@ -699,4 +805,6 @@ landing on this doc cold can act without prior context.
 
 | Date | Change |
 |---|---|
-| 2026-04-27 | Initial runbook (Epic OI-3 final layer). 7 playbooks + 5 communication templates. Tied to OI-1 (Terraform/RDS), OI-2 (Helm/deploy), and the rest of OI-3 (readyz, observability, alerting, backup/restore). |
+| 2026-04-27 | Initial runbook (Epic OI-3 final layer). 7 playbooks + 5 communication templates. Written for an EKS/RDS estate (Terraform, Helm, PagerDuty) that was never provisioned. |
+| 2026-09-02 | A table at the top translated the EKS/RDS commands for the GCP VM, after the estate was removed (#2226). |
+| 2026-10-26 | Rewritten for the GCP VM (#4308): every playbook uses the VM's containers, the alerts are the GCP Monitoring policies that exist, the on-call section says there is no rotation, and a Disk Full playbook is added. |

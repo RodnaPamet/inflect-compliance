@@ -1,7 +1,7 @@
 import { PrismaClient, type ControlFrequency } from '@prisma/client';
 import { GENERIC_TEMPLATE_TASKS } from './generic-template-tasks';
 import { PrismaPg } from '@prisma/adapter-pg';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '@/lib/auth/passwords';
 import { randomUUID } from 'crypto';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashForLookup } from '@/lib/security/encryption';
@@ -43,7 +43,9 @@ async function main() {
     // provisioned via OAuth, never this seed). Tests/CI leave it unset
     // so the default holds.
     const seedPassword = process.env.SEED_PASSWORD || 'password123';
-    const pwd = await bcrypt.hash(seedPassword, 10);
+    // The app's own hasher (cost 12). The seed used bcryptjs at cost 10,
+    // which the first login then re-hashed through `needsRehash` anyway.
+    const pwd = await hashPassword(seedPassword);
 
     const admin = await prisma.user.upsert({
         where: { emailHash: hashForLookup('admin@acme.com') },
@@ -1384,8 +1386,8 @@ Reviewed at least annually.` },
     }
     console.log(`✅ ISO 27701 privacy risk templates seeded (${iso27701RiskTemplates.length})`);
 
-    // ─── COSO ICF 2013 and AIUC-1 ───
-    // The two catalogues that declare the SAME framework key as their library
+    // ─── COSO ICF 2013, AIUC-1 and EU drone operations ───
+    // The catalogues that declare the SAME framework key as their library
     // file, so in production the catalogue writes the row and the library sync
     // below leaves it alone (scripts/seed-framework-catalogs.ts says why). This
     // file applied neither, so the sync used to find no catalogue row and import
@@ -1395,6 +1397,10 @@ Reviewed at least annually.` },
     for (const rel of [
         'prisma/fixtures/coso-icf-2013-control-templates.json',
         'prisma/fixtures/aiuc-1-control-templates.json',
+        // EU drone operations, for the same reason: its library declares the
+        // same key, so without the catalogue first the sync would import it as
+        // a library row with none of its seven subcategory packs.
+        'prisma/fixtures/eu-uas-ops-control-templates.json',
     ]) {
         const result = await applyCatalogFile(prisma, loadCatalogFile(rel), rel);
         console.log(
@@ -1676,7 +1682,6 @@ Reviewed at least annually.` },
     // existing frozen pack with a share link (tooltip-and-copy, reporting,
     // audit-readiness). Seeding this once removes the "no audit pack
     // available" / "share link not yet generated" skip branches.
-    const bcryptLib = bcrypt;
     let seedCycle = await prisma.auditCycle.findFirst({
         where: { tenantId: tenant.id, frameworkKey: 'ISO27001' },
     });
@@ -1862,9 +1867,6 @@ Reviewed at least annually.` },
         const vqCount = fixture.sections.reduce((n, s) => n + s.questions.length, 0);
         console.log(`✅ ${fixture.name} seeded (${fixture.sections.length} sections, ${vqCount} questions)`);
     }
-
-    // Silence unused-binding lint for the re-exported bcrypt alias above.
-    void bcryptLib;
 
     console.log('\n🎉 Seed complete! Login as admin@acme.com — password set via SEED_PASSWORD (default in prisma/seed.ts)');
 }

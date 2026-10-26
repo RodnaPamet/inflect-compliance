@@ -6,9 +6,20 @@
 #   app_health    — is the inflect-compliance app healthy?
 #   resource      — is Prometheus' own storage/scraping healthy?
 #
-# Every alert carries `for:`, `severity` (warning|critical), and annotations
-# (summary, description, runbook_url). runbook_url points at the docs tree;
-# replace the base URL with your real runbook host.
+# Every alert carries `severity` (warning|critical) and the annotations
+# `summary` and `description`. An alert carries `runbook_url` only where a doc
+# in this repository says what to do about it; the link is to that doc on
+# GitHub. tests/unit/prometheus-rules-match-emitted-metrics.test.ts fails if a
+# rule selects a metric, label or value the stack does not export, or if a
+# runbook_url names a doc or heading the repository does not have.
+#
+# Two rules this file used to carry are gone, because nothing produces what
+# they read:
+#   JobQueueDepthGrowing    — the app declares a `job.queue.depth` gauge, but
+#                             nothing calls startQueueDepthReporting, so no
+#                             queue-depth series exists. See recording-rules.yml.
+#   PrometheusDiskFillingUp — read node_filesystem_*, which needs node_exporter;
+#                             this stack does not run it.
 # =============================================================================
 
 groups:
@@ -31,7 +42,6 @@ groups:
           description: >-
             This alert always fires by design. If it is NOT present in the
             downstream receiver, the alert delivery path is broken.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/dead-mans-switch"
 
       # --- A scrape target is down.
       - alert: ObservabilityTargetDown
@@ -44,7 +54,7 @@ groups:
           description: >-
             Prometheus has been unable to scrape {{ $labels.job }}
             ({{ $labels.instance }}) for 5 minutes.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/target-down"
+          runbook_url: "https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/observability/04-production-hardening.md#failure-modes-and-runbooks"
 
       # --- Collector failing to EXPORT data (to Prometheus exporter or Tempo).
       - alert: CollectorExportFailures
@@ -59,23 +69,26 @@ groups:
           description: >-
             The collector exporter {{ $labels.exporter }} has had send
             failures for 10 minutes. Traces or metrics are being lost.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/collector-export-failures"
 
-      # --- Collector DROPPING data inside a processor (memory_limiter, batch).
+      # --- Collector REFUSING data: memory_limiter shedding load. The app's
+      # --- OTLP exporter gets a retryable error and, once its retries run
+      # --- out, drops what it sent. Collector 0.123.0 has no
+      # --- otelcol_processor_dropped_* series; memory_limiter's refused
+      # --- counters (label `processor`) are the signal.
       - alert: CollectorDroppingData
-        expr: sum by (processor) (rate(otelcol_processor_dropped_spans_total[5m])) > 0
+        expr: sum by (processor) (rate(otelcol_processor_refused_spans_total[5m])) > 0
               or
-              sum by (processor) (rate(otelcol_processor_dropped_metric_points_total[5m])) > 0
+              sum by (processor) (rate(otelcol_processor_refused_metric_points_total[5m])) > 0
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "OTel Collector processor {{ $labels.processor }} is dropping data"
+          summary: "OTel Collector processor {{ $labels.processor }} is refusing data"
           description: >-
-            The collector processor {{ $labels.processor }} has dropped
-            telemetry for 10 minutes — usually memory_limiter shedding load.
-            Check collector mem_limit and ingest volume.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/collector-dropping-data"
+            The collector processor {{ $labels.processor }} has refused
+            telemetry for 10 minutes — memory_limiter shedding load. Check
+            collector mem_limit and ingest volume.
+          runbook_url: "https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/observability/04-production-hardening.md#collector-memory-pressure"
 
   # ===========================================================================
   # APP HEALTH — inflect-compliance application signals.
@@ -83,9 +96,10 @@ groups:
   - name: app_health
     rules:
 
-      # --- 5xx ratio elevated. Uses the recording rule for cheapness.
+      # --- 5xx ratio elevated: responses with a 5xx status, thrown or
+      # --- returned, over all responses. Uses the recording rule.
       - alert: ApiHigh5xxRatio
-        expr: job:api_request:error_ratio5m > 0.05
+        expr: job:api_request:5xx_ratio5m > 0.05
         for: 10m
         labels:
           severity: critical
@@ -94,7 +108,7 @@ groups:
           description: >-
             {{ $labels.service_name }} has served a 5xx error ratio of
             {{ $value | humanizePercentage }} over the last 10 minutes.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/api-5xx-ratio"
+          runbook_url: "https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#common-first-steps-every-incident"
 
       # --- API p95 latency SLO breach (SLO: p95 < 750 ms).
       - alert: ApiLatencySloBreach
@@ -107,22 +121,7 @@ groups:
           description: >-
             p95 request latency for {{ $labels.service_name }} is
             {{ $value | humanize }}ms (SLO: 750ms) over the last 15 minutes.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/api-latency-slo"
-
-      # --- BullMQ queue depth growing unbounded.
-      - alert: JobQueueDepthGrowing
-        expr: max by (queue) (job_queue_depth) > 500
-              and
-              deriv(max by (queue) (job_queue_depth)[30m:]) > 0
-        for: 20m
-        labels:
-          severity: warning
-        annotations:
-          summary: "BullMQ queue {{ $labels.queue }} depth growing unbounded"
-          description: >-
-            Queue {{ $labels.queue }} has more than 500 pending jobs and has
-            been growing for 20 minutes — the worker is not keeping up.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/job-queue-depth"
+          runbook_url: "https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#common-first-steps-every-incident"
 
       # --- Job failure rate elevated.
       - alert: JobFailureRateHigh
@@ -135,7 +134,7 @@ groups:
           description: >-
             {{ $labels.service_name }} background jobs are failing at
             {{ $value | humanizePercentage }} over the last 15 minutes.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/job-failure-rate"
+          runbook_url: "https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#4-queue-backlog"
 
       # --- COMPLIANCE-CRITICAL: audit-stream delivery to tenant SIEMs failing.
       # --- A sustained failure means audit events are not reaching customer
@@ -153,32 +152,12 @@ groups:
             for 10 minutes ({{ $value | humanize }} failures/s). Audit events
             may not be reaching customer SIEMs — treat as a compliance
             incident, not a routine ops alert.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/audit-stream-delivery"
 
   # ===========================================================================
   # RESOURCE — Prometheus' own storage and scraping health.
   # ===========================================================================
   - name: resource
     rules:
-
-      # --- Prometheus TSDB disk filling up.
-      - alert: PrometheusDiskFillingUp
-        expr: |
-          (
-            node_filesystem_avail_bytes{mountpoint="/prometheus"}
-            /
-            node_filesystem_size_bytes{mountpoint="/prometheus"}
-          ) < 0.15
-        for: 30m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Prometheus TSDB volume below 15% free"
-          description: >-
-            The /prometheus volume has less than 15% free space. Reduce
-            PROM_RETENTION or grow the volume. (Requires node_exporter; if
-            absent this alert is vacuous — see README resource notes.)
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/prometheus-disk"
 
       # --- TSDB head series cardinality explosion.
       - alert: PrometheusHeadSeriesHigh
@@ -192,11 +171,13 @@ groups:
             Prometheus is holding {{ $value | humanize }} active series in the
             TSDB head — likely a high-cardinality label. Investigate before
             memory pressure causes restarts.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/prometheus-cardinality"
 
-      # --- Scrapes taking too long relative to the interval.
+      # --- Scrapes approaching the timeout. prometheus.yml sets
+      # --- scrape_timeout: 10s, so a scrape that takes longer has already
+      # --- failed (up == 0, ObservabilityTargetDown). The threshold sits at
+      # --- 80% of the timeout so this fires BEFORE that.
       - alert: PrometheusSlowScrapes
-        expr: scrape_duration_seconds > 10
+        expr: scrape_duration_seconds > 8
         for: 15m
         labels:
           severity: warning
@@ -204,6 +185,5 @@ groups:
           summary: "Slow scrape of {{ $labels.job }}"
           description: >-
             Scraping {{ $labels.job }} ({{ $labels.instance }}) is taking
-            {{ $value | humanize }}s, near the 30s scrape interval. The target
+            {{ $value | humanize }}s, near the 10s scrape timeout. The target
             may be overloaded or exposing too many series.
-          runbook_url: "https://docs.inflect.internal/observability/runbooks/slow-scrapes"

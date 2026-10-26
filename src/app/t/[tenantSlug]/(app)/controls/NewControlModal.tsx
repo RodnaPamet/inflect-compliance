@@ -56,6 +56,7 @@ import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { choiceOrNull, textOrNull } from './_lib/control-write-values';
 import { apiErrorMessage } from '@/lib/api-error';
+import { parsePlanLimitMessage } from '@/lib/billing/plan-limit-message';
 
 // ─── Options ─────────────────────────────────────────────────────────
 
@@ -263,7 +264,16 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                     // the envelope `{ error: { code, message } }`, which the
                     // old `typeof data.error === 'string'` read never matched,
                     // so the server's reason was always dropped (#4126).
-                    throw new Error(apiErrorMessage(data, ''));
+                    const reason = apiErrorMessage(data, '');
+                    // The plan-limit refusal is machine-shaped
+                    // (`plan_limit_exceeded: FREE plan allows 10 control(s); …`)
+                    // so a client can recognise it — say it in words instead.
+                    const planLimit = parsePlanLimitMessage(reason);
+                    throw new Error(
+                        planLimit
+                            ? t('new.planLimitReached', { limit: planLimit.limit, current: planLimit.current })
+                            : reason,
+                    );
                 }
                 const created: { id: string } = await res.json();
                 createdId = created.id;

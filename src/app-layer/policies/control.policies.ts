@@ -45,6 +45,22 @@ export function assertCanReadControls(ctx: RequestContext) {
     }
 }
 
+/**
+ * Whether `assertCanReadControls` admits this context — the same rule, asked
+ * rather than enforced, so there is one definition of it. For a page that
+ * shows controls only as a supporting list (the Evidence library's control
+ * pickers) and must still open for a custom role that may view evidence but
+ * not controls.
+ */
+export function canReadControls(ctx: RequestContext): boolean {
+    try {
+        assertCanReadControls(ctx);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /** ADMIN/EDITOR can create controls */
 export function assertCanCreateControl(ctx: RequestContext) {
     if (!ctx.permissions.canWrite || granularControlsDenied(ctx, 'create')) {

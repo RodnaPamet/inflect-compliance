@@ -771,6 +771,7 @@ function InteractiveKpiGrid({
                     id="kpi-coverage"
                     className="h-full"
                     label={t('controls')}
+                    trendAriaLabel={t('kpiTrend30Day', { label: t('controls') })}
                     value={exec.controlCoverage.coveragePercent}
                     format="percent"
                     icon={ShieldCheck}
@@ -787,6 +788,7 @@ function InteractiveKpiGrid({
                     id="kpi-risks"
                     className="h-full"
                     label={t('risks')}
+                    trendAriaLabel={t('kpiTrend30Day', { label: t('risks') })}
                     value={exec.stats.risks}
                     icon={AlertTriangle}
                     gradient="from-amber-500 to-orange-500"
@@ -802,6 +804,7 @@ function InteractiveKpiGrid({
                     id="kpi-evidence"
                     className="h-full"
                     label={t('evidence')}
+                    trendAriaLabel={t('kpiTrend30Day', { label: t('evidence') })}
                     value={exec.stats.evidence}
                     icon={Paperclip}
                     gradient="from-purple-500 to-pink-500"
@@ -843,6 +846,7 @@ function InteractiveKpiGrid({
                     id="kpi-findings"
                     className="h-full"
                     label={t('openFindings')}
+                    trendAriaLabel={t('kpiTrend30Day', { label: t('openFindings') })}
                     value={exec.stats.openFindings}
                     icon={Bug}
                     gradient="from-red-500 to-rose-500"
@@ -953,6 +957,7 @@ function CustomKpiPanel() {
                         id="custom-kpi-tile"
                         className="h-full"
                         label={selectedLabel}
+                        loadingAriaLabel={t('kpiLoading', { label: selectedLabel })}
                         value={isLoading ? null : data?.headline ?? null}
                         loading={isLoading}
                         icon={meta.icon}

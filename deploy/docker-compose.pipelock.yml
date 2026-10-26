@@ -3,6 +3,12 @@
 #
 # Usage (only after the preconditions below are met):
 #
+#   # FIRST: refuse the stack if the key is absent or is a directory. A
+#   # missing bind-mount source does not fail — Docker creates an empty
+#   # directory and mounts it — and `docker compose config` does not look.
+#   node scripts/preflight-compose-mounts.mjs \
+#     docker-compose.pipelock.yml --base /opt/inflect
+#
 #   docker compose --env-file .env --env-file .env.prod \
 #     -f docker-compose.prod.yml \
 #     -f docker-compose.pipelock.yml up -d

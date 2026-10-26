@@ -1,7 +1,7 @@
 import { listControls, listControlKpiCounts, listControlsPaginated, createControl, listControlsWithDeleted } from '@/app-layer/usecases/control';
 import { CreateControlSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { requirePermission } from '@/lib/security/permission-middleware';
+import { assertPermission, requirePermission } from '@/lib/security/permission-middleware';
 import { parseJsonBody } from '@/lib/validation/route';
 import { z } from 'zod';
 import { normalizeQ } from '@/lib/filters/query-helpers';
@@ -37,11 +37,6 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
     const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
     const query = ControlsQuerySchema.parse(sp);
 
-    if (query.includeDeleted === 'true') {
-        const controls = await listControlsWithDeleted(ctx);
-        return jsonResponse(controls);
-    }
-
     const filters = {
         status: query.status,
         applicability: query.applicability,
@@ -52,6 +47,31 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
         due: query.due,
         evidence: query.evidence,
     };
+
+    if (query.includeDeleted === 'true') {
+        // The Deleted controls view: `admin.manage` as well, the key its
+        // Restore, Purge and bulk delete routes name. It was `controls.view`
+        // alone, leaving the refusal to `listControlsWithDeleted`'s own
+        // `assertCanAdmin` — and a usecase refusal writes no AUTHZ_DENIED
+        // row, so a denied read was invisible to the security trail. The
+        // usecase check stays as the second layer. See docs/epic-c-security.md (C.1).
+        //
+        // `assertPermission` is `requirePermission`'s own decision (it writes
+        // the AUTHZ_DENIED row and throws the generic 403), called here
+        // because the gate depends on a query param, which a wrapper's static
+        // keys cannot express. A second `requirePermission` wrapper around
+        // this branch would resolve the tenant context — and verify an API
+        // key — twice per request.
+        await assertPermission(ctx, 'admin.manage', {
+            method: req.method,
+            path: req.nextUrl.pathname,
+        });
+        // The same filters as the live list, and the same `{ rows, truncated }`
+        // shape. This branch used to take no filters and return every control,
+        // deleted or not (#4275).
+        const controls = await listControlsWithDeleted(ctx, filters, { take: LIST_BACKFILL_CAP + 1 });
+        return jsonResponse(applyBackfillCap(controls));
+    }
 
     // If pagination params present, use paginated response
     if (query.limit !== undefined || query.cursor !== undefined) {

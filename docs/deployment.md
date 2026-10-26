@@ -102,7 +102,6 @@ wide open. The policy is environment-specific:
 |-------------|-----------|-----|
 | Local dev (`docker-compose.yml`) | **Unauthenticated**, loopback-only | Redis intentionally runs without `--requirepass` for dev ergonomics, but its host port is bound to `127.0.0.1:6379` — not reachable from the dev machine's network. |
 | Staging / Production Compose (`docker-compose.staging.yml`, `docker-compose.prod.yml`, `deploy/docker-compose.prod.yml`) | **Required password** | The bundled Redis container runs `redis-server --requirepass "${REDIS_PASSWORD:?…}"`. The `:?` fail-fast syntax aborts `docker compose up` before the container is created if `REDIS_PASSWORD` is unset. The two root compose files build the app's `REDIS_URL` from it (`redis://:${REDIS_PASSWORD}@redis:6379`); `deploy/docker-compose.prod.yml` has no inline `REDIS_URL` and takes it from the host `.env.prod` instead. |
-| Kubernetes / AWS | **Managed Redis, TLS + auth** | ElastiCache with `transit_encryption_enabled` + an AUTH token (Epic OI-1). The token is provisioned by Terraform into AWS Secrets Manager; the app receives a `rediss://:token@host` connection string via the `REDIS_URL` secret. |
 
 `src/env.ts` enforces the contract from the application side: under
 `NODE_ENV=production` it rejects a `REDIS_URL` that is missing **or**
@@ -132,7 +131,6 @@ records.
 |-------------|--------------------|-----|
 | Local dev (`docker-compose.yml`) | `noeviction` | `redis-server … --maxmemory-policy noeviction` |
 | Staging / Production Compose | `noeviction` | same flag on each `redis` service `command:` |
-| Kubernetes / ElastiCache | `noeviction` | terraform parameter group (`infra/terraform/modules/redis/main.tf`) |
 | Test (`docker-compose.test.yml`) | `noeviction` (Redis default) | no `maxmemory` cap is set, so eviction never triggers |
 
 With `noeviction` **and** a `maxmemory` cap, a Redis at its memory
@@ -147,8 +145,7 @@ Two layers keep this from regressing:
   from `src/instrumentation.ts` — a best-effort `CONFIG GET` check
   that logs loudly (error in production, warning in dev) if the
   connected Redis is evicting. Skipped quietly when `CONFIG` is
-  unavailable (managed Redis disables it), since terraform +
-  `terraform-redis-storage.test.ts` enforce that path.
+  unavailable, as managed Redis services commonly disable it.
 
 ### Background worker
 
@@ -491,14 +488,12 @@ This app uses **local file storage** for evidence uploads. Platforms without per
 - **Manual**: `npm run migrate:deploy`
 - **Never** use `db push` in production
 
-## Backup & Restore (Docker Compose — legacy path only)
+## Backup & Restore (self-hosted `docker-compose.prod.yml`)
 
-> **K8s/EKS users see [Backup & Restore (RDS + S3)](#backup--restore-rds--s3)
-> in the Kubernetes section below.** The commands here apply only to
-> the deprecated docker-compose deploy model (self-hosted single VPS
-> running Postgres in a container with a mounted volume). They do
-> NOT apply to the EKS production path, which uses RDS automated
-> backups + S3 versioning instead of host-level pg_dump and tar.
+> These commands are for the self-hosted stack in the root
+> `docker-compose.prod.yml`, whose database service is `db`. Production runs
+> `deploy/docker-compose.prod.yml` instead, and is backed up by the VM's daily
+> disk snapshot: see [`docs/disaster-recovery.md`](disaster-recovery.md).
 
 ### Database
 
@@ -542,629 +537,82 @@ docker compose -f docker-compose.prod.yml exec app \
 
 ---
 
-## Kubernetes (Helm) — primary production path
-
-As of Epic OI-2 (2026-04-27), production deployments use the Helm
-chart at `infra/helm/inflect/` running on EKS. The earlier
-SSH/docker-compose path remains documented for self-hosted scenarios
-but is **deprecated as the primary production model**.
-
-> **Companion docs**
-> - `infra/helm/inflect/README.md` — chart-specific operator notes
-> - `docs/infrastructure.md` — Epic OI-1 (Terraform/AWS layer beneath the cluster)
-> - `docs/implementation-notes/2026-04-27-epic-oi-2-*.md` — design history
-
-### Architecture
-
-```
-┌─────────────────── EKS cluster ───────────────────────┐
-│                                                       │
-│  Namespace: inflect-{staging,production}              │
-│                                                       │
-│  ┌── Service ──────┐                                  │
-│  │ ClusterIP :80   │ ◄── Ingress (NGINX or ALB)       │
-│  └────────┬────────┘                                  │
-│           │ targetPort: http (3000)                   │
-│           ▼                                           │
-│  ┌──── App pod ──────────────────────────────┐        │
-│  │  ┌── inflect ─────────┐  ┌── pgbouncer ─┐ │        │
-│  │  │ Next.js :3000      │──│ :5432 (loop)  │ │        │
-│  │  └────────────────────┘  └──────┬────────┘ │        │
-│  └─────────┬─────────────────────────┼────────┘        │
-│            │                         │                 │
-│  ┌── Worker pod ──────┐               │                │
-│  │ node tsx worker.ts │               │                │
-│  └────────────────────┘               │                │
-│            │                          │                │
-│            └────── envFrom ──┬────────┘                │
-│                              │                         │
-│                       (egress via NetworkPolicy:       │
-│                        DNS, VPC:5432/6379, HTTPS)      │
-└──────────────────────────────┼─────────────────────────┘
-                               ▼
-                  RDS Postgres + ElastiCache Redis
-                  (Epic OI-1 — terraform-managed)
-```
-
-Per-release resources rendered by the chart:
-
-| Kind | Name | When |
-|---|---|---|
-| Service | `<release>` | always |
-| Deployment | `<release>` (component=app, with PgBouncer sidecar) | always |
-| Deployment | `<release>-worker` (component=worker) | `worker.enabled=true` |
-| Job | `<release>-migrate` | Helm pre-install/pre-upgrade hook |
-| HorizontalPodAutoscaler | `<release>` | `autoscaling.enabled=true` |
-| Ingress | `<release>` | `ingress.enabled=true` |
-| NetworkPolicy | `<release>-app` | `networkPolicy.enabled=true` |
-
-### Deploying
-
-The `Deploy` GitHub Actions workflow (`.github/workflows/deploy.yml`)
-is the canonical path. Manual trigger only:
-
-```
-GitHub → Actions → Deploy → Run workflow
-  environment: staging | production
-  ref: (blank for current main, or branch/tag/SHA)
-  image_tag: (blank for short-SHA-derived)
-```
-
-The `environment` input chooses how far to promote:
-
-- **`staging`** — deploy + smoke staging, then stop.
-- **`production`** — deploy + smoke **staging first**, and only if
-  that passes, deploy + smoke production.
-
-#### The staging smoke gate
-
-Production is **structurally gated behind staging**. A single
-`production` run executes:
-
-```
-gate → build-image → deploy-staging → smoke-staging → deploy-production → smoke-production
-```
-
-The `deploy-production` job declares `needs: [smoke-staging]`.
-GitHub Actions never starts a job whose `needs` dependency failed —
-so **production cannot deploy unless the exact same image first
-passed staging deploy + staging smoke**. The dependency is explicit
-in the job graph, not implicit run-ordering. The wiring is locked by
-`tests/guards/deploy-staging-gate.test.ts`.
-
-Two layers protect production, in order:
-
-1. **Staging smoke must pass** — the `needs:` edge above. A failed
-   staging smoke turns the run red; `deploy-production` is skipped.
-2. **A human approves the production stage** — the `production`
-   GitHub Environment's required-reviewers rule, enforced on
-   `deploy-production`. The approval prompt fires *after* staging
-   smoke has already passed, so reviewers approve a release that is
-   already proven on staging.
-
-The same built image is promoted staging → production (built once
-in `build-image`), so what staging validated is byte-identical to
-what production receives.
-
-What each deploy stage does — both call the shared
-`.github/actions/helm-deploy` composite action, so the helm logic
-cannot drift between environments:
-
-1. OIDC into AWS, fetch kubeconfig for the target EKS cluster
-2. `helm lint` + `helm upgrade --install --dry-run` (validation)
-3. `helm upgrade --install ... --atomic --wait --timeout 10m`
-   - Pre-install/upgrade hook runs the Prisma migration Job; Helm
-     waits for the Job to succeed before rolling the Deployments
-   - `--atomic` rolls back automatically on any failure during
-     the upgrade window
-   - `--wait` blocks until all Deployments reach Ready and the
-     RolloutStatus reports complete (or `--timeout` expires)
-4. Smoke test (`scripts/smoke-prod.mjs`, the generic post-deploy
-   validator) against the environment's `vars.SMOKE_URL`
-
-### Local helm commands
-
-For ad-hoc operations (debugging, manual rollback, pod inspection)
-operators run helm locally with kubectl pointing at the cluster.
-
-**Setup once per workstation**:
-
-```bash
-# Authenticate to the AWS account
-aws sso login --profile inflect-prod   # or your auth method of choice
-
-# Update kubeconfig for the target cluster
-aws eks update-kubeconfig \
-  --region us-east-1 \
-  --name <eks-cluster-name>
-
-# Verify
-kubectl config current-context
-kubectl get nodes
-```
-
-**Inspect a release**:
-
-```bash
-helm list --namespace inflect-production
-helm history inflect-production --namespace inflect-production
-helm get values inflect-production --namespace inflect-production
-helm status inflect-production --namespace inflect-production
-```
-
-**Render the chart locally** (without applying):
-
-```bash
-helm template inflect-production infra/helm/inflect \
-  -f infra/helm/inflect/values-production.yaml \
-  --namespace inflect-production
-```
-
-**Manual install/upgrade** (rare — prefer the workflow so the
-approval audit trail is captured):
-
-```bash
-helm upgrade --install \
-  inflect-production \
-  infra/helm/inflect \
-  --namespace inflect-production \
-  --create-namespace \
-  --values infra/helm/inflect/values-production.yaml \
-  --set image.tag=<short-sha> \
-  --atomic \
-  --wait \
-  --timeout 10m
-```
-
-### Rollback via `helm rollback`
-
-Helm keeps the last 10 revisions per release (configurable via
-`HELM_HISTORY_MAX` in the workflow). Rollback restores the prior
-manifest set in a single atomic operation.
-
-**Find the target revision**:
-
-```bash
-helm history inflect-production --namespace inflect-production
-```
-
-Output (example):
-
-```
-REVISION  UPDATED                  STATUS      CHART          APP VERSION  DESCRIPTION
-1         2026-04-26 10:00:00 UTC  superseded  inflect-0.1.0  1.35.0       Install complete
-2         2026-04-27 09:15:00 UTC  superseded  inflect-0.1.0  1.35.1       Upgrade complete
-3         2026-04-27 14:00:00 UTC  deployed    inflect-0.1.0  1.36.0       Upgrade complete
-```
-
-**Roll back**:
-
-```bash
-# Roll back to the IMMEDIATELY PRIOR revision (most common)
-helm rollback inflect-production --namespace inflect-production
-
-# Roll back to a SPECIFIC revision
-helm rollback inflect-production 2 --namespace inflect-production
-
-# Roll back AND wait for resources to be ready
-helm rollback inflect-production 2 \
-  --namespace inflect-production \
-  --wait \
-  --timeout 5m
-
-# Roll back AND force-restart pods (sometimes needed when env hasn't actually changed)
-helm rollback inflect-production 2 \
-  --namespace inflect-production \
-  --recreate-pods   # deprecated but still useful in older Helm versions
-```
-
-**What rollback re-applies** (and what it doesn't):
-- ✅ Deployment image tags, replica counts, env, resources
-- ✅ ConfigMap / Secret content (chart-managed)
-- ✅ HPA bounds + metrics
-- ✅ Ingress + NetworkPolicy + Service spec
-- ⚠️  Pre-install/upgrade hook Jobs are **NOT re-run** on rollback —
-  Helm rollback does not invoke `helm.sh/hook: pre-install,pre-upgrade`
-  Jobs. The migration Job is one-way: rolling back the app image
-  to a revision that pre-dates a schema migration may break the
-  app on startup. See "Migration safety on rollback" below.
-- ❌ Externally-managed resources (RDS state, S3 bucket contents,
-  Secrets Manager entries) are NOT touched by rollback. Operator
-  handles those manually if a rollback also requires data revert.
-
-**Migration safety on rollback**:
-- Forward-incompatible schema changes (column drops, type changes,
-  constraint adds) make a rollback to a previous app image
-  dangerous — the old app code expects the old schema.
-- Mitigation: write **expand-and-contract** migrations.
-  - **Expand** PR adds the new column / table (compatible with
-    both app versions).
-  - **Migrate** PR ships the app code that uses the new shape.
-  - **Contract** PR drops the old shape AFTER the new code is
-    confirmed stable.
-  - Rollback after a Contract PR is a data-loss event — flag it
-    in PR descriptions so reviewers see the constraint explicitly.
-
-### Scaling
-
-**Horizontal — replicas**:
-
-The HPA owns the replica count when `autoscaling.enabled=true`
-(production default). Modify the bounds via values:
-
-```bash
-# Adjust bounds + reapply via helm upgrade
-helm upgrade --install \
-  inflect-production \
-  infra/helm/inflect \
-  --namespace inflect-production \
-  -f infra/helm/inflect/values-production.yaml \
-  --set autoscaling.minReplicas=4 \
-  --set autoscaling.maxReplicas=20 \
-  --reuse-values
-
-# OR: edit the per-env values file and commit + redeploy via the workflow
-```
-
-**Manual override** (when you need to pin replicas during an
-incident):
-
-```bash
-# Temporarily disable HPA + pin replica count
-kubectl --namespace inflect-production scale deployment inflect-production --replicas=8
-
-# WARNING: the next helm upgrade will reset this. Disable autoscaling
-# in values OR delete the HPA manually before the next deploy:
-kubectl --namespace inflect-production delete hpa inflect-production
-```
-
-**Vertical — resources**:
-
-```bash
-helm upgrade --install \
-  inflect-production \
-  infra/helm/inflect \
-  --namespace inflect-production \
-  -f infra/helm/inflect/values-production.yaml \
-  --set resources.requests.cpu=2 \
-  --set resources.requests.memory=1Gi \
-  --set resources.limits.cpu=4 \
-  --set resources.limits.memory=2Gi \
-  --reuse-values
-```
-
-For a permanent change, edit `values-production.yaml` and deploy
-through the workflow so the change is reviewable.
-
-**Worker scaling** is manual (no HPA per OI-2 spec):
-
-```bash
-helm upgrade --install \
-  inflect-production \
-  infra/helm/inflect \
-  --namespace inflect-production \
-  -f infra/helm/inflect/values-production.yaml \
-  --set worker.replicaCount=4 \
-  --reuse-values
-```
-
-### Secret rotation
-
-Production runtime secrets live in **AWS Secrets Manager** (per
-Epic OI-1). The K8s Secret in the namespace is populated by an
-External Secrets Operator (ESO) sync from Secrets Manager, OR
-manually via `kubectl create secret`. Both paths are supported.
-
-**Generated secrets — terraform-managed** (`AUTH_SECRET`,
-`JWT_SECRET`, `AV_WEBHOOK_SECRET`, `DATA_ENCRYPTION_KEY`,
-`POSTGRES_PASSWORD` (RDS-managed), Redis `AUTH_TOKEN`):
-
-See `docs/infrastructure.md` § "Day-2 ops → Rotating a generated
-secret" for the source-of-truth runbooks. Summary:
-
-| Secret | How to rotate |
-|---|---|
-| RDS master password | `aws secretsmanager rotate-secret --secret-id <rds-secret-id>` (RDS rotates without app downtime) |
-| Redis AUTH | `terraform apply` regenerates and rolls (auth_token_update_strategy = ROTATE keeps old token valid during transition) |
-| AUTH_SECRET / JWT_SECRET | Edit `modules/secrets/main.tf` to bump the random_id `keepers`, `terraform apply`, restart app pods (sessions invalidate — one mass logout) |
-| AV_WEBHOOK_SECRET | Same as AUTH_SECRET; ALSO update the AV scanner's HMAC config in lock-step |
-| DATA_ENCRYPTION_KEY | **NEVER regenerate without the v1→v2 sweep**. See `docs/epic-b-encryption.md` for the rotation runbook |
-
-**Operator-supplied secrets** (`GOOGLE_CLIENT_SECRET`,
-`MICROSOFT_CLIENT_SECRET`):
-
-```bash
-# 1. Rotate the secret in the cloud console (Google Cloud Console / Entra Portal)
-# 2. Update the value in AWS Secrets Manager
-aws secretsmanager put-secret-value \
-  --secret-id inflect-compliance-production-google-client-secret \
-  --secret-string '<new-value>'
-
-# 3. Force a sync if using External Secrets Operator
-kubectl --namespace inflect-production annotate \
-  externalsecret inflect-production-secrets \
-  force-sync=$(date +%s) \
-  --overwrite
-
-# 4. Restart pods to pick up the new value
-kubectl --namespace inflect-production rollout restart deployment inflect-production
-kubectl --namespace inflect-production rollout restart deployment inflect-production-worker
-```
-
-**Picking up a new K8s Secret value** (the chart's contract):
-- The Deployment uses `envFrom: [secretRef]`. K8s does NOT
-  hot-reload env vars when the Secret changes — pods read the
-  Secret's value at start time only.
-- Therefore: every secret rotation requires a `kubectl rollout
-  restart` (or a `helm upgrade` that triggers a pod recreation
-  via a non-trivial change like a templated annotation).
-
-**Triggering a no-op rollout** to pick up new Secret values
-without a values change:
-
-```bash
-# Bumps a pod template annotation, forcing K8s to recreate pods
-kubectl --namespace inflect-production rollout restart \
-  deployment/inflect-production
-```
-
-### Backup & Restore (RDS + S3)
-
-In the EKS path the stateful stores are AWS-managed; backup is
-automated by AWS, not by the operator. Operators DO drive the
-restore — the runbook below is what to run when something needs
-recovery.
-
-#### Database (RDS Postgres)
-
-**What's automatic** (no operator action required):
-
-- **Automated backups** — RDS takes a daily snapshot during the
-  configured `backup_window`, retained for `db_backup_retention_days`
-  (staging: 7d, production: 14d — see
-  `infra/terraform/environments/*/terraform.tfvars`).
-- **Point-in-time recovery (PITR)** — implicit while
-  `backup_retention_period > 0`. The recovery window equals the
-  retention period.
-- **Multi-AZ failover** (production only) — RDS handles automatic
-  failover to the standby on AZ outage. No restore needed; the
-  standby promotes within ~60 seconds.
-
-**Manual snapshot** (one-off — typically before a risky migration):
-
-```bash
-# Identifier embeds a date so listing snapshots later is grep-friendly
-aws rds create-db-snapshot \
-  --db-instance-identifier inflect-production-db \
-  --db-snapshot-identifier inflect-production-pre-migration-$(date +%Y%m%d-%H%M%S) \
-  --region us-east-1
-
-# Verify
-aws rds describe-db-snapshots \
-  --db-instance-identifier inflect-production-db \
-  --snapshot-type manual \
-  --region us-east-1 \
-  --query 'DBSnapshots[*].[DBSnapshotIdentifier,Status,SnapshotCreateTime]' \
-  --output table
-```
-
-**Restore from snapshot** (creates a NEW DB instance — never
-overwrites the running one):
-
-```bash
-# 1. List available snapshots
-aws rds describe-db-snapshots \
-  --db-instance-identifier inflect-production-db \
-  --region us-east-1 \
-  --query 'DBSnapshots[*].[DBSnapshotIdentifier,SnapshotCreateTime]' \
-  --output table
-
-# 2. Restore to a new instance (cannot reuse the original identifier)
-aws rds restore-db-instance-from-db-snapshot \
-  --db-instance-identifier inflect-production-db-restored \
-  --db-snapshot-identifier <snapshot-id> \
-  --db-subnet-group-name inflect-production-db-subnet-group \
-  --vpc-security-group-ids <db-sg-id> \
-  --no-publicly-accessible \
-  --multi-az \
-  --region us-east-1
-
-# 3. Once the restored instance is "available", point app at it via
-#    the runtime ConfigMap (DATABASE_URL host) — atomic cutover via
-#    `kubectl rollout restart`. Old instance kept until the cutover
-#    is verified, then deleted with a final snapshot.
-```
-
-**Restore to a point in time** (PITR — surgical recovery from a
-specific minute, e.g. just before a destructive query):
-
-```bash
-# Restore to 2 hours ago (or any timestamp within the retention window)
-aws rds restore-db-instance-to-point-in-time \
-  --source-db-instance-identifier inflect-production-db \
-  --target-db-instance-identifier inflect-production-db-pitr \
-  --restore-time "$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ)" \
-  --db-subnet-group-name inflect-production-db-subnet-group \
-  --vpc-security-group-ids <db-sg-id> \
-  --no-publicly-accessible \
-  --region us-east-1
-```
-
-The new instance comes up with the same parameter group, security
-group, and subnet group — only the data differs. Cutover via the
-same ConfigMap-edit + `rollout restart` pattern as the snapshot
-restore.
-
-#### Files (S3 storage bucket)
-
-**What's automatic**:
-
-- **Versioning** is enabled on the bucket
-  (`infra/terraform/modules/storage/main.tf::aws_s3_bucket_versioning`).
-  Every PUT creates a new version; deletes are tombstones, not
-  data loss.
-- **Lifecycle** transitions current objects to `STANDARD_IA` after
-  90d (configurable via `storage_ia_transition_days`); noncurrent
-  versions expire after `noncurrent_version_expiration_days`
-  (default 90d). **Tune the noncurrent retention up if you need a
-  longer file-restore window.**
-
-**Find a deleted or overwritten file**:
-
-```bash
-# List ALL versions of a key (including delete markers)
-aws s3api list-object-versions \
-  --bucket inflect-production-storage \
-  --prefix path/to/file \
-  --output table
-```
-
-The output shows `IsLatest`, `VersionId`, `LastModified`, and
-whether a row is a `DeleteMarker`. The version you want to restore
-is the `LastModified`-most-recent non-delete-marker entry from
-before the unwanted change.
-
-**Restore a single file**:
-
-```bash
-# Copy an old version back to the canonical key — creates a new
-# "latest" version that matches the old content.
-aws s3api copy-object \
-  --bucket inflect-production-storage \
-  --copy-source 'inflect-production-storage/path/to/file?versionId=<VERSION_ID>' \
-  --key path/to/file
-```
-
-**Restore from a delete marker** (file was deleted, want it back):
-
-```bash
-# Removing the delete marker re-exposes the version underneath.
-aws s3api delete-object \
-  --bucket inflect-production-storage \
-  --key path/to/file \
-  --version-id <DELETE_MARKER_VERSION_ID>
-```
-
-**Bulk-restore a deleted prefix** (e.g. accidental `aws s3 rm
---recursive`): script the above two calls over the output of
-`list-object-versions --prefix <prefix>`. There's no single AWS
-command for this — list, then iterate. Test against a small
-prefix first.
-
-#### What this section deliberately does NOT cover
-
-- **Off-region disaster recovery** (cross-region snapshot copy,
-  Aurora Global, S3 Cross-Region Replication) — out of scope for
-  the current single-region production posture. When a DR objective
-  forces a cross-region requirement, that's its own runbook.
-- **Audit-log database** — we use the same RDS instance; if an
-  immutable separate-store audit DB ships, it gets its own backup
-  policy here.
-- **Redis** — BullMQ job state is intentionally ephemeral; on-disk
-  Redis snapshots exist (`redis_snapshot_retention_days`) but there
-  is no operator restore flow because losing in-flight jobs is
-  acceptable. Document a Redis restore procedure here once a job
-  type is added that requires durability beyond the in-flight
-  window.
-
-### Operational runbook quick reference
-
-```bash
-# Status
-helm list -n inflect-production
-helm status inflect-production -n inflect-production
-helm history inflect-production -n inflect-production --max 10
-kubectl -n inflect-production get pods -l "app.kubernetes.io/instance=inflect-production"
-
-# Logs
-kubectl -n inflect-production logs -f -l "app.kubernetes.io/component=app" --tail=100
-kubectl -n inflect-production logs -f -l "app.kubernetes.io/component=worker" --tail=100
-
-# Debug a single pod
-kubectl -n inflect-production describe pod <pod>
-kubectl -n inflect-production exec -it <pod> -c inflect -- /bin/sh
-
-# Migration Job logs (after a failed pre-install hook)
-kubectl -n inflect-production logs job/inflect-production-migrate
-
-# PgBouncer state
-kubectl -n inflect-production exec <app-pod> -c pgbouncer -- \
-  psql "host=127.0.0.1 port=5432 dbname=pgbouncer user=postgres" \
-  -c "SHOW POOLS;"
-
-# Rollback
-helm rollback inflect-production [revision] -n inflect-production --wait
-
-# Scale
-helm upgrade ... --set autoscaling.minReplicas=4 --reuse-values
-helm upgrade ... --set worker.replicaCount=4 --reuse-values
-
-# Force secret-pickup rollout
-kubectl -n inflect-production rollout restart \
-  deployment/inflect-production deployment/inflect-production-worker
-```
-
-## PodDisruptionBudget (voluntary-disruption protection)
-
-The Helm chart ships a `PodDisruptionBudget` for both the **app** and
-the **worker** Deployment (`templates/pdb.yaml`), each independently
-gated by `pdb.app.enabled` / `pdb.worker.enabled`.
-
-**Why.** The HPA reacts to *load*, not to *disruption velocity*. A
-single voluntary disruption — a node drain during a k8s upgrade, a
-cluster-autoscaler scale-in, or kube-system node compaction — can evict
-every app pod at once and cause a hard outage the HPA can't prevent. A
-PDB caps how many pods the eviction API will take down at once.
-
-**Policy: `maxUnavailable: 1`.** With HPA-driven replicas this is the
-canonical safe default — it keeps ≥1 pod available even when the HPA has
-shrunk to its `minReplicas: 2` floor, and (unlike a percentage
-`minAvailable`) it never blocks a legitimate scale-down. The PDB's
-selector reuses `inflect.selectorLabels` so it always matches its
-Deployment's pods exactly.
-
-**Per-environment:**
-
-- **Production** (`values-production.yaml`) — **enabled** for both
-  components (HPA floor 2, worker `replicaCount: 2`).
-- **Staging / single-node dev** — **leave disabled** (the default). A
-  single-replica Deployment under a `maxUnavailable: 1` PDB would let
-  the eviction API take down its only pod's budget such that **every
-  node drain blocks indefinitely** (`0` disruptions allowed). Staging
-  runs single-replica today, so it correctly inherits `enabled: false`.
-
-**Verify it's active:**
-
-```bash
-kubectl get pdb -n inflect-production
-# NAME                      MIN AVAILABLE  MAX UNAVAILABLE  ALLOWED DISRUPTIONS
-# inflect-production-app    N/A            1                1
-# inflect-production-worker N/A            1                1
-```
-
-`ALLOWED DISRUPTIONS: 1` (not 0) confirms the budget has headroom. To
-see it enforced, `kubectl drain <node>` a node hosting an app pod — the
-drain evicts at most one app pod at a time and waits for a replacement
-to become Ready before evicting the next, instead of taking them all.
-
-## Sizing a production cluster
-
-For tenant-count → RPS → CPU/memory/replica guidance (four tiers: small
-/ medium / large / enterprise), see the **[Production Sizing Playbook](sizing.md)**.
-The chart's shipped defaults (`autoscaling: 2→10`, `worker.replicaCount: 2`)
-are the *medium* tier; the playbook gives copy-paste `values-production.yaml`
-deltas for the others, plus the telemetry signals that say you've
-outgrown a tier.
+## Production: one GCP VM
+
+Production is a single GCP VM running the Compose stack in
+[`deploy/docker-compose.prod.yml`](../deploy/docker-compose.prod.yml). How that
+file reaches the host is described in
+[The production VM's Compose file is repo-canonical](#the-production-vms-compose-file-is-repo-canonical)
+above. There is no Kubernetes cluster, Helm chart or Terraform-managed cloud
+estate.
+
+This section used to describe one: an EKS path under `infra/helm/inflect/`,
+deployed by `.github/workflows/deploy.yml` through staging and production GitHub
+Environments, with RDS and S3 backups. None of it ever deployed anything.
+`deploy.yml` was removed with the unapplied AWS estate on 2026-09-02 (#2226),
+and `infra/helm/` and `infra/terraform/` do not exist.
+
+### How a change reaches the VM
+
+1. A pull request merges to `main` through the merge queue.
+2. `.github/workflows/ghcr-publish.yml` builds the image, Trivy-scans it, and
+   only on a passing scan pushes it to GHCR as `:latest` and `:sha-<short>`.
+   A running publish is never cancelled by the next push (#4280). A push that
+   lands while one is building waits, and only the newest waiting push is built.
+3. Watchtower on the VM polls `:latest` every 60 seconds and rolls the `app` and
+   `worker` containers onto a new image. It updates only those two. A change to
+   the stack's structure goes through `deploy/apply.sh`.
+4. The `app` container runs `prisma migrate deploy` when it starts
+   (`scripts/entrypoint.sh`), so a merged migration applies when the new image
+   first starts.
+
+No approval sits between steps 1 and 3. See
+[`docs/change-management-policy.md`](change-management-policy.md) and #4056.
+
+### Rolling back
+
+- **The image.** Every published image keeps its `:sha-<short>` tag in GHCR. To
+  run a previous image, pin `app` and `worker` to that tag in
+  `deploy/docker-compose.prod.yml` and apply it with `deploy/apply.sh`, as for
+  any structural change. A pinned tag never moves, so Watchtower finds nothing
+  newer for those two services until the pin is removed. Merging a revert also
+  works, but builds a new image.
+- **The schema does not roll back.** Running an image older than a migration
+  runs old code against the new schema, so write migrations
+  **expand-and-contract**:
+  - **Expand**: add the new column or table, compatible with both versions.
+  - **Migrate**: ship the code that uses the new shape.
+  - **Contract**: drop the old shape once the new code is stable.
+
+  A rollback past a Contract step loses data, so that pull request should say
+  so. A migration that breaks production gets a forward-fix migration.
+
+### Backup, restore and scaling
+
+- **Backup and restore** are the VM's daily disk snapshot, which covers the
+  database, evidence uploads and the env file together. The recovery point,
+  retention, restore steps and what the snapshot does not protect against are
+  in [`docs/disaster-recovery.md`](disaster-recovery.md).
+- **Scaling** is vertical: one VM, one `app` container and one `worker`
+  container, with no autoscaling. More capacity means a larger machine type.
 
 ## Observability provisioning
 
-The telemetry backend (OTel Collector + Prometheus + Tempo + Grafana)
-deploys in three shapes — single-VM compose (today), self-hosted Helm
-(`infra/helm/observability`), or managed Grafana Cloud
-(`infra/terraform/modules/observability`). The app emits OTLP/HTTP in
-all three; only `OTEL_EXPORTER_OTLP_ENDPOINT` (+ auth header) changes.
-See [`docs/observability/01-deployment-topology.md`](observability/01-deployment-topology.md#scale-out-provisioning-beyond-the-single-vm)
-for the decision matrix.
+The telemetry backend (OTel Collector + Prometheus + Tempo + Grafana) is
+packaged as a separate Compose project, to run beside the app on the VM:
+`docker compose -f infra/observability/docker-compose.observability.yml up -d`.
+It is not part of the canonical set above: `deploy/apply.sh` does not push it
+and `deploy/check-drift.sh` does not check it. The repository's record of the
+running stack, `infra/alerts/gcp-custom-metrics.yml` (verified 2026-09-24),
+lists none of its containers and no `OTEL_*` variable on the app, and
+production's alerts are the GCP Cloud Monitoring policies in `infra/alerts/`.
+See [`docs/observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md#where-it-runs).
+The app emits OTLP/HTTP, so pointing it at another backend changes only
+`OTEL_EXPORTER_OTLP_ENDPOINT` (and its auth header).
+[`docs/observability/01-deployment-topology.md`](observability/01-deployment-topology.md#scale-out-provisioning-beyond-the-single-vm)
+describes the two other shapes, a dedicated monitoring VM and a managed
+backend. Neither is provisioned, and the repository has no Helm chart or
+Terraform module for either.
 
 ## Registering a sub-processor
 

@@ -50,6 +50,14 @@
  *     templateCodes: [A-A.5.1, …]  # subset of `templates[*].code`; defaults
  *                                  # to ALL templates in this file
  *
+ *   packs:                         # optional, INSTEAD of `pack`: several
+ *     - key: EU_UAS_OPEN_A2        # packs over one framework, each naming
+ *       templateCodes: [...]       # its templates explicitly. A framework
+ *                                  # whose packs are its subcategories
+ *                                  # (EU UAS: A1, A2, A3, STS-01 …) ships
+ *                                  # this way, and the install wizard then
+ *                                  # asks the tenant to choose at least one.
+ *
  * ## Validation contract
  *
  *   • Malformed YAML/JSON → `CatalogParseError` (carries file + cause).
@@ -243,18 +251,54 @@ export const CatalogPackSchema = z.object({
     templateCodes: z.array(z.string().min(1)).optional(),
 });
 
-export const CatalogFileSchema = z.object({
-    framework: CatalogFrameworkSchema,
-    requirements: z.array(CatalogRequirementSchema).min(1),
-    templates: z.array(CatalogTemplateSchema).default([]),
-    pack: CatalogPackSchema.optional(),
-});
+export const CatalogFileSchema = z
+    .object({
+        framework: CatalogFrameworkSchema,
+        requirements: z.array(CatalogRequirementSchema).min(1),
+        templates: z.array(CatalogTemplateSchema).default([]),
+        pack: CatalogPackSchema.optional(),
+        /**
+         * Several packs over this one framework. Each must name its templates:
+         * the single `pack` may default to "every template in the file", but
+         * with several packs that default would make each of them the whole
+         * framework, which is never what a file declaring several means.
+         */
+        packs: z
+            .array(CatalogPackSchema.extend({ templateCodes: z.array(z.string().min(1)).min(1) }))
+            .min(2)
+            .optional(),
+    })
+    .superRefine((file, ctx) => {
+        if (file.pack && file.packs) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['packs'],
+                message: 'declare either `pack` or `packs`, not both',
+            });
+        }
+        const seen = new Set<string>();
+        (file.packs ?? []).forEach((p, i) => {
+            if (seen.has(p.key)) {
+                ctx.addIssue({ code: 'custom', path: ['packs', i, 'key'], message: `pack key '${p.key}' is declared twice` });
+            }
+            seen.add(p.key);
+        });
+    });
 
 export type CatalogFile = z.infer<typeof CatalogFileSchema>;
 export type CatalogFramework = z.infer<typeof CatalogFrameworkSchema>;
 export type CatalogRequirement = z.infer<typeof CatalogRequirementSchema>;
 export type CatalogTemplate = z.infer<typeof CatalogTemplateSchema>;
 export type CatalogPack = z.infer<typeof CatalogPackSchema>;
+
+/**
+ * Every pack a catalog file declares, whichever of `pack` / `packs` it uses.
+ * Readers go through this rather than `file.pack`, so a multi-pack file is
+ * not read as a file with no pack.
+ */
+export function catalogPacks(file: CatalogFile): CatalogPack[] {
+    return file.packs ?? (file.pack ? [file.pack] : []);
+}
 
 // ─── Loader ─────────────────────────────────────────────────────────
 
@@ -350,12 +394,29 @@ export function assertCatalogConsistency(file: CatalogFile, sourcePath: string):
         }
     });
 
-    if (file.pack?.templateCodes) {
-        file.pack.templateCodes.forEach((tc, i) => {
+    const packs = catalogPacks(file);
+    packs.forEach((pack, p) => {
+        const at = file.packs ? `packs[${p}]` : 'pack';
+        (pack.templateCodes ?? []).forEach((tc, i) => {
             if (!templateCodes.has(tc)) {
                 issues.push({
-                    path: `pack.templateCodes[${i}]`,
+                    path: `${at}.templateCodes[${i}]`,
                     message: `template code '${tc}' not found in templates[*].code`,
+                });
+            }
+        });
+    });
+
+    // With several packs, a template no pack names is shipped to nobody: it
+    // seeds, and no install ever delivers it. The single `pack` cannot leave
+    // one out by omission — its default is every template.
+    if (file.packs) {
+        const named = new Set(packs.flatMap((p) => p.templateCodes ?? []));
+        file.templates.forEach((t, i) => {
+            if (!named.has(t.code)) {
+                issues.push({
+                    path: `templates[${i}].code`,
+                    message: `template '${t.code}' is in no pack, so no install would deliver it`,
                 });
             }
         });

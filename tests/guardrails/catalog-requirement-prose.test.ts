@@ -211,6 +211,7 @@ describe('catalogue requirements carry prose', () => {
         ['iso-42001.yaml', 'iso42001'],
         ['nist-ssdf-800-218.yaml', 'ssdf'],
         ['aiuc-1.yaml', 'aiuc-1'],
+        ['eu-uas-ops.yaml', 'eu-uas-ops'],
         // nis2 is deliberately absent: its library is keyed thematically
         // (NIS2-RM) and its fixture by article (Art.21(2)(a)), so a code join
         // resolves nothing. prisma/fixtures/nis2-library-map.json is the join,
@@ -408,6 +409,11 @@ describe('catalogue requirements carry prose', () => {
         // transcription path to fall down. The summaries are generated from
         // the library's own descriptions, which are original prose.
         'aiuc-1-control-templates.json': '0 of 50',
+        // EU drone operations ships every requirement WITH a summary, generated
+        // from the library's descriptions (Inflect's own account of each
+        // article or point), so it adds 51 to the population and none to the
+        // ceiling.
+        'eu-uas-ops-control-templates.json': '0 of 51',
         'asvs-l1-control-templates.json': '0 of 128',
         'cis-v8-ig1-control-templates.json': '0 of 56',
         // COSO ships every requirement WITH a summary. It is the first

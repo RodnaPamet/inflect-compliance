@@ -271,7 +271,7 @@ describeFn('risk bulk actions — two-tenant behaviour', () => {
             ).rejects.toThrow();
 
             expect((await raw(mine))!.ownerUserId).toBeNull();
-            await globalPrisma.user.deleteMany({ where: { id: stranger } }).catch(() => {});
+            await globalPrisma.user.deleteMany({ where: { id: stranger } });
         });
 
         it('requires write access', async () => {

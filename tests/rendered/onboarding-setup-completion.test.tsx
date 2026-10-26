@@ -146,6 +146,40 @@ describe('the framework step', () => {
         expect(cont.disabled).toBe(true);
     });
 
+    it('asks for at least one pack of a framework that has several, and keeps Continue disabled until one is ticked', async () => {
+        // The EU drone framework's packs are its operating subcategories.
+        const UAS = {
+            key: 'EU-UAS-OPS', name: 'EU Drone Operations', version: '2025-05', description: null, kind: 'REGULATION',
+            requirementCount: 51, controlCount: 53,
+            packs: [
+                { key: 'EU_UAS_OPEN_A2', name: 'Open category: subcategory A2', description: 'Close to people', controlCount: 19 },
+                { key: 'EU_UAS_OPEN_A3', name: 'Open category: subcategory A3', description: null, controlCount: 19 },
+            ],
+        };
+        serve({ '/onboarding/state': stateAt({}), '/onboarding/frameworks': [...FRAMEWORKS, UAS] });
+        render(withFreshCache(<OnboardingWizard />));
+        const card = await screen.findByTestId('fw-eu-uas-ops');
+        const cont = screen.getByTestId('wizard-continue') as HTMLButtonElement;
+
+        fireEvent.click(card);
+        const panel = await screen.findByTestId('fw-packs-eu-uas-ops');
+        expect(panel.textContent).toContain('Open category: subcategory A2');
+        expect(screen.getByText(en.onboarding.wizard.frameworks.choosePacksRequired.replace('{name}', 'EU Drone Operations'))).toBeTruthy();
+        expect(cont.disabled).toBe(true);
+
+        fireEvent.click(screen.getAllByRole('checkbox')[0]);
+        await waitFor(() => expect(cont.disabled).toBe(false));
+
+        // Unticking it puts the gate back; deselecting the framework clears it.
+        fireEvent.click(screen.getAllByRole('checkbox')[0]);
+        await waitFor(() => expect(cont.disabled).toBe(true));
+        fireEvent.click(card);
+        expect(screen.queryByTestId('fw-packs-eu-uas-ops')).toBeNull();
+        expect(cont.disabled).toBe(true);
+        fireEvent.click(screen.getByTestId('fw-iso27001'));
+        expect(cont.disabled).toBe(false);
+    });
+
     it('names a framework that failed to install, and why', async () => {
         serve({
             '/onboarding/state': stateAt({

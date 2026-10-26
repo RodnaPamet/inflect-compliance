@@ -7,8 +7,10 @@
 
 # Production Hardening Priorities
 
-The observability stack runs on the production VM **next to the
-application it observes**. Its hardening priorities, in order:
+The observability stack is packaged to run on the production VM, **next
+to the application it observes**. Whether it runs there is not recorded in
+this repository; see `03-prometheus-grafana.md`, "Where it runs". Its
+hardening priorities, in order:
 
 1. **Network isolation.** Nothing in the stack is reachable from the
    internet except Grafana, and Grafana only through Caddy with TLS.
@@ -232,12 +234,11 @@ default. Raising production retention is a `.env` change plus a
 redeploy — and a re-check of the storage-sizing formula in `03`
 against the new window.
 
-**The governance backstop is `PrometheusDiskFillingUp`** (`03`) — a
-`predict_linear` alert that fires when the TSDB volume is projected
-to fill within four days. Retention bounds *intended* growth; the
-alert catches *unintended* growth (a cardinality regression, a new
-high-series metric). The two together mean the volume never
-silently fills.
+**The stack has no disk alert** (`03`). Retention bounds *intended*
+growth; *unintended* growth (a cardinality regression, a new
+high-series metric) shows first as `PrometheusHeadSeriesHigh`. A
+disk alert needs node_exporter, which the stack does not run, so the
+volume filling is caught only by whatever watches the host's disk.
 
 **Cardinality is governed at the source.** The application's
 metric design — `normalizeRoute()` collapsing dynamic URL segments,
@@ -359,8 +360,8 @@ from "is the app affected?" — and for most of them the answer is no.
   collector is a telemetry gap, not an outage.**
 - **Stack impact:** metrics and traces have a gap for the outage
   window.
-- **Detection:** `CollectorDown` alert (`up{job="otel-collector-self"}
-  == 0`), and `ScrapeTargetDown` for the `otel-collector-*` jobs.
+- **Detection:** `ObservabilityTargetDown` (`up == 0`) for the
+  `otel-collector-app-metrics` and `otel-collector-self` jobs.
 - **Action:** `docker compose -f docker-compose.observability.yml
   logs otel-collector`; restart it (`restart: unless-stopped`
   usually has already). If it crash-loops, check the config —
@@ -373,11 +374,13 @@ from "is the app affected?" — and for most of them the answer is no.
 - **Stack impact:** no metrics are stored; no alerts evaluate (the
   alerting rules live in Prometheus). Dashboards' metric panels go
   blank.
-- **Detection:** the **deadman's switch** is the primary signal —
-  `ObservabilityDeadmanSwitch` is always-firing by design; if
-  Grafana stops *receiving* it, rule evaluation or notification
-  delivery is broken, which Prometheus being down causes. An
-  external uptime check on the Grafana URL is the backstop.
+- **Detection:** the **dead man's switch** is meant to be the
+  signal — `DeadMansSwitch` always fires by design, so its absence
+  downstream means rule evaluation or delivery is broken, which
+  Prometheus being down causes. As shipped nothing receives
+  Prometheus's alerts (`03`, Alerting rules), so nothing watches
+  for that absence either. An external uptime check on the Grafana
+  URL is the backstop.
 - **Action:** `docker logs obs-prometheus`; restart. If it will
   not start, the most likely cause is a corrupt TSDB block or a
   full disk (see below) — Prometheus logs the offending block; in
@@ -404,11 +407,11 @@ from "is the app affected?" — and for most of them the answer is no.
 - **App impact: NONE.**
 - **Stack impact:** the TSDB **halts writes** — `head` block stops
   growing, ingestion stalls, metrics stop being recorded.
-- **Detection:** `PrometheusDiskFillingUp` (`predict_linear`,
-  4-day runway) fires *before* it happens; `PrometheusSampleIngestionStalled`
-  fires if it already has.
-- **Action:** the runway alert should have given days of warning.
-  Immediate relief: reduce `PROM_RETENTION` and redeploy
+- **Detection:** no alert in this stack. A disk alert needs
+  `node_filesystem_*` from node_exporter, which the stack does not
+  run (`03`). The `obs-prometheus-data` volume is on the host's
+  disk, so whatever monitors that host's disk is what sees it fill.
+- **Action:** immediate relief: reduce `PROM_RETENTION` and redeploy
   (Prometheus reclaims old blocks on the next compaction).
   Durable fix: grow the `obs-prometheus-data` volume, or enable
   `remote_write` and shorten local retention. Re-check the
@@ -423,8 +426,9 @@ from "is the app affected?" — and for most of them the answer is no.
   thing shed.
 - **Stack impact:** refused/dropped telemetry — a partial gap, not
   a total one.
-- **Detection:** `CollectorDroppingData` alert on
-  `otelcol_processor_refused_*` / `otelcol_processor_dropped_*`.
+- **Detection:** `CollectorDroppingData` alert on `memory_limiter`'s
+  `otelcol_processor_refused_*` counters. The collector at 0.123.0
+  emits no `otelcol_processor_dropped_*` series.
 - **Action:** check what is driving the volume — usually a
   cardinality spike (a new high-series metric) or a traffic spike.
   Short-term: raise the collector's `mem_limit` and
@@ -455,50 +459,46 @@ The stack must observe itself — a monitoring tier that cannot
 report its own health is worthless. Four overlapping mechanisms:
 
 1. **Prometheus scrapes the collector's self-metrics (`:8888`).**
-   The `otelcol-collector-self` scrape job collects `otelcol_*`.
+   The `otel-collector-self` scrape job collects `otelcol_*`.
    The signals that matter:
-   - `otelcol_exporter_send_failed_metric_points` /
-     `otelcol_exporter_send_failed_spans` — the collector cannot
-     reach Prometheus's exposition surface or Tempo.
-   - `otelcol_processor_refused_metric_points` /
-     `otelcol_processor_refused_spans` — `memory_limiter` is
+   - `otelcol_exporter_send_failed_metric_points_total` /
+     `otelcol_exporter_send_failed_spans_total` — the collector
+     cannot reach Prometheus's exposition surface or Tempo.
+   - `otelcol_processor_refused_metric_points_total` /
+     `otelcol_processor_refused_spans_total` — `memory_limiter` is
      shedding load.
-   - `otelcol_processor_dropped_metric_points` /
-     `otelcol_processor_dropped_spans` — data dropped downstream.
    - `otelcol_receiver_refused_*` — incoming OTLP rejected.
-   Alerted by `CollectorExportFailing` and `CollectorDroppingData`
+   Alerted by `CollectorExportFailures` and `CollectorDroppingData`
    (`03`).
 
 2. **Prometheus scrapes itself, Grafana, and Tempo.** The `up`
    metric for every one of the five scrape jobs is the liveness
-   signal; `ScrapeTargetDown` (`up == 0`) covers all of them.
-   Scrape duration and `prometheus_tsdb_*` (head series, samples
-   appended, block bytes) cover Prometheus's own health, alerted
-   by `PrometheusSampleIngestionStalled` and
-   `PrometheusDiskFillingUp`.
+   signal; `ObservabilityTargetDown` (`up == 0`) covers all of
+   them. `PrometheusHeadSeriesHigh` (`prometheus_tsdb_head_series`)
+   and `PrometheusSlowScrapes` (`scrape_duration_seconds`) cover
+   Prometheus's own health.
 
-3. **The "Observability Stack Health" dashboard** (`Platform`
-   folder, `03`) — the human-facing surface: every `up`, collector
-   ingest-vs-export and error rates, collector memory against the
-   `memory_limiter` ceiling, Prometheus TSDB series and disk
-   runway, Tempo ingest and query latency, and the deadman's switch
-   status.
+3. **The "Observability Stack Health" dashboard** (`03`) — the
+   human-facing surface: every target's `up`, TSDB head series,
+   collector accepted and refused spans and metric points (with
+   `memory_limiter`'s refusals), exporter send failures, and scrape
+   duration by job.
 
-4. **The deadman's switch** — `ObservabilityDeadmanSwitch`,
-   `expr: vector(1)`, always firing by design. Grafana is
-   configured to alert if it **stops** arriving. It is the catch-all
-   for "the whole alerting pipeline is silently broken" — a state
-   no other alert can detect, because every other alert depends on
-   the same pipeline. Pair it with an **external, off-VM uptime
-   check** on the Grafana URL so a total-VM loss (which kills the
-   deadman's switch *and* everything that would notice it) is still
-   caught.
+4. **The dead man's switch** — `DeadMansSwitch`, `expr: vector(1)`,
+   always firing by design. It is meant to be watched from outside,
+   by something that alerts when it **stops** arriving; as shipped
+   nothing receives it (`03`). It is the catch-all for "the whole
+   alerting pipeline is silently broken" — a state no other alert
+   can detect, because every other alert depends on the same
+   pipeline. Pair it with an **external, off-VM uptime check** on
+   the Grafana URL so a total-VM loss (which kills the dead man's
+   switch *and* everything that would notice it) is still caught.
 
 The principle: every component the stack depends on is itself a
-scrape target, every failure mode in the runbooks above has an
-alert, and the one failure mode alerts cannot catch — the alerting
-pipeline itself dying — is covered by the deadman's switch plus an
-external probe.
+scrape target, and the one failure mode alerts cannot catch — the
+alerting pipeline itself dying — is what the dead man's switch and
+an external probe are for. One failure mode above has no alert in
+this stack: the Prometheus disk filling.
 
 # Acceptance Criteria
 
@@ -527,8 +527,9 @@ external probe.
       investigation uses Tempo trace search (`repo.tenant_id` span
       attribute).
 - [ ] Retention is enforced by `PROM_RETENTION` /
-      `TEMPO_RETENTION` flags; `PrometheusDiskFillingUp` is active
-      as the governance backstop.
+      `TEMPO_RETENTION` flags; the host's disk is watched by
+      whatever monitors that host, since the stack has no disk
+      alert.
 - [ ] All stack configuration — compose, collector config, scrape
       config, rules, Grafana provisioning, Tempo config — is in
       git under `infra/observability/`; recovery of configuration

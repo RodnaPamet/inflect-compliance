@@ -56,6 +56,17 @@ export function NewPolicyModal({
     // abandoning the modal + discarding the title. The /policies/templates page
     // is no longer the only path — this is the single, consistent creation flow.
     const [templateMode, setTemplateMode] = useState(isTemplateMode);
+    // The list page keeps this modal MOUNTED while it is closed, so state
+    // seeded from the prop at mount kept the first value for good — the
+    // `?template=1` deep link sets the prop after mount and still opened on
+    // "New". Re-seed on every open (React's adjust-state-during-render
+    // pattern, no effect needed); switching modes inside an open dialog is
+    // untouched.
+    const [wasOpen, setWasOpen] = useState(open);
+    if (open !== wasOpen) {
+        setWasOpen(open);
+        if (open) setTemplateMode(isTemplateMode);
+    }
 
     const createModeOptions = useMemo<ComboboxOption[]>(
         () => [

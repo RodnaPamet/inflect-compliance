@@ -76,6 +76,10 @@ const PAIRS: Record<string, Pair> = {
     // five retired identifiers are absent from BOTH sides, so they cannot show
     // up here as a missing obligation.
     'aiuc-1-control-templates.json': { library: 'aiuc-1.yaml', join: { kind: 'exact' } },
+    // Exact by construction, for AIUC-1's reason: the fixture's requirements
+    // are generated from the library, both keyed on the regulation's own
+    // article and point references (Art.14, UAS.OPEN.030 …).
+    'eu-uas-ops-control-templates.json': { library: 'eu-uas-ops.yaml', join: { kind: 'exact' } },
 
     'iso27001-control-templates.json': {
         library: 'iso27001-2022.yaml',

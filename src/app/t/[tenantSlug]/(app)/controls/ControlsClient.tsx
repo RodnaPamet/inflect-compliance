@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import type { Row, RowSelectionState } from '@/components/ui/table';
@@ -56,7 +56,9 @@ import {
     useFilterContext,
     useFilters,
     useFilterCardVisibility,
+    useRetainedFilterOptions,
     type CardDefinition,
+    type FilterOption,
     type FilterType,
 } from '@/components/ui/filter';
 import { EntityListPage } from '@/components/layout/EntityListPage';
@@ -83,7 +85,9 @@ import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import {
     buildControlFilters,
+    CONTROL_ROW_DERIVED_FILTER_KEYS,
     buildControlStatusLabels,
+    controlCategoryLabel,
     CONTROL_FILTER_KEYS,
 } from './filter-defs';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
@@ -167,6 +171,22 @@ function frameworkLabels(control: ControlListItem): string[] {
     return derived ? [derived] : [];
 }
 
+/**
+ * How many selected controls a bulk status / assign response reports as
+ * skipped (`results[].status !== 'ok'` — the server's per-id outcome). A
+ * response without `results` (older server) reports nothing skipped.
+ */
+function bulkSkippedCount(outcome: unknown): number {
+    if (!outcome || typeof outcome !== 'object') return 0;
+    const results = (outcome as { results?: unknown }).results;
+    if (!Array.isArray(results)) return 0;
+    let skipped = 0;
+    for (const r of results) {
+        if (!r || typeof r !== 'object' || (r as { status?: unknown }).status !== 'ok') skipped++;
+    }
+    return skipped;
+}
+
 interface ControlsClientProps {
     initialControls: ControlListItem[];
     initialFilters?: Record<string, string>;
@@ -182,6 +202,13 @@ interface ControlsClientProps {
         controls: { create: boolean; edit: boolean };
         // The inline task edit panel needs the task write permission.
         tasks: { edit: boolean };
+        // The quick view's drag-and-drop upload box POSTs to
+        // `/evidence/uploads`, whose usecase asserts `evidence.upload` — a
+        // DIFFERENT key from the one that opens the panel.
+        evidence: { upload: boolean };
+        // Bulk delete + the Deleted view's Restore / Purge are
+        // `requirePermission('admin.manage')` at their routes.
+        admin: { manage: boolean };
     };
 }
 
@@ -200,8 +227,8 @@ interface ControlsClientProps {
  * ControlRepository.kpiCounts — not derived from `rows`, which is both
  * filter-scoped and backfill-capped.
  *
- * OPTIONAL on purpose: the `includeDeleted` branch returns a bare array, and
- * the SSR fallback has rows but no counts. Requiring it would force a fake
+ * OPTIONAL on purpose: the `includeDeleted` branch returns rows without
+ * counts, and the SSR fallback has rows but no counts. Requiring it would force a fake
  * zero into both, and a card reading 0 is a worse lie than one reading the
  * page count.
  */
@@ -213,6 +240,47 @@ type ControlKpiCounts = {
 };
 type ControlListResponse = CappedList<ControlListItem> & { kpiCounts?: ControlKpiCounts };
 
+/**
+ * The controls-dashboard drill-down params. They narrow the list like a
+ * filter but are not FilterToolbar facets (see `filtersForQuery`).
+ */
+const DRILL_DOWN_KEYS = ['due', 'evidence'] as const;
+
+/**
+ * Drop the drill-down params from the address bar, so the next URL write —
+ * `clearAll`'s, which keeps every param that is not a facet — leaves them out.
+ */
+function stripDrillDownParams(): void {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    let changed = false;
+    for (const key of DRILL_DOWN_KEYS) {
+        if (url.searchParams.has(key)) {
+            url.searchParams.delete(key);
+            changed = true;
+        }
+    }
+    if (changed) window.history.replaceState(null, '', url.toString());
+}
+
+/**
+ * Drop the Health column in the Deleted view (#4325).
+ *
+ * `getControlHealthVerdicts` scans live controls only (`control/health.ts`,
+ * `deletedAt: null`), so a deleted row has no verdict and the cell rendered a
+ * dash on every one. Filtered HERE, inside the columns memo, rather than around
+ * `orderColumns(controlColumns)` — `controls-client-shell-adoption` pins that
+ * expression's shape because `orderColumns` spreads its input, and a fresh
+ * array between a row's two clicks kills double-click navigation.
+ */
+function withoutHealthWhenDeleted<T extends { id?: string }>(
+    columns: readonly T[],
+    showDeleted: boolean,
+): T[] {
+    // guardrail-ignore: filters the COLUMN DEFINITIONS (drops the Health column in the Deleted view, where its verdict scan has nothing to say) — not server-fetched rows.
+    return showDeleted ? columns.filter((col) => col.id !== 'health') : [...columns];
+}
+
 export function ControlsClient(props: ControlsClientProps) {
     // Build the filter context at the outer boundary so the provider can wrap
     // the inner tree — the inner component consumes via `useFilters()`.
@@ -223,9 +291,25 @@ export function ControlsClient(props: ControlsClientProps) {
         CONTROL_FILTER_KEYS,
         { serverFilters: props.initialFilters },
     );
+    // "Clear filters" must also clear a dashboard drill-down. The shared
+    // `clearAll` keeps every URL param that is not a facet, so a `?due=soon`
+    // arrival survived the empty state's Clear filters, the toolbar's clear
+    // and the Total card, and went on narrowing the list. Wrapped HERE, at the
+    // provider, so every one of those paths (they all call the context's
+    // `clearAll`) gets the same behaviour.
+    const pageFilterCtx = useMemo(
+        () => ({
+            ...filterCtx,
+            clearAll: () => {
+                stripDrillDownParams();
+                filterCtx.clearAll();
+            },
+        }),
+        [filterCtx],
+    );
 
     return (
-        <FilterProvider value={filterCtx}>
+        <FilterProvider value={pageFilterCtx}>
             <ControlsPageInner {...props} />
         </FilterProvider>
     );
@@ -256,15 +340,38 @@ function ControlsPageInner({
     const t = useTranslations('controls');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
-    // Bulk soft-delete + the Deleted-controls lifecycle view (Restore / Purge)
-    // require ADMIN server-side (bulkDeleteControl / listControlsWithDeleted
-    // both assertCanAdmin). Editors keep the status/assign bulk verbs.
-    const canAdmin = permissions.canAdmin;
+    // Every write affordance below is gated on BOTH layers the server checks:
+    // the route's `requirePermission(<granular key>)` AND the usecase's coarse
+    // tier. A custom role resolves the coarse tier from its BASE role, so
+    // either layer alone can admit a button the server then refuses.
+    //
+    // Bulk soft-delete + the Deleted-controls lifecycle view (Restore / Purge):
+    // `admin.manage` at the routes, `assertCanAdmin` in the usecases.
+    const canManageDeleted = permissions.canAdmin && appPermissions.admin.manage;
+    // Create + template install: `controls.create` at the route,
+    // `assertCanCreateControl` (canWrite AND controls.create) in the usecase.
+    const canCreateControls = permissions.canWrite && appPermissions.controls.create;
+    // Quick-view edits, bulk status/assign: `controls.edit` at the routes,
+    // `assertCanUpdateControl` (canWrite AND controls.edit) in the usecases.
+    const canEditControls = permissions.canWrite && appPermissions.controls.edit;
+
+    // Quick-view TASK edits: `tasks.edit` at the route, and `updateTask` asserts
+    // `assertCanWriteTasks` = canWrite AND tasks.edit. Offering the panel on the
+    // granular key alone gave a custom role on a Reader base an editable form
+    // whose every save was refused (#4325).
+    const canEditTasks = permissions.canWrite && appPermissions.tasks.edit;
+
+    // The upload box's own key: `assertCanUploadEvidence` checks
+    // `evidence.upload`. A custom role with `controls.edit` and no
+    // `evidence.upload` was shown the dropzone and refused (#4325). The panel
+    // ANDs it with its edit gate and applies it to the dropzone only, so the
+    // attached-evidence list still shows for every role.
+    const canUploadEvidence = appPermissions.evidence.upload;
     // Single source for "which bulk verbs may this viewer use" — see
     // _lib/bulk-action-policy.
     const allowedBulkActions = useMemo(
-        () => controlBulkActionsFor(permissions),
-        [permissions],
+        () => controlBulkActionsFor(permissions, appPermissions),
+        [permissions, appPermissions],
     );
     const FREQ_LABELS = useMemo<Record<string, string>>(
         () => ({
@@ -292,6 +399,14 @@ function ControlsPageInner({
     // Status labels: single localized source of truth for badges + the bulk
     // status picker (mirrors the filter-picker copy).
     const STATUS_LABELS = useMemo(() => buildControlStatusLabels(tAdapter), [tAdapter]);
+    // Category display label — a stored ISO 27002 theme constant
+    // ("TECHNOLOGICAL") reads as its localized label everywhere the list
+    // shows a category: the column, its sort, the task sub-rows, the
+    // Browse rail and the filter options.
+    const categoryLabel = useCallback(
+        (value: string) => controlCategoryLabel(value, tAdapter),
+        [tAdapter],
+    );
     // #9 — the bulk STATUS picker must NOT offer NOT_APPLICABLE. Writing
     // status=NOT_APPLICABLE bypasses the applicability-justification flow and
     // leaves Status=N/A alongside Applicability=Yes on the same row. N/A is set
@@ -315,7 +430,12 @@ function ControlsPageInner({
     // working against the modal-based flow.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/controls`);
+    // Only for a viewer who may create — otherwise an old `/controls/new`
+    // bookmark opened a form whose submit the server refuses. The param is
+    // stripped either way.
+    useCreateQueryParam(() => {
+        if (canCreateControls) setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/controls`);
 
     // ─── Consistency deep-link restriction (?ids=…) ───
     // The controls dashboard's consistency check deep-links each issue
@@ -330,6 +450,25 @@ function ControlsPageInner({
         const ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
         return ids.length > 0 ? new Set(ids) : null;
     }, [searchParams]);
+
+    // ─── Controls-dashboard drill-downs (?due=soon, ?evidence=missing) ───
+    // Not facets (see `filtersForQuery`), so nothing in the toolbar shows
+    // them. Read once here: they get a banner, they count as "a filter is
+    // narrowing the list" for the empty state and the Total card, and the
+    // page's `clearAll` (wrapped at the provider) drops them.
+    const dueDrillDown = searchParams?.get('due') || null;
+    const evidenceDrillDown = searchParams?.get('evidence') || null;
+    const drillDownActive = !!(dueDrillDown || evidenceDrillDown);
+    // Any narrowing at all — a facet, the search, or a drill-down.
+    const listNarrowed = hasActive || drillDownActive;
+    // "Show all controls" keeps the user's own filters and search; it only
+    // drops the drill-down.
+    const drillDownClearHref = useMemo(() => {
+        const next = new URLSearchParams(searchParams?.toString() ?? '');
+        for (const key of DRILL_DOWN_KEYS) next.delete(key);
+        const qs = next.toString();
+        return `/t/${tenantSlug}/controls${qs ? `?${qs}` : ''}`;
+    }, [searchParams, tenantSlug]);
 
     // ─── API query string from filter state + search + ?ids= deep-link ───
     // `ids` is not a FilterToolbar facet (it's a consistency deep-link param),
@@ -347,8 +486,9 @@ function ControlsPageInner({
         // an operator composes from the toolbar, and adding them as facets
         // would put two unremovable-looking chips in the picker for every user
         // who never arrives from a card. Clearing them is the "Controls" nav
-        // link — a plain visit to the page.
-        for (const key of ['due', 'evidence'] as const) {
+        // link — a plain visit to the page — or anything that clears the
+        // filters, and a banner names the active one.
+        for (const key of DRILL_DOWN_KEYS) {
             const v = searchParams?.get(key);
             if (v) params.set(key, v);
         }
@@ -429,8 +569,9 @@ function ControlsPageInner({
         const qs = params.toString();
         return qs ? `${CACHE_KEYS.controls.list()}?${qs}` : CACHE_KEYS.controls.list();
     }, [filtersForQuery, showDeleted]);
-    // The live list GET returns `{ rows, truncated }`; the `includeDeleted`
-    // branch returns a bare array (listControlsWithDeleted). Type + read both.
+    // Both branches of the list GET return `{ rows, truncated }` (the
+    // `includeDeleted` one without kpiCounts). A bare array — what that branch
+    // returned before #4275 — is still read, for a response from an older server.
     const controlsQuery = useTenantSWR<ControlListResponse | ControlListItem[]>(controlsKey, {
         // The SSR initial payload never contains soft-deleted rows, so the
         // deleted view must always fetch fresh (no fallback).
@@ -491,12 +632,15 @@ function ControlsPageInner({
             code: (c) => c.code || c.annexId || '',
             name: (c) => c.name || '',
             status: (c) => c.status || '',
-            category: (c) => categorizeControl(c)?.category || '',
+            category: (c) => {
+                const value = categorizeControl(c)?.category;
+                return value ? categoryLabel(value) : '';
+            },
             frequency: (c) =>
                 c.frequency ? FREQ_LABELS[c.frequency] || c.frequency : '',
             owner: (c) => c.owner?.name || c.owner?.email || '',
         }),
-        [FREQ_LABELS],
+        [FREQ_LABELS, categoryLabel],
     );
     // #8a — `category` is applied HERE, over the already-loaded rows, on the
     // DERIVED value the column renders (see the note on `filtersForQuery`,
@@ -559,9 +703,29 @@ function ControlsPageInner({
     // Options are derived from `rawControls` (the full server-returned set),
     // NOT the client-filtered `controls` — otherwise selecting one derived
     // category would collapse the Category picker to just that value.
-    const liveFilterDefs: FilterType[] = useMemo(
+    const builtFilterDefs: FilterType[] = useMemo(
         () => buildControlFilters(rawControls, tAdapter, tGroupAdapter),
         [rawControls, tAdapter, tGroupAdapter],
+    );
+    // `rawControls` is still narrowed by the SERVER-side filters, Owner among
+    // them, so options built from it alone collapse to the owner just picked.
+    const retainedFilterDefs = useRetainedFilterOptions(builtFilterDefs, CONTROL_ROW_DERIVED_FILTER_KEYS);
+
+    // HEALTH IS NOT OFFERED IN THE DELETED VIEW, because it cannot answer there
+    // (#4325). The verdicts come from `getControlHealthVerdicts`, whose scan
+    // reads live controls only (`health.ts`, `deletedAt: null`), so a Health
+    // pick in the Deleted view resolves to an empty `id: { in: [] }` and the
+    // table says "No controls match your filters" — a filter that can only ever
+    // find nothing. The column goes with it rather than showing a dash on every
+    // row. Fixing the scan instead would mean health verdicts for controls
+    // nobody can act on, which is a product decision rather than a bug fix.
+    const liveFilterDefs = useMemo(
+        () =>
+            showDeleted
+                // guardrail-ignore: filters the FILTER DEFINITIONS (withholds a facet that can only ever match nothing in the Deleted view) — not server-fetched rows.
+                ? retainedFilterDefs.filter((f) => f.key !== 'health')
+                : retainedFilterDefs,
+        [retainedFilterDefs, showDeleted],
     );
 
     // R-filter-gear (#3, 2026-06-07): the "Edit filter cards" gear now
@@ -647,9 +811,12 @@ function ControlsPageInner({
     const controlKpiDefs: ReadonlyArray<KpiFilterDef<ControlKpiId>> = useMemo(
         () => [
             {
+                // `clearAll` here is the page's — it drops a drill-down too.
+                // Not "selected" while a drill-down narrows the list: the card
+                // counts the whole register, and the table would not be it.
                 id: 'total',
                 apply: (ctx) => ctx.clearAll(),
-                isActive: (s) => Object.keys(s).length === 0,
+                isActive: (s) => Object.keys(s).length === 0 && !drillDownActive,
             },
             {
                 id: 'implemented',
@@ -681,10 +848,24 @@ function ControlsPageInner({
                 clear: (ctx) => ctx.removeAll('status'),
             },
         ],
-        [],
+        [drillDownActive],
     );
     const { activeKpiId: activeControlKpi, toggle: toggleControlKpi } =
         useKpiFilter(controlKpiDefs);
+    // The three STATUS cards are server counts (`kpiCounts`), and Category is
+    // the one facet applied in the browser (see `clientFilteredControls`), so
+    // under a Category filter they counted every category while their click
+    // showed one. A dash, with the reason under it, rather than a number the
+    // rows beside it contradict. Their click still filters as before; the
+    // Total card is unaffected — it counts the whole register by design.
+    const statusCardsUncounted = (categoryFilter?.length ?? 0) > 0;
+    const statusCardValue = (
+        count: number,
+        tone: 'success' | 'attention' | 'critical' | 'default',
+    ): { value: ReactNode; description?: string; tone: typeof tone } =>
+        statusCardsUncounted
+            ? { value: '—', description: t('kpi.notCountedByCategory'), tone: 'default' }
+            : { value: count, tone };
 
     // ─── Column visibility (Epic 52 / R10-PR6) ───
     // Pagination removed — internal scroll inside the table card
@@ -709,6 +890,17 @@ function ControlsPageInner({
         ],
         [t],
     );
+    // Same reason as the facet: in the Deleted view Health has no verdict to
+    // show, so it is not offered in the picker either. The stored visibility
+    // map is keyed by id, so a user's preference survives the round trip.
+    const offeredColumnList = useMemo(
+        () =>
+            showDeleted
+                // guardrail-ignore: filters the column PICKER's own list so it stops offering Health in the Deleted view — not server-data filtering.
+                ? controlColumnList.filter((col) => col.id !== 'health')
+                : controlColumnList,
+        [controlColumnList, showDeleted],
+    );
     const {
         columnVisibility,
         setColumnVisibility,
@@ -716,7 +908,7 @@ function ControlsPageInner({
         dropdown: columnsDropdown,
     } = useColumnsDropdown({
         storageKey: 'inflect:col-vis:controls',
-        columns: controlColumnList,
+        columns: offeredColumnList,
     });
     // ─── Row selection → canonical BulkActionBar ───
     // The page owns the selection state; DataTable is controlled via
@@ -748,7 +940,6 @@ function ControlsPageInner({
         () => Object.keys(settledSelection).filter((id) => settledSelection[id]),
         [settledSelection],
     );
-    const canEditControls = appPermissions.controls.edit;
 
     // Canonical bulk path — one `updateMany`-backed endpoint instead of the
     // former per-id status loop (kills the N+1). status + assign mirror the
@@ -868,8 +1059,25 @@ function ControlsPageInner({
         // bulk apply held the table on stale values for a round trip. Now the
         // rows repaint synchronously and roll back on throw.
         try {
-            await bulkMutation.trigger({ action, value, ids, label: _label });
-            toast.success(t('bulk.applied'));
+            const outcome = await bulkMutation.trigger({ action, value, ids, label: _label });
+            // The server skips any selected control the tenant does not own
+            // (a framework-global library control) and says so per id. The
+            // optimistic repaint showed every row changed, and revalidation
+            // quietly reverts the skipped ones — so say how many it was.
+            const skipped = bulkSkippedCount(outcome);
+            if (skipped === 0) {
+                toast.success(t('bulk.applied'));
+            } else if (skipped >= ids.length) {
+                toast.warning(t('bulk.noneApplied'));
+            } else {
+                toast.warning(
+                    t('bulk.partlyApplied', {
+                        applied: ids.length - skipped,
+                        total: ids.length,
+                        skipped,
+                    }),
+                );
+            }
             setRowSelection({});
         } catch {
             // The hook re-throws after rolling the cache back, so the rows
@@ -1084,18 +1292,21 @@ function ControlsPageInner({
     // inherited category uses the SAME `categorizeControl` value the Category
     // column shows.
     const renderControlTaskSubRows = useCallback(
-        (row: Row<ControlListItem>, columnIds: string[]) => (
-            <ControlTaskRows
-                tenantSlug={tenantSlug}
-                controlId={row.original.id}
-                controlCategory={categorizeControl(row.original)?.category ?? null}
-                columnIds={columnIds}
-                renderEvidence={renderTaskEvidence}
-                onTaskClick={setSelectedTask}
-                refreshToken={taskRefreshToken}
-            />
-        ),
-        [tenantSlug, renderTaskEvidence, taskRefreshToken],
+        (row: Row<ControlListItem>, columnIds: string[]) => {
+            const category = categorizeControl(row.original)?.category;
+            return (
+                <ControlTaskRows
+                    tenantSlug={tenantSlug}
+                    controlId={row.original.id}
+                    controlCategory={category ? categoryLabel(category) : null}
+                    columnIds={columnIds}
+                    renderEvidence={renderTaskEvidence}
+                    onTaskClick={setSelectedTask}
+                    refreshToken={taskRefreshToken}
+                />
+            );
+        },
+        [tenantSlug, renderTaskEvidence, taskRefreshToken, categoryLabel],
     );
     const handleRowSelectionChange = useCallback(
         (rows: Row<ControlListItem>[]) =>
@@ -1117,7 +1328,7 @@ function ControlsPageInner({
     }, []);
 
     // ── Column definitions ──
-    const controlColumns = useMemo(() => createColumns<ControlListItem>([
+    const controlColumns = useMemo(() => withoutHealthWhenDeleted(createColumns<ControlListItem>([
         {
             accessorFn: (c) => c.code || c.annexId || '',
             id: 'code',
@@ -1205,7 +1416,7 @@ function ControlsPageInner({
                 if (!cat) {
                     return <span className="text-xs text-content-subtle">—</span>;
                 }
-                return <StatusBadge size="sm">{cat.category}</StatusBadge>;
+                return <StatusBadge size="sm">{categoryLabel(cat.category)}</StatusBadge>;
             },
         },
         {
@@ -1272,10 +1483,11 @@ function ControlsPageInner({
             // `/controls/health-verdicts` map keyed by control id. Muted
             // '—' until the map resolves (or if a control isn't in it).
             id: 'health',
-            // Header carries the measured-only caveat: the verdict reflects
-            // MEASURED test operating-effectiveness only. Declared effectiveness
-            // informs valuation/ROI, not health — so a control with declared 95
-            // and no tests reads UNKNOWN here while ROI shows 95%.
+            // Header carries the verdict rule (`computeControlHealthVerdict`),
+            // stated in full by the hint — including that an untested
+            // IMPLEMENTED control reads HEALTHY. Declared effectiveness informs
+            // valuation/ROI, not health. tests/unit/control-health-hint-matches-rule
+            // holds the hint to the rule.
             header: () => (
                 <span className="inline-flex items-center gap-1">
                     {t('list.healthColumn')}
@@ -1437,7 +1649,7 @@ function ControlsPageInner({
     // `canEditControls` and the already-memoised callbacks, not those props
     // directly. They were in the array while the file-wide
     // `react-hooks/exhaustive-deps` disable hid the rule's opinion either way.
-    ]), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors]);
+    ]), showDeleted), [taskStats, openControlQuickView, verdictMap, showDeleted, handleRestore, deletedByLabel, t, FREQ_LABELS, STATUS_LABELS, sortAccessors, categoryLabel]);
 
     // `orderColumns` spreads its input, so it returns a NEW array every
     // call — calling it inline in the `table` object would undo the memo
@@ -1582,7 +1794,7 @@ function ControlsPageInner({
                                     <span className="flex min-w-0 flex-1 items-center justify-between gap-tight pr-2">
                                         <span className="flex min-w-0 flex-col items-start gap-0.5">
                                             <span className="truncate font-medium text-content-default">
-                                                {g.category}
+                                                {categoryLabel(g.category)}
                                             </span>
                                             {g.frameworkLabel && (
                                                 <span
@@ -1651,7 +1863,7 @@ function ControlsPageInner({
     // by default; the same `<AiAssistRail>` content + `/risks/ai`
     // destination as the Risks page so the panel reads as one
     // shared co-pilot across registers, not a stub.
-    const aiAssistAside = appPermissions.controls.edit ? (
+    const aiAssistAside = canEditControls ? (
         <AsidePanel
             title={t('list.aiAssist')}
             surfaceKey="controls-list-ai"
@@ -1693,7 +1905,7 @@ function ControlsPageInner({
             <TaskEditPanel
                 tenantSlug={tenantSlug}
                 task={selectedTask}
-                canWrite={appPermissions.tasks.edit}
+                canWrite={canEditTasks}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
             />
@@ -1710,9 +1922,10 @@ function ControlsPageInner({
             onClose={closeQuickView}
         >
             <ControlEditPanel
+                canUploadEvidence={canUploadEvidence}
                 tenantSlug={tenantSlug}
                 control={selectedControl}
-                canWrite={appPermissions.controls.edit}
+                canWrite={canEditControls}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
             />
@@ -1746,6 +1959,23 @@ function ControlsPageInner({
                     {verdictsQuery.error && !showDeleted && (
                         <InlineNotice variant="warning" id="controls-health-error">
                             {t('health.loadError')}
+                        </InlineNotice>
+                    )}
+                    {drillDownActive && (
+                        <InlineNotice variant="info" id="controls-drill-down-banner">
+                            {dueDrillDown && evidenceDrillDown
+                                ? t('list.drillDown.both')
+                                : dueDrillDown
+                                  ? t('list.drillDown.dueSoon')
+                                  : t('list.drillDown.missingEvidence')}
+                            {' · '}
+                            <Link
+                                href={drillDownClearHref}
+                                id="controls-drill-down-clear"
+                                className="font-medium underline hover:no-underline"
+                            >
+                                {t('list.drillDown.clear')}
+                            </Link>
                         </InlineNotice>
                     )}
                     {flaggedIds && (
@@ -1808,7 +2038,8 @@ function ControlsPageInner({
                         const cfg: Record<
                             string,
                             {
-                                value: number;
+                                value: ReactNode;
+                                description?: string;
                                 tone?:
                                     | 'success'
                                     | 'attention'
@@ -1821,22 +2052,22 @@ function ControlsPageInner({
                                 value: totalControls,
                                 sparkline: controlTrends.total,
                             },
+                            // Under a Category filter the three status
+                            // cards read `statusCardValue`'s dash and reason
+                            // (see `statusCardsUncounted`).
                             implemented: {
-                                value: implementedControls,
-                                tone: 'success',
+                                ...statusCardValue(implementedControls, 'success'),
                                 sparkline: controlTrends.implemented,
                             },
                             inProgress: {
-                                value: inProgressControls,
-                                tone: 'attention',
+                                ...statusCardValue(inProgressControls, 'attention'),
                                 sparkline: controlTrends.inProgress,
                             },
                             notStarted: {
-                                value: notStartedControls,
-                                tone:
-                                    notStartedControls > 0
-                                        ? 'critical'
-                                        : 'default',
+                                ...statusCardValue(
+                                    notStartedControls,
+                                    notStartedControls > 0 ? 'critical' : 'default',
+                                ),
                                 sparkline: controlTrends.notStarted,
                             },
                         };
@@ -1847,6 +2078,7 @@ function ControlsPageInner({
                                 key={card.id}
                                 label={card.label}
                                 value={c.value}
+                                description={c.description}
                                 tone={c.tone}
                                 sparkline={c.sparkline}
                                 sparklineVariant={sparkColors[card.id as keyof typeof sparkColors]}
@@ -1867,7 +2099,7 @@ function ControlsPageInner({
                 searchPlaceholder: t('searchPlaceholder'),
                 // Item 4 — primary create button lives in the toolbar's
                 // leading slot (left of the Filter trigger).
-                toolbarLeading: appPermissions.controls.create ? (
+                toolbarLeading: canCreateControls ? (
                     <Button
                         variant="primary"
                         icon={<Plus className="-ml-0.5 -mr-2.5" />}
@@ -1899,16 +2131,16 @@ function ControlsPageInner({
                                             icon: <AppIcon name="share" size={16} />,
                                             href: tenantHref('/controls/sankey'),
                                         },
-                                        appPermissions.controls.create && {
+                                        canCreateControls && {
                                             id: 'install-templates-btn',
                                             label: t('list.installTemplates'),
                                             icon: <AppIcon name="templates" size={16} />,
                                             href: tenantHref('/controls/templates'),
                                         },
-                                        // #3 — Deleted-controls view. Admin only:
-                                        // only admins can Restore / Purge (and see
-                                        // soft-deleted rows) server-side.
-                                        canAdmin && {
+                                        // #3 — Deleted-controls view. Only for a
+                                        // viewer whose Restore / Purge the server
+                                        // accepts (see `canManageDeleted`).
+                                        canManageDeleted && {
                                             id: 'controls-show-deleted-toggle',
                                             label: t('deleted.toggle'),
                                             icon: <Trash className="size-4" />,
@@ -1973,7 +2205,7 @@ function ControlsPageInner({
                 onReachEnd: hasMoreControls ? loadMoreControls : undefined,
                 onRowClick: handleRowClick,
                 onRowPrefetch: handleRowPrefetch,
-                emptyState: showDeleted && !hasActive ? (
+                emptyState: showDeleted && !listNarrowed ? (
                     // Deleted view with nothing soft-deleted — no "install a
                     // framework" CTA (you don't create a deleted control).
                     <EmptyState
@@ -1982,7 +2214,9 @@ function ControlsPageInner({
                         title={t('deleted.emptyTitle')}
                         description={t('deleted.emptyDesc')}
                     />
-                ) : hasActive ? (
+                ) : listNarrowed ? (
+                    // A drill-down counts: without it, an empty `?due=soon`
+                    // read as "No controls yet · Install a framework".
                     <EmptyState
                         size="sm"
                         variant="no-results"
@@ -2023,6 +2257,11 @@ function ControlsPageInner({
                 // renders in the header-row selection toolbar via
                 // `selectionControls`. For viewers without edit permission,
                 // selection is left off entirely (no checkboxes, no bar).
+                // `selectionEnabled` is what removes the checkboxes: the select
+                // column is on by default, so withholding the bar alone left
+                // read-only roles ticking rows into an empty bar, and a single
+                // click ticked a row instead of opening it (#4275).
+                selectionEnabled: canEditControls,
                 selectionControls: canEditControls
                     ? () => (
                           <BulkActionBar

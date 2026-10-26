@@ -57,6 +57,7 @@ import { Pen2, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 import { IconAction } from '@/components/ui/icon-action';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage } from '@/lib/api-error';
 // Shared with the list's Severity column and the Severity filter — this
 // page rendered the raw enum (`CRITICAL`) next to a filter chip reading
 // "Critical".
@@ -168,17 +169,15 @@ function errorMessage(e: unknown, fallback: string): string {
  * fails on.
  *
  * The server's own message is preferred over `fallback` so a reviewer-gate
- * 403 or a missing-resolution 400 reaches the user verbatim.
+ * 403 or a missing-resolution 400 reaches the user verbatim. It sits at
+ * `error.message` in the API envelope (`{ error: { code, message } }`);
+ * reading only a string `error` fell through to `fallback` on every real
+ * refusal.
  */
 async function okOrThrow(res: Response, fallback: string): Promise<Response> {
     if (res.ok) return res;
-    const data: unknown = await res.json().catch(() => ({}));
-    const body = (data ?? {}) as { error?: unknown; message?: unknown };
-    throw new Error(
-        (typeof body.error === 'string' && body.error) ||
-            (typeof body.message === 'string' && body.message) ||
-            fallback,
-    );
+    const data: unknown = await res.json().catch(() => null);
+    throw new Error(apiErrorMessage(data, fallback));
 }
 
 const TERMINAL_STATUS_VERB_KEY: Record<string, string> = {
@@ -220,6 +219,12 @@ interface TaskDetail {
     createdBy: { name: string | null } | null;
     // TP-6 — reviewer + watchers, both returned by getById.
     reviewer: { id: string; name: string | null; email: string | null } | null;
+    /**
+     * #4278 — whether the reviewer can sign this task off (`null` with no
+     * reviewer). False for a reviewer named before the rule whose role
+     * cannot edit tasks, or one no longer an active member.
+     */
+    reviewerCanSignOff?: boolean | null;
     watchers: {
         id: string;
         userId: string;
@@ -1203,6 +1208,9 @@ export default function TaskDetailPage() {
                                 id="task-reviewer-input"
                                 name="reviewerUserId"
                                 tenantSlug={tenantSlug}
+                                // Only members whose role can edit tasks —
+                                // the server refuses anyone else (#4278).
+                                audience="task-reviewer"
                                 selectedId={reviewerValue}
                                 onChange={(uid) => setReviewerDraft(uid ?? null)}
                                 placeholder={t('detail.noReviewer')}
@@ -1213,6 +1221,16 @@ export default function TaskDetailPage() {
                             {savingReviewer ? t('detail.saving') : t('detail.setReviewer')}
                         </Button>
                     </div>
+                    {/* #4278 — a reviewer named before the rule, whose
+                        role cannot edit tasks (or who has left), can never
+                        sign the task off. Existing tasks were not
+                        migrated; this is where it is said, beside the
+                        picker that fixes it. */}
+                    {task.reviewerCanSignOff === false && (
+                        <p className="mt-2 text-sm text-content-warning" id="task-reviewer-cannot-sign-off" role="status">
+                            {t('detail.reviewerCannotSignOff')}
+                        </p>
+                    )}
                 </div>
             )}
 

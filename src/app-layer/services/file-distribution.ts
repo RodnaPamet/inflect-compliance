@@ -67,6 +67,10 @@ export const FILE_DISTRIBUTION_KIND = 'file_distribution';
 /** Every way bytes currently leave the platform. */
 export type DistributionChannel =
     | 'EVIDENCE_DOWNLOAD'
+    // An inline preview or gallery thumbnail of evidence (#4277). Same route,
+    // same gates and the same bytes as a download, so it is an egress all the
+    // same; kept apart so the ledger can tell a view from a download.
+    | 'EVIDENCE_PREVIEW'
     | 'TRUST_CENTER_DOWNLOAD'
     | 'AUDIT_PACK_SHAREPOINT'
     | 'PORTABILITY_BUNDLE';

@@ -22,9 +22,9 @@ Open **{{ui:nav.controls}}** under **{{ui:nav.govern}}** in the sidebar. The bre
 | Delete in bulk | Owner, Admin |
 | Open **{{ui:controls.deleted.toggle}}**, restore and purge | Owner, Admin |
 
-Readers, Auditors and AI admins see the quick view with its fields greyed out. Every role can tick rows, but the selection bar offers only the bulk actions your role can apply, and a role that can apply none of them sees no actions there. The **{{ui:controls.list.aiAssist}}** panel is shown only to roles that can edit controls.
+Readers, Auditors and AI admins see the quick view with its fields greyed out, and cannot tick rows. The selection bar offers only the bulk actions your role can apply. The **{{ui:controls.list.aiAssist}}** panel is shown only to roles that can edit controls.
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given. The page decides some buttons from your role's base role, so a custom role can be offered an action that it is then refused. If a change fails that way, ask an Owner or Admin.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given, and the page offers only the control actions those permissions allow. In the **{{ui:controls.list.task}}** panel, the upload box and the assignee list can still be offered and then refused. If a change fails that way, ask an Owner or Admin.
 
 ## What it is for
 
@@ -36,24 +36,24 @@ Use the page to see where implementation stands across every framework at once: 
 
 | Card | What it counts | Clicking it |
 | --- | --- | --- |
-| {{ui:controls.kpi.total}} | Every control in the workspace, whatever the filters | Clears every filter and the search |
+| {{ui:controls.kpi.total}} | Every control in the workspace, whatever the filters | Clears every filter, the search and any dashboard drill-down |
 | {{ui:controls.kpi.implemented}} | Controls that are {{ui:controls.filterEnums.status.IMPLEMENTED}} | Filters to that status |
 | {{ui:controls.kpi.inProgress}} | Controls that are {{ui:controls.filterEnums.status.IN_PROGRESS}} or {{ui:controls.filterEnums.status.IMPLEMENTING}} | Filters to those two statuses |
 | {{ui:controls.kpi.notStarted}} | Controls that are {{ui:controls.filterEnums.status.NOT_STARTED}}. The card turns red when there are any | Filters to that status |
 
-The three status cards count within your search and your other filters, except {{ui:controls.filters.category}}. Click a selected card again to remove its filter.
+The three status cards count within your search and your other filters. While a {{ui:controls.filters.category}} filter is on, they show a dash with **{{ui:controls.kpi.notCountedByCategory}}** under it, and clicking one still filters the list. Click a selected card again to remove its filter.
 
 **The toolbar.** From left to right:
 
 - **{{ui:controls.addControl}}**, the button with a plus sign, opens the **{{ui:controls.new.title}}** dialog. Only roles that can create controls see it.
-- **{{ui:common.ui.filter}}** holds the search and the filters. Its search box, **{{ui:controls.searchPlaceholder}}**, filters the table as you type and matches a control's name, code and objective. The filters are {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}}, {{ui:controls.filters.category}} and {{ui:controls.filters.health}}. The owner and category lists offer only values that appear in the controls already listed. Each active filter shows as a pill; remove a pill to drop that filter.
+- **{{ui:common.ui.filter}}** holds the search and the filters. Its search box, **{{ui:controls.searchPlaceholder}}**, filters the table as you type and matches a control's name, code and objective. The filters are {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}}, {{ui:controls.filters.category}} and {{ui:controls.filters.health}}. The owner and category lists offer the values that have appeared in the controls listed since you opened the page, so picking one owner or category leaves the others on offer. Each active filter shows as a pill; remove a pill to drop that filter.
 - **{{ui:common.ui.viewsMenu}}** holds **{{ui:controls.list.sankeyFlow}}**, a diagram of how assets expose risks and controls mitigate them; **{{ui:controls.list.installTemplates}}**, for roles that can create controls; and **{{ui:controls.deleted.toggle}}**, for Owners and Admins.
 - The dashboard button opens the **{{ui:controls.dashboard.title}}**.
 - Two settings buttons close the row: **{{ui:common.table.toggleColumns}}** chooses the table's columns, and **{{ui:common.table.editKpiCards}}** chooses which summary cards are shown and in what order. Both choices are remembered in your browser.
 
 Filters and the search are kept in the page address, so a filtered view can be bookmarked or shared with a colleague who has access to the workspace.
 
-**The table.** Each row is one control. Click a row to tick it, and double-click it to open the control's own page. Click a column heading to sort by {{ui:controls.colHeaders.code}}, {{ui:controls.colHeaders.title}}, {{ui:controls.colHeaders.category}}, {{ui:controls.colHeaders.status}}, {{ui:controls.colHeaders.owner}} or {{ui:controls.colHeaders.frequency}}. A long list loads more rows as you scroll.
+**The table.** Each row is one control. If your role can edit controls, click a row to tick it and double-click it to open the control's own page. Otherwise a click opens the page. Click a column heading to sort by {{ui:controls.colHeaders.code}}, {{ui:controls.colHeaders.title}}, {{ui:controls.colHeaders.category}}, {{ui:controls.colHeaders.status}}, {{ui:controls.colHeaders.owner}} or {{ui:controls.colHeaders.frequency}}. A long list loads more rows as you scroll.
 
 | Column | What it shows |
 | --- | --- |
@@ -77,11 +77,11 @@ The health verdict looks at the control's status, its applicability, its next te
 4. **{{ui:controls.health.verdict.DEGRADED}}**: its next test is overdue, or fewer than 90% of its tests passed.
 5. **{{ui:controls.health.verdict.HEALTHY}}**: none of the above.
 
-An {{ui:controls.filterEnums.status.IMPLEMENTED}} control that has never been tested and is not overdue therefore reads {{ui:controls.health.verdict.HEALTHY}}, although the hint beside the column name says it reads {{ui:controls.health.verdict.UNKNOWN}}.
+An {{ui:controls.filterEnums.status.IMPLEMENTED}} control that has never been tested and is not overdue therefore reads {{ui:controls.health.verdict.HEALTHY}}. The icon beside the {{ui:controls.list.healthColumn}} heading states the same rule.
 
 **A control's tasks.** A control with linked tasks has an arrow in its first column. Click the arrow, or the control's name, to list its tasks under the row with their status, assignee and evidence count. Click a task to open it in the **{{ui:controls.list.task}}** panel.
 
-**The quick view.** Clicking a control's name opens the **{{ui:controls.list.control}}** panel beside the table, in place of the other panels. On a narrow screen it opens over the page. Its **{{ui:controls.detail.tabs.details}}** tab holds the control's {{ui:controls.detail.fields.name}}, {{ui:controls.detail.fields.category}}, {{ui:controls.detail.fields.frequency}} and {{ui:controls.detail.fields.owner}}, and its evidence. Roles that can edit controls also get a box there to upload files or **{{ui:panels.evidenceUpload.linkUrl}}**. Its **{{ui:controls.detail.tabs.activity}}** tab lists what has happened to the control. Press Escape or close the panel to go back.
+**The quick view.** Clicking a control's name opens the **{{ui:controls.list.control}}** panel beside the table, in place of the other panels. On a narrow screen it opens over the page. Its **{{ui:controls.detail.tabs.details}}** tab holds the control's {{ui:controls.detail.fields.name}}, {{ui:controls.detail.fields.category}}, {{ui:controls.detail.fields.frequency}} and {{ui:controls.detail.fields.owner}}, and its evidence. Roles that can edit controls also get a box there to **{{ui:panels.evidenceUpload.linkUrl}}**, and to upload files if they can also upload evidence. Its **{{ui:controls.detail.tabs.activity}}** tab lists what has happened to the control. Press Escape or close the panel to go back.
 
 **The side panels.** **{{ui:controls.list.browse}}** starts collapsed. Open it to see the listed controls grouped by category, each group tagged with its framework. **{{ui:controls.list.expandAll}}** opens every group. Click a control in it to open its page. **{{ui:controls.list.aiAssist}}** opens the AI-assisted risk assessment, the same one the risk register offers.
 
@@ -105,11 +105,11 @@ Tick the rows you want, up to 100 at a time. In the selection bar, open **{{ui:c
 - **{{ui:controls.bulk.assignOwner}}** gives them all one owner, who must be an active member. Leave the owner empty to unassign them.
 - **{{ui:controls.bulk.delete}}** removes them from the list. For five seconds a message offers **{{ui:controls.deleted.undo}}**. Nothing is deleted until that time runs out.
 
-A status or owner change shows **{{ui:controls.bulk.applied}}** and clears the selection. A failed one leaves the rows selected, so you can try again. A failed deletion puts the rows back in the table.
+A status or owner change shows **{{ui:controls.bulk.applied}}** and clears the selection. If some of the selected controls could not be changed, a warning says how many were changed, and the others stay as they were. If none could be, it reads **{{ui:controls.bulk.noneApplied}}** A failed change leaves the rows selected, so you can try again. A failed deletion puts the rows back in the table.
 
 ### Restore or purge a deleted control
 
-Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. A deleted control is marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. This view also lists the controls that are not deleted, with a dash in that column. In it, the search and every filter but {{ui:controls.filters.category}} have no effect, and the {{ui:controls.colHeaders.owner}}, {{ui:controls.colHeaders.tasks}} and {{ui:controls.colHeaders.evidence}} columns show a dash or zero for every row.
+Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. It lists only deleted controls, each marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. The search and the {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}} and {{ui:controls.filters.category}} filters narrow it as they narrow the normal list. A deleted control has no health verdict, so this view has no {{ui:controls.filters.health}} filter and no {{ui:controls.list.healthColumn}} column.
 
 - **{{ui:controls.deleted.restore}}** brings the control back into the list. A message reads **{{ui:controls.deleted.restoredToast}}**.
 - **{{ui:controls.deleted.purge}}** deletes it permanently. The **{{ui:controls.deleted.purgeTitle}}** dialog asks you to type the control's code, or its name if it has none, then click **{{ui:controls.deleted.purge}}**. This cannot be undone.
@@ -129,15 +129,14 @@ Choose **{{ui:controls.deleted.toggle}}** again to return to the normal list.
 | --- | --- | --- |
 | **{{ui:controls.empty.noRecordsTitle}}** | The workspace has no controls | Click **{{ui:controls.empty.installFramework}}** or **{{ui:controls.empty.installTemplates}}**. Only roles that can add controls can install anything on the pages they open |
 | **{{ui:controls.empty.filterTitle}}** | Controls exist, but none match the search and filters | Click **{{ui:controls.empty.clearFilters}}** |
-| **{{ui:controls.empty.filterTitle}}** after picking two or more owners | The {{ui:controls.filters.owner}} filter finds nothing when more than one owner is picked | Pick one owner at a time |
 | A banner saying how many flagged controls are shown | You came from the consistency check on the {{ui:controls.dashboard.title}}, and the list shows only the controls it flagged | Click **{{ui:controls.list.flaggedClear}}** in the banner |
-| Fewer controls than expected, with no filter pill | You came from the {{ui:controls.dashboard.controlsDueSoon}} or {{ui:controls.dashboard.missingEvidence}} card, and the list shows only those controls. {{ui:controls.empty.clearFilters}} does not undo this | Click **{{ui:nav.controls}}** in the sidebar |
-| **{{ui:controls.deleted.emptyTitle}}** | The workspace has no controls at all, deleted or not | Nothing to restore |
+| A banner reading **{{ui:controls.list.drillDown.dueSoon}}**, **{{ui:controls.list.drillDown.missingEvidence}}**, or both | You came from the {{ui:controls.dashboard.controlsDueSoon}} or {{ui:controls.dashboard.missingEvidence}} card, and the list shows only those controls | Click **{{ui:controls.list.drillDown.clear}}** in the banner. It keeps your other filters and the search |
+| **{{ui:controls.deleted.emptyTitle}}** | No control is deleted | Nothing to restore |
 | **{{ui:controls.list.loadError}}** | The list did not load | Reload the page |
 | **{{ui:controls.health.loadError}}** above the table | The health verdicts did not load, so the {{ui:controls.list.healthColumn}} column shows dashes | Reload the page |
 | **{{ui:controls.detail.taskRows.error}}** under a row | The control's tasks did not load | Collapse the row and open it again |
 | **{{ui:controls.bulk.actionFailed}}** | A bulk action did not go through, for example because more than 100 rows were selected | Select fewer rows and try again |
-| **{{ui:controls.new.createFailed}}**, or a reason from the server, in the dialog | The control was not created. On a plan that limits controls, the reason names the limit | Fix what the reason says, or ask an Owner about the plan |
+| **{{ui:controls.new.createFailed}}**, or a reason from the server, in the dialog | The control was not created. On a plan that limits controls, the message says how many controls the plan allows and how many the workspace already has | Fix what the reason says, or ask an Owner or Admin about the plan |
 | **{{ui:controls.new.applicabilityFailed}}** | The control exists, but marking it not applicable failed | Click **{{ui:controls.new.submit}}** again; it retries only that step |
 | **{{ui:controls.detail.errors.saveFailed}}** or **{{ui:controls.detail.errors.ownerUpdateFailed}}** in the quick view | The change was not saved | Try again, or make the change on the control's own page |
 | **{{ui:controls.deleted.restoreFailed}}** or **{{ui:controls.deleted.purgeFailed}}** | The restore or purge did not go through | Reload the page and try again |

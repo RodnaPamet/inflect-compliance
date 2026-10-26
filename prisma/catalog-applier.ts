@@ -24,6 +24,7 @@ import type { PrismaClient } from '@prisma/client';
 import {
     type CatalogFile,
     assertCatalogConsistency,
+    catalogPacks,
 } from './catalog-loader';
 import { GENERIC_TEMPLATE_TASKS } from './generic-template-tasks';
 import { taskContentHash } from './catalog-loader';
@@ -177,7 +178,17 @@ export interface ApplyCatalogResult {
      * keeps producing.
      */
     tasks: TaskReconcileResult;
-    pack?: { id: string; key: string; created: boolean; templatesLinked: number };
+    /** The first (for a single-`pack` file, the only) pack applied. */
+    pack?: AppliedPack;
+    /** Every pack applied, in file order — several for a `packs` file. */
+    packs: AppliedPack[];
+}
+
+export interface AppliedPack {
+    id: string;
+    key: string;
+    created: boolean;
+    templatesLinked: number;
 }
 
 /**
@@ -415,35 +426,38 @@ export async function applyCatalogFile(
 
     }
 
-    // ── 6. + 7. Pack + PackTemplateLinks ───────────────────────
-    let packResult: ApplyCatalogResult['pack'];
-    if (file.pack) {
+    // ── 6. + 7. Packs + PackTemplateLinks ──────────────────────
+    // One pack for most files; several for a framework whose packs are its
+    // subcategories. Each is upserted and linked the same way.
+    const appliedPacks: AppliedPack[] = [];
+    for (const filePack of catalogPacks(file)) {
         const packBefore = await prisma.frameworkPack.findUnique({
-            where: { key: file.pack.key },
+            where: { key: filePack.key },
         });
         const pack = await prisma.frameworkPack.upsert({
-            where: { key: file.pack.key },
+            where: { key: filePack.key },
             update: {
-                name: file.pack.name,
+                name: filePack.name,
                 frameworkId: framework.id,
-                ...(file.pack.version ? { version: file.pack.version } : {}),
-                ...(file.pack.description !== undefined
-                    ? { description: file.pack.description }
+                ...(filePack.version ? { version: filePack.version } : {}),
+                ...(filePack.description !== undefined
+                    ? { description: filePack.description }
                     : {}),
             },
             create: {
-                key: file.pack.key,
-                name: file.pack.name,
+                key: filePack.key,
+                name: filePack.name,
                 frameworkId: framework.id,
-                ...(file.pack.version ? { version: file.pack.version } : {}),
-                ...(file.pack.description !== undefined
-                    ? { description: file.pack.description }
+                ...(filePack.version ? { version: filePack.version } : {}),
+                ...(filePack.description !== undefined
+                    ? { description: filePack.description }
                     : {}),
             },
         });
 
-        // Default to every template in this file when omitted.
-        const codes = file.pack.templateCodes ?? file.templates.map((t) => t.code);
+        // Default to every template in this file when omitted (single
+        // `pack` only — the schema makes each of several name its own).
+        const codes = filePack.templateCodes ?? file.templates.map((t) => t.code);
         let linked = 0;
         for (const code of codes) {
             const templateId = templateMap[code];
@@ -455,12 +469,12 @@ export async function applyCatalogFile(
             });
             linked++;
         }
-        packResult = {
+        appliedPacks.push({
             id: pack.id,
             key: pack.key,
             created: !packBefore,
             templatesLinked: linked,
-        };
+        });
     }
 
     return {
@@ -476,6 +490,7 @@ export async function applyCatalogFile(
             templateFieldsFilled,
         },
         tasks: tasksReconciled,
-        pack: packResult,
+        pack: appliedPacks[0],
+        packs: appliedPacks,
     };
 }

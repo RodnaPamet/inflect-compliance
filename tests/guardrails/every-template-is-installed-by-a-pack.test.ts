@@ -40,7 +40,10 @@ interface Catalog {
     file: string;
     templates: string[];
     packKey: string | null;
+    /** Every code any pack in the file names — the union over `packs`. */
     packCodes: string[];
+    /** Per pack, for the duplicate check: a code twice in ONE pack is the defect. */
+    perPack: Array<{ key: string; codes: string[] }>;
 }
 
 function catalogues(): Catalog[] {
@@ -51,12 +54,22 @@ function catalogues(): Catalog[] {
             const d = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, f), 'utf-8')) as {
                 templates?: Array<{ code?: string }>;
                 pack?: { key?: string; templateCodes?: string[] };
+                // A framework whose packs are its subcategories declares
+                // several; each names its own templates and they overlap on
+                // the shared core, so the invariant is over their UNION.
+                packs?: Array<{ key?: string; templateCodes?: string[] }>;
             };
+            const packs = d.packs ?? (d.pack ? [d.pack] : []);
+            const perPack = packs.map((p) => ({
+                key: String(p.key),
+                codes: (p.templateCodes ?? []).map(String),
+            }));
             return {
                 file: f,
                 templates: (d.templates ?? []).map((t) => String(t.code)),
-                packKey: d.pack?.key ?? null,
-                packCodes: (d.pack?.templateCodes ?? []).map(String),
+                packKey: packs[0]?.key ?? null,
+                packCodes: [...new Set(perPack.flatMap((p) => p.codes))],
+                perPack,
             };
         })
         .filter((c) => c.templates.length > 0);
@@ -107,5 +120,13 @@ describe('every shipped template is installed by a pack', () => {
             .filter((c) => new Set(c.packCodes).size !== c.templates.length)
             .map((c) => `${c.file}: ${c.templates.length} templates, ${new Set(c.packCodes).size} distinct pack codes`);
         expect(mismatched).toEqual([]);
+        // The duplicate check moves to each pack: with several packs a code
+        // legitimately appears in more than one, but never twice in one.
+        const duplicated = all.flatMap((c) =>
+            c.perPack
+                .filter((p) => new Set(p.codes).size !== p.codes.length)
+                .map((p) => `${c.file}: pack ${p.key} names a template twice`),
+        );
+        expect(duplicated).toEqual([]);
     });
 });

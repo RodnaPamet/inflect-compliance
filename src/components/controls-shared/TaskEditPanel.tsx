@@ -29,6 +29,7 @@ import { PanelActivityFeed } from "./PanelActivityFeed";
 import { EvidenceUploadSection } from "@/components/evidence/EvidenceUploadSection";
 import { TERMINAL_TASK_STATUSES } from "@/app-layer/domain/task-status";
 import { Button } from "@/components/ui/button";
+import { apiErrorMessage } from "@/lib/api-error";
 import type { ControlTask } from "./ControlTaskRows";
 
 type OptT = (key: string) => string;
@@ -57,9 +58,16 @@ const buildTypeOptions = (t: OptT): ComboboxOption[] => [
 // commits through the setTaskStatus endpoint (state machine + TP-3
 // source reconciliation), NOT a raw field PATCH. Labels come from the
 // shared task-status map — no local status→variant redeclaration.
-const SELECTABLE_STATUSES = ["OPEN", "TRIAGED", "IN_PROGRESS", "IN_REVIEW", "BLOCKED", "CLOSED", "CANCELED"];
-const buildStatusOptions = (t: OptT): ComboboxOption[] =>
-    SELECTABLE_STATUSES.map((value) => ({ value, label: taskStatusLabel(value, t) }));
+//
+// OPEN is not a choice: it is the initial state only and no transition
+// leads back to it (`TASK_TRANSITIONS`), so picking it could only be
+// refused. A task that IS Open (or a legacy Resolved one) still shows
+// its current status — `buildStatusOptions` prepends it — and selecting
+// the current status is already a no-op in `handleStatusChange`.
+const SELECTABLE_STATUSES = ["TRIAGED", "IN_PROGRESS", "IN_REVIEW", "BLOCKED", "CLOSED", "CANCELED"];
+const buildStatusOptions = (t: OptT, current: string): ComboboxOption[] =>
+    (SELECTABLE_STATUSES.includes(current) ? SELECTABLE_STATUSES : [current, ...SELECTABLE_STATUSES])
+        .map((value) => ({ value, label: taskStatusLabel(value, t) }));
 type Tab = "details" | "activity";
 
 interface TaskDetail {
@@ -103,7 +111,6 @@ export function TaskEditPanel({
     const SEVERITY_OPTIONS = useMemo(() => buildSeverityOptions(tTask), [tTask]);
     const PRIORITY_OPTIONS = useMemo(() => buildPriorityOptions(tTask), [tTask]);
     const TYPE_OPTIONS = useMemo(() => buildTypeOptions(tTask), [tTask]);
-    const STATUS_OPTIONS = useMemo(() => buildStatusOptions(tTask), [tTask]);
     const [tab, setTab] = useState<Tab>("details");
     const base = `/api/t/${tenantSlug}/tasks/${task.id}`;
 
@@ -116,6 +123,7 @@ export function TaskEditPanel({
     // the setTaskStatus endpoint (never a raw PATCH). Terminal moves
     // (CLOSED / CANCELED) collect a required resolution note first.
     const [status, setStatus] = useState(task.status ?? "OPEN");
+    const STATUS_OPTIONS = useMemo(() => buildStatusOptions(tTask, status), [tTask, status]);
     const [pendingTerminalStatus, setPendingTerminalStatus] = useState<string | null>(null);
     const [resolutionDraft, setResolutionDraft] = useState("");
     // The initial GET can fail. Until it succeeds, `loadedRef` stays false and
@@ -168,7 +176,12 @@ export function TaskEditPanel({
                     dueAt: f.dueAt || null,
                 }),
             });
-            if (!res.ok) return tx("detail.errors.saveFailed");
+            if (!res.ok) {
+                // The refusal's reason is at `error.message` in the API
+                // envelope; show it rather than the generic fallback.
+                const body = await res.json().catch(() => null);
+                return apiErrorMessage(body, tx("detail.errors.saveFailed"));
+            }
             onSaved();
         },
     });
@@ -216,7 +229,10 @@ export function TaskEditPanel({
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ assigneeUserId: userId || null }),
                     });
-                    if (!res.ok) return tx("detail.errors.assigneeUpdateFailed");
+                    if (!res.ok) {
+                        const body = await res.json().catch(() => null);
+                        return apiErrorMessage(body, tx("detail.errors.assigneeUpdateFailed"));
+                    }
                 } catch {
                     // Server-rejected and network-thrown are the same message
                     // here — the user only needs to know the assignee did not
@@ -247,14 +263,12 @@ export function TaskEditPanel({
                 });
                 if (!res.ok) {
                     // A rejected transition carries a meaningful server message
-                    // (state-machine / reconciliation error) — surface it as-is.
+                    // (state-machine / reviewer gate / reconciliation error) —
+                    // surface it as-is. It sits at `error.message` in the API
+                    // envelope, which reading only a string `error` dropped.
                     // Fall back to the translated string when the body is empty.
-                    const data = await res.json().catch(() => ({}));
-                    const serverMessage =
-                        (typeof data?.error === "string" && data.error) ||
-                        (typeof data?.message === "string" && data.message) ||
-                        "";
-                    return serverMessage || tx("detail.errors.saveFailed");
+                    const data = await res.json().catch(() => null);
+                    return apiErrorMessage(data, tx("detail.errors.saveFailed"));
                 }
                 setStatus(nextStatus);
                 setPendingTerminalStatus(null);

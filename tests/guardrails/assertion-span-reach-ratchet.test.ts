@@ -139,7 +139,11 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 //   Re-seated DOWNWARD to the live count rather than left with slack, which is
 //   what the sentinel demands of an improvement — headroom is what a future
 //   regression spends on a green build.
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 142;
+// 142 -> 140 (2026-10-25, the Kubernetes runbook removal).
+//   `k8s-runbook-coverage.test.ts` pinned a Helm/EKS/RDS runbook in
+//   `docs/deployment.md` for a cluster that never existed; it was deleted with
+//   that section, and its two unbounded interior spans went with it.
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 140;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -194,7 +198,16 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 142;
 //   whole-file reads where there was one — and it LOWERED all three span and
 //   needle counts, for the same underlying reason. More, smaller files cost
 //   reads and save reach.
-const INTERIOR_SPAN_BASELINE = 310;
+// 310 -> 308 (2026-10-25): the two spans `k8s-runbook-coverage.test.ts` took
+//   with it, counted here as well as in the unbounded baseline.
+// 308 -> 307 (2026-10-25, #4277). The Evidence list's Freshness cell stopped
+//   rendering `<FreshnessBadge … lastRefreshedAt=>`, so the view-toggle guard's
+//   span over it was replaced by a needle on `evidenceFreshnessBucket(ev, …)`.
+// 307 -> 305 (2026-10-26, #4308): the two bounded `[\s\S]{0,200}` spans in
+//   `oi-3-runbook-and-slos.test.ts`'s severity assertion (CRITICAL…PagerDuty,
+//   WARNING…Slack), retired with the EKS-era runbook text they pinned. Both
+//   were bounded, so the unbounded baseline does not move.
+const INTERIOR_SPAN_BASELINE = 305;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.
