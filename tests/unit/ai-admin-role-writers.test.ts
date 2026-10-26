@@ -120,7 +120,6 @@ const NAMING_FILES: Readonly<Record<string, string>> = {
     'src/app-layer/schemas/entra-group-mapping.schemas.ts': 'ENTRA_MAPPABLE_ROLES: a group may map to it',
     'src/app-layer/policies/audit-readiness.policies.ts': 'assertCanViewPack: views packs like a READER',
     'src/app-layer/policies/issue.policies.ts': 'assertCanComment: refuses it like a READER',
-    'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx': 'hides the comment form, like a READER',
     'src/app/t/[tenantSlug]/(app)/admin/rbac/page.tsx': 'a column in the permission matrix',
     'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx':
         'a badge tone; the role-change picker offers it to an OWNER only, never the invite picker',
