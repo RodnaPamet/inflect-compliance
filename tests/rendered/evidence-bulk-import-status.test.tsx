@@ -93,6 +93,7 @@ async function startImport() {
                 setOpen={() => {}}
                 tenantSlug="acme"
                 apiUrl={apiUrl}
+                canEditControlLinks
             />
         </SWRConfig>,
     );

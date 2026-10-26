@@ -116,6 +116,13 @@ export interface EvidenceBulkImportModalProps {
     setOpen: Dispatch<SetStateAction<boolean>>;
     tenantSlug: string;
     apiUrl: (path: string) => string;
+    /**
+     * Offer the default control. It links every imported record to that
+     * control, which needs the coarse write tier AND `controls.edit`, a key a
+     * custom role on a write-tier base can lack (#4326). Without it the field
+     * is not shown and the import sends no control.
+     */
+    canEditControlLinks: boolean;
 }
 
 export function EvidenceBulkImportModal({
@@ -123,6 +130,7 @@ export function EvidenceBulkImportModal({
     setOpen,
     tenantSlug,
     apiUrl,
+    canEditControlLinks,
 }: EvidenceBulkImportModalProps) {
     const tx = useTranslations('evidence');
     const close = useCallback(() => setOpen(false), [setOpen]);
@@ -356,6 +364,7 @@ export function EvidenceBulkImportModal({
 
                     {/* EP-3 — optional metadata applied to every imported row. */}
                     <div className="mt-default grid grid-cols-1 gap-default sm:grid-cols-2">
+                        {canEditControlLinks && (
                         <FormField
                             label={tx('bulkImport.defaultControlLabel')}
                             description={tx('bulkImport.defaultControlDesc')}
@@ -370,6 +379,7 @@ export function EvidenceBulkImportModal({
                                 testId="bulk-import-control-picker"
                             />
                         </FormField>
+                        )}
                         <FormField label={tx('bulkImport.folderLabel')}>
                             <input
                                 id="bulk-import-folder-input"
