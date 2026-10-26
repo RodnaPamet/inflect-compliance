@@ -253,10 +253,36 @@ profile run key is refused at admission.
   grant as `PROFILE_TOOL_NOT_GRANTED`, and an engine that runs profiles passes
   it.
 
+- **The Behaviour tab** (Step 1b, #4144) is on the agent detail page while the
+  flag is on, under `admin.agent_registry`; a view-key reader finds it disabled.
+  - It shows the version in force read-only, the open version, and every
+    version's status, author, decider and instructions hash.
+  - Instructions render as text, never markup.
+  - An editor in a Sheet writes the next version as a DRAFT. Its tool and skill
+    pickers list only what the server's read offers: the agent's current grants
+    and the skills it may mount.
+  - A reviewer who is not the author sees the submitted text diffed against the
+    version in force. Approve sends the hash on screen. Reject asks for a
+    reason.
+  - Test run is shown on a submitted or approved version, disabled, and names
+    the engine setting it needs.
+- **A rejection says why.** `AgentProfileVersion.rejectionReason` is sanitised,
+  at most 1,000 characters, encrypted at rest, and never audited. The trigger
+  writes it only in the move from SUBMITTED to REJECTED, requires it there, and
+  never lets it be revised. The rotation sweeps' re-wrap is the one exception.
+- **The read is the builder's.** For an agent with no profile,
+  `getAgentProfile` answers `profile: null` instead of refusing. Each answer
+  carries:
+  - the editor's `options`;
+  - each version's `canDecide`, so the page offers exactly what the server
+    accepts;
+  - member labels in place of user ids;
+  - `testRun`.
+
 Two things are not enforced yet, and the steps that need them carry them:
 
-- **`allowedTriggers`** is checked at each trigger site: the Ask page and Test
-  run in 1b, automation in Phase 2.
+- **`allowedTriggers`** is checked at each trigger site as it gains a start
+  path: Test run in Step 2c, the Ask page and automation in Phase 2.
 - **Resume and settlement** still read the registry. A profile run row cannot
   exist until an engine runs profiles, and the engine that does routes both
   through the resolver (Step 2b).
@@ -1033,6 +1059,21 @@ Deliver per the Definition of done. This step is Significant.
 **Exit.** An approved profile version compiles into a run that `startWorkflowRun` admits or refuses with a named reason, inside one tenant only.
 
 #### Step 1b — Builder UI
+
+Delivered (#4144). The tab, the rejection reason and the builder's read are in
+"Agent profiles" under Current state. Three deviations from the prompt below:
+
+- **A schema migration.** Reject asks for a reason, and Step 1a had no column
+  to hold it, so this step added `rejectionReason`. The step is Significant,
+  not Standard.
+- **Test run is disabled, with no start path.** A browser session carries no
+  agent identity, and admission resolves only the approved version in force,
+  so enabling Test run needs a route this step could not exercise. That route,
+  the view's enabled state and the button's action are carried to Step 2c in
+  `docs/claude-tool-runner-design.md`.
+- **No Retire control.** The prompt does not ask for one, and an edit retires
+  the open version already. Retiring the version in force stays an API act
+  (`…/versions/:version/retire`).
 
 **Goal.** A Behaviour tab where a tenant writes, submits, reviews, approves and
 test-runs their agent's instructions.

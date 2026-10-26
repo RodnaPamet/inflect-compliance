@@ -2806,7 +2806,19 @@ edit from being undone:
   - **`AGENT_PROFILES` is the deployment's switch**, read like
     `AGENT_DRIVER_FLUE`. Off, every profile route answers 404 before its
     permission check (`whenAgentProfilesEnabled`) and a profile key is refused
-    at admission (`PROFILES_DISABLED`).
+    at admission (`PROFILES_DISABLED`). Off, the agent page also renders no
+    Behaviour tab.
+  - **A rejection carries its reason** (Step 1b, #4144). `rejectionReason` is
+    the version's second encrypted column. The trigger writes it only in the
+    move from SUBMITTED to REJECTED, refuses that move without it
+    (`AGENT_PROFILE_REJECTION_NEEDS_REASON`), and freezes it after. The rotation
+    sweeps' re-wrap is the one exception, as for `instructions`. The reason is a
+    sentence about the instructions, so it never goes in an audit row.
+  - **The Behaviour tab offers what the server would accept, from the server's
+    read.** The pickers list the view's `options` (the agent's current grants
+    and mountable skills). Approve and Reject follow each version's
+    `canDecide`. Compute neither in the client. Instructions and reasons render
+    as React text, never through markdown or `innerHTML`.
 
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).

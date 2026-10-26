@@ -52,6 +52,9 @@ export const PROFILE_MAX_TURNS: number = ENGINE_CAPS.MAX_STEPS;
 /** The instructions' size cap, after sanitising. */
 export const PROFILE_INSTRUCTIONS_MAX_CHARS = 16_000;
 
+/** A rejection reason's size cap, after sanitising. */
+export const PROFILE_REJECTION_REASON_MAX_CHARS = 1_000;
+
 /** At most this many tools and skills, as the CHECKs hold. */
 export const PROFILE_MAX_TOOLS = 128;
 export const PROFILE_MAX_SKILLS = 32;
