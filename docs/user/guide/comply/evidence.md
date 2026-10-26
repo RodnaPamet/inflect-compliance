@@ -28,7 +28,7 @@ Readers, Auditors and AI admins see no **{{ui:evidence.addEvidence}}** button an
 
 Whatever your role, nobody can approve or reject evidence they submitted for review; another Owner or Admin must do it. Only {{ui:evidence.statusLabels.SUBMITTED}} evidence can be approved or rejected, and a rejection needs a reason. Nobody can download archived evidence, so archived evidence shows no download button.
 
-If your workspace uses custom roles, the page shows the add, edit, archive, submit and bulk buttons only when both the built-in role your custom role is based on and the evidence permissions the custom role was given allow them. Linking and unlinking a control in the details panel also needs permission to edit controls; without it, the panel shows no control picker and no cross. A custom role that cannot view controls can still open this page, but the {{ui:evidence.filters.controlId}} filter and the control pickers offer no controls.
+If your workspace uses custom roles, the page shows the add, edit, archive, submit and bulk buttons only when both the built-in role your custom role is based on and the evidence permissions the custom role was given allow them. Linking evidence to a control, or unlinking it, also needs permission to edit controls, wherever you do it. Without that permission, the details panel shows no control picker and no cross, the forms that add evidence have no control field, and the edit form shows the linked controls but does not let you change them. A custom role that cannot view controls can still open this page, but the {{ui:evidence.filters.controlId}} filter and the control pickers offer no controls.
 
 ## What it is for
 
