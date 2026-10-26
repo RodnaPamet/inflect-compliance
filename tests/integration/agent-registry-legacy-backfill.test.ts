@@ -23,6 +23,7 @@ import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { prismaTestClient } from '../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(30_000);
@@ -86,7 +87,10 @@ async function cleanup(): Promise<void> {
             `DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`,
             TENANTS,
         );
-    });
+        // The declared budget, not Prisma's inherited 2000 ms maxWait (#3266):
+        // under CI shard load that is not enough to acquire a connection, and
+        // the throw from this cleanup failed every test in the file.
+    }, TENANT_TX_OPTIONS);
     // By id, not by a filter over the encrypted email column: an `undefined`
     // filter value is DROPPED by Prisma, and a dropped filter on a deleteMany
     // is a whole-table delete.
