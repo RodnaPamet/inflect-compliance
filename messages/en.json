@@ -1373,7 +1373,8 @@
       "generationFailed": "Generation failed",
       "applyFailed": "Apply failed",
       "dismissFailed": "Couldn't dismiss the suggestions. They're still here.",
-      "assetsNone": "No assets found. Suggestions will be general."
+      "assetsNone": "No assets found. Suggestions will be general.",
+      "permissionRequired": "You don't have permission to create risks, so you can't use AI Assist."
     },
     "aiSystems": {
       "risksCrumb": "Risks",

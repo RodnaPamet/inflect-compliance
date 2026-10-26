@@ -283,6 +283,7 @@ describe('Controls — read-only roles get no row checkboxes', () => {
                     controls: { create: perms.controls.create, edit: perms.controls.edit },
                     tasks: { edit: perms.tasks.edit },
                     evidence: { upload: true },
+                    risks: { create: true },
                     admin: { manage: perms.admin.manage },
                 }}
             />,

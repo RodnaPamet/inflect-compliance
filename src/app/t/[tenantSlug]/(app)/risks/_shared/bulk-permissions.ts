@@ -38,12 +38,14 @@ export function riskBulkPermissions(ctx: {
 }
 
 /**
- * Whether the user can create risks: the list's button, the import page, and
- * the empty register's button on the list, the dashboard and the board. Both ways in are gated twice, like the bulk actions: the
- * create route and the import route check `risks.create`, and `createRisk` /
- * `bulkImportRisks` assert the coarse write tier. A custom role can hold one
- * without the other, so the page used to offer Create on the tier alone and
- * the server then refused it.
+ * Whether the user can create risks: the list's button, the import page,
+ * the empty register's button on the list, the dashboard and the board, and
+ * AI Assist (the list's panel and the `/risks/ai` page). Every way in is gated
+ * twice, like the bulk actions: the create, import and AI generate / apply
+ * routes check `risks.create`, and `createRisk` / `bulkImportRisks` /
+ * `generateRiskSuggestions` / `applySession` assert the coarse write tier. A
+ * custom role can hold one without the other, so the page used to offer
+ * Create on the tier alone and the server then refused it.
  */
 export function riskCanCreate(ctx: {
     permissions: { canWrite: boolean };

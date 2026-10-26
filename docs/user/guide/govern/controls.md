@@ -22,7 +22,7 @@ Open **{{ui:nav.controls}}** under **{{ui:nav.govern}}** in the sidebar. The bre
 | Delete in bulk | Owner, Admin |
 | Open **{{ui:controls.deleted.toggle}}**, restore and purge | Owner, Admin |
 
-Readers, Auditors and AI admins see the quick view with its fields greyed out, and cannot tick rows. The selection bar offers only the bulk actions your role can apply. The **{{ui:controls.list.aiAssist}}** panel is shown only to roles that can edit controls.
+Readers, Auditors and AI admins see the quick view with its fields greyed out, and cannot tick rows. The selection bar offers only the bulk actions your role can apply. The **{{ui:controls.list.aiAssist}}** panel is shown only to roles that can edit controls and create risks.
 
 If your workspace uses custom roles, what you can do depends on the permissions your role was given, and the page offers only the control actions those permissions allow. In the **{{ui:controls.list.task}}** panel, the upload box and the assignee list can still be offered and then refused. If a change fails that way, ask an Owner or Admin.
 

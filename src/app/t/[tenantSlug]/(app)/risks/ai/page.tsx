@@ -15,6 +15,7 @@ import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cn } from '@inflect/ui/lib/cn';
+import { riskCanCreate } from '../_shared/bulk-permissions';
 
 const SCALE_OPTIONS: ComboboxOption[] = [1,2,3,4,5].map(v => ({ value: String(v), label: String(v) }));
 
@@ -77,7 +78,12 @@ type Phase = 'form' | 'generating' | 'review' | 'applying' | 'done';
 export default function AIRiskAssessmentPage() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions } = useTenantContext();
+    const tenant = useTenantContext();
+    const { permissions } = tenant;
+    // Applying suggestions creates risks, so the generate and apply routes
+    // take `risks.create` and the usecases the write tier (#4327) — the same
+    // two gates as the Risk button and the import.
+    const canCreate = riskCanCreate(tenant);
     const tx = useTranslations('risks');
     const { config: matrixConfig } = useRiskMatrixConfig();
 
@@ -266,6 +272,20 @@ export default function AIRiskAssessmentPage() {
     const acceptedCount = Object.values(decisions).filter(d => d === 'accept').length;
     const rejectedCount = Object.values(decisions).filter(d => d === 'reject').length;
     const pendingCount = Object.values(decisions).filter(d => d === 'pending').length;
+
+    if (!canCreate) {
+        return (
+            <div className="space-y-section animate-fadeIn max-w-5xl">
+                <BackAffordance />
+                <Card className="text-center" id="ai-no-permission">
+                    <p className="text-content-muted">{tx('ai.permissionRequired')}</p>
+                    <Link href={tenantHref('/risks')} className={buttonVariants({ variant: 'secondary', className: 'mt-4' })}>
+                        {tx('ai.viewRegister')}
+                    </Link>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-section animate-fadeIn max-w-5xl">
@@ -617,12 +637,11 @@ export default function AIRiskAssessmentPage() {
                     {/* Action bar */}
                     <div className={cn(cardVariants({ density: 'compact' }), 'flex items-center justify-between')} id="ai-action-bar">
                         {/* `dismissSession` asserts ctx.permissions.canWrite,
-                            same as generate and apply — but this button was
-                            the one left ungated. Gate on the coarse flag the
-                            usecase actually reads; the sibling
-                            RequirePermission gates use the granular
-                            `risks.create` key, which agrees for every built-in
-                            role and could diverge only for a custom one. */}
+                            and the dismiss route takes no granular key — but
+                            this button was the one left ungated. Gate on the
+                            coarse flag the usecase actually reads. (The page
+                            as a whole needs `canCreate`, so the sibling
+                            RequirePermission gates always pass here.) */}
                         {permissions.canWrite && (
                             <Button variant="secondary" onClick={handleDismiss} id="dismiss-btn">{tx('ai.dismissAll')}</Button>
                         )}

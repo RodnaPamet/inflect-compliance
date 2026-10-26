@@ -206,6 +206,9 @@ interface ControlsClientProps {
         // `/evidence/uploads`, whose usecase asserts `evidence.upload` — a
         // DIFFERENT key from the one that opens the panel.
         evidence: { upload: boolean };
+        // The AI Assist rail opens `/risks/ai`, whose generate and apply
+        // routes take `risks.create`.
+        risks: { create: boolean };
         // Bulk delete + the Deleted view's Restore / Purge are
         // `requirePermission('admin.manage')` at their routes.
         admin: { manage: boolean };
@@ -1863,7 +1866,10 @@ function ControlsPageInner({
     // by default; the same `<AiAssistRail>` content + `/risks/ai`
     // destination as the Risks page so the panel reads as one
     // shared co-pilot across registers, not a stub.
-    const aiAssistAside = canEditControls ? (
+    // Gated on the page's edit gate AND what the destination needs: the flow
+    // creates risks, so its routes take `risks.create` and its usecases the
+    // write tier (#4327). Without it the rail led to a refusal.
+    const aiAssistAside = canEditControls && appPermissions.risks.create ? (
         <AsidePanel
             title={t('list.aiAssist')}
             surfaceKey="controls-list-ai"
