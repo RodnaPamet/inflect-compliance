@@ -20,7 +20,11 @@ const prismaMock = {
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock, prisma: prismaMock }));
 
 import type { Role } from '@prisma/client';
-import { resolveInitiatorContext, initiatorAuthority } from '@/app-layer/context-system';
+import {
+    resolveInitiatorContext,
+    initiatorAuthority,
+    buildDelegatedJobContext,
+} from '@/app-layer/context-system';
 import { resolveTenantContext, computePermissions } from '@/lib/tenant-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 
@@ -181,5 +185,40 @@ describe('the refusal and the request id', () => {
         prismaMock.tenantMembership.findFirst.mockResolvedValue(row('EDITOR', null));
         const ctx = await resolveInitiatorContext({ tenantId: 'tenant-A', userId: 'user-1', requestId: 'req-9' });
         expect(ctx).toMatchObject({ requestId: 'req-9', userId: 'user-1', tenantId: 'tenant-A' });
+    });
+});
+
+/**
+ * The granular half of a delegated job context (#4388).
+ *
+ * `buildDelegatedJobContext` took a `permissions` override and hardcoded
+ * `appPermissions` to ADMIN's set, so a caller that narrowed the coarse flags
+ * got a context that still passed every purely-granular assert --
+ * `assertCanUploadEvidence` reads `appPermissions.evidence.upload` and nothing
+ * else. The two halves are narrowed together or the narrowing is decorative.
+ */
+describe('a delegated job context can narrow its granular set, not just the coarse flags', () => {
+    const base = { tenantId: 'tenant-A', job: 'j', onBehalfOf: 'user-1' };
+
+    it("defaults to ADMIN's granular set, so no existing caller moves", () => {
+        expect(buildDelegatedJobContext(base).appPermissions).toEqual(getPermissionsForRole('ADMIN'));
+    });
+
+    it('honours a narrower granular set when one is passed', () => {
+        const ctx = buildDelegatedJobContext({ ...base, appPermissions: getPermissionsForRole('EDITOR') });
+        expect(ctx.appPermissions).toEqual(getPermissionsForRole('EDITOR'));
+        // The key the coarse flags cannot speak for.
+        expect(ctx.appPermissions.admin.manage).toBe(false);
+    });
+
+    it('does not infer the granular set from the coarse flags — they are set independently', () => {
+        // Narrowing only the coarse half is what the old signature forced, and
+        // this is what it produced: canAdmin false beside admin.manage true.
+        const coarseOnly = buildDelegatedJobContext({
+            ...base,
+            permissions: { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: false },
+        });
+        expect(coarseOnly.permissions.canAdmin).toBe(false);
+        expect(coarseOnly.appPermissions.admin.manage).toBe(true);
     });
 });

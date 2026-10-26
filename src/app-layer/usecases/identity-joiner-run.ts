@@ -526,6 +526,16 @@ export async function runIdentityJoinerPass(input: {
     // waiting to be misattributed — but the execution row is the artefact an
     // operator reads to reconstruct a run, and it said `scheduled` for a run a
     // named admin started from the button.
+    // ACCEPTED, NOT OVERLOOKED (#4388, owner decision 2026-10-26). The route
+    // that queues this asserts `admin.tenant_lifecycle`, so no under-privileged
+    // user reaches it. But that check happens at ENQUEUE and is never repeated
+    // HERE: a pass queued by somebody since demoted or removed still runs, with
+    // full ADMIN, attributed to them. `resolveMemberContext` is the primitive
+    // that would close it and refuse instead -- and refusing a leaver pass
+    // leaves a departing employee's accounts enabled, which is the quiet
+    // compliance miss this codebase treats as worse than the over-grant.
+    // Closing it properly needs the per-tenant SYSTEM `User` row (see
+    // `buildDelegatedJobContext`), so the borrow is unnecessary at all.
     const ctx = input.requestedByUserId
         ? buildDelegatedJobContext({
               tenantId: input.tenantId,

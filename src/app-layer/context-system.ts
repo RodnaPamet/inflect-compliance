@@ -163,14 +163,25 @@ export function buildSystemContext(input: {
  * `Task.createdByUserId` is `String` — NOT NULL — with a foreign key to
  * `User`. So a task simply cannot be created by `SYSTEM_PRINCIPAL`: the
  * insert dies on `Task_createdByUserId_fkey`. That constraint is the
- * reason these two jobs borrowed a real member's id in the first place,
- * and it is not something a context helper can wish away.
+ * reason the first callers borrowed a real member's id, and it is not
+ * something a context helper can wish away.
+ *
+ * THE FK ARGUMENT DOES NOT COVER EVERY CALLER. It was written for two and
+ * there are now nine (#4388 classifies them). Where the id comes from a
+ * `requestedByUserId` the constraint is satisfied either way, so the ADMIN
+ * grant below is not the FK's doing and must be justified on its own.
  *
  * What this fixes is the half that IS fixable today: the row now carries
  * `actorType: 'JOB'`, so the trail reads "a job did this, attributed to
  * <user>" instead of "<user> did this". A reviewer can filter machine
  * activity out; nobody is misled into treating a nightly sweep as a
  * deliberate act by the person named.
+ *
+ * `appPermissions` defaults to ADMIN's granular set and can be narrowed.
+ * It could NOT before, which made a caller's coarse narrowing misleading:
+ * `assertCanUploadEvidence` reads only `appPermissions.evidence.upload`, so
+ * a context with `canAdmin: false` still passed every purely-granular
+ * assert. Narrow BOTH or the narrowing is decorative (#4388).
  *
  * **The ADMIN role stays, and that is a known remaining gap.** Resolving
  * the owner's real role instead (see `resolveMemberContext`) would mean a
@@ -191,6 +202,11 @@ export function buildDelegatedJobContext(input: {
     requestId?: string;
     /** Coarse flags; defaults to full. Pass explicitly to keep a narrower set. */
     permissions?: RequestContext['permissions'];
+    /**
+     * Granular set; defaults to ADMIN's. Narrow it alongside `permissions` —
+     * the asserts that read only this one are not gated by the coarse flags.
+     */
+    appPermissions?: PermissionSet;
 }): RequestContext {
     return {
         requestId: input.requestId ?? `${input.job}-${input.tenantId}`,
@@ -206,7 +222,7 @@ export function buildDelegatedJobContext(input: {
             canAudit: true,
             canExport: false,
         },
-        appPermissions: getPermissionsForRole('ADMIN'),
+        appPermissions: input.appPermissions ?? getPermissionsForRole('ADMIN'),
     };
 }
 
