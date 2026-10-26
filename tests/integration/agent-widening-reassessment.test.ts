@@ -62,8 +62,9 @@ import { completeAgentRiskAssessment } from '@/app-layer/usecases/agent-risk-ass
 import { MAX_AUTONOMY_BY_TIER } from '@/lib/agentic/agent-risk-scoring';
 import fixture from '../../prisma/fixtures/agent-risk-assessment.json';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(60_000);
 

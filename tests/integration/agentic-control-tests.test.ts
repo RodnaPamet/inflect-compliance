@@ -66,8 +66,9 @@ import { hashToolManifest } from '@/lib/mcp/tool-manifest';
 import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import { withholdingReasonForTool } from '@/lib/agentic/policy-card-evaluation';
 import { MIN_REPORTABLE_SAMPLE } from '@/lib/agentic/automation-bias';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(180_000);
 

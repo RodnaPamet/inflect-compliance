@@ -60,8 +60,9 @@ import {
 } from '@/app-layer/usecases/agent-policy-card';
 import { ACTION_CAP_LADDER, POLICY_CARD_RULES } from '@/lib/agentic/policy-card';
 import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(60_000);
 

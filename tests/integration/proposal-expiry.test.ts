@@ -54,8 +54,9 @@ import {
 } from '@/lib/agentic/proposal-expiry';
 import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import { makeRequestContext } from '../helpers/make-context';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(120_000);
 

@@ -39,6 +39,7 @@ const LOCAL_RULES = [
     'regex-within-ts-target',
     'no-typed-run-driver-read',
     'observable-gauge-rebinds',
+    'require-test-prisma-transaction-budget',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

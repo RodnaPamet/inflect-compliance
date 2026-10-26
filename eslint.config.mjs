@@ -639,6 +639,18 @@ const config = [
             'local/regex-within-ts-target': ['error', { target: TSCONFIG.targetYear }],
         },
     },
+    {
+        // #4371 — a test client with no `transactionOptions` leaves every
+        // interactive transaction on Prisma's 2000 ms default maxWait, which
+        // CI shard load exceeds: a cleanup that threw it failed a whole suite
+        // and ejected a queued PR (#4367). Every client under tests/ carries
+        // TENANT_TX_OPTIONS; this keeps it that way. The production client
+        // budgets each call instead, so the rule stays out of src/.
+        files: ['tests/**/*.ts', 'tests/**/*.tsx'],
+        rules: {
+            'local/require-test-prisma-transaction-budget': 'error',
+        },
+    },
 ];
 
 export default config;

@@ -19,6 +19,7 @@ import { encryptField, decryptField, hashForLookup, isEncryptedValue } from '@/l
 import { withPiiEncryptionExtension, _getPiiFieldMap } from '@/lib/security/pii-middleware';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 // Prisma 7 — soft-delete moved from `$use` to `$extends`. Wrap inline
 // to mirror the production `src/lib/prisma.ts` composition.
@@ -26,6 +27,7 @@ const prisma = withPiiEncryptionExtension(
     withSoftDeleteExtension(
         new PrismaClient({
             adapter: new PrismaPg({ connectionString: DB_URL }),
+            transactionOptions: TENANT_TX_OPTIONS,
         }),
     ),
 );

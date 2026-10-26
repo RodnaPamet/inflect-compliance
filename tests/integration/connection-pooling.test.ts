@@ -12,6 +12,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const CONCURRENCY_LEVEL = 60;
 
@@ -24,6 +25,7 @@ describe('Connection pooling: concurrent query handling', () => {
             adapter: new PrismaPg({
                 connectionString: process.env.DATABASE_URL!,
             }),
+            transactionOptions: TENANT_TX_OPTIONS,
         });
 
         // Probe DB connectivity — skip all tests if unreachable

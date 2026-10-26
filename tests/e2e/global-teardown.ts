@@ -44,6 +44,7 @@ import { resolve as resolvePath } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { TENANT_TX_OPTIONS } from '../../src/lib/db/concurrency-limits';
 
 const TRACKER_PATH = resolvePath(__dirname, '.tenant-tracker.jsonl');
 
@@ -271,6 +272,7 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
         adapter: new PrismaPg({
             connectionString: process.env.DATABASE_URL ?? '',
         }),
+        transactionOptions: TENANT_TX_OPTIONS,
     });
     let deleted = 0;
     let failed = 0;

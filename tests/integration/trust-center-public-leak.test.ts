@@ -17,8 +17,9 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { getPublicTrustCenter } from '@/lib/trust-center/public';
 import { upsertTrustCenter, setTrustCenterEnabled, getTrustCenter } from '@/app-layer/usecases/trust-center';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const SUITE = `tc-${randomUUID().slice(0, 8)}`;

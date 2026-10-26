@@ -29,8 +29,9 @@ import {
     bulkSetTaskStatus,
     listTasks,
 } from '@/app-layer/usecases/task';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const TAG = `trr-${randomUUID().slice(0, 8)}`;

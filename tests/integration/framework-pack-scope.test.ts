@@ -39,8 +39,9 @@ import { catalogPacks, loadAndValidateCatalogFile } from '../../prisma/catalog-l
 import { applyCatalogFile } from '../../prisma/catalog-applier';
 import { DB_AVAILABLE, DB_URL } from './db-helper';
 import { makeRequestContext } from '../helpers/make-context';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(180_000);
 

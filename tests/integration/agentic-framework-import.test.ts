@@ -25,8 +25,9 @@ import * as path from 'path';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { importLibrary, importLibraryFromFile } from '@/app-layer/services/library-importer';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const LIB_DIR = path.resolve(__dirname, '../../src/data/libraries');

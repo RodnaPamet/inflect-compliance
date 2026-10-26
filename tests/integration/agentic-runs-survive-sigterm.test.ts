@@ -38,8 +38,9 @@ import {
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { REPO_ROOT } from '../helpers/repo-files';
 import { functionBodyOf } from '../helpers/source-blocks';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(30_000);
 

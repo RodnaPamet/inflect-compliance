@@ -29,9 +29,11 @@ import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { ForbiddenError } from '@/lib/errors/types';
 import { computeVelocity } from '@/app-layer/usecases/risk-velocity';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    transactionOptions: TENANT_TX_OPTIONS,
 });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
