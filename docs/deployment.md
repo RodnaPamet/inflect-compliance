@@ -598,9 +598,15 @@ No approval sits between steps 1 and 3. See
 
 ## Observability provisioning
 
-The telemetry backend (OTel Collector + Prometheus + Tempo + Grafana) runs as
-a Compose stack co-located on the app VM:
+The telemetry backend (OTel Collector + Prometheus + Tempo + Grafana) is
+packaged as a separate Compose project, to run beside the app on the VM:
 `docker compose -f infra/observability/docker-compose.observability.yml up -d`.
+It is not part of the canonical set above: `deploy/apply.sh` does not push it
+and `deploy/check-drift.sh` does not check it. The repository's record of the
+running stack, `infra/alerts/gcp-custom-metrics.yml` (verified 2026-09-24),
+lists none of its containers and no `OTEL_*` variable on the app, and
+production's alerts are the GCP Cloud Monitoring policies in `infra/alerts/`.
+See [`docs/observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md#where-it-runs).
 The app emits OTLP/HTTP, so pointing it at another backend changes only
 `OTEL_EXPORTER_OTLP_ENDPOINT` (and its auth header).
 [`docs/observability/01-deployment-topology.md`](observability/01-deployment-topology.md#scale-out-provisioning-beyond-the-single-vm)

@@ -2399,6 +2399,13 @@ jobs:
             -e RUN_ID=ci-${{ github.run_id }}-${{ github.run_attempt }} \
             tests/load/mutations.js
 
+      # k6 passes a threshold that no sample matched. Until #4307 the
+      # `checks{check:…}` thresholds above matched nothing, because k6
+      # writes its own `check` tag over a custom one, and passed every run.
+      # This fails the job when a thresholded metric is empty.
+      - name: "Gate: every k6 threshold measured something"
+        run: node scripts/k6-summary-gate.mjs tests/load/results/mutations-summary.json
+
       - name: Stop app
         if: always()
         run: |

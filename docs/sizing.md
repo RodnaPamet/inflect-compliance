@@ -36,10 +36,12 @@ Four more things share the machine:
 - **No service sets `mem_limit`, `cpus` or `deploy.resources`.** Every
   container draws on the whole VM, so one busy container slows the others. When
   memory runs out, the kernel picks which process to kill.
-- **The observability stack** is a separate Compose project on the same VM
-  (`infra/observability/docker-compose.observability.yml`). Its four
-  containers do carry caps: collector 512 MB / 1 CPU, Prometheus 1 GB / 1 CPU,
-  Tempo 1 GB / 1 CPU, Grafana 512 MB / 0.75 CPU. See
+- **The observability stack** is packaged as a separate Compose project to
+  run on the same VM (`infra/observability/docker-compose.observability.yml`).
+  The repository's record of the running stack lists none of its containers
+  ([`docs/observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md#where-it-runs)).
+  Where it runs, its four containers carry caps: collector 512 MB / 1 CPU,
+  Prometheus 1 GB / 1 CPU, Tempo 1 GB / 1 CPU, Grafana 512 MB / 0.75 CPU. See
   `docs/observability/01-deployment-topology.md`.
 - **Opt-in overlays** in `deploy/` (`docker-compose.pipelock.yml`,
   `docker-compose.orangehrm-lab.yml`, `docker-compose.legacy-mcp-proving.yml`,
@@ -82,6 +84,9 @@ of shortage and does nothing for the others.
 The metric names come from `infra/observability/prometheus/rules/` and the
 dashboards from `infra/observability/grafana/dashboards/`. The alerts and
 dashboards are described in `docs/observability/03-prometheus-grafana.md`.
+They exist only where the observability stack runs, and the repository's
+record of production lists no such stack; production's alerts are the GCP
+Cloud Monitoring policies in `infra/alerts/policies/`.
 
 Every setting below is in `deploy/docker-compose.prod.yml` or in source. A
 change is a pull request, then `deploy/apply.sh` (`CONFIRM=1` applies) for a
@@ -168,13 +173,20 @@ Three things limit what it says about production:
   `ubuntu-latest` runner, against `next start`, with Postgres and Redis as
   service containers. There is no PgBouncer, worker, ClamAV or Caddy, and
   nothing else shares the machine.
-- **A green run proves nothing.** Each k6 step is `continue-on-error`, so the
-  run succeeds whatever the thresholds say. Read the results in the job log or
-  in the `k6-results-<run id>` artifact, which is kept for 7 days.
-- **It is failing its thresholds.** The runs of 2026-09-26, 2026-10-11 and
-  2026-10-25 all crossed them. The login step's p95 was 7.3 to 8.5 s against a
-  1.5 s threshold, and about 99.7% of the list requests in `lists.js` failed
-  (`list_success_rate` about 0.3%).
+- **A green run proves the scenarios measured something, not that they met
+  their budgets.** Each k6 step is `continue-on-error`, so latency thresholds
+  are reported, not enforced. A gate step (`scripts/k6-summary-gate.mjs`)
+  fails the run when under 95% of a scenario's checks or list requests
+  succeed, when a thresholded metric has no samples, or when k6 wrote no
+  summary. Read latency in the job log or in the `k6-results-<run id>`
+  artifact, which is kept for 7 days.
+- **Its list numbers before 2026-10-26 measured nothing.** About 99.7% of the
+  list requests in `lists.js` failed (`list_success_rate` about 0.3%) in the
+  runs of 2026-09-26, 2026-10-11 and 2026-10-25. k6 empties a virtual user's
+  cookie jar at the start of every iteration, so each one was signed out after
+  its first, and the list latencies from those runs are of 401 responses. That
+  is fixed (#4307). The login step was unaffected: its p95 in the same runs was
+  7.3 to 8.5 s, against a 1.5 s threshold.
 
 The smoke's thresholds are wider than the SLOs on purpose: `p(95)<800` ms for
 list reads, against the 500 ms read SLO. A capacity figure for the VM needs a

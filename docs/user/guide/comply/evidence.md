@@ -146,8 +146,7 @@ Click **{{ui:evidence.list.downloadFile}}** on a row, the download button on a g
 | **{{ui:evidence.noEvidence}}** | The workspace has no evidence | Add evidence, or ask an Owner, Admin or Editor |
 | **{{ui:evidence.list.emptyActiveTitle}}** | All of the workspace's evidence is archived or expired | Click **{{ui:evidence.list.showArchived}}** |
 | **{{ui:evidence.list.emptyFilterTitle}}**, **{{ui:evidence.list.emptyArchivedTitle}}** or **{{ui:evidence.list.emptyExpiringTitle}}** | Nothing matches the search, the filters or the retention view | Click **{{ui:evidence.list.clearFilters}}** |
-| **{{ui:evidence.list.archivedNoticeTitle}}** above the list | You are looking at archived evidence, which should not go into active audit packs | Unarchive what you need. Evidence whose retention date has passed needs a new retention date in **{{ui:evidence.list.editEvidence}}** first |
-| A message that the retention date has passed, after **{{ui:evidence.list.unarchiveEvidence}}** | The evidence was not unarchived, because its retention date is in the past | Set a new retention date, or clear it, then unarchive |
+| **{{ui:evidence.list.archivedNoticeTitle}}** above the list | You are looking at archived evidence, which should not go into active audit packs | Unarchive what you need |
 | A banner saying only the first 5,000 results are shown | The view holds more evidence than the page loads at once | Narrow it with a filter or the search |
 | **{{ui:evidence.list.reviewFailed}}** | The review did not go through: you submitted the evidence yourself, it was reviewed already, or your role cannot review | Ask another Owner or Admin. Reload the page to see the current status |
 | A message after a bulk action, or **{{ui:evidence.list.bulkFailed}}** | A bulk action was refused, for example because more than 100 rows were selected. The message gives the reason when Inflect sends one | Follow the reason, or select fewer rows and try again |

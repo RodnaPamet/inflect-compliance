@@ -7,8 +7,10 @@
 
 # Production Hardening Priorities
 
-The observability stack runs on the production VM **next to the
-application it observes**. Its hardening priorities, in order:
+The observability stack is packaged to run on the production VM, **next
+to the application it observes**. Whether it runs there is not recorded in
+this repository; see `03-prometheus-grafana.md`, "Where it runs". Its
+hardening priorities, in order:
 
 1. **Network isolation.** Nothing in the stack is reachable from the
    internet except Grafana, and Grafana only through Caddy with TLS.

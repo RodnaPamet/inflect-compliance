@@ -4,9 +4,14 @@
  *
  * Keeps the design artefact complete: all four migration phases, the
  * three RPO/RTO tiers, the five engineering-review open questions, and
- * the cross-references that ground it in the real system (the Terraform
- * modules it inventories, Epic B encryption-at-rest, the Epic C.3
- * session model). A future edit that guts a section fails CI.
+ * the cross-references that ground it in the real system (the production
+ * compose file its "Current state" inventories, Epic B encryption-at-rest,
+ * the Epic C.3 session model). A future edit that guts a section fails CI.
+ *
+ * The inventory cross-reference used to be `infra/terraform`. That tree
+ * described an AWS estate that was never provisioned and was removed on
+ * 2026-09-02 (#2226), so requiring it pinned the doc to infrastructure that
+ * does not exist (#4308). Production is `deploy/docker-compose.prod.yml`.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -40,8 +45,8 @@ describe('multi-region design doc coverage', () => {
         expect(numbered).toBeGreaterThanOrEqual(5);
     });
 
-    it('cross-references the Terraform modules, Epic B encryption, and Epic C.3 sessions', () => {
-        expect(doc).toMatch(/infra\/terraform/);
+    it('cross-references the production compose file, Epic B encryption, and Epic C.3 sessions', () => {
+        expect(doc).toMatch(/deploy\/docker-compose\.prod\.yml/);
         // Epic B encryption-at-rest (per-tenant DEK / master KEK).
         expect(doc).toMatch(/epic-b-encryption|Tenant\.encryptedDek|Epic B/);
         // Epic C.3 session model.

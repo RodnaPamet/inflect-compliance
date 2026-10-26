@@ -275,10 +275,10 @@ npx jest tests/unit/observability --verbose
 
 ## Observability provisioning
 
-The OTel/Prometheus/Tempo/Grafana stack runs as its own compose project,
-co-located on the app VM:
+The OTel/Prometheus/Tempo/Grafana stack is packaged as its own compose
+project, to run beside the app on the VM:
 [`observability/docker-compose.observability.yml`](observability/docker-compose.observability.yml).
-The app emits OTLP/HTTP, so moving the backend to a dedicated VM or a managed
+As the top of this file says, it is not deployed. The app emits OTLP/HTTP, so moving the backend to a dedicated VM or a managed
 service changes only `OTEL_EXPORTER_OTLP_ENDPOINT` and its auth header. There
 is no Helm chart or Terraform module for the stack. See
 [`docs/observability/01-deployment-topology.md`](../docs/observability/01-deployment-topology.md#scale-out-provisioning-beyond-the-single-vm).

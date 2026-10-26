@@ -1,5 +1,13 @@
 import type { PermissionSet } from '@/lib/permissions';
 
+/**
+ * The most risks one bulk request may name. The status, assign and delete
+ * schemas (`BulkRisk*Schema` in `src/lib/schemas/index.ts`) refuse more, with
+ * a validation message that means nothing on screen, so the list stops a
+ * larger selection before it is sent. A unit test holds the two in step.
+ */
+export const RISK_BULK_MAX = 100;
+
 /** Which of the Risks list's bulk actions a user can complete. */
 export interface RiskBulkPermissions {
     /** Set status and assign owner. */
@@ -27,4 +35,19 @@ export function riskBulkPermissions(ctx: {
         canEdit: ctx.permissions.canWrite && ctx.appPermissions.risks.edit,
         canDelete: ctx.permissions.canAdmin && ctx.appPermissions.admin.manage,
     };
+}
+
+/**
+ * Whether the user can create risks: the list's button, its empty state and
+ * the import page. Both ways in are gated twice, like the bulk actions: the
+ * create route and the import route check `risks.create`, and `createRisk` /
+ * `bulkImportRisks` assert the coarse write tier. A custom role can hold one
+ * without the other, so the page used to offer Create on the tier alone and
+ * the server then refused it.
+ */
+export function riskCanCreate(ctx: {
+    permissions: { canWrite: boolean };
+    appPermissions: Pick<PermissionSet, 'risks'>;
+}): boolean {
+    return ctx.permissions.canWrite && ctx.appPermissions.risks.create;
 }
