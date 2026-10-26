@@ -249,9 +249,16 @@ describe('bulk Delete is offered only to the roles the server lets delete', () =
             <EvidenceClient
                 initialEvidence={[EVIDENCE]}
                 initialControls={[]}
+                controlsComplete
+                canViewControls
                 initialMetrics={EVIDENCE_METRICS}
                 tenantSlug="acme"
                 permissions={coarse(role)}
+                grants={{
+                    evidenceEdit: getPermissionsForRole(role).evidence.edit,
+                    evidenceUpload: getPermissionsForRole(role).evidence.upload,
+                    adminManage: getPermissionsForRole(role).admin.manage,
+                }}
                 translations={{}}
             />,
         );

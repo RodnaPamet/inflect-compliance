@@ -8,6 +8,10 @@
  * past, the next nightly sweep archived it again. Setting a new retention date
  * did not clear `expiredAt` either, so the 365-day purge clock kept running.
  *
+ * The way back (owner decision): while the retention date has passed,
+ * Unarchive is refused (`RETENTION_DATE_PASSED`) and changes nothing; a new
+ * or empty retention date ends the expiry, and Unarchive then returns the row.
+ *
  * RUN: npx jest tests/integration/evidence-unarchive-restores.test.ts
  */
 import { Role } from '@prisma/client';
@@ -72,10 +76,25 @@ describeFn('unarchiving expired evidence (integration)', () => {
     const archivedIds = async () =>
         ((await listEvidence(ctx, { q: runId, tab: 'archived' })) as Array<{ id: string }>).map((r) => r.id);
 
-    it('returns to the active list and stays there after the next sweep', async () => {
+    it('refuses while the retention date has passed, then returns once a new date is set, and stays after the next sweep', async () => {
         const ev = await sweptEvidence('Unarchived');
         expect(await archivedIds()).toContain(ev.id);
 
+        await expect(unarchiveEvidence(ctx, ev.id)).rejects.toMatchObject({
+            details: { reason: 'RETENTION_DATE_PASSED' },
+        });
+        const refused = await prisma.evidence.findUniqueOrThrow({ where: { id: ev.id } });
+        // Nothing changed: the schedule is not erased as a side effect.
+        expect(refused).toMatchObject({
+            isArchived: true,
+            retentionPolicy: 'DAYS_AFTER_UPLOAD',
+            retentionDays: 30,
+        });
+        expect(refused.expiredAt).not.toBeNull();
+        expect(refused.retentionUntil?.getTime()).toBe(ev.retentionUntil?.getTime());
+
+        // The way back: remove the date in Edit evidence, then unarchive.
+        await updateEvidenceRetention(ctx, ev.id, { retentionPolicy: 'NONE', retentionUntil: null });
         await unarchiveEvidence(ctx, ev.id);
 
         expect(await activeIds()).toContain(ev.id);
@@ -84,13 +103,7 @@ describeFn('unarchiving expired evidence (integration)', () => {
         await runEvidenceRetentionSweep({ tenantId });
 
         const after = await prisma.evidence.findUniqueOrThrow({ where: { id: ev.id } });
-        expect(after).toMatchObject({
-            isArchived: false,
-            expiredAt: null,
-            retentionUntil: null,
-            retentionPolicy: 'NONE',
-            retentionDays: null,
-        });
+        expect(after).toMatchObject({ isArchived: false, expiredAt: null, retentionUntil: null });
         expect(await activeIds()).toContain(ev.id);
     });
 

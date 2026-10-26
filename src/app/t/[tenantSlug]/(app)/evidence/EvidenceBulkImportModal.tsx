@@ -61,6 +61,24 @@ const POLL_INTERVAL_MS = 2000;
 // import status surfaces a failed-import error instead of polling forever.
 const MAX_POLL_FAILURES = 5;
 
+/**
+ * The import job's queue state, as the status line names it. The line used
+ * to print BullMQ's raw state ("waiting", "active", …) beside the internal
+ * job id; neither means anything to the person running the import. States
+ * BullMQ adds later fall back to "queued" rather than leaking through.
+ */
+type ImportStateLabel = 'queued' | 'running' | 'paused' | 'completed' | 'failed';
+const IMPORT_STATE_LABEL: Record<string, ImportStateLabel> = {
+    waiting: 'queued',
+    delayed: 'queued',
+    prioritized: 'queued',
+    'waiting-children': 'queued',
+    active: 'running',
+    paused: 'paused',
+    completed: 'completed',
+    failed: 'failed',
+};
+
 interface ImportProgress {
     extracted: number;
     skipped: number;
@@ -374,9 +392,12 @@ export function EvidenceBulkImportModal({
                             className="mt-4 p-3 text-sm"
                             data-testid="evidence-bulk-import-status"
                         >
-                            <p className="text-content-emphasis">
-                                {tx('bulkImport.jobLabel')} <span className="font-mono">{jobId}</span>{' '}
-                                — {status?.state ?? tx('bulkImport.queued')}
+                            <p className="text-content-emphasis" id="bulk-import-state">
+                                {tx('bulkImport.statusLine', {
+                                    state: tx(
+                                        `bulkImport.states.${IMPORT_STATE_LABEL[status?.state ?? 'waiting'] ?? 'queued'}`,
+                                    ),
+                                })}
                             </p>
                             {progress && (
                                 <p className="mt-1 text-xs text-content-muted">

@@ -200,7 +200,10 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 140;
 //   reads and save reach.
 // 310 -> 308 (2026-10-25): the two spans `k8s-runbook-coverage.test.ts` took
 //   with it, counted here as well as in the unbounded baseline.
-const INTERIOR_SPAN_BASELINE = 308;
+// 308 -> 307 (2026-10-25, #4277). The Evidence list's Freshness cell stopped
+//   rendering `<FreshnessBadge … lastRefreshedAt=>`, so the view-toggle guard's
+//   span over it was replaced by a needle on `evidenceFreshnessBucket(ev, …)`.
+const INTERIOR_SPAN_BASELINE = 307;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

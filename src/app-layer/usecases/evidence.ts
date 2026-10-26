@@ -1435,14 +1435,36 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
 const OWNING_EVIDENCE_READ_CAP = 100;
 
 /**
+ * Why the bytes are being read. A `preview` is the details panel's inline
+ * image/PDF and the gallery's thumbnail — loaded with no click, so recording
+ * it as a download made scrolling the gallery log a download per image
+ * (#4277). It runs every gate a download does and is recorded too, under its
+ * own audit action and ledger channel: the bytes still reached the browser.
+ */
+export type EvidenceFilePurpose = 'download' | 'preview';
+
+/** The audit action for each purpose. `EVIDENCE_DOWNLOADED` keeps its meaning: a download. */
+export const EVIDENCE_FILE_AUDIT_ACTION: Record<EvidenceFilePurpose, string> = {
+    download: 'EVIDENCE_DOWNLOADED',
+    preview: 'EVIDENCE_PREVIEWED',
+};
+
+/**
  * STRICT DOWNLOAD POLICY (Option A):
  * - ADMIN/EDITOR: can download any tenant file evidence.
  * - READER/AUDITOR: can download ONLY if evidence is linked to a control (controlId not null).
  * - Soft-deleted evidence blocks download for all roles.
  * - When several records hold the file, the gates are asked of a live one.
+ * - A preview is gated identically; only what is recorded differs.
  */
-export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) {
+export async function downloadEvidenceFile(
+    ctx: RequestContext,
+    fileId: string,
+    options: { purpose?: EvidenceFilePurpose } = {},
+) {
     assertCanRead(ctx);
+    const purpose: EvidenceFilePurpose = options.purpose ?? 'download';
+    const verb = purpose === 'preview' ? 'previewed' : 'downloaded';
 
     return runInTenantContext(ctx, async (db) => {
         const fileRecord = await FileRepository.getById(db, ctx, fileId);
@@ -1549,14 +1571,14 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         }
 
         await logEvent(db, ctx, {
-            action: 'EVIDENCE_DOWNLOADED',
+            action: EVIDENCE_FILE_AUDIT_ACTION[purpose],
             entityType: 'FileRecord',
             entityId: fileId,
-            details: `Evidence file downloaded: ${fileRecord.originalName}`,
+            details: `Evidence file ${verb}: ${fileRecord.originalName}`,
             detailsJson: {
                 category: 'access',
                 operation: 'login',
-                detail: `Evidence downloaded: ${fileRecord.originalName}`,
+                detail: `Evidence ${verb}: ${fileRecord.originalName}`,
                 targetUserId: ctx.userId,
             },
         });
