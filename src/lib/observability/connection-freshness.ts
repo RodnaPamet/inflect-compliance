@@ -41,6 +41,7 @@
  * out-of-band + fail-safe, like the other integration metrics.
  */
 import { metrics } from '@opentelemetry/api';
+import { bindObservable } from '@/lib/observability/observable-registry';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import type { Prisma } from '@prisma/client';
@@ -169,26 +170,28 @@ let _connectionFreshnessStarted = false;
 export function startConnectionFreshnessReporting(now: () => number = Date.now): void {
     if (_connectionFreshnessStarted) return;
     _connectionFreshnessStarted = true;
-    const gauge = getMeter().createObservableGauge('integration.connection.freshness_seconds', {
-        description: 'Seconds since the last successful execution (PASSED, plus FAILED for cloud-posture providers), per enabled connection',
-        unit: 's',
-    });
-    gauge.addCallback(async (result) => {
-        try {
-            const rows = await getEnabledConnectionFreshness(now());
-            for (const r of rows) {
-                result.observe(r.secondsSinceLastSuccess, {
-                    connection: r.connectionId,
-                    provider: r.provider,
+    bindObservable(() => {
+        const gauge = getMeter().createObservableGauge('integration.connection.freshness_seconds', {
+            description: 'Seconds since the last successful execution (PASSED, plus FAILED for cloud-posture providers), per enabled connection',
+            unit: 's',
+        });
+        gauge.addCallback(async (result) => {
+            try {
+                const rows = await getEnabledConnectionFreshness(now());
+                for (const r of rows) {
+                    result.observe(r.secondsSinceLastSuccess, {
+                        connection: r.connectionId,
+                        provider: r.provider,
+                    });
+                }
+            } catch (err) {
+                // Fail-safe: a DB blip just skips this scrape.
+                logger.warn('Connection-freshness gauge scrape failed', {
+                    component: 'integration-metrics',
+                    err: err instanceof Error ? err : new Error(String(err)),
                 });
             }
-        } catch (err) {
-            // Fail-safe: a DB blip just skips this scrape.
-            logger.warn('Connection-freshness gauge scrape failed', {
-                component: 'integration-metrics',
-                err: err instanceof Error ? err : new Error(String(err)),
-            });
-        }
+        });
     });
 }
 

@@ -95,6 +95,7 @@
  */
 
 import { metrics } from '@opentelemetry/api';
+import { bindObservable } from './observable-registry';
 
 const METER_NAME = 'inflect-compliance';
 
@@ -907,16 +908,18 @@ export function startAuditStreamBufferReporting(getDepthFn: () => number): void 
     if (_auditStreamBufferGaugeStarted) return;
     _auditStreamBufferGaugeStarted = true;
 
-    const gauge = getMeter().createObservableGauge('audit_stream.buffer.depth', {
-        description: 'Total audit events buffered across all per-tenant audit-stream buffers',
-        unit: '1',
-    });
-    gauge.addCallback((result) => {
-        try {
-            result.observe(getDepthFn());
-        } catch {
-            // Buffer not available — noop; the gauge simply won't report.
-        }
+    bindObservable(() => {
+        const gauge = getMeter().createObservableGauge('audit_stream.buffer.depth', {
+            description: 'Total audit events buffered across all per-tenant audit-stream buffers',
+            unit: '1',
+        });
+        gauge.addCallback((result) => {
+            try {
+                result.observe(getDepthFn());
+            } catch {
+                // Buffer not available — noop; the gauge simply won't report.
+            }
+        });
     });
 }
 
@@ -989,10 +992,10 @@ function rejectAfter(ms: number): { promise: Promise<never>; cancel: () => void 
  * so an unobserved state is exported again at the last value it was read
  * at: the series holds its last reading, it does not disappear.
  *
- * PRECONDITION: call it AFTER `initTelemetry()`. The OTel metrics API has no
- * proxy provider, so a gauge created before the global MeterProvider is set
- * is a no-op for the life of the process, and the once-only registration
- * below would keep it that way.
+ * Registered through `bindObservable`, so a call made before `initTelemetry()`
+ * is moved onto the real meter provider when telemetry starts (see
+ * `observable-registry.ts`). The worker still calls it after, because it reads
+ * the worker's Redis connection, which exists only from `bootstrap()` on.
  *
  * Idempotent: a second call while reporting is a no-op. `getQueueFn` is not
  * called here, only at collection.
@@ -1005,36 +1008,38 @@ export function startQueueDepthReporting(getQueueFn: () => QueueDepthSource): vo
     if (_queueDepthGaugeRegistered) return;
     _queueDepthGaugeRegistered = true;
 
-    const gauge = getMeter().createObservableGauge('job.queue.depth', {
-        description: 'Number of jobs in the queue by state',
-        unit: '1',
-    });
+    bindObservable(() => {
+        const gauge = getMeter().createObservableGauge('job.queue.depth', {
+            description: 'Number of jobs in the queue by state',
+            unit: '1',
+        });
 
-    gauge.addCallback(async (result) => {
-        const getQueue = _queueDepthSource;
-        if (!getQueue) return; // stopped: read nothing
-        const timeout = rejectAfter(QUEUE_DEPTH_READ_TIMEOUT_MS);
-        try {
-            const queue = getQueue();
-            const counts = await Promise.race([
-                queue.getJobCounts(...QUEUE_DEPTH_STATES),
-                timeout.promise,
-            ]);
+        gauge.addCallback(async (result) => {
+            const getQueue = _queueDepthSource;
+            if (!getQueue) return; // stopped: read nothing
+            const timeout = rejectAfter(QUEUE_DEPTH_READ_TIMEOUT_MS);
+            try {
+                const queue = getQueue();
+                const counts = await Promise.race([
+                    queue.getJobCounts(...QUEUE_DEPTH_STATES),
+                    timeout.promise,
+                ]);
 
-            for (const state of QUEUE_DEPTH_STATES) {
-                if (counts[state] !== undefined) {
-                    result.observe(counts[state], {
-                        'queue.name': queue.name,
-                        'queue.state': state,
-                    });
+                for (const state of QUEUE_DEPTH_STATES) {
+                    if (counts[state] !== undefined) {
+                        result.observe(counts[state], {
+                            'queue.name': queue.name,
+                            'queue.state': state,
+                        });
+                    }
                 }
+            } catch {
+                // Queue unavailable, or the read timed out: observe nothing this
+                // time. The export goes ahead with the last values read.
+            } finally {
+                timeout.cancel();
             }
-        } catch {
-            // Queue unavailable, or the read timed out: observe nothing this
-            // time. The export goes ahead with the last values read.
-        } finally {
-            timeout.cancel();
-        }
+        });
     });
 }
 
@@ -1598,17 +1603,19 @@ export function startAgentRunsInFlightReporting(getCountFn: () => number): void 
     if (_agentRunsInFlightStarted) return;
     _agentRunsInFlightStarted = true;
 
-    const gauge = getMeter().createObservableGauge('agent.runs.in_flight', {
-        description: 'Agentic runs this process is currently executing',
-        unit: '1',
-    });
-    gauge.addCallback((result) => {
-        try {
-            result.observe(getCountFn());
-        } catch {
-            // The registry is unavailable — report nothing rather than failing
-            // the export for every other instrument in the batch.
-        }
+    bindObservable(() => {
+        const gauge = getMeter().createObservableGauge('agent.runs.in_flight', {
+            description: 'Agentic runs this process is currently executing',
+            unit: '1',
+        });
+        gauge.addCallback((result) => {
+            try {
+                result.observe(getCountFn());
+            } catch {
+                // The registry is unavailable — report nothing rather than failing
+                // the export for every other instrument in the batch.
+            }
+        });
     });
 }
 

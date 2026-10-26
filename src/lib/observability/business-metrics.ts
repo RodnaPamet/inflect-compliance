@@ -31,6 +31,7 @@
  * @module lib/observability/business-metrics
  */
 import { metrics } from '@opentelemetry/api';
+import { bindObservable } from './observable-registry';
 
 /** Reuse the app's single meter — no new instrumentation surface. */
 const METER_NAME = 'inflect-compliance';
@@ -290,24 +291,26 @@ export function startActiveUserGauges(): void {
     if (_gaugesStarted) return;
     _gaugesStarted = true;
 
-    const daily = getMeter().createObservableGauge('business.tenant.active.daily', {
-        description: 'Distinct active users in the last 24h, by plan',
-        unit: '1',
-    });
-    daily.addCallback((result) => {
-        for (const [plan, count] of Object.entries(_activeSnapshot.daily)) {
-            result.observe(count, { plan });
-        }
-    });
+    bindObservable(() => {
+        const daily = getMeter().createObservableGauge('business.tenant.active.daily', {
+            description: 'Distinct active users in the last 24h, by plan',
+            unit: '1',
+        });
+        daily.addCallback((result) => {
+            for (const [plan, count] of Object.entries(_activeSnapshot.daily)) {
+                result.observe(count, { plan });
+            }
+        });
 
-    const monthly = getMeter().createObservableGauge('business.tenant.active.monthly', {
-        description: 'Distinct active users in the last 30d, by plan',
-        unit: '1',
-    });
-    monthly.addCallback((result) => {
-        for (const [plan, count] of Object.entries(_activeSnapshot.monthly)) {
-            result.observe(count, { plan });
-        }
+        const monthly = getMeter().createObservableGauge('business.tenant.active.monthly', {
+            description: 'Distinct active users in the last 30d, by plan',
+            unit: '1',
+        });
+        monthly.addCallback((result) => {
+            for (const [plan, count] of Object.entries(_activeSnapshot.monthly)) {
+                result.observe(count, { plan });
+            }
+        });
     });
 }
 

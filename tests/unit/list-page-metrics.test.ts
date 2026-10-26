@@ -27,6 +27,10 @@ jest.mock('@opentelemetry/api', () => {
     const noopCounter = { add: (...args: unknown[]) => counterAdd(...args) };
     return {
         metrics: {
+            // The observable registry asks which provider a gauge bound to.
+            getMeterProvider() {
+                return this;
+            },
             getMeter: () => ({
                 createHistogram: () => noopHistogram,
                 createCounter: () => noopCounter,

@@ -180,8 +180,14 @@ let depthQueue: Queue | undefined;
 // it fails open — it logs and leaves orphans in place rather than making
 // the registration below look like it failed. See
 // `src/app-layer/jobs/register-schedules.ts`.
+//
+// The registration opens its own Redis connection and must quit it.
+// `schedulerQueue.close()` does not: BullMQ treats an ioredis instance it is
+// handed as shared and leaves it open, so the connection otherwise stayed
+// open, idle, for the life of the worker.
 (async () => {
-    const schedulerQueue = new Queue(QUEUE_NAME, { connection: createWorkerConnection() });
+    const schedulerConnection = createWorkerConnection();
+    const schedulerQueue = new Queue(QUEUE_NAME, { connection: schedulerConnection });
     try {
         const count = await registerSchedules(schedulerQueue, log);
         log.info({ count }, 'repeatable schedules registered on worker boot');
@@ -191,7 +197,8 @@ let depthQueue: Queue | undefined;
             'failed to register repeatable schedules on boot — cron jobs may not fire until the scheduler step runs',
         );
     } finally {
-        await schedulerQueue.close();
+        await schedulerQueue.close().catch(() => {});
+        await schedulerConnection.quit().catch(() => {});
     }
 })();
 
@@ -218,10 +225,11 @@ async function bootstrap(): Promise<void> {
     // This worker is the only long-running process that holds the queue,
     // and QUEUE_NAME is the only queue it serves, so it is the one read.
     //
-    // AFTER initTelemetry(): the OTel metrics API has no proxy provider, so
-    // a gauge registered before the global MeterProvider is set stays a
-    // no-op for the life of the process. With OTEL_ENABLED unset the gauge
-    // is a no-op anyway and its callback never runs, so nothing reads Redis.
+    // Here rather than earlier because the reader needs `connection`. Order
+    // against initTelemetry() no longer matters: a gauge registered first is
+    // moved onto the real meter provider when telemetry starts
+    // (observable-registry.ts). With OTEL_ENABLED unset the gauge is a no-op
+    // and its callback never runs, so nothing reads Redis.
     //
     // The Queue rides on `connection` rather than opening its own: BullMQ
     // treats a passed ioredis instance as shared and leaves it open on

@@ -70,7 +70,11 @@ jest.mock('@opentelemetry/api', () => ({
     diag: { setLogger: (a: unknown, b: unknown) => diagSetLogger(a, b) },
     DiagConsoleLogger: class DiagConsoleLogger {},
     DiagLogLevel: { INFO: 'INFO' },
-    metrics: { setGlobalMeterProvider: (p: unknown) => setGlobalMeterProvider(p) },
+    metrics: {
+        setGlobalMeterProvider: (p: unknown) => setGlobalMeterProvider(p),
+        // initTelemetry() rebinds early gauges against the provider it installed.
+        getMeterProvider: () => setGlobalMeterProvider.mock.calls.at(-1)?.[0],
+    },
     // `register()` is gone in sdk-trace 3.0.0; these two are what replaced it.
     trace: { setGlobalTracerProvider: (p: unknown) => setGlobalTracerProvider(p) },
     context: { setGlobalContextManager: (m: unknown) => setGlobalContextManager(m) },

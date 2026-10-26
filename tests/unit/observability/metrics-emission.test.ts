@@ -37,6 +37,10 @@ const instrumentCreations: string[] = [];
 
 jest.mock('@opentelemetry/api', () => ({
     metrics: {
+        // The observable registry asks which provider a gauge bound to.
+        getMeterProvider() {
+            return this;
+        },
         getMeter: () => ({
             createCounter: (name: string) => (instrumentCreations.push(name), {
                 add: (value: number, attrs?: Record<string, unknown>) => {
