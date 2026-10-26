@@ -281,7 +281,6 @@ function RisksPageInner({
     initialFilters,
     matrixConfig,
     tenantSlug,
-    permissions,
     bulkPermissions,
     canCreate,
     translations: t,
@@ -1151,12 +1150,13 @@ function RisksPageInner({
 
     // Right-rail Phase 3 — the AI assist co-pilot rail. A persistent,
     // co-resident entry point to the AI risk-assessment flow that
-    // follows the user across the register. Gated on the coarse write
-    // tier, the one check the AI suggestion routes make (they hold no
-    // granular key); `defaultCollapsed`
+    // follows the user across the register. Gated on `canCreate`, like the
+    // Risk button and Import: applying suggestions creates risks, so the
+    // generate and apply routes take `risks.create` and the usecases the
+    // write tier (#4327). `defaultCollapsed`
     // so it lands as a quiet 44px spine, not a 320px land-grab — the
     // user expands it when they want to engage.
-    const aiAssistRail = permissions.canWrite ? (
+    const aiAssistRail = canCreate ? (
         <AsidePanel
             title={tx('aiAssist')}
             surfaceKey="risks-list"
