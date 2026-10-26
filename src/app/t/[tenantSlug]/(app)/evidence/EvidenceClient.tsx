@@ -108,7 +108,7 @@ interface EvidenceGrants {
     evidenceUpload: boolean;
     /** `admin.manage` — the bulk-delete route's gate. */
     adminManage: boolean;
-    /** `controls.edit` — the details panel's unlink-a-control route's gate. */
+    /** `controls.edit` — the details panel's link and unlink-a-control routes' gate. */
     controlsEdit: boolean;
 }
 
@@ -289,8 +289,9 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     const canUploadEvidence = permissions.canWrite && grants.evidenceUpload;
     // `bulkDeleteEvidence` asserts canAdmin; its route requires admin.manage.
     const canBulkDelete = permissions.canAdmin && grants.adminManage;
-    // `unlinkEvidenceFromControl` asserts canWrite; its route requires controls.edit.
-    const canUnlinkControl = permissions.canWrite && grants.controlsEdit;
+    // `linkEvidenceToControl` / `unlinkEvidenceFromControl` assert canWrite;
+    // both their routes require controls.edit.
+    const canEditControlLinks = permissions.canWrite && grants.controlsEdit;
     // `downloadEvidenceFile`'s record gates, asked of a list row.
     const mayDownload = useCallback(
         (ev: EvidenceRow) =>
@@ -1660,7 +1661,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 evidenceId={detailEvidenceId}
                 tenantSlug={tenantSlug}
                 canWrite={permissions.canWrite}
-                canUnlinkControl={canUnlinkControl}
+                canEditControlLinks={canEditControlLinks}
                 canEdit={canEditEvidence}
                 canAdmin={permissions.canAdmin}
                 onEdit={(ev) => {

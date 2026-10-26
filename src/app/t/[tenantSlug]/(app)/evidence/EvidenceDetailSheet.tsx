@@ -63,16 +63,16 @@ export interface EvidenceDetailSheetProps {
     /** Tenant slug — needed for the control link picker. */
     tenantSlug: string;
     /**
-     * The coarse write tier — gates linking a control (which asserts it), and
-     * is the tier that may download a file linked to no control.
+     * The coarse write tier — the tier that may download a file linked to no
+     * control.
      */
     canWrite: boolean;
     /**
-     * The unlink cross. The unlink route also requires `controls.edit`, which
-     * a custom role on a write-tier base can lack, so the parent passes the
-     * coarse tier AND that grant. Defaults to `canWrite`.
+     * The link picker and the unlink cross. Both routes require
+     * `controls.edit`, which a custom role on a write-tier base can lack, so
+     * the parent passes the coarse tier AND that grant. Defaults to `canWrite`.
      */
-    canUnlinkControl?: boolean;
+    canEditControlLinks?: boolean;
     /**
      * Edit and Submit — `updateEvidence` and the SUBMITTED review assert the
      * custom-role `evidence.edit` grant, which a custom role on a write-tier
@@ -189,7 +189,7 @@ export function EvidenceDetailSheet({
     evidenceId,
     tenantSlug,
     canWrite,
-    canUnlinkControl = canWrite,
+    canEditControlLinks = canWrite,
     canEdit = canWrite,
     canAdmin,
     onEdit,
@@ -558,7 +558,7 @@ export function EvidenceDetailSheet({
                                                             ? `${prefix}: ${l.control.name}`
                                                             : l.control.name}
                                                     </Link>
-                                                    {canUnlinkControl && (
+                                                    {canEditControlLinks && (
                                                         <button
                                                             type="button"
                                                             aria-label={t(
@@ -580,7 +580,7 @@ export function EvidenceDetailSheet({
                                         })}
                                     </ul>
                                 )}
-                                {canWrite && (
+                                {canEditControlLinks && (
                                     <div className="flex items-end gap-tight pt-tight">
                                         <div className="min-w-0 flex-1">
                                             <EntityPicker

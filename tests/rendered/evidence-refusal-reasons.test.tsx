@@ -1,6 +1,7 @@
 /**
  * The Evidence library says why the server refused, and offers the details
- * panel's unlink cross only where the unlink route accepts it (#4326).
+ * panel's link picker and unlink cross only where their routes accept them
+ * (#4326).
  *
  *   - A refused review (segregation of duties, an illegal transition, a
  *     missing rejection reason) toasts the SERVER's reason. The mutation threw
@@ -9,9 +10,10 @@
  *     generic sentence.
  *   - A refused "Link control" in the details panel shows the server's reason
  *     (e.g. a control from another tenant), not only "Failed to link control".
- *   - The unlink cross follows `controls.edit`, which the unlink route
- *     requires, as well as the coarse write tier. An EDITOR-based custom role
- *     without `controls.edit` was shown the cross and refused on click.
+ *   - The unlink cross and the link picker follow `controls.edit`, which the
+ *     unlink and link routes both require, as well as the coarse write tier.
+ *     An EDITOR-based custom role without `controls.edit` was shown the cross
+ *     and refused on click; linking now takes the same key (owner decision).
  *
  * Mounts the REAL `EvidenceClient` (fetch faked by path; see
  * `./evidence-client-harness`).
@@ -235,7 +237,7 @@ describe('a refused "Link control" in the details panel says why', () => {
     });
 });
 
-describe('the details panel offers the unlink cross only with controls.edit', () => {
+describe('the details panel offers the link picker and unlink cross only with controls.edit', () => {
     async function openPanel(opts: Parameters<typeof mountEvidenceClient>[1]) {
         const row = evidenceRow();
         const server = makeServer({ rows: [row], detail: detailOf(row, LINKS) });
@@ -245,15 +247,23 @@ describe('the details panel offers the unlink cross only with controls.edit', ()
         await screen.findByText('A.5.15: Access control');
     }
 
-    it('an EDITOR-based custom role without controls.edit sees no cross, and keeps the link picker', async () => {
+    it('an EDITOR-based custom role without controls.edit sees neither the cross nor the link picker', async () => {
         await openPanel({ permissions: COARSE.EDITOR, grants: { ...GRANTS.EDITOR, controlsEdit: false } });
         expect(document.getElementById('unlink-control-c1')).toBeNull();
-        // Linking asks the write tier alone (the POST route names no key).
+        // The link route requires controls.edit too, so the picker goes with the cross.
+        expect(document.getElementById('evidence-link-control-btn')).toBeNull();
+        expect(document.getElementById('evidence-link-control-input')).toBeNull();
+    });
+
+    it('a built-in EDITOR keeps the cross and the link picker', async () => {
+        await openPanel({ role: 'EDITOR' });
+        expect(document.getElementById('unlink-control-c1')).not.toBeNull();
         expect(document.getElementById('evidence-link-control-btn')).not.toBeNull();
     });
 
-    it('a built-in EDITOR keeps the cross', async () => {
-        await openPanel({ role: 'EDITOR' });
-        expect(document.getElementById('unlink-control-c1')).not.toBeNull();
+    it('a READER sees neither', async () => {
+        await openPanel({ role: 'READER' });
+        expect(document.getElementById('unlink-control-c1')).toBeNull();
+        expect(document.getElementById('evidence-link-control-btn')).toBeNull();
     });
 });
