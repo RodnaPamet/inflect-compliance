@@ -1,10 +1,10 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
-import { mutate as globalMutate } from 'swr';
+import { mutate as globalMutate, useSWRConfig } from 'swr';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { ownerDisplayName } from '@/lib/owner-display';
@@ -31,6 +31,7 @@ import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ViewsMenu } from '@/components/ui/views-menu';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
 import {
     DataTable,
@@ -387,6 +388,19 @@ function RisksPageInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `rawRisks` is a fresh array each render by construction (`?? []`); the downstream useMemo keys off its CONTENTS via the query cache, not its identity. Wrapping it in its own useMemo would only move the allocation.
     const rawRisks = risksQuery.data?.rows ?? [];
     const truncated = risksQuery.data?.truncated ?? false;
+    // A failed load must read as a failure, not as the previous filter's
+    // rows. `useTenantSWR` keeps the PREVIOUS key's data (`keepPreviousData`),
+    // so after a failed filter change `data` is another query's answer and
+    // `!data` alone never fires. The list is unreachable when the CURRENT key
+    // has no rows of its own: no SSR fallback and nothing cached for it. A
+    // failed background refresh of a key that did load keeps its readable
+    // table. The same check as the Assets and Tasks lists.
+    const { cache: swrCache } = useSWRConfig();
+    const buildApiUrl = useTenantApiUrl();
+    const currentKeyHasRows =
+        filtersMatchInitial || swrCache.get(buildApiUrl(risksKey))?.data !== undefined;
+    const listError =
+        risksQuery.error && !currentKeyHasRows ? tx('loadError') : undefined;
 
     // PR-K — real multi-signal staleness (review overdue, assessment aged,
     // controls moved since, sensor moved). Wires the previously-dead
@@ -1190,14 +1204,17 @@ function RisksPageInner({
                                 sparkline?: typeof riskTrends.total;
                             }
                         > = {
-                            total: { value: total, kpi: 'total', sparkline: riskTrends.total },
+                            // After a failed load these figures belong to
+                            // the previous filters' answer, so they show a
+                            // dash rather than a number the list cannot back.
+                            total: { value: listError ? '—' : total, kpi: 'total', sparkline: riskTrends.total },
                             avgScore: {
-                                value: avgScore,
+                                value: listError ? '—' : avgScore,
                                 tone: 'attention',
                                 sparkline: riskTrends.avgScore,
                             },
                             open: {
-                                value: openCount,
+                                value: listError ? '—' : openCount,
                                 tone: 'success',
                                 kpi: 'open',
                                 sparkline: riskTrends.open,
@@ -1373,7 +1390,11 @@ function RisksPageInner({
 
             <ListPageShell.Body aside={aiAssistRail}>
                 <TruncationBanner truncated={truncated} />
-                {view === 'histogram' ? (
+                {/* The table shows the load error itself; the matrix and the
+                    histogram would draw the previous filters' risks. */}
+                {listError && view !== 'register' ? (
+                    <ErrorState description={listError} />
+                ) : view === 'histogram' ? (
                     <div className="space-y-default" data-testid="risk-histogram-view">
                         <div>
                             <Heading level={3} className="mb-1">{tx('histogramView.title')}</Heading>
@@ -1452,6 +1473,7 @@ function RisksPageInner({
                         }}
                         onRowClick={handleRiskRowClick}
                         onRowPrefetch={handleRiskRowPrefetch}
+                        error={listError}
                         selectionEnabled
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),

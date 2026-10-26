@@ -999,6 +999,7 @@
     "high": "HIGH",
     "critical": "CRITICAL",
     "loadingAria": "Loading risks",
+    "loadError": "Couldn't load risks. Reload the page to try again.",
     "perYear": "/yr",
     "saving": "Saving…",
     "eval": {
