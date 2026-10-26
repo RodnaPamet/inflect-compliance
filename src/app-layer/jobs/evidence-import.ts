@@ -72,7 +72,7 @@ import { getStorageProvider } from '@/lib/storage';
 import { logger } from '@/lib/observability/logger';
 import { runJob } from '@/lib/observability/job-runner';
 import { uploadEvidenceFile } from '@/app-layer/usecases/evidence';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { resolveInitiatorContext } from '@/app-layer/context-system';
 import type { RequestContext } from '@/app-layer/types';
 import type { EvidenceImportPayload } from './types';
 
@@ -243,36 +243,25 @@ function inferMimeType(name: string): string {
     }
 }
 
+/**
+ * The initiator's context: the same authority a request from them gets, read
+ * through `resolveInitiatorContext` — custom role included (#4362). The route
+ * asks `evidence.upload` and, for a default control, `controls.edit` before it
+ * enqueues; this asks them again when the job runs, so a role narrowed while
+ * the import sat in the queue narrows the import with it.
+ */
 async function buildJobContext(payload: EvidenceImportPayload): Promise<RequestContext> {
-    const membership = await prisma.tenantMembership.findFirst({
-        where: {
-            userId: payload.initiatedByUserId,
-            tenantId: payload.tenantId,
-            status: 'ACTIVE',
-        },
-        select: { role: true, customRoleId: true },
+    const ctx = await resolveInitiatorContext({
+        tenantId: payload.tenantId,
+        userId: payload.initiatedByUserId,
+        requestId: payload.requestId ?? `evidence-import-${payload.tenantId}`,
     });
-    if (!membership) {
+    if (!ctx) {
         throw new Error(
             `evidence-import: user ${payload.initiatedByUserId} is not an active member of tenant ${payload.tenantId}`,
         );
     }
-    const appPermissions = getPermissionsForRole(membership.role);
-    const role = membership.role;
-    return {
-        requestId: payload.requestId ?? `evidence-import-${payload.tenantId}`,
-        userId: payload.initiatedByUserId,
-        tenantId: payload.tenantId,
-        role,
-        permissions: {
-            canRead: appPermissions.evidence.view,
-            canWrite: appPermissions.evidence.upload,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
-        },
-        appPermissions,
-    };
+    return ctx;
 }
 
 // ─── Public job entry point ─────────────────────────────────────────
@@ -284,7 +273,10 @@ export async function runEvidenceImport(
     const jobRunId = crypto.randomUUID();
     return runJob('evidence-import', async () => {
         const ctx = await buildJobContext(payload);
-        if (!ctx.permissions.canWrite) {
+        // The key the route asks, not the coarse tier: a custom role holding
+        // `evidence.upload` over a READER base is admitted there, and one
+        // withholding it over an EDITOR base is refused there.
+        if (!ctx.appPermissions.evidence.upload) {
             throw new Error(
                 `evidence-import: user ${payload.initiatedByUserId} lacks evidence.upload permission on tenant ${payload.tenantId}`,
             );

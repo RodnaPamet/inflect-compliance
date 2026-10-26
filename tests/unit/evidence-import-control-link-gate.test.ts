@@ -5,9 +5,10 @@
  * (#4326, owner decision).
  *
  * It is asked when the REQUEST is made, before the archive is staged. The
- * worker that extracts the archive later builds its context from the
- * initiator's built-in role, not their custom role, so it cannot be the place
- * an EDITOR-based custom role without `controls.edit` is refused.
+ * worker that extracts the archive later asks it again under the initiator's
+ * custom role (#4362, `evidence-import-initiator-custom-role.test.ts`), but a
+ * refusal there is a per-file error on an import already accepted, so this is
+ * the place an EDITOR-based custom role without `controls.edit` is told.
  */
 import { NextRequest } from 'next/server';
 import { strictMock } from '../helpers/strict-mock';

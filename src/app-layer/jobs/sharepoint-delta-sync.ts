@@ -9,7 +9,8 @@
  */
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { initiatorAuthority, resolveInitiatorContext } from '@/app-layer/context-system';
+import type { PermissionSet } from '@/lib/permissions';
 import { runSharePointDeltaSync } from '@/app-layer/integrations/providers/sharepoint/import';
 import { enqueue } from './queue';
 import { fanOut, dispatchJobId, FOUR_HOURLY_BUCKET_MS } from './fan-out';
@@ -19,35 +20,52 @@ import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 import { runInTenantContext } from '@/lib/db-context';
 import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
 
-/** Build a tenant RequestContext for a job actor (an active member). */
+/**
+ * Whether a member's resolved permissions let them run a delta sync: the key
+ * the "Sync now" route asks (`requirePermission('evidence.upload')`), because a
+ * re-import writes evidence. One definition, read by the job's own gate and by
+ * the dispatcher choosing a scheduled run's actor, so the dispatcher never
+ * picks a member the job would then refuse.
+ */
+export function mayRunDeltaSync(appPermissions: PermissionSet): boolean {
+    return appPermissions.evidence.upload === true;
+}
+
+/**
+ * Why the dispatcher could not queue a scheduled sync for a connection. Each is
+ * logged with the connection and returned in the run's result.
+ */
+export const DELTA_SYNC_UNROUTABLE = {
+    /** The tenant has no ACTIVE OWNER or ADMIN membership at all. */
+    NO_ACTIVE_ADMIN: 'NO_ACTIVE_ADMIN',
+    /** It has some, but every one's resolved permissions withhold `evidence.upload`. */
+    NO_ADMIN_WITH_EVIDENCE_UPLOAD: 'NO_ADMIN_WITH_EVIDENCE_UPLOAD',
+} as const;
+export type DeltaSyncUnroutableReason = keyof typeof DELTA_SYNC_UNROUTABLE;
+
+/**
+ * Build a tenant RequestContext for a job actor (an active member): the same
+ * authority a request from them gets, custom role included (#4362). For a
+ * manual sync the actor is whoever clicked "Sync now"; for a scheduled one it
+ * is the member the dispatcher below picked.
+ */
 async function buildJobContext(tenantId: string, actorUserId: string): Promise<RequestContext> {
-    const membership = await prisma.tenantMembership.findFirst({
-        where: { userId: actorUserId, tenantId, status: 'ACTIVE' },
-        select: { role: true },
+    const ctx = await resolveInitiatorContext({
+        tenantId,
+        userId: actorUserId,
+        requestId: `sharepoint-delta-sync-${tenantId}`,
     });
-    if (!membership) {
+    if (!ctx) {
         throw new Error(`sharepoint-delta-sync: user ${actorUserId} is not an active member of tenant ${tenantId}`);
     }
-    const appPermissions = getPermissionsForRole(membership.role);
-    return {
-        requestId: `sharepoint-delta-sync-${tenantId}`,
-        userId: actorUserId,
-        tenantId,
-        role: membership.role,
-        permissions: {
-            canRead: appPermissions.evidence.view,
-            canWrite: appPermissions.evidence.upload,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
-        },
-        appPermissions,
-    };
+    return ctx;
 }
 
 export async function runSharePointDeltaSyncJob(payload: SharePointDeltaSyncPayload) {
     const ctx = await buildJobContext(payload.tenantId, payload.actorUserId);
-    if (!ctx.permissions.canWrite) {
+    // The key the "Sync now" route asks, not the coarse tier, which a custom
+    // role can hold without it.
+    if (!mayRunDeltaSync(ctx.appPermissions)) {
         throw new Error(`sharepoint-delta-sync: actor lacks evidence.upload on tenant ${payload.tenantId}`);
     }
 
@@ -76,9 +94,12 @@ export async function runSharePointDeltaSyncJob(payload: SharePointDeltaSyncPayl
 }
 
 /**
- * Fan-out: one delta-sync job per enabled SharePoint connection. Picks an
- * active OWNER/ADMIN of each tenant as the actor (re-imports need evidence
- * write). Connections with no eligible admin are skipped (logged).
+ * Fan-out: one delta-sync job per enabled SharePoint connection. The actor of
+ * each tenant's scheduled sync is its oldest active OWNER/ADMIN whose RESOLVED
+ * permissions — custom role included, through `initiatorAuthority`, the rule a
+ * request resolves by — let them run one (`mayRunDeltaSync`). A connection
+ * with no such member is not queued; it is logged and returned with its
+ * `DELTA_SYNC_UNROUTABLE` reason.
  */
 export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSyncDispatchPayload) {
     // Was `take: 1000` with no signal, and this dispatcher had no completion
@@ -95,34 +116,47 @@ export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSy
     );
 
     // Hoist the actor lookup out of the per-connection loop (avoid N+1): one
-    // query for all eligible admins, keyed to the oldest per tenant.
-    const tenantIds = [...new Set(connections.map((c) => c.tenantId))];
-    // `distinct` rather than a cap, because the cap here did not merely drop
-    // rows — it produced a WRONG DIAGNOSIS. The old query ordered by createdAt
-    // GLOBALLY across every tenant and took 5000, so a tenant whose
-    // memberships all sort late contributed zero rows, fell out of
-    // `adminByTenant`, and was logged below as "no eligible admin". That
-    // tenant has admins; the query just never returned them, and the warning
-    // sent an operator looking for a membership problem that does not exist.
+    // query for every active OWNER/ADMIN of these tenants, oldest first.
     //
-    // One row per tenant is all this needs, so ask for exactly that: order by
-    // (tenantId, createdAt) and take the first per tenantId. Bounded by the
-    // tenant count, which is bounded by `connections` — no cap required.
+    // Not `distinct: ['tenantId']` any more, because the first membership per
+    // tenant is no longer necessarily the actor: an ADMIN whose custom role
+    // withholds `evidence.upload` is passed over for the next one (#4362). It
+    // is still uncapped, and for the reason `distinct` replaced a cap: the old
+    // global `take: 5000` dropped every membership of a tenant that sorted
+    // late, and the tenant was then logged as having no eligible admin when it
+    // had several. Bounded by the OWNER/ADMIN count of tenants that hold a
+    // SharePoint connection.
+    const tenantIds = [...new Set(connections.map((c) => c.tenantId))];
     const admins = await prisma.tenantMembership.findMany({
         where: { tenantId: { in: tenantIds }, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
-        select: { tenantId: true, userId: true },
+        select: {
+            tenantId: true,
+            userId: true,
+            role: true,
+            customRole: { select: { baseRole: true, permissionsJson: true } },
+        },
         orderBy: [{ tenantId: 'asc' }, { createdAt: 'asc' }],
-        distinct: ['tenantId'],
     });
     const adminByTenant = new Map<string, string>();
-    for (const a of admins) if (!adminByTenant.has(a.tenantId)) adminByTenant.set(a.tenantId, a.userId);
+    const tenantsWithAdmins = new Set<string>();
+    for (const a of admins) {
+        tenantsWithAdmins.add(a.tenantId);
+        if (adminByTenant.has(a.tenantId)) continue;
+        if (mayRunDeltaSync(initiatorAuthority(a).appPermissions)) adminByTenant.set(a.tenantId, a.userId);
+    }
 
+    const unroutable: Array<{ tenantId: string; connectionId: string; reason: DeltaSyncUnroutableReason }> = [];
     const routable = connections.filter((conn) => {
         if (adminByTenant.has(conn.tenantId)) return true;
-        logger.warn('sharepoint-delta-sync-dispatch: no eligible admin', {
+        const reason: DeltaSyncUnroutableReason = tenantsWithAdmins.has(conn.tenantId)
+            ? DELTA_SYNC_UNROUTABLE.NO_ADMIN_WITH_EVIDENCE_UPLOAD
+            : DELTA_SYNC_UNROUTABLE.NO_ACTIVE_ADMIN;
+        unroutable.push({ tenantId: conn.tenantId, connectionId: conn.id, reason });
+        logger.warn('sharepoint-delta-sync-dispatch: connection not dispatched', {
             component: 'sharepoint',
             tenantId: conn.tenantId,
             connectionId: conn.id,
+            reason,
         });
         return false;
     });
@@ -152,9 +186,10 @@ export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSy
                 },
             ),
     );
-    // This dispatcher had no completion log at all. The three ways a
-    // connection fails to get a job are now distinguishable: no eligible admin,
-    // a throwing enqueue, or simply not being there.
+    // This dispatcher had no completion log at all. The ways a connection fails
+    // to get a job are now distinguishable: each `DELTA_SYNC_UNROUTABLE`
+    // reason, a throwing enqueue, or simply not being there.
+    const unroutableByReason = countByReason(unroutable);
     logger.info('sharepoint-delta-sync-dispatch complete', {
         component: 'sharepoint',
         connections: connections.length,
@@ -163,11 +198,23 @@ export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSy
         // Derived from `routable`, NOT from `dispatched` — subtracting the
         // dispatched count would relabel every enqueue failure as a
         // missing-admin skip and hide the Redis problem behind a config one.
-        skippedNoAdmin: connections.length - routable.length,
+        unroutable: unroutable.length,
+        ...unroutableByReason,
     });
 
     if (failed > 0 && dispatched === 0) {
         throw new Error(`sharepoint-delta-sync-dispatch: all ${failed} enqueues failed`);
     }
-    return { connections: connections.length, dispatched, failed };
+    return { connections: connections.length, dispatched, failed, unroutable };
+}
+
+function countByReason(
+    rows: ReadonlyArray<{ reason: DeltaSyncUnroutableReason }>,
+): Record<DeltaSyncUnroutableReason, number> {
+    const out: Record<DeltaSyncUnroutableReason, number> = {
+        NO_ACTIVE_ADMIN: 0,
+        NO_ADMIN_WITH_EVIDENCE_UPLOAD: 0,
+    };
+    for (const r of rows) out[r.reason] += 1;
+    return out;
 }
