@@ -13,6 +13,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { SkeletonDashboard } from '@/components/ui/skeleton';
 import { resolveBandForScore, resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import { RiskFirstRunEmpty } from '@/components/risks/RiskFirstRunEmpty';
+import { riskCanCreate } from '../_shared/bulk-permissions';
 import type { RiskMatrixBand } from '@/lib/risk-matrix/types';
 import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { formatTailAwareAle } from '@/lib/tail-language';
@@ -220,7 +221,7 @@ export default function RiskDashboardPage() {
                         ariaLabel={t('dash.statusAria')}
                         total={total}
                         showPercent
-                        emptyState={<RiskFirstRunEmpty size="sm" />}
+                        emptyState={<RiskFirstRunEmpty size="sm" canCreate={riskCanCreate(tenant)} />}
                         items={Object.entries(statusCounts)
                             .sort(([, a], [, b]) => b - a)
                             .map(([status, count]) => ({
