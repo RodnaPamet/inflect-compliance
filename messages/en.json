@@ -1149,6 +1149,7 @@
       "ownerBlank": "Owner (blank = unassign)",
       "delete": "Delete",
       "actionFailed": "Bulk action failed. Please try again.",
+      "tooMany": "Select at most {max} risks at a time.",
       "applied": "{count, plural, one {# risk updated} other {# risks updated}}",
       "deletedToast": "{count, plural, one {# risk deleted} other {# risks deleted}}",
       "undo": "Undo"

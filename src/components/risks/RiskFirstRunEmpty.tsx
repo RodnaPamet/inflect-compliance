@@ -51,12 +51,18 @@ export interface RiskFirstRunEmptyProps {
      * the destination page auto-opens via its `?create=1` reader.
      */
     onCreateClick?: () => void;
+    /**
+     * False hides the CTA, for a user the create route would refuse.
+     * Default: true. The risks list passes `riskCanCreate`.
+     */
+    canCreate?: boolean;
 }
 
 export function RiskFirstRunEmpty({
     size = 'md',
     ctaLabel,
     onCreateClick,
+    canCreate = true,
 }: RiskFirstRunEmptyProps = {}) {
     const tenantHref = useTenantHref();
     const t = useTranslations('panels.riskFirstRun');
@@ -68,7 +74,9 @@ export function RiskFirstRunEmpty({
             title={t('title')}
             description={t('description')}
             primaryAction={
-                onCreateClick
+                !canCreate
+                    ? undefined
+                    : onCreateClick
                     ? {
                           label: ctaText,
                           onClick: onCreateClick,
