@@ -545,56 +545,28 @@ const jsdomProject = {
  * different entry point, silently, with no diff to point at. This project
  * matches `tests/flue/**` and nothing else.
  *
- * No `globalSetup`: nothing here touches Postgres, which is also what makes it
- * cheap enough to run on every PR.
- */
-/**
- * Resolve a file inside a package that does NOT export it.
+ * ── HOW IT LOADS ESM: Node's own `require(esm)`, so Node 24.9 or later ──────
  *
- * `@flue/runtime` publishes `{".": {"import": "./dist/index.mjs"}}` and no
- * `require` condition and no `./package.json` entry, so `require.resolve`
- * throws `ERR_PACKAGE_PATH_NOT_EXPORTED` for every specifier — the package is
- * unreachable from a CJS resolver by design.
+ * The project prefers the `import` condition (`customExportConditions`) and
+ * transforms nothing under `node_modules/`. Every ESM-only entry it reaches is
+ * loaded by Node's native `require(esm)`, which Jest uses from Node 24.9 on:
+ * `@flue/runtime`, pi-ai, and the `.mjs` side of any dual package, such as
+ * `dedent`, which Jest's own test framework pulls in. CI runs Node 24, as
+ * `.nvmrc` and `package.json` engines pin it.
  *
- * `require.resolve.paths()` is not blocked by an exports map: it returns the
- * `node_modules` directories Node WOULD search, walking up the tree. Finding
- * the manifest there and joining the file gives the same answer Node's own
- * resolver would, and keeps working from a `.claude/worktrees/<id>/` checkout
- * that has no `node_modules` of its own — which a spelled `<rootDir>/…` path
- * does not, and which broke the rendered suites for worktree users once
- * already (see the `react-grid-layout` note above).
- */
-const resolveInPackage = (pkg, subpath) => {
-    const fs = require('node:fs');
-    const path = require('node:path');
-    for (const base of require.resolve.paths(pkg) || []) {
-        if (fs.existsSync(path.join(base, pkg, 'package.json'))) {
-            return path.join(base, pkg, subpath);
-        }
-    }
-    throw new Error(`jest.config: cannot locate ${pkg} — is it installed?`);
-};
-
-/**
- * The THIRD project: the Flue runtime, which is ESM-only.
+ * Under an older Node every suite failed at load with "Must use import to load
+ * ES Module: …/dedent/dist/dedent.mjs". That message names neither the project
+ * nor the cause, so the project's `globalSetup` (`tests/setup/flue-node-gate.js`)
+ * now refuses first and says which Node it needs. Jest runs it only when a flue
+ * test is selected.
  *
- * ── WHY NOT `customExportConditions` ────────────────────────────────────────
+ * This comment used to describe the opposite approach (conditions left alone,
+ * the ESM entries mapped by hand and compiled by ts-jest). The config had moved
+ * on and the comment had not. The `resolveInPackage` helper that approach
+ * needed was no longer called, and is gone too.
  *
- * The obvious fix is to prefer the `import` condition. It was tried, and it
- * breaks the project it is scoped to: a package's OWN exports map decides
- * priority, not the order of this array, so activating `import` re-points
- * every dependency that ships both conditions. `dedent` — pulled in by the
- * test harness itself — immediately resolved to `dedent.mjs` and died on
- * `Unexpected token 'export'`. That is the same hazard, one scope down, that
- * makes setting this on the node project unthinkable for 2040 files.
- *
- * So the conditions are left alone and the three ESM-only entries are mapped
- * explicitly. Every other package in this project resolves exactly as it does
- * everywhere else.
- *
- * `transformIgnorePatterns` then lets ts-jest compile those `.mjs` files (and
- * pi-ai, which is `"type": "module"`) down to CJS. No `globalSetup`: nothing
- * here touches Postgres, which is what makes it cheap enough to run per PR.
+ * Nothing here touches Postgres, which is also what makes it cheap enough to
+ * run on every PR.
  */
 const flueProject = {
     displayName: 'flue',
@@ -631,6 +603,8 @@ const flueProject = {
         '^@/(.*)$': '<rootDir>/src/$1',
     },
     testEnvironmentOptions: { customExportConditions: ['node', 'import'] },
+    // Refuses a Node older than 24.9 by name; see the docblock above.
+    globalSetup: '<rootDir>/tests/setup/flue-node-gate.js',
     transform: {
         '^.+\\.tsx?$': ['ts-jest', { useESM: true }],
     },
