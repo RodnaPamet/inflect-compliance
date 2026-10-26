@@ -52,6 +52,13 @@ Porting them under #4339's test found three that could never have fired:
   latency rule uses 750 ms over all requests. `slos.md` now says each SLO has no
   production alert rather than naming rules that never ran, and the coherence
   checks keep only the document's own targets.
+- **The in-flight gauge is still blind on the worker.** `in-flight-runs.ts`
+  registers `agent.runs.in_flight` when the module loads. The worker imports it
+  before `initTelemetry()`, and the OTel metrics API hands out a no-op meter
+  until a provider is set, so the worker's gauge never exports.
+  `AgenticRunsInFlightSustained` sees only processes that load the module after
+  telemetry starts. Left for a follow-up beside the worker's queue-depth gauge,
+  which has the same ordering constraint.
 - **The identity-write-unsettled policy's email text is left alone.** It says
   `infra/alerts/rules.yml` describes a stack that does not run. Editing the
   JSON would make the repository disagree with the applied policy until

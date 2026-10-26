@@ -602,7 +602,13 @@ const HIGH_MULTIPLICITY = 5;
 // matched both the sort accessor and the column accessor. That fallback was
 // the bug (every never-published policy read "v1"); its replacement needle,
 // `accessorFn: (p) => displayedVersionNumber(p)`, names the column alone.
-const AMBIGUOUS_NEEDLE_BASELINE = 1160;
+//
+// 1160 -> 1147 on 2026-10-26. `infra/alerts/rules.yml` and
+// `infra/dashboards/` were deleted (nothing ever loaded them), and with them
+// the whole-file assertions over them in `observability-infra`,
+// `epic19-coherence` and the two `oi-3-*` guards: thirteen ambiguous needles.
+// Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1147;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -724,7 +730,11 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1160;
 //   needles — `/RequirePermission/` alone occurred 17 times in the audit-pack
 //   page — so narrowing them returns this line to exactly where it stood
 //   before #3309, as does the ambiguous baseline above.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
+//
+//   165 -> 159 (2026-10-26). Six of the thirteen needles that left with
+//   `infra/alerts/rules.yml` and `infra/dashboards/` (see the ambiguous
+//   baseline above) had five or more satisfying positions. Measured.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 159;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -1187,8 +1197,14 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
     1408 -> 1402 (2026-10-25): `k8s-runbook-coverage.test.ts` was deleted with
     the Kubernetes runbook it pinned in `docs/deployment.md`, a cluster that
     never existed. Its six section-bound reads go with it. Measured.
+
+    1402 -> 1386 (2026-10-26): `infra/alerts/rules.yml` and `infra/dashboards/`
+    were deleted, and with them sixteen assertions in `observability-infra`,
+    `epic19-coherence` and the `oi-3-*` guards that the analyser could not
+    resolve: values parsed out of the JSON and YAML, and reads sliced between
+    two `- alert:` markers. Measured.
 */
-const UNANALYSABLE_READ_BASELINE = 1402;
+const UNANALYSABLE_READ_BASELINE = 1386;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

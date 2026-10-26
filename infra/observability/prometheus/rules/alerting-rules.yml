@@ -27,7 +27,10 @@
 # a file nothing deployed (2026-10-26). Two of its rules read names the
 # exporter does not produce — `session_policy_resolution` without `_total`, and
 # `agent_runs_in_flight` without the `_ratio` a unit-1 gauge gets — and the
-# breaker-trip counter had no caller. All three are fixed here.
+# breaker-trip counter had no caller. All three are fixed here. One gap
+# remains: the worker registers the in-flight gauge when its module loads,
+# before the worker starts telemetry, so runs executing on the worker are not
+# in `agent_runs_in_flight_ratio`.
 # =============================================================================
 
 groups:
