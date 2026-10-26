@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "EU drone operations (Implementing Regulation (EU) 2019/947 to Amendment 5, and the operator obligations of Regulation (EU) 2021/664) in CatalogFile shape, so applyCatalogFile creates the framework, its 51 requirements, 53 control templates, their requirement links and the seven subcategory packs together.",
     "grounding": "Requirement codes, titles, sections and summaries are generated from src/data/libraries/eu-uas-ops.yaml, so the library import and this catalogue write identical requirement rows. Every template and all task content is authored in this repo from the regulation's binding text, with figures from EASA's AMC and GM attributed in prose.",
-    "packs": "One pack per operating subcategory: A1, A2, A3, STS-01, STS-02, operational authorisation and LUC. A pack carries the ten controls every operation needs, the controls common to its category and its own. Install requires choosing at least one; a template the chosen packs share is installed once.",
+    "packs": "One pack per operating subcategory: A1, A2, A3, STS-01, STS-02, operational authorisation and LUC, each naming the aircraft classes it admits, plus a class C2 pack that installs A2 and A3 together, because a C2 aircraft may fly in either. A pack carries the ten controls every operation needs, the controls common to its category and its own. Install requires choosing at least one; a template the chosen packs share is installed once.",
     "packApplicability": "A pack's controls cite only requirements that govern its subcategory, and cite every one of them. tests/guardrails/eu-uas-framework-coverage.test.ts holds both directions against the table below.",
     "applicableRequirements": {
       "EU_UAS_OPEN_A1": [
@@ -52,6 +52,24 @@
         "UAS.OPEN.050",
         "UAS.OPEN.060",
         "UAS.OPEN.070",
+        "UAS.OPEN.040",
+        "Art.20"
+      ],
+      "EU_UAS_CLASS_C2": [
+        "Art.3",
+        "Art.8",
+        "Art.9",
+        "Art.10",
+        "Art.14",
+        "Art.15",
+        "Art.19",
+        "U-space Art.6",
+        "Art.4",
+        "UAS.OPEN.010",
+        "UAS.OPEN.050",
+        "UAS.OPEN.060",
+        "UAS.OPEN.070",
+        "UAS.OPEN.030",
         "UAS.OPEN.040",
         "Art.20"
       ],
@@ -11904,7 +11922,7 @@
   "packs": [
     {
       "key": "EU_UAS_OPEN_A1",
-      "name": "Open category: subcategory A1 (over people)",
+      "name": "Open category A1: over people (class C0, C1)",
       "version": "2025-05",
       "description": "Flights with class C0 or C1 aircraft, privately built or legacy aircraft under 250 g, where uninvolved people may be overflown briefly but assemblies never are. Installs the controls every operation needs, the open-category controls and the A1 controls.",
       "templateCodes": [
@@ -11930,7 +11948,7 @@
     },
     {
       "key": "EU_UAS_OPEN_A2",
-      "name": "Open category: subcategory A2 (close to people)",
+      "name": "Open category A2: close to people (class C2)",
       "version": "2025-05",
       "description": "Flights with a class C2 aircraft close to, but never over, uninvolved people: at least 30 m away, or 5 m in low-speed mode. Needs the A2 certificate of remote pilot competency. Installs the controls every operation needs, the open-category controls and the A2 controls.",
       "templateCodes": [
@@ -11957,7 +11975,7 @@
     },
     {
       "key": "EU_UAS_OPEN_A3",
-      "name": "Open category: subcategory A3 (far from people)",
+      "name": "Open category A3: far from people (class C2, C3, C4)",
       "version": "2025-05",
       "description": "Flights far from people, at least 150 m from residential, commercial, industrial and recreational areas, with class C2, C3 or C4 aircraft or privately built or legacy aircraft under 25 kg. Installs the controls every operation needs, the open-category controls and the A3 controls.",
       "templateCodes": [
@@ -11983,8 +12001,38 @@
       ]
     },
     {
+      "key": "EU_UAS_CLASS_C2",
+      "name": "Class C2 drone: open category A2 and A3",
+      "version": "2025-05",
+      "description": "Everything an operator needs to fly a class C2 aircraft in the open category, which it may do in subcategory A2 (close to people, with the A2 certificate) or A3 (far from people). Installs the A2 and A3 packs together; ticking those two instead installs the same controls.",
+      "templateCodes": [
+        "UAS-CORE-01",
+        "UAS-CORE-02",
+        "UAS-CORE-03",
+        "UAS-CORE-04",
+        "UAS-CORE-05",
+        "UAS-CORE-06",
+        "UAS-CORE-07",
+        "UAS-CORE-08",
+        "UAS-CORE-09",
+        "UAS-CORE-10",
+        "UAS-OPEN-01",
+        "UAS-OPEN-02",
+        "UAS-OPEN-03",
+        "UAS-OPEN-04",
+        "UAS-OPEN-05",
+        "UAS-OPEN-06",
+        "UAS-A2-01",
+        "UAS-A2-02",
+        "UAS-A2-03",
+        "UAS-A3-01",
+        "UAS-A3-02",
+        "UAS-A3-03"
+      ]
+    },
+    {
       "key": "EU_UAS_STS_01",
-      "name": "Specific category: standard scenario STS-01 (VLOS, populated area)",
+      "name": "Specific category STS-01: VLOS over a populated area (class C5)",
       "version": "2025-05",
       "description": "Declared operations in visual line of sight over a controlled ground area in a populated environment, with a class C5 aircraft. Installs the controls every operation needs, the specific-category controls, the standard-scenario controls and the STS-01 controls.",
       "templateCodes": [
@@ -12016,7 +12064,7 @@
     },
     {
       "key": "EU_UAS_STS_02",
-      "name": "Specific category: standard scenario STS-02 (BVLOS, sparsely populated area)",
+      "name": "Specific category STS-02: BVLOS over a sparsely populated area (class C6)",
       "version": "2025-05",
       "description": "Declared operations beyond visual line of sight over a controlled ground area in a sparsely populated environment, with a class C6 aircraft and optional airspace observers. Installs the controls every operation needs, the specific-category controls, the standard-scenario controls and the STS-02 controls.",
       "templateCodes": [

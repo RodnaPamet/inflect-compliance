@@ -1,5 +1,5 @@
 /**
- * EU drone operations reaches a database with its seven subcategory packs, and
+ * EU drone operations reaches a database with its eight packs, and
  * a tenant installs exactly the subcategories it chose.
  *
  * ── WHAT THIS PROVES THAT THE GUARDRAIL CANNOT ──────────────────────────────
@@ -7,7 +7,7 @@
  * `tests/guardrails/eu-uas-framework-coverage.test.ts` proves the FILES are
  * right: each pack cites only, and all of, the requirements that govern its
  * subcategory. This proves the WRITES are: that `applyCatalogFile` turns a
- * `packs` file into seven pack rows sharing template rows; that the library
+ * `packs` file into eight pack rows sharing template rows; that the library
  * import adopts the catalogue's framework row rather than colliding with it;
  * and that installing two packs that share their core creates each shared
  * control ONCE, while a later third pack adds only what is its own.
@@ -51,7 +51,7 @@ async function snapshot() {
     return { frameworks, requirements };
 }
 
-describeFn('EU UAS: the catalogue lands seven packs over one framework row', () => {
+describeFn('EU UAS: the catalogue lands eight packs over one framework row', () => {
     beforeAll(async () => {
         await resetDatabase(prisma);
     });
@@ -60,7 +60,7 @@ describeFn('EU UAS: the catalogue lands seven packs over one framework row', () 
         await prisma.$disconnect();
     });
 
-    it('writes the framework, its 51 requirements, 53 templates and the seven packs', async () => {
+    it('writes the framework, its 51 requirements, 53 templates and the eight packs', async () => {
         const result = await applyCatalogFile(prisma, file, FIXTURE);
         expect(result.framework.created).toBe(true);
         expect(result.packs.map((p) => p.key)).toEqual(PACKS.map((p) => p.key));
@@ -69,7 +69,7 @@ describeFn('EU UAS: the catalogue lands seven packs over one framework row', () 
         expect(await prisma.controlTemplate.count({ where: { code: { startsWith: 'UAS-' } } })).toBe(53);
 
         // Each pack links exactly its own templates — the shared core into all
-        // seven — and every pack hangs off the one framework row.
+        // eight — and every pack hangs off the one framework row.
         for (const pack of PACKS) {
             const row = await prisma.frameworkPack.findUniqueOrThrow({
                 where: { key: pack.key },
@@ -152,5 +152,46 @@ describeFn('EU UAS: a tenant installs the subcategories it chose', () => {
         const added = (await controlCodes()).filter((c) => !before.includes(c));
         expect(added).toEqual(['UAS-A1-01', 'UAS-A1-02', 'UAS-A1-03']);
         expect(result.controlsCreated).toBe(3);
+    });
+});
+
+describeFn('EU UAS: the class C2 pack gives a tenant what A2 and A3 give', () => {
+    const TENANT = 't-eu-uas-c2';
+    const ctx = makeRequestContext('ADMIN', { tenantId: TENANT, tenantSlug: 'eu-uas-c2', userId: 'u-eu-uas-c2' });
+
+    beforeAll(async () => {
+        await resetDatabase(prisma);
+        await applyCatalogFile(prisma, file, FIXTURE);
+        await prisma.tenant.upsert({
+            where: { id: TENANT }, update: {},
+            create: { id: TENANT, name: 'EU UAS C2 operator', slug: 'eu-uas-c2' },
+        });
+        const email = 'eu-uas-c2@example.test';
+        await prisma.user.upsert({
+            where: { id: ctx.userId }, update: {},
+            create: { id: ctx.userId, email, emailHash: hashForLookup(email) },
+        });
+        await prisma.task.deleteMany({ where: { tenantId: TENANT } });
+        await prisma.controlRequirementLink.deleteMany({ where: { tenantId: TENANT } });
+        await prisma.control.deleteMany({ where: { tenantId: TENANT } });
+    });
+
+    afterAll(async () => {
+        await prisma.$disconnect();
+    });
+
+    it('installs the A2 and A3 controls, each once, and nothing else', async () => {
+        const union = [...new Set([...packCodes('EU_UAS_OPEN_A2'), ...packCodes('EU_UAS_OPEN_A3')])];
+        const result = await installPacks(ctx, KEY, ['EU_UAS_CLASS_C2']);
+
+        const codes = (await prisma.control.findMany({ where: { tenantId: TENANT }, select: { code: true } }))
+            .map((c) => c.code ?? '')
+            .sort();
+        expect(codes).toEqual([...union].sort());
+        expect(result.controlsCreated).toBe(union.length);
+
+        // Ticking A2 as well afterwards adds nothing: the C2 pack already holds it.
+        const again = await installPacks(ctx, KEY, ['EU_UAS_OPEN_A2']);
+        expect(again.controlsCreated).toBe(0);
     });
 });
