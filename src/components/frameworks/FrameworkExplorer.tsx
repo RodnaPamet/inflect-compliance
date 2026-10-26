@@ -399,7 +399,13 @@ function FrameworkTreeRow({
             indicator = (
                 <ComplianceStatusIndicator status={status} mode="dot" />
             );
-            meta = isMapped ? (
+            // Outside the packs this workspace chose: not a gap, so it says
+            // so instead of wearing the unmapped chip.
+            meta = node.outOfScope ? (
+                <StatusBadge variant="neutral" size="sm">
+                    {t('outOfScope')}
+                </StatusBadge>
+            ) : isMapped ? (
                 <span className="text-[10px] text-content-subtle tabular-nums">
                     {mappedCount}
                 </span>
@@ -513,6 +519,10 @@ function RequirementDetail({
                     )}
                 </div>
             </div>
+
+            {node.outOfScope && (
+                <p className="text-sm text-content-muted">{t('outOfScopeDetail')}</p>
+            )}
 
             {node.description && (
                 <p className="text-sm text-content-muted whitespace-pre-line">

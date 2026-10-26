@@ -235,4 +235,30 @@ describe('decorateTreeWithCompliance', () => {
         // not just the immediate child's own status.
         expect(out[0].complianceStatus).toBe('partial');
     });
+
+    it('reads a requirement outside the chosen packs as N/A and flags it, whatever is mapped', () => {
+        const tree = [
+            section('s-a2', 'A2', [req('r-in', 'IN'), req('r-out', 'OUT'), req('r-out-mapped', 'OUT2')]),
+            section('s-luc', 'LUC', [req('r-luc', 'LUC')]),
+        ];
+        const ctlMap = new Map<string, ControlForCompliance[]>([
+            // Mapped by hand to a requirement no chosen pack covers: still
+            // outside the scope, so it neither covers nor gaps anything.
+            ['r-out-mapped', [C('IN_PROGRESS')]],
+        ]);
+        const out = decorateTreeWithCompliance(tree, ctlMap, new Set(['r-out', 'r-out-mapped', 'r-luc']));
+
+        expect(out[0].children.map((n) => [n.code, n.complianceStatus, n.outOfScope])).toEqual([
+            ['IN', 'gap', undefined],
+            ['OUT', 'na', true],
+            ['OUT2', 'na', true],
+        ]);
+        expect('outOfScope' in out[0].children[0]).toBe(false);
+        // The in-scope gap is still the section's verdict; N/A is ignored.
+        expect(out[0].complianceStatus).toBe('gap');
+        expect(out[0].statusCounts).toEqual({ compliant: 0, partial: 0, gap: 1, na: 2, unknown: 0 });
+        // A section wholly outside the scope reads N/A, never a gap.
+        expect(out[1].complianceStatus).toBe('na');
+        expect(out[1].outOfScope).toBeUndefined();
+    });
 });
