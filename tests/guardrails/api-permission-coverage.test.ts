@@ -53,6 +53,7 @@ import {
     type RoutePermissionRule,
 } from '@/lib/security/route-permissions';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { codeOf } from '../helpers/source-blocks';
 
 // ─── Discovery ───────────────────────────────────────────────────────
 
@@ -528,9 +529,19 @@ function fileToPathname(routeFile: string): string {
     return '/' + segments.join('/');
 }
 
+/**
+ * The route's CODE, comments masked. A docblock saying a handler is wrapped in
+ * the permission middleware is not the wrapper: read raw, a route whose wrapper
+ * had been deleted stayed green on the strength of its own comment (found
+ * mutation-checking the legacy campaign route, 2026-10-26). String literals are
+ * kept, so nothing else this file reads changes.
+ */
 function readSource(file: string): string {
-    return fs.readFileSync(file, 'utf8');
+    return codeOf(fs.readFileSync(file, 'utf8'));
 }
+
+/** A call (or a generic instantiation) of the wrapper, in code. */
+const WRAPPER_CALL = /requirePermission\s*[<(]/;
 
 function relPathFromRepo(file: string): string {
     return path.relative(REPO_ROOT, file);
@@ -563,6 +574,16 @@ describe('Epic C.1 — API permission coverage guardrail', () => {
         expect(PRIVILEGED_ROUTES.length).toBeGreaterThan(0);
     });
 
+    it('a wrapper spelled only in a comment does not count', () => {
+        const commentOnly =
+            "/** Gated by requirePermission('admin.manage', …). */\n" +
+            'export const GET = withApiErrorHandling(handler);\n';
+        // The raw text would satisfy the check; the code the guard reads must not.
+        expect(WRAPPER_CALL.test(commentOnly)).toBe(true);
+        expect(WRAPPER_CALL.test(codeOf(commentOnly))).toBe(false);
+        expect(WRAPPER_CALL.test(codeOf("export const GET = requirePermission('admin.manage', h);"))).toBe(true);
+    });
+
     test.each(
         PRIVILEGED_ROUTES.map((r) => [relPathFromRepo(r), r] as const),
     )('%s wraps its handlers with requirePermission(...)', (relFromRepo, full) => {
@@ -578,7 +599,7 @@ describe('Epic C.1 — API permission coverage guardrail', () => {
         }
 
         const src = readSource(full);
-        const ok = /requirePermission\s*[<(]/.test(src);
+        const ok = WRAPPER_CALL.test(src);
 
         if (!ok) {
             // High-signal failure message a reviewer can act on without

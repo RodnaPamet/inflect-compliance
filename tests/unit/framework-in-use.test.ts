@@ -16,7 +16,11 @@ interface Fw { id: string; key: string; sourceUrn: string | null; retiredAt: nul
 interface Req { id: string; frameworkId: string; code: string; title: string; section: string | null; category: string | null; sortOrder: number; deprecatedAt: Date | null }
 interface Link { id: string; tenantId: string; requirementId: string; control: { id: string; code: string; name: string; status: string; deletedAt: Date | null } }
 
-const world: { frameworks: Fw[]; requirements: Req[]; links: Link[] } = { frameworks: [], requirements: [], links: [] };
+/** A pack this tenant chose, and the requirement codes its templates cite. */
+interface Chosen { tenantId: string; frameworkId: string; key: string; codes: string[] }
+
+const world: { frameworks: Fw[]; requirements: Req[]; links: Link[]; chosen: Chosen[] } =
+    { frameworks: [], requirements: [], links: [], chosen: [] };
 
 const matchReq = (where: any) => (r: Req) =>
     (where.frameworkId === undefined ||
@@ -43,9 +47,27 @@ const tenantDb: any = {
         findMany: jest.fn(async ({ where }: any) => world.links.filter(matchLink(where))),
         findFirst: jest.fn(async ({ where }: any) => world.links.find(matchLink(where)) ?? null),
     },
-    // pack-scope.ts: a single-pack framework is never narrowed.
-    frameworkPack: { count: jest.fn(async () => 1) },
-    tenantFrameworkPack: { findMany: jest.fn(async () => []) },
+    // pack-scope.ts reads these: the framework's pack count, then the packs
+    // this tenant chose, shaped as its select returns them.
+    frameworkPack: {
+        count: jest.fn(async ({ where }: any) =>
+            world.frameworks.find((f) => f.id === where.frameworkId)?._count.packs ?? 0),
+    },
+    tenantFrameworkPack: {
+        findMany: jest.fn(async ({ where }: any) =>
+            world.chosen
+                .filter((c) => c.tenantId === where.tenantId && c.frameworkId === where.frameworkId)
+                .map((c) => ({
+                    pack: {
+                        key: c.key,
+                        templateLinks: [{
+                            template: {
+                                requirementLinks: c.codes.map((code) => ({ requirement: { code, frameworkId: c.frameworkId } })),
+                            },
+                        }],
+                    },
+                }))),
+    },
 };
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: catalogue, default: catalogue }));
@@ -88,6 +110,9 @@ beforeEach(() => {
         fw('fw-gdpr', 'GDPR'),
         fw('fw-cis', 'CIS'),
         fw('fw-hipaa', 'HIPAA'),
+        // Two packs, so scoped to the chosen one (#4373).
+        fw('fw-uas', 'EU-UAS-OPS', null, 2),
+        fw('fw-uas2', 'EU-UAS-OPS-2', null, 2),
     ];
     world.requirements = [
         req('r-iso-1', 'fw-iso', '5.1'),
@@ -98,6 +123,16 @@ beforeEach(() => {
         req('r-gdpr-1', 'fw-gdpr', 'Art.5'),
         req('r-cis-1', 'fw-cis', '1.1'),
         req('r-hipaa-1', 'fw-hipaa', '164.308'),
+        req('r-uas-a2', 'fw-uas', 'UAS.A2.1'),
+        req('r-uas-luc', 'fw-uas', 'UAS.LUC.1'),
+        req('r-uas2-a2', 'fw-uas2', 'UAS.A2.1'),
+        req('r-uas2-luc', 'fw-uas2', 'UAS.LUC.1'),
+    ];
+    // Both chose the A2 pack. On the first, the only mapping sits on an LUC
+    // requirement, outside the scope; on the second, on an A2 one, inside it.
+    world.chosen = [
+        { tenantId: 'tenant-1', frameworkId: 'fw-uas', key: 'A2', codes: ['UAS.A2.1'] },
+        { tenantId: 'tenant-1', frameworkId: 'fw-uas2', key: 'A2', codes: ['UAS.A2.1'] },
     ];
     world.links = [
         // ISO 27001: the tenant's link hangs off the OTHER representation.
@@ -111,11 +146,14 @@ beforeEach(() => {
         // HIPAA: another tenant's link.
         link('l-hipaa', 'r-hipaa-1', { tenantId: 'tenant-2' }),
         // GDPR: nothing.
+        // EU-UAS-OPS: only outside the chosen pack. EU-UAS-OPS-2: inside it.
+        link('l-uas-luc', 'r-uas-luc'),
+        link('l-uas2-a2', 'r-uas2-a2'),
     ];
 });
 
 describe('isFrameworkInUse is the Frameworks page’s rule', () => {
-    it.each(['ISO27001', 'SOC2', 'NIS2', 'GDPR', 'CIS', 'HIPAA'])(
+    it.each(['ISO27001', 'SOC2', 'NIS2', 'GDPR', 'CIS', 'HIPAA', 'EU-UAS-OPS', 'EU-UAS-OPS-2'])(
         '%s — agrees with computeCoverage(...).mapped > 0',
         async (key) => {
             const coverage = await computeCoverage(ctx, key);
@@ -126,11 +164,17 @@ describe('isFrameworkInUse is the Frameworks page’s rule', () => {
     it('answers each case the way the issue needs', async () => {
         const answers = Object.fromEntries(
             await Promise.all(
-                ['ISO27001', 'SOC2', 'NIS2', 'GDPR', 'CIS', 'HIPAA'].map(async (k) => [k, await isFrameworkInUse(ctx, k)] as const),
+                ['ISO27001', 'SOC2', 'NIS2', 'GDPR', 'CIS', 'HIPAA', 'EU-UAS-OPS', 'EU-UAS-OPS-2']
+                    .map(async (k) => [k, await isFrameworkInUse(ctx, k)] as const),
             ),
         );
         // Without the answers pinned, both sides could agree on always-false.
-        expect(answers).toEqual({ ISO27001: true, SOC2: false, NIS2: false, GDPR: false, CIS: true, HIPAA: false });
+        expect(answers).toEqual({
+            ISO27001: true, SOC2: false, NIS2: false, GDPR: false, CIS: true, HIPAA: false,
+            // A mapping outside the chosen packs does not make the framework installed.
+            'EU-UAS-OPS': false,
+            'EU-UAS-OPS-2': true,
+        });
     });
 
     it('a key the catalogue does not hold, or an empty key, is not in use', async () => {
@@ -149,6 +193,6 @@ describe('listFrameworksInUse', () => {
         const rows = await listFrameworksInUse(ctx);
         // The library twin is not offered (listFrameworks drops it), but its
         // link still puts ISO 27001 in use.
-        expect(rows.map((f: any) => f.key)).toEqual(['ISO27001', 'CIS']);
+        expect(rows.map((f: any) => f.key)).toEqual(['ISO27001', 'CIS', 'EU-UAS-OPS-2']);
     });
 });

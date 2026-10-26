@@ -14,6 +14,7 @@ import { z } from 'zod';
 import {
     PROFILE_EFFORTS,
     PROFILE_INSTRUCTIONS_MAX_CHARS,
+    PROFILE_REJECTION_REASON_MAX_CHARS,
     PROFILE_MAX_SKILLS,
     PROFILE_MAX_TOOLS,
     PROFILE_MAX_TURNS,
@@ -63,3 +64,10 @@ export const ApproveAgentProfileVersionSchema = z
 
 /** The `[version]` route segment: a positive integer, or a 400. */
 export const AgentProfileVersionParamSchema = z.coerce.number().int().min(1).max(999_999_999);
+
+/** Rejection says why, in the reviewer's words. */
+export const RejectAgentProfileVersionSchema = z
+    .object({
+        reason: z.string().min(1).max(PROFILE_REJECTION_REASON_MAX_CHARS),
+    })
+    .strict();

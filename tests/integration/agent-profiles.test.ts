@@ -23,11 +23,16 @@
  * no engine runs a profile in this build, which section 6 also proves.
  */
 let flagOn = true;
+let allowlist: string | undefined;
 jest.mock('@/env', () => {
     const actual = jest.requireActual('@/env') as { env: Record<string, unknown> };
     return {
         env: new Proxy(actual.env, {
-            get: (target, key) => (key === 'AGENT_PROFILES' ? (flagOn ? '1' : undefined) : Reflect.get(target, key)),
+            get: (target, key) => {
+                if (key === 'AGENT_PROFILES') return flagOn ? '1' : undefined;
+                if (key === 'AGENT_PROFILES_TENANTS') return allowlist;
+                return Reflect.get(target, key);
+            },
         }),
     };
 });
@@ -93,7 +98,15 @@ const USERS = {
     readerA: `ua-reader-${SUITE}`,
     authorB: `ub-author-${SUITE}`,
 };
-const AGENTS = { a: `ag-a-${SUITE}`, a2: `ag-a2-${SUITE}`, retired: `ag-ret-${SUITE}`, b: `ag-b-${SUITE}` };
+const AGENTS = {
+    a: `ag-a-${SUITE}`,
+    a2: `ag-a2-${SUITE}`,
+    a3: `ag-a3-${SUITE}`,
+    fresh: `ag-fresh-${SUITE}`,
+    scan: `ag-scan-${SUITE}`,
+    retired: `ag-ret-${SUITE}`,
+    b: `ag-b-${SUITE}`,
+};
 
 const ctx = (tenantId: string, role: Role, userId: string, over: Partial<RequestContext> = {}): RequestContext =>
     makeRequestContext(role, { tenantId, tenantSlug: tenantId, userId, ...over });
@@ -105,6 +118,8 @@ const authorB = (over: Partial<RequestContext> = {}) => ctx(TB, 'OWNER', USERS.a
 const INSTRUCTIONS =
     'Summarise the open risks for the weekly security review. Use list_risks, group them by owner, ' +
     'and say plainly when a risk has no owner.';
+
+const REASON = { reason: 'Group by the risk owner field, and drop the closing summary.' };
 
 const version = (over: Partial<AgentProfileVersionInput> = {}): AgentProfileVersionInput => ({
     instructions: INSTRUCTIONS,
@@ -204,6 +219,9 @@ describeFn('agent profiles (real DB)', () => {
         };
         await agent(TA, AGENTS.a, USERS.authorA, 'ACTIVE', ['list_risks', 'list_controls']);
         await agent(TA, AGENTS.a2, USERS.authorA, 'ACTIVE', ['list_risks', 'list_controls']);
+        await agent(TA, AGENTS.a3, USERS.authorA, 'ACTIVE', ['list_risks']);
+        await agent(TA, AGENTS.fresh, USERS.authorA, 'ACTIVE', ['list_risks', 'list_controls']);
+        await agent(TA, AGENTS.scan, USERS.authorA, 'ACTIVE', ['list_risks']);
         await agent(TA, AGENTS.retired, USERS.authorA, 'RETIRED', []);
         await agent(TB, AGENTS.b, USERS.authorB, 'ACTIVE', ['list_risks']);
         registerWorkflow({
@@ -221,6 +239,7 @@ describeFn('agent profiles (real DB)', () => {
 
     beforeEach(() => {
         flagOn = true;
+        allowlist = undefined;
         mockDriver = 'flue';
         engineRunsProfiles = false;
     });
@@ -232,15 +251,15 @@ describeFn('agent profiles (real DB)', () => {
         expect(created.version).toBe(1);
 
         let view = await getAgentProfile(reviewerA(), AGENTS.a);
-        expect(view.currentApprovedVersion).toBe(1);
-        expect(view.runKey).toBe(profileRunKey(created.profileId, 1));
+        expect(view.profile?.currentApprovedVersion).toBe(1);
+        expect(view.profile?.runKey).toBe(profileRunKey(created.profileId, 1));
         expect(view.versions[0]).toMatchObject({ version: 1, status: 'APPROVED', instructions: INSTRUCTIONS });
         expect(created.instructionsHash).toBe(profileInstructionsHash(INSTRUCTIONS));
 
         const edit = await createAgentProfileVersion(authorA(), AGENTS.a, version({ instructions: `${INSTRUCTIONS} Keep it short.` }));
         expect(edit.version).toBe(2);
         view = await getAgentProfile(reviewerA(), AGENTS.a);
-        expect(view.currentApprovedVersion).toBe(1);
+        expect(view.profile?.currentApprovedVersion).toBe(1);
 
         // A second edit while v2 is open retires v2: one open version at a time.
         const edit3 = await createAgentProfileVersion(authorA(), AGENTS.a, version({ instructions: `${INSTRUCTIONS} Be brief.` }));
@@ -250,7 +269,7 @@ describeFn('agent profiles (real DB)', () => {
         const approved = await approveAgentProfileVersion(reviewerA(), AGENTS.a, 3, { instructionsHash: edit3.instructionsHash });
         expect(approved.supersededVersion).toBe(1);
         view = await getAgentProfile(reviewerA(), AGENTS.a);
-        expect(view.currentApprovedVersion).toBe(3);
+        expect(view.profile?.currentApprovedVersion).toBe(3);
         expect(view.versions.map((v) => [v.version, v.status])).toEqual([
             [3, 'APPROVED'],
             [2, 'RETIRED'],
@@ -260,8 +279,8 @@ describeFn('agent profiles (real DB)', () => {
         // Retiring the version in force clears the pointer.
         await retireAgentProfileVersion(reviewerA(), AGENTS.a, 3);
         view = await getAgentProfile(reviewerA(), AGENTS.a);
-        expect(view.currentApprovedVersion).toBeNull();
-        expect(view.runKey).toBeNull();
+        expect(view.profile?.currentApprovedVersion).toBeNull();
+        expect(view.profile?.runKey).toBeNull();
     });
 
     // ── 2. Refusals ────────────────────────────────────────────────────
@@ -294,7 +313,9 @@ describeFn('agent profiles (real DB)', () => {
             expect(await reasonOf(createAgentProfile(authorA(), AGENTS.a2, version()))).toBe('PROFILE_EXISTS');
             expect(await reasonOf(createAgentProfileVersion(authorA(), AGENTS.retired, version()))).toBe('AGENT_RETIRED');
             expect(await reasonOf(submitAgentProfileVersion(authorA(), AGENTS.a2, 99))).toBe('VERSION_NOT_FOUND');
-            expect(await reasonOf(getAgentProfile(reviewerA(), AGENTS.retired))).toBe('PROFILE_NOT_FOUND');
+            // Reading an agent with no profile is not a refusal: the builder writes the first version from it.
+            expect(await reasonOf(retireAgentProfileVersion(authorA(), AGENTS.retired, 1))).toBe('PROFILE_NOT_FOUND');
+            expect((await getAgentProfile(reviewerA(), AGENTS.retired)).profile).toBeNull();
         });
 
         it('INSTRUCTIONS_EMPTY and INSTRUCTIONS_TOO_LONG, after sanitising', async () => {
@@ -331,7 +352,7 @@ describeFn('agent profiles (real DB)', () => {
         it('NOT_DRAFT, NOT_SUBMITTED, ALREADY_RETIRED', async () => {
             const v = await createAgentProfileVersion(authorA(), AGENTS.a2, version());
             expect(await reasonOf(approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash }))).toBe('NOT_SUBMITTED');
-            expect(await reasonOf(rejectAgentProfileVersion(reviewerA(), AGENTS.a2, v.version))).toBe('NOT_SUBMITTED');
+            expect(await reasonOf(rejectAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, REASON))).toBe('NOT_SUBMITTED');
             await submitAgentProfileVersion(authorA(), AGENTS.a2, v.version);
             expect(await reasonOf(submitAgentProfileVersion(authorA(), AGENTS.a2, v.version))).toBe('NOT_DRAFT');
             await retireAgentProfileVersion(authorA(), AGENTS.a2, v.version);
@@ -342,14 +363,14 @@ describeFn('agent profiles (real DB)', () => {
             const v = await createAgentProfileVersion(authorA(), AGENTS.a2, version());
             await submitAgentProfileVersion(authorA(), AGENTS.a2, v.version);
             expect(await reasonOf(approveAgentProfileVersion(authorA(), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash }))).toBe('SELF_DECISION');
-            expect(await reasonOf(rejectAgentProfileVersion(authorA(), AGENTS.a2, v.version))).toBe('SELF_DECISION');
+            expect(await reasonOf(rejectAgentProfileVersion(authorA(), AGENTS.a2, v.version, REASON))).toBe('SELF_DECISION');
             expect(
                 await reasonOf(
                     approveAgentProfileVersion(reviewerA({ apiKeyId: 'key-1' }), AGENTS.a2, v.version, { instructionsHash: v.instructionsHash }),
                 ),
             ).toBe('DECIDER_NOT_A_PERSON');
             expect(await reasonOf(approveAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, { instructionsHash: '0'.repeat(64) }))).toBe('HASH_CHANGED');
-            await rejectAgentProfileVersion(reviewerA(), AGENTS.a2, v.version);
+            await rejectAgentProfileVersion(reviewerA(), AGENTS.a2, v.version, REASON);
             const row = await prisma.agentProfileVersion.findFirstOrThrow({ where: { tenantId: TA, id: v.versionId } });
             expect(row).toMatchObject({ status: 'REJECTED', decidedByUserId: USERS.reviewerA });
         });
@@ -369,12 +390,24 @@ describeFn('agent profiles (real DB)', () => {
     // ── 3. The text scan ───────────────────────────────────────────────
 
     describe('the text scan refuses instructions by rule id', () => {
+        /** Profile and version rows in tenant A, to show a refusal stored nothing. */
+        const storedRows = async () => ({
+            profiles: await prisma.agentProfile.count({ where: { tenantId: TA } }),
+            versions: await prisma.agentProfileVersion.count({ where: { tenantId: TA } }),
+        });
+
+        // Step 1H: both save paths, the first version (which would also create
+        // the profile) and a later one, refuse every case, and nothing is stored.
         it.each(INJECTION_CASES.map((c) => [c.technique, c.payload] as const))(
-            'refuses the corpus case %s',
+            'refuses the corpus case %s on both save paths, and stores nothing',
             async (_technique, payload) => {
+                const before = await storedRows();
                 const err = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ instructions: payload })).catch((e) => e);
                 expect(err.details?.reason).toBe('INSTRUCTIONS_REFUSED');
                 expect((err.details?.rules as string[]).length).toBeGreaterThan(0);
+                const first = await createAgentProfile(authorA(), AGENTS.scan, version({ instructions: payload })).catch((e) => e);
+                expect(first.details?.reason).toBe('INSTRUCTIONS_REFUSED');
+                expect(await storedRows()).toEqual(before);
             },
         );
 
@@ -385,10 +418,14 @@ describeFn('agent profiles (real DB)', () => {
             'skill.undeclared_tool': 'Read the risks, then call list_controls for each owner.',
             'skill.secret_shape': 'Use the key AKIAIOSFODNN7EXAMPLE when the list is empty.', // pragma: allowlist secret
         };
-        it.each(Object.entries(FAMILY))('refuses the %s family by its rule id', async (rule, text) => {
+        it.each(Object.entries(FAMILY))('refuses the %s family by its rule id, and stores nothing', async (rule, text) => {
+            const before = await storedRows();
             const err = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ instructions: text })).catch((e) => e);
             expect(err.details?.reason).toBe('INSTRUCTIONS_REFUSED');
             expect(err.details?.rules).toContain(rule);
+            const first = await createAgentProfile(authorA(), AGENTS.scan, version({ instructions: text })).catch((e) => e);
+            expect(first.details?.rules).toContain(rule);
+            expect(await storedRows()).toEqual(before);
         });
 
         it('stores ciphertext at rest and a sanitised text, hashed as stored', async () => {
@@ -515,7 +552,7 @@ describeFn('agent profiles (real DB)', () => {
         let versionId = '';
         beforeAll(async () => {
             const view = await getAgentProfile(reviewerA(), AGENTS.a);
-            profileId = view.profileId;
+            profileId = view.profile!.profileId;
             key = profileRunKey(profileId, 1);
             hash = view.versions[0].instructionsHash;
             versionId = view.versions[0].id;
@@ -525,6 +562,8 @@ describeFn('agent profiles (real DB)', () => {
         it('resolves only the approved version in force, in the caller tenant', async () => {
             const { def } = await resolveRunDefinition(asAgentA(), key);
             expect(def.profile).toMatchObject({ profileId, version: 1, instructionsHash: hash, toolNames: ['list_risks'] });
+            // Step 1H: the text an engine is handed is exactly the text the pin hashes.
+            expect(profileInstructionsHash(def.profile!.instructions)).toBe(hash);
             expect(def.readOnly).toBe(true);
             expect(await reasonOf(resolveRunDefinition(asAgentA(), profileRunKey(profileId, 2)))).toBe('PROFILE_NOT_FOUND');
             expect(await reasonOf(resolveRunDefinition(asAgentA(), `agent-profile:${profileId}`))).toBe('PROFILE_KEY_INVALID');
@@ -588,6 +627,198 @@ describeFn('agent profiles (real DB)', () => {
                 other.versionId,
             );
             expect(await reasonOf(resolveRunDefinition(asAgentA(), key))).toBe('PROFILE_HASH_MISMATCH');
+        });
+    });
+
+    // ── 7. The builder's read and the rejection reason (Step 1b) ──────
+
+    describe('the builder (Step 1b)', () => {
+        /** A SUBMITTED version of AGENTS.a3, newly written. */
+        const submitted = async (instructions = INSTRUCTIONS) => {
+            const exists = await prisma.agentProfile.count({ where: { tenantId: TA, agentId: AGENTS.a3 } });
+            const v = exists
+                ? await createAgentProfileVersion(authorA(), AGENTS.a3, version({ instructions }))
+                : await createAgentProfile(authorA(), AGENTS.a3, version({ instructions }));
+            await submitAgentProfileVersion(authorA(), AGENTS.a3, v.version);
+            return v;
+        };
+        const reasonColumn = async (id: string) =>
+            (
+                await prisma.$queryRawUnsafe<Array<{ rejectionReason: string | null }>>(
+                    `SELECT "rejectionReason" FROM "AgentProfileVersion" WHERE "id" = $1`,
+                    id,
+                )
+            )[0].rejectionReason;
+
+        it('an agent with no profile reads as profile: null, with exactly what an editor may choose', async () => {
+            const view = await getAgentProfile(reviewerA(), AGENTS.fresh);
+            expect(view.profile).toBeNull();
+            expect(view.versions).toEqual([]);
+            expect(view.options.tools).toEqual(['list_controls', 'list_risks']);
+            expect(view.options.skills.length).toBeGreaterThan(0);
+            expect(view.limits).toEqual({ instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000 });
+
+            // The pickers offer what the save accepts: every option round-trips.
+            const v = await createAgentProfile(
+                authorA(),
+                AGENTS.fresh,
+                version({ toolNames: view.options.tools, skillRefs: view.options.skills.slice(0, 32) }),
+            );
+            expect(v.version).toBe(1);
+        });
+
+        it('says why a test run cannot start while no engine runs a profile', async () => {
+            expect((await getAgentProfile(reviewerA(), AGENTS.fresh)).testRun).toEqual({
+                available: false,
+                reason: 'NO_ENGINE_RUNS_PROFILES',
+            });
+        });
+
+        it('offers the decision only to a signed-in person who is not the author, and names people by label', async () => {
+            const v = await submitted();
+            const asReviewer = (await getAgentProfile(reviewerA(), AGENTS.a3)).versions.find((x) => x.version === v.version)!;
+            expect(asReviewer.canDecide).toBe(true);
+            expect(asReviewer.author).toEqual({ label: `${USERS.authorA}@example.test`, isViewer: false });
+            const asAuthor = (await getAgentProfile(authorA(), AGENTS.a3)).versions.find((x) => x.version === v.version)!;
+            expect(asAuthor.canDecide).toBe(false);
+            expect(asAuthor.author.isViewer).toBe(true);
+            const asKey = (await getAgentProfile(reviewerA({ apiKeyId: 'key-1' }), AGENTS.a3)).versions.find((x) => x.version === v.version)!;
+            expect(asKey.canDecide).toBe(false);
+            // A DRAFT is never decidable.
+            const draft = await createAgentProfileVersion(authorA(), AGENTS.a3, version({ instructions: `${INSTRUCTIONS} draft` }));
+            const asDraft = (await getAgentProfile(reviewerA(), AGENTS.a3)).versions.find((x) => x.version === draft.version)!;
+            expect(asDraft.canDecide).toBe(false);
+        });
+
+        it('REJECTION_REASON_REQUIRED and REJECTION_REASON_TOO_LONG, after sanitising, and nothing is decided', async () => {
+            const v = await submitted();
+            expect(await reasonOf(rejectAgentProfileVersion(reviewerA(), AGENTS.a3, v.version, { reason: '   ' }))).toBe(
+                'REJECTION_REASON_REQUIRED',
+            );
+            expect(await reasonOf(rejectAgentProfileVersion(reviewerA(), AGENTS.a3, v.version, { reason: '<b></b>' }))).toBe(
+                'REJECTION_REASON_REQUIRED',
+            );
+            expect(
+                await reasonOf(rejectAgentProfileVersion(reviewerA(), AGENTS.a3, v.version, { reason: 'a'.repeat(1_001) })),
+            ).toBe('REJECTION_REASON_TOO_LONG');
+            const row = await prisma.agentProfileVersion.findFirstOrThrow({ where: { id: v.versionId }, select: { status: true } });
+            expect(row.status).toBe('SUBMITTED');
+        });
+
+        it('stores the reason sanitised and encrypted, and the author reads it on their version', async () => {
+            const v = await submitted();
+            await rejectAgentProfileVersion(reviewerA(), AGENTS.a3, v.version, {
+                reason: 'Too broad. <img src=x onerror=alert(1)>Name the owner field.',
+            });
+            const raw = await reasonColumn(v.versionId);
+            expect(raw?.startsWith('v2:')).toBe(true);
+            expect(raw?.includes('owner field')).toBe(false);
+            const mine = (await getAgentProfile(authorA(), AGENTS.a3)).versions.find((x) => x.version === v.version)!;
+            expect(mine).toMatchObject({
+                status: 'REJECTED',
+                rejectionReason: 'Too broad. Name the owner field.',
+                decidedBy: { label: `${USERS.reviewerA}@example.test`, isViewer: false },
+            });
+            // The audit row carries no reason: it is a sentence about the instructions.
+            const audit = await prisma.auditLog.findMany({ where: { tenantId: TA, entityId: v.versionId }, select: { details: true, detailsJson: true } });
+            expect(JSON.stringify(audit)).not.toMatch(/owner field|Too broad/);
+        });
+
+        it('the database writes the reason only with the rejection, requires it there, and never revises it', async () => {
+            // A move to REJECTED with no reason.
+            const bare = await submitted(`${INSTRUCTIONS} bare`);
+            await expect(
+                prisma.$executeRawUnsafe(
+                    `UPDATE "AgentProfileVersion" SET "status" = 'REJECTED', "decidedAt" = now(), "decidedByUserId" = $2 WHERE "id" = $1`,
+                    bare.versionId,
+                    USERS.reviewerA,
+                ),
+            ).rejects.toThrow(/AGENT_PROFILE_REJECTION_NEEDS_REASON/);
+            // A reason on a version that is not being rejected.
+            await expect(
+                prisma.$executeRawUnsafe(`UPDATE "AgentProfileVersion" SET "rejectionReason" = 'v2:x' WHERE "id" = $1`, bare.versionId),
+            ).rejects.toThrow(/AGENT_PROFILE_REJECTION_REASON_WITH_REJECTION/);
+            // A reason on insert.
+            const profile = await prisma.agentProfile.findFirstOrThrow({ where: { tenantId: TA, agentId: AGENTS.a3 } });
+            await expect(
+                prisma.$executeRawUnsafe(
+                    `INSERT INTO "AgentProfileVersion" ("id","tenantId","profileId","version","instructions","instructionsHash","toolNames","skillRefs","modelTier","effort","maxTurns","outputKind","allowedTriggers","authoredByUserId","rejectionReason")
+                     VALUES ($1,$2,$3,900,'v2:x',$4,ARRAY['list_risks'],'[]'::jsonb,'balanced','medium',5,'ANSWER_ONLY',ARRAY['TEST_RUN'],$5,'v2:y')`,
+                    `apv-${SUITE}`,
+                    TA,
+                    profile.id,
+                    'a'.repeat(64),
+                    USERS.authorA,
+                ),
+            ).rejects.toThrow(/AGENT_PROFILE_REJECTION_REASON_WITH_REJECTION/);
+
+            // A decided reason is frozen for the table owner and app_user, except the re-wrap.
+            const rejected = await submitted(`${INSTRUCTIONS} rejected`);
+            await rejectAgentProfileVersion(reviewerA(), AGENTS.a3, rejected.version, REASON);
+            for (const sql of [
+                `UPDATE "AgentProfileVersion" SET "rejectionReason" = 'plain text' WHERE "id" = $1`,
+                `UPDATE "AgentProfileVersion" SET "rejectionReason" = NULL WHERE "id" = $1`,
+            ]) {
+                await expect(prisma.$executeRawUnsafe(sql, rejected.versionId)).rejects.toThrow(/AGENT_PROFILE/);
+                await expect(asTenant(TA, (tx) => tx.$executeRawUnsafe(sql, rejected.versionId))).rejects.toThrow(/AGENT_PROFILE/);
+            }
+            // The rotation sweeps' re-wrap: ciphertext to v2 ciphertext, nothing else.
+            const other = await submitted(`${INSTRUCTIONS} other`);
+            await rejectAgentProfileVersion(reviewerA(), AGENTS.a3, other.version, { reason: 'A different reason.' });
+            await prisma.$executeRawUnsafe(
+                `UPDATE "AgentProfileVersion" SET "rejectionReason" = (SELECT "rejectionReason" FROM "AgentProfileVersion" WHERE "id" = $2) WHERE "id" = $1`,
+                rejected.versionId,
+                other.versionId,
+            );
+            expect(await reasonColumn(rejected.versionId)).toBe(await reasonColumn(other.versionId));
+        });
+    });
+
+    // ── 8. Phase 1 hardening (Step 1H) ────────────────────────────────
+
+    describe('Phase 1 hardening (Step 1H)', () => {
+        it('AGENT_PROFILES_TENANTS opens the surface to the tenants it names, and to no other', async () => {
+            flagOn = false;
+            // Trimmed and case-insensitive, as the route gate reads it.
+            allowlist = ` ${TA.toUpperCase()} , someone-else`;
+            const profile = await prisma.agentProfile.findFirstOrThrow({ where: { tenantId: TA, agentId: AGENTS.a } });
+            const key = profileRunKey(profile.id, 1);
+
+            // The named tenant reads, writes and resolves as if the switch were on.
+            expect((await getAgentProfile(reviewerA(), AGENTS.a)).profile?.profileId).toBe(profile.id);
+            expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.a }), key))).not.toBe('PROFILES_DISABLED');
+
+            // Every other tenant answers as if it were off, on every path.
+            expect(await reasonOf(getAgentProfile(authorB(), AGENTS.b))).toBe('PROFILES_DISABLED');
+            expect(await reasonOf(createAgentProfile(authorB(), AGENTS.b, version()))).toBe('PROFILES_DISABLED');
+            expect(await reasonOf(resolveRunDefinition(authorB({ agentId: AGENTS.b }), key))).toBe('PROFILES_DISABLED');
+            expect(await prisma.agentProfile.count({ where: { tenantId: TB } })).toBe(0);
+
+            // A context that carries no slug is never on the list.
+            expect(await reasonOf(getAgentProfile(reviewerA({ tenantSlug: undefined }), AGENTS.a))).toBe('PROFILES_DISABLED');
+        });
+
+        it('a submitted version whose text is swapped under the re-wrap exception cannot be approved', async () => {
+            const target = await createAgentProfileVersion(authorA(), AGENTS.a2, version({ instructions: `${INSTRUCTIONS} The reviewed text.` }));
+            await submitAgentProfileVersion(authorA(), AGENTS.a2, target.version);
+            // Ciphertext of the same tenant, so it decrypts: another agent's
+            // version, copied through the trigger's one admitted change.
+            const other = await prisma.agentProfileVersion.findFirstOrThrow({
+                where: { tenantId: TA, profile: { agentId: AGENTS.a3 } },
+                select: { id: true },
+            });
+            await prisma.$executeRawUnsafe(
+                `UPDATE "AgentProfileVersion" SET "instructions" = (SELECT "instructions" FROM "AgentProfileVersion" WHERE "id" = $2) WHERE "id" = $1`,
+                target.versionId,
+                other.id,
+            );
+            // The reviewer names the hash they read, which is still the stored
+            // one; the text under it is not, and approval recomputes it.
+            expect(
+                await reasonOf(approveAgentProfileVersion(reviewerA(), AGENTS.a2, target.version, { instructionsHash: target.instructionsHash })),
+            ).toBe('HASH_CHANGED');
+            const row = await prisma.agentProfileVersion.findFirstOrThrow({ where: { id: target.versionId }, select: { status: true } });
+            expect(row.status).toBe('SUBMITTED');
         });
     });
 });

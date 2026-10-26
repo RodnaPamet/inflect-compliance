@@ -7,7 +7,7 @@
  * agent's row and its runs, and is never handed a control the server refuses.
  */
 import * as React from 'react';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 
 // Mounting the register mounts the table, the filter system and the create
 // modal's form stack, which is slow on a loaded machine. Nothing here is about
@@ -65,6 +65,7 @@ jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/PolicyCardTab', () =
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/ToolsTab', () => ({ ToolsTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/CoverageTab', () => ({ CoverageTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/SkillsTab', () => ({ SkillsTab: () => null }));
+jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/BehaviourTab', () => ({ BehaviourTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/RunsTab', () => ({ RunsTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/CircuitBreakerTab', () => ({ CircuitBreakerTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentKillSwitchAction', () => ({
@@ -101,8 +102,10 @@ const VIEW_ONLY: AgentDetailPermissions = {
     canCloseBreaker: false,
 };
 
-function renderWith(perms: AgentDetailPermissions) {
-    return render(<AgentDetailClient tenantSlug="acme" agent={AGENT} perms={perms} owners={[]} vendors={[]} />);
+function renderWith(perms: AgentDetailPermissions, profilesEnabled?: boolean) {
+    return render(
+        <AgentDetailClient tenantSlug="acme" agent={AGENT} perms={perms} owners={[]} vendors={[]} profilesEnabled={profilesEnabled} />,
+    );
 }
 
 const tab = (key: string) => document.getElementById(`tab-${key}`) as HTMLButtonElement | null;
@@ -134,5 +137,22 @@ describe('a view-key-only reader', () => {
         );
         expect(disabled).toEqual(['policy']);
         expect(screen.getByTestId('agent-amend-action')).toBeTruthy();
+    });
+});
+
+// Step 1b (#4144): the Behaviour tab exists only while AGENT_PROFILES is on, and
+// its read takes the register key, so a view-key reader finds it disabled.
+describe('the Behaviour tab', () => {
+    it('is absent while agent profiles are off', () => {
+        renderWith({ ...VIEW_ONLY, canReadRegistry: true, canManageRegistry: true });
+        expect(tab('behaviour')).toBeNull();
+    });
+
+    it('is disabled for a view-key reader and open to a register-key holder', () => {
+        renderWith(VIEW_ONLY, true);
+        expect(tab('behaviour')?.disabled).toBe(true);
+        cleanup();
+        renderWith({ ...VIEW_ONLY, canReadRegistry: true }, true);
+        expect(tab('behaviour')?.disabled).toBe(false);
     });
 });

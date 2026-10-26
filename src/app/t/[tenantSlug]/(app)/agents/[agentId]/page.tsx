@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { getRegisteredAgent } from '@/app-layer/usecases/agent-registry';
+import { agentProfilesOn } from '@/app-layer/usecases/agent-profiles';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
 import { NotFoundError } from '@/lib/errors/types';
@@ -165,6 +166,10 @@ export default async function AgentDetailPage({
                     ctx.appPermissions.admin.agent_ownership === true && ctx.permissions.canRead,
             }}
             viewerUserId={ctx.userId}
+            // The Behaviour tab exists only where agent profiles are on: the
+            // whole deployment, or this tenant by name (Steps 1b and 1H). Its
+            // routes answer 404 everywhere else.
+            profilesEnabled={agentProfilesOn(tenantSlug)}
         />
     );
 }

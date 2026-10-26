@@ -12,6 +12,7 @@
  * fail-safe, like the audit-stream metrics; escalation is alert-based.
  */
 import { metrics } from '@opentelemetry/api';
+import { bindObservable } from './observable-registry';
 
 import type { ServicePrincipalDisableStatus } from '@/lib/agentic/service-principal-disable';
 import type { EstateStaleReason } from '@/lib/agentic/harness-estate-staleness';
@@ -75,18 +76,20 @@ let _freshnessGaugeStarted = false;
 export function startIntegrationFreshnessReporting(now: () => number = Date.now): void {
     if (_freshnessGaugeStarted) return;
     _freshnessGaugeStarted = true;
-    const gauge = getMeter().createObservableGauge('integration.check.staleness_seconds', {
-        description: 'Seconds since the last recorded check outcome, per provider',
-        unit: 's',
-    });
-    gauge.addCallback((result) => {
-        try {
-            for (const [provider, ts] of Object.entries(_lastOutcomeMs)) {
-                result.observe(Math.max(0, Math.round((now() - ts) / 1000)), { provider });
+    bindObservable(() => {
+        const gauge = getMeter().createObservableGauge('integration.check.staleness_seconds', {
+            description: 'Seconds since the last recorded check outcome, per provider',
+            unit: 's',
+        });
+        gauge.addCallback((result) => {
+            try {
+                for (const [provider, ts] of Object.entries(_lastOutcomeMs)) {
+                    result.observe(Math.max(0, Math.round((now() - ts) / 1000)), { provider });
+                }
+            } catch {
+                /* noop — the gauge simply won't report this cycle */
             }
-        } catch {
-            /* noop — the gauge simply won't report this cycle */
-        }
+        });
     });
 }
 

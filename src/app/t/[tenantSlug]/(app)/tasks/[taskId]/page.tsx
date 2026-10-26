@@ -329,9 +329,17 @@ export default function TaskDetailPage() {
     // owns its own autosave lifecycle.
     const [showEditModal, setShowEditModal] = useState(false);
 
-    // AI_ADMIN (#3699) reads tasks like a READER and may not comment either —
-    // `assertCanCommentOnTasks` refuses it (no `tasks.edit`).
-    const canComment = role !== 'READER' && role !== 'AI_ADMIN';
+    // `POST /tasks/:id/comments` asks `tasks.edit`, and
+    // `assertCanCommentOnTasks` refuses a READER and any role without it.
+    // So AUDITOR and AI_ADMIN, whose sets hold no `tasks.edit`, get no comment
+    // box (owner decision, 2026-10-26); the role check alone offered it to
+    // AUDITOR and every save was refused.
+    const canComment = role !== 'READER' && appPermissions.tasks.edit;
+    // `DELETE /tasks/:id` asks `admin.manage` and `deleteTask` asserts the
+    // admin tier, so Delete is offered on both, as the Tasks list's bulk
+    // delete is. On the write tier alone an EDITOR was offered it and refused
+    // after the undo window (owner decision, 2026-10-26).
+    const canDeleteTask = !!permissions.canAdmin && appPermissions.admin.manage;
 
     // #4360 — each write control asks the key its route checks, on top of
     // the write tier, as the Tasks list does. The write tier alone let a
@@ -1132,14 +1140,16 @@ export default function TaskDetailPage() {
                             select it in the list and use the bulk bar.
                             Soft delete → Epic 67 undo-toast, same as every
                             other routine destructive action here. */}
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            id="delete-task-btn"
-                            onClick={handleDeleteTask}
-                        >
-                            {t('detail.deleteTask')}
-                        </Button>
+                        {canDeleteTask && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                id="delete-task-btn"
+                                onClick={handleDeleteTask}
+                            >
+                                {t('detail.deleteTask')}
+                            </Button>
+                        )}
                     </div>
                 )
             }
@@ -1209,44 +1219,49 @@ export default function TaskDetailPage() {
             {/* TP-6 — Reviewer assignment. Surfaces the previously
                 dead `reviewerUserId` field: a people-picker to set the
                 reviewer + a display of the current one. Wired through the
-                shared task update path (PATCH /tasks/:id, `tasks.edit`). */}
-            {canEditTask && (
-                <div className={cardVariants({ density: 'compact' })}>
-                    <div className="flex items-center gap-compact">
-                        <span className="text-sm text-content-muted">{t('detail.reviewerLabel')}</span>
-                        <span className="text-sm text-content-emphasis font-medium" id="task-reviewer">
-                            {task.reviewer?.name || task.reviewerUserId || t('detail.noReviewer')}
-                        </span>
-                        <div className="w-64">
-                            <UserCombobox
-                                id="task-reviewer-input"
-                                name="reviewerUserId"
-                                tenantSlug={tenantSlug}
-                                // Only members whose role can edit tasks —
-                                // the server refuses anyone else (#4278).
-                                audience="task-reviewer"
-                                selectedId={reviewerValue}
-                                onChange={(uid) => setReviewerDraft(uid ?? null)}
-                                placeholder={t('detail.noReviewer')}
-                                forceDropdown={false}
-                            />
-                        </div>
-                        <Button variant="secondary" onClick={handleAssignReviewer} disabled={savingReviewer} id="assign-reviewer-btn">
-                            {savingReviewer ? t('detail.saving') : t('detail.setReviewer')}
-                        </Button>
-                    </div>
-                    {/* #4278 — a reviewer named before the rule, whose
-                        role cannot edit tasks (or who has left), can never
-                        sign the task off. Existing tasks were not
-                        migrated; this is where it is said, beside the
-                        picker that fixes it. */}
-                    {task.reviewerCanSignOff === false && (
-                        <p className="mt-2 text-sm text-content-warning" id="task-reviewer-cannot-sign-off" role="status">
-                            {t('detail.reviewerCannotSignOff')}
-                        </p>
+                shared task update path (PATCH /tasks/:id, `tasks.edit`).
+                Who the reviewer is shows to everyone who can open the task;
+                only a role that can edit tasks gets the picker (owner
+                decision, 2026-10-26). */}
+            <div className={cardVariants({ density: 'compact' })} id="task-reviewer-card">
+                <div className="flex items-center gap-compact">
+                    <span className="text-sm text-content-muted">{t('detail.reviewerLabel')}</span>
+                    <span className="text-sm text-content-emphasis font-medium" id="task-reviewer">
+                        {task.reviewer?.name || task.reviewerUserId || t('detail.noReviewer')}
+                    </span>
+                    {canEditTask && (
+                        <>
+                            <div className="w-64">
+                                <UserCombobox
+                                    id="task-reviewer-input"
+                                    name="reviewerUserId"
+                                    tenantSlug={tenantSlug}
+                                    // Only members whose role can edit tasks —
+                                    // the server refuses anyone else (#4278).
+                                    audience="task-reviewer"
+                                    selectedId={reviewerValue}
+                                    onChange={(uid) => setReviewerDraft(uid ?? null)}
+                                    placeholder={t('detail.noReviewer')}
+                                    forceDropdown={false}
+                                />
+                            </div>
+                            <Button variant="secondary" onClick={handleAssignReviewer} disabled={savingReviewer} id="assign-reviewer-btn">
+                                {savingReviewer ? t('detail.saving') : t('detail.setReviewer')}
+                            </Button>
+                        </>
                     )}
                 </div>
-            )}
+                {/* #4278 — a reviewer named before the rule, whose
+                    role cannot edit tasks (or who has left), can never
+                    sign the task off. Existing tasks were not
+                    migrated; this is where it is said, beside the
+                    picker that fixes it. */}
+                {canEditTask && task.reviewerCanSignOff === false && (
+                    <p className="mt-2 text-sm text-content-warning" id="task-reviewer-cannot-sign-off" role="status">
+                        {t('detail.reviewerCannotSignOff')}
+                    </p>
+                )}
+            </div>
 
             {/* TP-6 — Watchers. Surfaces the previously dead
                 TaskWatcher model: a watch/unwatch toggle for the current

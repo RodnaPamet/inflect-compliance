@@ -373,6 +373,13 @@ export const env = createEnv({
         // 'true', for the reason `AGENT_DRIVER_FLUE` above gives: a typo in a
         // feature flag is "off", not a process that will not boot.
         AGENT_PROFILES: z.string().optional(),
+        // The same surface, opened to named tenants only (Step 1H, #4145; owner
+        // decision 2026-10-26): comma-separated tenant slugs. It lets one
+        // proving tenant author and approve a profile in production while every
+        // other tenant still has no Behaviour tab and a 404 on every profile
+        // route. `AGENT_PROFILES` on opens the surface to every tenant whatever
+        // this says. Read through `agentProfilesEnabledFor`.
+        AGENT_PROFILES_TENANTS: z.string().optional(),
         // A2A HOST CONSUMERS (#3861) — admits a host that calls Inflect as a
         // CLIENT rather than as a peer agent: no card to pin, no Ed25519 key,
         // an OAuth2 bearer instead of a signed receipt.
@@ -663,6 +670,7 @@ export const env = createEnv({
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
+        AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
         SANDBOX_RUNTIME_CONFIG_DIGEST: process.env.SANDBOX_RUNTIME_CONFIG_DIGEST,

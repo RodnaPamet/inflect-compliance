@@ -373,6 +373,19 @@ Deliver per the Definition of done. This step is Significant.
 
 #### Step 2c — Turn the Tool Runner engine on
 
+**Carried from Step 1b (#4144).** The builder's Test run is in the Behaviour
+tab and is disabled. This step builds what enables it:
+- **A start route.** Admission resolves only the approved version in force, and
+  a browser session carries no agent identity, so a Test run needs its own
+  route. That route binds the agent, as `agent-invoke-dispatch` does. It admits
+  the version it names, a SUBMITTED one included, under the `TEST_RUN` trigger,
+  read-only, and it refuses a version whose `allowedTriggers` lacks `TEST_RUN`.
+- **The view's other state.** `getAgentProfile`'s `testRun` has one state today,
+  `{ available: false, reason: 'NO_ENGINE_RUNS_PROFILES' }`. This step adds the
+  state where a run can start. It also adds a reason naming the tenant's engine
+  choice, for a tenant whose chosen engine does not run profiles.
+- **The button's action.** It starts the run and opens it in the Runs tab.
+
 **Goal.** One deploy after 2b, let a tenant choose the engine and run a profile on it.
 
 ```text

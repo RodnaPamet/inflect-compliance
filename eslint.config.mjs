@@ -225,6 +225,13 @@ const config = [
             // selects around it, and a reader that needs the engine reads it as
             // text. See eslint-rules/rules/no-typed-run-driver-read.js.
             'local/no-typed-run-driver-read': 'error',
+            // An observable gauge is created inside `bindObservable()`, so a
+            // gauge registered before initTelemetry() moves onto the real meter
+            // provider when telemetry starts. Created directly, it lands on the
+            // OTel API's no-op meter and exports nothing for the life of the
+            // process (agent.runs.in_flight on the worker). See
+            // eslint-rules/rules/observable-gauge-rebinds.js.
+            'local/observable-gauge-rebinds': 'error',
 
             // An MCP tool DECLARES the authorization its human equivalent
             // applies and never performs its own. The funnel is the one gate;

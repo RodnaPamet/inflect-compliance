@@ -200,7 +200,7 @@ jest.mock('@/app-layer/jobs/evidence-import', () => ({
 }));
 jest.mock('@/app-layer/jobs/sharepoint-delta-sync', () => ({
     runSharePointDeltaSyncJob: jest.fn(async () => ({ drivesSynced: 0, reimported: 0, staled: 0 })),
-    runSharePointDeltaSyncDispatch: jest.fn(async () => ({ connections: 0, dispatched: 0 })),
+    runSharePointDeltaSyncDispatch: jest.fn(async () => ({ connections: 0, dispatched: 0, failed: 0, unroutable: [] })),
 }));
 jest.mock('@/app-layer/jobs/sharepoint-policy-jobs', () => ({
     runSharePointPolicyPull: jest.fn(async () => ({ pulled: true })),

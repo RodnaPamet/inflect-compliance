@@ -465,8 +465,10 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // own block in every prompt the profile runs under (owner decision 2,
     // 2026-10-25). Sanitised and scanned at the single write seam
     // (`usecases/agent-profiles.ts`) before this middleware encrypts it, and
-    // hashed in plaintext so a run can pin it. Not filtered or sorted on.
-    AgentProfileVersion: ['instructions'],
+    // hashed in plaintext so a run can pin it. `rejectionReason` (Step 1b) is
+    // a reviewer's sentence about those instructions, the same kind of
+    // content. Neither is filtered or sorted on.
+    AgentProfileVersion: ['instructions', 'rejectionReason'],
 
     // ─── Epic Agentic — the agent register ─────────────
     // `description` is the operator's own account of what an agent does and

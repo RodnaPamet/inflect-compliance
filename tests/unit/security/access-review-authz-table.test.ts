@@ -97,6 +97,10 @@ jest.mock('@/app-layer/usecases/access-review-connected', () => ({
     // send an AGENT subject to the agent decide. Not a usecase run: no `ran`.
     scopeOfConnectedDecision: () => Promise.resolve('CONNECTED_APP'),
 }));
+// The LEGACY_APP create (2026-10-26) — stubbed the same way.
+jest.mock('@/app-layer/usecases/access-review-legacy', () => ({
+    createLegacyAccessReview: () => { ran('createLegacyAccessReview'); return Promise.resolve({ accessReviewId: 'r1', subjectCount: 1 }); },
+}));
 // #3674 — the agent campaign's routes, stubbed the same way.
 jest.mock('@/app-layer/usecases/access-review-agent', () => ({
     createAgentAccessReview: () => { ran('createAgentAccessReview'); return Promise.resolve({ accessReviewId: 'r1', subjectCount: 2 }); },
@@ -120,6 +124,7 @@ import type { RequestContext } from '@/app-layer/types';
 
 import { GET as LIST, POST as CREATE } from '@/app/api/t/[tenantSlug]/access-reviews/route';
 import { POST as CREATE_CONNECTED } from '@/app/api/t/[tenantSlug]/access-reviews/connected/route';
+import { POST as CREATE_LEGACY } from '@/app/api/t/[tenantSlug]/access-reviews/legacy/route';
 import { GET as DETAIL, PATCH as UPDATE_SETTINGS } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/route';
 import { POST as REGENERATE_EVIDENCE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/evidence/regenerate/route';
 import { POST as CLOSE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/close/route';
@@ -201,6 +206,7 @@ describe('Step 5a — every access-review route resolves to its intended key', (
         ['GET', T, 'access_reviews.view'],
         ['POST', T, 'access_reviews.create'],
         ['POST', `${T}/connected`, 'access_reviews.create'],
+        ['POST', `${T}/legacy`, 'access_reviews.create'],
         ['GET', `${T}/r1`, 'access_reviews.view'],
         ['POST', `${T}/r1/close`, 'access_reviews.close'],
         ['PUT', `${T}/r1/decisions/d1`, 'access_reviews.decide'],
@@ -283,6 +289,11 @@ describe('Step 5a — every access-review route resolves to its intended key', (
         expect(resolveRoutePermission(`${T}/connected`, 'POST')?.permission)
             .not.toBe('access_reviews.view');
     });
+
+    it.each(['agents', 'legacy'])('…nor is the %s CREATE, the other leaves the pattern can reach', (leaf) => {
+        expect(resolveRoutePermission(`${T}/${leaf}`, 'POST')?.permission)
+            .toBe('access_reviews.create');
+    });
 });
 
 // ─── 3. Allow and deny at the real route, and the denial audit ───
@@ -300,6 +311,7 @@ function cases(): Case[] {
         { name: 'GET /access-reviews', key: 'view', call: () => LIST(makeReq('GET', T), { params: Promise.resolve({ tenantSlug: 'acme' }) } as never) },
         { name: 'POST /access-reviews', key: 'create', call: () => CREATE(makeReq('POST', T, { name: 'Q4', reviewerUserId: 'u1' }), { params: Promise.resolve({ tenantSlug: 'acme' }) } as never) },
         { name: 'POST /access-reviews/connected', key: 'create', call: () => CREATE_CONNECTED(makeReq('POST', `${T}/connected`, { name: 'Q4', reviewerUserId: 'u1' }), { params: Promise.resolve({ tenantSlug: 'acme' }) } as never) },
+        { name: 'POST /access-reviews/legacy', key: 'create', call: () => CREATE_LEGACY(makeReq('POST', `${T}/legacy`, { name: 'Q4', connectionId: 'c1', reviewerUserId: 'u1' }), { params: Promise.resolve({ tenantSlug: 'acme' }) } as never) },
         { name: 'GET /access-reviews/:id', key: 'view', call: () => DETAIL(makeReq('GET', `${T}/r1`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
         { name: 'PATCH /access-reviews/:id', key: 'create', call: () => UPDATE_SETTINGS(makeReq('PATCH', `${T}/r1`, { dueAt: null }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
         { name: 'POST /access-reviews/:id/evidence/regenerate', key: 'close', call: () => REGENERATE_EVIDENCE(makeReq('POST', `${T}/r1/evidence/regenerate`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
@@ -356,11 +368,12 @@ describe('Step 5a — the real routes allow and deny exactly as the ladder did',
 
     it('denials really did occur for the non-admin roles — a count, not a vibe', () => {
         // Guards against the whole block above silently becoming all-allow:
-        // 3 non-admin roles x 7 admin-gated cases (5 create + 2 close) = 21.
-        // #4130 added one of each: the settings PATCH and the regeneration.
+        // 3 non-admin roles x 8 admin-gated cases (6 create + 2 close) = 24.
+        // #4130 added one of each: the settings PATCH and the regeneration;
+        // the LEGACY_APP create added a sixth create.
         const denied = ROLES.flatMap((role) =>
             cases().filter((c) => !getPermissionsForRole(role).access_reviews[c.key]),
         );
-        expect(denied).toHaveLength(21);
+        expect(denied).toHaveLength(24);
     });
 });

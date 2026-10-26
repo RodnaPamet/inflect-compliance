@@ -56,8 +56,10 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { scanSkillText } from '@/lib/agentic/flue/skills/text-scan';
 import { repositorySkillNames } from '@/lib/agentic/flue/skills/resolve';
 import {
-    agentProfilesEnabled,
+    agentProfilesEnabledFor,
     PROFILE_INSTRUCTIONS_MAX_CHARS,
+    PROFILE_MAX_TURNS,
+    PROFILE_REJECTION_REASON_MAX_CHARS,
     profileRunKey,
     type ProfileSkillRef,
 } from '@/lib/agentic/agent-profile';
@@ -83,6 +85,8 @@ export type AgentProfileRefusal =
     | 'SELF_DECISION'
     | 'DECIDER_NOT_A_PERSON'
     | 'HASH_CHANGED'
+    | 'REJECTION_REASON_REQUIRED'
+    | 'REJECTION_REASON_TOO_LONG'
     | 'CONCURRENT_CHANGE';
 
 const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
@@ -103,6 +107,8 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     SELF_DECISION: 403,
     DECIDER_NOT_A_PERSON: 403,
     HASH_CHANGED: 409,
+    REJECTION_REASON_REQUIRED: 400,
+    REJECTION_REASON_TOO_LONG: 400,
     CONCURRENT_CHANGE: 409,
 };
 
@@ -116,9 +122,13 @@ function refuse(reason: AgentProfileRefusal, message: string, extra: Record<stri
     return new AppError(message, 'NOT_FOUND', 404, true, details);
 }
 
-/** Is the profile surface on for this deployment? */
-export function agentProfilesOn(): boolean {
-    return agentProfilesEnabled(env.AGENT_PROFILES);
+/**
+ * Is the profile surface on for this tenant? The deployment's switch opens it to
+ * every tenant; `AGENT_PROFILES_TENANTS` opens it to the tenants it names
+ * (Step 1H, #4145). No slug is never named, so the answer fails closed.
+ */
+export function agentProfilesOn(tenantSlug: string | null | undefined): boolean {
+    return agentProfilesEnabledFor(env.AGENT_PROFILES, env.AGENT_PROFILES_TENANTS, tenantSlug);
 }
 
 /**
@@ -126,7 +136,7 @@ export function agentProfilesOn(): boolean {
  * answers every caller the same 404 and says nothing about who may act.
  */
 function assertMayManageProfiles(ctx: RequestContext): void {
-    if (!agentProfilesOn()) throw refuse('PROFILES_DISABLED', 'Not found.');
+    if (!agentProfilesOn(ctx.tenantSlug)) throw refuse('PROFILES_DISABLED', 'Not found.');
     if (ctx.permissions.canRead !== true || ctx.appPermissions?.admin?.agent_registry !== true) {
         throw new AppError('Agent profiles require admin.agent_registry.', 'FORBIDDEN', 403, true);
     }
@@ -602,9 +612,26 @@ export async function approveAgentProfileVersion(
     });
 }
 
-/** SUBMITTED → REJECTED, by a person other than the author. */
-export async function rejectAgentProfileVersion(ctx: RequestContext, agentId: string, version: number): Promise<{ status: 'REJECTED' }> {
+/**
+ * SUBMITTED → REJECTED, by a person other than the author, saying why (Step
+ * 1b). The reason is sanitised, required and capped, written once beside the
+ * decision and encrypted at rest; the author reads it on the version they
+ * wrote. It reaches no audit row: it is a sentence about the instructions.
+ */
+export async function rejectAgentProfileVersion(
+    ctx: RequestContext,
+    agentId: string,
+    version: number,
+    input: { reason: string },
+): Promise<{ status: 'REJECTED' }> {
     assertMayManageProfiles(ctx);
+    const reason = sanitizePlainText(input.reason).trim();
+    if (reason === '') throw refuse('REJECTION_REASON_REQUIRED', 'Say why the version is rejected, so its author can act on it.');
+    if (reason.length > PROFILE_REJECTION_REASON_MAX_CHARS) {
+        throw refuse('REJECTION_REASON_TOO_LONG', `A rejection reason is at most ${PROFILE_REJECTION_REASON_MAX_CHARS} characters.`, {
+            maxChars: PROFILE_REJECTION_REASON_MAX_CHARS,
+        });
+    }
     return runInTenantContext(ctx, async (db) => {
         const agent = await findAgent(db, ctx, agentId);
         const profile = await findProfile(db, ctx, agentId);
@@ -613,7 +640,7 @@ export async function rejectAgentProfileVersion(ctx: RequestContext, agentId: st
         assertMayDecide(ctx, v.authoredByUserId);
         const claimed = await db.agentProfileVersion.updateMany({
             where: { id: v.id, tenantId: ctx.tenantId, status: 'SUBMITTED' },
-            data: { status: 'REJECTED', decidedAt: new Date(), decidedByUserId: ctx.userId },
+            data: { status: 'REJECTED', decidedAt: new Date(), decidedByUserId: ctx.userId, rejectionReason: reason },
         });
         if (claimed.count !== 1) throw refuse('CONCURRENT_CHANGE', 'This version changed while it was being rejected.');
         await logEvent(db, ctx, {
@@ -682,45 +709,126 @@ export async function retireAgentProfileVersion(ctx: RequestContext, agentId: st
 
 // ─── Read ───────────────────────────────────────────────────────────
 
-export interface AgentProfileView {
-    profileId: string;
-    agentId: string;
-    currentApprovedVersion: number | null;
-    /** The key a run of the version in force is started under, or null. */
-    runKey: string | null;
-    versions: Array<{
-        id: string;
-        version: number;
-        status: string;
-        instructions: string;
-        instructionsHash: string;
-        toolNames: string[];
-        skillRefs: unknown;
-        modelTier: string;
-        effort: string;
-        maxTurns: number;
-        outputKind: string;
-        allowedTriggers: string[];
-        authoredByUserId: string;
-        submittedAt: Date | null;
-        decidedAt: Date | null;
-        decidedByUserId: string | null;
-        retiredAt: Date | null;
-        createdAt: Date;
-    }>;
+/** A person on a version, as the tab shows them: a label, and whether it is the viewer. */
+export interface AgentProfilePerson {
+    label: string | null;
+    isViewer: boolean;
 }
 
-/** One agent's profile and its newest versions, newest first. */
+export interface AgentProfileVersionView {
+    id: string;
+    version: number;
+    status: string;
+    instructions: string;
+    instructionsHash: string;
+    toolNames: string[];
+    skillRefs: ProfileSkillRef[];
+    modelTier: string;
+    effort: string;
+    maxTurns: number;
+    outputKind: string;
+    allowedTriggers: string[];
+    author: AgentProfilePerson;
+    submittedAt: string | null;
+    decidedBy: AgentProfilePerson | null;
+    decidedAt: string | null;
+    rejectionReason: string | null;
+    retiredAt: string | null;
+    createdAt: string;
+    /**
+     * The four-eyes affordance, computed here so the page offers exactly what
+     * the server would accept: a SUBMITTED version, a signed-in person, never
+     * its author.
+     */
+    canDecide: boolean;
+}
+
+export interface AgentProfileView {
+    /** Null before the agent's first version. */
+    profile: { profileId: string; currentApprovedVersion: number | null; runKey: string | null } | null;
+    /** Newest first. */
+    versions: AgentProfileVersionView[];
+    /**
+     * What an editor may choose from: the tools the agent is granted NOW and
+     * the skills it may mount. The pickers offer these and nothing else; the
+     * save refuses anything outside them anyway.
+     */
+    options: { tools: string[]; skills: ProfileSkillRef[] };
+    /**
+     * Whether a test run can start, and why not. One state in this build: no
+     * engine runs a profile (decision 7), so the Behaviour tab's Test run is
+     * disabled and names the engine setting it needs. Step 2c adds the start
+     * path and the state in which it is offered, together; until then there is
+     * no `available: true` for a page to act on.
+     */
+    testRun: { available: false; reason: 'NO_ENGINE_RUNS_PROFILES' };
+    limits: { instructionsMaxChars: number; maxTurns: number; rejectionReasonMaxChars: number };
+}
+
+/** Display labels for members of this tenant, by user id. Unknown ids are absent. */
+async function memberLabels(db: PrismaTx, ctx: RequestContext, userIds: string[]): Promise<Map<string, string>> {
+    const ids = [...new Set(userIds)];
+    if (ids.length === 0) return new Map();
+    const members = await db.tenantMembership.findMany({
+        where: { tenantId: ctx.tenantId, userId: { in: ids } },
+        select: { userId: true, user: { select: { name: true, email: true } } },
+        take: ids.length,
+    });
+    return new Map(members.map((m) => [m.userId, m.user.name ?? m.user.email]));
+}
+
+/** The skills a profile may mount: the shipped corpus and the tenant's APPROVED skills. */
+async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<ProfileSkillRef[]> {
+    const tenant = await db.tenantSkillVersion.findMany({
+        where: { tenantId: ctx.tenantId, status: 'APPROVED' },
+        select: { skill: { select: { name: true } } },
+        take: 200,
+    });
+    return [
+        ...[...repositorySkillNames()].sort().map((name) => ({ origin: 'repository' as const, name })),
+        ...[...new Set(tenant.map((t) => t.skill.name))].sort().map((name) => ({ origin: 'tenant' as const, name })),
+    ];
+}
+
+/** The stored skill refs, read back; anything malformed is dropped from the VIEW only. */
+function viewSkillRefs(raw: unknown): ProfileSkillRef[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((r) => {
+        const { origin, name } = (r ?? {}) as { origin?: unknown; name?: unknown };
+        return (origin === 'repository' || origin === 'tenant') && typeof name === 'string' ? [{ origin, name }] : [];
+    });
+}
+
+/**
+ * One agent's profile, its newest versions, and what the tab may offer. An
+ * agent with no profile yet answers with `profile: null` and the options, so
+ * the first version can be written.
+ */
 export async function getAgentProfile(ctx: RequestContext, agentId: string): Promise<AgentProfileView> {
     assertMayManageProfiles(ctx);
     return runInTenantContext(ctx, async (db) => {
         await findAgent(db, ctx, agentId);
+        const grants = await db.registeredAgentTool.findMany({
+            where: { tenantId: ctx.tenantId, agentId },
+            select: { toolName: true },
+            orderBy: { toolName: 'asc' },
+            take: 500,
+        });
+        const options = { tools: grants.map((g) => g.toolName), skills: await mountableSkills(db, ctx) };
+        const testRun = { available: false, reason: 'NO_ENGINE_RUNS_PROFILES' } as const;
+        const limits = {
+            instructionsMaxChars: PROFILE_INSTRUCTIONS_MAX_CHARS,
+            maxTurns: PROFILE_MAX_TURNS,
+            rejectionReasonMaxChars: PROFILE_REJECTION_REASON_MAX_CHARS,
+        };
+
         const profile = await db.agentProfile.findFirst({
             where: { tenantId: ctx.tenantId, agentId },
             select: { id: true, currentApprovedVersion: true },
         });
-        if (!profile) throw refuse('PROFILE_NOT_FOUND', 'This agent has no profile.');
-        const versions = await db.agentProfileVersion.findMany({
+        if (!profile) return { profile: null, versions: [], options, testRun, limits };
+
+        const rows = await db.agentProfileVersion.findMany({
             where: { tenantId: ctx.tenantId, profileId: profile.id },
             orderBy: { version: 'desc' },
             take: 50,
@@ -741,16 +849,45 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
                 submittedAt: true,
                 decidedAt: true,
                 decidedByUserId: true,
+                rejectionReason: true,
                 retiredAt: true,
                 createdAt: true,
             },
         });
+        const labels = await memberLabels(db, ctx, rows.flatMap((r) => [r.authoredByUserId, ...(r.decidedByUserId ? [r.decidedByUserId] : [])]));
+        const person = (userId: string): AgentProfilePerson => ({ label: labels.get(userId) ?? null, isViewer: userId === ctx.userId });
+        const versions: AgentProfileVersionView[] = rows.map((r) => ({
+            id: r.id,
+            version: r.version,
+            status: r.status,
+            instructions: r.instructions,
+            instructionsHash: r.instructionsHash,
+            toolNames: r.toolNames,
+            skillRefs: viewSkillRefs(r.skillRefs),
+            modelTier: r.modelTier,
+            effort: r.effort,
+            maxTurns: r.maxTurns,
+            outputKind: r.outputKind,
+            allowedTriggers: r.allowedTriggers,
+            author: person(r.authoredByUserId),
+            submittedAt: r.submittedAt?.toISOString() ?? null,
+            decidedBy: r.decidedByUserId ? person(r.decidedByUserId) : null,
+            decidedAt: r.decidedAt?.toISOString() ?? null,
+            rejectionReason: r.rejectionReason,
+            retiredAt: r.retiredAt?.toISOString() ?? null,
+            createdAt: r.createdAt.toISOString(),
+            canDecide: r.status === 'SUBMITTED' && !ctx.apiKeyId && r.authoredByUserId !== ctx.userId,
+        }));
         return {
-            profileId: profile.id,
-            agentId,
-            currentApprovedVersion: profile.currentApprovedVersion,
-            runKey: profile.currentApprovedVersion === null ? null : profileRunKey(profile.id, profile.currentApprovedVersion),
+            profile: {
+                profileId: profile.id,
+                currentApprovedVersion: profile.currentApprovedVersion,
+                runKey: profile.currentApprovedVersion === null ? null : profileRunKey(profile.id, profile.currentApprovedVersion),
+            },
             versions,
+            options,
+            testRun,
+            limits,
         };
     });
 }

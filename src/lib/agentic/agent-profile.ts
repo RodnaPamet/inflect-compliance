@@ -52,6 +52,9 @@ export const PROFILE_MAX_TURNS: number = ENGINE_CAPS.MAX_STEPS;
 /** The instructions' size cap, after sanitising. */
 export const PROFILE_INSTRUCTIONS_MAX_CHARS = 16_000;
 
+/** A rejection reason's size cap, after sanitising. */
+export const PROFILE_REJECTION_REASON_MAX_CHARS = 1_000;
+
 /** At most this many tools and skills, as the CHECKs hold. */
 export const PROFILE_MAX_TOOLS = 128;
 export const PROFILE_MAX_SKILLS = 32;
@@ -127,4 +130,33 @@ export function agentProfilesEnabled(raw: string | null | undefined): boolean {
     if (!raw) return false;
     const normalised = raw.trim().toLowerCase();
     return normalised === '1' || normalised === 'true';
+}
+
+/**
+ * The tenants `AGENT_PROFILES_TENANTS` names: comma-separated slugs, trimmed and
+ * lower-cased, empty entries dropped (Step 1H, #4145).
+ */
+export function profileTenantAllowlist(raw: string | null | undefined): ReadonlySet<string> {
+    return new Set(
+        (raw ?? '')
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter((s) => s.length > 0),
+    );
+}
+
+/**
+ * Is the profile surface on for this tenant? Either the deployment's switch is
+ * on, which opens it to every tenant, or the allowlist names this tenant's slug.
+ * No slug (a context that carries none) is never on the allowlist, so the
+ * answer fails closed.
+ */
+export function agentProfilesEnabledFor(
+    flag: string | null | undefined,
+    allowlist: string | null | undefined,
+    tenantSlug: string | null | undefined,
+): boolean {
+    if (agentProfilesEnabled(flag)) return true;
+    if (typeof tenantSlug !== 'string' || tenantSlug.trim() === '') return false;
+    return profileTenantAllowlist(allowlist).has(tenantSlug.trim().toLowerCase());
 }

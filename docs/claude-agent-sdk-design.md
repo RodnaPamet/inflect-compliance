@@ -253,10 +253,43 @@ profile run key is refused at admission.
   grant as `PROFILE_TOOL_NOT_GRANTED`, and an engine that runs profiles passes
   it.
 
+- **The Behaviour tab** (Step 1b, #4144) is on the agent detail page while the
+  flag is on, under `admin.agent_registry`; a view-key reader finds it disabled.
+  - It shows the version in force read-only, the open version, and every
+    version's status, author, decider and instructions hash.
+  - Instructions render as text, never markup.
+  - An editor in a Sheet writes the next version as a DRAFT. Its tool and skill
+    pickers list only what the server's read offers: the agent's current grants
+    and the skills it may mount.
+  - A reviewer who is not the author sees the submitted text diffed against the
+    version in force. Approve sends the hash on screen. Reject asks for a
+    reason.
+  - Test run is shown on a submitted or approved version, disabled, and names
+    the engine setting it needs.
+- **A rejection says why.** `AgentProfileVersion.rejectionReason` is sanitised,
+  at most 1,000 characters, encrypted at rest, and never audited. The trigger
+  writes it only in the move from SUBMITTED to REJECTED, requires it there, and
+  never lets it be revised. The rotation sweeps' re-wrap is the one exception.
+- **The surface can be opened to named tenants only** (Step 1H, decision 8).
+  `AGENT_PROFILES_TENANTS` holds comma-separated tenant slugs. The route gate
+  reads the URL's slug before any context exists, and the usecases and
+  admission read `ctx.tenantSlug`. A tenant the list does not name sees exactly
+  what the switch being off shows: no tab, a 404 on every route and
+  `PROFILES_DISABLED` at admission. A context with no slug is never named.
+  `AGENT_PROFILES` on still opens the surface to every tenant.
+- **The read is the builder's.** For an agent with no profile,
+  `getAgentProfile` answers `profile: null` instead of refusing. Each answer
+  carries:
+  - the editor's `options`;
+  - each version's `canDecide`, so the page offers exactly what the server
+    accepts;
+  - member labels in place of user ids;
+  - `testRun`.
+
 Two things are not enforced yet, and the steps that need them carry them:
 
-- **`allowedTriggers`** is checked at each trigger site: the Ask page and Test
-  run in 1b, automation in Phase 2.
+- **`allowedTriggers`** is checked at each trigger site as it gains a start
+  path: Test run in Step 2c, the Ask page and automation in Phase 2.
 - **Resume and settlement** still read the registry. A profile run row cannot
   exist until an engine runs profiles, and the engine that does routes both
   through the resolver (Step 2b).
@@ -602,6 +635,12 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    false, which is every engine until Phase 2's Tool Runner sets its own. It
    also keeps "tenant-authored agent instructions" off the Anthropic
    sub-processor row until Step 2c, where the roadmap records it.
+
+8. **How Phase 1's production evidence is gathered.** **Decided (owner,
+   2026-10-26): a per-tenant allowlist.** `AGENT_PROFILES` opens the surface
+   to every tenant, and Step 1H's evidence needs it in one proving tenant only.
+   `AGENT_PROFILES_TENANTS` names the tenants that get it. It is emptied once
+   the evidence is recorded.
 
 ## Roadmap (future direction)
 
@@ -1034,6 +1073,21 @@ Deliver per the Definition of done. This step is Significant.
 
 #### Step 1b — Builder UI
 
+Delivered (#4144). The tab, the rejection reason and the builder's read are in
+"Agent profiles" under Current state. Three deviations from the prompt below:
+
+- **A schema migration.** Reject asks for a reason, and Step 1a had no column
+  to hold it, so this step added `rejectionReason`. The step is Significant,
+  not Standard.
+- **Test run is disabled, with no start path.** A browser session carries no
+  agent identity, and admission resolves only the approved version in force,
+  so enabling Test run needs a route this step could not exercise. That route,
+  the view's enabled state and the button's action are carried to Step 2c in
+  `docs/claude-tool-runner-design.md`.
+- **No Retire control.** The prompt does not ask for one, and an edit retires
+  the open version already. Retiring the version in force stays an API act
+  (`…/versions/:version/retire`).
+
 **Goal.** A Behaviour tab where a tenant writes, submits, reviews, approves and
 test-runs their agent's instructions.
 
@@ -1091,6 +1145,13 @@ Deliver per the Definition of done.
 **Exit.** A tenant can write, review, approve and version an agent's behaviour in the product, with no CLI and no code.
 
 #### Step 1H — Phase 1 hardening
+
+Ships in two pull requests, because the production evidence needs code that has
+to be deployed first. The first carries the per-tenant allowlist (decision 8),
+the adversarial read and its tests, the corpus and purge tests, and the
+invariants. The answers are in
+`docs/implementation-notes/2026-10-26-phase-1-hardening.md`. The second records
+the production profile in the evidence table.
 
 **Goal.** Prove the builder holds its invariants across both steps, and record that
 a real tenant has authored and approved a profile.

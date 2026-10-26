@@ -1106,9 +1106,12 @@ executorRegistry.register('sharepoint-delta-sync-dispatch', async (payload) => {
     const startMs = performance.now();
     const { runSharePointDeltaSyncDispatch } = await import('./sharepoint-delta-sync');
     const r = await runSharePointDeltaSyncDispatch(payload);
-    return makeResult('sharepoint-delta-sync-dispatch', startedAt, startMs, r.connections, r.dispatched, 0, {
+    // A connection with no member able to run its sync is not queued, and is
+    // reported here with its named reason (`DELTA_SYNC_UNROUTABLE`, #4362).
+    return makeResult('sharepoint-delta-sync-dispatch', startedAt, startMs, r.connections, r.dispatched, r.unroutable.length, {
         connections: r.connections,
         dispatched: r.dispatched,
+        unroutable: r.unroutable,
     });
 });
 

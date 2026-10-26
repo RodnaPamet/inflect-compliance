@@ -56,8 +56,6 @@
  * @module app-layer/usecases/access-review-legacy
  */
 
-import { z } from 'zod';
-
 import { badRequest } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -74,6 +72,9 @@ import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
 import { assertCanAdmin } from '../policies/common';
 import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
+// The input schema lives beside the HTTP body it is the base of:
+// `POST /access-reviews/legacy` parses the same fields `.strict()`.
+import { CreateLegacyAccessReviewSchema } from '../schemas/access-review.schemas';
 
 /**
  * The same window the rest of the subsystem uses.
@@ -96,16 +97,6 @@ export const SNAPSHOT_FRESHNESS_MS = OBSERVATION_FRESHNESS_MS;
  * connected-app flow.
  */
 const MAX_SUBJECTS = 5000;
-
-export const CreateLegacyAccessReviewSchema = z.object({
-    name: z.string().min(1).max(200),
-    description: z.string().max(2000).optional(),
-    connectionId: z.string().min(1).max(64),
-    reviewerUserId: z.string().min(1),
-    dueAt: z.coerce.date().optional(),
-    periodStartAt: z.coerce.date().optional(),
-    periodEndAt: z.coerce.date().optional(),
-});
 
 export type LegacyCampaignRefusal =
     | 'NO_SNAPSHOT'
