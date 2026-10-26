@@ -135,6 +135,13 @@ beforeAll(async () => {
         where: { id: 'lar-user-1' }, update: {},
         create: { id: 'lar-user-1', email: 'reviewer@lar.test', name: 'Reviewer' },
     });
+    // A campaign's reviewer must be an ACTIVE member of its tenant, on every
+    // create path (`assertReviewerIsActiveMember`).
+    await prisma.tenantMembership.upsert({
+        where: { tenantId_userId: { tenantId: T, userId: 'lar-user-1' } },
+        update: { status: 'ACTIVE' },
+        create: { tenantId: T, userId: 'lar-user-1', role: 'ADMIN', status: 'ACTIVE' },
+    });
     reviewerId = 'lar-user-1';
 });
 

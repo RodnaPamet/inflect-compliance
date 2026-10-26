@@ -77,7 +77,8 @@ const mockDb = {
     identityAccountLink: { findMany: jest.fn() },
     accessReviewConnectedDecision: { createMany: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
     accessReview: { findFirst: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
-    tenantMembership: { findMany: jest.fn() },
+    // `findFirst` is the reviewer-membership check every create path asks first.
+    tenantMembership: { findMany: jest.fn(), findFirst: jest.fn(async () => ({ id: 'm-rev' })) },
     task: { create: jest.fn() },
     user: { findUnique: jest.fn() },
     tenant: { findUnique: jest.fn() },

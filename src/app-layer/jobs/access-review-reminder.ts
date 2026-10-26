@@ -31,6 +31,11 @@
  *   - Tenant has notifications disabled (the email-enqueue layer
  *     short-circuits to `null`).
  *   - Reviewer email is missing (we log + skip; no exception).
+ *   - Reviewer is not an ACTIVE member of the campaign's tenant (we log +
+ *     skip). Every create path refuses such a reviewer now, but a campaign
+ *     created before that rule, or whose reviewer was deactivated since, may
+ *     still name one, and the reminder would tell somebody outside the
+ *     workspace the campaign's name and how much of it is undecided.
  *   - Zero pending decisions (no reason to nudge).
  */
 import type { PrismaClient } from '@prisma/client';
@@ -61,6 +66,8 @@ export interface AccessReviewReminderResult {
      *  reviewer has no email. */
     skippedDuplicate: number;
     skippedNoEmail: number;
+    /** Reminders not sent because the reviewer is not an ACTIVE member of the campaign's tenant. */
+    skippedReviewerNotMember: number;
     /** Campaigns excluded because they had no pending decisions. */
     skippedComplete: number;
 }
@@ -70,8 +77,11 @@ interface CampaignSnapshot {
     tenantId: string;
     name: string;
     dueAt: Date;
+    reviewerUserId: string;
     reviewerEmail: string | null;
     reviewerName: string | null;
+    /** The reviewer holds an ACTIVE membership in THIS campaign's tenant. */
+    reviewerIsMember: boolean;
     tenantSlug: string;
     pendingCount: number;
     totalCount: number;
@@ -140,7 +150,18 @@ export async function processAccessReviewReminders(
             tenantId: true,
             name: true,
             dueAt: true,
-            reviewer: { select: { email: true, name: true } },
+            reviewerUserId: true,
+            // The reviewer's ACTIVE memberships, so the loop can tell whether
+            // they still belong to THIS campaign's tenant. Read here rather
+            // than per campaign, and matched on tenantId below because one
+            // system-wide scan spans tenants.
+            reviewer: {
+                select: {
+                    email: true,
+                    name: true,
+                    tenantMemberships: { where: { status: 'ACTIVE' }, select: { tenantId: true } },
+                },
+            },
             tenant: { select: { slug: true } },
             decisions: {
                 select: { id: true, decision: true },
@@ -176,8 +197,10 @@ export async function processAccessReviewReminders(
                 // The query filter guarantees dueAt is non-null here,
                 // but TS still sees `Date | null`.
                 dueAt: r.dueAt as Date,
+                reviewerUserId: r.reviewerUserId,
                 reviewerEmail: r.reviewer?.email ?? null,
                 reviewerName: r.reviewer?.name ?? null,
+                reviewerIsMember: (r.reviewer?.tenantMemberships ?? []).some((m) => m.tenantId === r.tenantId),
                 tenantSlug: r.tenant.slug,
                 pendingCount,
                 totalCount,
@@ -188,6 +211,7 @@ export async function processAccessReviewReminders(
     let enqueued = 0;
     let skippedDuplicate = 0;
     let skippedNoEmail = 0;
+    let skippedReviewerNotMember = 0;
     let skippedComplete = 0;
 
     for (const c of candidates) {
@@ -196,6 +220,19 @@ export async function processAccessReviewReminders(
             // due date is approaching. Closing the campaign is the
             // admin's call, not a reminder concern.
             skippedComplete++;
+            continue;
+        }
+        if (!c.reviewerIsMember) {
+            // Before the email check: an address is not a reason to write to
+            // somebody who no longer belongs here. The id, never the address,
+            // goes in the log.
+            skippedReviewerNotMember++;
+            logger.warn('access-review-reminder: reviewer is not an active member of the tenant', {
+                component: 'access-review-reminder',
+                accessReviewId: c.id,
+                tenantId: c.tenantId,
+                reviewerUserId: c.reviewerUserId,
+            });
             continue;
         }
         if (!c.reviewerEmail) {
@@ -239,6 +276,7 @@ export async function processAccessReviewReminders(
         enqueued,
         skippedDuplicate,
         skippedNoEmail,
+        skippedReviewerNotMember,
         skippedComplete,
     };
 

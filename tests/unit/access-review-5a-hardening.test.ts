@@ -49,6 +49,8 @@ const mockDb = {
     task: { create: jest.fn() },
     user: { findUnique: jest.fn() },
     fileRecord: { create: jest.fn() },
+    // The reviewer-membership check every create path asks first.
+    tenantMembership: { findFirst: jest.fn() },
 };
 
 function account(over: Record<string, unknown> = {}) {
@@ -74,6 +76,7 @@ function reviewRow(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockDb.tenantMembership.findFirst.mockResolvedValue({ id: 'm-rev' });
     mockDb.connectedIdentityAccount.findMany.mockResolvedValue([account()]);
     mockDb.accessReviewConnectedDecision.createMany.mockResolvedValue({ count: 1 });
     mockDb.accessReviewConnectedDecision.updateMany.mockResolvedValue({ count: 1 });

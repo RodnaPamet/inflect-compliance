@@ -138,7 +138,7 @@ jest.mock('@/app-layer/jobs/policyReviewReminder', () => ({
 }));
 jest.mock('@/app-layer/jobs/access-review-reminder', () => ({
     processAccessReviewReminders: jest.fn(async () => ({
-        scanned: 0, enqueued: 0, skippedDuplicate: 0, skippedNoEmail: 0, skippedComplete: 0,
+        scanned: 0, enqueued: 0, skippedDuplicate: 0, skippedNoEmail: 0, skippedReviewerNotMember: 0, skippedComplete: 0,
     })),
 }));
 jest.mock('@/app-layer/jobs/access-review-overdue-escalation', () => ({

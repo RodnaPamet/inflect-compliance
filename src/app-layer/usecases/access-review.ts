@@ -84,6 +84,7 @@ import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
 import { campaignSettingsEditable, isMemberScope, mayReadAgentSubjects } from '@/lib/access-review/scope';
 import { assertNotAgentCampaign } from './access-review-scope-gate';
+import { assertReviewerIsActiveMember } from './access-review-reviewer';
 
 // ─── Read paths ───────────────────────────────────────────────────────
 
@@ -211,6 +212,10 @@ export async function createAccessReview(
     const parsed: CreateAccessReviewInput = CreateAccessReviewSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
+        // Before the population: a campaign whose reviewer cannot open it is
+        // refused whatever it would have covered, and nothing is written.
+        await assertReviewerIsActiveMember(db, ctx, parsed.reviewerUserId);
+
         const memberships = await AccessReviewRepository.resolveMembershipsForScope(
             db,
             ctx,
@@ -1526,8 +1531,8 @@ export interface UpdateAccessReviewSettingsResult {
  *     the write is conditional on that, so a close landing mid-request wins.
  *   - Not an AGENT campaign (`campaignSettingsEditable`): its reviewer reads
  *     register data, and moving that is the agent flow's decision.
- *   - The new reviewer must be an ACTIVE member of this tenant, as the agent
- *     campaign's creation requires.
+ *   - The new reviewer must be an ACTIVE member of this tenant, as every
+ *     campaign's creation requires (`assertReviewerIsActiveMember`).
  *
  * Every change writes `ACCESS_REVIEW_UPDATED` with the before and after values.
  * Decisions already recorded keep their decider; the own-row rule applies to
@@ -1559,13 +1564,7 @@ export async function updateAccessReviewSettings(
 
         const data: { reviewerUserId?: string; dueAt?: Date | null } = {};
         if (parsed.reviewerUserId !== undefined && parsed.reviewerUserId !== review.reviewerUserId) {
-            const member = await db.tenantMembership.findFirst({
-                where: { tenantId: ctx.tenantId, userId: parsed.reviewerUserId, status: 'ACTIVE' },
-                select: { id: true },
-            });
-            if (!member) {
-                throw badRequest('REVIEWER_NOT_A_MEMBER: the reviewer must be an active member of this workspace.');
-            }
+            await assertReviewerIsActiveMember(db, ctx, parsed.reviewerUserId);
             data.reviewerUserId = parsed.reviewerUserId;
         }
         if (
