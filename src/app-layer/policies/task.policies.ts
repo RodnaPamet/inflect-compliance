@@ -110,8 +110,11 @@ export function assertCanAssignTasks(ctx: RequestContext) {
 }
 
 /**
- * ADMIN, EDITOR, and AUDITOR can add comments (broader for collaboration).
- * READER cannot comment.
+ * A role that can edit tasks can comment: OWNER, ADMIN and EDITOR, and a
+ * custom role that holds `tasks.edit`. READER cannot, and neither can
+ * AUDITOR or AI_ADMIN, whose sets hold no `tasks.edit`. (This used to say
+ * AUDITOR could comment; the granular check below never allowed it, and the
+ * owner kept that rule on 2026-10-26.)
  *
  * Gated on `edit` at the granular layer: there is no dedicated
  * `tasks.comment` flag, and a role that has had edit revoked should not be

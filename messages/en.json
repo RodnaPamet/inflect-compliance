@@ -4925,6 +4925,7 @@
       "tabRisk": "Risk assessment",
       "tabPolicy": "Policy card",
       "tabSkills": "Skills",
+      "tabBehaviour": "Behaviour",
       "tabTools": "Tools",
       "tabCoverage": "ASI coverage",
       "tabRuns": "Runs",
@@ -10379,6 +10380,128 @@
       "tokens": "Tokens",
       "tooLong": "Too long — questions are limited to {max} characters. Ask something shorter, or attach the material as evidence and ask about that.",
       "unnamedTool": "unnamed call"
+    },
+    "behaviour": {
+      "heading": "Behaviour",
+      "intro": "The instructions this agent follows, with the tools, skills and limits they run with. A new version runs nothing until a second person approves it.",
+      "createAction": "Profile",
+      "editAction": "Edit profile",
+      "retired": "This agent is retired, so its profile can no longer change. A version still waiting for review can be rejected.",
+      "loadFailed": "Couldn't load this agent's profile.",
+      "actionFailed": "That didn't work. Try again.",
+      "you": "you",
+      "unknownMember": "a former member",
+      "none": "None",
+      "version": "Version {version}",
+      "done": {
+        "submit": "Submitted for review.",
+        "approve": "Approved. This version is now in force.",
+        "reject": "Rejected. The author can read your reason on the version."
+      },
+      "status": {
+        "DRAFT": "Draft",
+        "SUBMITTED": "Waiting for review",
+        "APPROVED": "In force",
+        "REJECTED": "Rejected",
+        "RETIRED": "Retired"
+      },
+      "field": {
+        "instructions": "Instructions",
+        "tools": "Tools",
+        "skills": "Skills",
+        "modelTier": "Model tier",
+        "effort": "Effort",
+        "maxTurns": "Turn limit",
+        "outputKind": "Output",
+        "triggers": "Allowed triggers"
+      },
+      "tier": {
+        "balanced": "Balanced",
+        "deep": "Deep"
+      },
+      "effort": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      },
+      "outputKind": {
+        "ANSWER_ONLY": "An answer only",
+        "ANSWER_AND_PROPOSALS": "An answer and proposals for a person to approve"
+      },
+      "trigger": {
+        "ASK": "Asked by a person",
+        "AUTOMATION": "Started by an automation",
+        "TEST_RUN": "Test run"
+      },
+      "inForce": {
+        "heading": "In force",
+        "approval": "Version {version}, approved by {who} on {when}.",
+        "noneTitle": "No version is in force",
+        "noneDescription": "Until a version is approved, this agent runs no profile.",
+        "noProfileDescription": "This agent has no profile yet. Write its instructions to create the first version."
+      },
+      "open": {
+        "heading": "Version {version}",
+        "writtenBy": "Written by {who} on {when}.",
+        "submit": "Submit for review"
+      },
+      "review": {
+        "diffIntro": "Changes from version {from}, in force now, to version {to}:",
+        "hashNote": "Approving approves this text, by its hash:",
+        "authorCannotDecide": "You wrote this version, so another person must approve or reject it.",
+        "approve": "Approve",
+        "reject": "Reject"
+      },
+      "testRun": {
+        "action": "Test run",
+        "reason": {
+          "NO_ENGINE_RUNS_PROFILES": "A test run needs an agent engine that runs profiles, chosen under Admin → AI features → Agent engines. No engine in this version runs profiles yet."
+        }
+      },
+      "history": {
+        "heading": "Version history",
+        "empty": "No versions yet.",
+        "author": "Written by",
+        "decider": "Decided by",
+        "byOn": "{who}, {when}",
+        "hash": "Instructions hash",
+        "rejectionReason": "Reason for rejection"
+      },
+      "editor": {
+        "createTitle": "Write the first version",
+        "editTitle": "Write a new version",
+        "description": "Saving creates a draft. Nothing changes for the agent until the draft is submitted and a second person approves it.",
+        "supersedes": "Version {version} is open now. Saving this draft retires it, and it leaves the review queue.",
+        "lost": "The agent is no longer granted, or can no longer mount, these, so they were left out: {items}.",
+        "instructionsHint": "What the agent should do, in plain language. Shown to reviewers exactly as written.",
+        "counter": "{count} of {max} characters",
+        "toolsHint": "Only the tools this agent is granted now. A run can never use more.",
+        "toolsPlaceholder": "Choose tools",
+        "toolsEmpty": "This agent is granted no tools. Grant one on the Tools tab first.",
+        "skillsHint": "Only the skills this agent can mount.",
+        "skillsPlaceholder": "Choose skills",
+        "skillOption": {
+          "repository": "{name}",
+          "tenant": "{name} (this workspace)"
+        },
+        "modelTierHint": "Balanced suits most work. Deep is slower and costs more.",
+        "effortHint": "How much the model reasons before it answers.",
+        "maxTurnsHint": "The most model turns a run may take, from 1 to {max}.",
+        "outputKindHint": "Proposals are never applied by the agent. A person decides each one.",
+        "triggersHint": "What may start a run of this profile.",
+        "cancel": "Cancel",
+        "save": "Save draft",
+        "saving": "Saving…",
+        "saved": "Draft saved.",
+        "failed": "Couldn't save this version."
+      },
+      "reject": {
+        "title": "Reject version {version}?",
+        "description": "The author can read your reason on the version, and writes a new version to change it.",
+        "reason": "Reason",
+        "reasonHint": "Say what has to change, so the author can act on it.",
+        "confirm": "Reject version {version}"
+      }
     }
   },
   "securityTesting": {

@@ -998,8 +998,9 @@ export function parsePermissionsJson(json: unknown, baseRole: Role): PermissionS
  * `appPermissions` from, for a principal who is not the caller. It exists for a
  * usecase that must predict what ANOTHER member will be allowed to do — the
  * agent ownership transfer (#3698) refuses at step one a recipient who could
- * never pass step two's `requirePermission`. The request-context resolvers keep
- * their own inline copies; this one must stay in step with them.
+ * never pass step two's `requirePermission`. A job acting for the member who
+ * started it reads it too (`initiatorAuthority`, #4362). The request-context
+ * resolvers keep their own inline copies; this one must stay in step with them.
  */
 export function permissionsForMembership(membership: {
     role: Role;

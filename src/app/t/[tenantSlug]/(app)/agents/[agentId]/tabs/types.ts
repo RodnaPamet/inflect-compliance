@@ -131,3 +131,18 @@ export interface SkillsTabProps extends AgentTabProps {
      */
     canAuthorSkills?: boolean;
 }
+
+/**
+ * Behaviour (Step 1b of `docs/claude-agent-sdk-design.md`, #4144). The tab's
+ * read and every act take `admin.agent_registry`, which the shell requires
+ * before it enables the tab, and it exists only while `AGENT_PROFILES` is on.
+ */
+export interface BehaviourTabProps extends AgentTabProps {
+    /**
+     * A retired agent's profile cannot change: the usecase refuses
+     * `AGENT_RETIRED` to a new version, a submission and an approval, so the
+     * tab offers none of them. Rejecting a version still open stays available,
+     * because it puts nothing in force.
+     */
+    retired: boolean;
+}
