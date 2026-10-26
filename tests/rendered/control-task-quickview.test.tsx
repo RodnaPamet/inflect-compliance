@@ -122,13 +122,13 @@ describe("ControlEditPanel (editable control side panel)", () => {
         })) as unknown as typeof fetch;
     });
 
-    const renderPanel = (canUploadEvidence = true) =>
+    const renderPanel = (canUploadEvidence = true, canWrite = true) =>
         render(
             withQuery(
                 <ControlEditPanel
                     tenantSlug="acme"
                     control={CONTROL}
-                    canWrite
+                    canWrite={canWrite}
                     canUploadEvidence={canUploadEvidence}
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
@@ -155,23 +155,42 @@ describe("ControlEditPanel (editable control side panel)", () => {
         );
     });
 
-    it("withholds the upload box without `evidence.upload`, keeping the form editable (#4325)", () => {
-        // The panel opens on `canWrite && controls.edit`; an upload POSTs to
-        // `/evidence/uploads`, whose usecase asserts `evidence.upload` and
-        // nothing else — no route key, no coarse tier. A custom role with one
-        // and not the other was shown the dropzone and refused.
+    it("withholds only the dropzone without `evidence.upload`, keeping the form and the URL link (#4325)", () => {
+        // The panel opens on `canWrite && controls.edit`; a FILE upload POSTs to
+        // `/evidence/uploads`, which asks `evidence.upload`. A custom role with
+        // one and not the other was shown the dropzone and refused.
         //
-        // The assertion is deliberately BOTH halves: withholding the box must
-        // not withhold the form, or this fix would trade a refused upload for
-        // an uneditable panel. The case above is the positive control, with the
-        // same render and the flag on.
+        // Only the dropzone goes. The URL link posts to the control's own
+        // evidence route, which asks `controls.edit`, and the form stays
+        // editable. The case above is the positive control.
         renderPanel(false);
 
-        expect(screen.queryByTestId("evidence-upload-section")).not.toBeInTheDocument();
+        expect(screen.getByTestId("evidence-upload-section")).toBeInTheDocument();
         expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
+        expect(screen.getByTestId("evidence-link-url-form")).toBeInTheDocument();
 
         expect(screen.getByTestId("control-edit-form")).toBeInTheDocument();
         expect((screen.getByLabelText(/Name/) as HTMLInputElement).disabled).toBe(false);
+    });
+
+    it("still lists the attached evidence for a read-only role without `evidence.upload`", async () => {
+        // Readers, Auditors and AI admins hold no `evidence.upload`. Hiding the
+        // whole section on that key took the control's evidence out of their
+        // quick view. They get the list, and neither the dropzone nor the link.
+        global.fetch = jest.fn(async (url: string) => ({
+            ok: true,
+            json: async () =>
+                String(url).endsWith("/controls/c1/evidence")
+                    ? { links: [{ id: "l1", kind: "LINK", url: "https://example.com/report", note: "Pen-test report" }] }
+                    : [],
+        })) as unknown as typeof fetch;
+
+        renderPanel(false, false);
+
+        expect(await screen.findByTestId("evidence-attached-list")).toBeInTheDocument();
+        expect(screen.getByText("Pen-test report")).toBeInTheDocument();
+        expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("evidence-link-url-form")).not.toBeInTheDocument();
     });
 
     it("auto-saves the name on blur with a PATCH (no Save click)", async () => {

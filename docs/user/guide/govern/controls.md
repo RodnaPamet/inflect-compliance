@@ -24,7 +24,7 @@ Open **{{ui:nav.controls}}** under **{{ui:nav.govern}}** in the sidebar. The bre
 
 Readers, Auditors and AI admins see the quick view with its fields greyed out, and cannot tick rows. The selection bar offers only the bulk actions your role can apply. The **{{ui:controls.list.aiAssist}}** panel is shown only to roles that can edit controls.
 
-If your workspace uses custom roles, what you can do depends on the permissions your role was given, and the page offers only the actions those permissions allow. The box to upload files or **{{ui:panels.evidenceUpload.linkUrl}}**, in the quick view and in the **{{ui:controls.list.task}}** panel, also needs permission to upload evidence. Choosing a task's assignee in the **{{ui:controls.list.task}}** panel needs permission to assign tasks.
+If your workspace uses custom roles, what you can do depends on the permissions your role was given, and the page offers only the actions those permissions allow. The box to upload files, in the quick view and in the **{{ui:controls.list.task}}** panel, also needs permission to upload evidence. Choosing a task's assignee in the **{{ui:controls.list.task}}** panel needs permission to assign tasks.
 
 ## What it is for
 
@@ -81,7 +81,7 @@ An {{ui:controls.filterEnums.status.IMPLEMENTED}} control that has never been te
 
 **A control's tasks.** A control with linked tasks has an arrow in its first column. Click the arrow, or the control's name, to list its tasks under the row with their status, assignee and evidence count. Click a task to open it in the **{{ui:controls.list.task}}** panel.
 
-**The quick view.** Clicking a control's name opens the **{{ui:controls.list.control}}** panel beside the table, in place of the other panels. On a narrow screen it opens over the page. Its **{{ui:controls.detail.tabs.details}}** tab holds the control's {{ui:controls.detail.fields.name}}, {{ui:controls.detail.fields.category}}, {{ui:controls.detail.fields.frequency}} and {{ui:controls.detail.fields.owner}}, and its evidence. Roles that can edit controls also get a box there to upload files or **{{ui:panels.evidenceUpload.linkUrl}}**. Its **{{ui:controls.detail.tabs.activity}}** tab lists what has happened to the control. Press Escape or close the panel to go back.
+**The quick view.** Clicking a control's name opens the **{{ui:controls.list.control}}** panel beside the table, in place of the other panels. On a narrow screen it opens over the page. Its **{{ui:controls.detail.tabs.details}}** tab holds the control's {{ui:controls.detail.fields.name}}, {{ui:controls.detail.fields.category}}, {{ui:controls.detail.fields.frequency}} and {{ui:controls.detail.fields.owner}}, and its evidence. Roles that can edit controls also get a box there to **{{ui:panels.evidenceUpload.linkUrl}}**, and to upload files if they can also upload evidence. Its **{{ui:controls.detail.tabs.activity}}** tab lists what has happened to the control. Press Escape or close the panel to go back.
 
 **The side panels.** **{{ui:controls.list.browse}}** starts collapsed. Open it to see the listed controls grouped by category, each group tagged with its framework. **{{ui:controls.list.expandAll}}** opens every group. Click a control in it to open its page. **{{ui:controls.list.aiAssist}}** opens the AI-assisted risk assessment, the same one the risk register offers.
 
@@ -109,7 +109,7 @@ A status or owner change shows **{{ui:controls.bulk.applied}}** and clears the s
 
 ### Restore or purge a deleted control
 
-Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. It lists only deleted controls, each marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. The search and the {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}} and {{ui:controls.filters.category}} filters narrow it as they narrow the normal list. A deleted control has no health verdict, so the {{ui:controls.list.healthColumn}} column shows a dash there and the {{ui:controls.filters.health}} filter finds nothing.
+Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. It lists only deleted controls, each marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. The search and the {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}} and {{ui:controls.filters.category}} filters narrow it as they narrow the normal list. A deleted control has no health verdict, so this view has no {{ui:controls.filters.health}} filter and no {{ui:controls.list.healthColumn}} column.
 
 - **{{ui:controls.deleted.restore}}** brings the control back into the list. A message reads **{{ui:controls.deleted.restoredToast}}**.
 - **{{ui:controls.deleted.purge}}** deletes it permanently. The **{{ui:controls.deleted.purgeTitle}}** dialog asks you to type the control's code, or its name if it has none, then click **{{ui:controls.deleted.purge}}**. This cannot be undone.
