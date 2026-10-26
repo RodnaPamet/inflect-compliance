@@ -62,10 +62,12 @@ jest.mock('next/navigation', () => ({
     useSearchParams: () => new URLSearchParams(),
 }));
 
+// Attaching evidence here links it to the control, which takes `controls.edit`.
+let mockControlsEdit = true;
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: { canWrite: true, canAdmin: true, canRead: true },
-        appPermissions: {},
+        appPermissions: { controls: { view: true, create: true, edit: mockControlsEdit } },
         role: 'ADMIN',
         tenantSlug: 'acme',
         userId: 'user_1',
@@ -129,6 +131,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
+    mockControlsEdit = true;
     fetchMock.mockReset();
     mutateEvidence.mockClear();
     mutatePage.mockClear();
@@ -246,5 +249,28 @@ describe('control Evidence tab — a refused upload', () => {
             ),
         );
         expect(document.getElementById('control-evidence-error')).not.toHaveTextContent('[object Object]');
+    });
+});
+
+describe('control Evidence tab — attaching needs controls.edit', () => {
+    it('a custom role on a write-tier base without controls.edit is not offered the form', async () => {
+        // The link and the upload both link the evidence to this control,
+        // which the server refuses without `controls.edit` (#4326).
+        mockControlsEdit = false;
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <ControlDetailPage />
+            </SWRConfig>,
+        );
+        const tab = await waitFor(() => {
+            const el = document.getElementById('tab-evidence');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        fireEvent.click(tab);
+        // The tab itself renders; only the add trigger is withheld. The other
+        // cases in this file are the positive control.
+        await waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
+        expect(document.getElementById('link-evidence-btn')).toBeNull();
     });
 });

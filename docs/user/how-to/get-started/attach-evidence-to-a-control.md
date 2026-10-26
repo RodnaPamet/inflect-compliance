@@ -68,10 +68,10 @@ When you add a file, a text note or a link on this page with **{{ui:evidence.add
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| There is no **{{ui:panels.evidenceForm.addTrigger}}** button on the tab | Your role cannot add evidence | Ask an Owner, Admin or Editor |
+| There is no **{{ui:panels.evidenceForm.addTrigger}}** button on the tab | Your role cannot add evidence here. A custom role also needs permission to edit controls | Ask an Owner, Admin or Editor |
 | **{{ui:panels.evidenceForm.add}}** stays greyed out | No file is chosen, or an address is typed without a title | Choose a file, or type both an address and a title |
-| A red box appears in the form after you add a file, and the file is not in the table | The file was refused. The box gives the reason: its type may not be accepted, it may be too large, the malware scan may have rejected it, or your role may not link evidence to controls | Check the file type against the list above. Try a smaller file, or ask an Owner or Admin |
-| A red box appears in the form after you add a link, and the link is not in the table | The link was refused. The box gives the reason, for example that your role cannot add evidence to the library or link it to a control | Follow the reason given. If your role is the cause, ask an Owner or Admin |
+| A red box appears in the form after you add a file, and the file is not in the table | The file was refused. The box gives the reason: its type may not be accepted, it may be too large, or the malware scan may have rejected it | Check the file type against the list above. Try a smaller file, or ask an Owner or Admin |
+| A red box appears in the form after you add a link, and the link is not in the table | The link was refused. The box gives the reason, for example that your role cannot add evidence to the library | Follow the reason given. If your role is the cause, ask an Owner or Admin |
 | {{ui:controls.detailPage.errors.linkEvidenceFailed}} | The link was not saved, and no reason came back | Check that the address is complete, then try again. If it keeps failing, reload the page |
 | {{ui:controls.detailPage.couldntLoadEvidence}} | The control's evidence could not be loaded | Reload the page |
 | A plain link you removed comes back in the table | The removal did not go through | Reload the page and remove it again |

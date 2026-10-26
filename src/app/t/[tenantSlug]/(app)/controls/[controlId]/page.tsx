@@ -162,7 +162,10 @@ export default function ControlDetailPage() {
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, tenantSlug } = useTenantContext();
+    const { permissions, appPermissions, tenantSlug } = useTenantContext();
+    // Attaching evidence here links it to this control: the link route takes
+    // `controls.edit`, and so does an upload that names a control (#4326).
+    const canAttachEvidence = permissions.canWrite && appPermissions.controls.edit;
     const controlId = params?.controlId as string;
     // Ordered ids for the prev/next stepper beside the name — list order,
     // so stepping walks the sequence the user just saw.
@@ -1236,7 +1239,7 @@ export default function ControlDetailPage() {
                             error: 'control-evidence-error',
                             submit: 'submit-evidence-btn',
                         }}
-                        canWrite={permissions.canWrite}
+                        canWrite={canAttachEvidence}
                         show={showEvidenceForm}
                         onToggleShow={() => { setShowEvidenceForm(!showEvidenceForm); setFileUploadError(''); }}
                         file={fileToUpload}
