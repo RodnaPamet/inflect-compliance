@@ -77,7 +77,7 @@ of shortage and does nothing for the others.
 | Host CPU or memory near its limit | `sudo docker stats --no-stream` on the VM; the VM's CPU graph in the Compute Engine console | A larger machine type. |
 | API p95 near the SLO: reads 500 ms, writes 1000 ms (`docs/slos.md`, SLO 2 and 2b) | Recording rule `job:api_request_duration_ms:p95`; alert `ApiLatencySloBreach` (p95 above 750 ms for 15 minutes); the `inflect-api-overview` dashboard | If host CPU is high, a larger machine type. If it is not, find the slow route or query first. |
 | Clients waiting for a database connection | PgBouncer's admin console (`SHOW POOLS`, the `cl_waiting` column); one stats line a minute in the `pgbouncer` log (`STATS_PERIOD: 60`) | [Raise the PgBouncer pool](#database-connections), within Postgres `max_connections`. |
-| Jobs waiting | `job_queue_depth{queue_state="waiting"}`; alert `JobQueueDepthGrowing` (above 500 and growing for 20 minutes); the `inflect-jobs-and-queues` dashboard | See [worker throughput](#worker-throughput). |
+| Jobs waiting | `redis-cli LLEN bull:inflect-jobs:wait`, as in the Redis triage in `docs/incident-response.md`. There is no queue-depth metric: the app declares a `job.queue.depth` gauge but nothing registers it | See [worker throughput](#worker-throughput). |
 | Redis near 256 MB, or `OOM` errors in the `app` or `worker` log | `redis-cli INFO memory` (`used_memory` against `maxmemory`) | [Raise `--maxmemory`](#redis-memory), if the host has memory to give. |
 | Disk filling | `df -h` on the VM | A larger disk. |
 

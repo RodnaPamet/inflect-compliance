@@ -199,11 +199,16 @@ exporters:
   become Prometheus's underscored names, and units are appended.
   `api.request.duration` (a histogram, unit `ms`) becomes
   `api_request_duration_milliseconds` with `_bucket` / `_sum` /
-  `_count` series; `job.queue.depth` becomes `job_queue_depth`;
-  `audit_stream.delivery.failures` becomes
+  `_count` series; `audit_stream.delivery.failures` becomes
   `audit_stream_delivery_failures_total` (the `_total` suffix is
-  Prometheus's counter convention). All PromQL in
-  `03-prometheus-grafana.md` uses these transformed names.
+  Prometheus's counter convention); and a gauge whose unit is `1`
+  gets `_ratio`, so `job.queue.depth` would be `job_queue_depth_ratio`
+  and `business.tenant.active.daily` is
+  `business_tenant_active_daily_ratio`. Attribute keys are
+  underscored the same way (`job.status` → `job_status`). All PromQL
+  in `03-prometheus-grafana.md` uses these transformed names, and
+  `tests/unit/prometheus-rules-match-emitted-metrics.test.ts` checks
+  it against them.
 
 - **`otlp/tempo` — push to `tempo:4317`.** The traces pipeline
   exports sampled spans via OTLP/gRPC to Tempo's OTLP receiver.
@@ -249,12 +254,14 @@ service:
 **Metrics pipeline.** App OTLP metrics in → `memory_limiter` →
 `resourcedetection` → `resource` → `batch` → out to the Prometheus
 exporter on `:8889` (and the debug tap). No sampler — metrics are
-exact. This pipeline carries every instrument from
+exact. This pipeline carries every instrument the app records from
 `src/lib/observability/metrics.ts`: the RED metrics
 (`api_request_count`, `api_request_duration`, `api_request_errors`),
 the repository metrics (`repo_method_duration/calls/errors/result_count`),
-the job metrics (`job_execution_count/duration`, `job_queue_depth`),
-and `audit_stream_delivery_failures`.
+the job metrics (`job_execution_count/duration`), and
+`audit_stream_delivery_failures`. The `job.queue.depth` gauge is
+declared there but never registered: nothing outside the tests calls
+`startQueueDepthReporting`.
 
 **Traces pipeline.** App OTLP spans in → `memory_limiter` →
 `resourcedetection` → `resource` → `probabilistic_sampler` →
@@ -376,10 +383,10 @@ properties that make that safe.
     reach Prometheus's exposition surface or Tempo.
   - `otelcol_processor_refused_*` — `memory_limiter` is shedding
     load; the collector is under memory pressure.
-  - `otelcol_processor_dropped_*` — data dropped (queue full,
-    processing error).
   - `otelcol_receiver_refused_*` — the receiver rejected incoming
     OTLP.
+  The collector at 0.123.0 emits no `otelcol_processor_dropped_*`
+  series; `memory_limiter`'s refusals are its load-shedding signal.
 
 - **Graceful shutdown alignment.** The app's Epic E shutdown handler
   (`src/lib/observability/shutdown.ts`) drains the app-side OTel

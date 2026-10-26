@@ -128,7 +128,8 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Collector — accepted / refused / dropped (spans)",
+      "title": "Collector — accepted / refused (spans)",
+      "description": "Receiver accepted and refused, and memory_limiter refused (the load-shedding signal CollectorDroppingData alerts on). Collector 0.123.0 emits no otelcol_processor_dropped_* series.",
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
@@ -155,15 +156,16 @@
         {
           "refId": "C",
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(otelcol_processor_dropped_spans_total[5m]))",
-          "legendFormat": "dropped"
+          "expr": "sum(rate(otelcol_processor_refused_spans_total[5m]))",
+          "legendFormat": "refused by memory_limiter"
         }
       ]
     },
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Collector — accepted / refused / dropped (metric points)",
+      "title": "Collector — accepted / refused (metric points)",
+      "description": "Receiver accepted and refused, and memory_limiter refused (the load-shedding signal CollectorDroppingData alerts on). Collector 0.123.0 emits no otelcol_processor_dropped_* series.",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
@@ -190,8 +192,8 @@
         {
           "refId": "C",
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(otelcol_processor_dropped_metric_points_total[5m]))",
-          "legendFormat": "dropped"
+          "expr": "sum(rate(otelcol_processor_refused_metric_points_total[5m]))",
+          "legendFormat": "refused by memory_limiter"
         }
       ]
     },
