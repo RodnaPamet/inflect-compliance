@@ -15,6 +15,8 @@
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
+import { apiErrorMessage } from '@/lib/api-error';
+import { isAssetNameTaken } from '@/lib/asset-name-taken';
 import {
     NewAssetFormSchema,
     type NewAssetFormValues,
@@ -102,8 +104,15 @@ export function useNewAssetForm({
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.error?.message || t('form.createFailed'));
+                const err: unknown = await res.json().catch(() => ({}));
+                // A name another asset holds gets the page's own sentence:
+                // the server's is English, and the index's generic one did
+                // not say the name was the problem (#4324).
+                throw new Error(
+                    isAssetNameTaken(err)
+                        ? t('form.nameTaken')
+                        : apiErrorMessage(err, t('form.createFailed')),
+                );
             }
             const asset = await res.json();
             onSuccess(asset);
@@ -119,7 +128,10 @@ export function useNewAssetForm({
         error: zod.error,
         canSubmit: zod.canSubmit,
         submit: async () => {
-            await zod.submit();
+            // A refusal is already in `error`, which the dialog shows. The
+            // rethrow reached only the dialog's `void form.submit()`, as an
+            // unhandled rejection.
+            await zod.submit().catch(() => undefined);
         },
         isDirty: zod.isDirty,
     };

@@ -136,6 +136,7 @@ it('after one owner is picked, the Owner filter still offers the other', async (
                     appPermissions={{
                         controls: { create: perms.controls.create, edit: perms.controls.edit },
                         tasks: { edit: perms.tasks.edit },
+                    evidence: { upload: true },
                         admin: { manage: perms.admin.manage },
                     }}
                 />

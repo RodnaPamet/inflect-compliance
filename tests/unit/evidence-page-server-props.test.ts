@@ -10,7 +10,8 @@
  *     rest; it used to keep the first 100 for good.
  *   - The custom-role evidence grants reach the client (`grants`), because
  *     the coarse `permissions` come from a custom role's BASE role and the
- *     evidence usecases check `appPermissions.evidence.*`.
+ *     evidence usecases check `appPermissions.evidence.*` — and the unlink
+ *     route checks `controls.edit` (#4326).
  */
 import * as React from 'react';
 
@@ -42,7 +43,7 @@ type ClientProps = {
     initialControls: unknown[];
     controlsComplete: boolean;
     canViewControls: boolean;
-    grants: { evidenceEdit: boolean; evidenceUpload: boolean; adminManage: boolean };
+    grants: { evidenceEdit: boolean; evidenceUpload: boolean; adminManage: boolean; controlsEdit: boolean };
 };
 
 async function render(): Promise<ClientProps> {
@@ -105,12 +106,22 @@ describe('the evidence grants reach the client', () => {
         getTenantCtxMock.mockResolvedValue(ctx);
 
         const props = await render();
-        expect(props.grants).toEqual({ evidenceEdit: false, evidenceUpload: true, adminManage: false });
+        expect(props.grants).toEqual({ evidenceEdit: false, evidenceUpload: true, adminManage: false, controlsEdit: true });
     });
 
     it('an ADMIN holds admin.manage', async () => {
         getTenantCtxMock.mockResolvedValue(makeRequestContext('ADMIN'));
         const props = await render();
-        expect(props.grants).toEqual({ evidenceEdit: true, evidenceUpload: true, adminManage: true });
+        expect(props.grants).toEqual({ evidenceEdit: true, evidenceUpload: true, adminManage: true, controlsEdit: true });
+    });
+
+    // #4326 — the details panel's unlink route requires `controls.edit`.
+    it('controls.edit as the custom role holds it', async () => {
+        const ctx = makeRequestContext('EDITOR');
+        ctx.appPermissions = { ...ctx.appPermissions, controls: { ...ctx.appPermissions.controls, edit: false } };
+        getTenantCtxMock.mockResolvedValue(ctx);
+
+        const props = await render();
+        expect(props.grants.controlsEdit).toBe(false);
     });
 });

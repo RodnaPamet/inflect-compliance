@@ -27,7 +27,8 @@
  * narrowing — open one with a written precondition + a test row.
  */
 import type { PrismaTx } from '@/lib/db-context';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, ConflictError } from '@/lib/errors/types';
+import { ASSET_NAME_TAKEN } from '@/lib/asset-name-taken';
 import type { RequestContext } from '../types';
 
 export type RestorableModel =
@@ -142,10 +143,40 @@ const EVIDENCE_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
     }
 };
 
+/**
+ * `Asset` restore — refuse if a live asset now holds the same name (#4324).
+ *
+ * Asset names are unique among LIVE assets only (the partial index
+ * `Asset_tenantId_name_key`, `WHERE "deletedAt" IS NULL`), so a deleted
+ * asset's name is free for reuse. Restoring it afterwards would put two live
+ * assets on one name; the index refuses that as a bare P2002, which the API
+ * answers with a generic sentence that names no cause and that no retry can
+ * clear. The match is the index's own: exact and case-sensitive.
+ */
+const ASSET_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
+    const row = record as { id: string; name: string | null };
+    if (!row.name) return;
+    const holder = await db.asset.findFirst({
+        where: {
+            tenantId: ctx.tenantId,
+            name: row.name,
+            deletedAt: null,
+            id: { not: row.id },
+        },
+        select: { id: true },
+    });
+    if (holder) {
+        throw new ConflictError(
+            'Cannot restore: another asset now has this name. Rename that asset first, then retry.',
+            { reason: ASSET_NAME_TAKEN },
+        );
+    }
+};
+
 // ─── Registry ────────────────────────────────────────────────────────
 
 export const RESTORE_VALIDATORS: Record<RestorableModel, RestoreValidator> = {
-    Asset: NOOP_VALIDATOR,
+    Asset: ASSET_VALIDATOR,
     Risk: NOOP_VALIDATOR,
     Control: NOOP_VALIDATOR,
     Evidence: EVIDENCE_VALIDATOR,

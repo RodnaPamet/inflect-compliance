@@ -244,7 +244,7 @@ describe('Edit and Submit follow the evidence.edit grant', () => {
         renderSheet({ canWrite: true, canEdit: false, canAdmin: false });
         expect(document.getElementById('evidence-sheet-edit-btn')).toBeNull();
         expect(document.getElementById('evidence-sheet-submit-btn')).toBeNull();
-        // Linking a control asks the write tier alone, so it stays.
+        // Linking a control follows controls.edit, not evidence.edit, so it stays.
         expect(document.getElementById('evidence-link-control-btn')).not.toBeNull();
     });
 

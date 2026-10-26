@@ -258,6 +258,7 @@ describe('bulk Delete is offered only to the roles the server lets delete', () =
                     evidenceEdit: getPermissionsForRole(role).evidence.edit,
                     evidenceUpload: getPermissionsForRole(role).evidence.upload,
                     adminManage: getPermissionsForRole(role).admin.manage,
+                    controlsEdit: getPermissionsForRole(role).controls.edit,
                 }}
                 translations={{}}
             />,
@@ -281,6 +282,7 @@ describe('Controls — read-only roles get no row checkboxes', () => {
                 appPermissions={{
                     controls: { create: perms.controls.create, edit: perms.controls.edit },
                     tasks: { edit: perms.tasks.edit },
+                    evidence: { upload: true },
                     admin: { manage: perms.admin.manage },
                 }}
             />,
