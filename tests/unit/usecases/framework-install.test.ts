@@ -204,6 +204,7 @@ describe('installPack — RBAC + idempotency + audit', () => {
                     create: controlCreate,
                 },
                 task: { create: taskCreate },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: {
                     create: linkCreate,
                     upsert: linkUpsert,
@@ -244,6 +245,7 @@ describe('installPack — RBAC + idempotency + audit', () => {
             fn({
                 control: { findFirst: jest.fn(), create: jest.fn() },
                 task: { create: jest.fn() },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
                 policy: { findMany: jest.fn().mockResolvedValue([]) },
                 policyControlLink: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
@@ -270,8 +272,8 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
         tasks: [{ title: `task ${code}`, description: 'd' }],
         requirementLinks: [{ requirementId: `req-${code}`, requirement: { code: `R-${code}`, title: code } }],
     });
-    const A2 = { key: 'EU_UAS_OPEN_A2', name: 'A2', frameworkId: 'fw-uas', framework: { key: 'EU-UAS-OPS', name: 'EU UAS', version: '2025-05' }, templateLinks: [{ template: tmpl('UAS-CORE-01') }, { template: tmpl('UAS-A2-01') }] };
-    const A3 = { key: 'EU_UAS_OPEN_A3', name: 'A3', frameworkId: 'fw-uas', framework: { key: 'EU-UAS-OPS', name: 'EU UAS', version: '2025-05' }, templateLinks: [{ template: tmpl('UAS-CORE-01') }, { template: tmpl('UAS-A3-01') }] };
+    const A2 = { id: 'pack-a2', key: 'EU_UAS_OPEN_A2', name: 'A2', frameworkId: 'fw-uas', framework: { key: 'EU-UAS-OPS', name: 'EU UAS', version: '2025-05' }, templateLinks: [{ template: tmpl('UAS-CORE-01') }, { template: tmpl('UAS-A2-01') }] };
+    const A3 = { id: 'pack-a3', key: 'EU_UAS_OPEN_A3', name: 'A3', frameworkId: 'fw-uas', framework: { key: 'EU-UAS-OPS', name: 'EU UAS', version: '2025-05' }, templateLinks: [{ template: tmpl('UAS-CORE-01') }, { template: tmpl('UAS-A3-01') }] };
 
     function tenantDb() {
         return {
@@ -281,6 +283,7 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
                 create: jest.fn(async ({ data }: { data: { code: string } }) => ({ id: `c-${data.code}` })),
             },
             task: { create: jest.fn() },
+            tenantFrameworkPack: { upsert: jest.fn() },
             controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
             policy: { findMany: jest.fn().mockResolvedValue([]) },
             policyControlLink: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
@@ -348,6 +351,15 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
             ['FRAMEWORK_PACK_INSTALLED', 'EU_UAS_OPEN_A2'],
             ['FRAMEWORK_PACK_INSTALLED', 'EU_UAS_OPEN_A3'],
         ]);
+        // Each chosen pack is recorded once, in the same transaction: these
+        // rows are the scope coverage is counted over (pack-scope.ts).
+        expect(db.tenantFrameworkPack.upsert.mock.calls.map((c) => c[0])).toEqual(
+            ['pack-a2', 'pack-a3'].map((packId) => ({
+                where: { tenantId_packId: { tenantId: makeRequestContext('ADMIN').tenantId, packId } },
+                create: { tenantId: makeRequestContext('ADMIN').tenantId, frameworkId: 'fw-uas', packId },
+                update: {},
+            })),
+        );
     });
 
     it('previews the union of the chosen packs, each control once', async () => {
@@ -386,6 +398,7 @@ describe('installSingleTemplate — idempotency', () => {
                 control: {
                     findFirst: jest.fn().mockResolvedValue({ id: 'existing-c' }),
                 },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { upsert: linkUpsert },
             } as never),
         );
@@ -509,6 +522,7 @@ describe('bulkInstallTemplates', () => {
             fn({
                 control: { findFirst, create },
                 task: { create: jest.fn() },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
             } as never),
         );
@@ -555,6 +569,7 @@ describe('installPack — stage-3c additions', () => {
             return fn({
                 control: { findFirst: jest.fn(), create: jest.fn() },
                 task: { create: jest.fn() },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
                 policy: { findMany: jest.fn().mockResolvedValue([]) },
                 policyControlLink: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
@@ -588,6 +603,7 @@ describe('installPack — stage-3c additions', () => {
                     create: jest.fn().mockResolvedValue({ id: 'c-new' }),
                 },
                 task: { create: jest.fn() },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
                 policy: { findMany: jest.fn().mockResolvedValue([]) },
                 policyControlLink: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
@@ -640,6 +656,7 @@ describe('installPack — stage-3c additions', () => {
             fn({
                 control: { findFirst: jest.fn().mockResolvedValue(null), create: controlCreate },
                 task: { create: jest.fn() },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
                 policy: { findMany: jest.fn().mockResolvedValue([{ id: 'p-1', title: 'Access Management Policy' }]) },
                 policyControlLink: { createMany: policyCreateMany },
@@ -682,6 +699,7 @@ describe('installSingleTemplate — stage-3c additions', () => {
                     create: jest.fn().mockResolvedValue({ id: 'c-new' }),
                 },
                 task: { create: jest.fn() },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { create: jest.fn() },
             } as never),
         );
@@ -736,6 +754,7 @@ describe('bulkMapControls — stage-3c additions', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 control: { findMany: jest.fn().mockResolvedValue([{ id: 'c-1' }]) },
+                tenantFrameworkPack: { upsert: jest.fn() },
                 controlRequirementLink: { create: linkCreate },
             } as never),
         );

@@ -10,6 +10,7 @@ import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence
 import { toCsv } from '@/lib/csv/format-csv';
 import { LIVE_TEMPLATE_TASKS } from '../../repositories/ControlTemplateRepository';
 import { listFrameworks } from './catalog';
+import { partitionByScope, resolveRequirementScope, summariseScope } from './pack-scope';
 import {
     collapseLinksToOwnRequirements,
     resolveFamilyRequirementAliases,
@@ -66,12 +67,10 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
     //
     // This is the number on the Frameworks list page, the framework JSON +
     // CSV exports, and the MCP framework tools/resources.
-    const requirements = await db.frameworkRequirement.findMany({
+    const allRequirements = await db.frameworkRequirement.findMany({
         where: { frameworkId: fw.id, deprecatedAt: null },
         orderBy: { sortOrder: 'asc' },
     });
-
-    const requirementById = new Map(requirements.map((r) => [r.id, r]));
 
     // Get all tenant control requirement links for this framework — and for
     // every OTHER representation of it, via `aliases.lookupIds`.
@@ -85,8 +84,15 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
     // The alias resolution reads only GLOBAL tables and runs in the same
     // transaction as the links query, so the two cannot see different
     // catalogues.
-    const { rawLinks, aliases } = await runInTenantContext(ctx, async (tdb) => {
-        const resolved = await resolveFamilyRequirementAliases(tdb, fw, requirements);
+    //
+    // A framework with several packs counts only the requirements of the packs
+    // this workspace chose (`pack-scope.ts`); the rest are reported as outside
+    // the scope, never as unmapped. Resolved first, in the same transaction,
+    // so the links read are the in-scope requirements' links.
+    const { rawLinks, aliases, scope, requirements, outOfScope } = await runInTenantContext(ctx, async (tdb) => {
+        const scope = await resolveRequirementScope(tdb, ctx.tenantId, fw.id);
+        const { inScope, outOfScope } = partitionByScope(scope, allRequirements);
+        const resolved = await resolveFamilyRequirementAliases(tdb, fw, inScope);
         const rows = await tdb.controlRequirementLink.findMany({
             where: {
                 tenantId: ctx.tenantId,
@@ -97,8 +103,10 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
                 control: { select: { id: true, code: true, name: true, status: true } },
             },
         });
-        return { rawLinks: rows, aliases: resolved };
+        return { rawLinks: rows, aliases: resolved, scope, requirements: inScope, outOfScope };
     });
+
+    const requirementById = new Map(requirements.map((r) => [r.id, r]));
 
     // Re-point every link at the REQUESTED framework's own requirement row, so
     // a link held against the other representation counts for the obligation
@@ -139,6 +147,12 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
         coveragePercent,
         bySection,
         unmappedRequirements: unmapped.map((r) => ({ code: r.code, title: r.title, section: r.section || r.category })),
+        // Requirements of packs this workspace did not choose. Not in `total`,
+        // `unmapped` or any percentage; always empty unless `scope` is
+        // CHOSEN_PACKS.
+        scope: summariseScope(scope),
+        outOfScope: outOfScope.length,
+        outOfScopeRequirements: outOfScope.map((r) => ({ code: r.code, title: r.title, section: r.section || r.category })),
         controlMappings: links.map((l) => ({
             requirementCode: l.requirement.code,
             requirementTitle: l.requirement.title,
@@ -317,6 +331,9 @@ export async function exportCoverageData(
     for (const r of coverage.unmappedRequirements) {
         rows.push(['Unmapped', r.code, r.title, r.section || '', '', '', '']);
     }
+    for (const r of coverage.outOfScopeRequirements) {
+        rows.push(['Not in chosen packs', r.code, r.title, r.section || '', '', '', '']);
+    }
 
     const csv = toCsv(rows);
     return { csv, filename: `${frameworkKey}-coverage.csv` };
@@ -332,7 +349,7 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     if (!fw) throw notFound('Framework not found');
 
     // Get all active requirements
-    const requirements = await db.frameworkRequirement.findMany({
+    const allRequirements = await db.frameworkRequirement.findMany({
         where: { frameworkId: fw.id, deprecatedAt: null },
         orderBy: { sortOrder: 'asc' },
     });
@@ -345,8 +362,13 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     // two-representation reconciliation as `computeCoverage` above — the
     // readiness report reads the SAME links and would otherwise report a
     // mapped control as a gap on exactly the tenants that surface does.
-    const { rawLinks, aliases } = await runInTenantContext(ctx, async (tdb) => {
-        const resolved = await resolveFamilyRequirementAliases(tdb, fw, requirements);
+    //
+    // Scoped exactly as `computeCoverage` is (`pack-scope.ts`), so the two
+    // never disagree about which requirements a multi-pack framework counts.
+    const { rawLinks, aliases, scope, requirements, outOfScope } = await runInTenantContext(ctx, async (tdb) => {
+        const scope = await resolveRequirementScope(tdb, ctx.tenantId, fw.id);
+        const { inScope, outOfScope } = partitionByScope(scope, allRequirements);
+        const resolved = await resolveFamilyRequirementAliases(tdb, fw, inScope);
         const rows = await tdb.controlRequirementLink.findMany({
             // `control: { deletedAt: null }` is the second half of the same fix
             // the evidence filter below already made.
@@ -425,7 +447,7 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
                 },
             },
         });
-        return { rawLinks: rows, aliases: resolved };
+        return { rawLinks: rows, aliases: resolved, scope, requirements: inScope, outOfScope };
     });
 
     // Re-point every link at this framework's own requirement row (see
@@ -683,6 +705,10 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
         unmappedRequirements: unmapped.map((r) => ({
             code: r.code, title: r.title, section: r.section || r.category,
         })),
+        scope: summariseScope(scope),
+        outOfScopeRequirements: outOfScope.map((r) => ({
+            code: r.code, title: r.title, section: r.section || r.category,
+        })),
         notApplicableControls: notApplicable,
         controlsMissingEvidence: missingEvidence,
         overdueTasks,
@@ -720,6 +746,9 @@ export async function exportReadinessReport(
 
     for (const r of report.unmappedRequirements) {
         rows.push([r.section || '', 'Unmapped Requirement', r.code, r.title, '', '']);
+    }
+    for (const r of report.outOfScopeRequirements) {
+        rows.push([r.section || '', 'Not in Chosen Packs', r.code, r.title, '', '']);
     }
     for (const c of report.notApplicableControls) {
         rows.push(['', 'Not Applicable Control', c.code || '', `${c.name} — ${c.justification}`, 'NOT_APPLICABLE', '']);

@@ -33,6 +33,7 @@ import { NIS2_SOURCE_KIND } from '../nis2-readiness';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
 import { readinessBand } from '@/lib/readiness/bands';
 import { toCsv } from '@/lib/csv/format-csv';
+import { partitionByScope, resolveRequirementScope } from '../framework/pack-scope';
 
 /**
  * The engine that produces the score owns the bands that read it. The numbers
@@ -346,12 +347,18 @@ async function computeGenericReadiness(
     let totalReqs = 0;
     let mappedReqs = 0;
     if (fw) {
-        const reqs = await runInTenantContext(ctx, (tdb) =>
-            tdb.frameworkRequirement.findMany({
+        // A framework with several packs counts only the requirements of the
+        // packs this workspace chose, as the framework's own coverage does
+        // (framework/pack-scope.ts); a cycle must not score lower than the
+        // framework page for requirements the workspace never took on.
+        const reqs = await runInTenantContext(ctx, async (tdb) => {
+            const all = await tdb.frameworkRequirement.findMany({
                 where: { frameworkId: fw.id, deprecatedAt: null },
                 select: { id: true, code: true, title: true },
-            }),
-        );
+            });
+            const scope = await resolveRequirementScope(tdb, ctx.tenantId, fw.id);
+            return partitionByScope(scope, all).inScope;
+        });
         totalReqs = reqs.length;
         const reqIds = reqs.map((r) => r.id);
         const mappings = await runInTenantContext(ctx, (tdb) =>

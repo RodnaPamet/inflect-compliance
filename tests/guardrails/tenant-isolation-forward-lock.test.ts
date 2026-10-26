@@ -64,6 +64,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     ExternalWriteJournal: "tests/integration/external-write-journal-rls.test.ts",
     ExternalToolPriorStateRead: "tests/integration/external-write-journal-rls.test.ts",
     EvidenceControlLink: "tests/integration/evidence-control-link-rls.test.ts",
+    TenantFrameworkPack: "tests/integration/framework-pack-scope.test.ts",
     EvidenceRiskLink: "tests/integration/evidence-risk-asset-link-rls.test.ts",
     EvidenceAssetLink: "tests/integration/evidence-risk-asset-link-rls.test.ts",
     EvidenceTag: "tests/integration/evidence-risk-asset-link-rls.test.ts",

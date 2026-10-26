@@ -47,6 +47,9 @@ beforeEach(() => {
             upsert: jest.fn().mockImplementation(({ create }: any) => Promise.resolve({ id: `ord-${create.requirementId}` })),
         },
         controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
+        // pack-scope.ts: a single-pack framework is never narrowed.
+        frameworkPack: { count: jest.fn().mockResolvedValue(1) },
+        tenantFrameworkPack: { findMany: jest.fn().mockResolvedValue([]) },
         // A framework can exist twice in `Framework` under two keys, so the
         // links query is widened to the whole family first
         // (`services/framework-representation-aliases.ts`). Both reads are
