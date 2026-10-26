@@ -12,7 +12,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { logEvent } from '../events/audit';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { runInTenantContext } from '@/lib/db-context';
-import { ConflictError, notFound } from '@/lib/errors/types';
+import { notFound } from '@/lib/errors/types';
 import { runEvidenceRetentionSweep } from '../jobs/retention';
 
 /**
@@ -208,12 +208,11 @@ function retentionHasLapsed(retentionUntil: Date | string | null, now: Date): bo
  *
  * Evidence the retention sweep archived carries `expiredAt` as well as the
  * flag, and the Archived view lists a row with either set, so both are
- * cleared. While the retention date has passed, unarchive is REFUSED
- * (`RETENTION_DATE_PASSED`, owner decision on #4277): the next nightly sweep
- * would archive the row again, and clearing the date here would erase a
- * retention policy as a side effect of a different action. A new or empty
- * date set in Edit evidence (`updateEvidenceRetention`) is the way back.
- * The audit row keeps the expiry stamp it cleared.
+ * cleared. A retention date that has already passed is cleared too, policy
+ * and day count with it, or the next nightly sweep would archive the row
+ * again and the policy would recompute the same past date on the next edit.
+ * Bringing the evidence back ends that schedule; a new date can be set after.
+ * The audit row keeps what was cleared.
  */
 export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string) {
     assertCanWrite(ctx);
@@ -225,22 +224,17 @@ export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string)
         if (!evidence) throw notFound('Evidence not found');
         if (!evidence.isArchived && !evidence.expiredAt) return evidence; // idempotent
 
-        // #4277 — refuse while the retention date has passed, and say what to
-        // do instead. Unarchiving such a row used to leave it under Archived
-        // (its `expiredAt` stayed set) and the nightly sweep archived it again.
-        if (retentionHasLapsed(evidence.retentionUntil, new Date())) {
-            throw new ConflictError(
-                "This evidence's retention date has passed. Set a new retention date first, then unarchive it.",
-                { reason: 'RETENTION_DATE_PASSED' },
-            );
+        const updateData: Prisma.EvidenceUpdateInput = { isArchived: false, expiredAt: null };
+        const lapsed = retentionHasLapsed(evidence.retentionUntil, new Date());
+        if (lapsed) {
+            updateData.retentionUntil = null;
+            updateData.retentionPolicy = RetentionPolicy.NONE;
+            updateData.retentionDays = null;
         }
 
         const updated = await db.evidence.update({
             where: { id: evidenceId },
-            // `expiredAt` goes too: with the retention date empty or ahead, an
-            // expiry stamp left from an earlier date would keep the row in
-            // the Archived view after it is unarchived.
-            data: { isArchived: false, expiredAt: null },
+            data: updateData,
         });
 
         await logEvent(db, ctx, {
@@ -253,6 +247,13 @@ export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string)
                 operation: 'unarchived',
                 model: 'Evidence',
                 clearedExpiredAt: evidence.expiredAt?.toISOString() ?? null,
+                clearedRetention: lapsed
+                    ? {
+                          retentionUntil: evidence.retentionUntil?.toISOString() ?? null,
+                          retentionPolicy: evidence.retentionPolicy,
+                          retentionDays: evidence.retentionDays,
+                      }
+                    : null,
             },
         });
 
