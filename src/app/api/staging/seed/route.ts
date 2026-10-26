@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
 
     try {
         // Run the base seed inline (simplified version — core entities only)
-        const bcrypt = await import('bcryptjs');
-        const pwd = await bcrypt.hash('password123', 10);
+        const { hashPassword } = await import('@/lib/auth/passwords');
+        const pwd = await hashPassword('password123');
 
         const tenant = await prisma.tenant.upsert({
             where: { slug: 'acme-corp' },
