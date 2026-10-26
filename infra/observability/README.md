@@ -140,12 +140,13 @@ curl -s http://127.0.0.1:3001/api/health
 In Grafana (`http://127.0.0.1:3001` or via Caddy) you should see three
 provisioned dashboards under the *inflect-observability* folder:
 
-- **Inflect — API Overview (RED)** — request rate, error %, p95 latency.
-- **Inflect — Jobs & Queues** — job rate/duration/failures, BullMQ queue
-  depth, audit-stream delivery failures.
-- **Inflect — Observability Stack Health** — collector accepted/refused/
-  dropped, exporter send failures, Prometheus TSDB head series + scrape
-  health, target `up`.
+- **Inflect — API Overview (RED)** — request rate, 5xx %, p95 latency.
+- **Inflect — Jobs & Queues** — job rate/duration/failures, audit-stream
+  delivery failures. No queue-depth panel: the app never registers its
+  `job.queue.depth` gauge (nothing calls `startQueueDepthReporting`).
+- **Inflect — Observability Stack Health** — collector accepted/refused
+  (including `memory_limiter`'s refusals), exporter send failures,
+  Prometheus TSDB head series + scrape health, target `up`.
 
 To reload Prometheus rules after editing files under `prometheus/rules/`:
 
@@ -175,22 +176,29 @@ Alert **rules** are Prometheus-native
 (`prometheus/rules/alerting-rules.yml`), in three groups:
 
 - **stack_health** — collector/Prometheus/Tempo/Grafana down, collector
-  export failures, dropped data, and a `DeadMansSwitch` that always fires
-  (monitor for its *absence* downstream).
-- **app_health** — high 5xx ratio, API p95 SLO breach, BullMQ queue depth
-  growth, job failure rate, and the compliance-critical
-  `AuditStreamDeliveryFailing`.
-- **resource** — Prometheus disk, TSDB head series, scrape duration.
+  export failures, data refused by `memory_limiter`, and a `DeadMansSwitch`
+  that always fires (monitor for its *absence* downstream).
+- **app_health** — high 5xx ratio, API p95 SLO breach, job failure rate, and
+  the compliance-critical `AuditStreamDeliveryFailing`.
+- **resource** — TSDB head series, scrape duration.
+
+The rules and dashboards use the metric names the collector's Prometheus
+exporter writes (`api_request_count_total`,
+`api_request_duration_milliseconds_bucket`, a unit-`1` gauge ending
+`_ratio`, ...). `tests/unit/prometheus-rules-match-emitted-metrics.test.ts`
+derives those names from `src/` and fails on a rule or panel that selects
+anything the stack does not export. See
+`docs/observability/03-prometheus-grafana.md`.
 
 This stack does **not** ship an Alertmanager. Delivery is via Grafana unified
 alerting's provisioned webhook contact point. If you prefer Prometheus-native
 routing, deploy an Alertmanager and uncomment the `alerting:` block in
 `prometheus/prometheus.yml`.
 
-> The `PrometheusDiskFillingUp` alert depends on `node_exporter` metrics
-> (`node_filesystem_*`). This stack does not deploy node_exporter — the alert
-> is vacuous until you add one and a scrape job for it. Disk pressure is still
-> visible operationally via `df` on the VM.
+> There is no disk alert: one would need `node_exporter` metrics
+> (`node_filesystem_*`), and this stack does not deploy node_exporter. Disk
+> pressure is visible operationally via `df` on the VM. There is no
+> queue-depth alert either, for the reason under the dashboards above.
 
 ## Per-environment notes
 
