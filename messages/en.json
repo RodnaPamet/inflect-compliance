@@ -5871,7 +5871,8 @@
         "decideFailed": "Could not record the decision: {reason}",
         "superseded": "A newer run has replaced this result. Re-open the queue before deciding.",
         "filterOutcome": "Outcome",
-        "filterAll": "All"
+        "filterAll": "All",
+        "filterReasonEXTERNAL_EXPIRED": "External classification expired"
       },
       "legacyMapping": {
         "application": "{name}, owned by {owner}",
