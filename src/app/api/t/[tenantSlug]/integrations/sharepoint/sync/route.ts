@@ -10,6 +10,11 @@ import { dispatchJobId, MINUTE_MS } from '@/app-layer/jobs/fan-out';
  * SP-3 — on-demand delta sync for a SharePoint connection. Enqueues the
  * `sharepoint-delta-sync` job and returns its id for polling. Gated by
  * `evidence.upload` (re-imports write evidence).
+ *
+ * A request made with an API key hands the job the key's id. The worker then
+ * runs the sync as the key AND its user rather than as the user alone, and
+ * refuses when the key was revoked or expired while the sync was queued
+ * (#4386).
  */
 /**
  * `connectionId` is bounded in CHARSET and LENGTH, not merely non-empty.
@@ -57,6 +62,9 @@ export const POST = withApiErrorHandling(
                 tenantId: ctx.tenantId,
                 connectionId,
                 actorUserId: ctx.userId,
+                // Only when there is one, so a session request's payload is
+                // exactly the one this route always queued.
+                ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
                 triggeredBy: 'manual',
                 requestId: ctx.requestId,
             },
