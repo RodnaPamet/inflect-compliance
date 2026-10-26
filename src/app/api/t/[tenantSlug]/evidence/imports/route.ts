@@ -60,10 +60,9 @@ export const POST = withApiErrorHandling(
         // A default control links every record the import creates to it, so
         // it takes the same rule as any other evidence-to-control link: the
         // coarse write tier AND `controls.edit` (#4326, owner decision). Asked
-        // HERE, before the archive is staged. The worker cannot ask it: its
-        // context is the initiator's built-in role (`buildJobContext`), not
-        // their custom role, and a refusal there would arrive as a per-file
-        // error after the request had been accepted.
+        // HERE, before the archive is staged. The worker asks it again, under
+        // the initiator's custom role (#4362), but a refusal there arrives as
+        // a per-file error after the request has been accepted.
         const controlId =
             (formData.get('controlId') as string | null) || null;
         if (controlId) {

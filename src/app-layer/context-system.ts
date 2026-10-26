@@ -22,7 +22,7 @@
  * `context.ts` where the session import belongs — they were the 404-importer
  * side, and moving them would have been a repo-wide rewrite for no benefit.
  *
- * The three builders are NOT interchangeable and must not be collapsed:
+ * The four builders are NOT interchangeable and must not be collapsed:
  *
  *   buildSystemContext        the actor IS the machine. No real User row.
  *   buildDelegatedJobContext  a named user is accountable, and some FKs are
@@ -34,9 +34,16 @@
  *                             removed principal loses it. Returns null as a
  *                             REFUSAL; falling back to a system context there
  *                             re-opens the escalation it exists to close.
+ *   resolveInitiatorContext   the same, for a job that does what one member
+ *                             ASKED for (an evidence import, a SharePoint
+ *                             sync; a queued workflow run reads its
+ *                             `initiatorAuthority`). It keeps those jobs'
+ *                             coarse `canAudit` for a built-in role; see
+ *                             `initiatorAuthority`.
  */
-import { computePermissions } from '@/lib/tenant-context';
-import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
+import type { Role } from '@prisma/client';
+import { computePermissions, resolveMembershipAuthority, type Permissions } from '@/lib/tenant-context';
+import { getPermissionsForRole, parsePermissionsJson, type PermissionSet } from '@/lib/permissions';
 import prisma from '@/lib/prisma';
 import { RequestContext } from './types';
 
@@ -239,5 +246,71 @@ export async function resolveMemberContext(input: {
                   membership.customRole.baseRole,
               )
             : getPermissionsForRole(membership.role),
+    };
+}
+
+/**
+ * The authority a job carries for the member who STARTED it: the role, coarse
+ * flags and granular set a request from that member gets, with one exception.
+ *
+ * Read through `resolveMembershipAuthority`, the function every request's
+ * authority is built from, so a custom role restricts the job exactly as it
+ * restricted the request that queued it, and a role changed while the job sat
+ * in the queue applies when it runs. These jobs read `getPermissionsForRole(
+ * membership.role)` until #4362, so a custom role that withheld
+ * `evidence.upload` or `controls.edit` was ignored by the work it had queued.
+ *
+ * THE EXCEPTION, FOR A BUILT-IN ROLE ONLY. These jobs projected their coarse
+ * flags from the granular set (`canRead: evidence.view`, `canWrite:
+ * evidence.upload`, ...). For every built-in role that agrees with a request's
+ * `computePermissions` in four flags of five, and differs in `canAudit`, which
+ * they took from `audits.view`: true for every built-in role, where a request
+ * gives EDITOR, READER and AI_ADMIN false. Dropping it to the request's value
+ * changes what a built-in role's job carries, so it waits for the owner; until
+ * then a built-in role keeps exactly the context it had. A custom role gets the
+ * request's flags, with no exception.
+ */
+export function initiatorAuthority(membership: {
+    role: Role;
+    customRole: { baseRole: Role; permissionsJson: unknown } | null;
+}): { role: Role; permissions: Permissions; appPermissions: PermissionSet } {
+    const resolved = resolveMembershipAuthority(membership);
+    if (membership.customRole) return resolved;
+    return {
+        ...resolved,
+        permissions: { ...resolved.permissions, canAudit: resolved.appPermissions.audits.view },
+    };
+}
+
+/**
+ * Resolve the context for a job that does what one named member asked for:
+ * the initiator of an evidence import, the actor of a SharePoint sync.
+ *
+ * Returns `null` when that member has no ACTIVE membership in the tenant. That
+ * is a REFUSAL, exactly as for `resolveMemberContext`: the caller stops, and
+ * never falls back to a system context.
+ *
+ * Differs from `resolveMemberContext` in what these jobs always carried: the
+ * caller's own `requestId`, no `tenantSlug`, and the built-in role's coarse
+ * `canAudit` (`initiatorAuthority`).
+ */
+export async function resolveInitiatorContext(input: {
+    tenantId: string;
+    userId: string;
+    requestId: string;
+}): Promise<RequestContext | null> {
+    const membership = await prisma.tenantMembership.findFirst({
+        where: { userId: input.userId, tenantId: input.tenantId, status: 'ACTIVE' },
+        select: {
+            role: true,
+            customRole: { select: { baseRole: true, permissionsJson: true } },
+        },
+    });
+    if (!membership) return null;
+    return {
+        requestId: input.requestId,
+        userId: input.userId,
+        tenantId: input.tenantId,
+        ...initiatorAuthority(membership),
     };
 }

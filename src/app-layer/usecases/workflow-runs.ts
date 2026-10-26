@@ -57,7 +57,7 @@ import { createHash } from 'node:crypto';
 import { WorkflowRunStatus } from '@prisma/client';
 
 import { runInTenantContext, runInGlobalContext } from '@/lib/db/rls-middleware';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { initiatorAuthority } from '@/app-layer/context-system';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { failRun } from '@/lib/agentic/drivers/run-settlement';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
@@ -1578,8 +1578,11 @@ export async function executeQueuedWorkflowRun(
  * key started the run, and the SCOPES it carries now are the ones it may use
  * now. A key that was narrowed, or revoked, between enqueue and execution
  * narrows the run with it.
+ *
+ * Exported for its unit test (`agent-run-principal-custom-role.test.ts`):
+ * `executeQueuedWorkflowRun` needs a registered agent and a dispatch to reach.
  */
-async function rebuildRunContext(row: {
+export async function rebuildRunContext(row: {
     tenantId: string;
     startedByUserId: string | null;
     triggeredViaKeyId: string | null;
@@ -1590,7 +1593,9 @@ async function rebuildRunContext(row: {
     const membership = await runInGlobalContext((db) =>
         db.tenantMembership.findFirst({
             where: { tenantId: row.tenantId, userId: row.startedByUserId as string, status: 'ACTIVE' },
-            select: { role: true, customRoleId: true },
+            // The custom role too: a request from this principal is built from
+            // it, so the run that request started is (#4362).
+            select: { role: true, customRole: { select: { baseRole: true, permissionsJson: true } } },
         }),
     );
     // FAIL CLOSED. No active membership, no context, no execution.
@@ -1626,24 +1631,19 @@ async function rebuildRunContext(row: {
             : [];
     }
 
-    const appPermissions = getPermissionsForRole(membership.role);
     return {
         // Correlates every log line and audit row of this attempt back to the
         // run, which is what an operator has when they open the page.
         requestId: `agent-run-${row.tenantId}-${row.startedByUserId}`,
         userId: row.startedByUserId,
         tenantId: row.tenantId,
-        role: membership.role,
-        // Derived from the granular set exactly as `risk-appetite-jobs`
-        // does — the coarse five are a projection of it, not a second source.
-        permissions: {
-            canRead: appPermissions.risks.view,
-            canWrite: appPermissions.risks.edit,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
-        },
-        appPermissions,
+        // The principal's authority as a request resolves it, custom role
+        // included. For a built-in role the coarse five are what this run
+        // always carried: the projection it used to compute from the granular
+        // set (`risks.view`, `risks.edit`, ...) agrees with a request in every
+        // flag but `canAudit`, kept until the owner decides (see
+        // `initiatorAuthority`).
+        ...initiatorAuthority(membership),
         // NOT `actorType: 'JOB'`. The worker is only where this runs; the run
         // was asked for by a person or a key, and the audit trail must keep
         // saying so or a review cannot tell an agent's work from a sweep's.

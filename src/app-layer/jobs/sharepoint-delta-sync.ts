@@ -9,7 +9,7 @@
  */
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { resolveInitiatorContext } from '@/app-layer/context-system';
 import { runSharePointDeltaSync } from '@/app-layer/integrations/providers/sharepoint/import';
 import { enqueue } from './queue';
 import { fanOut, dispatchJobId, FOUR_HOURLY_BUCKET_MS } from './fan-out';
@@ -19,35 +19,29 @@ import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 import { runInTenantContext } from '@/lib/db-context';
 import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
 
-/** Build a tenant RequestContext for a job actor (an active member). */
+/**
+ * Build a tenant RequestContext for a job actor (an active member): the same
+ * authority a request from them gets, custom role included (#4362). For a
+ * manual sync the actor is whoever clicked "Sync now"; for a scheduled one it
+ * is the member the dispatcher below picked.
+ */
 async function buildJobContext(tenantId: string, actorUserId: string): Promise<RequestContext> {
-    const membership = await prisma.tenantMembership.findFirst({
-        where: { userId: actorUserId, tenantId, status: 'ACTIVE' },
-        select: { role: true },
+    const ctx = await resolveInitiatorContext({
+        tenantId,
+        userId: actorUserId,
+        requestId: `sharepoint-delta-sync-${tenantId}`,
     });
-    if (!membership) {
+    if (!ctx) {
         throw new Error(`sharepoint-delta-sync: user ${actorUserId} is not an active member of tenant ${tenantId}`);
     }
-    const appPermissions = getPermissionsForRole(membership.role);
-    return {
-        requestId: `sharepoint-delta-sync-${tenantId}`,
-        userId: actorUserId,
-        tenantId,
-        role: membership.role,
-        permissions: {
-            canRead: appPermissions.evidence.view,
-            canWrite: appPermissions.evidence.upload,
-            canAdmin: appPermissions.admin.manage,
-            canAudit: appPermissions.audits.view,
-            canExport: appPermissions.reports.export,
-        },
-        appPermissions,
-    };
+    return ctx;
 }
 
 export async function runSharePointDeltaSyncJob(payload: SharePointDeltaSyncPayload) {
     const ctx = await buildJobContext(payload.tenantId, payload.actorUserId);
-    if (!ctx.permissions.canWrite) {
+    // The key the "Sync now" route asks (`requirePermission('evidence.upload')`),
+    // not the coarse tier, which a custom role can hold without it.
+    if (!ctx.appPermissions.evidence.upload) {
         throw new Error(`sharepoint-delta-sync: actor lacks evidence.upload on tenant ${payload.tenantId}`);
     }
 

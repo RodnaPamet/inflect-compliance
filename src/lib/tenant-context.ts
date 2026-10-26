@@ -10,7 +10,7 @@
 import prisma from './prisma';
 import { notFound, forbidden } from '@/lib/errors/types';
 import type { Role, Tenant, TenantMembership, TenantCustomRole } from '@prisma/client';
-import { getPermissionsForRole, parsePermissionsJson, type PermissionSet } from '@/lib/permissions';
+import { permissionsForMembership, type PermissionSet } from '@/lib/permissions';
 
 // ─── Permission shape ───
 
@@ -55,6 +55,33 @@ export function computePermissions(role: Role): Permissions {
         canAdmin: level >= 4,
         canAudit: role === 'AUDITOR' || level >= 4,
         canExport: level >= 2,
+    };
+}
+
+/**
+ * The authority a membership resolves to: the role, the coarse flags and the
+ * granular set a request carries.
+ *
+ * A custom role overrides the built-in one when the membership has one: the
+ * role is its base, and the granular set is its JSON parsed over that base.
+ * The link is all that is read. Deleting a custom role clears every
+ * membership's link to it in the same write, and a link that survives anyway
+ * is applied like any other.
+ *
+ * `resolveTenantContext` builds every request's authority from this, and a
+ * job acting for the member who started it (`resolveInitiatorContext` in
+ * `src/app-layer/context-system.ts`) reads the same function, so the two
+ * cannot drift (#4362).
+ */
+export function resolveMembershipAuthority(membership: {
+    role: Role;
+    customRole: { baseRole: Role; permissionsJson: unknown } | null;
+}): { role: Role; permissions: Permissions; appPermissions: PermissionSet } {
+    const role = membership.customRole?.baseRole ?? membership.role;
+    return {
+        role,
+        permissions: computePermissions(role),
+        appPermissions: permissionsForMembership(membership),
     };
 }
 
@@ -118,17 +145,14 @@ export async function resolveTenantContext(
     }
 
     // Resolve permissions: custom role overrides enum-based defaults when present
-    const effectiveRole = membership.customRole?.baseRole ?? membership.role;
-    const appPermissions = membership.customRole
-        ? parsePermissionsJson(membership.customRole.permissionsJson, membership.customRole.baseRole)
-        : getPermissionsForRole(membership.role);
+    const { role, permissions, appPermissions } = resolveMembershipAuthority(membership);
 
     return {
         tenant,
         membership,
-        role: effectiveRole,
+        role,
         customRole: membership.customRole,
-        permissions: computePermissions(effectiveRole),
+        permissions,
         appPermissions,
     };
 }
