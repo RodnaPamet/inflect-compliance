@@ -213,15 +213,40 @@ const BUDGETS_KB: Record<string, number> = {
         Main had 0.2 KB left in `dashboard`, so no change to shared client
         code could pass it. The raise is the measured delta rounded up, not
         measured + 4.
+
+        ─── `dashboard` and `risks` RAISED 2026-10-26 BY THE PRODUCTION GROUP BUMP (#4342) ───
+
+        Measured on CI's webpack build, main (cabd0adda) against #4342
+        (2e05f56), whose only change is nine dependency versions:
+
+              bucket          worst route                        main     #4342    delta
+              dashboard       controls/dashboard/page            616.8    617.8    +1.0
+              risks           risks/[riskId]/page                653.8    654.9    +1.1
+              controls        controls/…/tests/[planId]/page     665.7    666.7    +1.0
+              root            org/…/tenants/new/page             578.7    579.8    +1.1
+              tenant-default  policies/[policyId]/page           675.2    676.3    +1.1
+
+        What grew: of the nine packages, two reach the browser. `react-window`
+        2.4.1 -> 2.5.0 (its ESM build is 7.6 -> 10.7 KB gzipped; it is behind
+        `<DataTable>` and `<Combobox>`, so nearly every route loads it) and
+        `motion` 13.4 -> 13.5 (about +0.8 KB). The other seven (AWS SDK,
+        bullmq, dotenv, jose, nodemailer, stripe) are server-only. Every bucket
+        grew by the same 1.0-1.1 KB, so this is shared code, not one route.
+
+        Main had 0.2 KB left in both buckets, so the bump could not pass
+        either. The new budgets are measured + ~4, the convention. `controls`
+        and `root` are not raised: they still pass, with 1.3 and 0.2 KB left.
     */
-    'dashboard': 617,
+    'dashboard': 622,
     // Raised 653 → 654 in the Tasks list fixes (#4300, #4278; owner decision).
     // Main measured this route at 652.9 KB (0.1 KB left); the PR measured
     // 653.2. The growth is in the task form and edit panel that the risk
     // page's Linked tasks panel loads, and the people picker: refusals now
     // show the server's reason, the reviewer picker asks for members who can
     // sign a task off, and staged links show labels instead of raw codes.
-    'risks': 654,
+    // Raised 654 → 659 by the production group bump (#4342): 653.8 → 654.9
+    // KB, from react-window 2.5 and motion 13.5. See the `dashboard` note.
+    'risks': 659,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
