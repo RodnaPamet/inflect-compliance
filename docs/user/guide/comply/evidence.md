@@ -24,11 +24,11 @@ Click **{{ui:nav.evidence}}** under {{ui:nav.comply}} in the sidebar. The breadc
 | Assign an owner in bulk | Owner, Admin, Editor |
 | Delete in bulk | Owner, Admin |
 
-Readers, Auditors and AI admins see no **{{ui:evidence.addEvidence}}** button and no edit, archive or review buttons, and they cannot tick rows or cards. **{{ui:evidence.list.bulkDelete}}** is for Owners and Admins. Every role sees the download button on every file, but a Reader, Auditor or AI admin who downloads a file from evidence with no control gets no file.
+Readers, Auditors and AI admins see no **{{ui:evidence.addEvidence}}** button and no edit, archive or review buttons, and they cannot tick rows or cards. **{{ui:evidence.list.bulkDelete}}** is for Owners and Admins. Readers, Auditors and AI admins get a download button only on evidence linked to a control; on other evidence the details panel reads **{{ui:evidence.detail.downloadNeedsControl}}**.
 
-Whatever your role, nobody can approve or reject evidence they submitted for review; another Owner or Admin must do it. Only {{ui:evidence.statusLabels.SUBMITTED}} evidence can be approved or rejected, and a rejection needs a reason. Nobody can download archived evidence.
+Whatever your role, nobody can approve or reject evidence they submitted for review; another Owner or Admin must do it. Only {{ui:evidence.statusLabels.SUBMITTED}} evidence can be approved or rejected, and a rejection needs a reason. Nobody can download archived evidence, so archived evidence shows no download button.
 
-If your workspace uses custom roles, the page decides which buttons to show by the built-in role your custom role is based on. Saving checks the permissions the custom role was given, so a button can appear and still be refused. A custom role that cannot view controls cannot open this page.
+If your workspace uses custom roles, the page shows the add, edit, archive, submit and bulk buttons only when both the built-in role your custom role is based on and the evidence permissions the custom role was given allow them. A custom role that cannot view controls can still open this page, but the {{ui:evidence.filters.controlId}} filter and the control pickers offer no controls.
 
 ## What it is for
 
@@ -36,12 +36,12 @@ Use the library to collect proof for your audits and keep it current. Add a piec
 
 ## What you see
 
-**Summary cards.** Four cards sit above the list: {{ui:evidence.list.kpiTotal}}, {{ui:evidence.list.kpiDraft}}, {{ui:evidence.list.kpiSubmitted}} and {{ui:evidence.list.kpiApproved}}. Click a status card to filter the list to that status, and click it again to drop the filter; {{ui:evidence.list.kpiTotal}} clears every filter. **{{ui:common.table.editKpiCards}}** on the toolbar adds four cards that filter by review currency: {{ui:evidence.filterEnums.freshness.current}}, {{ui:evidence.filterEnums.freshness.expiring}}, {{ui:evidence.filterEnums.freshness.expired}} and {{ui:evidence.filterEnums.freshness.needsReview}}. The cards count all of the workspace's evidence, archived and expired evidence included, while the list shows only active evidence by default, so a card can count more than the list shows.
+**Summary cards.** Four cards sit above the list: {{ui:evidence.list.kpiTotal}}, {{ui:evidence.list.kpiDraft}}, {{ui:evidence.list.kpiSubmitted}} and {{ui:evidence.list.kpiApproved}}. Click a status card to filter the list to that status, and click it again to drop the filter; {{ui:evidence.list.kpiTotal}} clears every filter. **{{ui:common.table.editKpiCards}}** on the toolbar adds four cards that filter by review currency: {{ui:evidence.filterEnums.freshness.current}}, {{ui:evidence.filterEnums.freshness.expiring}}, {{ui:evidence.filterEnums.freshness.expired}} and {{ui:evidence.filterEnums.freshness.needsReview}}. The cards count the workspace's active evidence, the same evidence the list shows by default, and they do not change with the search or the filters.
 
 **The toolbar.**
 
 - **{{ui:evidence.addEvidence}}** opens a menu: {{ui:evidence.list.createFileUpload}}, {{ui:evidence.list.createTextNote}}, {{ui:evidence.list.createLink}} and {{ui:evidence.list.createBulkImport}}. Only roles that can add evidence see it.
-- **{{ui:common.ui.filter}}** holds the search and the filters. Its search box, **{{ui:evidence.list.searchPlaceholder}}**, filters as you type. It matches titles, note text, link addresses and file names, and also the stored location of each uploaded file, so a word such as "evidence" or a year finds every file. The filters are {{ui:evidence.filters.type}}, {{ui:evidence.filters.status}}, {{ui:evidence.filters.retention}}, {{ui:evidence.filters.freshness}}, {{ui:evidence.filters.controlId}}, {{ui:evidence.filters.folder}} and {{ui:evidence.filters.category}}. Each active filter shows as a pill beside the button.
+- **{{ui:common.ui.filter}}** holds the search and the filters. Its search box, **{{ui:evidence.list.searchPlaceholder}}**, filters as you type. It matches titles, note text, link addresses and file names. The filters are {{ui:evidence.filters.type}}, {{ui:evidence.filters.status}}, {{ui:evidence.filters.retention}}, {{ui:evidence.filters.freshness}}, {{ui:evidence.filters.controlId}}, {{ui:evidence.filters.folder}} and {{ui:evidence.filters.category}}. Each active filter shows as a pill beside the button.
 - {{ui:evidence.filters.retention}} chooses which part of the library you see: {{ui:evidence.list.retentionActive}}, the default; {{ui:evidence.list.triageExpiring}}, evidence whose next review date, or failing that its retention date, falls in the next 30 days; or {{ui:evidence.list.retentionArchived}}, archived or expired evidence.
 - **{{ui:evidence.list.viewList}}** and **{{ui:evidence.list.viewGallery}}** switch between the table and a grid of cards. **{{ui:common.table.toggleColumns}}**, in the list view only, chooses which columns are shown. The filters and the view are kept in the page address, so a filtered view can be bookmarked or shared.
 
@@ -53,28 +53,28 @@ Use the library to collect proof for your audits and keep it current. Add a piec
 | {{ui:evidence.type}} | The kind of file, such as PDF, image or spreadsheet, or Link or Text |
 | {{ui:evidence.control}} | The first linked control's code, with +1, +2 and so on for more. Hover it to see them all |
 | {{ui:evidence.colHeaders.category}} and {{ui:evidence.colHeaders.folder}} | The labels set when the evidence was added or edited, or a dash |
-| {{ui:evidence.colHeaders.retention}} | {{ui:evidence.list.retentionActive}}, Expiring with the days left (within 30 days of the retention date), {{ui:evidence.list.retentionExpired}}, {{ui:evidence.list.retentionArchived}}, or {{ui:evidence.list.retentionNoPolicy}} when there is no retention date. The date sits under the badge |
-| {{ui:evidence.colHeaders.freshness}} | A coloured dot and an age, read from the next review date, or from the expiry date when there is no review date. It reads "today" while that date is ahead. Once it has passed it shows how long ago, turning amber after 30 days and red after 90. A dash means there is no date |
+| {{ui:evidence.colHeaders.retention}} | {{ui:evidence.list.retentionActive}}, Expiring with the days left (within 30 days of the retention date), {{ui:evidence.list.retentionExpired}}, {{ui:evidence.list.retentionArchived}}, or {{ui:evidence.list.retentionNoPolicy}} when there is no retention date. The date sits under the badge, except on archived evidence |
+| {{ui:evidence.colHeaders.freshness}} | {{ui:evidence.filterEnums.freshness.current}}, {{ui:evidence.filterEnums.freshness.expiring}}, {{ui:evidence.filterEnums.freshness.expired}} or {{ui:evidence.filterEnums.freshness.needsReview}}: the same groups the {{ui:evidence.filters.freshness}} filter and cards use. It is read from the next review date, or from the retention date when there is no review date: expired once that date has passed, expiring soon within 30 days of it. {{ui:evidence.statusLabels.NEEDS_REVIEW}} evidence always reads {{ui:evidence.filterEnums.freshness.needsReview}}, and evidence with neither date reads {{ui:evidence.filterEnums.freshness.current}} |
 | {{ui:evidence.status}} | {{ui:evidence.statusLabels.DRAFT}}, {{ui:evidence.statusLabels.SUBMITTED}}, {{ui:evidence.statusLabels.APPROVED}}, {{ui:evidence.statusLabels.REJECTED}} or {{ui:evidence.statusLabels.NEEDS_REVIEW}} |
 | {{ui:evidence.ownerLabel}} | The member who owns it, or the name typed on a text note |
 | {{ui:evidence.colHeaders.actions}} | Icon buttons, described below |
 
-The {{ui:evidence.colHeaders.actions}} column holds **{{ui:evidence.list.editEvidence}}**, **{{ui:evidence.list.archiveEvidence}}** (or **{{ui:evidence.list.unarchiveEvidence}}** on archived evidence) and, on files, **{{ui:evidence.list.downloadFile}}**. It also holds the review step that applies: **{{ui:evidence.submitForReview}}** on {{ui:evidence.statusLabels.DRAFT}} and {{ui:evidence.statusLabels.REJECTED}} evidence, **{{ui:evidence.list.reReview}}** on {{ui:evidence.statusLabels.NEEDS_REVIEW}} evidence, and, for Owners and Admins, **{{ui:evidence.approveEvidence}}** and **{{ui:evidence.rejectEvidence}}** on {{ui:evidence.statusLabels.SUBMITTED}} evidence. Files are scanned for viruses when they are uploaded: a file still being scanned shows **{{ui:evidence.scan.pending}}** in place of the download button. A file the scanner flagged shows **{{ui:evidence.scan.infected}}** and can never be downloaded.
+The {{ui:evidence.colHeaders.actions}} column holds **{{ui:evidence.list.editEvidence}}**, **{{ui:evidence.list.archiveEvidence}}** (or **{{ui:evidence.list.unarchiveEvidence}}** on archived or expired evidence) and, on files you may download, **{{ui:evidence.list.downloadFile}}**. It also holds the review step that applies: **{{ui:evidence.submitForReview}}** on {{ui:evidence.statusLabels.DRAFT}} and {{ui:evidence.statusLabels.REJECTED}} evidence, **{{ui:evidence.list.reReview}}** on {{ui:evidence.statusLabels.NEEDS_REVIEW}} evidence, and, for Owners and Admins, **{{ui:evidence.approveEvidence}}** and **{{ui:evidence.rejectEvidence}}** on {{ui:evidence.statusLabels.SUBMITTED}} evidence. Files are scanned for viruses when they are uploaded: a file still being scanned shows **{{ui:evidence.scan.pending}}** in place of the download button. A file the scanner flagged shows **{{ui:evidence.scan.infected}}** and can never be downloaded.
 
-**The gallery.** One card per record, with its freshness, retention and status badges. An image shows a thumbnail, and a PDF card reads **{{ui:common.ui.openPdf}}** and opens in a new tab. Each file that has passed the scan has a download button. Click a card to open its details. Roles that can edit evidence can also tick cards, and the selection bar offers only the actions your role can apply.
+**The gallery.** One card per record, with its freshness, retention and status badges. On a file you may download, an image shows a thumbnail, a PDF card reads **{{ui:common.ui.openPdf}}** and opens in a new tab, and a download button sits on the card once the file has passed the scan. Click a card to open its details. Roles that can edit evidence can also tick cards, and the selection bar offers only the actions your role can apply.
 
 **The details panel.** It opens at the side of the page and shows, from top to bottom:
 
-- The status. For a file, a preview of an image or PDF, and a **{{ui:evidence.detail.download}}** button.
+- The status. For a file, a preview of an image or PDF and a **{{ui:evidence.detail.download}}** button or, when you cannot download it, **{{ui:evidence.detail.downloadArchived}}** or **{{ui:evidence.detail.downloadNeedsControl}}**.
 - The type, owner and category; the task, risk or asset a file was uploaded from; the next review date; and the date of the last change. Evidence imported from SharePoint has a **{{ui:evidence.detail.viewInSharePoint}}** link.
 - The controls the evidence is used by, or **{{ui:evidence.detail.noControlsLinked}}**.
 - **{{ui:evidence.detail.descriptionLabel}}**: a note's text, or a link's address. A link opens in a new tab only when its address is safe to follow. An address starting with javascript:, data:, vbscript: or file: is shown as plain text that cannot be clicked.
 - **{{ui:evidence.detail.usedByLabel}}**, counting the controls, risks and assets it supports, and its **{{ui:evidence.detail.tagsLabel}}**.
-- **{{ui:evidence.detail.fileMetaTitle}}**: the file's name, size and type, its **{{ui:evidence.detail.fileHash}}** fingerprint with a copy button, and its retention and expiry dates. For a file, **{{ui:evidence.detail.versionsLabel}}** follows, with a download button for each earlier version.
+- **{{ui:evidence.detail.fileMetaTitle}}**: the file's name, size and type, its **{{ui:evidence.detail.fileHash}}** fingerprint with a copy button, and its retention and expiry dates. For a file, **{{ui:evidence.detail.versionsLabel}}** follows, with a download button for each earlier version when you may download the file.
 - **{{ui:evidence.detail.reviewHistoryTitle}}**: each submission, approval and rejection, who made it, when, and any reason given.
 - The tasks linked to the evidence. Roles that can add evidence also get a **{{ui:panels.linkedTasks.task}}** button to raise one.
 
-The footer holds the edit button and the review buttons that apply. The panel does not refresh after you review or edit from it, and keeps showing the old status and buttons. Close it and open it again to see the change.
+The footer holds the edit button and the review buttons that apply.
 
 ## What you can do
 
@@ -100,8 +100,7 @@ Choose **{{ui:evidence.list.createBulkImport}}**. In **{{ui:evidence.bulkImport.
 Click **{{ui:evidence.list.editEvidence}}** on a row, or the pencil in the details panel. The **{{ui:evidence.edit.title}}** form holds **{{ui:evidence.edit.titleLabel}}**, a note's **{{ui:evidence.edit.descriptionLabel}}** or a link's **{{ui:evidence.edit.addressLabel}}** (a file has neither), **{{ui:evidence.edit.tagsLabel}}** separated by commas, **{{ui:evidence.edit.ownerLabel}}**, **{{ui:evidence.edit.categoryLabel}}**, **{{ui:evidence.edit.controlsLabel}}**, **{{ui:evidence.edit.folderLabel}}** and **{{ui:evidence.edit.retentionLabel}}**. Click **{{ui:evidence.edit.save}}**.
 
 - Empty the description box to clear a note. A link's address cannot be cleared: **{{ui:evidence.edit.linkNeedsUrl}}** appears and the save button is greyed out. Clear the retention date to remove it.
-- In a workspace with more than 100 controls, **{{ui:evidence.edit.controlsLabel}}** and the add forms offer only the first 100. Link the others from the details panel.
-- For a file, choose a new file under **{{ui:evidence.edit.replaceFileLabel}}**. It uploads at once and the form closes, without saving any other change you typed in the form. The record keeps its controls, retention and review history, and the earlier file stays under {{ui:evidence.detail.versionsLabel}}.
+- For a file, choose a new file under **{{ui:evidence.edit.replaceFileLabel}}**. It uploads at once. If you changed nothing else, the form closes; otherwise it stays open and reads **{{ui:evidence.edit.replacedKeepEditing}}**, so click **{{ui:evidence.edit.save}}** to keep the rest. The record keeps its controls, retention and review history, and the earlier file stays under {{ui:evidence.detail.versionsLabel}}.
 
 ### Review evidence
 
@@ -123,7 +122,7 @@ In the list view, tick up to 100 rows, choose an action from **{{ui:common.table
 
 - **{{ui:evidence.list.bulkApprove}}**, for Owners and Admins, approves only the {{ui:evidence.statusLabels.SUBMITTED}} evidence you did not submit yourself. A message says how many were approved and skipped.
 - **{{ui:evidence.list.bulkAssign}}** gives them all one owner. Leave the owner empty to unassign them.
-- **{{ui:evidence.list.bulkDelete}}** asks you to confirm, then removes them from the library. There is no undo.
+- **{{ui:evidence.list.bulkDelete}}**, for Owners and Admins, asks you to confirm, then removes them from the library. There is no undo.
 
 ### Download a file
 
@@ -137,26 +136,27 @@ Click **{{ui:evidence.list.downloadFile}}** on a row, the download button on a g
 - **Review dates.** Once a day, approved evidence whose next review date has passed becomes {{ui:evidence.statusLabels.NEEDS_REVIEW}}. This page has no field for the next review date; evidence that an integration collects automatically carries one.
 - **Retention dates.** Once a day, evidence whose retention date has passed is archived and marked {{ui:evidence.list.retentionExpired}}. Evidence archived that way is deleted for good 365 days after it expired, unless you give it a retention date that has not passed or clear its date. Evidence you archive yourself is kept.
 - **Deleted evidence** leaves the library at once and is removed for good after 90 days. Until then an Owner or Admin can restore it through the Inflect API; this page has no restore button.
-- **The audit log** records adding, editing, uploading, replacing, reviewing, archiving, linking, retention changes, deleting and downloading. An image or PDF shown in the details panel or the gallery is loaded the way a download is, so it is recorded as one too.
+- **The audit log** records adding, editing, uploading, replacing, reviewing, archiving, linking, retention changes, deleting, downloading and previewing. An image or PDF shown in the details panel, or an image shown in the gallery, is recorded as a preview, not a download. **{{ui:common.ui.openPdf}}** on a gallery card is a download.
 - **Audit packs** take in approved evidence that is linked to controls and is neither expired nor archived.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:evidence.noEvidence}}** | No evidence is active. Archived or expired evidence may still exist | Add evidence, or choose {{ui:evidence.list.retentionArchived}} under {{ui:evidence.filters.retention}} |
+| **{{ui:evidence.noEvidence}}** | The workspace has no evidence | Add evidence, or ask an Owner, Admin or Editor |
+| **{{ui:evidence.list.emptyActiveTitle}}** | All of the workspace's evidence is archived or expired | Click **{{ui:evidence.list.showArchived}}** |
 | **{{ui:evidence.list.emptyFilterTitle}}**, **{{ui:evidence.list.emptyArchivedTitle}}** or **{{ui:evidence.list.emptyExpiringTitle}}** | Nothing matches the search, the filters or the retention view | Click **{{ui:evidence.list.clearFilters}}** |
 | **{{ui:evidence.list.archivedNoticeTitle}}** above the list | You are looking at archived evidence, which should not go into active audit packs | Unarchive what you need |
 | A banner saying only the first 5,000 results are shown | The view holds more evidence than the page loads at once | Narrow it with a filter or the search |
 | **{{ui:evidence.list.reviewFailed}}** | The review did not go through: you submitted the evidence yourself, it was reviewed already, or your role cannot review | Ask another Owner or Admin. Reload the page to see the current status |
-| **{{ui:evidence.list.bulkFailed}}** | A bulk action was refused, for example because more than 100 rows were selected | Select fewer rows and try again |
+| A message after a bulk action, or **{{ui:evidence.list.bulkFailed}}** | A bulk action was refused, for example because more than 100 rows were selected. The message gives the reason when Inflect sends one | Follow the reason, or select fewer rows and try again |
 | A red box in a form, with a reason | Nothing was saved. A file can be refused for its type or size, or because the malware scanner rejected it | Follow the reason given |
 | **{{ui:evidence.upload.spProbeErrorTitle}}** | Inflect could not check the SharePoint connection, so its import is hidden | Reopen the form later, or ask an Admin to check the integration |
 | **{{ui:evidence.edit.retentionFailed}}** | Your other changes were saved, but the retention date was not | Click **{{ui:evidence.edit.save}}** again |
 | **{{ui:evidence.edit.updateFailed}}**, **{{ui:evidence.edit.replaceFailed}}** or **{{ui:evidence.detail.linkControlFailed}}** | The change was not saved | Reload the page and try again |
-| A control you unlinked comes back in the details panel | The unlink did not go through | Reload the page and try again |
-| The details panel stays on **{{ui:evidence.detail.loadingBody}}** | The record could not be loaded, for example because it was deleted | Close the panel and reload the page |
-| A download gives no file | The evidence is archived, or your role needs it linked to a control first | Unarchive it, or ask an Owner, Admin or Editor to link it to a control |
+| A control you unlinked comes back in the details panel, with a message | The unlink did not go through, and the message says why | Follow the reason, or reload the page and try again |
+| A red message in the details panel in place of the record | The record could not be loaded, for example because it was deleted | Close the panel and reload the page |
+| **{{ui:evidence.detail.downloadArchived}}** or **{{ui:evidence.detail.downloadNeedsControl}}** in the details panel | The evidence is archived, or your role needs it linked to a control before you can download it | Unarchive it, or ask an Owner, Admin or Editor to link it to a control |
 
 ## Related
 
