@@ -69,11 +69,33 @@ function isStaticDriverReason(value: string): value is StaticDriverReason {
  * A reason this build does not know reads as the generic sentence rather than
  * a raw code. The client and the server ship together, so that only happens
  * mid-deploy, and a code shown to a reader explains nothing.
+ *
+ * The engine being chosen is not the same as a run being able to start. A
+ * Flue run also needs an active registered agent and a key bound to it, and
+ * without them every start is refused rather than moved to the built-in
+ * engine. An owner holds the checklist that knows this, so when it says the
+ * workspace is not ready the headline says so too. Somebody without the
+ * checklist gets the sentence that names the condition instead.
  */
-export function headlineFor(setting: AgentDriverSettingPayload): string {
+export function headlineFor(setting: AgentDriverSettingPayload, wiring?: FlueWiringPayload): string {
     const { reason, driver } = setting.effective;
-    if (reason === null) return driver === 'flue' ? 'runsOnFlue' : 'reason.UNKNOWN';
+    if (reason === null) {
+        if (driver !== 'flue') return 'reason.UNKNOWN';
+        return wiring && !wiring.ready ? 'runsOnFlueNotReady' : 'runsOnFlue';
+    }
     return isStaticDriverReason(reason) ? REASON_MESSAGE[reason] : 'reason.UNKNOWN';
+}
+
+export type HeadlineTone = 'success' | 'warning' | 'info';
+
+/**
+ * Success only when the engine is on AND nothing known stops a run. A green
+ * headline over a checklist that blocks every run is the section reporting a
+ * capability the runtime refuses.
+ */
+export function headlineToneFor(setting: AgentDriverSettingPayload, wiring?: FlueWiringPayload): HeadlineTone {
+    if (setting.effective.driver !== 'flue') return 'info';
+    return wiring && !wiring.ready ? 'warning' : 'success';
 }
 
 /**
@@ -83,11 +105,11 @@ export function headlineFor(setting: AgentDriverSettingPayload): string {
  *   `admin.tenant_lifecycle`). They still see everything, plus one sentence
  *   naming who can change it. Hiding the section would make a gate nobody can
  *   read look the same as one that is not there.
- * - `deployment-off`: an owner, on a deployment whose switch is off. The
- *   choice is shown but disabled. The API would accept the write, but the
- *   stored value changes no run until the operator turns the switch on, and a
- *   control whose success changes nothing is the trap this page exists to
- *   avoid (#3909).
+ * - `deployment-off`: an owner, on a deployment whose switch is off. Choosing
+ *   Flue is disabled: the API would accept the write, but it changes no run
+ *   until the operator turns the switch on, and a control whose success
+ *   changes nothing is the trap this page exists to avoid (#3909). Returning
+ *   to the built-in engine stays available (`choiceEnabled`).
  * - `editable`: an owner, on a deployment that allows the engine.
  *
  * Read-only is decided first. An admin on a switched-off deployment has
@@ -121,3 +143,19 @@ export function gateTermsFor(setting: AgentDriverSettingPayload): EngineTerm[] {
 
 /** The engines the API accepts today, in the order they are offered. */
 export const OFFERED_ENGINES: readonly AgentDriverMode[] = AGENT_DRIVER_MODES;
+
+/**
+ * Whether one engine can be chosen under a control.
+ *
+ * The built-in engine is ALWAYS reachable for somebody who can change the
+ * engine, the deployment switch included. A stored Flue choice is not inert
+ * while the switch is off: it takes effect, with nobody acting, the moment the
+ * operator turns the switch back on. So narrowing is the one move that must
+ * never wait on another key, which is what `setAgentDriverSetting` says of it
+ * too ("the narrow is the one that has to be instant").
+ */
+export function choiceEnabled(control: EngineControl, option: AgentDriverMode): boolean {
+    if (control === 'editable') return true;
+    if (control === 'deployment-off') return option === 'STATIC';
+    return false;
+}
