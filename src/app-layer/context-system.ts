@@ -42,8 +42,13 @@
  *                             `initiatorAuthority`.
  */
 import type { Role } from '@prisma/client';
-import { computePermissions, resolveMembershipAuthority, type Permissions } from '@/lib/tenant-context';
-import { getPermissionsForRole, parsePermissionsJson, type PermissionSet } from '@/lib/permissions';
+import { computePermissions, type Permissions } from '@/lib/tenant-context';
+import {
+    getPermissionsForRole,
+    parsePermissionsJson,
+    permissionsForMembership,
+    type PermissionSet,
+} from '@/lib/permissions';
 import prisma from '@/lib/prisma';
 import { RequestContext } from './types';
 
@@ -253,12 +258,20 @@ export async function resolveMemberContext(input: {
  * The authority a job carries for the member who STARTED it: the role, coarse
  * flags and granular set a request from that member gets, with one exception.
  *
- * Read through `resolveMembershipAuthority`, the function every request's
- * authority is built from, so a custom role restricts the job exactly as it
- * restricted the request that queued it, and a role changed while the job sat
- * in the queue applies when it runs. These jobs read `getPermissionsForRole(
- * membership.role)` until #4362, so a custom role that withheld
- * `evidence.upload` or `controls.edit` was ignored by the work it had queued.
+ * A request's rule (`resolveTenantContext`): the role is the custom role's
+ * base when the membership has one, the coarse flags are `computePermissions`
+ * of that role, and the granular set is `permissionsForMembership` — the custom
+ * role's JSON parsed over its base. Only the link is read, never the custom
+ * role's `isActive`: a request applies a soft-deleted role a membership is
+ * still linked to, and so does this. (`deleteCustomRole` clears the links in
+ * the same write, so such a link takes legacy data or a race.)
+ * `initiator-context.test.ts` holds this equal to `resolveTenantContext`.
+ *
+ * So a custom role restricts the job exactly as it restricted the request that
+ * queued it, and a role changed while the job sat in the queue applies when it
+ * runs. These jobs read `getPermissionsForRole(membership.role)` until #4362,
+ * so a custom role that withheld `evidence.upload` or `controls.edit` was
+ * ignored by the work it had queued.
  *
  * THE EXCEPTION, FOR A BUILT-IN ROLE ONLY. These jobs projected their coarse
  * flags from the granular set (`canRead: evidence.view`, `canWrite:
@@ -274,11 +287,15 @@ export function initiatorAuthority(membership: {
     role: Role;
     customRole: { baseRole: Role; permissionsJson: unknown } | null;
 }): { role: Role; permissions: Permissions; appPermissions: PermissionSet } {
-    const resolved = resolveMembershipAuthority(membership);
-    if (membership.customRole) return resolved;
+    const role = membership.customRole?.baseRole ?? membership.role;
+    const appPermissions = permissionsForMembership(membership);
+    const permissions = computePermissions(role);
     return {
-        ...resolved,
-        permissions: { ...resolved.permissions, canAudit: resolved.appPermissions.audits.view },
+        role,
+        permissions: membership.customRole
+            ? permissions
+            : { ...permissions, canAudit: appPermissions.audits.view },
+        appPermissions,
     };
 }
 

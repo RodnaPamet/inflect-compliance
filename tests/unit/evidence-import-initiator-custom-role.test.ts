@@ -5,8 +5,8 @@
  * so a custom role that withheld `evidence.upload` or `controls.edit` was
  * ignored by the import it had queued: a role narrowed while the job sat in the
  * queue, or any path that enqueued without the route's check, imported with the
- * built-in role's full set. The context now comes from the request's own
- * resolution (`resolveInitiatorContext` → `resolveMembershipAuthority`).
+ * built-in role's full set. The context now follows the request's rule
+ * (`resolveInitiatorContext`, `initiatorAuthority`).
  *
  * Driven through `runEvidenceImport` with the REAL `uploadEvidenceFile`, so the
  * refusals below are the usecase's own policy checks reading the job's context,
