@@ -47,6 +47,9 @@ import { useTranslations } from 'next-intl';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns, useColumnsDropdown } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
+import { FilterProvider, createFilterDefs, useFilterContext } from '@/components/ui/filter';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import { AppIcon } from '@/components/icons/AppIcon';
 import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -116,6 +119,58 @@ export default function ReconciliationQueuePage() {
     const [loading, setLoading] = useState(true);
     const [open, setOpen] = useState<WireRow | null>(null);
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+
+    // ── THE TWO FACETS THIS QUEUE ALWAYS WANTED (#3358) ─────────────────────
+    //
+    // `filter-toolbar-coverage` exempted this page on the grounds that it could
+    // not have them: `FilterDefInput.icon` demanded a `LucideIcon` and
+    // `no-lucide` forbids a new lucide import site, so the documented filter
+    // API was unreachable from new code. #4109 widened that field to
+    // `FilterIcon`, which already admitted a `ReactNode` — so the icons below
+    // are `<AppIcon>` elements, and this page is the first production caller of
+    // the builder the GUIDE documents. The exemption is deleted in this diff
+    // rather than re-justified, which is what its own last line asked for.
+    //
+    // Both facets are closed unions on `WireRow`, so the option lists cannot
+    // drift from the data: a new `outcome` or `reason` member is a type error
+    // at `OUTCOME_OPTIONS` / `REASON_OPTIONS` before it is a missing chip.
+    const { filters: queueFilters, filterKeys } = useMemo(
+        () =>
+            createFilterDefs({
+                outcome: {
+                    label: t('colOutcome'),
+                    icon: <AppIcon name="circleDashed" />,
+                    options: (['SUGGESTED', 'AMBIGUOUS', 'UNMATCHED'] satisfies Array<WireRow['outcome']>).map(
+                        (value) => ({ value, label: t(`outcome${value}`) }),
+                    ),
+                    multiple: true,
+                },
+                reason: {
+                    label: t('colReason'),
+                    icon: <AppIcon name="alertCircle" />,
+                    options: [
+                        { value: 'UNDECIDED', label: t('reasonUNDECIDED') },
+                        // The column label interpolates a date; a chip has no
+                        // row to take one from, so it gets its own label.
+                        { value: 'EXTERNAL_EXPIRED', label: t('filterReasonEXTERNAL_EXPIRED') },
+                    ] satisfies Array<{ value: WireRow['reason']; label: string }>,
+                    multiple: true,
+                },
+            }),
+        [t],
+    );
+    const filterCtx = useFilterContext([], filterKeys);
+    // guardrail-ignore: faceting the rows this page already loaded in full — the queue is one run's undecided accounts with no server-side filter params, and both facets are closed unions on the loaded row.
+    const visibleRows = useMemo(() => {
+        const wanted = (key: string) => filterCtx.state[key] ?? [];
+        const outcomes = wanted('outcome');
+        const reasons = wanted('reason');
+        return rows.filter(
+            (r) =>
+                (outcomes.length === 0 || outcomes.includes(r.outcome)) &&
+                (reasons.length === 0 || reasons.includes(r.reason)),
+        );
+    }, [rows, filterCtx.state]);
 
     // ── Resolve the run, then the queue ─────────────────────────────────────
     const load = useCallback(async () => {
@@ -344,6 +399,7 @@ export default function ReconciliationQueuePage() {
     );
 
     return (
+        <FilterProvider value={filterCtx}>
         <ListPageShell>
             <ListPageShell.Header>
                 <BackAffordance />
@@ -366,12 +422,12 @@ export default function ReconciliationQueuePage() {
                     {t('title')}
                 </Heading>
                 <p className="text-sm text-content-muted">
-                    {t('subtitle', { count: rows.length })}
+                    {t('subtitle', { count: visibleRows.length })}
                 </p>
             </ListPageShell.Header>
 
             <ListPageShell.Filters>
-                <div className="flex items-center gap-tight">{columnsDropdown}</div>
+                <FilterToolbar filters={queueFilters} actions={columnsDropdown} />
             </ListPageShell.Filters>
 
             <ListPageShell.Body>
@@ -381,7 +437,7 @@ export default function ReconciliationQueuePage() {
                 <DataTable
                     fillBody
                     data-testid="legacy-reconciliation-queue"
-                    data={rows}
+                    data={visibleRows}
                     columns={columns}
                     getRowId={(r) => r.accountKey}
                     loading={loading}
@@ -434,5 +490,6 @@ export default function ReconciliationQueuePage() {
                 ) : null}
             </Sheet>
         </ListPageShell>
+        </FilterProvider>
     );
 }
