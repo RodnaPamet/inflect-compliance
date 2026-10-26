@@ -67,6 +67,7 @@ function rehydrateEvent(
         entityType: serialized.entityType,
         entityId: serialized.entityId,
         actorUserId: serialized.actorUserId,
+        ...(serialized.actorApiKeyId ? { actorApiKeyId: serialized.actorApiKeyId } : {}),
         emittedAt: new Date(serialized.emittedAt),
         stableKey: serialized.stableKey,
         data: serialized.data,
@@ -245,6 +246,7 @@ export async function runAutomationEventDispatch(
                         entityType: event.entityType,
                         entityId: event.entityId,
                         actorUserId: event.actorUserId,
+                        ...(event.actorApiKeyId ? { actorApiKeyId: event.actorApiKeyId } : {}),
                         data: event.data as Record<string, unknown> | undefined,
                     });
                     // `updateMany` scoped to status RUNNING, not `update` by id.

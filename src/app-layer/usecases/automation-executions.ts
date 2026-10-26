@@ -409,6 +409,9 @@ export async function reTriggerRule(ctx: RequestContext, ruleId: string) {
                 entityType: 'ManualReplay',
                 entityId: ruleId,
                 actorUserId: ctx.userId,
+                // As the bus stamps it (#4386): a replay requested with an API
+                // key fires an author-less rule no wider than that key.
+                ...(ctx.apiKeyId ? { actorApiKeyId: ctx.apiKeyId } : {}),
                 emittedAt: new Date().toISOString(),
                 stableKey,
                 data,

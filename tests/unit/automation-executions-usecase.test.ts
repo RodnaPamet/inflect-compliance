@@ -136,4 +136,24 @@ describe('reTriggerRule', () => {
         expect((out as { reason?: string }).reason).toBe('entity_target_not_replayable');
         expect(enqueueMock).not.toHaveBeenCalled();
     });
+
+    // #4386 — an author-less rule replayed through a key request runs no wider
+    // than that key, so the replay carries the key's id as the bus would.
+    it('a replay requested with an API key carries the key id on the event', async () => {
+        ruleRepo.getById.mockResolvedValue({ id: 'r1', status: 'ENABLED', triggerEvent: 'RISK_CREATED' } as any);
+        execRepo.listForRule.mockResolvedValue([{ triggerPayloadJson: {} }] as any);
+        const ctx = makeRequestContext('EDITOR', { apiKeyId: 'key-1', apiKeyScopes: ['*'] });
+        await reTriggerRule(ctx, 'r1');
+        expect(enqueueMock.mock.calls[0][1].event).toMatchObject({
+            actorUserId: ctx.userId,
+            actorApiKeyId: 'key-1',
+        });
+    });
+
+    it('a replay requested from a session carries no key id, as before', async () => {
+        ruleRepo.getById.mockResolvedValue({ id: 'r1', status: 'ENABLED', triggerEvent: 'RISK_CREATED' } as any);
+        execRepo.listForRule.mockResolvedValue([{ triggerPayloadJson: {} }] as any);
+        await reTriggerRule(makeRequestContext('EDITOR'), 'r1');
+        expect(enqueueMock.mock.calls[0][1].event).not.toHaveProperty('actorApiKeyId');
+    });
 });

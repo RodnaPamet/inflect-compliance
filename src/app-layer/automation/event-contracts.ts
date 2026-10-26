@@ -24,12 +24,18 @@ import type { AutomationEventName } from './events';
  * - `stableKey` is optional; when present, the dispatcher derives the
  *   execution idempotencyKey from (ruleId, event, stableKey) so a
  *   retried producer never double-fires.
+ * - `actorApiKeyId` is stamped by the bus from RequestContext, and only
+ *   when the emitting request was made with an API key (#4386). A rule
+ *   with no author runs as `actorUserId`, and this is what bounds it to
+ *   the key that request was limited to. Absent on every event a session,
+ *   a job without a key, or a build before this field emitted.
  */
 export interface AutomationEventMetadata {
     tenantId: string;
     entityType: string;
     entityId: string;
     actorUserId: string | null;
+    actorApiKeyId?: string;
     emittedAt: Date;
     stableKey?: string;
 }
@@ -209,13 +215,14 @@ const _catalogueCheck: _CatalogueConsistency extends never ? true : false = true
 // ─── Producer-facing emit shape ────────────────────────────────────────
 //
 // What a usecase actually hands to the bus — metadata minus the
-// fields the bus itself stamps (tenantId + emittedAt). Keeps usecases
-// from accidentally forging another tenant's id.
+// fields the bus itself stamps (tenantId, emittedAt, actorApiKeyId).
+// Keeps usecases from accidentally forging another tenant's id, or
+// naming — or leaving out — the key a request was made with.
 
 export type EmitAutomationEvent = {
     [E in AutomationDomainEvent as E['event']]: Omit<
         E,
-        'tenantId' | 'emittedAt'
+        'tenantId' | 'emittedAt' | 'actorApiKeyId'
     >;
 }[AutomationDomainEvent['event']];
 

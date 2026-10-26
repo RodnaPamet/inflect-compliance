@@ -104,6 +104,14 @@ function createAutomationBus(): AutomationBus {
                 actorUserId: input.actorUserId ?? ctx.userId ?? null,
                 emittedAt: new Date(),
             } as AutomationDomainEvent;
+            // So is the key the emitting request was made with (#4386): an
+            // author-less rule runs as `actorUserId`, and must not run with
+            // more than this key. Taken from ctx and never from the input
+            // (the emit type omits it; this holds it for an untyped caller
+            // too), and set only when there is one, so a session's event is
+            // exactly the one it always was.
+            delete event.actorApiKeyId;
+            if (ctx.apiKeyId) event.actorApiKeyId = ctx.apiKeyId;
 
             log('debug', 'automation-bus.emit', {
                 event: event.event,

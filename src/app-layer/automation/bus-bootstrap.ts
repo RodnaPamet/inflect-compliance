@@ -39,6 +39,7 @@ export function toDispatchPayload(
             entityType: event.entityType,
             entityId: event.entityId,
             actorUserId: event.actorUserId,
+            ...(event.actorApiKeyId ? { actorApiKeyId: event.actorApiKeyId } : {}),
             emittedAt: event.emittedAt.toISOString(),
             stableKey: event.stableKey,
             data: event.data as Record<string, unknown>,

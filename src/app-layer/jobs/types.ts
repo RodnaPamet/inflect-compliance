@@ -526,6 +526,14 @@ export interface AutomationEventDispatchPayload {
         entityType: string;
         entityId: string;
         actorUserId: string | null;
+        /**
+         * The API key the emitting request was made with, when it was made
+         * with one (#4386). A rule with no author runs as `actorUserId`
+         * narrowed to this key, and is refused when the key no longer
+         * authorises a request. Absent on a session's event and on every
+         * payload queued before this member existed.
+         */
+        actorApiKeyId?: string;
         /** ISO string — bus Date serialized for Redis. */
         emittedAt: string;
         stableKey?: string;

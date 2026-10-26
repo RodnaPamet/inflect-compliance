@@ -25,6 +25,7 @@ import { assertCanCreateTask } from '../policies/task.policies';
 import { AppError } from '@/lib/errors/types';
 import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 import { computePermissions } from '@/lib/tenant-context';
+import { resolveKeyInitiatorContext } from '@/app-layer/context-system';
 import type { RequestContext } from '../types';
 import type {
     NotifyUserActionConfig,
@@ -94,6 +95,54 @@ async function resolveActorCtx(db: Db, tenantId: string, userId: string): Promis
     };
 }
 
+/**
+ * The context a rule's CREATE_TASK / UPDATE_STATUS executes under: the rule
+ * author's (`resolveActorCtx`), or — for an author-less rule only — the firing
+ * actor's, narrowed to the API key their request was made with (#4386).
+ *
+ * An author-less rule borrows the firing actor's membership. When that actor
+ * fired the event through a request made with an API key, the key is what the
+ * request was limited to, and borrowing the whole membership instead would let
+ * the rule do what the key may not: a `risks:write` CI key creating a risk
+ * would fire a task its key could never create. So the key is resolved the way
+ * a job a key queued resolves it (`resolveKeyInitiatorContext`, #4382) — the
+ * request's own liveness checks, the key ∧ the member — and a key revoked,
+ * expired or gone by the time the rule executes refuses it by name.
+ *
+ * A rule WITH an author runs as its author, exactly as before: the key that
+ * fired the event is provenance there, not authority, for the reason
+ * `resolveActorCtx` gives about the firing member. An event with no key id —
+ * a session, a job, and every event queued before the bus stamped one — is
+ * unchanged too.
+ */
+async function resolvePrincipalCtx(
+    db: Db,
+    rule: ExecutableRule,
+    event: ActionEvent,
+    principalUserId: string,
+): Promise<ActorResolution> {
+    const resolved = await resolveActorCtx(db, event.tenantId, principalUserId);
+    if (!resolved.ok || rule.createdByUserId || !event.actorApiKeyId) return resolved;
+
+    const keyed = await resolveKeyInitiatorContext({
+        tenantId: event.tenantId,
+        userId: principalUserId,
+        apiKeyId: event.actorApiKeyId,
+        requestId: resolved.ctx.requestId,
+    });
+    if (!keyed.ok) {
+        return {
+            ok: false,
+            summary:
+                `Rule actor ${principalUserId} fired this event with API key ${event.actorApiKeyId}, ` +
+                `which is refused (${keyed.reason}) — execution refused`,
+        };
+    }
+    // The slug `resolveActorCtx` read, for the assignee notification that
+    // opens on it; `resolveKeyInitiatorContext` sets none, as no job's does.
+    return { ok: true, ctx: { ...keyed.ctx, tenantSlug: resolved.ctx.tenantSlug } };
+}
+
 export interface ActionResult {
     ok: boolean;
     summary: string;
@@ -124,6 +173,12 @@ export interface ActionEvent {
     entityType?: string;
     entityId?: string;
     actorUserId?: string | null;
+    /**
+     * The API key the request that emitted the event was made with, when it
+     * was made with one (#4386). Bounds an author-less rule, which runs as
+     * `actorUserId`, to that key — see `resolvePrincipalCtx`.
+     */
+    actorApiKeyId?: string;
     data?: Record<string, unknown>;
 }
 
@@ -219,7 +274,7 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     if (!principalUserId) return { ok: false, summary: 'No actor to own the created task' };
     // Resolve real authority BEFORE any read or write, so an unauthorised rule
     // leaves no trace beyond the FAILED execution row carrying the reason.
-    const resolved = await resolveActorCtx(db, event.tenantId, principalUserId);
+    const resolved = await resolvePrincipalCtx(db, rule, event, principalUserId);
     if (!resolved.ok) return { ok: false, summary: resolved.summary };
     const ctx = resolved.ctx;
     try {
@@ -399,7 +454,7 @@ async function updateStatus(db: Db, rule: ExecutableRule, event: ActionEvent): P
     // beyond the FAILED execution row carrying the reason (the #1874 pattern).
     const principalUserId = rule.createdByUserId ?? event.actorUserId;
     if (!principalUserId) return { ok: false, summary: 'No actor to authorise the status change' };
-    const resolved = await resolveActorCtx(db, event.tenantId, principalUserId);
+    const resolved = await resolvePrincipalCtx(db, rule, event, principalUserId);
     if (!resolved.ok) return { ok: false, summary: resolved.summary };
     const ctx = resolved.ctx;
     const entityId = event.entityId;
