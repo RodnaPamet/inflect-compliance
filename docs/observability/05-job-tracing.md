@@ -94,31 +94,29 @@ unset, so dev/test pay nothing.
 
 ## How an operator pivots from a slow request to its worker spans
 
-1. **From the API dashboard** (`inflect-api-overview.json`,
-   *Latency percentiles*) or the **jobs dashboard**
-   (`inflect-jobs-and-queues.json`, *Job p95 duration over time*):
-   hover a data point and follow the exemplar **View trace in Tempo**
-   link. That link is provisioned at the datasource level
-   (`exemplarTraceIdDestinations` → `trace_id` → the `tempo`
-   datasource in `provisioning/datasources/datasources.yml`).
-2. **Or** open **Explore → Tempo** and run a TraceQL search:
+1. **Open Explore → Tempo** and run a TraceQL search:
    - all worker executions:
      `{ resource.service.name="inflect-compliance" && name=~"execute .*" }`
    - one queue:
      `{ name=~"execute .*" && span.messaging.destination.name="inflect-jobs" }`
-3. Open the trace. The HTTP handler span is the root; the
+
+   To start from a slow moment on the API dashboard (`inflect-api-overview.json`,
+   *Latency percentiles*) or the jobs dashboard (`inflect-jobs-and-queues.json`,
+   *Job p95 duration over time*), note the time and narrow the search to it.
+2. Open the trace. The HTTP handler span is the root; the
    `enqueue <job>` span and the worker's `execute <job>` span (with its
    nested usecase/repository spans) hang underneath — the full causal
    chain in one view.
 
-### Note on per-datapoint exemplar links
+### No per-datapoint links from the dashboards
 
-The exemplar → Tempo wiring is provisioned, but a metric data point
-only carries a clickable `trace_id` exemplar once the **app emits
-exemplars** on the corresponding histogram. That app-side exemplar
-emission is a separate, tracked follow-up; until it lands, use the
-TraceQL search path (step 2). The cross-process trace itself
-(steps in the diagram above) is fully working regardless.
+Grafana's Prometheus datasource is provisioned with an exemplar link to
+Tempo (`exemplarTraceIdDestinations` → `trace_id` → the `tempo` datasource
+in `provisioning/datasources/datasources.yml`), but a data point carries a
+clickable `trace_id` only when the app records exemplars on the histogram
+behind it. The app's metrics SDK records none, so hovering a data point
+offers no **View trace in Tempo** link. Use the TraceQL search above. The
+cross-process trace itself (the diagram above) works regardless.
 
 ## Out of scope (intentional)
 
