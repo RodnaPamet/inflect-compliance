@@ -35,9 +35,13 @@ function fixture(name: string, body: string): string {
 }
 
 function run(...files: string[]) {
+    return runWithEnv({}, ...files);
+}
+
+function runWithEnv(env: NodeJS.ProcessEnv, ...files: string[]) {
     const result = spawnSync('bash', [SCRIPT, ...files], {
         encoding: 'utf8',
-        env: { ...process.env, NO_COLOR: '1' },
+        env: { ...process.env, NO_COLOR: '1', ...env },
     });
     return {
         status: result.status ?? -1,
@@ -191,6 +195,37 @@ describe('detect-secrets — secret classes', () => {
         const r = run(f);
         expect(r.status).toBe(1);
         expect(r.stdout).toMatch(/NPM Token/);
+    });
+});
+
+// ─── Lengths are characters, not bytes ──────────────────────────────
+
+// The CI guardrail (tests/guardrails/no-secrets.test.ts) reads the same
+// patterns as JavaScript regexes, which count characters. Under a POSIX or C
+// locale `grep -P` counts bytes, so a masked placeholder of eight '•' (three
+// bytes each) read as 24 and cleared the 16-character floor: the hook refused
+// what CI accepts, and blocked every merge of main that carried one.
+describe('detect-secrets — lengths are characters, not bytes', () => {
+    const POSIX = { LC_ALL: 'C', LANG: 'C', LC_CTYPE: 'C' };
+
+    it('passes a masked placeholder under a POSIX locale', () => {
+        const f = fixture('masked.ts', `const cfg = { clientSecret: '••••••••' };`);
+        const r = runWithEnv(POSIX, f);
+        expect(r.status).toBe(0);
+    });
+
+    it('still flags a 16-character secret under a POSIX locale', () => {
+        const f = fixture('ascii.ts', `const cfg = { clientSecret: 'abcdefghijklmnop' };`);
+        const r = runWithEnv(POSIX, f);
+        expect(r.status).toBe(1);
+        expect(r.stdout).toMatch(/Hardcoded Password Assignment/);
+    });
+
+    it('still flags a non-ASCII secret of 16 characters or more', () => {
+        const f = fixture('cyrillic.ts', `const cfg = { password: 'парола-парола-парола' };`);
+        const r = runWithEnv(POSIX, f);
+        expect(r.status).toBe(1);
+        expect(r.stdout).toMatch(/Hardcoded Password Assignment/);
     });
 });
 
