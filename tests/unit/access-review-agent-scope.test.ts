@@ -67,6 +67,8 @@ import {
     subjectTableOf,
 } from '@/lib/access-review/scope';
 import { makeRequestContext } from '../helpers/make-context';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 const NOW = new Date('2026-10-18T09:00:00.000Z');
 
@@ -199,11 +201,33 @@ describe('the member creation route refuses AGENT by name', () => {
     });
 
     it('…and points the other non-member scopes at their own routes, rather than snapshotting members into them', () => {
-        for (const scope of ['CONNECTED_APP', 'LEGACY_APP']) {
+        const expected: ReadonlyArray<[string, string]> = [
+            ['CONNECTED_APP', 'SCOPE_HAS_ITS_OWN_ROUTE: a CONNECTED_APP campaign is created at POST /access-reviews/connected.'],
+            ['LEGACY_APP', 'SCOPE_HAS_ITS_OWN_ROUTE: a LEGACY_APP campaign is created at POST /access-reviews/legacy.'],
+        ];
+        for (const [scope, message] of expected) {
             const r = CreateAccessReviewSchema.safeParse({ name: 'Q4', reviewerUserId: 'u-rev', scope });
             expect(r.success).toBe(false);
-            expect(r.error?.issues[0]?.message).toMatch(/^SCOPE_HAS_ITS_OWN_ROUTE:/);
+            expect(r.error?.issues[0]?.message).toBe(message);
         }
+    });
+
+    it('every route a refusal points at exists', () => {
+        // The LEGACY_APP refusal used to point at no route at all ("created
+        // from a reconciled legacy snapshot, not here") because there was none.
+        // A pointer is only worth giving if it leads somewhere, so each one is
+        // followed to its route file. That each file's POST is gated on
+        // `access_reviews.create` is `tests/unit/security/access-review-authz-table.test.ts`.
+        const pointed = ['AGENT', 'CONNECTED_APP', 'LEGACY_APP'].map((scope) => {
+            const r = CreateAccessReviewSchema.safeParse({ name: 'Q4', reviewerUserId: 'u-rev', scope });
+            const m = /POST \/access-reviews\/([a-z-]+)\.$/.exec(r.error?.issues[0]?.message ?? '');
+            return m?.[1] ?? `<no route named for ${scope}>`;
+        });
+        expect(pointed).toEqual(['agents', 'connected', 'legacy']);
+        const missing = pointed.filter((leaf) => !fs.existsSync(path.resolve(
+            __dirname, '../..', 'src/app/api/t/[tenantSlug]/access-reviews', leaf, 'route.ts',
+        )));
+        expect(missing).toEqual([]);
     });
 
     it('still accepts the member scopes, and defaults to ALL_USERS', () => {

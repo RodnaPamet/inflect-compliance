@@ -59,7 +59,7 @@ function memberScopeRefusal(input: unknown): string {
         return 'SCOPE_HAS_ITS_OWN_ROUTE: a CONNECTED_APP campaign is created at POST /access-reviews/connected.';
     }
     if (input === 'LEGACY_APP') {
-        return 'SCOPE_HAS_ITS_OWN_ROUTE: a LEGACY_APP campaign is created from a reconciled legacy snapshot, not here.';
+        return 'SCOPE_HAS_ITS_OWN_ROUTE: a LEGACY_APP campaign is created at POST /access-reviews/legacy.';
     }
     return `scope must be one of ${MEMBER_ACCESS_REVIEW_SCOPES.join(', ')}.`;
 }
@@ -115,6 +115,39 @@ export const CreateAccessReviewSchema = z
     });
 
 export type CreateAccessReviewInput = z.infer<typeof CreateAccessReviewSchema>;
+
+// ── createLegacyAccessReview ───────────────────────────────────────
+
+/**
+ * What a LEGACY_APP campaign is created with: one legacy application's
+ * connection, whose latest reconciled snapshot becomes the frozen population.
+ *
+ * `createLegacyAccessReview` parses with this one. It is TOLERANT of unknown
+ * keys, as the connected and agent create schemas are, and its non-HTTP callers
+ * (the proving-run script, the usecase tests) rely on that.
+ */
+export const CreateLegacyAccessReviewSchema = z.object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    connectionId: z.string().min(1).max(64),
+    reviewerUserId: z.string().min(1),
+    dueAt: z.coerce.date().optional(),
+    periodStartAt: z.coerce.date().optional(),
+    periodEndAt: z.coerce.date().optional(),
+});
+
+/**
+ * The body of `POST /access-reviews/legacy`: the same fields, `.strict()`.
+ *
+ * Derived rather than restated, so the route and the usecase cannot come to
+ * disagree about a field. Strict at the HTTP boundary because a body naming a
+ * key this route does not take — a `scope`, a subject list, a coverage claim —
+ * is a caller who believes they asked for something they did not get, and is
+ * told so (400) rather than having it dropped in silence. Nothing a body says
+ * can choose the scope, the subjects or the coverage: the usecase writes
+ * LEGACY_APP and reads the rest from the snapshot.
+ */
+export const CreateLegacyAccessReviewBodySchema = CreateLegacyAccessReviewSchema.strict();
 
 // ── updateAccessReviewSettings (#4130) ─────────────────────────────
 
