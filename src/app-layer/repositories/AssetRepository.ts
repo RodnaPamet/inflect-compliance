@@ -235,6 +235,19 @@ export class AssetRepository {
         });
     }
 
+    /**
+     * The LIVE asset holding `name`, if any. Mirrors the partial unique index
+     * `Asset_tenantId_name_key` (`WHERE "deletedAt" IS NULL`): exact,
+     * case-sensitive, deleted assets excluded — so it refuses exactly what
+     * the index would, and nothing it would let through (#4324).
+     */
+    static async findLiveByName(db: PrismaTx, ctx: RequestContext, name: string) {
+        return db.asset.findFirst({
+            where: { tenantId: ctx.tenantId, name, deletedAt: null },
+            select: { id: true },
+        });
+    }
+
     static async create(db: PrismaTx, ctx: RequestContext, data: Omit<Prisma.AssetUncheckedCreateInput, 'tenantId'>) {
         // Mint a per-tenant `AST-N` key from an atomic counter.
         // Mirrors `RiskRepository.create` / the TaskKeySequence

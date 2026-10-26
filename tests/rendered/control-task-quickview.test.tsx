@@ -122,14 +122,14 @@ describe("ControlEditPanel (editable control side panel)", () => {
         })) as unknown as typeof fetch;
     });
 
-    const renderPanel = () =>
+    const renderPanel = (canUploadEvidence = true, canWrite = true) =>
         render(
             withQuery(
                 <ControlEditPanel
                     tenantSlug="acme"
                     control={CONTROL}
-                    canWrite
-                    canUploadEvidence
+                    canWrite={canWrite}
+                    canUploadEvidence={canUploadEvidence}
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
                 />,
@@ -155,41 +155,42 @@ describe("ControlEditPanel (editable control side panel)", () => {
         );
     });
 
-    it("offers the file box only with evidence.upload; the URL link stays on the edit gate", () => {
-        // The file box POSTs to /evidence/uploads, which asserts
-        // `evidence.upload` — not the `controls.edit` that `canWrite` carries
-        // (#4325). The URL link is the control's own route.
-        render(
-            withQuery(
-                <ControlEditPanel
-                    tenantSlug="acme"
-                    control={CONTROL}
-                    canWrite
-                    canUploadEvidence={false}
-                    onClose={jest.fn()}
-                    onSaved={jest.fn()}
-                />,
-            ),
-        );
-        expect(screen.getByTestId("evidence-link-url-form")).toBeInTheDocument();
+    it("withholds only the dropzone without `evidence.upload`, keeping the form and the URL link (#4325)", () => {
+        // The panel opens on `canWrite && controls.edit`; a FILE upload POSTs to
+        // `/evidence/uploads`, which asks `evidence.upload`. A custom role with
+        // one and not the other was shown the dropzone and refused.
+        //
+        // Only the dropzone goes. The URL link posts to the control's own
+        // evidence route, which asks `controls.edit`, and the form stays
+        // editable. The case above is the positive control.
+        renderPanel(false);
+
+        expect(screen.getByTestId("evidence-upload-section")).toBeInTheDocument();
         expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
+        expect(screen.getByTestId("evidence-link-url-form")).toBeInTheDocument();
+
+        expect(screen.getByTestId("control-edit-form")).toBeInTheDocument();
+        expect((screen.getByLabelText(/Name/) as HTMLInputElement).disabled).toBe(false);
     });
 
-    it("offers neither to a viewer who cannot edit the control, whatever evidence.upload says", () => {
-        render(
-            withQuery(
-                <ControlEditPanel
-                    tenantSlug="acme"
-                    control={CONTROL}
-                    canWrite={false}
-                    canUploadEvidence
-                    onClose={jest.fn()}
-                    onSaved={jest.fn()}
-                />,
-            ),
-        );
-        expect(screen.queryByTestId("evidence-link-url-form")).not.toBeInTheDocument();
+    it("still lists the attached evidence for a read-only role without `evidence.upload`", async () => {
+        // Readers, Auditors and AI admins hold no `evidence.upload`. Hiding the
+        // whole section on that key took the control's evidence out of their
+        // quick view. They get the list, and neither the dropzone nor the link.
+        global.fetch = jest.fn(async (url: string) => ({
+            ok: true,
+            json: async () =>
+                String(url).endsWith("/controls/c1/evidence")
+                    ? { links: [{ id: "l1", kind: "LINK", url: "https://example.com/report", note: "Pen-test report" }] }
+                    : [],
+        })) as unknown as typeof fetch;
+
+        renderPanel(false, false);
+
+        expect(await screen.findByTestId("evidence-attached-list")).toBeInTheDocument();
+        expect(screen.getByText("Pen-test report")).toBeInTheDocument();
         expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("evidence-link-url-form")).not.toBeInTheDocument();
     });
 
     it("auto-saves the name on blur with a PATCH (no Save click)", async () => {
@@ -236,7 +237,7 @@ describe("ControlEditPanel (editable control side panel)", () => {
                     tenantSlug="acme"
                     control={{ ...CONTROL, status: "NEEDS_REVIEW" }}
                     canWrite
-                    canUploadEvidence
+                canUploadEvidence
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
                 />,

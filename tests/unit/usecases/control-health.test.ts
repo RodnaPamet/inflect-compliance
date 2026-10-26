@@ -46,7 +46,6 @@ import {
     getControlHealthVerdicts,
     HEALTH_VERDICT_SCAN_CAP,
 } from '@/app-layer/usecases/control/health';
-import { withDeleted } from '@/lib/soft-delete';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't-1' });
 
@@ -305,30 +304,6 @@ describe('getControlHealthVerdicts', () => {
         const arg = db.control.findMany.mock.calls[0][0];
         expect(arg.where).toEqual({ tenantId: 't-1', deletedAt: null });
         expect(arg.take).toBe(HEALTH_VERDICT_SCAN_CAP + 1);
-    });
-
-    it("scope 'deleted' scans ONLY soft-deleted controls, for the Deleted view (#4325)", async () => {
-        db.control.findMany.mockResolvedValue([row({ id: 'gone', applicability: 'NOT_APPLICABLE' })]);
-        computeControlEffectivenessMap.mockResolvedValue(new Map());
-
-        const res = await getControlHealthVerdicts(ctx, { scope: 'deleted' });
-
-        const arg = db.control.findMany.mock.calls[0][0];
-        // Opted out of the soft-delete read filter, then narrowed to the
-        // deleted set — never the live one, never both.
-        expect(arg.where).toEqual({ tenantId: 't-1', deletedAt: { not: null } });
-        expect(arg).toMatchObject(withDeleted({}));
-        expect(arg.take).toBe(HEALTH_VERDICT_SCAN_CAP + 1);
-        expect(res.verdicts).toEqual([{ controlId: 'gone', verdict: 'NOT_APPLICABLE', passRate: null }]);
-    });
-
-    it("scope 'deleted' is admin-only, like the view it serves", async () => {
-        db.control.findMany.mockResolvedValue([]);
-        computeControlEffectivenessMap.mockResolvedValue(new Map());
-        await expect(
-            getControlHealthVerdicts(makeRequestContext('EDITOR', { tenantId: 't-1' }), { scope: 'deleted' }),
-        ).rejects.toThrow();
-        expect(db.control.findMany).not.toHaveBeenCalled();
     });
 
     it('reports truncated=false and the scanned count under the cap', async () => {

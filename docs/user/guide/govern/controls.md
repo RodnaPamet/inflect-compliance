@@ -109,7 +109,7 @@ A status or owner change shows **{{ui:controls.bulk.applied}}** and clears the s
 
 ### Restore or purge a deleted control
 
-Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. It lists only deleted controls, each marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. The search and the {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}}, {{ui:controls.filters.category}} and {{ui:controls.filters.health}} filters narrow it as they narrow the normal list, and the {{ui:controls.list.healthColumn}} column shows each deleted control's verdict.
+Choose **{{ui:common.ui.viewsMenu}}** › **{{ui:controls.deleted.toggle}}**. The table gains a **{{ui:controls.deleted.actions}}** column, and the summary cards are hidden. It lists only deleted controls, each marked **{{ui:controls.deleted.badge}}**, with when and by whom it was deleted. The search and the {{ui:controls.filters.status}}, {{ui:controls.filters.applicability}}, {{ui:controls.filters.owner}} and {{ui:controls.filters.category}} filters narrow it as they narrow the normal list. A deleted control has no health verdict, so this view has no {{ui:controls.filters.health}} filter and no {{ui:controls.list.healthColumn}} column.
 
 - **{{ui:controls.deleted.restore}}** brings the control back into the list. A message reads **{{ui:controls.deleted.restoredToast}}**.
 - **{{ui:controls.deleted.purge}}** deletes it permanently. The **{{ui:controls.deleted.purgeTitle}}** dialog asks you to type the control's code, or its name if it has none, then click **{{ui:controls.deleted.purge}}**. This cannot be undone.

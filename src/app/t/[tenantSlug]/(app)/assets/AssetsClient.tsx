@@ -55,6 +55,8 @@ import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
+import { apiErrorMessage } from '@/lib/api-error';
+import { isAssetNameTaken } from '@/lib/asset-name-taken';
 
 
 /** CVSS severity → StatusBadge variant (for the per-asset open-vuln badge). */
@@ -695,13 +697,24 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     });
 
     // ─── Deleted-asset lifecycle actions ───
-    const handleRestore = async (id: string) => {
+    const handleRestore = async (id: string, name: string) => {
         try {
             const res = await fetch(apiUrl(`/assets/${id}/restore`), {
                 method: 'POST',
                 credentials: 'same-origin',
             });
-            if (!res.ok) throw new Error('Restore failed');
+            if (!res.ok) {
+                // The server's reason, not a "try again" no retry can
+                // satisfy — a name reused since the delete refuses every
+                // time (#4324).
+                const body: unknown = await res.json().catch(() => null);
+                toast.error(
+                    isAssetNameTaken(body)
+                        ? tx('deleted.restoreNameTaken', { name })
+                        : apiErrorMessage(body, tx('deleted.restoreFailed')),
+                );
+                return;
+            }
             await assetsQuery.mutate();
             toast.success(tx('deleted.restoredToast'));
         } catch {
@@ -938,7 +951,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                                                   size="xs"
                                                   onClick={(e) => {
                                                       e.stopPropagation();
-                                                      void handleRestore(a.id);
+                                                      void handleRestore(a.id, a.name);
                                                   }}
                                                   text={tx('deleted.restore')}
                                               />

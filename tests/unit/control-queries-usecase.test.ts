@@ -532,43 +532,12 @@ describe('runConsistencyCheck', () => {
 describe('listControlsWithDeleted', () => {
     // The deleted-only narrowing is the repository's, held against Postgres in
     // tests/integration/list-multi-select-and-deleted-views.test.ts.
-    beforeEach(() => {
-        (getControlHealthVerdicts as jest.Mock).mockResolvedValue({ verdicts: [], counts: {} });
-    });
-
     it('returns the deleted read, with task counts, for ADMIN', async () => {
         (ControlRepository.listDeleted as jest.Mock).mockResolvedValue([{ id: 'c-1' }]);
         (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
         const rows = await listControlsWithDeleted(adminCtx);
-        expect(rows).toEqual([{ id: 'c-1', taskTotal: 0, taskDone: 0, healthVerdict: null }]);
+        expect(rows).toEqual([{ id: 'c-1', taskTotal: 0, taskDone: 0 }]);
         expect(ControlRepository.listDeleted).toHaveBeenCalledTimes(1);
-    });
-
-    it('resolves the `health` facet against the DELETED controls, not the live scan (#4325)', async () => {
-        // The live scan reads `deletedAt: null`, so a Health pick in this view
-        // matched nothing.
-        (getControlHealthVerdicts as jest.Mock).mockResolvedValue({
-            verdicts: [
-                { controlId: 'gone-1', verdict: 'AT_RISK', passRate: null },
-                { controlId: 'gone-2', verdict: 'HEALTHY', passRate: 100 },
-            ],
-            counts: {},
-        });
-        (ControlRepository.listDeleted as jest.Mock).mockResolvedValue([{ id: 'gone-1' }]);
-        (TaskRepository.countLinkedToControls as jest.Mock).mockResolvedValue(new Map());
-
-        const rows = await listControlsWithDeleted(adminCtx, { health: 'AT_RISK' });
-
-        expect(getControlHealthVerdicts).toHaveBeenCalledTimes(1);
-        expect(getControlHealthVerdicts).toHaveBeenCalledWith(adminCtx, { scope: 'deleted' });
-        expect(ControlRepository.listDeleted).toHaveBeenCalledWith(
-            expect.anything(),
-            expect.anything(),
-            expect.objectContaining({ ids: ['gone-1'] }),
-            expect.anything(),
-        );
-        // …and each row carries its own verdict for the Health column.
-        expect(rows).toEqual([{ id: 'gone-1', taskTotal: 0, taskDone: 0, healthVerdict: 'AT_RISK' }]);
     });
 
     it('rejects AUDITOR (admin gate, not audit)', async () => {

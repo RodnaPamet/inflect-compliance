@@ -23,7 +23,10 @@
  *   5. ↑/↓ in the preview panel walk the rows in the order the table shows;
  *   6. the Vulns badge keeps its count and opens the asset's own
  *      Vulnerabilities tab, which lists everything the count adds up;
- *   7. types, statuses and severities render as labels, not enum codes.
+ *   7. types, statuses and severities render as labels, not enum codes;
+ *   8. a restore or create refused because the name is taken says so in the
+ *      page's own words, and any other refused restore shows the server's
+ *      reason rather than "try again" (#4324).
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -96,6 +99,20 @@ jest.mock('next/navigation', () => {
 });
 
 jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () => null }));
+
+// `toast.error` is captured: no Toaster is mounted, and the restore outcome
+// is reported only as a toast. Everything else in sonner stays real.
+const mockToastError = jest.fn();
+jest.mock('sonner', () => {
+    const actual = jest.requireActual('sonner');
+    return {
+        ...actual,
+        toast: Object.assign((...a: unknown[]) => actual.toast(...a), {
+            ...actual.toast,
+            error: (...a: unknown[]) => mockToastError(...a),
+        }),
+    };
+});
 
 const mockGetTenantCtx = jest.fn();
 jest.mock('@/app-layer/context', () => ({
@@ -174,13 +191,18 @@ const DELETED = row({
 
 /** Decides, per request, whether the list GET fails. */
 let failList: (url: URL) => boolean = () => false;
+/** Per test: the answer to a POST, or null for the default 200 `{}`. */
+let answerPost: (url: URL) => { status: number; body: unknown } | null = () => null;
 
 function installFetch() {
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), 'https://test.local');
         let status = 200;
         let body: unknown = {};
-        if (url.pathname === '/api/t/acme/assets') {
+        const posted = init?.method === 'POST' ? answerPost(url) : null;
+        if (posted) {
+            ({ status, body } = posted);
+        } else if (url.pathname === '/api/t/acme/assets') {
             if (failList(url)) {
                 status = 500;
                 body = { error: { code: 'INTERNAL', message: 'An error occurred' } };
@@ -265,6 +287,8 @@ async function openViewsMenu() {
 beforeEach(() => {
     window.localStorage.clear();
     failList = () => false;
+    answerPost = () => null;
+    mockToastError.mockReset();
     mockListAssets.mockReset();
     mockListAssets.mockResolvedValue(LIVE_ROWS);
     const sp = jest.requireMock('next/navigation').__searchParams as URLSearchParams;
@@ -521,5 +545,75 @@ describe('Assets list — types, statuses and severities are labels', () => {
         expect([...offered].sort()).toEqual(
             Object.values(A.filterEnums.type as Record<string, string>).sort(),
         );
+    });
+});
+
+// ─── 8. A taken name is named (#4324) ───────────────────────────────
+
+/** The refusal the server sends for a taken name (`src/lib/asset-name-taken.ts`). */
+function nameTaken(message: string) {
+    return {
+        status: 409,
+        body: { error: { code: 'CONFLICT', message, details: { reason: 'ASSET_NAME_TAKEN' } } },
+    };
+}
+
+async function clickRestore() {
+    await openDeletedView();
+    await screen.findByText(DELETED.name);
+    await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: A.deleted.restore }));
+    });
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+    return mockToastError.mock.calls[0][0] as string;
+}
+
+describe('Assets list — a taken name is named', () => {
+    it('a restore refused because another asset took the name says so, not "try again"', async () => {
+        answerPost = (url) =>
+            url.pathname === `/api/t/acme/assets/${DELETED.id}/restore`
+                ? nameTaken('Cannot restore: another asset now has this name. Rename that asset first, then retry.')
+                : null;
+        await mountAs('ADMIN');
+        const shown = await clickRestore();
+        expect(shown).toBe(A.deleted.restoreNameTaken.replace('{name}', DELETED.name));
+        expect(shown).not.toBe(A.deleted.restoreFailed);
+    });
+
+    it("any other refused restore shows the server's reason", async () => {
+        answerPost = (url) =>
+            url.pathname.endsWith('/restore')
+                ? { status: 404, body: { error: { code: 'NOT_FOUND', message: 'Asset is not deleted' } } }
+                : null;
+        await mountAs('ADMIN');
+        expect(await clickRestore()).toBe('Asset is not deleted');
+    });
+
+    it("the new-asset dialog says the name is taken in the page's words, not the server's", async () => {
+        // The reason decides, not the sentence: the server's is English
+        // whatever the reader's language.
+        answerPost = (url) =>
+            url.pathname === '/api/t/acme/assets'
+                ? nameTaken('A resource with that unique constraint already exists')
+                : null;
+        await mountAs('EDITOR');
+        await act(async () => {
+            fireEvent.click(document.getElementById('new-asset-btn') as HTMLElement);
+        });
+        const input = await waitFor(() => {
+            const el = document.getElementById('asset-name-input');
+            expect(el).not.toBeNull();
+            return el as HTMLInputElement;
+        });
+        fireEvent.change(input, { target: { value: ALPHA.name } });
+        await act(async () => {
+            fireEvent.submit(document.getElementById('new-asset-form') as HTMLFormElement);
+        });
+        const alert = await waitFor(() => {
+            const el = document.getElementById('new-asset-error');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        expect(alert.textContent).toBe(A.form.nameTaken);
     });
 });

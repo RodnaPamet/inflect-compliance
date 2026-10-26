@@ -63,10 +63,11 @@ export function ControlEditPanel({
     control: PanelControl;
     canWrite: boolean;
     /**
-     * The viewer's `evidence.upload`. The file box POSTs to
-     * `/evidence/uploads`, which asks that key and not `controls.edit`, so
-     * `canWrite` alone offered it to a custom role the upload then refused.
-     * The URL link stays on `canWrite`: its route is the control's own.
+     * The viewer's `evidence.upload`, which gates the file dropzone on top of
+     * `canWrite` (here `canWrite && controls.edit`): a file upload POSTs to
+     * `/evidence/uploads`, which asks `evidence.upload` (#4325). It gates only
+     * the dropzone. The attached-evidence list shows for every role, and the
+     * URL link stays on `canWrite`, because its route is the control's own.
      */
     canUploadEvidence: boolean;
     /** Retained for API compatibility (AsidePanel owns the close affordance). */
@@ -286,7 +287,9 @@ export function ControlEditPanel({
                         )}
                     </div>
 
-                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail). */}
+                    {/* Drag-and-drop evidence upload (canonical FileDropzone, compact in the rail).
+                        The dropzone also needs `evidence.upload`; the attached
+                        list is always shown. */}
                     <EvidenceUploadSection
                         tenantSlug={tenantSlug}
                         linkField="controlId"

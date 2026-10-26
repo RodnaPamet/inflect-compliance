@@ -1,6 +1,6 @@
 import { RequestContext } from '../../types';
 import { ControlRepository, type ControlListFilters } from '../../repositories/ControlRepository';
-import { getControlHealthVerdicts, type ControlHealthSummary } from './health';
+import { getControlHealthVerdicts } from './health';
 import { TaskRepository } from '../../repositories/TaskRepository';
 import { assertCanReadControls } from '../../policies/control.policies';
 import { notFound } from '@/lib/errors/types';
@@ -36,14 +36,13 @@ export interface ControlListInputFilters {
 async function resolveControlIdRestriction(
     ctx: RequestContext,
     filters?: ControlListInputFilters,
-    loadVerdicts: () => Promise<ControlHealthSummary> = () => getControlHealthVerdicts(ctx),
 ): Promise<string[] | undefined> {
     let ids: string[] | undefined;
     if (filters?.ids !== undefined) {
         ids = filters.ids.split(',').map((s) => s.trim()).filter(Boolean);
     }
     if (filters?.health) {
-        const { verdicts } = await loadVerdicts();
+        const { verdicts } = await getControlHealthVerdicts(ctx);
         const healthIds = verdicts.filter((v) => v.verdict === filters.health).map((v) => v.controlId);
         if (ids) {
             // O(1) membership test instead of Array.includes (O(n)) — the
@@ -254,13 +253,7 @@ export async function listControlsWithDeleted(
     options: { take?: number } = {},
 ) {
     assertCanAdmin(ctx);
-    // The tenant-wide verdict scan reads live controls only, so a Health pick
-    // here matched nothing and every row's Health cell was a dash. One scan
-    // over the DELETED controls serves both the facet and each row's verdict.
-    // It runs before — not nested inside — the transaction below.
-    const deletedHealth = await getControlHealthVerdicts(ctx, { scope: 'deleted' });
-    const verdictById = new Map(deletedHealth.verdicts.map((v) => [v.controlId, v.verdict]));
-    const idRestriction = await resolveControlIdRestriction(ctx, filters, async () => deletedHealth);
+    const idRestriction = await resolveControlIdRestriction(ctx, filters);
     const repoFilters = toRepoFilters(filters, idRestriction);
     return runInTenantContext(ctx, async (db) => {
         const controls = await ControlRepository.listDeleted(db, ctx, repoFilters, options);
@@ -273,7 +266,6 @@ export async function listControlsWithDeleted(
             ...c,
             taskTotal: counts.get(c.id)?.total ?? 0,
             taskDone: counts.get(c.id)?.done ?? 0,
-            healthVerdict: verdictById.get(c.id) ?? null,
         }));
     });
 }

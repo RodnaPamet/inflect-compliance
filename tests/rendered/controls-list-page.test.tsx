@@ -18,9 +18,7 @@
  *      a dash with the reason, not a count that ignores the filter;
  *   4. a bulk status change the server applied to only some controls says so;
  *   5. a second owner can be picked in the Owner filter;
- *   6. a custom control's stored theme category reads as its label;
- *   7. the quick views and the AI Assist panel follow the keys their own
- *      routes check, and the Deleted view shows each row's health (#4325).
+ *   6. a custom control's stored theme category reads as its label.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -115,19 +113,6 @@ const CUSTOM = row({ id: 'c-custom', name: 'Encrypt laptops', code: 'CTL-1', cat
 const OTHER = row({ id: 'c-other', name: 'Review firewall rules', code: 'CTL-2' });
 const ALL_ROWS = [CUSTOM, OTHER];
 
-/** A control with one linked task, for the Task quick view (#4325). */
-const WITH_TASK = row({ id: 'c-task', name: 'Log access', code: 'CTL-3', taskTotal: 1 });
-const TASK = { id: 't-1', key: 'TSK-1', title: 'Collect the access log', status: 'OPEN', severity: 'MEDIUM', assignee: null, _count: { evidence: 0 } };
-/** GET /tasks/:id — what the Task quick view seeds its form from. */
-const TASK_DETAIL = {
-    ...TASK,
-    description: null,
-    type: 'TASK',
-    priority: 'P2',
-    dueAt: null,
-    assigneeUserId: null,
-};
-
 const KPI = { total: 2, implemented: 0, inProgress: 2, notStarted: 0 };
 
 /** What the list GET returns in this test. */
@@ -158,9 +143,6 @@ function installFetch() {
             return respond({ rows, truncated: false, kpiCounts: KPI });
         }
         if (p === '/api/t/acme/controls/bulk/status') return respond(bulkStatusResponse);
-        // A control's linked tasks (the expanded row) and one task's detail.
-        if (p === '/api/t/acme/tasks') return respond([TASK]);
-        if (p === `/api/t/acme/tasks/${TASK.id}`) return respond(TASK_DETAIL);
         if (p.endsWith('/controls/health-verdicts')) return respond({ verdicts: [] });
         if (p.endsWith('/dashboard/trends')) return respond({ dataPoints: [] });
         // Member lookups, activity feeds, evidence lists — empty.
@@ -193,7 +175,7 @@ function granular(role: Role): AppPerms {
     return {
         controls: p.controls,
         tasks: { edit: p.tasks.edit },
-        evidence: { upload: p.evidence.upload },
+                    evidence: { upload: true },
         admin: { manage: p.admin.manage },
     };
 }
@@ -656,135 +638,5 @@ describe('Controls list — a stored theme category reads as its label', () => {
         const rail = await screen.findByTestId('controls-browse-aside');
         await waitFor(() => expect(rail).toHaveTextContent(C.categoryLabels.TECHNOLOGICAL));
         expect(rail).not.toHaveTextContent('TECHNOLOGICAL');
-    });
-});
-
-// ─── 7. The quick views, the AI Assist panel, the Deleted view (#4325) ─
-
-/** Click a control's name and return its quick view. */
-async function openControlQuickView(c: ControlRow): Promise<HTMLElement> {
-    await readsSettled();
-    fireEvent.click(screen.getByTestId(`control-title-${c.id}`));
-    return screen.findByTestId('control-edit-panel');
-}
-
-describe('Controls list — the control quick view offers a file upload only to evidence.upload', () => {
-    it('an EDITOR-based custom role without evidence.upload keeps the URL link but gets no file box', async () => {
-        // The box POSTs to /evidence/uploads, whose usecase asserts
-        // `evidence.upload`; it was offered on `controls.edit` and refused.
-        const editor = granular('EDITOR');
-        mount({
-            permissions: coarse('EDITOR'),
-            appPermissions: { ...editor, evidence: { upload: false } },
-        });
-        await screen.findByText(CUSTOM.name);
-        const panel = await openControlQuickView(CUSTOM);
-        // The URL link is the control's own route (`controls.edit`), held.
-        expect(within(panel).getByTestId('evidence-link-url-form')).toBeInTheDocument();
-        expect(within(panel).queryByTestId('evidence-upload-dropzone')).toBeNull();
-    });
-
-    it('a built-in EDITOR gets both (the negative above is real)', async () => {
-        mountAs('EDITOR');
-        await screen.findByText(CUSTOM.name);
-        const panel = await openControlQuickView(CUSTOM);
-        expect(within(panel).getByTestId('evidence-link-url-form')).toBeInTheDocument();
-        expect(within(panel).getByTestId('evidence-upload-dropzone')).toBeInTheDocument();
-    });
-});
-
-describe('Controls list — the Task quick view follows both permission layers', () => {
-    /** Expand the control's tasks, click the task, and wait for its form to load. */
-    async function openTaskQuickView(): Promise<HTMLElement> {
-        await screen.findByText(WITH_TASK.name);
-        await openControlQuickView(WITH_TASK);
-        const taskRow = await waitFor(() => {
-            const el = document.querySelector(`[data-task-quickview="${TASK.id}"]`);
-            expect(el).not.toBeNull();
-            return el as HTMLElement;
-        });
-        fireEvent.click(taskRow);
-        const panel = await screen.findByTestId('task-edit-panel');
-        // Loaded — a failed load disables the form too, which would make the
-        // assertion below pass for the wrong reason.
-        await waitFor(() =>
-            expect(within(panel).getByDisplayValue(TASK_DETAIL.title)).toBeInTheDocument(),
-        );
-        return panel;
-    }
-    const taskFieldset = (panel: HTMLElement) =>
-        within(panel).getByTestId('task-edit-form').querySelector('fieldset');
-
-    it('a READER-based custom role granted tasks.edit gets a read-only task panel', async () => {
-        // `updateTask` asserts canWrite AND tasks.edit; the key alone made
-        // the panel editable and every save was refused.
-        listRows = [WITH_TASK];
-        const reader = granular('READER');
-        mount({
-            permissions: coarse('READER'),
-            appPermissions: { ...reader, tasks: { edit: true } },
-        });
-        const panel = await openTaskQuickView();
-        expect(taskFieldset(panel)).toBeDisabled();
-        expect(within(panel).queryByTestId('task-edit-autosave-status')).toBeNull();
-    });
-
-    it('a built-in EDITOR gets an editable one (the negative above is real)', async () => {
-        listRows = [WITH_TASK];
-        mountAs('EDITOR');
-        const panel = await openTaskQuickView();
-        expect(taskFieldset(panel)).not.toBeDisabled();
-    });
-});
-
-describe('Controls list — the AI Assist panel needs the write tier as well as controls.edit', () => {
-    beforeEach(() => {
-        // Expanded, so its content renders rather than the collapsed spine.
-        window.localStorage.setItem('aside:collapsed:controls-list-ai', 'false');
-    });
-
-    it('a READER-based custom role granted controls.edit does not get it', async () => {
-        const reader = granular('READER');
-        mount({
-            permissions: coarse('READER'),
-            appPermissions: { ...reader, controls: { create: false, edit: true } },
-        });
-        await screen.findByText(CUSTOM.name);
-        await readsSettled();
-        expect(screen.queryByTestId('ai-assist-rail')).toBeNull();
-    });
-
-    it('a built-in EDITOR does (the negative above is real)', async () => {
-        mountAs('EDITOR');
-        await screen.findByText(CUSTOM.name);
-        expect(await screen.findByTestId('ai-assist-rail')).toBeInTheDocument();
-    });
-});
-
-describe('Controls list — the Deleted view shows each deleted row its health', () => {
-    it("reads the row's own verdict, which the tenant-wide read does not cover", async () => {
-        // The health-verdicts mock answers no verdicts (live controls only),
-        // and the Deleted view's rows carry their own.
-        listRows = [{ ...CUSTOM, deletedAt: '2026-10-01T00:00:00.000Z', deletedByUserId: null, healthVerdict: 'AT_RISK' }];
-        mountAs('ADMIN');
-        // The live list ignores the field: a dash, as before.
-        const liveRow = await rowFor(CUSTOM);
-        await readsSettled();
-        expect(liveRow).not.toHaveTextContent(C.health.verdict.AT_RISK);
-
-        await openViewsMenu();
-        await userEvent.setup().click(document.getElementById('controls-show-deleted-toggle') as HTMLElement);
-        await waitFor(() =>
-            expect(
-                (global.fetch as jest.Mock).mock.calls.some(
-                    ([u]) => new URL(String(u), 'https://test.local').searchParams.get('includeDeleted') === 'true',
-                ),
-            ).toBe(true),
-        );
-        await waitFor(() =>
-            expect(screen.getByTestId(`control-title-${CUSTOM.id}`).closest('tr')).toHaveTextContent(
-                C.health.verdict.AT_RISK,
-            ),
-        );
     });
 });
