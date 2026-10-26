@@ -45,9 +45,11 @@ import type { AgentDriverMode } from '@/lib/agentic/agent-driver';
 
 import {
     OFFERED_ENGINES,
+    choiceEnabled,
     engineControlFor,
     gateTermsFor,
     headlineFor,
+    headlineToneFor,
     type AgentDriverSettingPayload,
     type EngineTerm,
     type EngineTermKey,
@@ -78,18 +80,31 @@ export function AgentEnginesSection() {
             setSaving(true);
             setSaveError(null);
             try {
-                const res = await fetch(apiUrl('/admin/agent-driver'), {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode }),
-                });
+                let res: Response;
+                try {
+                    res = await fetch(apiUrl('/admin/agent-driver'), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode }),
+                    });
+                } catch (err) {
+                    // No response at all. The dialog stays open, so it must
+                    // say why, or a retry looks like a button that does nothing.
+                    setSaveError(t('saveFailed'));
+                    throw err;
+                }
                 if (!res.ok) {
                     const body: unknown = await res.json().catch(() => null);
                     const message = apiErrorMessage(body, t('saveFailed'));
                     setSaveError(message);
                     throw new Error(message);
                 }
-                await Promise.all([setting.mutate(), canChange ? wiring.mutate() : undefined]);
+                // The change is made. A refetch that fails must not hold the
+                // dialog open as if it had not been: the section reports the
+                // stale read itself (`refreshFailed`).
+                await Promise.all([setting.mutate(), canChange ? wiring.mutate() : undefined]).catch(
+                    () => undefined,
+                );
                 setPending(null);
             } finally {
                 setSaving(false);
@@ -98,7 +113,10 @@ export function AgentEnginesSection() {
         [apiUrl, canChange, setting, wiring, t],
     );
 
-    if (setting.error) {
+    // Only when there is nothing to show. SWR keeps the last good answer
+    // beside a failed revalidation, and a section that had loaded is not
+    // replaced by an error about a refresh.
+    if (setting.error && !setting.data) {
         return (
             <section id="agent-engines" data-testid="agent-engines">
                 <ErrorState title={t('loadFailed')} />
@@ -110,7 +128,12 @@ export function AgentEnginesSection() {
 
     const control = engineControlFor(state, canChange);
     const runsOnFlue = state.effective.driver === 'flue';
-    const terms: EngineTerm[] = canChange && wiring.data ? wiring.data.terms : gateTermsFor(state);
+    // The owner's six terms only when they have arrived. While the checklist
+    // is loading, or if it failed, the three terms the gate reports are shown
+    // under the gate's own heading, never as "what a Flue run needs".
+    const wiringData = canChange ? wiring.data : undefined;
+    const terms: EngineTerm[] = wiringData ? wiringData.terms : gateTermsFor(state);
+    const tone = headlineToneFor(state, wiringData);
 
     /** Where a tenant-owned wiring term is fixed. Operator terms have no link. */
     const fixHref = (key: EngineTermKey): string | null => {
@@ -127,20 +150,37 @@ export function AgentEnginesSection() {
                         <Heading level={2}>{t('title')}</Heading>
                         <p className="max-w-3xl text-sm text-content-muted">{t('description')}</p>
                     </div>
-                    <StatusBadge variant={runsOnFlue ? 'success' : 'neutral'}>
+                    <StatusBadge variant={tone === 'info' ? 'neutral' : tone}>
                         {runsOnFlue ? t('engine.FLUE.name') : t('engine.STATIC.name')}
                     </StatusBadge>
                 </div>
 
                 {/* The headline, and the reason the section exists: what runs
                     TODAY, which the stored choice alone does not tell you. */}
-                <InlineNotice variant={runsOnFlue ? 'success' : 'info'}>
-                    <span data-testid="agent-engines-headline">{t(headlineFor(state))}</span>
+                <InlineNotice variant={tone}>
+                    <span data-testid="agent-engines-headline" data-tone={tone}>
+                        {t(headlineFor(state, wiringData))}
+                    </span>
                 </InlineNotice>
 
-                {!state.envEnabled && (
+                {setting.error && (
+                    <InlineNotice variant="warning">
+                        <span data-testid="agent-engines-refresh-failed">{t('refreshFailed')}</span>
+                    </InlineNotice>
+                )}
+
+                {/* Only over a control. A viewer who has none is told the
+                    deployment is off by the headline already. */}
+                {control === 'deployment-off' && (
                     <InlineNotice variant="info" title={t('deploymentOffHeading')}>
-                        <span data-testid="agent-engines-deployment-off">{t('deploymentOffBody')}</span>
+                        <span data-testid="agent-engines-deployment-off" className="block">
+                            {t('deploymentOffBody')}
+                        </span>
+                        {state.mode === 'FLUE' && (
+                            <span data-testid="agent-engines-deployment-off-stored-flue" className="mt-1 block">
+                                {t('deploymentOffStoredFlue')}
+                            </span>
+                        )}
                     </InlineNotice>
                 )}
 
@@ -158,13 +198,14 @@ export function AgentEnginesSection() {
                             const next = value as AgentDriverMode;
                             if (next !== state.mode) setPending(next);
                         }}
-                        disabled={control === 'deployment-off' || saving}
+                        disabled={saving}
                         aria-label={t('choiceAria')}
                         className="space-y-1.5"
                     >
                         {OFFERED_ENGINES.map((mode) => {
                             const id = `agent-engine-${mode}`;
                             const checked = state.mode === mode;
+                            const enabled = choiceEnabled(control, mode);
                             return (
                                 <label
                                     key={mode}
@@ -173,9 +214,16 @@ export function AgentEnginesSection() {
                                         checked
                                             ? 'border-border-emphasis bg-bg-subtle'
                                             : 'border-border-subtle hover:bg-bg-muted'
-                                    } ${control === 'deployment-off' ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                    } ${enabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
                                 >
-                                    <RadioGroupItem id={id} value={mode} size="sm" className="mt-0.5" data-testid={id} />
+                                    <RadioGroupItem
+                                        id={id}
+                                        value={mode}
+                                        size="sm"
+                                        className="mt-0.5"
+                                        disabled={!enabled}
+                                        data-testid={id}
+                                    />
                                     <div className="min-w-0">
                                         <p className="text-sm font-medium text-content-emphasis">
                                             {t(`engine.${mode}.name`)}
@@ -189,8 +237,13 @@ export function AgentEnginesSection() {
                 )}
 
                 <div className="space-y-tight">
+                    {canChange && wiring.error && (
+                        <InlineNotice variant="warning">
+                            <span data-testid="agent-engines-wiring-failed">{t('wiringLoadFailed')}</span>
+                        </InlineNotice>
+                    )}
                     <p className="text-sm font-medium text-content-emphasis">
-                        {canChange ? t('wiringHeading') : t('gateHeading')}
+                        {wiringData ? t('wiringHeading') : t('gateHeading')}
                     </p>
                     <ul className="space-y-tight" data-testid="agent-engines-terms">
                         {terms.map((term) => {
@@ -232,8 +285,10 @@ export function AgentEnginesSection() {
                         })}
                     </ul>
                     {/* The term that surprises people: a browser session carries
-                        no agentId, so nobody can start a Flue run by hand. */}
-                    {canChange && <p className="text-xs text-content-muted">{t('boundKeyNote')}</p>}
+                        no agentId, so nobody can start a Flue run by hand. Shown
+                        to every viewer: it is the one condition the three-term
+                        gate cannot report. */}
+                    <p className="text-xs text-content-muted">{t('boundKeyNote')}</p>
                 </div>
             </Card>
 

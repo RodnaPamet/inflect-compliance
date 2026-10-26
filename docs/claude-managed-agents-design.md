@@ -62,11 +62,33 @@ puts at Anthropic:
     ceiling of 600 requests a minute sits in front of authentication. Every
     Managed Agent calls from Anthropic's egress addresses, and they no longer
     share one budget (`docs/rate-limiting.md`, "The MCP endpoint").
+    - **The key is charged before any work** (#4210). It is charged after the
+      cheap credential check and before the registration gate and the
+      invocation, whose `tools/list` reaches every external connection. A
+      malformed request costs one unit.
   - **AI Guard.** A read tool's arguments pass the same egress scan that
-    `runGuardedTool` applies to Inflect's own engines, before the funnel
-    (`src/lib/mcp/argument-guard.ts`). Proposals are guarded at the queue, as
-    before. A read's *result* is not scanned on this route, because the model
-    that consumes it is not Inflect's.
+    `runGuardedTool` applies to Inflect's own engines
+    (`src/lib/mcp/argument-guard.ts`).
+    - **The scan runs after the gate** (#4210). It runs once the tool has
+      resolved and passed `authorizeToolCall`, so an unknown or unauthorized
+      call is refused as such and writes no guard row. A refusal names no rule.
+    - **What the scan reads** (#4212). It reads keys as well as values, and
+      refuses content nested past depth 64 rather than passing it as clean.
+    - **Proposals** are guarded at the queue, as before.
+    - **A read's *result*** is not scanned on this route, because the model
+      that consumes it is not Inflect's.
+- **Every engine plugs into one tool core and passes one conformance suite**
+  (Phase 0 of `docs/claude-agent-sdk-design.md`).
+  - **The tool core** (`src/lib/agentic/engine-tools/`) holds the narrowing, the
+    review latch and the guarded call. An engine supplies only its tool shape
+    and its guard source prefix.
+  - **The conformance suite** (`tests/helpers/driver-conformance.ts`) holds
+    every run driver to the same controls. The kill switch and the caps are
+    asked before every model call, and an unvouched agent is refused before
+    its run row exists.
+  - **A new run driver must pass it before it is switched on.** That includes
+    the managed-agents driver this document plans. A variance is allowed only
+    with a named owner decision.
 - **Integrations have a provider registry and a signed webhook route.**
   `src/app-layer/integrations/providers/` and
   `src/app/api/integrations/webhooks/[provider]/route.ts`. The route reads the

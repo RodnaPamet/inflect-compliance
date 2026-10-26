@@ -2830,6 +2830,22 @@ Two scenarios are easy to weaken by accident:
   decision 2026-10-25, #4197). The count is asserted against the model inputs
   and is never inferred from the number of steps.
 
+A cap scenario is mutation-proved by removing EVERY charge site of that cap.
+Since #4196 the token and wall-clock caps are also charged before each model
+call, so removing one site leaves the cap held by another, and the scenario
+stays green. That is correct, not vacuous.
+
+**The Agent engines section never offers less than the narrow, and never
+reports more than a run can do** (Phase 0's hardening, 0H):
+
+  - An owner can always return to the built-in engine, even with the
+    deployment switch off. A stored Flue choice takes effect the moment the
+    operator turns the switch on, so disabling the narrow would leave the owner
+    unable to reverse it (`choiceEnabled`).
+  - The headline is green only when nothing known stops a run. For an owner
+    whose checklist shows no active agent or bound key, it says no Flue run can
+    start yet (`headlineFor`, `headlineToneFor`).
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

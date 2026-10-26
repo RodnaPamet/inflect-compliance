@@ -9,8 +9,12 @@
  *   - a viewer who cannot change the engine sees the state, no control, one
  *     sentence naming who can change it, and causes no request to the
  *     owner-only checklist route;
- *   - an owner on a deployment whose switch is off gets a disabled choice and
- *     the reason;
+ *   - an owner on a deployment whose switch is off cannot choose Flue, can
+ *     always return to the built-in engine, and is told the reason;
+ *   - the headline never reports Flue as working while the owner's checklist
+ *     says no run can start;
+ *   - a checklist that is loading or failed is never shown as the owner's
+ *     checklist, and a failed refresh never replaces a section that loaded;
  *   - an owner's change goes through the confirmation, PUTs exactly the mode
  *     chosen, and a refusal keeps the dialog open over the server's sentence;
  *   - the owner's checklist names the blocking term and where to fix it.
@@ -77,8 +81,16 @@ const EN = jest.requireActual('../../messages/en.json') as { admin: { agentEngin
 const BG = jest.requireActual('../../messages/bg.json') as { admin: { agentEngines: Record<string, unknown> } };
 interface EngineCopy {
     runsOnFlue: string;
+    runsOnFlueNotReady: string;
     ownerOnly: string;
     deploymentOffBody: string;
+    deploymentOffStoredFlue: string;
+    wiringHeading: string;
+    gateHeading: string;
+    wiringLoadFailed: string;
+    refreshFailed: string;
+    loadFailed: string;
+    saveFailed: string;
     confirmLabel: string;
     fix: string;
     operatorTerm: string;
@@ -121,12 +133,32 @@ const WIRING_BLOCKED: FlueWiringPayload = {
     blockedOn: 'REGISTERED_AGENT',
 };
 
-function arrange(opts: { setting: AgentDriverSettingPayload; canChange: boolean; wiring?: FlueWiringPayload }) {
+const WIRING_READY: FlueWiringPayload = {
+    terms: WIRING_BLOCKED.terms.map((term) => ({ ...term, satisfied: true })),
+    ready: true,
+    blockedOn: null,
+};
+
+function arrange(opts: {
+    setting: AgentDriverSettingPayload | undefined;
+    canChange: boolean;
+    wiring?: FlueWiringPayload;
+    settingError?: unknown;
+    wiringError?: unknown;
+    mutate?: jest.Mock;
+}) {
     permissions.admin.tenant_lifecycle = opts.canChange;
-    swr['/admin/agent-driver'] = { data: opts.setting, error: undefined, isLoading: false, mutate: jest.fn() };
-    swr['/admin/flue-wiring'] = { data: opts.wiring, error: undefined, isLoading: false, mutate: jest.fn() };
+    swr['/admin/agent-driver'] = {
+        data: opts.setting,
+        error: opts.settingError,
+        isLoading: false,
+        mutate: opts.mutate ?? jest.fn(),
+    };
+    swr['/admin/flue-wiring'] = { data: opts.wiring, error: opts.wiringError, isLoading: false, mutate: jest.fn() };
     return render(<AgentEnginesSection />);
 }
+
+const FLUE_EFFECTIVE = setting({ mode: 'FLUE', effective: { driver: 'flue', reason: null } });
 
 const fetchMock = jest.fn();
 beforeEach(() => {
@@ -216,7 +248,7 @@ describe('a viewer who cannot change the engine', () => {
 });
 
 describe('an owner on a deployment whose switch is off', () => {
-    it('gets a disabled choice, and the page says why', () => {
+    it('cannot choose Flue, can always choose the built-in engine, and the page says why', () => {
         arrange({
             setting: setting({ envEnabled: false, effective: { driver: 'static', reason: 'ENV_DISABLED' } }),
             canChange: true,
@@ -224,8 +256,93 @@ describe('an owner on a deployment whose switch is off', () => {
         });
         expect(screen.getByTestId('agent-engines')).toHaveAttribute('data-control', 'deployment-off');
         expect(screen.getByTestId('agent-engine-FLUE')).toBeDisabled();
-        expect(screen.getByTestId('agent-engine-STATIC')).toBeDisabled();
+        expect(screen.getByTestId('agent-engine-STATIC')).toBeEnabled();
         expect(screen.getByTestId('agent-engines-deployment-off')).toHaveTextContent(COPY.deploymentOffBody);
+        // Nothing is stored that the switch would turn on.
+        expect(screen.queryByTestId('agent-engines-deployment-off-stored-flue')).toBeNull();
+    });
+
+    it('can narrow a stored Flue choice back to the built-in engine, which the switch would otherwise turn on', async () => {
+        // A stored FLUE is not inert while the switch is off: it takes effect
+        // the moment the operator turns the switch back on.
+        const user = userEvent.setup();
+        fetchMock.mockResolvedValue({ ok: true, json: async () => setting({ envEnabled: false }) });
+        arrange({
+            setting: setting({ mode: 'FLUE', envEnabled: false, effective: { driver: 'static', reason: 'ENV_DISABLED' } }),
+            canChange: true,
+            wiring: WIRING_BLOCKED,
+        });
+        expect(screen.getByTestId('agent-engines-deployment-off-stored-flue')).toHaveTextContent(
+            COPY.deploymentOffStoredFlue,
+        );
+
+        await user.click(screen.getByTestId('agent-engine-STATIC'));
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog).toHaveTextContent(COPY.confirmTitle.STATIC);
+        await user.click(within(dialog).getByRole('button', { name: COPY.confirmLabel }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ mode: 'STATIC' });
+    });
+});
+
+describe('the headline does not report a capability the runtime refuses', () => {
+    it('tells an owner whose checklist blocks every run that no Flue run can start yet', () => {
+        arrange({ setting: FLUE_EFFECTIVE, canChange: true, wiring: WIRING_BLOCKED });
+        const headline = screen.getByTestId('agent-engines-headline');
+        expect(headline).toHaveTextContent(COPY.runsOnFlueNotReady);
+        expect(headline).toHaveAttribute('data-tone', 'warning');
+    });
+
+    it('reports Flue as running for an owner whose checklist is complete (positive control)', () => {
+        arrange({ setting: FLUE_EFFECTIVE, canChange: true, wiring: WIRING_READY });
+        const headline = screen.getByTestId('agent-engines-headline');
+        expect(headline).toHaveTextContent(COPY.runsOnFlue);
+        expect(headline).toHaveAttribute('data-tone', 'success');
+    });
+
+    it('tells a viewer without the checklist what a run still needs', () => {
+        arrange({ setting: FLUE_EFFECTIVE, canChange: false });
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(COPY.runsOnFlue);
+        expect(screen.getByText(COPY.boundKeyNote)).toBeInTheDocument();
+    });
+});
+
+describe('a checklist or a setting that did not arrive', () => {
+    it('shows an owner the gate’s three terms under the gate’s heading while the checklist loads', () => {
+        arrange({ setting: FLUE_EFFECTIVE, canChange: true, wiring: undefined });
+        expect(within(screen.getByTestId('agent-engines-terms')).getAllByRole('listitem')).toHaveLength(3);
+        expect(screen.getByText(COPY.gateHeading)).toBeInTheDocument();
+        expect(screen.queryByText(COPY.wiringHeading)).toBeNull();
+        // Not ready is unknown, not false: no warning is claimed either way.
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(COPY.runsOnFlue);
+        expect(screen.queryByTestId('agent-engines-wiring-failed')).toBeNull();
+    });
+
+    it('says so when the checklist failed, rather than showing three terms as the checklist', () => {
+        arrange({ setting: FLUE_EFFECTIVE, canChange: true, wiring: undefined, wiringError: new Error('500') });
+        expect(screen.getByTestId('agent-engines-wiring-failed')).toHaveTextContent(COPY.wiringLoadFailed);
+        expect(screen.queryByText(COPY.wiringHeading)).toBeNull();
+    });
+
+    it('keeps a section that had loaded when a refresh fails, and says the read may be stale', () => {
+        arrange({ setting: setting(), canChange: true, wiring: WIRING_BLOCKED, settingError: new Error('500') });
+        expect(screen.getByTestId('agent-engines-headline')).toBeInTheDocument();
+        expect(screen.getByTestId('agent-engines-refresh-failed')).toHaveTextContent(COPY.refreshFailed);
+    });
+
+    it('shows the load failure only when there is nothing to show', () => {
+        arrange({ setting: undefined, canChange: true, settingError: new Error('500') });
+        expect(screen.getByText(COPY.loadFailed)).toBeInTheDocument();
+        expect(screen.queryByTestId('agent-engines-headline')).toBeNull();
+    });
+
+    it('does not tell a viewer with no control that "the choice below" is disabled', () => {
+        arrange({
+            setting: setting({ envEnabled: false, effective: { driver: 'static', reason: 'ENV_DISABLED' } }),
+            canChange: false,
+        });
+        expect(screen.queryByTestId('agent-engines-deployment-off')).toBeNull();
+        expect(screen.getByTestId('agent-engines-headline')).toHaveTextContent(COPY.reason.ENV_DISABLED);
     });
 });
 
@@ -268,6 +385,34 @@ describe('an owner on a deployment that allows the engine', () => {
 
         await waitFor(() => expect(within(screen.getByRole('dialog')).getByRole('alert')).toBeInTheDocument());
         expect(swr['/admin/agent-driver'].mutate).not.toHaveBeenCalled();
+    });
+
+    it('a request that never reached the server keeps the dialog open and says so', async () => {
+        const user = userEvent.setup();
+        fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+        arrange({ setting: setting(), canChange: true, wiring: WIRING_BLOCKED });
+
+        await user.click(screen.getByTestId('agent-engine-FLUE'));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('button', { name: COPY.confirmLabel }));
+
+        await waitFor(() =>
+            expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(COPY.saveFailed),
+        );
+    });
+
+    it('closes the dialog once the change is made, even when the refetch after it fails', async () => {
+        const user = userEvent.setup();
+        fetchMock.mockResolvedValue({ ok: true, json: async () => setting({ mode: 'FLUE' }) });
+        const mutate = jest.fn().mockRejectedValue(new Error('refetch failed'));
+        arrange({ setting: setting(), canChange: true, wiring: WIRING_BLOCKED, mutate });
+
+        await user.click(screen.getByTestId('agent-engine-FLUE'));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('button', { name: COPY.confirmLabel }));
+
+        await waitFor(() => expect(mutate).toHaveBeenCalled());
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     });
 
     it('choosing the engine already in force opens nothing', async () => {

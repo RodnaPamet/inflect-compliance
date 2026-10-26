@@ -94,7 +94,10 @@ Which engine runs is the AND of four terms, each able only to narrow
 4. whether the workflow definition asks for it (`WorkflowDefinition.driver`).
 
 Anything else resolves to `static`, with a named reason in the
-`WORKFLOW_RUN_STARTED` audit row.
+`WORKFLOW_RUN_STARTED` audit row. The run records the engine it executed on in
+`WorkflowRun.driver`, through `recordedModeOf` (#4285), a total map from `AgentDriver`
+to the stored mode, so a new engine cannot compile until it names its stored
+value (0H).
 
 **Where the tenant sets it.** Admin → AI features, in the "Agent engines"
 section (Step 0c, #4181).
@@ -107,7 +110,12 @@ section (Step 0c, #4181).
   rows.
 
 Each `StaticDriverReason` has its own sentence. When the deployment's switch is
-off, the choice is disabled. That section is the only control for the column.
+off, choosing Flue is disabled, but returning to the built-in engine is not: a
+stored Flue choice takes effect the moment the operator turns the switch on, so
+the narrow is always offered (0H). The headline reports Flue as running only
+when nothing known stops a run. For an owner whose checklist shows no active
+agent or bound key, it says no Flue run can start yet. That section is the only
+control for the column.
 Admin → Integrations used to carry a second control, and now links to the
 section instead.
 
@@ -765,7 +773,7 @@ Each phase's hardening step fills its row.
 
 | Phase | Has it run in production? | Evidence |
 | --- | --- | --- |
-| 0 — Foundations | no | — |
+| 0 — Foundations | yes, 2026-10-26 | Deployed at 19:04:37 UTC on 2026-10-25, when Watchtower rolled the `ced48e0` publish. Before that, every image publish after 04:28 had been cancelled by the next push (#4280). **`/api/mcp` limiting**, about 19:25 UTC: a probe of 610 unauthenticated requests drew 600 `401` and 10 `429`, and exactly 10 `rate-limit.blocked` lines, all `mcp-ip`, none `api-mutation`. **A Flue run:** the first start after the deploy answered 500, because the image did not carry the skill corpus (#4301, fixed by #4302). After the fix, `access-posture` run `cmvp38v9d000001o5526qt04h` completed on 2026-10-26: recorded `FLUE`, 1 `MODEL_CALL` and 2 `TOOL_CALL` steps, all `DONE`, in 16 s. The baseline, `cmujpuc84000001pgl3rdy9ud` (2026-09-27), had 1 `MODEL_CALL` and 5 `TOOL_CALL` steps. |
 | 1 — Agent builder | no | — |
 | 2 — Tool Runner engine | no | — |
 | 3 — Connect agents customers run | no | — |
@@ -779,7 +787,12 @@ Each phase's hardening step fills its row.
 
 Make the engine seam ready for more than Flue. #4111 closed the two gaps on
 `/api/mcp` first (Step 0d). #4176 then delivered the engine-neutral tool core
-(Step 0a), and #4220 the driver conformance suite (Step 0b).
+(Step 0a), #4220 the driver conformance suite (Step 0b), and #4181 the Agent
+engines section (Step 0c). #4248 hardened the phase (Step 0H). **Phase 0 is
+built, mutation-proved and observed in production.** Its `/api/mcp` limiting was
+observed on 2026-10-25, and a Flue run completed after it on 2026-10-26, once
+#4302 shipped the skill corpus in the image (#4301). See the Operational evidence
+table.
 
 #### Step 0a — Engine-neutral tool core
 
@@ -848,11 +861,34 @@ phase.
 
 Delivered by #4111. The rate limit is keyed on the verified `apiKeyId` and charged
 per JSON-RPC message, behind a per-IP ceiling of its own. Read-tool arguments pass
-the AI Guard's egress scan before the funnel. The design and the tests are in
+the AI Guard's egress scan. The design and the tests are in
 `docs/implementation-notes/2026-10-24-mcp-per-key-rate-limit-and-argument-guard.md`.
-It has no prompt, and 0H checks it with the rest of the phase.
+
+0H's re-read found four defects in it (#4205), fixed by #4210:
+- the key is now charged before the invocation is built;
+- a malformed request costs one unit;
+- the argument guard runs after the tool resolves and passes authorization;
+- a refusal no longer names the guard's rules.
+
+The scanner's own gaps (#4206) are older than the step. #4212 fixed them: keys
+are scanned, and content past depth 64 is refused.
 
 #### Step 0H — Phase 0 hardening
+
+Delivered by #4248 (#4141):
+
+- **The adversarial read** found the run-engine label (fixed by #4285, `recordedModeOf`) and six
+  rendering faults in the Agent engines section, each with a test.
+- **#4205 and #4206** were found by the read and fixed in #4210 and #4212.
+- **#4224** was filed against Step 2b.
+- **The mutation sweep** turns each conformance scenario red with exactly its
+  own mutation.
+
+- **The production evidence** is in the Operational evidence row for Phase 0. The
+  owner read the VM, because the session's `gcloud` credentials were refused. The
+  first Flue run start answered 500, which found #4301 (fixed by #4302).
+
+Details are in `docs/implementation-notes/2026-10-25-phase-0-hardening.md`.
 
 **Goal.** Prove Phase 0 as a whole: Flue runs exactly as before on the new core,
 the conformance suite bites, and the MCP changes behave in production.
