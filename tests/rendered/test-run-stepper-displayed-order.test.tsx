@@ -84,6 +84,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         tenantSlug: 'acme',
         permissions: { canWrite: true, canAdmin: false, canRead: true },
+        appPermissions: { controls: { view: true, create: true, edit: true } },
     }),
 }));
 

@@ -200,12 +200,16 @@ interface ControlsClientProps {
     };
     appPermissions: {
         controls: { create: boolean; edit: boolean };
-        // The inline task edit panel needs the task write permission.
-        tasks: { edit: boolean };
-        // The quick view's drag-and-drop upload box POSTs to
+        // The inline task edit panel needs the task write permission, and
+        // `tasks.assign` for its assignee picker (`/tasks/:id/assign`).
+        tasks: { edit: boolean; assign: boolean };
+        // The quick views' drag-and-drop upload boxes POST to
         // `/evidence/uploads`, whose usecase asserts `evidence.upload` — a
-        // DIFFERENT key from the one that opens the panel.
+        // DIFFERENT key from the one that opens either panel.
         evidence: { upload: boolean };
+        // The AI Assist rail opens `/risks/ai`, whose generate and apply
+        // routes take `risks.create`.
+        risks: { create: boolean };
         // Bulk delete + the Deleted view's Restore / Purge are
         // `requirePermission('admin.manage')` at their routes.
         admin: { manage: boolean };
@@ -1863,7 +1867,10 @@ function ControlsPageInner({
     // by default; the same `<AiAssistRail>` content + `/risks/ai`
     // destination as the Risks page so the panel reads as one
     // shared co-pilot across registers, not a stub.
-    const aiAssistAside = canEditControls ? (
+    // Gated on the page's edit gate AND what the destination needs: the flow
+    // creates risks, so its routes take `risks.create` and its usecases the
+    // write tier (#4327). Without it the rail led to a refusal.
+    const aiAssistAside = canEditControls && appPermissions.risks.create ? (
         <AsidePanel
             title={t('list.aiAssist')}
             surfaceKey="controls-list-ai"
@@ -1906,6 +1913,11 @@ function ControlsPageInner({
                 tenantSlug={tenantSlug}
                 task={selectedTask}
                 canWrite={canEditTasks}
+                // Its evidence box and assignee picker ask their own keys
+                // (`evidence.upload`; `tasks.assign` + the write tier), inside
+                // the panel's task edit rights.
+                canUploadEvidence={canEditTasks && canUploadEvidence}
+                canAssign={canEditTasks && appPermissions.tasks.assign}
                 onClose={closeQuickView}
                 onSaved={handlePanelSaved}
             />

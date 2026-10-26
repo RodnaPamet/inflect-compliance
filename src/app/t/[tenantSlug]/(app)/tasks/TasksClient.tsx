@@ -202,11 +202,14 @@ interface TasksClientProps {
     tenantSlug: string;
     /**
      * Granular keys — the ones each write route's `requirePermission`
-     * names. `tasks.assign` gates bulk Assign (`bulk/assign`), and
-     * `admin.manage` gates bulk Delete (`bulk/delete`).
+     * names. `tasks.assign` gates bulk Assign (`bulk/assign`) and the quick
+     * view's assignee picker (`/tasks/:id/assign`), `evidence.upload` the
+     * quick view's evidence box (`/evidence/uploads`), and `admin.manage`
+     * gates bulk Delete (`bulk/delete`).
      */
     appPermissions: {
         tasks: { create: boolean; edit: boolean; assign: boolean };
+        evidence: { upload: boolean };
         admin: { manage: boolean };
     };
     /**
@@ -251,7 +254,9 @@ function TasksPageInner({
     //   - pencil / quick-view editing (PATCH, /status):
     //                        `tasks.edit` + `assertCanWriteTasks`
     //   - bulk status / due: `tasks.edit` + `assertCanWriteTasks`
-    //   - bulk assign:       `tasks.assign` + `assertCanAssignTasks`
+    //   - bulk assign, and the quick view's assignee picker:
+    //                        `tasks.assign` + `assertCanAssignTasks`
+    //   - the quick view's evidence box: `evidence.upload` (`/evidence/uploads`)
     //   - bulk delete:       `admin.manage` + `assertCanAdmin`
     //   - Deleted view:      its list asserts `assertCanAdmin`, and its only
     //                        action, restore, is `tasks.edit` + `assertCanAdmin`
@@ -1206,6 +1211,8 @@ function TasksPageInner({
                     key: selectedTask.key ?? undefined,
                 }}
                 canWrite={canEdit}
+                canUploadEvidence={canEdit && appPermissions.evidence.upload}
+                canAssign={canEdit && appPermissions.tasks.assign}
                 onClose={() => setSelectedTask(null)}
                 onSaved={() => void invalidateAllTasks()}
             />

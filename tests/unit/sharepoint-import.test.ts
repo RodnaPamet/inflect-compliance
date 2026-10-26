@@ -27,6 +27,14 @@ jest.mock('@/app-layer/usecases/evidence', () => ({
     __esModule: true,
     uploadEvidenceFile: (...a: unknown[]) => mockUpload(...a),
 }));
+// The control-link rule (#4326). Its own decision is tested in
+// tests/unit/usecases/evidence-control-link-permission.test.ts; here, only
+// that the import asks it, once, before touching SharePoint.
+const mockAssertMayChangeLinks = jest.fn();
+jest.mock('@/app-layer/usecases/evidence-control-links', () => ({
+    __esModule: true,
+    assertMayChangeEvidenceControlLinks: (...a: unknown[]) => mockAssertMayChangeLinks(...a),
+}));
 jest.mock('@/app-layer/integrations/providers/sharepoint/service', () => ({
     __esModule: true,
     getSharePointClient: (...a: unknown[]) => mockGetClient(...a),
@@ -59,6 +67,7 @@ function fakeClient(over: any = {}) {
 beforeEach(() => {
     jest.clearAllMocks();
     mockUpload.mockResolvedValue({ id: 'ev-new' });
+    mockAssertMayChangeLinks.mockResolvedValue(undefined);
     mockDb.integrationSyncMapping.upsert.mockResolvedValue({});
     // Restated every test: `clearAllMocks` resets CALLS, not implementations,
     // so the lost-claim test's `{ count: 0 }` would otherwise leak into every
@@ -173,6 +182,35 @@ describe('importSharePointItems', () => {
     it('no-ops on an empty selection', async () => {
         const r = await importSharePointItems(ctx, { connectionId: 'c1', items: [] });
         expect(r).toEqual({ imported: 0, failed: 0, evidenceIds: [], errors: [] });
+    });
+
+    it('a chosen control is checked ONCE, before anything is claimed or downloaded, and a refusal stops the import', async () => {
+        // The control links every imported record, so it takes the control
+        // side's rule (#4326). `uploadEvidenceFile` would refuse each file in
+        // turn, after its download; asking here refuses the import whole.
+        const refusal = Object.assign(new Error('You do not have permission to link evidence to controls.'), { status: 403 });
+        mockAssertMayChangeLinks.mockRejectedValueOnce(refusal);
+        mockGetClient.mockResolvedValue(fakeClient());
+
+        await expect(
+            importSharePointItems(ctx, {
+                connectionId: 'c1',
+                items: [{ driveId: 'd1', itemId: 'a' }, { driveId: 'd1', itemId: 'b' }],
+                controlId: 'ctrl1',
+            }),
+        ).rejects.toBe(refusal);
+        expect(mockAssertMayChangeLinks).toHaveBeenCalledTimes(1);
+        expect(mockAssertMayChangeLinks.mock.calls[0][0]).toBe(ctx);
+        expect(mockGetClient).not.toHaveBeenCalled();
+        expect(mockDb.integrationSyncMapping.createMany).not.toHaveBeenCalled();
+        expect(mockUpload).not.toHaveBeenCalled();
+    });
+
+    it('an import with no control does not ask the control-link rule', async () => {
+        mockGetClient.mockResolvedValue(fakeClient());
+        await importSharePointItems(ctx, { connectionId: 'c1', items: [{ driveId: 'd1', itemId: 'a' }] });
+        expect(mockAssertMayChangeLinks).not.toHaveBeenCalled();
+        expect(mockUpload).toHaveBeenCalledTimes(1);
     });
 });
 

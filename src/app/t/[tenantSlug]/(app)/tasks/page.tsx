@@ -67,6 +67,7 @@ export default async function TasksPage({
             tenantSlug={tenantSlug}
             appPermissions={{
                 tasks: ctx.appPermissions.tasks,
+                evidence: { upload: ctx.appPermissions.evidence.upload },
                 admin: { manage: ctx.appPermissions.admin.manage },
             }}
             permissions={{

@@ -97,6 +97,14 @@ export interface EditEvidenceModalProps {
      * Defaults to true.
      */
     canReplaceFile?: boolean;
+    /**
+     * Let the Controls field change the links. A save that adds or removes a
+     * link needs the coarse write tier AND `controls.edit`, a key a custom
+     * role on a write-tier base can lack (#4326). Without it the field shows
+     * the current links read-only and the save sends no `controlIds`, so the
+     * links are left exactly as they are.
+     */
+    canEditControlLinks: boolean;
 }
 
 function controlLabel(c: ControlOption): string {
@@ -111,6 +119,7 @@ export function EditEvidenceModal({
     initial,
     onSaved,
     canReplaceFile = true,
+    canEditControlLinks,
 }: EditEvidenceModalProps) {
     const apiUrl = useTenantApiUrl();
     const t = useTranslations('evidence');
@@ -239,8 +248,12 @@ export function EditEvidenceModal({
                         : {}),
                     ownerUserId: ownerUserId || null,
                     // EP-3 — reconcile the whole link set. Never send the
-                    // legacy singular `controlId`.
-                    controlIds: selectedControls.map((o) => o.value),
+                    // legacy singular `controlId`. Sent ONLY when the field is
+                    // editable: an omitted key leaves the links untouched,
+                    // where any set sent is the set the record ends up with.
+                    ...(canEditControlLinks
+                        ? { controlIds: selectedControls.map((o) => o.value) }
+                        : {}),
                     category: category.trim() || null,
                     // B8 follow-up — empty string clears the folder
                     // (the usecase null-coerces); a non-empty value
@@ -483,7 +496,9 @@ export function EditEvidenceModal({
                         </div>
                         {/* EP-3 — multi-select control links. Sends
                             `controlIds` on save; the usecase reconciles
-                            the add/remove diff. */}
+                            the add/remove diff. Read-only for a role that
+                            may not change links (see `canEditControlLinks`). */}
+                        {canEditControlLinks ? (
                         <FormField
                             label={t('edit.controlsLabel')}
                             description={t('edit.controlsDesc')}
@@ -507,6 +522,24 @@ export function EditEvidenceModal({
                                 caret
                             />
                         </FormField>
+                        ) : (
+                        <FormField
+                            label={t('edit.controlsLabel')}
+                            description={t('edit.controlsReadOnlyDesc')}
+                        >
+                            <div id="edit-evidence-controls-readonly" className="text-sm text-content-default">
+                                {selectedControls.length > 0 ? (
+                                    <ul className="space-y-tight">
+                                        {selectedControls.map((o) => (
+                                            <li key={o.value}>{o.label}</li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="text-content-muted">{t('detail.noControlsLinked')}</p>
+                                )}
+                            </div>
+                        </FormField>
+                        )}
                         {/* B8 follow-up — folder is editable post-
                             create. Clearing the field re-files the
                             evidence as unfoldered. */}

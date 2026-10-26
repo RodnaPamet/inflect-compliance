@@ -174,8 +174,9 @@ function granular(role: Role): AppPerms {
     const p = getPermissionsForRole(role);
     return {
         controls: p.controls,
-        tasks: { edit: p.tasks.edit },
-                    evidence: { upload: true },
+        tasks: { edit: p.tasks.edit, assign: p.tasks.assign },
+        evidence: { upload: true },
+        risks: { create: p.risks.create },
         admin: { manage: p.admin.manage },
     };
 }
@@ -383,6 +384,29 @@ describe('Controls list — the write surface follows both permission layers', (
         await selectEveryRow();
         const listbox = await openBulkActions();
         expect(within(listbox).getByRole('option', { name: C.bulk.delete })).toBeInTheDocument();
+    });
+});
+
+describe('Controls list — the AI Assist rail follows what /risks/ai needs', () => {
+    // The rail opens the AI risk flow, whose generate and apply routes take
+    // `risks.create` (#4327). Offering it on the controls edit gate alone sent
+    // a custom role that cannot create risks to a refusal.
+    it('a built-in EDITOR gets the AI Assist rail', async () => {
+        mountAs('EDITOR');
+        await screen.findByText(CUSTOM.name);
+        expect(screen.getAllByText(C.list.aiAssist).length).toBeGreaterThan(0);
+    });
+
+    it('an EDITOR-based custom role without risks.create gets no AI Assist rail', async () => {
+        const editor = granular('EDITOR');
+        mount({
+            permissions: coarse('EDITOR'),
+            appPermissions: { ...editor, risks: { create: false } },
+        });
+        await screen.findByText(CUSTOM.name);
+        // It still edits controls; only the rail is withheld.
+        expect(document.getElementById('new-control-btn')).not.toBeNull();
+        expect(screen.queryAllByText(C.list.aiAssist)).toHaveLength(0);
     });
 });
 

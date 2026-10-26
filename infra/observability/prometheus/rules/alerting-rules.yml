@@ -13,13 +13,8 @@
 # rule selects a metric, label or value the stack does not export, or if a
 # runbook_url names a doc or heading the repository does not have.
 #
-# Two rules this file used to carry are gone, because nothing produces what
-# they read:
-#   JobQueueDepthGrowing    — the app declares a `job.queue.depth` gauge, but
-#                             nothing calls startQueueDepthReporting, so no
-#                             queue-depth series exists. See recording-rules.yml.
-#   PrometheusDiskFillingUp — read node_filesystem_*, which needs node_exporter;
-#                             this stack does not run it.
+# PrometheusDiskFillingUp, which this file used to carry, is gone: it read
+# node_filesystem_*, which needs node_exporter, and this stack does not run it.
 # =============================================================================
 
 groups:
@@ -134,6 +129,32 @@ groups:
           description: >-
             {{ $labels.service_name }} background jobs are failing at
             {{ $value | humanizePercentage }} over the last 15 minutes.
+          runbook_url: "https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#4-queue-backlog"
+
+      # --- BullMQ backlog above 500 and still growing.
+      # --- The backlog is `waiting` plus `prioritized`: jobs ready to run that
+      # --- no worker has taken (BullMQ keeps a job added with a priority in
+      # --- `prioritized`, not `waiting`). Not `delayed`, which never falls
+      # --- below the number of job schedulers because each keeps its next run
+      # --- there, nor `active` or `failed`. 500 is about ten minutes of the
+      # --- worker's limiter (50 jobs a minute, scripts/worker.ts). `deriv > 0`
+      # --- keeps a fan-out burst that is draining from firing. A backlog that
+      # --- sits flat above 500 does not fire it either; a worker that stopped
+      # --- taking jobs is what the worker's healthcheck (its heartbeat) reports.
+      - alert: JobQueueDepthGrowing
+        expr: |
+          sum by (queue_name) (job:job_queue_depth:max{queue_state=~"waiting|prioritized"}) > 500
+          and
+          deriv(sum by (queue_name) (job:job_queue_depth:max{queue_state=~"waiting|prioritized"})[30m:]) > 0
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: "BullMQ queue {{ $labels.queue_name }} backlog is growing"
+          description: >-
+            Queue {{ $labels.queue_name }} has {{ $value | humanize }} jobs
+            waiting to run, more than 500, and the backlog has grown over the
+            last 30 minutes. Work is arriving faster than the worker takes it.
           runbook_url: "https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#4-queue-backlog"
 
       # --- COMPLIANCE-CRITICAL: audit-stream delivery to tenant SIEMs failing.

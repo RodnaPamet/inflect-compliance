@@ -58,7 +58,7 @@ describe('evidence library — Create link dialog', () => {
     it("shows the server's reason, not [object Object]", async () => {
         fetchMock.mockResolvedValue(refused());
         render(withSWR(
-            <NewEvidenceLinkModal open setOpen={() => {}} tenantSlug="acme" apiUrl={apiUrl} controls={[]} />,
+            <NewEvidenceLinkModal open setOpen={() => {}} tenantSlug="acme" apiUrl={apiUrl} controls={[]} canEditControlLinks />,
         ));
         fireEvent.change(byId('link-evidence-title-input'), { target: { value: 'Q3 review' } });
         fireEvent.change(byId('link-evidence-url-input'), { target: { value: 'https://example.com/r' } });
@@ -75,7 +75,7 @@ describe('evidence library — text evidence dialog', () => {
     it("shows the server's reason, not [object Object]", async () => {
         fetchMock.mockResolvedValue(refused());
         render(withSWR(
-            <NewEvidenceTextModal open setOpen={() => {}} tenantSlug="acme" apiUrl={apiUrl} controls={[]} />,
+            <NewEvidenceTextModal open setOpen={() => {}} tenantSlug="acme" apiUrl={apiUrl} controls={[]} canEditControlLinks />,
         ));
         fireEvent.change(byId('text-evidence-title-input'), { target: { value: 'Board minutes' } });
         await act(async () => {

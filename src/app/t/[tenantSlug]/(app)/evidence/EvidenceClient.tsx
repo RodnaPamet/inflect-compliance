@@ -290,7 +290,10 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // `bulkDeleteEvidence` asserts canAdmin; its route requires admin.manage.
     const canBulkDelete = permissions.canAdmin && grants.adminManage;
     // `linkEvidenceToControl` / `unlinkEvidenceFromControl` assert canWrite;
-    // both their routes require controls.edit.
+    // both their routes require controls.edit. Every form that sets links
+    // (create, upload, ZIP import, edit) takes the same rule when it changes
+    // them (`assertMayChangeEvidenceControlLinks`), so their control pickers
+    // follow it too.
     const canEditControlLinks = permissions.canWrite && grants.controlsEdit;
     // `downloadEvidenceFile`'s record gates, asked of a list row.
     const mayDownload = useCallback(
@@ -1621,12 +1624,14 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         tenantSlug={tenantSlug}
                         apiUrl={apiUrl}
                         controls={controls}
+                        canEditControlLinks={canEditControlLinks}
                     />
                     <EvidenceBulkImportModal
                         open={showBulkImport}
                         setOpen={setShowBulkImport}
                         tenantSlug={tenantSlug}
                         apiUrl={apiUrl}
+                        canEditControlLinks={canEditControlLinks}
                     />
                 </>
             )}
@@ -1638,6 +1643,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         tenantSlug={tenantSlug}
                         apiUrl={apiUrl}
                         controls={controls}
+                        canEditControlLinks={canEditControlLinks}
                     />
                     <NewEvidenceLinkModal
                         open={showLinkModal}
@@ -1645,6 +1651,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                         tenantSlug={tenantSlug}
                         apiUrl={apiUrl}
                         controls={controls}
+                        canEditControlLinks={canEditControlLinks}
                     />
                 </>
             )}
@@ -1684,6 +1691,7 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
                 controls={controls}
                 initial={editInitial}
                 canReplaceFile={canUploadEvidence}
+                canEditControlLinks={canEditControlLinks}
                 onSaved={() => {
                     // Revalidate the list cache so the freshly-saved
                     // values flow back into the table — and the record's

@@ -82,6 +82,21 @@ export function assertCanLinkEvidence(ctx: RequestContext) {
     }
 }
 
+/**
+ * Whether `assertCanLinkEvidence` admits this context — the same rule, asked
+ * rather than enforced, so there is one definition of it. For the evidence
+ * library's create, edit and upload paths, which apply the rule only when a
+ * request adds or removes a control link (#4326, owner decision).
+ */
+export function canLinkEvidence(ctx: RequestContext): boolean {
+    try {
+        assertCanLinkEvidence(ctx);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /** ADMIN/EDITOR can set control applicability */
 export function assertCanSetApplicability(ctx: RequestContext) {
     if (!ctx.permissions.canWrite || granularControlsDenied(ctx, 'edit')) {

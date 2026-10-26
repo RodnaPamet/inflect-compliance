@@ -141,14 +141,14 @@ All metrics are emitted via OpenTelemetry API and exported through the OTel Coll
 |---|---|---|---|---|
 | `job.execution.count` | `job_execution_count` | Counter | `job.name`, `job.status` (success/failure) | `runJob`, `executorRegistry.execute` |
 | `job.execution.duration` | `job_execution_duration` | Histogram (ms) | `job.name`, `job.status` | `runJob`, `executorRegistry.execute` |
-| `job.queue.depth` | `job_queue_depth` | Gauge | `queue.name`, `queue.state` (waiting/active/delayed/failed) | `startQueueDepthReporting` |
+| `job.queue.depth` | `job_queue_depth` | Gauge | `queue.name`, `queue.state` (waiting/prioritized/active/delayed/failed) | `startQueueDepthReporting` (BullMQ worker) |
 
 ### Cardinality Control
 
 - `http.route` labels are auto-normalized: UUIDs → `:id`, tenant slugs → `:tenantSlug`
 - `job.name` is bounded to the 11 registered job names in `JobPayloadMap`
 - `job.status` is exactly `success` or `failure`
-- `queue.state` is limited to 4 values: `waiting`, `active`, `delayed`, `failed`
+- `queue.state` is limited to 5 values: `waiting`, `prioritized`, `active`, `delayed`, `failed`
 
 ## SLO Documentation
 

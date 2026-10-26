@@ -144,10 +144,34 @@
       ]
     },
     {
+      "id": 5,
+      "type": "timeseries",
+      "title": "BullMQ queue depth by state",
+      "description": "Jobs in each BullMQ state, per queue, as the worker reports them every 30s (`job:job_queue_depth:max`). `waiting` and `prioritized` are the backlog that `JobQueueDepthGrowing` watches. `delayed` never falls below the number of job schedulers, because each keeps its next run there. `failed` is left out: it counts retained failed jobs, not work outstanding.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 15 } },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "job:job_queue_depth:max{queue_state!=\"failed\"}",
+          "legendFormat": "{{queue_name}} {{queue_state}}"
+        }
+      ]
+    },
+    {
       "id": 6,
       "type": "timeseries",
       "title": "Job execution rate by service",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 6 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
         "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } },

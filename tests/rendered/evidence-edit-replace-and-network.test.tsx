@@ -67,6 +67,7 @@ function mount(props: Partial<React.ComponentProps<typeof EditEvidenceModal>> = 
             setOpen={setOpen}
             tenantSlug="acme"
             controls={[]}
+            canEditControlLinks
             initial={FILE}
             onSaved={onSaved}
             {...props}

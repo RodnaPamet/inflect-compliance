@@ -95,10 +95,11 @@ labels the same way, so `job.status` is `job_status`. With
 | `api.request.duration` | `api_request_duration_milliseconds_{bucket,sum,count}` | as above |
 | `api.request.errors` | `api_request_errors_total` | `http_method`, `http_route`, `error_code` |
 | `job.execution.count` | `job_execution_count_total` | `job_name`, `job_status` (`success`, `failure`) |
+| `job.queue.depth` | `job_queue_depth_ratio` | `queue_name`, `queue_state` (`waiting`, `prioritized`, `active`, `delayed`, `failed`) |
 | `business.tenant.active.daily` | `business_tenant_active_daily_ratio` | `plan` |
 
-The last row is a gauge of distinct users, and its name still ends `_ratio`,
-because the instrument's unit is `1`.
+The last two rows are gauges of counts, jobs and distinct users, and their
+names still end `_ratio`, because each instrument's unit is `1`.
 
 `tests/unit/prometheus-rules-match-emitted-metrics.test.ts` derives these
 names and labels from the instrument declarations in `src/` and the collector
@@ -112,7 +113,7 @@ until someone checks the new version's naming.
 ## Recording rules
 
 `recording-rules.yml`, four groups, each evaluated every 30 seconds. Every rule
-uses a 5-minute rate window.
+that takes a rate uses a 5-minute window.
 
 | Group | Rule | What it computes |
 |-------|------|------------------|
@@ -126,7 +127,8 @@ uses a 5-minute rate window.
 | `inflect_repo` | `job:repo_method:rate5m` | repository calls per second |
 | | `job:repo_method:error_ratio5m` | repository errors / calls |
 | | `job:repo_method_duration_ms:p95` | p95 repository call duration in ms |
-| `inflect_jobs` | `job:job_execution:rate5m` | job executions per second |
+| `inflect_jobs` | `job:job_queue_depth:max` | jobs in each BullMQ state, by `queue_name` and `queue_state` |
+| | `job:job_execution:rate5m` | job executions per second |
 | | `job:job_execution:failure_ratio5m` | executions with `job_status="failure"` / all executions |
 | | `job:job_execution_duration_ms:p95` | p95 job duration in ms |
 | `inflect_audit_stream` | `job:audit_stream_delivery_failures:rate5m` | audit-stream batch delivery failures per second |
@@ -145,16 +147,28 @@ Notes on these rules:
   divide by `clamp_min(denominator, 1)`, which counts any rate below one per
   second as one per second, so at 0.1 requests a second a ratio or a mean read
   a tenth of its real value.
-- **There is no queue-depth rule.** `metrics.ts` declares a `job.queue.depth`
-  gauge in `startQueueDepthReporting`, and nothing outside the tests calls
-  that function, so no queue-depth series exists. When the worker calls it,
-  the series is `job_queue_depth_ratio`, labelled `queue_name` and
-  `queue_state` (`waiting`, `active`, `delayed`, `failed`); the backlog is
-  `queue_state="waiting"`.
+- **Queue depth comes from the worker.** `scripts/worker.ts` calls
+  `startQueueDepthReporting` once telemetry is initialised, so the series
+  exists only where a worker runs with `OTEL_ENABLED=true`. Each metric
+  export (every 30 seconds) costs the worker one `getJobCounts` call to
+  Redis for the five states. A read that fails, or takes longer than 5
+  seconds, is given up rather than hold the export back. The metrics SDK
+  then exports the last values it read again, so during a Redis outage the
+  series stays flat at its last reading instead of disappearing. Every
+  worker reports the same Redis-held counts, so `job:job_queue_depth:max`
+  takes the `max` across them; a `sum` would multiply the depth by the
+  number of workers.
+- **Queue states are never added together, except the two that make the
+  backlog.** `waiting` and `prioritized` are jobs ready to run that no worker
+  has taken: BullMQ keeps a job enqueued with a priority in `prioritized`, not
+  `waiting`. `delayed` is not backlog. It holds the next run of every job
+  scheduler, so it never falls below the number of schedules, and every
+  retry's backoff. `active` is work in progress and `failed` is retained
+  history.
 
 ## Alerting rules
 
-`alerting-rules.yml`, three groups, ten rules. Prometheus evaluates them.
+`alerting-rules.yml`, three groups, eleven rules. Prometheus evaluates them.
 With no `alerting:` block in `prometheus.yml`, a firing alert reaches nothing
 outside Prometheus's own alerts page. Grafana can show these rules but does not
 route them: its provisioned contact point and notification policy apply only to
@@ -169,6 +183,7 @@ alert rules created in Grafana, and none is provisioned.
 | `app_health` | `ApiHigh5xxRatio` | `job:api_request:5xx_ratio5m > 0.05` | 10m | critical |
 | | `ApiLatencySloBreach` | `job:api_request_duration_ms:p95 > 750` | 15m | warning |
 | | `JobFailureRateHigh` | `job:job_execution:failure_ratio5m > 0.10` | 15m | warning |
+| | `JobQueueDepthGrowing` | the backlog (`waiting` plus `prioritized`, summed per `queue_name`) is above 500 and its 30-minute `deriv` is positive | 20m | warning |
 | | `AuditStreamDeliveryFailing` | `job:audit_stream_delivery_failures:rate5m > 0` | 10m | critical, plus `compliance: "true"` |
 | `resource` | `PrometheusHeadSeriesHigh` | `prometheus_tsdb_head_series > 1500000` | 30m | warning |
 | | `PrometheusSlowScrapes` | `scrape_duration_seconds > 8` | 15m | warning |
@@ -191,19 +206,25 @@ Notes on individual rules:
 - **`PrometheusSlowScrapes`** fires at 8 seconds because `scrape_timeout` is
   10 seconds. A scrape that takes longer than 10 seconds has failed, which
   `ObservabilityTargetDown` reports.
-- **No queue-depth alert and no disk alert.** No queue-depth series exists
-  (see [Recording rules](#recording-rules)). A disk alert needs
-  `node_filesystem_*` from node_exporter, which the stack does not run. The
-  TSDB volume is a Docker volume on the host's disk, so watching it is the job
-  of whatever monitors that host.
-- **`runbook_url`.** Five rules carry one: `ObservabilityTargetDown` and
+- **`JobQueueDepthGrowing`** reads only the backlog states (see
+  [Recording rules](#recording-rules)); counting `delayed` would put every
+  job scheduler's next run in it. 500 jobs is about ten minutes of the
+  worker's limiter, 50 jobs a minute (`docs/sizing.md`). The positive
+  `deriv` keeps a fan-out burst that is draining from firing. A backlog that
+  sits flat does not fire it either: a worker that has stopped taking jobs is
+  what its healthcheck reports.
+- **No disk alert.** A disk alert needs `node_filesystem_*` from
+  node_exporter, which the stack does not run. The TSDB volume is a Docker
+  volume on the host's disk, so watching it is the job of whatever monitors
+  that host.
+- **`runbook_url`.** Six rules carry one: `ObservabilityTargetDown` and
   `CollectorDroppingData` link to
   [`04-production-hardening.md`](04-production-hardening.md)'s runbooks,
   `ApiHigh5xxRatio` and `ApiLatencySloBreach` to the common first steps in
   [`docs/incident-response.md`](../incident-response.md), and
-  `JobFailureRateHigh` to its Queue Backlog section. Each link is to the doc
-  on GitHub. The other five have no runbook in this repository, so they carry
-  no link.
+  `JobFailureRateHigh` and `JobQueueDepthGrowing` to its Queue Backlog
+  section. Each link is to the doc on GitHub. The other five have no runbook
+  in this repository, so they carry no link.
 
 ## Retention and storage
 
@@ -273,7 +294,7 @@ query the same way it checks the rules.
 | UID | Title | Panels |
 |-----|-------|--------|
 | `inflect-api-overview` | Inflect — API Overview (RED) | Request rate, 5xx % and p95 as stats; request rate by service; p95 / p99 / mean latency; 5xx ratio by service. |
-| `inflect-jobs-and-queues` | Inflect — Jobs & Queues | Job rate, p95 duration, failure ratio and audit-stream failures as stats; job rate by service; p95 duration over time; audit-stream failures over time. No queue-depth panel, for the reason under [Recording rules](#recording-rules). |
+| `inflect-jobs-and-queues` | Inflect — Jobs & Queues | Job rate, p95 duration, failure ratio and audit-stream failures as stats; BullMQ queue depth by state (every state but `failed`); job rate by service; p95 duration over time; audit-stream failures over time. |
 | `observability-stack-health` | Inflect — Observability Stack Health | Targets up; TSDB head series; collector exporter failures; collector accepted and refused spans and metric points, with `memory_limiter`'s refusals; exporter failures by exporter; scrape duration by job. |
 | `inflect-business-kpis` | Inflect — Business KPIs | Tenant growth, onboarding funnel, feature adoption and billing. See `06-business-kpis.md`. |
 
