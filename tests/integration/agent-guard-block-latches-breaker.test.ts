@@ -31,8 +31,18 @@ import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { recordAgentBreakerTrip } from '@/lib/observability/integration-metrics';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+
+// The trip counter. The AgenticCircuitBreakerTripped alert reads it, and for
+// as long as it existed nothing incremented it: the latch wrote its row and
+// rang its bell, and the alert could never fire.
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    ...jest.requireActual('@/lib/observability/integration-metrics'),
+    recordAgentBreakerTrip: jest.fn(),
+}));
+const tripsCounted = recordAgentBreakerTrip as jest.MockedFunction<typeof recordAgentBreakerTrip>;
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -209,6 +219,7 @@ describeFn('guard blocks latch the breaker, at the right threshold', () => {
     });
 
     beforeEach(async () => {
+        tripsCounted.mockClear();
         for (const t of [T1, T2]) {
             await prisma.agentProposal.deleteMany({ where: { tenantId: t } });
             await prisma.agentCircuitBreaker.deleteMany({ where: { tenantId: t } });
@@ -236,6 +247,7 @@ describeFn('guard blocks latch the breaker, at the right threshold', () => {
 
         expect(out).toEqual({ blocksInWindow: GUARD_BLOCK_TRIP_THRESHOLD - 1, latched: false });
         expect((await breakerState(T1, seeded[T1].agentId))?.state).toBe('CLOSED');
+        expect(tripsCounted).not.toHaveBeenCalled();
     });
 
     it('latches AT the threshold, naming GUARD_BLOCK as the reason', async () => {
@@ -253,6 +265,16 @@ describeFn('guard blocks latch the breaker, at the right threshold', () => {
             // not a behavioural signal — different evidence, different response.
             trippedSignals: ['GUARD_BLOCK'],
         });
+
+        // Counted once, labelled with the agent's own tier as the register
+        // holds it, so the alert on the counter can fire.
+        const agent = await prisma.registeredAgent.findUniqueOrThrow({
+            where: { id: seeded[T1].agentId },
+            select: { riskTier: true },
+        });
+        expect(tripsCounted.mock.calls).toEqual([
+            [{ agentId: seeded[T1].agentId, signal: GUARD_BLOCK_TRIP, riskTier: agent.riskTier }],
+        ]);
     });
 
     it('counts only QUARANTINED proposals, not clean ones', async () => {
@@ -320,6 +342,8 @@ describeFn('guard blocks latch the breaker, at the right threshold', () => {
         const out = await latchOnGuardBlock(T1, seeded[T1].agentId, NOW);
 
         expect(out).toEqual({ blocksInWindow: GUARD_BLOCK_TRIP_THRESHOLD, latched: false });
+        // No write, so no trip: the counter follows the latch, not the count.
+        expect(tripsCounted).not.toHaveBeenCalled();
     });
 
     it('latches an agent that has no breaker row yet', async () => {

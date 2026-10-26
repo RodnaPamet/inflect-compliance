@@ -31,10 +31,15 @@ alerts are GCP Cloud Monitoring policies: the uptime check in
 `infra/alerts/external-uptime.yml` and the custom-metric policies in
 `infra/alerts/gcp-custom-metrics.yml` and `infra/alerts/policies/`.
 
-`infra/alerts/rules.yml` is a third set of Prometheus rules, with names such as
-`QueueDepthBacklogCritical` and `DatabaseConnectionPoolExhausted`. This stack
-does not load it: Prometheus reads only
-`infra/observability/prometheus/rules/*.yml`.
+Until 2026-10-26 `infra/alerts/rules.yml` was a third set of Prometheus rules,
+which nothing loaded: Prometheus reads only
+`infra/observability/prometheus/rules/*.yml`. Its security-control and
+agentic-run alerts moved into `alerting-rules.yml`, below. Two of them read
+names the exporter does not produce and were corrected, and a third read a
+breaker-trip counter nothing incremented, which the breaker now does. The rest
+of it (the API, queue, database, Redis and
+certificate alerts) duplicated rules here or read series nothing exports, and
+was deleted with its Alertmanager config, `receivers.yml`.
 
 ## Prometheus
 
@@ -168,7 +173,7 @@ Notes on these rules:
 
 ## Alerting rules
 
-`alerting-rules.yml`, three groups, eleven rules. Prometheus evaluates them.
+`alerting-rules.yml`, five groups, twenty-one rules. Prometheus evaluates them.
 With no `alerting:` block in `prometheus.yml`, a firing alert reaches nothing
 outside Prometheus's own alerts page. Grafana can show these rules but does not
 route them: its provisioned contact point and notification policy apply only to
@@ -185,6 +190,16 @@ alert rules created in Grafana, and none is provisioned.
 | | `JobFailureRateHigh` | `job:job_execution:failure_ratio5m > 0.10` | 15m | warning |
 | | `JobQueueDepthGrowing` | the backlog (`waiting` plus `prioritized`, summed per `queue_name`) is above 500 and its 30-minute `deriv` is positive | 20m | warning |
 | | `AuditStreamDeliveryFailing` | `job:audit_stream_delivery_failures:rate5m > 0` | 10m | critical, plus `compliance: "true"` |
+| `security_controls` | `SessionPolicyResolutionFailing` | sign-ins proceeding without their tenant's session caps (`session_policy_resolution_total{outcome="failed"}` above 0) | 10m | warning |
+| | `AgenticWorkflowContextIntegrityHalt` | any workflow run halted on a context-integrity code in 15 minutes | — | critical |
+| | `AgenticKillSwitchDrillFailed` | a kill-switch drill reported `FAILED` in 24 hours | — | critical |
+| | `AgenticKillSwitchDrillUnverified` | a kill-switch drill reported `ERROR` or `SWEPT_NOBODY` in 24 hours | — | warning |
+| | `AgenticCircuitBreakerTripped` | an agent's circuit breaker latched OPEN in the last hour | — | warning |
+| | `AgenticFanOutHalted` | an agentic fan-out halted with members unattempted in the last hour | — | warning |
+| `agentic_runs` | `AgenticRunFailureRateWarning` | more than 25% of settled runs failed over 15 minutes | 15m | warning |
+| | `AgenticGuardBlocksRising` | the content guard quarantined more than 5 runs in an hour | — | warning |
+| | `AgenticRunsInFlightSustained` | more than 20 runs executing at once (`agent_runs_in_flight_ratio`) | 30m | warning |
+| | `AgenticRunsStartedNotSettling` | runs starting faster than they settle by more than 0.05/s | 1h | warning |
 | `resource` | `PrometheusHeadSeriesHigh` | `prometheus_tsdb_head_series > 1500000` | 30m | warning |
 | | `PrometheusSlowScrapes` | `scrape_duration_seconds > 8` | 15m | warning |
 
@@ -303,10 +318,10 @@ trace. Neither panel links to a trace from a data point: they plot recording
 rules, and the app's metrics SDK records no exemplars, so the Prometheus
 datasource's `exemplarTraceIdDestinations` has nothing to follow.
 
-`infra/dashboards/` holds five more dashboards (`inflect-app-overview`,
-`inflect-bullmq`, `inflect-database`, `inflect-redis`,
-`inflect-compliance-slos`). This stack does not mount that directory. They are
-for importing by hand.
+`infra/dashboards/` held five more dashboards until 2026-10-26. This stack
+never mounted that directory, and they charted series nothing exports
+(`aws_elasticache_*`, and `job_queue_depth` without the `_ratio` the collector
+appends), so they were deleted.
 
 ## Bringing the stack up
 

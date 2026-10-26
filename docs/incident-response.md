@@ -93,11 +93,13 @@ Each alert email is titled with the policy's display name.
 | `OOM command not allowed` in the `app` or `worker` log | [Redis](#3-redis-oom--degraded-queueing) |
 | Suspected unauthorised access to data | [Data Breach Response](#7-data-breach-response) |
 
-The Prometheus rules in `infra/alerts/rules.yml` and
-`infra/observability/prometheus/rules/` alert nobody in production; see
+The Prometheus rules in `infra/observability/prometheus/rules/` alert nobody
+in production; see
 [`docs/observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md).
-A name from them (`DatabaseConnectionPoolExhausted`,
-`QueueDepthBacklogCritical`, …) did not come from a production alert.
+A name from them (`ApiHigh5xxRatio`, `AgenticCircuitBreakerTripped`, …) did
+not come from a production alert. Nor did `DatabaseConnectionPoolExhausted`
+or `QueueDepthBacklogCritical`: they were in `infra/alerts/rules.yml`, which
+nothing loaded and which was deleted on 2026-10-26.
 
 ## Severity definitions
 
@@ -130,9 +132,8 @@ The places to look are:
   `journalctl -u work-overdue-reporter.service -n 50`
   ([`infra/reporters/README.md`](../infra/reporters/README.md)).
 
-The Grafana dashboards in `infra/dashboards/` and
-`infra/observability/grafana/dashboards/` are for the observability stack,
-which is not recorded as running.
+The Grafana dashboards in `infra/observability/grafana/dashboards/` are for
+the observability stack, which is not recorded as running.
 
 ## Common first steps (every incident)
 

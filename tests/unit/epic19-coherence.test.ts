@@ -20,9 +20,20 @@ import { headingLines, mdSection } from '../helpers/markdown-regions';
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'js-yaml';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
+
+const readAll = (dir: string, ext: string): string =>
+    fs.readdirSync(path.join(ROOT, dir))
+        .filter((f) => f.endsWith(ext))
+        .sort()
+        .map((f) => fs.readFileSync(path.join(ROOT, dir, f), 'utf-8'))
+        .join('\n');
+const OBS_DASHBOARDS = readAll('infra/observability/grafana/dashboards', '.json');
+const OBS_RULES = readAll('infra/observability/prometheus/rules', '.yml');
+const ALERTING_RULES_PATH = 'infra/observability/prometheus/rules/alerting-rules.yml';
 
 // ─── 1. Metric Emission ↔ Dashboard/Alert Coherence ────────────────────
 
@@ -42,12 +53,11 @@ describe('Epic 19 Coherence: metric names', () => {
         .filter(m => !m.startsWith('http.') && !m.startsWith('error.') && !m.startsWith('job.name')
             && !m.startsWith('job.status') && !m.startsWith('queue.'));
 
-    const dashboardContent = fs.readFileSync(
-        path.join(ROOT, 'infra/dashboards/grafana-api-slos.json'), 'utf-8'
-    );
-    const alertContent = fs.readFileSync(
-        path.join(ROOT, 'infra/alerts/rules.yml'), 'utf-8'
-    );
+    // What the Prometheus stack loads: every dashboard it provisions and every
+    // rule file it reads. infra/dashboards/ and infra/alerts/rules.yml stood
+    // here until 2026-10-26; nothing ever loaded either.
+    const dashboardContent = OBS_DASHBOARDS;
+    const alertContent = OBS_RULES;
 
     it('should emit all 6 metrics referenced in infra configs', () => {
         const expectedMetrics = [
@@ -97,6 +107,12 @@ describe('Epic 19 Coherence: metric names', () => {
             // codes. A distribution is also the wrong shape for an SLO board
             // whose panels are API/health and job metrics.
             'agentic.workflow.context.bytes',
+            // Steps and tokens per agentic run (#3484). "Runs got longer" is a
+            // trend to look at, not a page, so neither has an alert; their only
+            // panels were on infra/dashboards/grafana-api-slos.json, which no
+            // Grafana loaded and which was deleted on 2026-10-26.
+            'agent.run.steps',
+            'agent.run.tokens',
             'api.request.errors',
             'repo.method.duration',
             // EI-4 — SCIM bearer-token auth outcome counter. A diagnostic
@@ -146,131 +162,43 @@ describe('Epic 19 Coherence: metric names', () => {
             }
         }
     });
-
-    it('should not reference non-existent metrics in dashboard PromQL', () => {
-        // Extract all metric base names from dashboard PromQL
-        const promqlMetrics = new Set<string>();
-        const metricPattern = /[a-z][a-z_]+(?:_count|_duration|_depth|_errors|_bucket)\b/g;
-        let match;
-        while ((match = metricPattern.exec(dashboardContent)) !== null) {
-            // Skip Prometheus system metrics
-            if (match[0].startsWith('process_') || match[0].startsWith('probe_')) continue;
-            promqlMetrics.add(match[0].replace(/_bucket$/, ''));
-        }
-
-        // Convert OTel names to Prometheus for comparison
-        const knownPromNames = new Set(
-            otelNames.map(n => n.replace(/\./g, '_'))
-        );
-
-        for (const promMetric of promqlMetrics) {
-            expect(knownPromNames).toContain(promMetric);
-        }
-    });
+    // The reverse direction (no dashboard or rule names a metric the app does
+    // not emit) is tests/unit/prometheus-rules-match-emitted-metrics.test.ts,
+    // which applies the collector's real naming rather than a suffix pattern.
 });
 
-// ─── 2. Dashboard Structure Coherence ──────────────────────────────────
-
-describe('Epic 19 Coherence: dashboard structure', () => {
-    const dashboard = JSON.parse(
-        fs.readFileSync(path.join(ROOT, 'infra/dashboards/grafana-api-slos.json'), 'utf-8')
-    );
-
-    it('should have exactly 16 data panels (11 API/health + 3 job + 2 agentic)', () => {
-        // 14 -> 16: the two agentic run-shape histograms (#3484). They are
-        // PANELS and not alerts deliberately — "runs got longer" is a trend to
-        // look at, not a page, and the three agentic alerts send an operator
-        // here to make exactly that distinction.
-        const panels = dashboard.panels.filter((p: { type: string }) => p.type !== 'row');
-        expect(panels.length).toBe(16);
-    });
-
-    it('should have 6 row dividers', () => {
-        // 6th: "Agentic run shape" (#3484).
-        const rows = dashboard.panels.filter((p: { type: string }) => p.type === 'row');
-        expect(rows.length).toBe(6);
-    });
-
-    it('should have unique panel IDs across all panels', () => {
-        const ids = dashboard.panels.map((p: { id: number }) => p.id);
-        expect(new Set(ids).size).toBe(ids.length);
-    });
-
-    it('should have targets (queries) on every non-row panel', () => {
-        const dataPanels = dashboard.panels.filter(
-            (p: { type: string }) => p.type !== 'row'
-        );
-        for (const panel of dataPanels) {
-            expect(panel.targets).toBeDefined();
-            expect(panel.targets.length).toBeGreaterThan(0);
-        }
-    });
-});
-
-// ─── 3. Alert Rule Coherence ───────────────────────────────────────────
+// ─── 2–3. Alert Rule Coherence ────────────────────────────────────────
+//
+// The dashboard-structure block that was section 2 counted the panels of
+// infra/dashboards/grafana-api-slos.json, and section 3 counted names in
+// infra/alerts/rules.yml. Neither file was ever loaded by anything, and both
+// were deleted on 2026-10-26. The security-control and agentic-run alerts
+// moved to the rule file the Prometheus stack reads, and this holds them there.
 
 describe('Epic 19 Coherence: alert rules', () => {
-    const alertContent = fs.readFileSync(
-        path.join(ROOT, 'infra/alerts/rules.yml'), 'utf-8'
-    );
+    type Rule = { alert?: string; record?: string; labels?: Record<string, string> };
+    type Group = { name: string; rules: Rule[] };
+    const groups = (yaml.load(fs.readFileSync(path.join(ROOT, ALERTING_RULES_PATH), 'utf-8')) as {
+        groups: Group[];
+    }).groups;
+    const alertsIn = (group: string): string[] =>
+        (groups.find((g) => g.name === group)?.rules ?? []).flatMap((r) => (r.alert ? [r.alert] : []));
 
-    // The original SLO-tracking alerts (Epic OI-3 step 1). Every one
-    // of these MUST link to the SLO dashboard — the dashboard is the
-    // operator's first stop when one fires.
-    const SLO_ALERT_NAMES = [
-        'ApiErrorRateWarning',
-        'ApiErrorRateCritical',
-        'ApiP95LatencyWarning',
-        'ApiP95LatencyCritical',
-        'ReadyzProbeFailure',
-        'ReadyzProbeCritical',
-        'LivezProbeFailure',
-        'ApiAvailabilityBurnRateHigh',
-        'JobFailureRateWarning',
-    ];
-
-    // Infrastructure alerts added later. These belong on dedicated
-    // dashboards (queue-depth, DB-pool, Redis-memory, cert-expiry)
-    // and intentionally don't link to the SLO board, so they are
-    // exempt from the SLO-dashboard invariant below.
-    const INFRA_ALERT_NAMES = [
-        'QueueDepthBacklogWarning',
-        'QueueDepthBacklogCritical',
-        'DatabaseConnectionPoolExhausted',
-        'RedisMemoryHighWarning',
-        'RedisMemoryHighCritical',
-        'CertificateExpiryWarning',
-        'CertificateExpiryCritical',
-    ];
-
-    // Security-control integrity alerts. Distinct from both tiers above: they
-    // do not track an SLO and they are not infrastructure health — they fire
-    // when a security control stops applying while the system stays otherwise
-    // healthy, which is precisely the condition nothing else would surface.
+    // Fire when a security control STOPS applying, or could not be verified,
+    // while the system stays otherwise healthy: the condition nothing else
+    // surfaces.
     const SECURITY_ALERT_NAMES = [
         'SessionPolicyResolutionFailing',
-        // A workflow run halted because its own context failed verification.
-        // CONTEXT_CHAIN_BROKEN and CONTEXT_REPLAYED do not occur through normal
-        // application writes — the blob disagrees with its head, or an earlier
-        // sealed pair was restored over a later one. The system stays healthy
-        // while an agent's memory stops being trustworthy, which is exactly the
-        // condition this tier exists for.
         'AgenticWorkflowContextIntegrityHalt',
-        // ASI08/ASI10 stop controls. Same tier and same reason: each fires when a
-        // SAFETY CONTROL failed or a rogue signal tripped, while the system stays
-        // otherwise healthy — which is exactly the condition nothing else surfaces.
-        'AgenticKillSwitchDrillNotPassing',
+        'AgenticKillSwitchDrillFailed',
+        'AgenticKillSwitchDrillUnverified',
         'AgenticCircuitBreakerTripped',
         'AgenticFanOutHalted',
     ];
 
-    // AGENTIC RUN HEALTH (#3484). A FOURTH tier, and the classification is the
-    // point rather than tidiness: these are not SLO-tracking (no API SLO is
-    // involved and they do not link the SLO board), not infrastructure health
-    // (no queue, pool, cache or certificate), and not security-control
-    // integrity — that tier fires when a control STOPS applying, whereas a
-    // guard block here is the control working. They are the health of agentic
-    // WORK: is it finishing, is it being stopped, is it accumulating.
+    // The health of agentic WORK (#3484): is it finishing, being stopped,
+    // accumulating. A guard block is a control working, so these are not in
+    // the group above.
     const AGENTIC_RUN_ALERT_NAMES = [
         'AgenticRunFailureRateWarning',
         'AgenticGuardBlocksRising',
@@ -278,50 +206,21 @@ describe('Epic 19 Coherence: alert rules', () => {
         'AgenticRunsStartedNotSettling',
     ];
 
-    const ALL_ALERT_NAMES = [
-        ...SLO_ALERT_NAMES,
-        ...INFRA_ALERT_NAMES,
-        ...SECURITY_ALERT_NAMES,
-        ...AGENTIC_RUN_ALERT_NAMES,
-    ];
-
-    it('defines exactly as many alert rules as the four tiers name', () => {
-        // The title used to read "exactly 17 (9 SLO + 7 infra + 1 security)"
-        // while the registry held 21 — the security tier had grown by four and
-        // the prose had not. The assertion was always derived from the arrays,
-        // so only the SENTENCE was wrong, which is the quiet kind: a reader
-        // trusting it would have thought four alerts did not exist.
-        const alertCount = (alertContent.match(/- alert:/g) || []).length;
-        expect(alertCount).toBe(ALL_ALERT_NAMES.length);
+    it('the security_controls group holds exactly the security-control alerts', () => {
+        expect(alertsIn('security_controls')).toEqual(SECURITY_ALERT_NAMES);
     });
 
-    it('should have all known alert names', () => {
-        for (const name of ALL_ALERT_NAMES) {
-            expect(alertContent).toContain(name);
-        }
+    it('the agentic_runs group holds exactly the agentic-run alerts', () => {
+        expect(alertsIn('agentic_runs')).toEqual(AGENTIC_RUN_ALERT_NAMES);
     });
 
-    it('should have 10 alert groups', () => {
-        // 9th group: inflect.security_controls — see SECURITY_ALERT_NAMES.
-        // 10th: inflect.agentic_runs (#3484) — its own group rather than four
-        // more rules inside security_controls, because a guard block is a
-        // control WORKING and that tier is for a control that stopped.
-        const groupCount = (alertContent.match(/- name: inflect\./g) || []).length;
-        expect(groupCount).toBe(10);
-    });
-
-    it('every alert should have service: inflect-compliance label', () => {
-        const alertCount = (alertContent.match(/- alert:/g) || []).length;
-        const serviceCount = (alertContent.match(/service: inflect-compliance/g) || []).length;
-        expect(serviceCount).toBe(alertCount);
-    });
-
-    it('every SLO-tracking alert references the SLO dashboard', () => {
-        // Only the SLO-tier alerts must link to the SLO dashboard;
-        // infra alerts have their own dashboards and would clutter
-        // the SLO board if they all linked back to it.
-        const dashboardRefCount = (alertContent.match(/inflect-compliance-slos/g) || []).length;
-        expect(dashboardRefCount).toBe(SLO_ALERT_NAMES.length);
+    it('every alert carries a warning or critical severity', () => {
+        const bad = groups.flatMap((g) =>
+            g.rules
+                .filter((r) => r.alert && !['warning', 'critical'].includes(r.labels?.severity ?? ''))
+                .map((r) => `${g.name}/${r.alert}: severity ${r.labels?.severity ?? '(none)'}`),
+        );
+        expect(bad).toEqual([]);
     });
 });
 
@@ -331,9 +230,10 @@ describe('Epic 19 Coherence: SLO document', () => {
     const sloContent = fs.readFileSync(
         path.join(ROOT, 'docs/slos.md'), 'utf-8'
     );
-    const alertContent = fs.readFileSync(
-        path.join(ROOT, 'infra/alerts/rules.yml'), 'utf-8'
-    );
+    // The two cases below also compared these targets with the thresholds in
+    // infra/alerts/rules.yml (> 500, > 2000, 0.001), a file nothing loaded,
+    // deleted 2026-10-26. No running alert mirrors the SLO thresholds; the
+    // doc's SLO sections say so where they name each SLO's alert.
 
     it('should define all 4 SLOs', () => {
         // #2246 — "DEFINE an SLO" means a `##` section exists for it, so the
@@ -350,24 +250,18 @@ describe('Epic 19 Coherence: SLO document', () => {
         expect(sections).toContain('SLO 4');
     });
 
-    it('SLO latency threshold should match alert rules', () => {
+    it('SLO 2 states its 500ms read target', () => {
         // SLO says < 500ms for P95 — in the read-latency SLO's own section.
         // `500ms` matched 11 times document-wide (k6 budgets, the revision
         // history, the summary table); bound to the section that sets it, 4.
         expect(mdSection(sloContent, 'SLO 2: API Latency — Reads (P95)')).toContain(
             '500ms',
         );
-        // Alert fires at > 500 (warning) and > 2000 (critical). YAML, not
-        // markdown — left whole, see the seam note at the top of this file.
-        expect(alertContent).toContain('> 500');
-        expect(alertContent).toContain('> 2000');
     });
 
-    it('SLO availability target should match burn rate alert', () => {
+    it('SLO 1 states its 99.9% availability target', () => {
         // 4 matches document-wide → 3 inside the availability SLO.
         expect(mdSection(sloContent, 'SLO 1: API Availability')).toContain('99.9%');
-        // Burn rate alert uses 0.001 (100% - 99.9%)
-        expect(alertContent).toContain('0.001');
     });
 });
 
@@ -446,11 +340,10 @@ describe('Epic 19 Coherence: documentation', () => {
         expect(fs.existsSync(path.join(ROOT, 'infra/README.md'))).toBe(true);
     });
 
-    // #2246 — these four read MARKDOWN, and each is narrowed to the region
-    // the test names rather than masked. `mdCodeOf` keeps a document's CODE
-    // and blanks its PROSE, which on three of the four needles below
-    // (`Operational Runbook`, `14 panels`, `10)`) means ZERO matches and an
-    // assertion that could never fail again.
+    // #2246 — these read MARKDOWN, and each is narrowed to the region the
+    // test names rather than masked. `mdCodeOf` keeps a document's CODE and
+    // blanks its PROSE, which on a needle like `Operational Runbook` means
+    // ZERO matches and an assertion that could never fail again.
 
     it('observability.md should reference livez, readyz, and health probes', () => {
         // The probes are documented under `## Health Probes`; whole-document
@@ -474,21 +367,6 @@ describe('Epic 19 Coherence: documentation', () => {
         expect(headingLines(content, 2)).toContain('Operational Runbook');
     });
 
-    it('observability.md should reference the correct panel count', () => {
-        const content = fs.readFileSync(path.join(ROOT, 'docs/observability.md'), 'utf-8');
-        expect(mdSection(content, 'SLOs, Dashboards & Alerting')).toContain(
-            '14 panels',
-        );
-    });
-
-    it('infra/README.md should reference the correct alert count', () => {
-        // `'10)'` is a three-character needle against a whole README — it
-        // would be satisfied by a numbered list item, a version string, a
-        // port. What it is actually about is the `## Alert Rules (10)` heading,
-        // so read the level-2 heading lines.
-        const content = fs.readFileSync(path.join(ROOT, 'infra/README.md'), 'utf-8');
-        expect(headingLines(content, 2)).toContain('10)');
-    });
 });
 
 // ─── 8. Route Normalization Stability ──────────────────────────────────
@@ -544,24 +422,10 @@ describe('Epic 19 Coherence: job runner metrics wiring', () => {
 // ─── 10. Infra Config Files Valid ─────────────────────────────────────
 
 describe('Epic 19 Coherence: infra config integrity', () => {
-    it('dashboard JSON is parseable', () => {
-        const raw = fs.readFileSync(
-            path.join(ROOT, 'infra/dashboards/grafana-api-slos.json'), 'utf-8'
-        );
-        expect(() => JSON.parse(raw)).not.toThrow();
-    });
-
     it('OTel collector config exists and references OTLP port', () => {
         const raw = fs.readFileSync(
             path.join(ROOT, 'infra/otel-collector/config.yml'), 'utf-8'
         );
         expect(raw).toContain('4318');
-    });
-
-    it('alert rules file exists and has groups', () => {
-        const raw = fs.readFileSync(
-            path.join(ROOT, 'infra/alerts/rules.yml'), 'utf-8'
-        );
-        expect(raw).toContain('groups:');
     });
 });

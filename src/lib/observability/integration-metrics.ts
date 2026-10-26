@@ -322,8 +322,8 @@ export function recordIdentityBatchRefused(attrs: {
  *      and `.add()` is discarded in-process. The series does not exist.
  *   2. NOTHING EVALUATES PROMQL. Prometheus and Alertmanager are not deployed;
  *      `deploy/docker-compose.prod.yml` references neither.
- *      `infra/alerts/rules.yml` holds 22 rules that have never run, and zero of
- *      them mention identity.
+ *      `infra/alerts/rules.yml` held 22 rules that never ran, and zero of them
+ *      mentioned identity. It was deleted on 2026-10-26.
  *
  * So a rule added there would be useless twice over — and worse than useless,
  * because the next person grepping for coverage would find it and stop looking.
