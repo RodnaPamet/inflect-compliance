@@ -77,6 +77,12 @@ export interface CreatedSandbox {
 }
 
 export interface SandboxExecResult {
+    /**
+     * Proof that an in-band exit event arrived. A transport cannot construct a
+     * result without saying so, which is what stops a dropped stream being
+     * returned as a clean run — see `SandboxExecIncompleteError`.
+     */
+    readonly exited: true;
     /** Process exit code, or null when the sandbox reported a signal instead. */
     readonly exitCode: number | null;
     readonly signal: string | null;
@@ -105,6 +111,35 @@ export interface SandboxTransport {
     deleteSandbox(input: { readonly sandboxId: string }): Promise<DeleteResult>;
     /** Resolve once the sandbox is absent. Only called after `ACCEPTED`. */
     awaitDeleted(input: { readonly sandboxId: string; readonly signal: AbortSignal }): Promise<void>;
+}
+
+/**
+ * Raised when the exec stream ended WITHOUT an in-band exit event — 4.1.
+ *
+ * `ExecSandbox` is a streaming RPC (`ExecSandboxEvent`, `ExecSandboxExit`), so
+ * the authoritative end of a run is an exit event, not the close of the
+ * connection. A stream that closes without one has produced output nobody can
+ * attribute an exit to, and the two readings — "the tool succeeded and the
+ * connection dropped" and "the tool was killed mid-write" — are
+ * indistinguishable from the bytes received.
+ *
+ * It is a SEPARATE error from unreachability because the collector must report
+ * it differently: an unreachable gateway never ran anything, while this ran
+ * something and cannot say what happened. Both are failures; only one of them
+ * may have had side effects.
+ *
+ * A transport MUST throw this rather than returning a `SandboxExecResult` with
+ * a null code and a null signal, because that shape is ambiguous with a clean
+ * exit nobody recorded.
+ */
+export class SandboxExecIncompleteError extends Error {
+    constructor(sandboxId: string, bytesSeen: number) {
+        super(
+            `the OpenShell exec stream for sandbox ${sandboxId} closed without an exit event ` +
+                `after ${bytesSeen} byte(s); the run's outcome is unknown and is treated as a failure`,
+        );
+        this.name = 'SandboxExecIncompleteError';
+    }
 }
 
 /** Raised when the gateway cannot be reached or is not configured. */
