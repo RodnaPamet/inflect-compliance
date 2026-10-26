@@ -1896,6 +1896,16 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'OWNER + ADMIN.',
     },
     {
+        // BEFORE the `[^/]+` detail rule below — see the ordering note above.
+        path: new RegExp(`^${T}\\/access-reviews\\/legacy$`),
+        methods: ['POST'],
+        permission: 'access_reviews.create',
+        note:
+            'Creating a LEGACY_APP campaign from one legacy application\'s ' +
+            'reconciled snapshot. Mirrors the assertCanAdmin in ' +
+            'createLegacyAccessReview: OWNER + ADMIN.',
+    },
+    {
         path: new RegExp(`^${T}\\/access-reviews\\/[^/]+$`),
         methods: ['GET'],
         permission: 'access_reviews.view',
@@ -1912,7 +1922,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'nothing else. The key that names them at creation: OWNER + ADMIN, ' +
             'mirroring the assertCanAdmin in updateAccessReviewSettings. After ' +
             'every leaf above, like the GET: `[^/]+$` would swallow ' +
-            '`/connected` and `/agents`, whose only method is POST.',
+            '`/connected`, `/agents` and `/legacy`, whose only method is POST.',
     },
     {
         path: new RegExp(`^${T}\\/access-reviews$`),
