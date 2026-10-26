@@ -1263,11 +1263,11 @@ export default function TaskDetailPage() {
                                 // Unsubscribing YOURSELF needs no write
                                 // permission — it only changes your own
                                 // notification feed. Removing someone else
-                                // still does. Mirrors the split in
-                                // `removeTaskWatcher`.
+                                // still does: `removeTaskWatcher` asserts
+                                // the write tier AND `tasks.edit` for that.
                                 const canRemove =
                                     w.userId === userId ||
-                                    (!!permissions.canWrite &&
+                                    (canEditTask &&
                                         (role === 'OWNER' || role === 'ADMIN'));
                                 return (
                                     <span key={w.id} className="inline-flex items-center gap-tight">

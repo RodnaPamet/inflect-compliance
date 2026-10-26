@@ -566,3 +566,46 @@ function getCountExactList(): number {
             url === '/api/t/acme/tasks' && (!init || !init.method || init.method === 'GET'),
     ).length;
 }
+
+describe('task detail — removing someone else as a watcher follows tasks.edit', () => {
+    // Removing YOURSELF needs no write permission; removing another person
+    // makes `removeTaskWatcher` assert the write tier AND `tasks.edit`. The
+    // page offered the × to an Admin on the write tier alone, so a custom role
+    // built on Admin without `tasks.edit` was offered it and refused.
+    beforeEach(() => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) => {
+            const path = url.split('?')[0];
+            if (path === '/api/t/acme/tasks/task_1') {
+                return json({
+                    ...TASK,
+                    watchers: [
+                        { id: 'w_other', userId: 'user_2', user: { name: 'Ana Petrova', email: 'ana@example.com' } },
+                        { id: 'w_self', userId: 'user_1', user: { name: 'Me', email: 'me@example.com' } },
+                    ],
+                });
+            }
+            return baseGet(url);
+        });
+        (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    it('a built-in Admin may remove another watcher', async () => {
+        renderPage();
+        await waitForTaskLoaded();
+        expect(document.getElementById('remove-watcher-user_2')).not.toBeNull();
+    });
+
+    it('an Admin-based custom role without tasks.edit may remove only itself', async () => {
+        const admin = getPermissionsForRole('ADMIN');
+        mockViewer = {
+            role: 'ADMIN',
+            permissions: { canWrite: true, canAdmin: true },
+            appPermissions: { ...admin, tasks: { ...admin.tasks, edit: false } },
+        };
+        renderPage();
+        await waitForTaskLoaded();
+        expect(document.getElementById('remove-watcher-user_1')).not.toBeNull();
+        expect(document.getElementById('remove-watcher-user_2')).toBeNull();
+    });
+});
