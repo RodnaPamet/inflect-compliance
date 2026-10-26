@@ -734,7 +734,12 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1147;
 //   165 -> 159 (2026-10-26). Six of the thirteen needles that left with
 //   `infra/alerts/rules.yml` and `infra/dashboards/` (see the ambiguous
 //   baseline above) had five or more satisfying positions. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 159;
+//
+//   159 -> 158 (#4387). The control detail page now passes each tab body
+//   its own gate, so `/canWrite=\{permissions\.canWrite\}/` in
+//   `control-exception-api.test.ts` matches two mounts there instead of
+//   five. Still ambiguous, so the ambiguous baseline does not move.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 158;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

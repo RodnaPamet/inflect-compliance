@@ -211,9 +211,10 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
                 /data-testid="control-where-used-btn"/,
             );
             // The headerActions block now always renders the button
-            // and gates only the write-controls below it.
+            // and gates only the write-controls below it — on the write
+            // tier AND `controls.edit`, the key their routes check (#4387).
             expect(src).toMatch(
-                /const headerActions = \(\s*<>[\s\S]{0,500}control-where-used-btn[\s\S]{0,400}permissions\.canWrite\s*&&/,
+                /const headerActions = \(\s*<>[\s\S]{0,500}control-where-used-btn[\s\S]{0,400}canEditControl\s*&&/,
             );
         });
     });
