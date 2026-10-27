@@ -131,6 +131,48 @@ all. Linux 6.2+ with Landlock remains required, and under `hard_requirement` the
 gateway refuses to start without it — the behaviour to want rather than work
 around.
 
+## 4.4 residency — what is deferred, and one gap found while deferring it
+
+**Deferred by owner condition: per-residency-class sandboxes (#3966).** That
+sentence is deliberately kept on one line: a guard matches it literally, so
+reflowing it across a line break breaks the check that this record still
+exists. The reasoning follows.
+
+Kernel network policy could backstop a `LOCAL_ONLY` decision by denying
+non-local model egress. It is out of scope because the shapes do not line up:
+one worker process serves many tenants, while OpenShell confines per sandbox.
+A per-tenant backstop therefore needs **per-residency-class sandboxes** — a
+topology change, not a policy edit — and #3966 rules it out "unless the owner
+pulls it in". Recorded here as well as in
+`tests/guards/flue-provider-is-never-set-per-run.test.ts`, because an option
+deferred only in a comment nobody reads is indistinguishable from one that was
+forgotten.
+
+**And a gap the deferral surfaced, in our own policy.** The collector policy
+(4.1) is provider-scoped rather than per-service, for the reason recorded
+there: the host set is not derivable from this repository. One cost of that
+width is now named:
+
+```
+GCP policy allows   *.googleapis.com
+which admits        generativelanguage.googleapis.com   ← a model provider
+```
+
+So a GCP collector sandbox has an egress path to an inference API that
+`model-selection.ts` never decided. It is narrow — the workload is Powerpipe
+running a compliance benchmark, not an agent — but it is exactly the second
+route #3966 exists to prevent, and it is admitted by a wildcard rather than by
+an endpoint anyone wrote down.
+
+It is **asserted as a known property** rather than silently left: a test pins
+that the wildcard admits it, so the fact cannot be discovered later as a
+surprise, and narrowing cannot be mistaken for something already done.
+Narrowing needs a real run's denials, which is #3961's undelivered half and
+needs a deployed gateway. The alternative available today — dropping
+`*.googleapis.com` for a guessed service list — would break collection on the
+first service the guess missed, and a broken collector returns ERROR, which is
+fail-closed but useless.
+
 ## Retention classification
 
 **No new model.** `prisma/schema.prisma` declares no sandbox- or
