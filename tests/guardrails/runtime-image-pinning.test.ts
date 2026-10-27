@@ -91,10 +91,6 @@ const BASELINE: Readonly<Record<string, string>> = {
     'prom/prometheus': 'Observability stack, version-pinned. Scrapes metrics, never tenant rows.',
     'otel/opentelemetry-collector-contrib':
         'Observability stack, version-pinned. Forwards spans and metrics, never tenant rows.',
-    'ghcr.io/luckypipewrench/pipelock':
-        'A peer tool, outside the application stack, and its own compose line already says '
-        + '"pin to a digest before enabling" — so it is baselined as UNENABLED rather than as '
-        + 'reviewed. Enabling it is the moment that comment has to be honoured.',
 };
 
 /** Every `image:` reference in a compose file git tracks, with its file. */
@@ -213,7 +209,16 @@ const CANONICAL_COMPOSE = 'deploy/docker-compose.prod.yml';
  * baselined on that basis. This asks a narrower question: does a baseline whose
  * reason is "it does not run" agree with the file that decides what runs.
  */
-const BASELINED_AS_UNENABLED: readonly string[] = ['ghcr.io/luckypipewrench/pipelock'];
+/*
+    EMPTY since 2026-10-27 (#3967). `ghcr.io/luckypipewrench/pipelock` was the
+    only member, and it is now digest-pinned in both compose files, so a
+    baseline excusing it from the pin rule no longer excuses anything.
+
+    Kept as an empty list rather than deleted: the cross-check below and the
+    conditional pin rule are the mechanism a FUTURE unenabled image needs, and
+    rebuilding them from the prose would be harder than reading them.
+*/
+const BASELINED_AS_UNENABLED: readonly string[] = [];
 
 describe('a baseline that claims an image is UNENABLED stays true', () => {
     const canonical = composeImageRefs().filter((r) => r.file === CANONICAL_COMPOSE);
@@ -309,7 +314,22 @@ describe('runtime images — a new one is pinned by digest', () => {
         // is removed or finally pinned, its entry goes in the same diff.
         const present = new Set(refs.map((r) => repositoryOf(r.ref)));
         const stale = Object.keys(BASELINE).filter((image) => !present.has(image));
+        // A SECOND kind of stale, which the line above cannot see: an entry for
+        // an image that is still referenced but is now digest-pinned
+        // everywhere. Its exemption excuses nothing, and nothing failed when
+        // pipelock's did — found by pinning it (#3967) and watching 15/15 stay
+        // green with the carve-out still in place.
+        //
+        // `ALLOWED_EXECUTORS` in `tool-execution-is-bounded` states the
+        // property this is borrowing: "an entry here for a file that no longer
+        // executes anything fails it too, so a stale carve-out cannot outlive
+        // the code it excused."
+        const excusesNothing = Object.keys(BASELINE).filter((image) => {
+            const refs = composeImageRefs().filter((r) => repositoryOf(r.ref) === image);
+            return refs.length > 0 && refs.every((r) => isDigestPinned(r.ref));
+        });
         expect(stale).toEqual([]);
+        expect(excusesNothing).toEqual([]);
     });
 
     describe('detector proof — on synthetic references, so a clean run means something', () => {

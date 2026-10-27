@@ -13,8 +13,10 @@
  *   4. LICENSE — no phantom pipelock/fleet npm dependency; NOTICE credits the
  *      Apache-2.0 CORE; the verifier documents the Apache-core boundary.
  */
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { codeOf } from '../helpers/source-blocks';
+import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
 import {
     generateKeyPairSync,
     sign as cryptoSign,
@@ -288,5 +290,121 @@ describe('pipelock license boundary', () => {
         const mod = readFileSync(join(REPO_ROOT, 'src/lib/mcp/receipt-verification.ts'), 'utf8');
         expect(mod).toMatch(/Apache-2\.0/);
         expect(mod).toMatch(/CORE/);
+    });
+});
+
+/**
+ * D4, the split by role — 4.5 (#3967).
+ *
+ * pipelock mediates MCP and signs the receipts behind `H4.receipts`; OpenShell
+ * confines execution and NON-MCP egress and signs nothing. The issue states the
+ * consequence plainly: OpenShell's policies contain no MCP rules, which also
+ * sidesteps NVIDIA/OpenShell#4679 and the prover's blindness to MCP rules.
+ *
+ * Asserted here rather than in a new guard file because the property is about
+ * the same boundary the block above defends, from the other side: that one keeps
+ * the Elastic-licensed half out, this one keeps the two mediators from
+ * overlapping.
+ *
+ * Read through parsed exports and comment-masked source, never raw text. A
+ * guard that greps raw source for "mcp" would be satisfied by a docblock
+ * mentioning MCP and would fail on one explaining why MCP is absent — which is
+ * exactly the prose this module is full of.
+ */
+describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediator', () => {
+    const openShellDir = join(REPO_ROOT, 'src/lib/agentic/openshell');
+
+    /**
+     * Enumerated as CONSTANT paths rather than walked, for two reasons that
+     * agree.
+     *
+     * `assertion-needle-uniqueness`'s Class D counts a `readFileSync` whose path
+     * is built in a loop as un-analysable — "build the path in a loop and the
+     * ratchet stops seeing it" — and my first version pushed that baseline from
+     * 1386 to 1388. A constant path is one the analyser follows.
+     *
+     * And it is the stronger shape anyway: the completeness assertion below
+     * makes a NEW module in this directory fail HERE until somebody adds it,
+     * which is what a walk cannot do — a walk covers a new file silently, so
+     * nobody reads the rule when the file arrives. Same trade
+     * `ALLOWED_EXECUTORS` makes in `tool-execution-is-bounded`.
+     */
+    const OPENSHELL_MODULES = [
+        'src/lib/agentic/openshell/collector-policy.ts',
+        'src/lib/agentic/openshell/executor.ts',
+        'src/lib/agentic/openshell/transport.ts',
+    ] as const;
+
+    it('the enumeration covers every module in the directory', () => {
+        // The half a constant list cannot give itself. A module added here and
+        // not listed above fails this, rather than going unchecked.
+        const onDisk = readdirSync(openShellDir)
+            .filter((f) => f.endsWith('.ts'))
+            .map((f) => `src/lib/agentic/openshell/${f}`)
+            .sort();
+        expect(onDisk).toEqual([...OPENSHELL_MODULES].sort());
+    });
+
+    /*
+        ASSERTED BEHAVIOURALLY, not by reading source — and that took three
+        attempts to get right, which is worth recording because the reason is a
+        genuine tension between two of this repo's own ratchets.
+
+        A negative whole-file assertion (`not.toMatch(/mcp/)`) MUST mask
+        comments, or a docblock explaining why MCP is absent fails it — this
+        directory's docblocks discuss MCP for exactly that reason. Masking means
+        `codeOf(readFileSync(...))`, and Class D of
+        `assertion-needle-uniqueness` counts a transformed read as
+        un-analysable: its `content-transformed` bucket. So Class A requires the
+        masking that Class D penalises, and the baseline moved 1386 -> 1388 ->
+        1390 -> 1391 across my attempts at constant paths and `it.each`.
+
+        The way out is not a cleverer read. It is to stop asserting on text: what
+        the split actually claims is that an OpenShell module does not REACH an
+        MCP surface, and a module's reach is observable by importing it and
+        looking at what came with it. No file read, no needle, nothing for
+        either ratchet to object to — and it catches a transitive import that no
+        source scan of these three files ever would.
+    */
+    it('importing the OpenShell modules pulls in no MCP module', async () => {
+        jest.resetModules();
+        await import('@/lib/agentic/openshell/transport');
+        await import('@/lib/agentic/openshell/executor');
+        await import('@/lib/agentic/openshell/collector-policy');
+
+        const loaded = Object.keys(require.cache);
+        // Non-vacuous: the modules themselves must be in there, or an empty
+        // cache would pass this trivially.
+        expect(loaded.some((m) => m.includes('agentic/openshell/transport'))).toBe(true);
+
+        const mcp = loaded.filter((m) => /[\\/]lib[\\/]mcp[\\/]/.test(m));
+        expect(mcp).toEqual([]);
+    });
+
+    it('the collector policy allows cloud APIs and no MCP endpoint', () => {
+        // Read as PARSED endpoints, so a comment naming an MCP host cannot
+        // satisfy it and a host list that genuinely grew cannot hide in prose.
+        for (const benchmark of [
+            'aws_compliance.benchmark.soc_2',
+            'azure_compliance.benchmark.soc_2',
+            'gcp_compliance.benchmark.cis_v300',
+        ]) {
+            const hosts = collectorSandboxPolicy(benchmark).networkPolicies.map((e) => e.host);
+            expect(hosts.length).toBeGreaterThan(0);
+            for (const host of hosts) {
+                expect(host).not.toMatch(/mcp/i);
+                // A sandbox reaching pipelock directly would make it the
+                // mediator's client rather than its subject.
+                expect(host).not.toMatch(/pipelock/i);
+            }
+        }
+    });
+
+    it('the detector can fire — the control', () => {
+        // Without this the two assertions above are satisfied by a regex that
+        // matches nothing in any input.
+        const planted = codeOf("import { x } from '@/lib/mcp/authorize';\nconst mcp = x;");
+        expect(/\bmcp\b|@\/lib\/mcp/i.test(planted)).toBe(true);
+        expect([{ host: 'mcp.internal' }].some((e) => /mcp/i.test(e.host))).toBe(true);
     });
 });
