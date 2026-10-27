@@ -551,6 +551,53 @@ describe('getConnectionsHealth', () => {
         expect(res.staleCount).toBe(2);
     });
 
+    /**
+     * #4389 — a connection whose sync has nobody to run as.
+     *
+     * It is read from the CONNECTION, not derived from executions, because a
+     * connection in this state produces no execution rows at all. That is also
+     * why it cannot be folded into `isStale`: a successful "Test connection"
+     * counts as activity, so a blocked connection can be perfectly fresh by
+     * every signal this function computes and still be syncing nothing.
+     */
+    it('reports a blocked connection, and counts it apart from stale', async () => {
+        const groupBy = jest.fn().mockResolvedValue([
+            { connectionId: 'blocked', _max: { completedAt: minsAgo(5), executedAt: null } },
+        ]);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                integrationConnection: {
+                    findMany: jest.fn().mockResolvedValue([
+                        {
+                            id: 'blocked', provider: 'sharepoint', name: 'Marketing site',
+                            createdAt: minsAgo(10_000), lastTestedAt: minsAgo(5), lastTestStatus: 'ok',
+                            syncBlockedAt: minsAgo(60 * 24 * 3),
+                            syncBlockedReason: 'NO_ADMIN_WITH_EVIDENCE_UPLOAD',
+                        },
+                        {
+                            id: 'ok', provider: 'okta', name: 'Okta',
+                            createdAt: minsAgo(10_000), lastTestedAt: null, lastTestStatus: null,
+                            syncBlockedAt: null, syncBlockedReason: null,
+                        },
+                    ]),
+                },
+                integrationExecution: { groupBy },
+            } as never),
+        );
+
+        const res = await getConnectionsHealth(makeRequestContext('ADMIN'));
+        const byId = Object.fromEntries(res.connections.map((c) => [c.connectionId, c]));
+
+        expect(byId.blocked.syncBlockedReason).toBe('NO_ADMIN_WITH_EVIDENCE_UPLOAD');
+        expect(byId.blocked.syncBlockedAt).toBe(minsAgo(60 * 24 * 3).toISOString());
+        expect(byId.ok.syncBlockedAt).toBeNull();
+        expect(res.blockedCount).toBe(1);
+        // The control that makes the point: this connection is NOT stale by any
+        // freshness measure, and is still not syncing.
+        expect(byId.blocked.isStale).toBe(false);
+        expect(res.staleCount).toBe(1);
+    });
+
     // ─── #2252 — the status allowlist is scoped to POSTURE providers ───
     //
     // A posture benchmark that reaches the account and finds a gap persists
