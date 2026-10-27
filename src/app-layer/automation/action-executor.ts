@@ -58,6 +58,30 @@ type ActorResolution =
  * Mirrors `resolveTenantContext` (src/lib/tenant-context.ts) — same
  * customRole-aware resolution, same membership-status refusal — reusing its
  * `computePermissions` so the two can never drift.
+ *
+ * ## The API key that fired the trigger is NOT a term here
+ *
+ * ACCEPTED, not overlooked (#4386 item 3, owner decision 2026-10-27). Where an
+ * event came from a request made with an API key, that key does not narrow the
+ * rule: an author-less rule runs with the firing actor's full membership, and a
+ * key scoped to one resource can trigger a rule that writes another.
+ *
+ * The other three paths #4386 lists were narrowed — a key-started SharePoint
+ * sync (#4408), a key-started workflow run (#4410) and a key-requested key
+ * rotation (#4411) all re-read the key and hold `key ∧ member`, because each is
+ * work the key ASKED FOR, begun by one request and finished later.
+ *
+ * A rule is not that shape. It was configured once, by an author with
+ * `canAdmin`, and fires on events indefinitely afterwards; the key that
+ * happened to trigger today's event authored nothing. Narrowing by it would
+ * make a rule stop firing because an unrelated credential was revoked — and for
+ * an author-less rule, would stop it whenever the triggering principal is
+ * narrower than the work, which is most of the time.
+ *
+ * What would close it properly is making `createdByUserId` required, so no rule
+ * borrows the firing actor's identity at all. That is a migration plus a
+ * backfill policy for rules whose author is unknown or departed, and it is the
+ * real fix rather than this one.
  */
 async function resolveActorCtx(db: Db, tenantId: string, userId: string): Promise<ActorResolution> {
     const membership = await db.tenantMembership.findUnique({
