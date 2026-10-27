@@ -80,6 +80,11 @@ function countStatusBadges(content: string): number {
  * requires a comment explaining the new badge column / context.
  */
 const STATUS_BADGE_BUDGET: Record<string, number> = {
+    // Integrations health — the status cell has THREE mutually exclusive
+    // values (blocked / stale / fresh, #4389), so a row still renders exactly
+    // one badge; the count is static branches, not stacked chrome. The
+    // blocked-count summary beside the heading is plain text for that reason.
+    "src/app/t/[tenantSlug]/(app)/admin/integrations/ConnectionHealthPanel.tsx": 5,
     // Heavy display surfaces — many badges across distinct
     // contexts (each its own row / cell, not stacked in one cell).
     "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 12,

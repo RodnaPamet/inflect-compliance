@@ -103,3 +103,98 @@ export async function clearAuthFailure(
     }
     return r.count > 0;
 }
+
+/**
+ * Record that this connection's sync cannot RUN — distinct from running and
+ * being refused (#4389).
+ *
+ * The scheduled SharePoint delta sync borrows an active Owner or Admin who may
+ * upload evidence, so the evidence it writes names a real member. Since #4375 a
+ * workspace with no such member means the connection is never queued at all. It
+ * reported that in the dispatch result and a `warn` line, and nowhere an admin
+ * looks.
+ *
+ * ## Why not an IntegrationExecution row
+ *
+ * It would have made the page read BETTER while the connection got worse.
+ * `getConnectionsHealth` takes `lastActivity` from the most recent execution of
+ * ANY status — deliberately, so a connection that runs and fails still counts as
+ * live — so a row written every four hours for a connection that never syncs
+ * would clear its stale flag. The signal would have cancelled itself.
+ *
+ * ## Why its own pair of columns
+ *
+ * Same argument that keeps `authFailure*` apart from `lastTested*`: a revoked
+ * credential and a permissions configuration are different facts with different
+ * fixes. One field would let a credential recovery clear a permissions block, or
+ * the reverse, and a tenant that cannot tell them apart cannot act on either.
+ *
+ * `reason` is a stable machine token (`DELTA_SYNC_UNROUTABLE` / `BORROW_FAILURE`
+ * values), not a sentence: the UI owns the words, so the copy can change without
+ * a migration and without re-reading rows written by an older build.
+ *
+ * Takes an ARRAY because its caller is a cross-tenant dispatcher: one statement
+ * per reason beats one per connection, and a single predicate cannot drift from
+ * a looped one.
+ *
+ * @returns how many connections this actually changed.
+ */
+export async function markSyncBlocked(
+    db: PrismaTx,
+    connectionIds: string[],
+    reason: string,
+    now: Date = new Date(),
+): Promise<number> {
+    if (connectionIds.length === 0) return 0;
+    const stored = reason.slice(0, MAX_REASON_LEN);
+
+    // Only the FIRST observation moves the timestamp, so "blocked since" means
+    // since — a dispatcher running `0 */4 * * *` would otherwise re-stamp it
+    // every four hours and it would read as minutes old forever, which is the
+    // one thing this field exists to tell an admin. A CHANGED reason does move
+    // it: that is a different block, not the same one continuing.
+    const r = await db.integrationConnection.updateMany({
+        where: {
+            id: { in: connectionIds },
+            OR: [{ syncBlockedAt: null }, { syncBlockedReason: { not: stored } }],
+        },
+        data: { syncBlockedAt: now, syncBlockedReason: stored },
+    });
+
+    if (r.count > 0) {
+        logger.warn('integration sync has no eligible actor — connections marked', {
+            component: 'integrations',
+            connections: r.count,
+            reason,
+        });
+    }
+    return r.count;
+}
+
+/**
+ * Clear the block once a sync IS queued.
+ *
+ * Unconditional on every path that queues, for the reason `clearAuthFailure`
+ * gives: a banner that outlives its cause is worse than none, because it teaches
+ * people to ignore the one signal that means somebody must act. The `not: null`
+ * predicate keeps the common case a no-op write.
+ */
+export async function clearSyncBlocked(
+    db: PrismaTx,
+    connectionIds: string[],
+): Promise<number> {
+    if (connectionIds.length === 0) return 0;
+
+    const r = await db.integrationConnection.updateMany({
+        where: { id: { in: connectionIds }, syncBlockedAt: { not: null } },
+        data: { syncBlockedAt: null, syncBlockedReason: null },
+    });
+
+    if (r.count > 0) {
+        logger.info('integration sync has an eligible actor again — connections cleared', {
+            component: 'integrations',
+            connections: r.count,
+        });
+    }
+    return r.count;
+}
