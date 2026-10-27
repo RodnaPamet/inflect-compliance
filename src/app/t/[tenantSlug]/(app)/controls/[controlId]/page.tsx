@@ -1234,14 +1234,14 @@ export default function ControlDetailPage() {
                         entityType="CONTROL"
                         entityId={controlId}
                         tenantHref={tenantHref}
-                        // STILL the coarse tier, deliberately (#4387, #4415).
-                        // This panel's single `canWrite` drives BOTH a task
-                        // create (`tasks.create`) and row selection, which is
-                        // what turns on the bulk actions (`tasks.edit`). Either
-                        // key alone is wrong for one of them, and the prop is
-                        // shared with six other detail pages — so splitting it
-                        // is #4415, not this change.
                         canWrite={permissions.canWrite}
+                        // The two keys the server asks, now that the panel can
+                        // tell them apart (#4415): `tasks.create` for the
+                        // create affordance, `tasks.edit` for the bulk actions
+                        // behind row selection. #4387 left this one site on the
+                        // coarse tier precisely because it could not.
+                        canCreateTasks={permissions.canWrite && appPermissions.tasks.create}
+                        canEditTasks={permissions.canWrite && appPermissions.tasks.edit}
                     />
                 </div>
             )}
