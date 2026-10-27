@@ -122,7 +122,7 @@ describe("ControlEditPanel (editable control side panel)", () => {
         })) as unknown as typeof fetch;
     });
 
-    const renderPanel = (canUploadEvidence = true, canWrite = true) =>
+    const renderPanel = (canUploadEvidence = true, canWrite = true, canWriteTier?: boolean) =>
         render(
             withQuery(
                 <ControlEditPanel
@@ -130,6 +130,7 @@ describe("ControlEditPanel (editable control side panel)", () => {
                     control={CONTROL}
                     canWrite={canWrite}
                     canUploadEvidence={canUploadEvidence}
+                    canWriteTier={canWriteTier}
                     onClose={jest.fn()}
                     onSaved={jest.fn()}
                 />,
@@ -191,6 +192,29 @@ describe("ControlEditPanel (editable control side panel)", () => {
         expect(screen.getByText("Pen-test report")).toBeInTheDocument();
         expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
         expect(screen.queryByTestId("evidence-link-url-form")).not.toBeInTheDocument();
+    });
+
+    // The dropzone follows the WRITE TIER, not `controls.edit` (#4389). This
+    // panel ANDed it with `canWrite`, which the caller passes as
+    // `write tier && controls.edit`, so a viewer holding the tier and
+    // `evidence.upload` was refused an upload the route would have accepted.
+    // Re-ANDing `canWrite` left 33/33 green before this case existed.
+    it("offers the dropzone on the write tier even without `controls.edit`", () => {
+        renderPanel(true, false, true);
+
+        expect(screen.getByTestId("evidence-upload-dropzone")).toBeInTheDocument();
+    });
+
+    it("withholds it when the viewer has no write tier", () => {
+        renderPanel(true, false, false);
+
+        expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
+    });
+
+    it("defaults the tier to `canWrite`, so an omitting caller is unchanged", () => {
+        renderPanel(true, false);
+
+        expect(screen.queryByTestId("evidence-upload-dropzone")).not.toBeInTheDocument();
     });
 
     it("auto-saves the name on blur with a PATCH (no Save click)", async () => {

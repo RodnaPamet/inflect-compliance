@@ -57,19 +57,27 @@ export function ControlEditPanel({
     control,
     canWrite,
     canUploadEvidence,
+    canWriteTier,
     onSaved,
 }: {
     tenantSlug: string;
     control: PanelControl;
     canWrite: boolean;
     /**
-     * The viewer's `evidence.upload`, which gates the file dropzone on top of
-     * `canWrite` (here `canWrite && controls.edit`): a file upload POSTs to
-     * `/evidence/uploads`, which asks `evidence.upload` (#4325). It gates only
-     * the dropzone. The attached-evidence list shows for every role, and the
-     * URL link stays on `canWrite`, because its route is the control's own.
+     * The viewer's `evidence.upload`, which gates the file dropzone together
+     * with `canWriteTier`: a file upload POSTs to `/evidence/uploads`, which
+     * asks `evidence.upload` (#4325). It gates only the dropzone. The
+     * attached-evidence list shows for every role, and the URL link stays on
+     * `canWrite`, because its route is the control's own.
      */
     canUploadEvidence: boolean;
+    /**
+     * The viewer's COARSE write tier. `canWrite` here is
+     * `write tier && controls.edit`, and the dropzone used to be ANDed with
+     * that, so it required `controls.edit` — a key the upload route never asks
+     * for (#4389). Defaults to `canWrite`, so an omitting caller is unchanged.
+     */
+    canWriteTier?: boolean;
     /** Retained for API compatibility (AsidePanel owns the close affordance). */
     onClose?: () => void;
     /** Called after a successful save so the list reflects new name/owner. */
@@ -295,7 +303,7 @@ export function ControlEditPanel({
                         linkField="controlId"
                         linkId={control.id}
                         canWrite={canWrite}
-                        canUpload={canWrite && canUploadEvidence}
+                        canUpload={(canWriteTier ?? canWrite) && canUploadEvidence}
                         compactDropzone
                         listEndpoint={`/controls/${control.id}/evidence`}
                         urlLinkEndpoint={`/controls/${control.id}/evidence`}
