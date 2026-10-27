@@ -36,6 +36,7 @@ import {
     extractBearerToken,
     isApiKeyToken,
     API_KEY_PREFIX,
+    keyAuthorityFromScopes,
 } from '@/lib/auth/api-key-auth';
 
 beforeEach(() => {
@@ -307,5 +308,49 @@ describe('API Key — Hash Storage Integrity', () => {
         expect(keyHash).not.toContain(plaintext);
         // Re-hashing plaintext produces the same hash (verifiable)
         expect(hashApiKey(plaintext)).toBe(keyHash);
+    });
+});
+
+/**
+ * The ROLE a key's scopes imply, which nothing asserted (#4386).
+ *
+ * Measured: breaking the derivation so every key resolved to READER left this
+ * whole file green. That mattered more once the derivation was extracted into
+ * `keyAuthorityFromScopes` and gained a second caller — the workflow-run worker
+ * narrows a queued run by it, so one unasserted function now decides key
+ * authority in two places.
+ */
+describe('API Key — the authority a scope list confers', () => {
+    const role = (scopes: string[]) => keyAuthorityFromScopes(scopes).role;
+
+    it('a write scope implies EDITOR', () => {
+        expect(role(['risks:write'])).toBe('EDITOR');
+        expect(role(['evidence:write', 'risks:read'])).toBe('EDITOR');
+    });
+
+    it('a resource wildcard implies EDITOR, not ADMIN', () => {
+        expect(role(['risks:*'])).toBe('EDITOR');
+    });
+
+    it('only admin:write or the full wildcard implies ADMIN', () => {
+        expect(role(['admin:write'])).toBe('ADMIN');
+        expect(role(['*'])).toBe('ADMIN');
+    });
+
+    it('read scopes, and none at all, imply READER', () => {
+        expect(role(['risks:read'])).toBe('READER');
+        expect(role([])).toBe('READER');
+    });
+
+    it('the coarse flags follow the role, not the scope list', () => {
+        expect(keyAuthorityFromScopes(['risks:read']).permissions.canWrite).toBe(false);
+        expect(keyAuthorityFromScopes(['risks:write']).permissions.canWrite).toBe(true);
+        expect(keyAuthorityFromScopes(['admin:write']).permissions.canAdmin).toBe(true);
+    });
+
+    it('the granular set is the scopes, so a read key cannot edit', () => {
+        const readOnly = keyAuthorityFromScopes(['risks:read']).appPermissions;
+        expect(readOnly.risks.view).toBe(true);
+        expect(readOnly.risks.edit).toBe(false);
     });
 });
