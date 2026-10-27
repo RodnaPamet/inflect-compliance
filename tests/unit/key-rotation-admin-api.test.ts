@@ -308,3 +308,47 @@ describe('GET /api/t/:tenantSlug/admin/key-rotation', () => {
         expect(getQueueMock).not.toHaveBeenCalled();
     });
 });
+
+/**
+ * The key a rotation was requested with reaches the job (#4386).
+ *
+ * This route admits an `admin:write` key, and the rotation then sits in a
+ * queue. The job re-checks the key's liveness before any work — but it can
+ * only do that if the route hands it the id, and nothing here asserted that it
+ * did. Measured: removing the spread from the route left all 8 tests in this
+ * file green, because the one exact-match assertion above describes a SESSION
+ * request, where the id is absent either way.
+ */
+describe('key rotation — the requesting key reaches the job', () => {
+    test('a key-authenticated request carries the key id', async () => {
+        getTenantCtxMock.mockResolvedValueOnce({
+            ...adminCtx(),
+            apiKeyId: 'key-1',
+            apiKeyScopes: ['admin:write'],
+        });
+        enqueueMock.mockResolvedValueOnce({ id: 'bullmq-job-43' });
+
+        const res = await POST(req('POST'), { params: { tenantSlug: 'acme' } });
+
+        expect(res.status).toBe(202);
+        expect(enqueueMock).toHaveBeenCalledWith('key-rotation', {
+            tenantId: 'tenant-A',
+            initiatedByUserId: 'admin-1',
+            apiKeyId: 'key-1',
+            requestId: 'req-1',
+        });
+    });
+
+    test('a session request carries none, so the payload is the one it always was', async () => {
+        // This file does not clear `enqueueMock` between tests, so read THIS
+        // call rather than the first one in the file.
+        enqueueMock.mockClear();
+        getTenantCtxMock.mockResolvedValueOnce(adminCtx());
+        enqueueMock.mockResolvedValueOnce({ id: 'bullmq-job-44' });
+
+        await POST(req('POST'), { params: { tenantSlug: 'acme' } });
+
+        expect(enqueueMock).toHaveBeenCalledTimes(1);
+        expect(enqueueMock.mock.calls[0][1]).not.toHaveProperty('apiKeyId');
+    });
+});

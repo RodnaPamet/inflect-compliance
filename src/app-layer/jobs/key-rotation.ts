@@ -58,6 +58,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
+import { resolveApiKeyForJob } from '@/lib/auth/api-key-auth';
 import { logger } from '@/lib/observability/logger';
 import {
     encryptField,
@@ -77,6 +78,8 @@ import { appendAuditEntry } from '@/lib/audit/audit-writer';
 export interface KeyRotationOptions {
     tenantId: string;
     initiatedByUserId: string;
+    /** The key the rotation was requested with, re-checked before any work. */
+    apiKeyId?: string;
     requestId?: string;
     /** Override SELECT batch size per (model, field). Default 500. */
     batchSize?: number;
@@ -304,6 +307,37 @@ export async function runKeyRotation(
             const jobRunId = crypto.randomUUID();
             const started = Date.now();
             const batchSize = Math.max(1, options.batchSize ?? 500);
+
+            // ── The grant that authorised this must still hold ──────────────
+            //
+            // This route admits an `admin:write` key, and a rotation can sit in
+            // the queue. A key revoked or expired in between no longer
+            // authorises the request that queued this, so the work does not
+            // start (#4386).
+            //
+            // LIVENESS ONLY, and deliberately not the conjunction that
+            // `resolveKeyInitiatorContext` applies to the other key-started
+            // jobs. Those act WITH an authority — they write evidence, they run
+            // workflow steps — so theirs must be narrowed by the key and the
+            // member alike. This one is a SYSTEM act that does one fixed thing
+            // and reads no permission at all, so there is nothing to narrow;
+            // the key is the authorisation to have ASKED.
+            //
+            // The initiator's membership is not a term for the same reason. A
+            // rotation stopping because the admin who asked for it has since
+            // left would leave keys unrotated, which is the kind of security
+            // work that must not disappear quietly.
+            if (options.apiKeyId) {
+                const key = await resolveApiKeyForJob({
+                    apiKeyId: options.apiKeyId,
+                    tenantId: options.tenantId,
+                });
+                if (!key.valid) {
+                    throw new Error(
+                        `key-rotation: API key ${options.apiKeyId} that requested this rotation is refused (${key.reason}) on tenant ${options.tenantId}`,
+                    );
+                }
+            }
 
             await appendAuditEntry({
                 tenantId: options.tenantId,

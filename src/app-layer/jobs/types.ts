@@ -463,6 +463,14 @@ export interface KeyRotationPayload {
     tenantId: string;
     /** User who initiated — attribution on audit-log entries. */
     initiatedByUserId: string;
+    /**
+     * The API key the rotation was requested with, when it was requested with
+     * one (#4386). Re-read for LIVENESS before any work: a key revoked or
+     * expired while the job sat in the queue no longer authorises the request
+     * that queued it. Absent for a session request, and for every payload
+     * queued before this member existed.
+     */
+    apiKeyId?: string;
     /** Upstream request id for log correlation. */
     requestId?: string;
 }
