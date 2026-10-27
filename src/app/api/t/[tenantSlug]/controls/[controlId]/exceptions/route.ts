@@ -16,7 +16,8 @@ import {
     requestException,
 } from '@/app-layer/usecases/control';
 import { RequestExceptionSchema } from '@/app-layer/schemas/control-exception.schemas';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
@@ -34,24 +35,25 @@ export const GET = withApiErrorHandling(
     },
 );
 
+/**
+ * Gated on `controls.edit` (#4387, owner decision 2026-10-27).
+ *
+ * `requestException` asserted `assertCanWrite` — the coarse tier alone — and
+ * this route carried no gate. It now asserts `assertCanUpdateControl`, which
+ * reads this same key, so route and usecase ask one question. This IS a
+ * tightening: a write-tier custom role without `controls.edit` could request
+ * an exception before and cannot now.
+ */
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        RequestExceptionSchema,
-        async (
-            req: NextRequest,
-            { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> },
-            body,
-        ) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
+    requirePermission<{ tenantSlug: string; controlId: string }>(
+        'controls.edit',
+        async (req, { params }, ctx) => {
+            const body = await parseJsonBody(req, RequestExceptionSchema);
             // The body's controlId MUST match the path's controlId —
             // a mismatched body is a 400, not a silent override.
             if (body.controlId !== params.controlId) {
                 return jsonResponse(
-                    {
-                        error:
-                            'Body controlId must match the URL controlId.',
-                    },
+                    { error: 'Body controlId must match the URL controlId.' },
                     { status: 400 },
                 );
             }

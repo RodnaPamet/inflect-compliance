@@ -56,8 +56,11 @@ describe('Epic G-5 — control exception API + UI wiring', () => {
         expect(listRoute).toMatch(/export const POST/);
         expect(listRoute).toContain('listControlExceptions');
         expect(listRoute).toContain('requestException');
-        expect(listRoute).toContain('RequestExceptionSchema');
-        expect(listRoute).toContain('withValidatedBody');
+        // `parseJsonBody` since #4387: the POST is wrapped in
+        // `requirePermission`, whose handler takes the ctx in the third
+        // position `withValidatedBody` uses for the body, so the two cannot
+        // nest. Same schema, same `schema.parse`, same error.
+        expect(listRoute).toContain('await parseJsonBody(req, RequestExceptionSchema)');
     });
 
     it('detail GET delegates to getControlException + verifies control hierarchy', () => {
@@ -69,27 +72,37 @@ describe('Epic G-5 — control exception API + UI wiring', () => {
 
     it('approve / reject / renew routes are typed + validated', () => {
         expect(approveRoute).toContain('approveException');
-        expect(approveRoute).toContain('ApproveExceptionSchema');
-        expect(approveRoute).toContain('withValidatedBody');
+        expect(approveRoute).toContain('await parseJsonBody(req, ApproveExceptionSchema)');
         expect(rejectRoute).toContain('rejectException');
-        expect(rejectRoute).toContain('RejectExceptionSchema');
-        expect(rejectRoute).toContain('withValidatedBody');
+        expect(rejectRoute).toContain('await parseJsonBody(req, RejectExceptionSchema)');
         expect(renewRoute).toContain('renewException');
-        expect(renewRoute).toContain('RenewExceptionSchema');
-        expect(renewRoute).toContain('withValidatedBody');
+        expect(renewRoute).toContain('await parseJsonBody(req, RenewExceptionSchema)');
     });
 
     // ── 2. Tenant scoping invariant ─────────────────────────────────
 
-    it('every route uses getTenantCtx', () => {
-        for (const src of [
-            listRoute,
-            detailRoute,
-            approveRoute,
-            rejectRoute,
-            renewRoute,
-        ]) {
-            expect(src).toContain('getTenantCtx');
+    /**
+     * Every route resolves the tenant context — now through
+     * `requirePermission` on the writes (#4387), which calls `getTenantCtx`
+     * itself AND gates before the handler runs. Asserting the gate rather than
+     * the helper is strictly stronger: a route could call `getTenantCtx` and
+     * check nothing, which is the state this issue found these routes in.
+     */
+    it('every route resolves the tenant context, and every WRITE gates first', () => {
+        // The read still resolves it directly.
+        expect(detailRoute).toContain('await getTenantCtx(params, req)');
+
+        const writes: Array<[string, string, string]> = [
+            ['list POST', listRoute, 'controls.edit'],
+            ['approve', approveRoute, 'admin.manage'],
+            ['reject', rejectRoute, 'admin.manage'],
+            ['renew', renewRoute, 'controls.edit'],
+        ];
+        // Jest's `expect` takes one argument, so the route NAME rides in the
+        // asserted value instead — a failure then says which route it was.
+        for (const [name, src, key] of writes) {
+            expect(`${name}: ${src.includes('requirePermission')}`).toBe(`${name}: true`);
+            expect(`${name}: ${src.includes(`'${key}'`)}`).toBe(`${name}: true`);
         }
     });
 

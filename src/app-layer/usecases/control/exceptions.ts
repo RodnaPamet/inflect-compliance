@@ -30,8 +30,9 @@
  * usecases — exception state is a separate axis.
  */
 import { RequestContext } from '../../types';
+import { assertCanUpdateControl, assertCanDecideException } from '../../policies/control.policies';
 import { ControlExceptionRepository } from '../../repositories/ControlExceptionRepository';
-import { assertCanAdmin, assertCanRead, assertCanWrite } from '../../policies/common';
+import { assertCanRead } from '../../policies/common';
 import { logEvent } from '../../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -87,7 +88,9 @@ export async function requestException(
     ctx: RequestContext,
     input: unknown,
 ): Promise<RequestExceptionResult> {
-    assertCanWrite(ctx);
+    // `controls.edit`, not the coarse tier alone: requesting an exception is a
+    // control write, and the route now requires the same key (#4387).
+    assertCanUpdateControl(ctx);
     const parsed: RequestExceptionInput = RequestExceptionSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
@@ -169,7 +172,9 @@ export async function approveException(
     id: string,
     input: unknown,
 ): Promise<ApproveExceptionResult> {
-    assertCanAdmin(ctx);
+    // `admin.manage`, so a narrow custom role on an admin base can be denied
+    // the decision and the route can mirror it (#4387).
+    assertCanDecideException(ctx);
     const parsed: ApproveExceptionInput = ApproveExceptionSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
@@ -247,7 +252,8 @@ export async function rejectException(
     id: string,
     input: unknown,
 ): Promise<RejectExceptionResult> {
-    assertCanAdmin(ctx);
+    // Same key as approving: a rejection is the same decision (#4387).
+    assertCanDecideException(ctx);
     const parsed: RejectExceptionInput = RejectExceptionSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
@@ -330,7 +336,8 @@ export async function renewException(
     id: string,
     input: unknown,
 ): Promise<RenewExceptionResult> {
-    assertCanWrite(ctx);
+    // Renewing extends a control write, so it asks what requesting asks (#4387).
+    assertCanUpdateControl(ctx);
     const parsed: RenewExceptionInput = RenewExceptionSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {

@@ -608,7 +608,14 @@ const HIGH_MULTIPLICITY = 5;
 // the whole-file assertions over them in `observability-infra`,
 // `epic19-coherence` and the two `oi-3-*` guards: thirteen ambiguous needles.
 // Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1147;
+//
+// 1147 -> 1139 on 2026-10-27. `control-exception-api`'s route assertions were
+// re-pinned while #4387 gave those routes a `requirePermission`: four bare
+// `'parseJsonBody'` and four bare schema names became four needles naming the
+// CALL (`await parseJsonBody(req, ApproveExceptionSchema)`), and the
+// five-route `getTenantCtx` loop became one assertion naming its call. Eight
+// ambiguous needles fewer. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1139;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -1223,7 +1230,11 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 159;
     three files would. That is the same trade the note above this one makes:
     the better test, at the cost of a count.
 */
-const UNANALYSABLE_READ_BASELINE = 1388;
+// 1388 -> 1387 on 2026-10-27. #4387's route gates collapsed
+// `control-exception-api`'s five-route `getTenantCtx` loop into one assertion
+// naming the call, so one whole-file read over an un-analysable slice is gone.
+// Measured.
+const UNANALYSABLE_READ_BASELINE = 1387;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

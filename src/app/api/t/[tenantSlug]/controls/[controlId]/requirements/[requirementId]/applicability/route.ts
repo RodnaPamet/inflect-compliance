@@ -1,8 +1,9 @@
-import { NextRequest } from 'next/server';
+
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
+
 import { setRequirementLinkApplicability } from '@/app-layer/usecases/control';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
@@ -14,16 +15,17 @@ const Schema = z.object({
 
 /** Set (or clear) the per-framework applicability override on a control's
  *  mapping to one requirement. */
+/**
+ * `setRequirementLinkApplicability` asserts `assertCanSetApplicability`
+ * (`canWrite` + `controls.edit`) and this route carried no gate, so the
+ * refusal happened inside the usecase and wrote no `AUTHZ_DENIED` row. Same
+ * key, so no role moves (#4387).
+ */
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        Schema,
-        async (
-            req: NextRequest,
-            { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string; requirementId: string }> },
-            body,
-        ) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
+    requirePermission<{ tenantSlug: string; controlId: string; requirementId: string }>(
+        'controls.edit',
+        async (req, { params }, ctx) => {
+            const body = await parseJsonBody(req, Schema);
             const updated = await setRequirementLinkApplicability(
                 ctx,
                 params.controlId,
