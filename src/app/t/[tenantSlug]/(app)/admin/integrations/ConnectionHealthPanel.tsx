@@ -25,12 +25,19 @@ interface HealthRow {
     secondsSinceActivity: number | null;
     lastTestStatus: string | null;
     lastTestedAt: string | null;
+    // #4389 — set when a scheduled sync has nobody it may run as, so the
+    // connection produces no executions at all. It therefore cannot be derived
+    // from the freshness signals above: a connection tested OK last week and
+    // blocked ever since reads "fresh" by every one of them.
+    syncBlockedAt: string | null;
+    syncBlockedReason: string | null;
 }
 
 interface HealthResponse {
     connections: HealthRow[];
     staleThresholdSeconds: number;
     staleCount?: number;
+    blockedCount?: number;
     generatedAt: string;
 }
 
@@ -67,6 +74,25 @@ export function ConnectionHealthPanel() {
 
     useEffect(() => { fetchHealth(); }, [fetchHealth]);
 
+    /**
+     * The stored reason is a machine token, so the words live here and can
+     * change without a migration. An UNRECOGNISED token still produces a
+     * sentence: a build that has not heard of a newer reason must say the sync
+     * cannot run rather than render a raw enum or, worse, nothing at all.
+     */
+    const blockedReasonText = (reason: string | null): string => {
+        switch (reason) {
+            case 'NO_ACTIVE_ADMIN':
+            case 'NO_ACTIVE_MEMBER':
+                return t('integrations.health.blockedNoActiveAdmin');
+            case 'NO_ADMIN_WITH_EVIDENCE_UPLOAD':
+            case 'NO_QUALIFYING_ACTOR':
+                return t('integrations.health.blockedNoAdminWithUpload');
+            default:
+                return t('integrations.health.blockedUnknown');
+        }
+    };
+
     // Only render the panel when there is at least one enabled connection.
     if (!loading && (!data || data.connections.length === 0)) return null;
 
@@ -90,9 +116,22 @@ export function ConnectionHealthPanel() {
         },
         {
             id: 'status', header: t('integrations.colStatus'), accessorKey: 'isStale',
-            cell: ({ row }) => row.original.isStale
-                ? <StatusBadge variant="error">{t('integrations.health.stale')}</StatusBadge>
-                : <StatusBadge variant="success">{t('integrations.health.fresh')}</StatusBadge>,
+            // Blocked FIRST, and not folded into stale/fresh. A blocked
+            // connection can satisfy every freshness test — a successful
+            // "Test connection" counts as activity — so reading the two in the
+            // other order reports the one state that needs a person as healthy.
+            cell: ({ row }) => row.original.syncBlockedAt
+                ? (
+                    <div className="space-y-1">
+                        <StatusBadge variant="warning">{t('integrations.health.blocked')}</StatusBadge>
+                        <p className="text-xs text-content-muted max-w-xs text-pretty">
+                            {blockedReasonText(row.original.syncBlockedReason)}
+                        </p>
+                    </div>
+                )
+                : row.original.isStale
+                    ? <StatusBadge variant="error">{t('integrations.health.stale')}</StatusBadge>
+                    : <StatusBadge variant="success">{t('integrations.health.fresh')}</StatusBadge>,
         },
     ]);
 
@@ -100,9 +139,14 @@ export function ConnectionHealthPanel() {
         <div>
             <div className="flex items-center justify-between mb-3">
                 <Heading level={2}>{t('integrations.health.title')}</Heading>
-                {data && (data.staleCount ?? 0) > 0 && (
-                    <StatusBadge variant="error">{t('integrations.health.staleSummary', { count: data.staleCount ?? 0 })}</StatusBadge>
-                )}
+                <div className="flex items-center gap-2">
+                    {data && (data.blockedCount ?? 0) > 0 && (
+                        <StatusBadge variant="warning">{t('integrations.health.blockedSummary', { count: data.blockedCount ?? 0 })}</StatusBadge>
+                    )}
+                    {data && (data.staleCount ?? 0) > 0 && (
+                        <StatusBadge variant="error">{t('integrations.health.staleSummary', { count: data.staleCount ?? 0 })}</StatusBadge>
+                    )}
+                </div>
             </div>
             <p className="text-sm text-content-subtle mb-3">{t('integrations.health.description')}</p>
             {loading ? (

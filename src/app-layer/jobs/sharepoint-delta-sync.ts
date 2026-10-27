@@ -19,6 +19,7 @@ import type { SharePointDeltaSyncPayload, SharePointDeltaSyncDispatchPayload } f
 import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 import { runInTenantContext } from '@/lib/db-context';
 import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
+import { markSyncBlocked, clearSyncBlocked } from '@/app-layer/integrations/connection-health';
 
 /**
  * Whether a member's resolved permissions let them run a delta sync: the key
@@ -160,6 +161,27 @@ export async function runSharePointDeltaSyncDispatch(_payload: SharePointDeltaSy
         });
         return false;
     });
+
+    // Record the block ON THE CONNECTION, which is the only place an admin
+    // looks. The dispatch result and the warn line above are read by neither
+    // (#4389). Marked per reason so the two stay distinguishable, and the first
+    // observation is the one whose timestamp sticks.
+    for (const reason of Object.values(DELTA_SYNC_UNROUTABLE)) {
+        await markSyncBlocked(
+            prisma,
+            unroutable.filter((u) => u.reason === reason).map((u) => u.connectionId),
+            reason,
+        );
+    }
+    // Cleared on being ROUTABLE, not on being dispatched: the block records
+    // "nobody may run this", and an eligible actor existing is exactly what
+    // falsifies it. A throwing enqueue is a different failure with its own
+    // counter, and letting it hold this banner up would blame a Redis outage on
+    // a permissions configuration.
+    await clearSyncBlocked(
+        prisma,
+        routable.map((c) => c.id),
+    );
 
     // FOUR-hourly bucket, not daily — this dispatcher runs `0 */4 * * *`, and a
     // 24 h bucket would dedupe five of the six daily runs into a silent no-op.
