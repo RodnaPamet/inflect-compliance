@@ -70,6 +70,24 @@ describe('the worker rebuilds the run’s own principal', () => {
         expect(rebuild).toContain('agentId');
     });
 
+    it('makes the key\'s scopes AUTHORITY, not merely a list it carries', () => {
+        // The scopes were on the context and nothing else, so the run's role,
+        // flags and granular set came from the membership alone and the key
+        // bound only where something happened to read `apiKeyScopes` (#4386).
+        // Pinned structurally for the reason the whole file is: a run that
+        // succeeds with too much authority looks exactly like one that did not.
+        expect(rebuild).toContain('keyAuthorityFromScopes');
+        expect(rebuild).toContain('lowerRole');
+        expect(rebuild).toContain('intersectPermissions');
+        expect(rebuild).toContain('intersectPermissionSets');
+    });
+
+    it('requires the key\'s tenant to be live, not merely the key unrevoked', () => {
+        // A soft-deleted tenant does NOT revoke its keys, so without this an
+        // offboarded customer's queued run resumes on a live credential.
+        expect(rebuild).toContain('deletedAt: null');
+    });
+
     it('does NOT relabel the actor as a job', () => {
         // The worker is only WHERE this runs. The run was asked for by a
         // person or a key, and the audit trail must keep saying so or a review

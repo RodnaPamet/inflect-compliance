@@ -31,7 +31,7 @@
 import crypto from 'crypto';
 import prisma from '@/lib/prisma';
 import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
-import { computePermissions } from '@/lib/tenant-context';
+import { computePermissions, type Permissions } from '@/lib/tenant-context';
 import { forbidden } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
 import {
@@ -39,7 +39,7 @@ import {
     resolveAgentAuthority,
     auditPrincipalUnresolved,
 } from '@/lib/agentic/agent-authority';
-import type { TenantApiKey, Tenant } from '@prisma/client';
+import type { TenantApiKey, Tenant, Role } from '@prisma/client';
 
 // ─── Constants ───
 
@@ -395,6 +395,31 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
 }
 
 /**
+ * The authority a key's SCOPES alone confer: the coarse role they imply, the
+ * flags that follow from it, and the granular set they map to.
+ *
+ * Extracted from `finaliseApiKeyAuth` so a second reader cannot drift from it
+ * (#4386). The workflow-run worker rebuilds a queued run's context and has to
+ * narrow it by the key the run was started with; deriving the role there from a
+ * copy of these three lines is how two answers to "what may this key do" come
+ * to exist.
+ *
+ * Scopes ALONE. An agent-bound key is narrowed further by its principal, and a
+ * job is narrowed by the initiator's membership — both at their own call sites,
+ * because neither term is knowable from a scope list.
+ */
+export function keyAuthorityFromScopes(scopes: string[]): {
+    role: Role;
+    permissions: Permissions;
+    appPermissions: PermissionSet;
+} {
+    const hasAdminScope = scopes.includes('*') || scopes.includes('admin:write');
+    const hasWriteScope = scopes.some((s) => s.endsWith(':write') || s.endsWith(':*') || s === '*');
+    const role: Role = hasAdminScope ? 'ADMIN' : hasWriteScope ? 'EDITOR' : 'READER';
+    return { role, permissions: computePermissions(role), appPermissions: scopesToPermissions(scopes) };
+}
+
+/**
  * Enforce API key scopes on a request context.
  *
  * Call this in any endpoint that may receive API-key-authenticated requests.
@@ -632,15 +657,7 @@ async function finaliseApiKeyAuth(
     // Parse scopes from stored JSON
     const scopes = Array.isArray(apiKey.scopes) ? (apiKey.scopes as string[]) : [];
 
-    // Build permissions from scopes instead of giving blanket ADMIN
-    const appPermissions = scopesToPermissions(scopes);
-
-    // Determine effective role from scopes
-    const hasAdminScope = scopes.includes('*') || scopes.includes('admin:write');
-    const hasWriteScope = scopes.some(s => s.endsWith(':write') || s.endsWith(':*') || s === '*');
-    const role = hasAdminScope ? 'ADMIN' as const
-        : hasWriteScope ? 'EDITOR' as const
-        : 'READER' as const;
+    const { role, appPermissions } = keyAuthorityFromScopes(scopes);
 
     const ctx: RequestContext = {
         requestId: crypto.randomUUID(),
