@@ -1,9 +1,10 @@
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
+
+
 import { runAutomationForControl } from '@/app-layer/usecases/integrations';
-import { assertCanReadControls } from '@/app-layer/policies/control.policies';
+
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { forbidden } from '@/lib/errors/types';
+import { requirePermission } from '@/lib/security/permission-middleware';
+
 import { jsonResponse } from '@/lib/api-response';
 
 /**
@@ -13,20 +14,28 @@ import { jsonResponse } from '@/lib/api-response';
  * Requires an active integration connection for the control's provider.
  * Returns the execution result immediately (synchronous for now).
  */
-export const POST = withApiErrorHandling(async (
-    req: NextRequest,
-    { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }
-) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    if (!ctx.permissions?.canWrite) throw forbidden('Write permission required');
-
-    const result = await runAutomationForControl(ctx, params.controlId, {
-        triggeredBy: 'manual',
-    });
-
-    return jsonResponse(result);
-});
+/**
+ * Gated on `controls.edit` (#4387, owner decision 2026-10-27).
+ *
+ * The gate here was an INLINE `if (!ctx.permissions?.canWrite) throw
+ * forbidden('Write permission required')` — the coarse tier, not even a policy
+ * function — and no route-level `requirePermission`, so a refusal wrote no
+ * `AUTHZ_DENIED` row. A manual sync re-checks a control and writes its
+ * execution result, so `controls.edit` is the key, matching every other write
+ * on this control. This IS a tightening: a write-tier custom role without
+ * `controls.edit` could trigger a sync before and cannot now.
+ */
+export const POST = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string; controlId: string }>(
+        'controls.edit',
+        async (_req, { params }, ctx) => {
+            const result = await runAutomationForControl(ctx, params.controlId, {
+                triggeredBy: 'manual',
+            });
+            return jsonResponse(result);
+        },
+    ),
+);
 
 /**
  * GET /api/t/[tenantSlug]/controls/[controlId]/sync
@@ -34,13 +43,11 @@ export const POST = withApiErrorHandling(async (
  * Returns the current sync mapping status for this control.
  * Used to drive the conflict badge on the control detail page.
  */
-export const GET = withApiErrorHandling(async (
-    req: NextRequest,
-    { params: paramsPromise }: { params: Promise<{ tenantSlug: string; controlId: string }> }
-) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    assertCanReadControls(ctx);
+export const GET = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string; controlId: string }>('controls.view', async (_req, { params }, ctx) => {
+    // Mirrors the `assertCanReadControls(ctx)` this handler already made, which
+    // reads `canRead` + `controls.view`. Same key, so no role moves; the
+    // refusal is simply audited now (#4387).
 
     const { PrismaSyncMappingStore } = await import('@/app-layer/integrations/prisma-sync-store');
     const { runInTenantContext } = await import('@/lib/db-context');
@@ -75,4 +82,5 @@ export const GET = withApiErrorHandling(async (
         errorMessage: mapping?.errorMessage ?? null,
         provider,
     });
-});
+}),
+);

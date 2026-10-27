@@ -7,30 +7,25 @@
  *   → creates a NEW exception linked to the supplied id; prior is
  *     untouched.
  */
-import { NextRequest } from 'next/server';
-import { getTenantCtx } from '@/app-layer/context';
+
 import { renewException } from '@/app-layer/usecases/control';
 import { RenewExceptionSchema } from '@/app-layer/schemas/control-exception.schemas';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
+type Params = { tenantSlug: string; controlId: string; exceptionId: string };
+
+/**
+ * Gated on `controls.edit` (#4387). `renewException` asserted `assertCanWrite`,
+ * the coarse tier alone; it now asserts `assertCanUpdateControl`, which reads
+ * this key. Renewing extends a control write, so it asks what requesting asks.
+ */
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        RenewExceptionSchema,
-        async (
-            req: NextRequest,
-            { params: paramsPromise }: { params: Promise<{
-                    tenantSlug: string;
-                    controlId: string;
-                    exceptionId: string;
-                }> },
-            body,
-        ) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
-            const result = await renewException(ctx, params.exceptionId, body);
-            return jsonResponse(result, { status: 201 });
-        },
-    ),
+    requirePermission<Params>('controls.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, RenewExceptionSchema);
+        const result = await renewException(ctx, params.exceptionId, body);
+        return jsonResponse(result, { status: 201 });
+    }),
 );

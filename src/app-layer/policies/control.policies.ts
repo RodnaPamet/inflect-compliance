@@ -97,6 +97,22 @@ export function canLinkEvidence(ctx: RequestContext): boolean {
     }
 }
 
+/**
+ * Deciding an exception — approving or rejecting one — is an ADMIN action with
+ * its own granular key (#4387, owner decision 2026-10-27).
+ *
+ * It used to be `assertCanAdmin`, the coarse tier alone, which meant the
+ * decision could not be withheld from a custom role on an admin base however
+ * narrowly that role was drawn — and, because the routes carried no gate
+ * either, a refusal wrote no `AUTHZ_DENIED` row. `admin.manage` is the key the
+ * routes now require, so route and usecase ask the same question.
+ */
+export function assertCanDecideException(ctx: RequestContext) {
+    if (!ctx.permissions.canAdmin || !ctx.appPermissions.admin.manage) {
+        throw forbidden('You do not have permission to decide control exceptions.');
+    }
+}
+
 /** ADMIN/EDITOR can set control applicability */
 export function assertCanSetApplicability(ctx: RequestContext) {
     if (!ctx.permissions.canWrite || granularControlsDenied(ctx, 'edit')) {
