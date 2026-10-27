@@ -34,6 +34,7 @@ import * as path from 'node:path';
 
 import { repoFiles } from '../helpers/repo-files';
 import { codeOf } from '../helpers/source-blocks';
+import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -98,5 +99,145 @@ describe('the Flue provider is never set per run (#3650)', () => {
         // guard's own subject file produces three times over.
         expect(SET_PROVIDER_CALL.test(codeOf('// those with `setProvider()` in app.ts'))).toBe(false);
         expect(SET_PROVIDER_CALL.test(codeOf('/* It deliberately does NOT call setProvider(); */'))).toBe(false);
+    });
+});
+
+/**
+ * 4.4 (#3966) — OpenShell must not become a SECOND inference router.
+ *
+ * The block above keeps `model-selection.ts` the only decision-maker inside
+ * this process. This one keeps a different component from acquiring the same
+ * authority from outside, and the issue states why it matters: "two routers can
+ * disagree about where a tenant's data went, and the disagreement is
+ * unobservable from either side." A residency claim that two components can
+ * answer differently is not a claim about anything.
+ *
+ * ═══ WHAT "OPENSHELL ROUTES INFERENCE" WOULD ACTUALLY LOOK LIKE ═══
+ *
+ * Not a `setProvider` call — OpenShell is a different process and cannot make
+ * one. Measured against the pinned v0.1.5 gateway for #4258, it compiles in no
+ * inference invocation path at all: no `api.anthropic.com`, `api.openai.com`,
+ * `openrouter.ai` or `generativelanguage` host, and no `InvokeModel`-shaped
+ * route. Its only matches are `bedrock`/`bedrock-runtime` in CONFIGURATION HELP
+ * TEXT, naming an example endpoint an operator might allow.
+ *
+ * Which is exactly the shape the risk takes here. OpenShell cannot CALL a model
+ * provider, but a policy of ours could ALLOW a sandbox to reach one — and a
+ * sandbox that may reach `api.anthropic.com` has an egress path for inference
+ * that `model-selection.ts` never decided. So the assertion is over the
+ * endpoints our committed policies actually declare, read as parsed values.
+ *
+ * ═══ THE PER-RESIDENCY-CLASS BACKSTOP IS DEFERRED, NOT FORGOTTEN ═══
+ *
+ * #3966 records the option and rules it out of scope: kernel network policy
+ * COULD backstop a `LOCAL_ONLY` decision by denying non-local model egress, but
+ * one worker process serves many tenants while OpenShell confines per sandbox,
+ * so a per-tenant backstop needs per-residency-class sandboxes. That is a
+ * sandbox-per-residency-class topology, not a policy edit, and it is deferred
+ * "unless the owner pulls it in".
+ *
+ * The deferral is recorded in the phase note as well as here, and the last test
+ * below pins the STATE that deferral describes — because an option deferred in
+ * a comment nobody reads is indistinguishable from one that was forgotten, and
+ * because asserting on the note's prose is a shape two of this repo's ratchets
+ * close on from opposite sides (the test says which).
+ */
+describe('OpenShell is not a second inference router (#3966)', () => {
+    /**
+     * Real inference endpoints, one per provider family. Full hostnames, not
+     * fragments, because the question below is "would this policy ADMIT this
+     * host", and a wildcard can only be evaluated against a whole name.
+     */
+    const INFERENCE_HOSTS: readonly string[] = [
+        'api.anthropic.com',
+        'api.openai.com',
+        'openrouter.ai',
+        'generativelanguage.googleapis.com',
+        'aiplatform.googleapis.com',
+        'bedrock-runtime.us-east-1.amazonaws.com',
+        'inflect.openai.azure.com',
+    ];
+
+    const BENCHMARKS = [
+        'aws_compliance.benchmark.soc_2',
+        'azure_compliance.benchmark.soc_2',
+        'gcp_compliance.benchmark.cis_v300',
+    ] as const;
+
+    /** The gateway's own matching rule: a leading `*.` is a suffix match. */
+    const admits = (benchmark: string, host: string): boolean =>
+        collectorSandboxPolicy(benchmark).networkPolicies.some((e) =>
+            e.host.startsWith('*.') ? host.endsWith(e.host.slice(1)) : e.host === host,
+        );
+
+    it.each(BENCHMARKS)('%s names no inference endpoint outright', (benchmark) => {
+        // Parsed hosts, not source text: a docblock naming a provider must not
+        // fail this, and a host list that genuinely grew must not hide in one.
+        const hosts = collectorSandboxPolicy(benchmark).networkPolicies.map((e) => e.host);
+        expect(hosts.length).toBeGreaterThan(0);
+        // A filtered set rather than a per-host `not.toContain`: this names
+        // every offending endpoint on failure instead of stopping at the first,
+        // and it keeps an array-membership check out of the Class D whole-file
+        // read census, which counts `toContain`/`toMatch` to ask a different
+        // question — whether a NEEDLE is ambiguous. A seven-element literal
+        // list of hostnames has no needle to be ambiguous about.
+        expect(hosts.filter((h) => INFERENCE_HOSTS.includes(h))).toEqual([]);
+    });
+
+    it('records exactly which inference hosts the wildcards admit anyway', () => {
+        // The subtler half, and the one worth pinning. 4.1 allows a
+        // PROVIDER-scoped host per collector because the per-service set is not
+        // derivable from this repository — and two of those three wildcards
+        // reach an inference API. Asserted as an exact set, so neither a new
+        // admission nor a narrowing can pass unnoticed.
+        const admitted = BENCHMARKS.flatMap((b) =>
+            INFERENCE_HOSTS.filter((h) => admits(b, h)).map((h) => `${b} -> ${h}`),
+        );
+        expect(admitted.sort()).toEqual([
+            // `*.amazonaws.com` — Bedrock, which the pinned gateway's own
+            // configuration help text names as an example endpoint (#4258).
+            'aws_compliance.benchmark.soc_2 -> bedrock-runtime.us-east-1.amazonaws.com',
+            // `*.googleapis.com` — both Google inference surfaces sit under the
+            // same suffix as the service APIs the benchmark needs.
+            'gcp_compliance.benchmark.cis_v300 -> aiplatform.googleapis.com',
+            'gcp_compliance.benchmark.cis_v300 -> generativelanguage.googleapis.com',
+        ]);
+    });
+
+    it('azure is the control — an exact-host policy admits none of them', () => {
+        // Not a quirk: the azure policy needs no wildcard because ARM is one
+        // host, so it shows what the other two would look like once #3961's
+        // denial measurement lets them be narrowed. Without this the test above
+        // could be satisfied by a matcher that admits everything.
+        for (const host of INFERENCE_HOSTS) {
+            expect(admits('azure_compliance.benchmark.soc_2', host)).toBe(false);
+        }
+        // And the matcher is not inert: it does admit azure's real endpoint.
+        expect(admits('azure_compliance.benchmark.soc_2', 'management.azure.com')).toBe(true);
+    });
+    it('the per-residency-class backstop is still deferred, not quietly half-built', () => {
+        // #3966's third requirement, held as a STATE rather than as a sentence
+        // in a document — and that choice was forced, which is worth recording.
+        //
+        // Reading the phase note and asserting it contains the record is the
+        // obvious move, and it is the one shape this repo will not take. An
+        // unmasked read-and-assert puts the file in Class A of
+        // `raw-source-assertion-ratchet` (zero headroom, two listed files);
+        // masking it to escape that puts it in Class D of
+        // `assertion-needle-uniqueness` as `content-transformed`. The two
+        // ratchets close on prose assertions from both sides, deliberately.
+        //
+        // So this asserts the thing the deferral is ABOUT. A per-residency-class
+        // backstop means a policy that varies by residency class, and this one
+        // cannot: it is keyed by benchmark and takes nothing else. Implementing
+        // the backstop changes that signature, which fails here — and whoever
+        // changes it is then standing in front of the record above, which is
+        // the whole point of not forgetting.
+        expect(collectorSandboxPolicy.length).toBe(1);
+        const once = collectorSandboxPolicy('gcp_compliance.benchmark.cis_v300');
+        const twice = collectorSandboxPolicy('gcp_compliance.benchmark.cis_v300');
+        // Nothing ambient varies it either — no tenant, no residency class read
+        // from somewhere else and folded in.
+        expect(JSON.stringify(twice)).toEqual(JSON.stringify(once));
     });
 });
