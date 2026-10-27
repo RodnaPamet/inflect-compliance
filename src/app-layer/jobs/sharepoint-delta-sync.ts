@@ -9,7 +9,11 @@
  */
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { initiatorAuthority, resolveInitiatorContext } from '@/app-layer/context-system';
+import {
+    initiatorAuthority,
+    resolveInitiatorContext,
+    resolveKeyInitiatorContext,
+} from '@/app-layer/context-system';
 import type { PermissionSet } from '@/lib/permissions';
 import { runSharePointDeltaSync } from '@/app-layer/integrations/providers/sharepoint/import';
 import { enqueue } from './queue';
@@ -49,13 +53,42 @@ export type DeltaSyncUnroutableReason = keyof typeof DELTA_SYNC_UNROUTABLE;
  * authority a request from them gets, custom role included (#4362). For a
  * manual sync the actor is whoever clicked "Sync now"; for a scheduled one it
  * is the member the dispatcher below picked.
+ *
+ * A sync requested with an API KEY runs as that key AND its user
+ * (`resolveKeyInitiatorContext`, the shape #4382 settled for the evidence
+ * import). The route checked the key — its scopes, its tenant, its liveness —
+ * and then queued a job that rebuilt the user's WHOLE membership, so a key
+ * holding `evidence:write` and nothing else had the sync run with everything
+ * its creator may do, and a key revoked while the job waited did not stop it
+ * (#4386). The key is read again here, by id, and the job holds the
+ * conjunction: never more than either term.
+ *
+ * A payload with no key id runs as the member, unchanged. That covers a session
+ * request, EVERY scheduled run — the dispatcher borrows a member and no key is
+ * involved — and any payload queued before the route carried the id.
  */
-async function buildJobContext(tenantId: string, actorUserId: string): Promise<RequestContext> {
-    const ctx = await resolveInitiatorContext({
-        tenantId,
-        userId: actorUserId,
-        requestId: `sharepoint-delta-sync-${tenantId}`,
-    });
+async function buildJobContext(payload: SharePointDeltaSyncPayload): Promise<RequestContext> {
+    const { tenantId, actorUserId } = payload;
+    const requestId = payload.requestId ?? `sharepoint-delta-sync-${tenantId}`;
+
+    if (payload.apiKeyId) {
+        const resolved = await resolveKeyInitiatorContext({
+            tenantId,
+            userId: actorUserId,
+            apiKeyId: payload.apiKeyId,
+            requestId,
+        });
+        if (!resolved.ok) {
+            // Named, because an operator has to tell a revoked key from a key
+            // belonging to somebody else, and the job does no work either way.
+            throw new Error(
+                `sharepoint-delta-sync: API key ${payload.apiKeyId} that started this sync is refused (${resolved.reason}) on tenant ${tenantId}`,
+            );
+        }
+        return resolved.ctx;
+    }
+
+    const ctx = await resolveInitiatorContext({ tenantId, userId: actorUserId, requestId });
     if (!ctx) {
         throw new Error(`sharepoint-delta-sync: user ${actorUserId} is not an active member of tenant ${tenantId}`);
     }
@@ -63,7 +96,7 @@ async function buildJobContext(tenantId: string, actorUserId: string): Promise<R
 }
 
 export async function runSharePointDeltaSyncJob(payload: SharePointDeltaSyncPayload) {
-    const ctx = await buildJobContext(payload.tenantId, payload.actorUserId);
+    const ctx = await buildJobContext(payload);
     // The key the "Sync now" route asks, not the coarse tier, which a custom
     // role can hold without it.
     if (!mayRunDeltaSync(ctx.appPermissions)) {

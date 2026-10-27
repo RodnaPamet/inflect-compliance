@@ -57,6 +57,11 @@ export const POST = withApiErrorHandling(
                 tenantId: ctx.tenantId,
                 connectionId,
                 actorUserId: ctx.userId,
+                // Carried so the WORKER can hold the key's authority too, and
+                // stop if the key is revoked while the job sits in the queue.
+                // Undefined for a session request, which runs as the member
+                // (#4386).
+                ...(ctx.apiKeyId ? { apiKeyId: ctx.apiKeyId } : {}),
                 triggeredBy: 'manual',
                 requestId: ctx.requestId,
             },
