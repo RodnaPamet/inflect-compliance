@@ -97,6 +97,25 @@ describe('the integrations health panel shows a connection that cannot sync', ()
         expect(screen.getByText(/no active owner or admin/i)).toBeInTheDocument();
     });
 
+    /**
+     * The case the PRECEDENCE actually turns on, and the one the first draft of
+     * this file could not express: every fixture above has `isStale: false`, so
+     * only one branch is ever true and swapping the order changes nothing
+     * (measured — the swap left 4/4 green). A connection that is BOTH stale and
+     * blocked is where reading stale first costs the admin the reason.
+     */
+    it('a connection that is stale AND blocked still says why, not just that it is stale', async () => {
+        serve([{ ...BASE, connectionId: 'c1', isStale: true,
+            syncBlockedAt: new Date().toISOString(), syncBlockedReason: 'NO_ADMIN_WITH_EVIDENCE_UPLOAD' }], 1);
+        render(<ConnectionHealthPanel />);
+        await loaded();
+
+        expect(screen.getByText('Not syncing')).toBeInTheDocument();
+        expect(screen.getByText(/may upload evidence/i)).toBeInTheDocument();
+        // "Stale" alone tells an admin to wait; this tells them what to change.
+        expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    });
+
     it('still says something useful for a reason this build has never heard of', async () => {
         serve([{ ...BASE, connectionId: 'c1', isStale: false,
             syncBlockedAt: new Date().toISOString(), syncBlockedReason: 'SOME_FUTURE_REASON' }], 1);
