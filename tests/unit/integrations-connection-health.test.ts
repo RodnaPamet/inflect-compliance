@@ -6,7 +6,12 @@
  * no banner: it trains people to ignore the one signal that means someone must
  * act. So most of these assert the CLEARING and the NARROWNESS, not the setting.
  */
-import { markAuthFailure, clearAuthFailure } from '@/app-layer/integrations/connection-health';
+import {
+    markAuthFailure,
+    clearAuthFailure,
+    markSyncBlocked,
+    clearSyncBlocked,
+} from '@/app-layer/integrations/connection-health';
 import {
     IntegrationAuthError,
     IntegrationTerminalError,
@@ -89,5 +94,102 @@ describe('clearAuthFailure', () => {
 
         expect(await clearAuthFailure(db, CONN)).toBe(false);
         expect(calls[0].where).toEqual({ id: CONN, authFailedAt: { not: null } });
+    });
+});
+
+/**
+ * A sync that cannot RUN, as opposed to one that runs and is rejected (#4389).
+ *
+ * Its own pair of fields, for the reason the auth pair is its own: a revoked
+ * credential and a permissions configuration are different facts with different
+ * fixes, and sharing a field would let a credential recovery clear a
+ * permissions block, or the reverse.
+ */
+describe('markSyncBlocked', () => {
+    it('writes the reason as a machine token, so the UI owns the words', async () => {
+        const { db, calls } = fakeDb();
+        const at = new Date('2026-10-27T09:00:00Z');
+
+        const n = await markSyncBlocked(db, [CONN], 'NO_ACTIVE_ADMIN', at);
+
+        expect(n).toBe(1);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].data).toEqual({ syncBlockedAt: at, syncBlockedReason: 'NO_ACTIVE_ADMIN' });
+    });
+
+    it('leaves an already-recorded block alone, so "blocked since" means since', async () => {
+        const { db, calls } = fakeDb();
+
+        await markSyncBlocked(db, [CONN], 'NO_ACTIVE_ADMIN');
+
+        // The predicate, not the caller, is what stops a four-hourly dispatcher
+        // moving the timestamp forward forever.
+        expect(calls[0].where).toEqual({
+            id: { in: [CONN] },
+            OR: [{ syncBlockedAt: null }, { syncBlockedReason: { not: 'NO_ACTIVE_ADMIN' } }],
+        });
+    });
+
+    it('does move it when the REASON changes — a different block is not the same one continuing', async () => {
+        const { db, calls } = fakeDb();
+
+        await markSyncBlocked(db, [CONN], 'NO_ADMIN_WITH_EVIDENCE_UPLOAD');
+
+        expect(calls[0].where.OR).toContainEqual({
+            syncBlockedReason: { not: 'NO_ADMIN_WITH_EVIDENCE_UPLOAD' },
+        });
+    });
+
+    it('writes nothing at all for an empty set, so a healthy run costs no statement', async () => {
+        const { db, calls } = fakeDb();
+
+        const n = await markSyncBlocked(db, [], 'NO_ACTIVE_ADMIN');
+
+        expect(n).toBe(0);
+        expect(calls).toEqual([]);
+    });
+
+    it('truncates a hostile reason instead of writing unbounded text', async () => {
+        const { db, calls } = fakeDb();
+
+        await markSyncBlocked(db, [CONN], 'X'.repeat(5000));
+
+        expect(String(calls[0].data.syncBlockedReason)).toHaveLength(500);
+    });
+});
+
+describe('clearSyncBlocked', () => {
+    it('clears BOTH fields, so no orphan reason outlives the flag', async () => {
+        const { db, calls } = fakeDb();
+
+        const n = await clearSyncBlocked(db, [CONN]);
+
+        expect(n).toBe(1);
+        expect(calls[0].data).toEqual({ syncBlockedAt: null, syncBlockedReason: null });
+    });
+
+    it('is predicated on there being something to clear', async () => {
+        const { db, calls } = fakeDb(0);
+
+        const n = await clearSyncBlocked(db, [CONN]);
+
+        expect(n).toBe(0);
+        expect(calls[0].where).toEqual({ id: { in: [CONN] }, syncBlockedAt: { not: null } });
+    });
+
+    it('writes nothing for an empty set', async () => {
+        const { db, calls } = fakeDb();
+
+        expect(await clearSyncBlocked(db, [])).toBe(0);
+        expect(calls).toEqual([]);
+    });
+
+    it('does not touch the credential fields — the two states are independent', async () => {
+        const { db, calls } = fakeDb();
+
+        await clearSyncBlocked(db, [CONN]);
+
+        expect(calls[0].data).not.toHaveProperty('authFailedAt');
+        expect(calls[0].data).not.toHaveProperty('authFailureReason');
     });
 });

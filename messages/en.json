@@ -5791,7 +5791,13 @@
         "stale": "Stale",
         "fresh": "Fresh",
         "staleSummary": "{count} stale",
-        "testedOk": "Tested OK"
+        "testedOk": "Tested OK",
+        "blocked": "Not syncing",
+        "blockedSummary": "{count} not syncing",
+        "blockedNoActiveAdmin": "No active owner or admin in this workspace, so a sync has nobody to run as. Invite or reactivate one.",
+        "blockedNoAdminWithUpload": "No owner or admin here may upload evidence, so a sync has nobody to attribute it to. Grant the evidence upload permission to one of them.",
+        "blockedSince": "Not syncing since {since}",
+        "blockedUnknown": "A sync cannot run for this connection."
       },
       "syncNow": "Sync now",
       "viewOutcomes": "View outcomes",
