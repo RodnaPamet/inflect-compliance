@@ -253,6 +253,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'Short operational revocation reason (e.g. "logout", "admin_revoke").',
     'IntegrationConnection.authFailureReason':
         'System-generated auth-failure line ("Integration auth failed (401): host/path"); URL is scrubbed to host+path by safeUrl so no query-string token reaches it.',
+    'IntegrationConnection.syncBlockedReason':
+        'A fixed machine token from a closed set (NO_ACTIVE_ADMIN, NO_ADMIN_WITH_EVIDENCE_UPLOAD), never free text and never a name: the UI owns the words, so nothing tenant-identifying is stored here (#4389).',
 
     // ── Ephemeral AI drafts — exist only until accepted into a real
     //    record. ──────────────────────────────────────────────────────

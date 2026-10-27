@@ -139,9 +139,13 @@ export function ConnectionHealthPanel() {
         <div>
             <div className="flex items-center justify-between mb-3">
                 <Heading level={2}>{t('integrations.health.title')}</Heading>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-tight">
+                    {/* Plain text, not a second loud badge: the row below
+                        carries the state, and this is a count. */}
                     {data && (data.blockedCount ?? 0) > 0 && (
-                        <StatusBadge variant="warning">{t('integrations.health.blockedSummary', { count: data.blockedCount ?? 0 })}</StatusBadge>
+                        <span className="text-xs text-content-muted">
+                            {t('integrations.health.blockedSummary', { count: data.blockedCount ?? 0 })}
+                        </span>
                     )}
                     {data && (data.staleCount ?? 0) > 0 && (
                         <StatusBadge variant="error">{t('integrations.health.staleSummary', { count: data.staleCount ?? 0 })}</StatusBadge>
