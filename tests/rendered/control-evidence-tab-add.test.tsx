@@ -67,7 +67,14 @@ let mockControlsEdit = true;
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: { canWrite: true, canAdmin: true, canRead: true },
-        appPermissions: { controls: { view: true, create: true, edit: mockControlsEdit } },
+        appPermissions: {
+            controls: { view: true, create: true, edit: mockControlsEdit },
+            // The exceptions panel reads `admin.manage` for its approve/reject
+            // gate (#4387). A real context always carries it; this mock did
+            // not, so the page threw at render rather than failing a gate.
+            admin: { manage: true },
+            tasks: { view: true, create: true, edit: true, assign: true },
+        },
         role: 'ADMIN',
         tenantSlug: 'acme',
         userId: 'user_1',
@@ -272,5 +279,62 @@ describe('control Evidence tab — attaching needs controls.edit', () => {
         // cases in this file are the positive control.
         await waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
         expect(document.getElementById('link-evidence-btn')).toBeNull();
+    });
+});
+
+/**
+ * The rest of the control detail page's write controls also need
+ * `controls.edit`, not the write tier alone (#4387).
+ *
+ * Each of these was gated on `permissions.canWrite` while the route and usecase
+ * behind it assert `assertCanUpdateControl` or `assertCanSetApplicability` —
+ * both `canWrite && controls.edit`. So a custom role on a write-tier base
+ * without `controls.edit` was offered the control and refused by the server,
+ * which is the shape #4360 fixed on the task page.
+ */
+describe('control detail page — the write controls need controls.edit', () => {
+    const mount = () =>
+        render(
+            <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false, dedupingInterval: 0 }}>
+                <ControlDetailPage />
+            </SWRConfig>,
+        );
+
+    const settled = () =>
+        waitFor(() => {
+            expect(document.getElementById('control-where-used-btn')).not.toBeNull();
+        });
+
+    it('withholds the status picker and the Edit button without controls.edit', async () => {
+        mockControlsEdit = false;
+        mount();
+        await settled();
+
+        expect(document.getElementById('control-status-select')).toBeNull();
+        expect(screen.queryByTestId('control-edit-button')).not.toBeInTheDocument();
+    });
+
+    it('offers them to a role that holds controls.edit — the control case', async () => {
+        // The positive half, and not optional: a `queryByTestId` for a NAME
+        // THAT DOES NOT EXIST returns null in both worlds. The first draft of
+        // the case above asked for `control-edit-btn`, which the page never
+        // renders — it is `control-edit-button` — so the assertion passed
+        // without being able to fail.
+        mockControlsEdit = true;
+        mount();
+        await settled();
+
+        expect(document.getElementById('control-status-select')).not.toBeNull();
+        expect(screen.getByTestId('control-edit-button')).toBeInTheDocument();
+    });
+
+    it('keeps the Where-used button for a viewer who may not edit', async () => {
+        // Informational, and auditors need it most — it must stay outside the
+        // write gate (the property `p2c-control-reverse-lookup` pins).
+        mockControlsEdit = false;
+        mount();
+        await settled();
+
+        expect(document.getElementById('control-where-used-btn')).not.toBeNull();
     });
 });

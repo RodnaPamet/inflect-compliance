@@ -167,8 +167,14 @@ describe('Epic G-5 — control exception API + UI wiring', () => {
         );
     });
 
-    it('control detail page mounts the panel with permission props', () => {
-        expect(detailPage).toMatch(/canWrite=\{permissions\.canWrite\}/);
-        expect(detailPage).toMatch(/canAdmin=\{permissions\.canAdmin\}/);
+    it('control detail page mounts the panel with the keys its routes require', () => {
+        // #4387 — the panel used to take the coarse tiers. Requesting and
+        // renewing ask `controls.edit` (`canEditControl` on the page is
+        // `canWrite && appPermissions.controls.edit`); approving and rejecting
+        // ask `admin.manage`.
+        expect(detailPage).toMatch(/canWrite=\{canEditControl\}/);
+        expect(detailPage).toMatch(
+            /canAdmin=\{permissions\.canAdmin && appPermissions\.admin\.manage\}/,
+        );
     });
 });
