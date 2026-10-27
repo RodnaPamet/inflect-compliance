@@ -12,8 +12,15 @@
  * route hands the job the id at all. Mirrors
  * `evidence-import-metadata-reaches-job`, the same seam for #4369.
  */
-const enqueueMock = jest.fn(async () => ({ id: 'job-1' }));
-jest.mock('@/app-layer/jobs/queue', () => ({ enqueue: (...a: unknown[]) => enqueueMock(...a) }));
+// Typed with the parameters the route passes, so `calls[0][1]` below is the
+// payload and not an element of an empty tuple.
+const enqueueMock = jest.fn(
+    async (_name: string, _payload: Record<string, unknown>, _opts?: unknown) => ({ id: 'job-1' }),
+);
+jest.mock('@/app-layer/jobs/queue', () => ({
+    enqueue: (name: string, payload: Record<string, unknown>, opts?: unknown) =>
+        enqueueMock(name, payload, opts),
+}));
 
 /** The context the permission middleware resolves — session or key. */
 let currentCtx: Record<string, unknown> = {};
@@ -43,7 +50,7 @@ const SESSION_CTX = {
 const request = () =>
     ({ json: async () => ({ connectionId: 'conn-1' }) }) as unknown as Request;
 
-const enqueuedPayload = () => enqueueMock.mock.calls[0][1] as Record<string, unknown>;
+const enqueuedPayload = () => enqueueMock.mock.calls[0][1];
 
 beforeEach(() => {
     jest.clearAllMocks();
