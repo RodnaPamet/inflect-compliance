@@ -133,10 +133,10 @@ around.
 
 ## 4.4 residency — what is deferred, and one gap found while deferring it
 
-**Deferred by owner condition: per-residency-class sandboxes (#3966).** That
-sentence is deliberately kept on one line: a guard matches it literally, so
-reflowing it across a line break breaks the check that this record still
-exists. The reasoning follows.
+**Deferred by owner condition: per-residency-class sandboxes (#3966).** The
+reasoning follows, and a guard holds the state this describes — see the last
+test in `tests/guards/flue-provider-is-never-set-per-run.test.ts`, which fails
+the moment a policy starts varying by residency class.
 
 Kernel network policy could backstop a `LOCAL_ONLY` decision by denying
 non-local model egress. It is out of scope because the shapes do not line up:

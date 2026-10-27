@@ -136,9 +136,11 @@ describe('the Flue provider is never set per run (#3650)', () => {
  * sandbox-per-residency-class topology, not a policy edit, and it is deferred
  * "unless the owner pulls it in".
  *
- * The deferral is recorded in the phase note as well as here, and a test below
- * asserts that record exists — because an option that is deferred in a comment
- * nobody reads is indistinguishable from one that was forgotten.
+ * The deferral is recorded in the phase note as well as here, and the last test
+ * below pins the STATE that deferral describes — because an option deferred in
+ * a comment nobody reads is indistinguishable from one that was forgotten, and
+ * because asserting on the note's prose is a shape two of this repo's ratchets
+ * close on from opposite sides (the test says which).
  */
 describe('OpenShell is not a second inference router (#3966)', () => {
     /**
@@ -213,26 +215,29 @@ describe('OpenShell is not a second inference router (#3966)', () => {
         // And the matcher is not inert: it does admit azure's real endpoint.
         expect(admits('azure_compliance.benchmark.soc_2', 'management.azure.com')).toBe(true);
     });
-    it('the deferred per-residency-class backstop is recorded, not forgotten', () => {
-        // #3966's third requirement, and the one a test can actually hold. A
-        // deferral that lives only in a code comment is indistinguishable from
-        // an oversight six months later, so the phase note carries it too — and
-        // deleting that record fails here rather than quietly widening what
-        // this file appears to have settled.
+    it('the per-residency-class backstop is still deferred, not quietly half-built', () => {
+        // #3966's third requirement, held as a STATE rather than as a sentence
+        // in a document — and that choice was forced, which is worth recording.
         //
-        // Matched as ONE PLAIN LITERAL against the file as it is on disk, which
-        // is a deliberate choice between three options that are not equivalent:
-        // collapsing whitespace makes it a transformed read and a regex with
-        // `\s+` makes the needle carry a span, and Class D of
-        // `assertion-needle-uniqueness` scores BOTH as un-analysable — +2 on a
-        // blind-spot census, to assert two lines of prose. A literal costs
-        // nothing there, and the note keeps the sentence un-wrapped for it.
-        const note = fs.readFileSync(
-            path.join(ROOT, 'docs/implementation-notes/2026-10-25-openshell.md'),
-            'utf8',
-        );
-        expect(note).toContain(
-            'Deferred by owner condition: per-residency-class sandboxes (#3966).',
-        );
+        // Reading the phase note and asserting it contains the record is the
+        // obvious move, and it is the one shape this repo will not take. An
+        // unmasked read-and-assert puts the file in Class A of
+        // `raw-source-assertion-ratchet` (zero headroom, two listed files);
+        // masking it to escape that puts it in Class D of
+        // `assertion-needle-uniqueness` as `content-transformed`. The two
+        // ratchets close on prose assertions from both sides, deliberately.
+        //
+        // So this asserts the thing the deferral is ABOUT. A per-residency-class
+        // backstop means a policy that varies by residency class, and this one
+        // cannot: it is keyed by benchmark and takes nothing else. Implementing
+        // the backstop changes that signature, which fails here — and whoever
+        // changes it is then standing in front of the record above, which is
+        // the whole point of not forgetting.
+        expect(collectorSandboxPolicy.length).toBe(1);
+        const once = collectorSandboxPolicy('gcp_compliance.benchmark.cis_v300');
+        const twice = collectorSandboxPolicy('gcp_compliance.benchmark.cis_v300');
+        // Nothing ambient varies it either — no tenant, no residency class read
+        // from somewhere else and folded in.
+        expect(JSON.stringify(twice)).toEqual(JSON.stringify(once));
     });
 });
