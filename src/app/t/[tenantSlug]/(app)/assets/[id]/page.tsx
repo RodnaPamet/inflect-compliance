@@ -128,7 +128,7 @@ export default function AssetDetailPage() {
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, tenantSlug } = useTenantContext();
+    const { permissions, appPermissions, tenantSlug } = useTenantContext();
     const t = useTranslations('assets');
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
@@ -569,6 +569,12 @@ export default function AssetDetailPage() {
                         entityId={assetId}
                         tenantHref={tenantHref}
                         canWrite={permissions.canWrite}
+                        // `tasks.create` for the create affordance,
+                        // `tasks.edit` for the bulk actions behind row
+                        // selection — the two keys the server asks, which the
+                        // coarse tier alone could not express (#4415).
+                        canCreateTasks={permissions.canWrite && appPermissions.tasks.create}
+                        canEditTasks={permissions.canWrite && appPermissions.tasks.edit}
                     />
                 </div>
             )}

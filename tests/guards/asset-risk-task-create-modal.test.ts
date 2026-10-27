@@ -75,7 +75,11 @@ describe("Control/Asset/Risk task creation — unified canonical modal", () => {
             expect(s).toMatch(/entityType === ['"]ASSET['"]/);
             expect(s).toMatch(/entityType === ['"]RISK['"]/);
             expect(s).toMatch(/entityType === ['"]CONTROL['"]/);
-            expect(s).toMatch(/showCreate = canWrite && /);
+            // `canCreateTasks` since #4415 — the panel's own `tasks.create`
+            // prop, which DEFAULTS to `canWrite`, so this still pins "a write
+            // permission AND a canonical entity type" and now pins the more
+            // precise of the two keys.
+            expect(s).toMatch(/showCreate = canCreateTasks && /);
         });
 
         it("the '+ Task' button is gated by showCreate and has the canonical testid", () => {

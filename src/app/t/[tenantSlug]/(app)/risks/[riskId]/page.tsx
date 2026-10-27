@@ -530,6 +530,12 @@ export default function RiskDetailPage() {
                         entityId={riskId}
                         tenantHref={href}
                         canWrite={canWrite}
+                        // `tasks.create` for the create affordance,
+                        // `tasks.edit` for the bulk actions behind row
+                        // selection — the two keys the server asks, which the
+                        // coarse tier alone could not express (#4415).
+                        canCreateTasks={canWrite && tenant.appPermissions.tasks.create}
+                        canEditTasks={canWrite && tenant.appPermissions.tasks.edit}
                     />
                 </div>
             )}
