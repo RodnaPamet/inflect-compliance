@@ -212,8 +212,11 @@ describe("Epic P2-PR-C — control reverse-lookup", () => {
             );
             // The headerActions block now always renders the button
             // and gates only the write-controls below it.
+            // The gate is named `canEditControl` since #4387 (`canWrite &&
+            // controls.edit`). What this pins is the ORDER — the button is
+            // emitted before the gate opens, so it is outside it.
             expect(src).toMatch(
-                /const headerActions = \(\s*<>[\s\S]{0,500}control-where-used-btn[\s\S]{0,400}permissions\.canWrite\s*&&/,
+                /const headerActions = \(\s*<>[\s\S]{0,500}control-where-used-btn[\s\S]{0,400}canEditControl\s*&&/,
             );
         });
     });

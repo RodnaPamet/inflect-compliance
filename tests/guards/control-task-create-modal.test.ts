@@ -36,10 +36,12 @@ describe("Control task creation — unified through LinkedTasksPanel", () => {
         // tasks now. It must receive entityType CONTROL + the page's
         // write permission so the "+ Task" affordance shows for
         // editors and the created task links back to this control.
-        const block = s.slice(
-            s.indexOf("entityType=\"CONTROL\""),
-            s.indexOf("entityType=\"CONTROL\"") + 400,
-        );
+        // Bounded on the ELEMENT's own end, not a character count: #4387 added
+        // a comment inside these props explaining why this one prop stays on
+        // the coarse tier (#4415), and a fixed 400-char window pushed
+        // `canWrite` out of range while the prop itself had not moved.
+        const from = s.indexOf('entityType="CONTROL"');
+        const block = s.slice(from, s.indexOf('/>', from) + 2);
         expect(s).toMatch(/<LinkedTasksPanel\b/);
         expect(s).toMatch(/entityType="CONTROL"/);
         expect(block).toMatch(/canWrite=\{permissions\.canWrite\}/);

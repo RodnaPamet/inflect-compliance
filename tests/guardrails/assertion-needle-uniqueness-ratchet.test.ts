@@ -741,7 +741,12 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1139;
 //   165 -> 159 (2026-10-26). Six of the thirteen needles that left with
 //   `infra/alerts/rules.yml` and `infra/dashboards/` (see the ambiguous
 //   baseline above) had five or more satisfying positions. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 159;
+//
+//   159 -> 158 (2026-10-27). #4387's UI half re-bounded
+//   `control-task-create-modal`'s window on the ELEMENT's own end instead of a
+//   fixed 400 characters, which also narrowed its needle from one satisfied in
+//   several places to one satisfied in the panel's props alone. Measured.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 158;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
