@@ -1,0 +1,101 @@
+#
+# OpenShell gateway — 4.3 (#3964). Installed on the GATEWAY VM only.
+#
+#   install -m 0644 openshell-gateway.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now openshell-gateway
+#
+# Not a container, and not on the app VM. deploy/openshell/README.md records
+# why for both, with the measurements.
+#
+[Unit]
+Description=OpenShell gateway (v0.1.5, pinned)
+Documentation=file:/etc/openshell/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+# ASSERT, NOT CONDITION — and the difference is the whole point.
+#
+# `ConditionPathExists=` makes systemd SKIP a unit whose condition is unmet and
+# report the skip as success: `systemctl start` exits 0, `is-active` says
+# inactive, and an aggregate that reads exit codes sees nothing wrong. That is
+# the same shape as pipelock's missing bind mount, where Docker created an empty
+# directory where an Ed25519 private key should have been and the daemon
+# started anyway.
+#
+# `Assert…` fails the unit and records the reason. A gateway with no signing key
+# must be a failure somebody is told about, not a silent absence.
+AssertPathExists=/etc/openshell/gateway.toml
+AssertPathExists=/etc/openshell/pki/jwt/signing.pem
+AssertPathExists=/etc/openshell/env
+
+# [Unit], NOT [Service] — `systemd-analyze verify` rejected these in [Service]
+# with "Unknown key name … ignoring", which is to say the rate limit would have
+# been silently absent. Three attempts in five minutes, then stop and stay
+# failed, so a gateway refusing to start (no Landlock, missing key) surfaces as
+# a failed unit instead of an endless restart loop nobody reads.
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+[Service]
+Type=exec
+# Root for the Docker socket, which is root-equivalent regardless. Confining
+# this process on a shared host would be theatre; the isolation that matters
+# here is the VM boundary.
+User=root
+ExecStart=/usr/local/bin/openshell-gateway
+
+Environment=OPENSHELL_GATEWAY_CONFIG=/etc/openshell/gateway.toml
+Environment=OPENSHELL_COMPUTE_DRIVER=docker
+Environment=OPENSHELL_LOG_LEVEL=info
+
+# ── TELEMETRY OFF ─────────────────────────────────────────────────────
+# Anonymous telemetry is DEFAULT ON in this build, which is why the phase
+# requires this line. The variable is present in the 0.1.5 binary but is NOT
+# listed in `--help`, so it is read from the environment without appearing in
+# the flag surface — and setting it to an invalid value is accepted silently
+# rather than rejected.
+#
+# So this line is NOT self-verifying, and must not be the only control. The
+# endpoint is
+#   https://events.telemetry.data.nvidia.com/v1.1/events/jsonstruct
+# and the VM's egress policy MUST deny it independently — a precondition in
+# README.md, not something this file arranges. A setting whose effect cannot be
+# observed is a request; the network rule is the enforcement.
+Environment=OPENSHELL_TELEMETRY_ENABLED=false
+
+# ── OPERATOR mTLS STAYS OFF HERE ──────────────────────────────────────
+# `--enable-operator-auth` defaults to false, and is set explicitly so that
+# the default moving does not change this deployment. Operator access is
+# gateway-wide mTLS with OU=operator; that certificate is deliberately absent
+# from both VMs and is presented out of band by a person.
+Environment=OPENSHELL_ENABLE_OPERATOR_AUTH=false
+
+# Deployment-specific values — the OIDC issuer, audience and bind address, and
+# nothing else. A separate file from the app's .env.prod ON A SEPARATE VM, so
+# the database password, the Redis password and the master encryption key are
+# not merely unused here, they are not present to be read.
+EnvironmentFile=/etc/openshell/env
+
+# The gateway REFUSES to start without Landlock under hard_requirement, which
+# is the behaviour to want. Restart on failure, but never mask a refusal as a
+# restart loop: 3 attempts in 5 minutes, then stop and stay failed.
+Restart=on-failure
+RestartSec=10s
+
+# NoNewPrivileges is left at its default (off) rather than set either way.
+# Setting it ON is the tempting hardening, and it is untested: this process
+# drives the Docker socket, and the one place that interaction is known to go
+# wrong — snapd's AppArmor refusing the no_new_privs transition — took a day to
+# diagnose. An untested directive that prevents startup is worse than an absent
+# one, and the VM boundary is what carries the isolation here. Revisit with the
+# VM in front of you, not from a checkout.
+ProtectHome=yes
+ProtectSystem=full
+ReadWritePaths=/var/log/openshell
+LogsDirectory=openshell
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
