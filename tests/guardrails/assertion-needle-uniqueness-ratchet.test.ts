@@ -1203,8 +1203,27 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 159;
     `epic19-coherence` and the `oi-3-*` guards that the analyser could not
     resolve: values parsed out of the JSON and YAML, and reads sliced between
     two `- alert:` markers. Measured.
+
+    1386 -> 1388 (2026-10-27): the D4 split block in
+    `agent-action-receipt.test.ts` (#3967) adds four assertions that are not
+    whole-file reads — an import-reach check, two parsed-endpoint checks and a
+    directory-completeness check — so `not-a-file-read` grows by two. Measured:
+    main is green at 1386, this tree measures 1388.
+
+    WORTH RECORDING WHY IT IS NOT A READ. The property is that an OpenShell
+    module reaches no MCP surface, and the first three attempts asserted it over
+    source text. A NEGATIVE whole-file assertion has to mask comments — this
+    directory's docblocks discuss MCP precisely because it is absent — and
+    masking is what Class D scores as `content-transformed`. So Class A requires
+    the masking Class D penalises, and the figure moved 1386 -> 1388 -> 1390 ->
+    1391 across constant paths and `it.each` before the shape changed.
+
+    Importing the modules and inspecting what came with them needs no read, no
+    needle and no mask, and it catches a TRANSITIVE import that no scan of those
+    three files would. That is the same trade the note above this one makes:
+    the better test, at the cost of a count.
 */
-const UNANALYSABLE_READ_BASELINE = 1386;
+const UNANALYSABLE_READ_BASELINE = 1388;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
