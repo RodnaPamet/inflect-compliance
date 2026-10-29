@@ -79,7 +79,7 @@ import {
     type OrphanPassRefusal,
     type RosterEmployee,
 } from '@/lib/agentic/owner-orphan';
-import { buildDelegatedJobContext, buildSystemContext, SYSTEM_PRINCIPAL } from '../context-system';
+import { buildSystemContext, buildTenantSystemJobContext, SYSTEM_PRINCIPAL } from '../context-system';
 import { drainPages, DRAIN_PAGE_SIZE } from '../jobs/drain-pages';
 import { createAgenticNotification, resolveAgenticRecipients } from '../notifications/agentic';
 import { getAgentOrphanPassPolicy } from './agent-owner-orphan-policy';
@@ -482,13 +482,14 @@ async function openTransferTask(
 ): Promise<TransferTaskOutcome> {
     try {
         // `Task.createdByUserId` is a NOT NULL foreign key to `User`, so a task
-        // cannot be created by the system principal. Delegated to the manager
-        // it is assigned to — the policy-review reminder's precedent — with
-        // actor type JOB, so the trail reads "a job raised this for <manager>".
-        const taskCtx = buildDelegatedJobContext({
+        // cannot be created by the system principal. It is written as the
+        // tenant's SYSTEM user (#4400). It used to be delegated to the manager
+        // it is assigned to, so the task and its audit row named the manager
+        // as its author, under an ADMIN-shaped context, for work the pass did.
+        // The manager is still the assignee.
+        const taskCtx = await buildTenantSystemJobContext({
             tenantId: ctx.tenantId,
             job: 'agent-owner-orphan-pass',
-            onBehalfOf: managerUserId,
             tenantSlug: ctx.tenantSlug,
             requestId: ctx.requestId,
         });
