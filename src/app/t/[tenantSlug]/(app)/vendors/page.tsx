@@ -52,8 +52,18 @@ export default async function VendorRegisterPage({
             initialVendors={JSON.parse(JSON.stringify(vendors))}
             initialFilters={filters}
             tenantSlug={tenantSlug}
+            // Each flag is what the server checks for that verb: the key the
+            // route's `requirePermission` names AND what its usecase asserts.
+            // `vendors.create` alone was the create button's gate while
+            // `createVendor` asserts `vendors.edit`, and the bulk bar had no
+            // gate at all (#4462).
             permissions={{
-                canCreate: ctx.appPermissions.vendors.create,
+                // POST /vendors: vendors.create, then assertCanManageVendors.
+                canCreate: ctx.appPermissions.vendors.create && ctx.appPermissions.vendors.edit,
+                // bulk/status + bulk/assign: vendors.edit, route and usecase.
+                canEdit: ctx.appPermissions.vendors.edit,
+                // bulk/delete: admin.manage, then assertCanAdmin (coarse tier).
+                canDelete: ctx.permissions.canAdmin && ctx.appPermissions.admin.manage,
             }}
         />
     );

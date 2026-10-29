@@ -81,8 +81,14 @@ interface VendorsClientProps {
     initialVendors: VendorRow[];
     initialFilters: Record<string, string>;
     tenantSlug: string;
+    /**
+     * One flag per write affordance, each the server's own rule for it (see
+     * the page). A control the role cannot use is hidden, not greyed.
+     */
     permissions: {
         canCreate: boolean;
+        canEdit: boolean;
+        canDelete: boolean;
     };
 }
 
@@ -160,7 +166,12 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     // reopen the modal unexpectedly.
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const searchParams = useSearchParams();
-    useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/vendors`);
+    // `/vendors/new` redirects here with `?create=1`. Open only for a role
+    // that may create — the dialog is not mounted otherwise. The param is
+    // stripped either way.
+    useCreateQueryParam(() => {
+        if (permissions.canCreate) setIsCreateOpen(true);
+    }, `/t/${tenantSlug}/vendors`);
 
     const filterCtx = useFilters();
     const { state, search, hasActive } = filterCtx;
@@ -342,48 +353,62 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
             setBulkApplying(false);
         }
     };
+    // Each verb is offered only to a role its route admits: status + assign
+    // are `vendors.edit`, delete is `admin.manage` + the admin tier. All three
+    // used to be offered to every role, so a Reader saw three actions that
+    // all failed and an Editor saw a Delete that failed (#4462).
     const vendorBulkActions: BulkActionDef[] = useMemo(
         () => [
-            {
-                value: 'status',
-                label: t('bulk.setStatus'),
-                canApply: (v) => v !== '',
-                renderInput: ({ value, setValue }) => (
-                    <Combobox
-                        hideSearch
-                        id="bulk-value-input"
-                        selected={vendorStatusOptions.find((o) => o.value === value) ?? null}
-                        setSelected={(opt) => setValue(opt?.value ?? '')}
-                        options={vendorStatusOptions}
-                        placeholder={t('bulk.selectStatus')}
-                        matchTriggerWidth
-                        buttonProps={{ className: 'text-sm' }}
-                    />
-                ),
-            },
-            {
-                value: 'assign',
-                label: t('bulk.assignOwner'),
-                renderInput: ({ value, setValue, setLabel }) => (
-                    <UserCombobox
-                        tenantSlug={tenantSlug}
-                        selectedId={value || null}
-                        onChange={(id, m) => {
-                            setValue(id ?? '');
-                            setLabel(ownerDisplayName(m?.name, m?.email) ?? '');
-                        }}
-                        forceDropdown
-                        matchTriggerWidth
-                        placeholder={t('bulk.ownerPlaceholder')}
-                        className="w-full sm:w-44"
-                        id="bulk-value-input"
-                    />
-                ),
-            },
-            { value: 'delete', label: t('bulk.delete'), confirm: true },
+            ...(permissions.canEdit
+                ? ([
+                    {
+                        value: 'status',
+                        label: t('bulk.setStatus'),
+                        canApply: (v) => v !== '',
+                        renderInput: ({ value, setValue }) => (
+                            <Combobox
+                                hideSearch
+                                id="bulk-value-input"
+                                selected={vendorStatusOptions.find((o) => o.value === value) ?? null}
+                                setSelected={(opt) => setValue(opt?.value ?? '')}
+                                options={vendorStatusOptions}
+                                placeholder={t('bulk.selectStatus')}
+                                matchTriggerWidth
+                                buttonProps={{ className: 'text-sm' }}
+                            />
+                        ),
+                    },
+                    {
+                        value: 'assign',
+                        label: t('bulk.assignOwner'),
+                        renderInput: ({ value, setValue, setLabel }) => (
+                            <UserCombobox
+                                tenantSlug={tenantSlug}
+                                selectedId={value || null}
+                                onChange={(id, m) => {
+                                    setValue(id ?? '');
+                                    setLabel(ownerDisplayName(m?.name, m?.email) ?? '');
+                                }}
+                                forceDropdown
+                                matchTriggerWidth
+                                placeholder={t('bulk.ownerPlaceholder')}
+                                className="w-full sm:w-44"
+                                id="bulk-value-input"
+                            />
+                        ),
+                    },
+                  ] satisfies BulkActionDef[])
+                : []),
+            ...(permissions.canDelete
+                ? [{ value: 'delete', label: t('bulk.delete'), confirm: true }]
+                : []),
         ],
-        [tenantSlug, t, vendorStatusOptions],
+        [tenantSlug, t, vendorStatusOptions, permissions.canEdit, permissions.canDelete],
     );
+    // No verb, no selection: the checkboxes are on by default, so withholding
+    // the bar alone left a read-only role ticking rows into an empty bar, and
+    // a single click ticked a row instead of opening it (#4275 on Controls).
+    const canBulk = vendorBulkActions.length > 0;
     const tGroup = useTranslations('common.filterGroups');
     const liveFilters = useMemo(
         () =>
@@ -744,22 +769,26 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                         onColumnVisibilityChange={setColumnVisibility}
                         onRowClick={handleVendorRowClick}
                         onRowPrefetch={handleVendorRowPrefetch}
-                        selectionEnabled
+                        selectionEnabled={canBulk}
                         selectedRows={Object.fromEntries(
                             Array.from(selected).map((id) => [id, true]),
                         )}
                         onRowSelectionChange={(rows) =>
                             setSelected(new Set(rows.map((r) => r.original.id)))
                         }
-                        selectionControls={() => (
-                            <BulkActionBar
-                                actions={vendorBulkActions}
-                                onApply={handleBulkApply}
-                                applying={bulkApplying}
-                                selectedCount={selected.size}
-                                entityLabel={t('entityLabelPlural')}
-                            />
-                        )}
+                        selectionControls={
+                            canBulk
+                                ? () => (
+                                      <BulkActionBar
+                                          actions={vendorBulkActions}
+                                          onApply={handleBulkApply}
+                                          applying={bulkApplying}
+                                          selectedCount={selected.size}
+                                          entityLabel={t('entityLabelPlural')}
+                                      />
+                                  )
+                                : undefined
+                        }
                         emptyState={
                             hasActive ? (
                                 <EmptyState

@@ -11,10 +11,14 @@
  *   1. the create dialog offers no Active (a new vendor has no assessment, so
  *      the server refuses ACTIVE) and sends no status;
  *   2. a create refused because another live vendor has the name says so in
- *      the page's own words; any other refusal shows the server's reason.
+ *      the page's own words; any other refusal shows the server's reason;
+ *   3. the write surface per ROLE, derived from the real
+ *      `getPermissionsForRole` — each bulk verb, the create button and the
+ *      `?create=1` deep link follow the rule the server applies to them, for
+ *      built-in and custom roles.
  */
 import * as React from 'react';
-import { act, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 import type { Role } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
@@ -95,6 +99,7 @@ import VendorRegisterPage from '@/app/t/[tenantSlug]/(app)/vendors/page';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 import { makeRequestContext } from '../helpers/make-context';
+import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 
 const en = require('../../messages/en.json');
 const V = en.vendors;
@@ -168,6 +173,30 @@ async function mount(ctx: RequestContext) {
 }
 
 const mountAs = (role: Role) => mount(makeRequestContext(role));
+
+/** A custom role: `base`'s coarse tier, with granular keys overridden. */
+function customRole(base: Role, edit: (p: PermissionSet) => PermissionSet): RequestContext {
+    return makeRequestContext(base, { appPermissions: edit(getPermissionsForRole(base)) });
+}
+
+/**
+ * The labels the bulk bar's action picker offers, or null when the table has
+ * no row selection at all (no checkboxes, so no bar).
+ */
+async function bulkActionLabels(): Promise<string[] | null> {
+    const boxes = screen.queryAllByRole('checkbox');
+    if (boxes.length === 0) return null;
+    await act(async () => {
+        fireEvent.click(boxes[0]);
+    });
+    const select = document.getElementById('bulk-action-select');
+    if (!select) return null;
+    fireEvent.click(select);
+    const listbox = await screen.findByRole('listbox');
+    return within(listbox)
+        .getAllByRole('option')
+        .map((o) => o.textContent?.trim() ?? '');
+}
 
 async function openCreateDialog() {
     await act(async () => {
@@ -281,5 +310,74 @@ describe('Vendors list — a create refused for a taken name says so', () => {
         await mountAs('EDITOR');
         await submitCreate('Delta Logistics');
         expect((await createAlert()).textContent).toBe('plan_limit_exceeded: vendors');
+    });
+});
+
+// ─── 3. The write surface per role ──────────────────────────────────
+
+describe('Vendors list — the write surface each role gets', () => {
+    it.each(['OWNER', 'ADMIN'] as const)('%s can create and reach every bulk verb, Delete included', async (role) => {
+        await mountAs(role);
+        expect(document.getElementById('new-vendor-btn')).not.toBeNull();
+        expect(await bulkActionLabels()).toEqual([V.bulk.setStatus, V.bulk.assignOwner, V.bulk.delete]);
+    });
+
+    it('EDITOR is NOT offered bulk Delete — the route requires admin.manage', async () => {
+        await mountAs('EDITOR');
+        expect(document.getElementById('new-vendor-btn')).not.toBeNull();
+        expect(await bulkActionLabels()).toEqual([V.bulk.setStatus, V.bulk.assignOwner]);
+    });
+
+    it.each(['READER', 'AUDITOR', 'AI_ADMIN'] as const)(
+        '%s gets no create button, no row selection and no bulk bar',
+        async (role) => {
+            await mountAs(role);
+            expect(document.getElementById('new-vendor-btn')).toBeNull();
+            expect(screen.queryAllByRole('checkbox')).toEqual([]);
+            expect(await bulkActionLabels()).toBeNull();
+        },
+    );
+
+    it('a custom role with vendors.create but not vendors.edit gets no create button', async () => {
+        // The route admits it (vendors.create) and createVendor then refuses
+        // it (vendors.edit), so the button offered a guaranteed refusal.
+        await mount(
+            customRole('READER', (p) => ({ ...p, vendors: { view: true, create: true, edit: false } })),
+        );
+        expect(document.getElementById('new-vendor-btn')).toBeNull();
+        expect(await bulkActionLabels()).toBeNull();
+    });
+
+    it('a custom READER-based role with vendors.edit gets status + assign, not Delete', async () => {
+        await mount(
+            customRole('READER', (p) => ({ ...p, vendors: { view: true, create: false, edit: true } })),
+        );
+        expect(document.getElementById('new-vendor-btn')).toBeNull();
+        expect(await bulkActionLabels()).toEqual([V.bulk.setStatus, V.bulk.assignOwner]);
+    });
+
+    it('a custom ADMIN-based role without admin.manage keeps status/assign but loses Delete', async () => {
+        await mount(customRole('ADMIN', (p) => ({ ...p, admin: { ...p.admin, manage: false } })));
+        expect(await bulkActionLabels()).toEqual([V.bulk.setStatus, V.bulk.assignOwner]);
+    });
+});
+
+describe('Vendors list — `?create=1` opens the dialog only for a creator', () => {
+    const setCreateParam = () =>
+        (jest.requireMock('next/navigation').__searchParams as URLSearchParams).set('create', '1');
+
+    it('READER following an old /vendors/new link gets no dialog', async () => {
+        setCreateParam();
+        await mountAs('READER');
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(document.getElementById('new-vendor-form')).toBeNull();
+    });
+
+    it('EDITOR following the same link gets the dialog (positive companion)', async () => {
+        setCreateParam();
+        await mountAs('EDITOR');
+        await waitFor(() => expect(document.getElementById('new-vendor-form')).not.toBeNull());
     });
 });
