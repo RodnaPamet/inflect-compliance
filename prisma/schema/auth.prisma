@@ -640,7 +640,23 @@ model TenantCustomRole {
   tenant          Tenant             @relation(fields: [tenantId], references: [id])
   memberships     TenantMembership[]
 
-  @@unique([tenantId, name])
+  /// CONSTRAINT NOT VISIBLE HERE: the database carries
+  /// `TenantCustomRole_tenantId_name_key`, a PARTIAL unique index on
+  /// (tenantId, name) WHERE "isActive" — migration
+  /// 20261029190000_custom_role_name_unique_among_live (#4467), modelled on
+  /// Asset's 20260312210616_partial_unique_soft_delete. A custom role is
+  /// deleted by setting `isActive` false, so a deleted role frees its name
+  /// (owner decision, 2026-10-29). Prisma has no syntax for a filtered
+  /// index, so it CANNOT be declared here: writing `@@unique([tenantId,
+  /// name])` would make the next `migrate dev` replace the partial index with
+  /// an unconditional one, and a deleted role's name would be taken for good
+  /// again. The index below is the plain lookup index; the uniqueness is
+  /// enforced by the database alone.
+  ///
+  /// The constraint is CASE-SENSITIVE and ignores deleted roles.
+  /// `createCustomRole` and a rename in `updateCustomRole` ask the index's
+  /// exact question first (`findLiveCustomRoleByName`).
+  @@index([tenantId, name])
   @@index([tenantId])
   @@index([tenantId, isActive])
 

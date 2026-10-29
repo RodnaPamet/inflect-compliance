@@ -50,10 +50,11 @@ describe('training / background — registration + wiring', () => {
         }
         // The trailing comment already said which model this is about;
         // now the assertion does too. `@@unique([tenantId, name])` is
-        // declared by 6 models (Asset, TenantCustomRole,
-        // TenantIdentityProvider, AutomationRule, TrainingCourse, Vendor),
-        // so against the whole schema it held whether or not TrainingCourse
-        // carried it.
+        // declared by 6 models (TenantIdentityProvider, AutomationRule,
+        // TrainingCourse, Vendor, AgentHarnessEstate, TenantSkill), so
+        // against the whole schema it held whether or not TrainingCourse
+        // carried it. (Asset and TenantCustomRole carry a PARTIAL unique
+        // index instead, which Prisma cannot declare.)
         expect(braceBlockAfter(schema, 'model TrainingCourse\\s*\\{'))
             .toMatch(/@@unique\(\[tenantId, name\]\)/);
         const mig = readSql('prisma/migrations/20260707130000_training_background/migration.sql');
