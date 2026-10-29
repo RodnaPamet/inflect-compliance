@@ -12,6 +12,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import Link from 'next/link';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
@@ -90,8 +91,13 @@ export function SharePointCard() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ connectionId: id }),
                 });
-                const data = await res.json();
-                setTestResult((r) => ({ ...r, [id]: data.message ?? (data.ok ? t('sharepoint.ok') : t('sharepoint.failed')) }));
+                const data = await res.json().catch(() => null);
+                // A refusal carries the envelope `{ error: { message } }`, not
+                // the `{ ok, message }` of a test that ran.
+                const text = res.ok
+                    ? data?.message ?? (data?.ok ? t('sharepoint.ok') : t('sharepoint.failed'))
+                    : apiErrorMessage(data, t('sharepoint.testFailed'));
+                setTestResult((r) => ({ ...r, [id]: text }));
                 void load();
             } catch {
                 setTestResult((r) => ({ ...r, [id]: t('sharepoint.testFailed') }));
@@ -100,36 +106,62 @@ export function SharePointCard() {
         [apiUrl, load, t],
     );
 
+    /**
+     * A site list that cannot be read closes the picker and says why (#4466).
+     * It used to open anyway, empty — which reads as "this connection reaches
+     * no sites" — and Save sites on that picker would then store an empty list.
+     */
     const openSites = useCallback(
         async (conn: SpConnection) => {
+            setError(null);
+            setSites([]);
             setSitesFor(conn.id);
             setSelectedSites(conn.configJson?.allowedSiteIds ?? []);
             try {
                 const res = await fetch(apiUrl(`/admin/integrations/sharepoint/sites?connectionId=${conn.id}`));
-                if (res.ok) setSites(await res.json());
+                const data = await res.json().catch(() => null);
+                if (!res.ok) {
+                    setSitesFor(null);
+                    setError(apiErrorMessage(data, t('sharepoint.sitesLoadFailed')));
+                    return;
+                }
+                setSites(Array.isArray(data) ? data : []);
             } catch {
-                /* ignore */
+                setSitesFor(null);
+                setError(t('sharepoint.sitesLoadFailed'));
             }
         },
-        [apiUrl],
+        [apiUrl, t],
     );
 
+    /**
+     * The picker closes only when the save landed (#4466). It used to close on
+     * any answer, so a refused save looked exactly like a successful one.
+     */
     const saveSites = useCallback(
         async (id: string) => {
             setBusy(true);
+            setError(null);
             try {
-                await fetch(apiUrl(`/admin/integrations/sharepoint/sites?connectionId=${id}`), {
+                const res = await fetch(apiUrl(`/admin/integrations/sharepoint/sites?connectionId=${id}`), {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ siteIds: selectedSites }),
                 });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => null);
+                    setError(apiErrorMessage(data, t('sharepoint.saveSitesFailed')));
+                    return;
+                }
                 setSitesFor(null);
                 void load();
+            } catch {
+                setError(t('sharepoint.saveSitesFailed'));
             } finally {
                 setBusy(false);
             }
         },
-        [apiUrl, selectedSites, load],
+        [apiUrl, selectedSites, load, t],
     );
 
     const disconnect = useCallback(
@@ -183,21 +215,36 @@ export function SharePointCard() {
             {error && <InlineNotice variant="error">{error}</InlineNotice>}
 
             {connections.map((conn) => (
-                <div key={conn.id} className="rounded-md border border-border-subtle p-4 space-y-default">
+                <div key={conn.id} className="rounded-md border border-border-subtle p-4 space-y-default" data-testid={`sp-connection-${conn.id}`}>
                     <div className="flex items-center gap-default">
                         <span className="font-medium text-content-default">{conn.name}</span>
-                        <StatusBadge variant={conn.lastTestStatus === 'error' ? 'error' : 'success'}>
-                            {conn.lastTestStatus === 'error' ? t('sharepoint.statusError') : t('sharepoint.statusConnected')}
+                        {/* A DISABLED connection read "Connected": the badge looked
+                            only at the last test (#4466). The service refuses a
+                            disabled connection for test, sites and every read. */}
+                        <StatusBadge variant={!conn.isEnabled || conn.lastTestStatus === 'error' ? 'error' : 'success'}>
+                            {!conn.isEnabled
+                                ? t('sharepoint.statusDisabled')
+                                : conn.lastTestStatus === 'error' ? t('sharepoint.statusError') : t('sharepoint.statusConnected')}
                         </StatusBadge>
                         <span className="text-xs text-content-muted">
                             {t('sharepoint.sitesAllowed', { count: conn.configJson?.allowedSiteIds?.length ?? 0 })}
                         </span>
                         <div className="ml-auto flex gap-tight">
-                            <Button variant="ghost" size="sm" onClick={() => test(conn.id)}>{t('sharepoint.test')}</Button>
-                            <Button variant="ghost" size="sm" onClick={() => openSites(conn)}>{t('sharepoint.sites')}</Button>
+                            {/* Test and Sites can only fail on a disabled connection,
+                                so it is offered Disconnect alone — after which
+                                Connect is back. */}
+                            {conn.isEnabled && (
+                                <>
+                                    <Button variant="ghost" size="sm" onClick={() => test(conn.id)}>{t('sharepoint.test')}</Button>
+                                    <Button variant="ghost" size="sm" onClick={() => openSites(conn)}>{t('sharepoint.sites')}</Button>
+                                </>
+                            )}
                             <Button variant="ghost" size="sm" onClick={() => disconnect(conn)}>{t('sharepoint.disconnect')}</Button>
                         </div>
                     </div>
+                    {!conn.isEnabled && (
+                        <p className="text-xs text-content-muted">{t('sharepoint.disabledHint')}</p>
+                    )}
                     {testResult[conn.id] && (
                         <p className="text-xs text-content-muted">{testResult[conn.id]}</p>
                     )}

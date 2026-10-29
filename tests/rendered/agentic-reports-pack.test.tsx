@@ -270,3 +270,66 @@ describe('a third-party agent with no assurance is called out', () => {
         expect(screen.getByTestId('third-party-a2').textContent).toMatch(/no completed assessment/i);
     });
 });
+
+// ─── #4474 ──────────────────────────────────────────────────────────────────
+
+const CATALOGUE = {
+    en: jest.requireActual('../../messages/en.json') as Record<string, unknown>,
+    bg: jest.requireActual('../../messages/bg.json') as Record<string, unknown>,
+};
+const msg = (lang: 'en' | 'bg', dotted: string): string => {
+    const v = dotted
+        .split('.')
+        .reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), CATALOGUE[lang]);
+    if (typeof v !== 'string') throw new Error(`no string at ${lang}:${dotted}`);
+    return v;
+};
+
+describe('the review-quality link follows that page’s own gate (#4474)', () => {
+    // `/agents/review-quality` refuses anybody without `admin.agent_registry`,
+    // which is what `canInvestigate` carries. An Auditor reads the pack on the
+    // inventory view key alone and must not be handed a link to a refusal.
+    const renderWith = (canInvestigate: boolean) =>
+        render(
+            <ReportsClient
+                tenantSlug="acme"
+                pack={pack()}
+                enforcing
+                canReviewProposals
+                canInvestigate={canInvestigate}
+                canExport={false}
+            />,
+        );
+
+    it('is offered to a reader holding the register key', () => {
+        renderWith(true);
+        expect(screen.getByTestId('reports-approvals-detail-link')).toHaveAttribute(
+            'href',
+            '/t/acme/agents/review-quality',
+        );
+    });
+
+    it('is not offered to a reader with the inventory view key alone, who still reads the report', () => {
+        renderWith(false);
+        expect(screen.queryByTestId('reports-approvals-detail-link')).not.toBeInTheDocument();
+        expect(screen.getByTestId('reports-approvals-unobservable')).toBeInTheDocument();
+    });
+});
+
+describe('the not-enforcing notice names the page and the control that exist (#4474)', () => {
+    it('names "Security & MFA" and "Enforce registration", as the security page labels them', () => {
+        renderPack({}, false);
+        const notice = screen.getByTestId('reports-not-enforcing');
+        expect(notice).toHaveTextContent(msg('en', 'admin.security.title'));
+        expect(notice).toHaveTextContent(msg('en', 'admin.security.agentEnforcement.enableAction'));
+        expect(notice.textContent).not.toMatch(/Security settings/);
+    });
+
+    it('does the same in Bulgarian', () => {
+        const body = msg('bg', 'agents.reports.notEnforcingBody');
+        expect(body).toContain(msg('bg', 'admin.security.title'));
+        expect(body).toContain(msg('bg', 'admin.security.agentEnforcement.enableAction'));
+        expect(body).not.toMatch(/настройките за сигурност/);
+    });
+});
+

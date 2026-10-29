@@ -103,6 +103,8 @@ const EN = (
     }
 ).agents;
 const H = EN.harness;
+/** The estate form's source names, which every source on the tab now shows (#4474). */
+const KIND = (EN.harness as unknown as { estates: { form: { kind: Record<string, string> } } }).estates.form.kind;
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -499,9 +501,11 @@ describe('the scanner section states completeness and drift', () => {
         renderHarness(view({ sections: [section({ latest })] }));
         expect(screen.getByTestId('harness-completeness-scan_latest').textContent).toBe(H.completeness.INCOMPLETE);
         const notice = screen.getByTestId('harness-incomplete-scan-scan_latest');
-        expect(notice.textContent).toContain('mcp');
+        expect(notice.textContent).toContain(KIND.mcp);
         expect(notice.textContent).toContain('time box reached');
-        expect(notice.textContent).not.toContain('entra-sp');
+        expect(notice.textContent).not.toContain(KIND['entra-sp']);
+        // The name, never the stable id (#4474).
+        expect(notice.textContent).not.toMatch(/\bmcp\b/);
         // The matrix still renders: an incomplete scan is shown as what it is.
         expect(screen.getByTestId('harness-matrix-scan_latest')).toBeInTheDocument();
     });
@@ -578,8 +582,10 @@ describe('the scanner section states completeness and drift', () => {
 
         const sources = screen.getByTestId('harness-drift-scan_latest-sources');
         expect(sources.textContent).toContain('Source coverage lost (2)');
-        expect(within(sources).getByText('mcp: read in full before, now incomplete (time box reached)')).toBeInTheDocument();
-        expect(within(sources).getByText('vault: no longer reported')).toBeInTheDocument();
+        expect(
+            within(sources).getByText(`${KIND.mcp}: read in full before, now incomplete (time box reached)`),
+        ).toBeInTheDocument();
+        expect(within(sources).getByText(`${KIND.vault}: no longer reported`)).toBeInTheDocument();
         expect(screen.queryByTestId('harness-drift-scan_latest-sources-none')).not.toBeInTheDocument();
         expect(screen.queryByTestId('harness-drift-scan_latest-sources-unknown')).not.toBeInTheDocument();
         // The empty list beside them is still a sentence.
@@ -636,7 +642,9 @@ describe('the scan history', () => {
             view({ scans: { rows: [scanRow(), unreadable], truncated: true } }),
         );
         const table = screen.getByTestId('harness-scans-table');
-        expect(within(table).getByTestId('harness-scan-sources-scan_latest').textContent).toContain('entra-sp');
+        const sources = within(table).getByTestId('harness-scan-sources-scan_latest').textContent ?? '';
+        expect(sources).toContain(KIND['entra-sp']);
+        expect(sources).not.toContain('entra-sp');
         expect(within(table).getByTestId('harness-scan-sources-unreadable-scan_bad').textContent).toBe(H.sourcesUnreadable);
         expect(within(table).getByTestId('harness-scan-completeness-scan_bad').textContent).toBe(H.completeness.INCOMPLETE);
         expect(screen.getByTestId('harness-scans-truncated')).toBeInTheDocument();
@@ -867,5 +875,52 @@ describe('nothing the server held back disappears silently', () => {
             'Only the 1 most recently seen shadow agents are listed.',
         );
         expect(screen.getByTestId('harness-acceptances-truncated').textContent).toBe('Only the first 1 acceptances are listed.');
+    });
+});
+
+// ─── Source names (#4474) ───────────────────────────────────────────────────
+
+describe('a source is named, not shown by its stable id', () => {
+    it('the shadow list names the sources an agent was found through', () => {
+        renderHarness(
+            view({
+                shadow: {
+                    rows: [
+                        {
+                            discoveredAgentId: 'da_s',
+                            discoveredId: 'entra:sp:shadow-1',
+                            discoveredVia: ['entra-sp', 'vault'],
+                            firstSeenAt: '2026-10-01T00:00:00.000Z',
+                            lastSeenAt: '2026-10-15T00:00:00.000Z',
+                            lastLevel: 'H0',
+                            reason: 'REGISTER_ROW_DELETED',
+                            findingId: 'fnd_s',
+                            intake: null,
+                            suggestion: null,
+                        },
+                    ],
+                    truncated: false,
+                    basis: 'EVIDENCED',
+                    basisAsOf: '2026-10-15T03:00:00.000Z',
+                },
+            }),
+        );
+        const table = screen.getByTestId('harness-shadow-table');
+        expect(table.textContent).toContain(`${KIND['entra-sp']}, ${KIND.vault}`);
+        expect(table.textContent).not.toContain('entra-sp, vault');
+    });
+
+    it('a source this client has no name for is shown as stored, not as a key path', () => {
+        renderHarness(
+            view({
+                scans: {
+                    rows: [scanRow({ sources: [{ kind: 'later-source', status: 'COMPLETE', rows: 3, reason: null }] })],
+                    truncated: false,
+                },
+            }),
+        );
+        const sources = screen.getByTestId('harness-scan-sources-scan_latest').textContent ?? '';
+        expect(sources).toContain('later-source');
+        expect(sources).not.toContain('estates.form.kind');
     });
 });

@@ -20,6 +20,7 @@ import {
 } from '../../domain/control-test-due';
 import { effectiveDueAt } from '../due-planning';
 import { urgencyFromDaysUntil, DAY_MS } from '@/lib/urgency';
+import { INCIDENT_NOTIFICATION_KIND_LABEL } from '@/lib/incidents/labels';
 import { env } from '@/env';
 import type { TaskStatus } from '@prisma/client';
 import type { RequestContext } from '../../types';
@@ -194,7 +195,8 @@ export async function loadIncidentNotificationEvents(
             id: `INCIDENT_NOTIFICATION:${r.id}:incident-notification-due`,
             type: 'incident-notification-due',
             category: 'finding',
-            title: `Incident notification (${r.kind}): ${r.incident.title}`,
+            // The deadline's label, never the enum code (#4463).
+            title: `Incident notification (${INCIDENT_NOTIFICATION_KIND_LABEL[r.kind]}): ${r.incident.title}`,
             entityName: r.incident.title,
             date: r.dueAt.toISOString(),
             status: classifyStatus(r.dueAt, now, isDone),

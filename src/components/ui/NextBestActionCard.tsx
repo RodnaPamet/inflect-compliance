@@ -35,6 +35,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
 
 import { Card } from "./card";
@@ -114,7 +115,12 @@ export function NextBestActionCard({
     quickAdds,
     className,
 }: NextBestActionCardProps) {
+    const t = useTranslations("dashboard.nextAction");
     const action = resolveNextBestAction(input, tenantHref);
+    const label = t(`${action.messageKey}.label`);
+    const description = t(`${action.messageKey}.description`, {
+        count: action.count,
+    });
 
     return (
         <Card
@@ -153,13 +159,13 @@ export function NextBestActionCard({
                         data-next-best-action-clear-check
                     />
                 )}
-                {action.label}
+                {label}
             </Heading>
             <p
                 className="text-sm text-content-muted mb-4"
                 data-next-best-action-description
             >
-                {action.description}
+                {description}
             </p>
             <Link href={action.href}>
                 <Button
@@ -167,7 +173,7 @@ export function NextBestActionCard({
                     size="md"
                     data-testid="next-best-action-cta"
                 >
-                    {action.label}
+                    {label}
                 </Button>
             </Link>
             {quickAdds && quickAdds.length > 0 && (
@@ -176,7 +182,7 @@ export function NextBestActionCard({
                     data-next-best-action-quick-adds
                 >
                     <span className="font-medium text-content-muted">
-                        Quick add:
+                        {t("quickAdd")}
                     </span>
                     {quickAdds.slice(0, 3).map((qa, i) => (
                         <React.Fragment key={qa.href}>

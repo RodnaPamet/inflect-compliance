@@ -230,12 +230,17 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // (docs/claude-agent-sdk-design.md, docs/claude-managed-agents-design.md,
         // docs/claude-tool-runner-design.md), one contiguous textual insert
         // between `docs/ci-local.md` and `docs/cloud-storage.md`: +9/-0.
-        // Moved 2026-10-29 by ONE sorted addition, the SAP MCP connection runbook
-        // (docs/runbooks/wiring-an-sap-mcp-connection.md, #3872), inserted after
-        // `docs/runbooks/joule-byoa.md` because 'w' > 'j' within that folder and
-        // before `docs/sap-agent-integration-roadmap.md`: +3/-0. No existing
-        // entry moved, which is the distinction this digest draws.
-        keyOrderSha: '2ff88255cfcc69fd2bc5786af941fa91ea95d8a9d59f7a9930a16966b313e2ca',
+        // RECOMPUTED, not picked — and this is the case where the distinction
+        // matters most. #4499 (the AI-architecture roadmap docs) and #3872 (the SAP
+        // MCP runbook) each added entries in different sorted positions, so the
+        // merged file's key ORDER is neither branch's. Taking either side's digest
+        // would leave this red; worse, a digest that happened to match would be
+        // asserting a key order the file no longer has.
+        //
+        // Derived with the guard's own `keyOrder`/`keyOrderSha` over the merged
+        // file, then confirmed by running the guard. Unlike a counted baseline,
+        // a digest cannot be composed by arithmetic.
+        keyOrderSha: 'bf7438e7307fe7ddc9ab20d02a1c82821ce03b6884c0222b9fcdcebc7cb84a20',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
