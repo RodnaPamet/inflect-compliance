@@ -898,7 +898,23 @@ jobs:
         run: |
           npx jest --selectProjects scan \
             --maxWorkers=2 --forceExit --ci \
-            --coverage --coverageReporters=json
+            --coverage --coverageReporters=json \
+            --json --outputFile=jest-scan-results.json
+
+        # Outside jest ON PURPOSE (#4426). Every other check on this population is
+        # a jest test, and that is the defect: the suite pinning the `scan`
+        # project's ignore list lives INSIDE the population it protects, so one
+        # pattern naming its directory removes 225 suites AND the assertion
+        # against doing so, leaving this job green. Measured: 810 -> 585 files,
+        # with "0 matches" for the pinning suite. No jest-level pattern can reach
+        # a step that is not jest.
+        #
+        # `if: always()` so a population cut is still reported when the suite run
+        # itself failed: the two causes are independent, and skipping this on
+        # failure is how the quieter one stays invisible.
+      - name: "Verify the Ratchets population actually ran"
+        if: always()
+        run: node scripts/check-scan-population.mjs jest-scan-results.json
 
       - name: Upload shard coverage
         uses: actions/upload-artifact@v7
