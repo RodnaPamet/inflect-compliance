@@ -253,12 +253,18 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
 
     // #4 — a failed PUT used to silently drop the result; surface it and
     // only refresh the pane once the write actually succeeded.
-    const updateChecklist = async (itemId: string, result: string, notes: string = '') => {
+    //
+    // The update carries the RESULT only. `notes` is left out, not sent as
+    // `''`: the usecase writes any string note it receives and leaves an
+    // absent one alone, and this page has no way to write a note — so sending
+    // a default here erased the item's note (written through the API) on the
+    // first result change.
+    const updateChecklist = async (itemId: string, result: string) => {
         if (!selected) return;
         try {
             await auditWrite.trigger({
                 auditId: selected.id,
-                body: { checklistUpdates: [{ id: itemId, result, notes }] },
+                body: { checklistUpdates: [{ id: itemId, result }] },
             });
             toast.success(tx('detail.checklistSaved'));
             loadAudit(selected.id);

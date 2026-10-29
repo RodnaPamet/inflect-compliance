@@ -122,7 +122,7 @@ function freshDetail() {
         auditScope: 'Access management',
         checklist: [
             { id: 'item-1', prompt: 'Verify A.5.1 — policies exist', result: 'NOT_TESTED', notes: null },
-            { id: 'item-2', prompt: 'Verify A.5.2 — roles assigned', result: 'NOT_TESTED', notes: null },
+            { id: 'item-2', prompt: 'Verify A.5.2 — roles assigned', result: 'NOT_TESTED', notes: 'Sampled 5 of 40 role assignments' },
         ],
         findings: [],
     };
@@ -151,11 +151,18 @@ beforeEach(() => {
                 return Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response);
             }
             // Model the server: apply the patch so the re-read reflects it.
+            // Notes follow `updateAudit` + `AuditRepository.updateChecklistItem`
+            // exactly: an absent `notes` leaves the column alone, and ANY string
+            // — the empty one included — overwrites it. (This mock used to keep
+            // the old note on `''`, which is how it hid the erasure.)
             const body = JSON.parse(String(init.body));
             if (body.status) detail.status = body.status;
             for (const up of body.checklistUpdates ?? []) {
                 const row = (detail.checklist as Array<Record<string, unknown>>).find((c) => c.id === up.id);
-                if (row) { row.result = up.result; row.notes = up.notes ?? row.notes; }
+                if (row) {
+                    row.result = up.result;
+                    if (up.notes !== undefined) row.notes = up.notes;
+                }
             }
             return Promise.resolve({ ok: true, json: async () => detail } as Response);
         }
@@ -227,6 +234,28 @@ describe('recording a checklist result', () => {
         expect(body.checklistUpdates).toEqual([
             expect.objectContaining({ id: 'item-1', result: 'PASS' }),
         ]);
+    });
+
+    it('changing a result leaves the item\'s note alone', async () => {
+        // The page cannot write a note, so a note on a row came from the API —
+        // and the first result change on the page used to send `notes: ''`,
+        // which the server stores as given.
+        await openAudit();
+        expect(screen.getByText('Sampled 5 of 40 role assignments')).toBeTruthy();
+
+        const triggers = screen.getAllByRole('combobox');
+        const rowTwo = screen.getByText('Verify A.5.2 — roles assigned').closest('div.rounded-lg') as HTMLElement;
+        const trigger = triggers.find((t) => rowTwo.contains(t))!;
+        await act(async () => { fireEvent.click(trigger); });
+        const option = await screen.findByRole('option', { name: /^pass$/i });
+        await act(async () => { fireEvent.click(option); });
+        await flush();
+
+        await waitFor(() => expect(puts().length).toBeGreaterThan(0));
+        const [update] = puts()[0].checklistUpdates as Array<Record<string, unknown>>;
+        expect(update).toEqual({ id: 'item-2', result: 'PASS' });
+        expect((detail.checklist as Array<Record<string, unknown>>)[1].notes).toBe('Sampled 5 of 40 role assignments');
+        await waitFor(() => expect(screen.getByText('Sampled 5 of 40 role assignments')).toBeTruthy());
     });
 
     it('re-reads the audit after a successful write, so the pane shows the saved value', async () => {
