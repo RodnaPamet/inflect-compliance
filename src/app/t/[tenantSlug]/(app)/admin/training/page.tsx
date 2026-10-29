@@ -1,5 +1,5 @@
-import { getTenantCtx } from '@/app-layer/context';
 import { listTrainingAssignments } from '@/app-layer/usecases/training';
+import { gateAdminPage } from '../_lib/admin-page-gate';
 import { TrainingClient, type AssignmentRow } from './TrainingClient';
 
 export const dynamic = 'force-dynamic';
@@ -7,10 +7,14 @@ export const dynamic = 'force-dynamic';
 /**
  * Training (PR-6) — Server Component. Security-awareness training assignments.
  * Part of the people layer (personnel.view).
+ *
+ * Gated here, before the read (`admin.view` + `personnel.view`): the admin
+ * layout is a client component and cannot keep this page's rows out of the
+ * payload. See `../_lib/admin-page-requirements.ts`.
  */
 export default async function TrainingPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
-    const resolved = await params;
-    const ctx = await getTenantCtx(resolved);
-    const rows = (await listTrainingAssignments(ctx)) as unknown as AssignmentRow[];
+    const gate = await gateAdminPage('/admin/training', params);
+    if (!gate.allowed) return gate.forbidden;
+    const rows = (await listTrainingAssignments(gate.ctx)) as unknown as AssignmentRow[];
     return <TrainingClient initialRows={JSON.parse(JSON.stringify(rows))} />;
 }

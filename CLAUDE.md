@@ -981,6 +981,8 @@ signed its subject in from any browser.
 
 Job definitions are in `src/app-layer/jobs/`. The executor registry is `src/app-layer/jobs/executor-registry.ts`. Jobs wrap their body in `runJob()` from `@/lib/observability/job-runner`, which opens a fresh AsyncLocalStorage request context (`route: job:<name>`) and a `traceOperation` span; the BullMQ worker additionally runs each execution inside an `execute <jobName>` span linked to the originating `enqueue` span. No job uses `traceUsecase`.
 
+**A job that must write a NOT NULL `User` foreign key writes it as the tenant's SYSTEM user** (#4400), through `buildTenantSystemJobContext` in `src/app-layer/context-system.ts`. It must not borrow a member for that. The row is `sys_<tenantId>`, created on first use. Its `emailHash` is `system:<tenantId>`, which no lookup by email can compute, and it never has a password. Migration `20261029200000_tenant_system_user` refuses the `sys_` id in every table a sign-in or standing needs: Account, identity link, tenant and org membership, password reset, MFA, both session tables, API keys and device tokens. So no code path can make it a person. The jwt callback and the mailer refuse it again as a second line. The policy review reminder moved first. The other borrowing callers move one per PR, each with a test that the row no longer names a person (`buildDelegatedJobContext`'s docblock). A job acting for a named, accountable person still resolves their membership (`resolveMemberContext`).
+
 ### Data Retention
 
 **See `docs/data-retention.md`** — the policy document that categorizes all 203

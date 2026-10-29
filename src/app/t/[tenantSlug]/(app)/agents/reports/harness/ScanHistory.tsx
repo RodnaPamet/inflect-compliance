@@ -18,6 +18,7 @@ import { formatDateTime } from '@inflect/ui/lib/format-date';
 import type { HarnessMatrixView, HarnessScanRow } from '@/lib/agentic/harness-read-model';
 
 import { COMPLETENESS_VARIANT } from './ScannerSection';
+import { sourceKindLabel } from './source-kind-label';
 
 function SourcesCell({ scan }: { scan: HarnessScanRow }) {
     const t = useTranslations('agents');
@@ -34,11 +35,11 @@ function SourcesCell({ scan }: { scan: HarnessScanRow }) {
                 <li key={s.kind} className={s.status === 'INCOMPLETE' ? 'text-content-warning' : undefined}>
                     {s.status === 'INCOMPLETE'
                         ? t('harness.sourceLineIncomplete', {
-                            kind: s.kind,
+                            kind: sourceKindLabel(t, s.kind),
                             reason: s.reason ? t(`harness.incompleteReason.${s.reason}`) : '',
                             rows: s.rows,
                         })
-                        : t('harness.sourceLine', { kind: s.kind, rows: s.rows })}
+                        : t('harness.sourceLine', { kind: sourceKindLabel(t, s.kind), rows: s.rows })}
                 </li>
             ))}
         </ul>
