@@ -169,6 +169,51 @@ describe('IncidentsClient — a search that matches nothing', () => {
     });
 });
 
+// #4463 — the register read stops at the backfill cap. The response says so
+// (`truncated`), and the KPI cards come from server counts over every
+// incident rather than from the rows that made it into the list.
+describe('IncidentsClient — a capped register', () => {
+    afterEach(() => mockSWR.mockReset());
+
+    it('shows the truncation banner and the server KPI counts, not counts of the loaded rows', () => {
+        mockSWR.mockReturnValue({
+            data: {
+                rows: ROWS,
+                truncated: true,
+                kpiCounts: { total: 7200, open: 6100, reportable: 310, deadlinesDueOrOverdue: 12 },
+            },
+            isLoading: false,
+            error: null,
+            mutate: jest.fn(),
+        });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+
+        expect(screen.getByTestId('list-truncation-banner')).toBeInTheDocument();
+        // Counted over 7,200 incidents — the two loaded rows would give 1 / 1 / 1.
+        expect(screen.getByText('6100')).toBeInTheDocument();
+        expect(screen.getByText('310')).toBeInTheDocument();
+        expect(screen.getByText('12')).toBeInTheDocument();
+        // The rows themselves still render.
+        expect(screen.getByText(/INC-2026-001/)).toBeInTheDocument();
+    });
+
+    it('shows no banner when the register fits under the cap', () => {
+        mockSWR.mockReturnValue({
+            data: {
+                rows: ROWS,
+                truncated: false,
+                kpiCounts: { total: 2, open: 1, reportable: 1, deadlinesDueOrOverdue: 1 },
+            },
+            isLoading: false,
+            error: null,
+            mutate: jest.fn(),
+        });
+        render(withSWR(<IncidentsClient initialIncidents={ROWS} tenantSlug="acme" canManage />));
+        expect(screen.queryByTestId('list-truncation-banner')).not.toBeInTheDocument();
+        expect(screen.getByText(/INC-2026-002/)).toBeInTheDocument();
+    });
+});
+
 describe('NewIncidentModal submit', () => {
     const origFetch = global.fetch;
     afterEach(() => {

@@ -12,6 +12,8 @@ import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { createColumns } from '@/components/ui/table';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { EmptyState } from '@/components/ui/empty-state';
+import { TruncationBanner } from '@/components/ui/TruncationBanner';
+import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import {
@@ -50,8 +52,25 @@ export interface IncidentRow {
     notifications: IncidentNotificationLite[];
 }
 
+/**
+ * The register's KPI cards, counted server-side over EVERY incident
+ * (`IncidentRepository.kpiCounts`) — not derived from the list rows, which
+ * stop at the backfill cap.
+ */
+export interface IncidentKpiCounts {
+    total: number;
+    open: number;
+    reportable: number;
+    deadlinesDueOrOverdue: number;
+}
+
+/** Shape of GET /api/t/:slug/incidents. */
+type IncidentListResponse = CappedList<IncidentRow> & { kpiCounts?: IncidentKpiCounts };
+
 interface IncidentsClientProps {
     initialIncidents: IncidentRow[];
+    /** Server aggregates for the first paint; omitted → counted from the rows. */
+    initialKpiCounts?: IncidentKpiCounts;
     tenantSlug: string;
     canManage: boolean;
 }
@@ -108,7 +127,12 @@ export function IncidentsClient(props: IncidentsClientProps) {
     );
 }
 
-function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: IncidentsClientProps) {
+function IncidentsPageInner({
+    initialIncidents,
+    initialKpiCounts,
+    tenantSlug,
+    canManage,
+}: IncidentsClientProps) {
     const t = useTranslations('incidents');
     const tGroup = useTranslations('common.filterGroups');
     const severityLabels = useMemo(
@@ -132,10 +156,17 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
     const tenantHref = useTenantHref();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-    const query = useTenantSWR<IncidentRow[]>(CACHE_KEYS.incidents.list(), {
-        fallbackData: initialIncidents,
+    // GET /incidents answers `{ rows, truncated, kpiCounts }` (PR-5 backfill
+    // cap). The SSR page holds the first SSR_PAGE_LIMIT rows, so its seed is
+    // not "truncated" — the revalidated response says whether the cap fired.
+    // A bare array (an older cached response) still reads, through
+    // `unwrapCappedList`.
+    const query = useTenantSWR<IncidentListResponse | IncidentRow[]>(CACHE_KEYS.incidents.list(), {
+        fallbackData: { rows: initialIncidents, truncated: false, kpiCounts: initialKpiCounts },
     });
-    const incidents = query.data ?? initialIncidents;
+    const incidents = query.data ? unwrapCappedList(query.data) : initialIncidents;
+    const listResponse = query.data && !Array.isArray(query.data) ? query.data : undefined;
+    const truncated = listResponse?.truncated ?? false;
     const { state, search, hasActive, clearAll } = useFilters();
 
     // Client-side filtering (the API returns the bounded per-tenant list).
@@ -163,11 +194,19 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
     usePublishDisplayedOrder(CACHE_KEYS.incidents.list(), filtered);
 
     // KPI summary — open incidents, reportable, deadlines due/overdue.
-    const openCount = incidents.filter((i) => i.phase !== 'CLOSED').length;
-    const reportableCount = incidents.filter((i) => i.reportable).length;
-    const dueOrOverdueCount = incidents.filter((i) =>
-        i.notifications.some((n) => n.status === 'DUE' || n.status === 'OVERDUE'),
-    ).length;
+    // Counted by the server over every incident; the rows-derived fallback
+    // only serves a response that carries no counts.
+    const kpi = listResponse?.kpiCounts ?? {
+        total: incidents.length,
+        open: incidents.filter((i) => i.phase !== 'CLOSED').length,
+        reportable: incidents.filter((i) => i.reportable).length,
+        deadlinesDueOrOverdue: incidents.filter((i) =>
+            i.notifications.some((n) => n.status === 'DUE' || n.status === 'OVERDUE'),
+        ).length,
+    };
+    const openCount = kpi.open;
+    const reportableCount = kpi.reportable;
+    const dueOrOverdueCount = kpi.deadlinesDueOrOverdue;
 
     const columns = useMemo(
         () =>
@@ -256,7 +295,7 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
                     { label: t('crumb.incidents') },
                 ],
                 title: t('title'),
-                count: t('count', { count: incidents.length }),
+                count: t('count', { count: kpi.total }),
                 description: t('description'),
                 actions: canManage ? (
                     <Button
@@ -280,6 +319,9 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
                     />
                 </div>
             }
+            // The list stops at the backfill cap; say so rather than show a
+            // partial register as if it were whole.
+            banner={<TruncationBanner truncated={truncated} />}
             filters={{
                 defs: [...incidentDefs.filters],
                 searchId: 'incidents-search',

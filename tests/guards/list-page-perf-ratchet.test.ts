@@ -52,7 +52,7 @@ import { codeOf } from '../helpers/source-blocks';
 const ROOT = path.resolve(__dirname, '../..');
 
 /**
- * The eight list-page entities covered by the interim perf package.
+ * The list-page entities covered by the interim perf package.
  *
  * Each tuple: `[entity, repoFileName]`. The page directory and API
  * route directory are the entity name unchanged; the repo file is the
@@ -63,6 +63,9 @@ const ROOT = path.resolve(__dirname, '../..');
  * PR-9 added Tasks to the set; the Tasks list page already had the
  * SSR cap from PR #146 but was missing the SELECT trim, backfill cap,
  * and row-count metric — the package's three later pieces.
+ *
+ * #4463 added Incidents: the register silently stopped at the
+ * repository's default 200 rows, with no truncation flag.
  */
 const LIST_PAGE_ENTITIES: ReadonlyArray<{ entity: string; repo: string }> = [
     { entity: 'controls', repo: 'ControlRepository' },
@@ -73,6 +76,7 @@ const LIST_PAGE_ENTITIES: ReadonlyArray<{ entity: string; repo: string }> = [
     { entity: 'vendors', repo: 'VendorRepository' },
     { entity: 'findings', repo: 'FindingRepository' },
     { entity: 'tasks', repo: 'TaskRepository' },
+    { entity: 'incidents', repo: 'IncidentRepository' },
 ];
 
 function readFile(rel: string): string {

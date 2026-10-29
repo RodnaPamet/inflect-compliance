@@ -52,6 +52,7 @@ const CAPPED_ENDPOINTS: readonly string[] = [
     'controls',
     'evidence',
     'findings',
+    'incidents',
     'policies',
     'risks',
     'tasks',

@@ -56,6 +56,12 @@ export async function listIncidents(
     return runInTenantContext(ctx, (db) => IncidentRepository.list(db, ctx, options));
 }
 
+/** The register's KPI cards, counted over every incident (not the capped list). */
+export async function listIncidentKpiCounts(ctx: RequestContext) {
+    assertCanViewIncidents(ctx);
+    return runInTenantContext(ctx, (db) => IncidentRepository.kpiCounts(db, ctx));
+}
+
 export async function getIncident(ctx: RequestContext, id: string) {
     assertCanViewIncidents(ctx);
     return runInTenantContext(ctx, async (db) => {

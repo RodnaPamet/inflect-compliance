@@ -91,9 +91,10 @@ export function unwrapCappedList<T>(
  * thirteen chances to repeat it.
  *
  * Tolerates every shape the list routes actually return: a bare array
- * (`incidents`), the plain envelope (`assets`, `tasks`), and the envelope
- * spread alongside extra keys (`risks`, `controls`, `policies`, `vendors`
- * all return `{ ...result, kpiCounts }`). Anything else yields `[]`, which
+ * (an uncapped route, or an older cached response), the plain envelope
+ * (`assets`, `tasks`), and the envelope spread alongside extra keys
+ * (`risks`, `controls`, `policies`, `vendors`, `incidents` all return
+ * `{ ...result, kpiCounts }`). Anything else yields `[]`, which
  * makes the nav hide rather than render arrows that point nowhere.
  */
 export function idsFromCappedList(

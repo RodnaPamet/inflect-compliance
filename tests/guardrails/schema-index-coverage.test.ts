@@ -1028,9 +1028,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // NIS2 incident response — listIncidents filters by tenantId (+ optional
     // phase / severity), orders by detectedAt DESC; covered by
     // @@index([tenantId, phase]) + @@index([tenantId, severity, detectedAt]);
-    // bounded take:200.
+    // always bounded (the route reads LIST_BACKFILL_CAP + 1, the page
+    // SSR_PAGE_LIMIT, any other caller the repository's default of 200).
     Incident:
-        'listIncidents filters by tenantId (+ optional phase / severity), orders by detectedAt DESC — covered by @@index([tenantId, phase]) + @@index([tenantId, severity, detectedAt]); bounded take:200.',
+        'listIncidents filters by tenantId (+ optional phase / severity), orders by detectedAt DESC — covered by @@index([tenantId, phase]) + @@index([tenantId, severity, detectedAt]); always bounded (LIST_BACKFILL_CAP + 1 on the route, SSR_PAGE_LIMIT on the page, take:200 by default).',
     // Notification deadlines fetched per incident (detail page) and scanned
     // by [tenantId, status, dueAt] (the deadline-clock job); covered by
     // @@index([tenantId, incidentId]) + @@index([tenantId, status, dueAt]).
