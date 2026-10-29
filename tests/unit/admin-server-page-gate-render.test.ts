@@ -138,6 +138,7 @@ jest.mock('@/lib/prisma', () => ({
 }));
 
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { PageHeader } from '@/components/layout/PageHeader';
 import en from '../../messages/en.json';
 import AdminPage from '@/app/t/[tenantSlug]/(app)/admin/page';
 import AuditLogPage from '@/app/t/[tenantSlug]/(app)/admin/audit-log/page';
@@ -257,6 +258,37 @@ describe('audit log — the owner decision of 2026-10-29', () => {
         const el = await render('/admin/audit-log', role);
         expect(el.type).not.toBe(ForbiddenPage);
         expect(reads.listAuditLogs).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('audit log — the header names only pages the reader can open', () => {
+    /** The first element of `type` in a rendered element tree. */
+    function find(el: unknown, type: unknown): Element | null {
+        if (!el || typeof el !== 'object') return null;
+        if (Array.isArray(el)) {
+            for (const child of el) {
+                const hit = find(child, type);
+                if (hit) return hit;
+            }
+            return null;
+        }
+        const node = el as Element;
+        if (node.type === type) return node;
+        return find(node.props?.children, type);
+    }
+
+    const crumbs = async (role: string) => {
+        const header = find(await render('/admin/audit-log', role), PageHeader);
+        expect(header).not.toBeNull();
+        return (header!.props.breadcrumbs as Array<{ label: string; href?: string }>).map((c) => c.href ?? null);
+    };
+
+    test('an AUDITOR, who cannot open the admin landing, is not offered it', async () => {
+        expect(await crumbs('AUDITOR')).toEqual(['/t/acme/dashboard', null]);
+    });
+
+    test.each(['ADMIN', 'OWNER'])('an %s keeps the Admin crumb', async (role) => {
+        expect(await crumbs(role)).toEqual(['/t/acme/dashboard', '/t/acme/admin', null]);
     });
 });
 

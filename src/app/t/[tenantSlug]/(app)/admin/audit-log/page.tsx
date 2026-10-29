@@ -40,6 +40,11 @@ export default async function AuditLogPage({
     const auditLog = await listAuditLogs(ctx);
 
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    // An AUDITOR reaches this page without `admin.view` (owner decision
+    // 2026-10-29), so the Admin crumb would lead them to the forbidden page.
+    const adminCrumb = ctx.appPermissions.admin.view
+        ? [{ label: t('title'), href: tenantHref('/admin') }]
+        : [];
 
     return (
         <ListPageShell className="gap-default">
@@ -48,7 +53,7 @@ export default async function AuditLogPage({
                     back={{ smart: true }}
                     breadcrumbs={[
                         { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
-                        { label: t('title'), href: tenantHref('/admin') },
+                        ...adminCrumb,
                         { label: t('auditLog') },
                     ]}
                     title={t('auditLog')}

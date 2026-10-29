@@ -31,13 +31,21 @@
  *
  * The one row without `admin.view` is the audit log: owner decision
  * 2026-10-29, an AUDITOR may read it, so it takes exactly what `listAuditLogs`
- * asserts (`canAudit`: OWNER, ADMIN, AUDITOR). The client layout still hides
- * the page from an AUDITOR; opening it on screen is a separate change.
+ * asserts (`canAudit`: OWNER, ADMIN, AUDITOR).
+ *
+ * ═══ THE CLIENT LAYOUT READS THIS TABLE TOO ═══
+ *
+ * The layout shows a page when the caller holds `admin.view` OR the page's own
+ * row here admits them (`adminPageRouteForPath`). Every row but the audit
+ * log's includes `admin.view`, so for those the second half adds nobody; for
+ * the audit log it is what lets an AUDITOR see the page the server already
+ * renders for them. One table, so what the screen shows and what the server
+ * sends cannot disagree about a page in it.
  *
  * For every built-in OWNER and ADMIN each row admits, so they see no change.
  *
  * This module is pure — no session, no database, no React — so the role matrix
- * is unit-tested over it directly.
+ * is unit-tested over it directly, and the client layout can import it.
  */
 import type { RequestContext } from '@/app-layer/types';
 import { hasPermission, type PermissionKey } from '@/lib/security/permission-key';
@@ -110,4 +118,35 @@ export function admitsAdminPage(
     const granted = ctx.appPermissions;
     if (!granted) return false;
     return requirement.keys.every((key) => hasPermission(granted, key));
+}
+
+const ROUTE_PARAM = /^\[[^\]/]+\]$/;
+
+/**
+ * The row of `ADMIN_PAGE_REQUIREMENTS` naming the page at `pathname`
+ * (`/t/acme/admin/vendor-templates/t-1` → `/admin/vendor-templates/[templateId]`),
+ * or `null` when no row names it. For the client layout, which knows the
+ * browser's path and not the page's folder.
+ *
+ * Fails towards `null`, which leaves the layout on its `admin.view` floor: a
+ * path that is not exactly `/t/<slug>/admin/...` (one optional trailing
+ * slash), or whose segment count or static segments match no row. A static row
+ * wins over a dynamic one, and a `[param]` matches one non-empty segment.
+ */
+export function adminPageRouteForPath(pathname: string): AdminPageRoute | null {
+    const match = /^\/t\/[^/]+(\/admin(?:\/[^?#]*)?)$/.exec(pathname);
+    if (!match) return null;
+    let under = match[1];
+    if (under.length > '/admin'.length && under.endsWith('/')) under = under.slice(0, -1);
+    if (Object.prototype.hasOwnProperty.call(ADMIN_PAGE_REQUIREMENTS, under)) {
+        return under as AdminPageRoute;
+    }
+    const segments = under.split('/');
+    for (const route of Object.keys(ADMIN_PAGE_REQUIREMENTS) as AdminPageRoute[]) {
+        const pattern = route.split('/');
+        if (pattern.length !== segments.length || !pattern.some((p) => ROUTE_PARAM.test(p))) continue;
+        const fits = pattern.every((p, i) => (ROUTE_PARAM.test(p) ? segments[i] !== '' : p === segments[i]));
+        if (fits) return route;
+    }
+    return null;
 }
