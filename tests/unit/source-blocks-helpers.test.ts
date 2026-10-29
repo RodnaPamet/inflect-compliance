@@ -713,8 +713,8 @@ describe('source-blocks — commentsOf', () => {
     });
 });
 
-describe('functionBodyOf refuses a return type it would misread (#4515)', () => {
-    it('throws rather than returning the RETURN TYPE when it holds an object literal', () => {
+describe('functionBodyOf reads past a return type it used to misread (#4515)', () => {
+    it('returns the BODY when the return type holds an object literal', () => {
         const src = [
             'function withInline(a: string): Promise<{ x: number; y: string }> {',
             '    return bodyMarker();',
@@ -722,9 +722,37 @@ describe('functionBodyOf refuses a return type it would misread (#4515)', () => 
         ].join('\n');
 
         // The old behaviour returned the slice ending at the TYPE's closing
-        // brace, so this assertion would have passed while reading a type
-        // declaration — which is the whole defect.
-        expect(() => functionBodyOf(src, 'withInline')).toThrow(/return type contains an object literal/);
+        // brace, so a `.not.toMatch` against it passed vacuously. Both halves
+        // are asserted: the body is reached, and the type is not mistaken for
+        // it — the second is what actually went wrong.
+        const body = functionBodyOf(src, 'withInline');
+        expect(body).toContain('bodyMarker()');
+        expect(body).toContain('x: number');
+    });
+
+    it('reads past a NESTED object type, not just a flat one', () => {
+        const src = [
+            'function nested(): Promise<{ a: { b: string }; c: number }> {',
+            '    return bodyMarker();',
+            '}',
+        ].join('\n');
+
+        expect(functionBodyOf(src, 'nested')).toContain('bodyMarker()');
+    });
+
+    it('the real shape that broke CI: a usecase returning Promise<{ id: string }>', () => {
+        // `recordA2aMessage` in `usecases/a2a-messages.ts`. A test that
+        // enumerates every exported function in that directory calls this on
+        // each, which is why a refusal was the wrong fix and why the measured
+        // "zero live instances" was wrong — the detector only counted calls
+        // naming a function with a quoted literal.
+        const src = [
+            'export async function recordA2aMessage(ctx: RequestContext, rec: Rec): Promise<{ id: string }> {',
+            '    return bodyMarker(ctx);',
+            '}',
+        ].join('\n');
+
+        expect(functionBodyOf(src, 'recordA2aMessage')).toContain('bodyMarker(ctx)');
     });
 
     it('still extracts an ordinary body, including one whose return type is generic', () => {
