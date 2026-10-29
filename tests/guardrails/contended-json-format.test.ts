@@ -230,7 +230,15 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // (docs/claude-agent-sdk-design.md, docs/claude-managed-agents-design.md,
         // docs/claude-tool-runner-design.md), one contiguous textual insert
         // between `docs/ci-local.md` and `docs/cloud-storage.md`: +9/-0.
-        keyOrderSha: '89576449fd9001551aa131d753dab3fe4e14291ba391d22e32cc59675315fe40',
+        // Moved 2026-10-29 by twenty sorted ADDITIONS, the AI architecture
+        // roadmap: docs/ai-architecture-roadmap.md and the nineteen files under
+        // docs/ai-architecture/, one contiguous insert between
+        // `docs/agentic-iam-roadmap.md` and `docs/api-consumer-guide.md`:
+        // +60/-0. The writer re-serialised the `docs` map through a sort, the
+        // shape this digest exists for; it was a no-op only because the file
+        // was already sorted, and the +60/-0 diff, not this digest, is the
+        // evidence that no existing key moved.
+        keyOrderSha: 'f2500188bd40b531e8eec5ea253c01601c4b4d241cccb96b59713f35e4f52a3e',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
