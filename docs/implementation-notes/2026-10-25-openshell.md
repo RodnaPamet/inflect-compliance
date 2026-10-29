@@ -231,6 +231,59 @@ existing VMs consume it exactly, so a third bills entirely on-demand. That is a
 cost decision for the owner, not a deployment step, and nothing in
 `deploy/openshell/` provisions anything.
 
+## 0.1f — there is no JavaScript SDK, so there is nothing to isolate
+
+#3931 asked whether `@nvidia/openshell-sdk` is ESM-only, because if it were,
+phase 4 would need the `@flue/runtime` treatment: its own jest project and a
+boundary module carrying "MUST NEVER BE IMPORTED FROM THE MAIN SRC GRAPH".
+
+**That package does not exist.** Measured against the registry rather than a
+README, which is what the issue asked for:
+
+| | |
+|---|---|
+| `@nvidia/openshell-sdk` on npm | **404** |
+| npm packages mentioning OpenShell | **39**, and NONE published by NVIDIA |
+| The official SDK | `pypi/openshell` **0.1.6** — author NVIDIA Inc., source `github.com/NVIDIA/OpenShell`, `requires_python >=3.11` |
+
+So the module-format question does not arise, and the isolation requirement is
+**none** — for a stronger reason than a friendly module format. A Python package
+cannot enter a Node import graph under any module format, so there is no import
+to isolate and no second jest project to add.
+
+What phase 4 does instead was already the right shape before this was asked.
+`SandboxTransport` is four hand-written calls over the gateway's own gRPC
+surface, and the repository depends on no OpenShell package from anybody:
+`package.json` names none and the lockfile contains zero. 0.1f's concern is
+therefore satisfied by construction, and a test below holds it that way rather
+than leaving it as a property nobody re-checks.
+
+### The trap, which is the half worth keeping
+
+The ESM-only worry in #3931 is **true of a package that is not NVIDIA's**:
+
+```
+@openkaiden/opnshll-sdk   0.1.6
+  "Official TypeScript SDK for the OpenShell gateway."
+  type: module            → genuinely ESM-only
+  maintainer: an individual, not NVIDIA
+```
+
+It calls itself official, it is ESM-only exactly as the issue feared, its
+version mirrors the real release, and its name is a vowel-dropped lookalike of
+`openshell`. Every signal #3931 would have used to identify the SDK points at
+it. Adopting it would be a **supply-chain decision wearing a module-format
+costume**, and the answer to 0.1f is the reason we will not need to take it.
+
+### And a newer release exists
+
+`v0.1.6` shipped **2026-10-27**, a week after the pinned `v0.1.5`, which is how
+the PyPI SDK is at 0.1.6. The pin is one release behind and is deliberately
+unchanged here: taking it runs 5.3's checklist in full, which is its own work
+rather than a side effect of a spike answer. It is registered in
+`KNOWN_NEWER_RELEASES` so the discovery is recorded without the pin moving —
+that register exists because this finding could not otherwise be written down.
+
 ## Retention classification
 
 **No new model.** `prisma/schema.prisma` declares no sandbox- or

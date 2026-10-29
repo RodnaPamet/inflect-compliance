@@ -16,7 +16,7 @@
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import * as yaml from 'js-yaml';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, interfaceBodyOf } from '../helpers/source-blocks';
 import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
 import {
     generateKeyPairSync,
@@ -554,5 +554,123 @@ describe('4.3 — the gateway deploys outside the canonical compose (#3964)', ()
         // The gateway reads its pinned driver digests from the config, and the
         // unit must point at it or the pins are inert.
         expect(env).toContain('OPENSHELL_GATEWAY_CONFIG=/etc/openshell/gateway.toml');
+    });
+});
+
+/**
+ * 0.1f (#3931) — the repository depends on no OpenShell package, from anybody.
+ *
+ * #3931 asked whether the SDK is ESM-only, so phase 4 would know whether it
+ * needs the `@flue/runtime` treatment: a jest project of its own and a boundary
+ * module nothing in the main graph may import. The answer measured against the
+ * registry is that there is no JavaScript SDK at all — `@nvidia/openshell-sdk`
+ * is a 404, and of the 39 npm packages that mention OpenShell, none is
+ * published by NVIDIA. The official SDK is Python (`pypi/openshell`,
+ * `requires_python >=3.11`), which cannot enter a Node import graph under any
+ * module format.
+ *
+ * ═══ WHY A TEST AND NOT ONLY A NOTE ═══
+ *
+ * Because the dangerous version of this is cheap to adopt by accident.
+ * `@openkaiden/opnshll-sdk` describes itself as "Official TypeScript SDK for
+ * the OpenShell gateway", is `type: module` — genuinely ESM-only, exactly as
+ * #3931 feared — carries a version that mirrors the real release, and is
+ * maintained by an individual. Every signal somebody would use to find "the
+ * SDK" points at it. An `npm i` away, phase 4 acquires a third-party dependency
+ * in the position the note says is empty.
+ *
+ * So the assertion is over the DEPENDENCY MANIFESTS rather than over imports: a
+ * package can be depended on before anything imports it, and that is the moment
+ * worth failing. It matches no allowlist of names — any dependency whose name
+ * contains `openshell` or the lookalike spelling fails, whoever publishes it,
+ * because adopting one is a supply-chain decision and not a module-format one.
+ */
+describe('0.1f — no OpenShell package is a dependency (#3931)', () => {
+    const LOOKALIKE = /openshell|opnshll/i;
+
+    const manifest = JSON.parse(
+        readFileSync(join(__dirname, '../../package.json'), 'utf8'),
+    ) as Record<string, unknown>;
+
+    const DEP_SECTIONS = [
+        'dependencies',
+        'devDependencies',
+        'optionalDependencies',
+        'peerDependencies',
+        'bundledDependencies',
+        'bundleDependencies',
+    ] as const;
+
+    it('names none in any dependency section of package.json', () => {
+        // Every section, not just `dependencies`. A devDependency is still a
+        // package on the machine that builds this, and `optionalDependencies`
+        // is how one arrives without failing an install.
+        const named: string[] = [];
+        let sectionsSeen = 0;
+        for (const section of DEP_SECTIONS) {
+            const deps = manifest[section];
+            if (!deps) continue;
+            sectionsSeen++;
+            const names = Array.isArray(deps) ? deps : Object.keys(deps as object);
+            for (const n of names as string[]) {
+                if (LOOKALIKE.test(n)) named.push(`${section}: ${n}`);
+            }
+        }
+        // Non-vacuous: the manifest really has dependency sections to search.
+        expect(sectionsSeen).toBeGreaterThanOrEqual(2);
+        expect(named).toEqual([]);
+    });
+
+    it('resolves none in the lockfile either', () => {
+        // The manifest is what somebody writes; the lockfile is what actually
+        // installs, including anything pulled in transitively.
+        const lock = JSON.parse(
+            readFileSync(join(__dirname, '../../package-lock.json'), 'utf8'),
+        ) as { packages?: Record<string, unknown> };
+        const paths = Object.keys(lock.packages ?? {});
+        // Non-vacuous: the lockfile really was parsed and really has packages.
+        expect(paths.length).toBeGreaterThan(100);
+        expect(paths.filter((k) => LOOKALIKE.test(k))).toEqual([]);
+    });
+
+    it('the transport is ours — four calls we wrote, not a re-export', () => {
+        // What fills the space where an SDK would sit. If this ever became a
+        // re-export from a dependency, the two assertions above would be the
+        // only thing standing between phase 4 and an unvetted package.
+        //
+        // NARROWED AND EXTRACTED, not matched against the whole file. The first
+        // draft read `codeOf(src)` and asserted two `toMatch`es over it, which
+        // Class D of `assertion-needle-uniqueness` counts as a transformed
+        // whole-file read — +2 on a blind-spot census, and the ratchet caught
+        // it. Narrowing is the documented fix and CLAUDE.md says why: a
+        // narrowed read stays out of scope precisely so that taking the
+        // ratchet's advice does not redden it.
+        const src = readFileSync(
+            join(__dirname, '../../src/lib/agentic/openshell/transport.ts'),
+            'utf8',
+        );
+
+        // Bound to the interface, so the four calls are asserted where they
+        // are declared rather than anywhere in a 200-line file.
+        const body = interfaceBodyOf(src, 'SandboxTransport');
+        expect(body.length).toBeGreaterThan(80);
+        for (const call of ['createSandbox', 'execSandbox', 'deleteSandbox', 'awaitDeleted']) {
+            expect(body).toContain(call);
+        }
+
+        // And the module's own specifiers, as a filtered list: nothing it pulls
+        // in or re-exports may be an OpenShell package. An array comparison,
+        // which carries no needle for Class D to analyse.
+        const specifiers = [...codeOf(src).matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
+        expect(specifiers.filter((x) => LOOKALIKE.test(x))).toEqual([]);
+    });
+
+    it('the detector fires on a planted dependency — the control', () => {
+        // Without this, all three assertions above are satisfied by a pattern
+        // that matches nothing.
+        const planted = ['@nvidia/openshell-sdk', '@openkaiden/opnshll-sdk', 'openshell-node'];
+        expect(planted.filter((n) => LOOKALIKE.test(n))).toEqual(planted);
+        // And it does not fire on the ordinary neighbours it sits beside.
+        expect(['next', 'zod', '@flue/runtime'].filter((n) => LOOKALIKE.test(n))).toEqual([]);
     });
 });
