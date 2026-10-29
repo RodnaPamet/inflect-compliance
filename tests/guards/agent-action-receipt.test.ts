@@ -15,6 +15,7 @@
  */
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import * as yaml from 'js-yaml';
 import { codeOf } from '../helpers/source-blocks';
 import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
 import {
@@ -412,5 +413,142 @@ describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediato
         const planted = codeOf("import { x } from '@/lib/mcp/authorize';\nconst mcp = x;");
         expect(/\bmcp\b|@\/lib\/mcp/i.test(planted)).toBe(true);
         expect([{ host: 'mcp.internal' }].some((e) => /mcp/i.test(e.host))).toBe(true);
+    });
+});
+
+/**
+ * 4.3 (#3964) — the gateway deploys to its OWN host, outside the canonical
+ * compose, and Watchtower does not update it.
+ *
+ * ═══ ASSERTED AS STRUCTURE, NOT AS TEXT ═══
+ *
+ * The compose file is parsed with `js-yaml` and the unit file into sections and
+ * keys, for the reason #4312 recorded: the first version of that guard matched
+ * `--runInBand` anywhere in the file, so a mention in a COMMENT satisfied it
+ * and deleting the real flag left it green. A deployment artifact is mostly
+ * commentary — this one is deliberately so — which makes a text scan the wrong
+ * instrument twice over.
+ *
+ * ═══ THE PREMISE THAT CAN EXPIRE ═══
+ *
+ * "Watchtower does not update the gateway" currently rests on two independent
+ * facts, and only one of them is about the gateway:
+ *
+ *   1. Watchtower runs on the APP VM, watching that VM's Docker socket, and
+ *      has no view of the gateway host.
+ *   2. It is OPT-IN: `--label-enable` plus `WATCHTOWER_LABEL_ENABLE: "true"`,
+ *      so only containers labelled `…watchtower.enable=true` are candidates.
+ *
+ * Fact 2 is a configuration anybody can change, and dropping `--label-enable`
+ * silently converts Watchtower to watching everything it can see. That would
+ * not reach this gateway today, so nothing would break — which is exactly why
+ * it is worth pinning. A safety argument whose premises have gone false while
+ * nothing failed is worse than no argument, because it still reads as true.
+ */
+describe('4.3 — the gateway deploys outside the canonical compose (#3964)', () => {
+    const CANONICAL = join(__dirname, '../../deploy/docker-compose.prod.yml');
+    const UNIT = join(__dirname, '../../deploy/openshell/openshell-gateway.service');
+
+    const compose = yaml.load(readFileSync(CANONICAL, 'utf8')) as {
+        services?: Record<string, { image?: string; command?: string | string[];
+            environment?: Record<string, string>; labels?: Record<string, string> }>;
+    };
+
+    /** The unit as section -> key -> every value, because keys repeat. */
+    const unit = ((): Record<string, Record<string, string[]>> => {
+        const out: Record<string, Record<string, string[]>> = {};
+        let section = '';
+        for (const raw of readFileSync(UNIT, 'utf8').split('\n')) {
+            const line = raw.trim();
+            if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+            const sec = /^\[(.+)\]$/.exec(line);
+            if (sec) { section = sec[1]; out[section] ??= {}; continue; }
+            const kv = /^([A-Za-z][A-Za-z0-9]*)=(.*)$/.exec(line);
+            if (!kv || !section) continue;
+            (out[section][kv[1]] ??= []).push(kv[2]);
+        }
+        return out;
+    })();
+
+    it('the canonical compose defines no gateway service', () => {
+        // `deploy/apply.sh` pushes this file and refuses any other basename.
+        // The pipelock lesson is that a service which cannot start does not
+        // belong here; this one cannot even run on this HOST.
+        const names = Object.keys(compose.services ?? {});
+        expect(names.length).toBeGreaterThan(5);
+        expect(names.filter((n) => /openshell|gateway/i.test(n))).toEqual([]);
+        const images = Object.values(compose.services ?? {}).map((s) => s.image ?? '');
+        expect(images.filter((i) => i.includes('openshell'))).toEqual([]);
+    });
+
+    it('apply.sh cannot push the gateway artifacts to the production VM', () => {
+        // The REAL mechanism behind "outside the canonical compose", and a
+        // stronger statement than the compose file merely not naming a gateway:
+        // `apply.sh` pushes exactly CANONICAL_SET plus the host-config set, and
+        // refuses any compose basename but `docker-compose.prod.yml`. Nothing
+        // under `deploy/openshell/` is in either set, so the production VM
+        // cannot acquire these files by running the deploy script.
+        //
+        // Asserted over the EXTRACTED ENTRIES rather than the script's text: a
+        // whole-file `not.toMatch(/openshell/)` would be satisfied or broken by
+        // a comment, and `deploy/apply.sh` is heavily commented.
+        const apply = readFileSync(join(__dirname, '../../deploy/apply.sh'), 'utf8');
+        const arrayEntries = (name: string): string[] => {
+            const m = new RegExp(`${name}=\\(([^)]*)\\)`, 'm').exec(apply);
+            if (!m) return [];
+            return m[1]
+                .split('\n')
+                .map((l) => l.replace(/#.*$/, '').trim().replace(/^"|"$/g, ''))
+                .filter((l) => l.length > 0);
+        };
+        const canonical = arrayEntries('CANONICAL_SET');
+        // Non-vacuous: the array really was found and really has entries.
+        expect(canonical.length).toBeGreaterThanOrEqual(3);
+        expect(canonical.filter((e) => e.includes('openshell'))).toEqual([]);
+        expect(arrayEntries('HOST_CONFIG_SET').filter((e) => e.includes('openshell'))).toEqual([]);
+    });
+
+    it('watchtower is still opt-in by label — the premise the exclusion rests on', () => {
+        const wt = compose.services?.watchtower;
+        expect(wt).toBeDefined();
+        const cmd = Array.isArray(wt?.command) ? wt!.command.join(' ') : (wt?.command ?? '');
+        expect(cmd).toContain('--label-enable');
+        expect(wt?.environment?.WATCHTOWER_LABEL_ENABLE).toBe('true');
+    });
+
+    it('the watched set is explicit, and the gateway is not in it', () => {
+        // The positive half: some services DO opt in, so "nothing is watched"
+        // is not what makes the gateway safe.
+        const LABEL = 'com.centurylinklabs.watchtower.enable';
+        const watched = Object.entries(compose.services ?? {})
+            .filter(([, s]) => s.labels?.[LABEL] === 'true')
+            .map(([n]) => n);
+        expect(watched.length).toBeGreaterThan(0);
+        expect(watched.filter((n) => /openshell|gateway/i.test(n))).toEqual([]);
+    });
+
+    it('the unit ASSERTS its preconditions instead of CONDITIONing them', () => {
+        // `Condition…` makes systemd SKIP the unit and report success, which is
+        // the same silent-absence shape as pipelock's missing bind mount.
+        // `Assert…` fails it and says why.
+        const u = unit['Unit'] ?? {};
+        expect((u['AssertPathExists'] ?? []).length).toBeGreaterThanOrEqual(3);
+        expect(Object.keys(u).filter((k) => k.startsWith('Condition'))).toEqual([]);
+        // And the restart limit is in [Unit], where systemd reads it.
+        // `systemd-analyze verify` rejected it in [Service] as an unknown key,
+        // i.e. the limit would have been silently absent.
+        expect(u['StartLimitBurst']).toEqual(['3']);
+        expect(unit['Service']?.['StartLimitBurst']).toBeUndefined();
+    });
+
+    it('telemetry is off and operator auth is pinned to false', () => {
+        const env = (unit['Service']?.['Environment'] ?? []);
+        expect(env).toContain('OPENSHELL_TELEMETRY_ENABLED=false');
+        // Explicit although it is also the default, so a default that moves
+        // upstream does not move this deployment.
+        expect(env).toContain('OPENSHELL_ENABLE_OPERATOR_AUTH=false');
+        // The gateway reads its pinned driver digests from the config, and the
+        // unit must point at it or the pins are inert.
+        expect(env).toContain('OPENSHELL_GATEWAY_CONFIG=/etc/openshell/gateway.toml');
     });
 });

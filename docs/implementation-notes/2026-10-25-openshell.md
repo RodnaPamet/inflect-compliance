@@ -108,8 +108,17 @@ A gateway creates sandboxes through a compute driver, and with Docker that means
 runs eight compose services, so granting that there would put the whole stack
 inside the blast radius of the component whose purpose is to contain things.
 
-The precedent is already in the repository: the harness scanner has its own VM
-(`deploy/harness-scanner/vm.sh`, `.github/workflows/scanner-vm.yml`).
+**There is no precedent for this in the repository, and an earlier version of
+this note claimed there was.** It said the harness scanner has its own VM, citing
+`deploy/harness-scanner/vm.sh`. That script's own header reads "THE HARNESS
+SCANNER ON THE PRODUCTION VM", and its `VM_NAME` defaults to
+`inflect-compliance` — the same default as `deploy/apply.sh` and
+`deploy/check-drift.sh`. All three target one host. The scanner is an overlay on
+the production VM, not a second VM, so the gateway VM would be this project's
+first.
+
+Corrected while delivering 4.3 (#3964), where the claim would have been
+load-bearing: it was the stated reason the own-VM requirement was cheap.
 
 Phase 4/5 added a second, independent reason the spike could not have known. The
 development host runs **snap-packaged Docker**, and snapd's AppArmor confinement
@@ -172,6 +181,55 @@ needs a deployed gateway. The alternative available today — dropping
 `*.googleapis.com` for a guessed service list — would break collection on the
 first service the guess missed, and a broken collector returns ERROR, which is
 fail-closed but useless.
+
+## 4.3 deployment — three findings that changed the shape of it
+
+**1. There is no gateway container image for this release.**
+`ghcr.io/nvidia/openshell/gateway` holds 4000 tags whose highest semantic
+version is **0.0.91**, built **2026-07-24**; `docker run … --version` on it
+reports `openshell-gateway 0.0.91` against our binary's `0.1.5`. It is also
+missing nine flags the 0.1.5 binary has, three of which this phase needs —
+`--compute-driver`, `--enable-operator-auth`, `--oidc-jwks-allowed-origins`.
+Using it would pair a 0.1.5 SDK with a 0.0.91 gateway, breaking this phase's own
+rule that pre-1.0 the two move together. So the gateway runs from the
+checksum-verified binary as a systemd unit, and what is an image here — the two
+the Docker driver pulls — is digest-pinned.
+
+This also means a **fourth** numbering space. The note above records two
+(releases `0.1.x`, docs `v0.0.116`); the container images are a third at
+`0.0.91`, and none of the three agree.
+
+**2. A release tag was re-pushed inside 72 hours.** With no configuration the
+gateway resolves its driver images by mutable tag — observed in its own Docker
+socket traffic, `GET /images/ghcr.io/nvidia/openshell/sandbox:0.1.5/json`. The
+digests in § 1 were recorded 2026-10-24. Re-resolved 2026-10-27:
+
+```
+sandbox:0.1.5     -> sha256:e9adf9ec…    recorded: sha256:d60222e1…
+supervisor:0.1.5  -> sha256:fabcd01f…    recorded: sha256:07cc8b62…
+```
+
+Both recorded digests still exist and still pull, so the record was not wrong —
+the tag moved. The pinned table above is therefore authoritative and `:0.1.5` is
+not, which is the difference between pinning as ceremony and pinning as a
+control.
+
+**3. The telemetry setting is not self-verifying.** Anonymous telemetry is
+default ON, which is why 4.3 requires `OPENSHELL_TELEMETRY_ENABLED=false`. The
+variable is present in the 0.1.5 binary but absent from `--help`, an invalid
+value is accepted silently, and three traced 18-second runs — unset, `false`,
+`notabool` — were indistinguishable: no telemetry egress in any of them and
+nothing in the logs at debug level. So the setting is a request, and the
+enforcement is an egress rule denying
+`https://events.telemetry.data.nvidia.com/v1.1/events/jsonstruct`.
+
+**And one thing 4.3 cannot deliver.** The VM does not exist. GCP project
+`hazel-design-419410` holds one commitment, `agrent-inflect-e2-3yr`
+(`VCPU;MEMORY = 4;32768`, europe-west1, to 2029-09-21), and a commitment is
+regional and aggregated across the instance family rather than per-VM. Both
+existing VMs consume it exactly, so a third bills entirely on-demand. That is a
+cost decision for the owner, not a deployment step, and nothing in
+`deploy/openshell/` provisions anything.
 
 ## Retention classification
 
