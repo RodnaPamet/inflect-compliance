@@ -33,14 +33,20 @@ interface Props {
     truncated: boolean;
     /** Override the displayed cap value if a list uses a different limit. */
     cap?: number;
+    /**
+     * The sentence after the cap. Defaults to "refine your filters", which is
+     * wrong on a page that has none: such a page names its own narrowing
+     * control here, or passes `false` when it has nothing to offer.
+     */
+    hint?: string | false;
 }
 
-export function TruncationBanner({ truncated, cap = LIST_BACKFILL_CAP }: Props) {
+export function TruncationBanner({ truncated, cap = LIST_BACKFILL_CAP, hint }: Props) {
     if (!truncated) return null;
-    return <TruncationBannerNotice cap={cap} />;
+    return <TruncationBannerNotice cap={cap} hint={hint} />;
 }
 
-function TruncationBannerNotice({ cap }: { cap: number }) {
+function TruncationBannerNotice({ cap, hint }: { cap: number; hint?: string | false }) {
     // The message formats the cap for the viewer's locale (`{cap, number}`:
     // "5,000" / "5000"), so the banner needs no `useFormatter` — page tests
     // that mock next-intl with `useTranslations` alone still render it.
@@ -56,8 +62,13 @@ function TruncationBannerNotice({ cap }: { cap: number }) {
             <div>
                 <span className="font-medium">
                     {t('showingFirst', { cap })}
-                </span>{' '}
-                <span className="text-content-muted">{t('refine')}</span>
+                </span>
+                {hint !== false && (
+                    <>
+                        {' '}
+                        <span className="text-content-muted">{hint ?? t('refine')}</span>
+                    </>
+                )}
             </div>
         </div>
     );

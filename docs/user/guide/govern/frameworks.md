@@ -22,7 +22,6 @@ A back link above the title returns you to the page you came from, or to {{ui:au
 | --- | --- |
 | View the page, and open any framework to read its requirements, packs and coverage | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
 | Click **{{ui:frameworks.list.importFramework}}** to add a framework | Owner, Admin |
-| Open the **{{ui:frameworks.list.customTitle}}** explanation | Every role |
 
 **{{ui:frameworks.list.importFramework}}** appears only for roles that can add frameworks.
 
@@ -38,24 +37,23 @@ Use the page to choose the standards your organisation works to and to track how
 
 - **{{ui:common.ui.viewTable}}** and **{{ui:common.ui.viewCards}}** switch between a table and cards. The page starts on cards and remembers your choice.
 - In the table view only, **{{ui:common.table.toggleColumns}}** chooses which columns are shown.
-- **{{ui:frameworks.list.createFramework}}** opens an explanation, described below.
 - **{{ui:frameworks.list.importFramework}}**, for roles that can add frameworks.
 
 **The cards.** One card per framework, in order of the framework's short code. Click anywhere on a card to open the framework. Each card shows:
 
-- The framework's name and, under it, its kind, such as ISO STANDARD or EU DIRECTIVE.
+- The framework's name and, under it, its kind, such as **{{ui:frameworks.kinds.isoStandard}}** or **{{ui:frameworks.kinds.euDirective}}**.
 - Its status: **{{ui:frameworks.list.installed}}** or **{{ui:frameworks.list.available}}**. Hold the pointer over **{{ui:frameworks.list.installed}}** to read **{{ui:frameworks.list.inUseHint}}**.
 - **{{ui:frameworks.list.requirements}}**, **{{ui:frameworks.list.packs}}** and **{{ui:frameworks.list.coverage}}**, then a short description and a coverage bar.
 - For a standard published by another body, a line naming its source and licence. **{{ui:frameworks.list.referenceIndexNote}}** on that line means Inflect holds the requirement codes and links to the standard's own text.
 
-**The table.** The same frameworks, one row each, under **{{ui:frameworks.list.framework}}**, **{{ui:frameworks.list.domain}}**, **{{ui:frameworks.list.requirements}}**, **{{ui:frameworks.list.coverage}}** and **{{ui:frameworks.list.status}}**. Click a name to open the framework. Clicking elsewhere on a row ticks it, but the page has no action for ticked rows, and the columns cannot be sorted.
+**The table.** The same frameworks, one row each, under **{{ui:frameworks.list.framework}}**, **{{ui:frameworks.list.domain}}**, **{{ui:frameworks.list.requirements}}**, **{{ui:frameworks.list.coverage}}** and **{{ui:frameworks.list.status}}**. Click a name to open the framework. The columns cannot be sorted.
 
 **What the figures mean.**
 
 - **{{ui:frameworks.list.coverage}}** is the share of the framework's requirements that have at least one of your controls mapped to them. Deleted controls do not count. A requirement the standard has dropped is left out.
 - When a framework has several packs, coverage counts only the requirements of the packs your workspace chose, as [Add a framework](../../how-to/get-started/add-a-framework.md) explains.
-- **{{ui:frameworks.list.installed}}** means at least one of the requirements coverage counts has a mapped control. Coverage is rounded to a whole percent, so a large framework with one mapped requirement reads **{{ui:frameworks.list.installed}}** at 0%. Neither figure says whether the controls work; evidence and tests show that.
-- **{{ui:frameworks.list.requirements}}** counts every requirement Inflect holds for the framework, across all its packs, including any the standard has dropped. It can therefore be larger than the number coverage is worked out from.
+- **{{ui:frameworks.list.installed}}** means at least one of the requirements coverage counts has a mapped control. Coverage is rounded to a whole percent, except that a framework with any mapped requirement never reads 0%: a large framework with only a few mapped requirements reads <1%. Neither figure says whether the controls work; evidence and tests show that.
+- **{{ui:frameworks.list.requirements}}** is the number of requirements coverage is worked out from: the current requirements of the packs your workspace chose. It is the figure the framework's **{{ui:frameworks.detail.coverageTab}}** tab gives as its total. When coverage cannot be worked out, it shows every requirement Inflect holds for the framework instead.
 
 Frameworks Inflect no longer offers are not listed. A workspace that installed one keeps its controls and mappings.
 
@@ -68,10 +66,6 @@ Click its name, or its card. The framework's own page has four tabs: **{{ui:fram
 ### Add a framework
 
 Click **{{ui:frameworks.list.importFramework}}**. It opens the install page for the first framework your workspace does not use yet, which may not be the one you want, so check the name at the top. To install a particular framework, open it and click **{{ui:frameworks.detail.installPack}}** there. [Add a framework](../../how-to/get-started/add-a-framework.md) walks through the install, the packs and removing a pack.
-
-### Read about custom frameworks
-
-Click **{{ui:frameworks.list.createFramework}}**. Nothing is created: the **{{ui:frameworks.list.customTitle}}** dialog explains that a workspace cannot build its own framework from scratch, and that the way to adapt one is to install a framework from the catalogue and work with it. The tab the dialog calls Customize is the **{{ui:frameworks.detail.builderTab}}** tab, which only reorders requirements. Click **{{ui:frameworks.list.close}}**, or **{{ui:frameworks.list.importFramework}}** in the dialog if your role can add frameworks.
 
 ## What happens next
 
