@@ -21,7 +21,9 @@
  *      that one asset has none;
  *   6. the table has no select column (it has no bulk action);
  *   7. To Risk and To Finding work once: after a conversion the button is a
- *      link to what it made, and a refused second conversion says why.
+ *      link to what it made, and a refused second conversion says why;
+ *   8. "CVE sync is disabled" tells a user who to ask, not which environment
+ *      variable to set.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -150,6 +152,9 @@ function vuln(over: Record<string, unknown> = {}) {
     };
 }
 
+/** Per test: what `/vulnerabilities/status` reports. */
+let syncEnabled = true;
+
 /** Per test: the answer to a write (POST / PATCH), or null for a 200 `{}`. */
 let answerWrite: (url: URL, method: string) => { status: number; body: unknown } | null = () => null;
 
@@ -163,7 +168,7 @@ function installFetch() {
         if (written) {
             ({ status, body } = written);
         } else if (url.pathname === '/api/t/acme/vulnerabilities/status') {
-            body = { syncEnabled: true, lastSyncedAt: null, assetsTotal: 1, assetsWithIdentity: 1 };
+            body = { syncEnabled, lastSyncedAt: null, assetsTotal: 1, assetsWithIdentity: 1 };
         } else if (url.pathname.includes('/members')) {
             body = [];
         }
@@ -242,6 +247,7 @@ beforeEach(() => {
     mockToastError.mockReset();
     mockToastSuccess.mockReset();
     answerWrite = () => null;
+    syncEnabled = true;
     installFetch();
 });
 
@@ -502,5 +508,25 @@ describe('Vulnerabilities — To Risk and To Finding work once', () => {
         await waitFor(() => expect(mockToastError).toHaveBeenCalled());
         expect(mockToastError.mock.calls[0][0]).toBe(V.refusalAlreadyConvertedToRisk);
         expect(router.refresh).toHaveBeenCalled();
+    });
+});
+
+// ─── 8. Sync switched off ───────────────────────────────────────────
+
+describe('Vulnerabilities — CVE matching switched off', () => {
+    it('the empty state says to ask whoever runs the installation, and names no setting', async () => {
+        syncEnabled = false;
+        await mount(makeRequestContext('ADMIN'), [], { ready: V.emptyDisabledTitle });
+        const text = screen.getByText(V.emptyDisabledDesc).textContent ?? '';
+        expect(text).toMatch(/ask whoever runs this installation/i);
+        // An environment variable is nothing a workspace admin can set.
+        expect(text).not.toMatch(/NVD_SYNC_ENABLED|[A-Z]+_[A-Z_]+/);
+    });
+
+    it('neither locale names the environment variable', () => {
+        const bg = require('../../messages/bg.json').vulnerabilities;
+        for (const messages of [V, bg]) {
+            expect(JSON.stringify(messages)).not.toContain('NVD_SYNC_ENABLED');
+        }
     });
 });

@@ -11085,7 +11085,7 @@
     "emptyFilteredDesc": "Try clearing a filter.",
     "emptyDesc": "CVEs appear here once the NVD sync matches a published CVE to an asset with CPE/product data, or when you link one manually.",
     "emptyDisabledTitle": "CVE sync is disabled",
-    "emptyDisabledDesc": "NVD CVE sync is turned off for this deployment, so no CVEs are being matched to your assets. An admin can enable it by setting NVD_SYNC_ENABLED.",
+    "emptyDisabledDesc": "CVE matching is switched off for this installation, so no CVEs are being matched to your assets. To turn it on, ask whoever runs this installation.",
     "emptyNoIdentityTitle": "No assets carry product identity yet",
     "emptyNoIdentityDesc": "CVEs match on product identity. Add a CPE or a vendor/product to your assets so published CVEs can match them.",
     "emptyNoIdentityAction": "Assets",
