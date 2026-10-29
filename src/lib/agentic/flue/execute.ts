@@ -46,6 +46,7 @@ import {
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
 import { openDeclaredRunInput, runMessage } from './run-message';
+import type { PeerReplyEnvelope } from '../a2a-peer-reply-input';
 import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics';
 import {
     flueToolsFor,
@@ -253,11 +254,43 @@ export async function executeFlueRun(
         return { status, stepFailures: 0 };
     }
 
+    // A PEER'S REPLY TO A TASK THIS RUN SENT (#3744), claimed at the step
+    // boundary rather than carried in the sealed context.
+    //
+    // It cannot be in `declared.input`: that is the definition's
+    // `requiredInput` read from the context sealed at START, and a reply
+    // arrives after that seal. So it is read fresh here, per segment, and the
+    // ledger insert inside `claimPeerRepliesForRun` is what stops a second
+    // segment showing the model the same answer twice.
+    //
+    // DYNAMIC IMPORT, as `a2a-inbound.ts` reaches `workflow-runs`: the usecase
+    // touches Prisma, and the engine's static graph is deliberately thin.
+    //
+    // A failure here never fails the run. The reply is kept and stays
+    // undelivered, which is the same outcome as a peer that has not answered
+    // yet — a run must not die because a ledger read did.
+    let peerReplies: readonly PeerReplyEnvelope[] = [];
+    try {
+        const { claimPeerRepliesForRun } = await import('@/app-layer/usecases/a2a-reply-delivery');
+        const claimed = await claimPeerRepliesForRun(ctx, runId);
+        peerReplies = claimed.deliver;
+    } catch (err) {
+        logger.warn('a2a.reply_claim_failed', {
+            component: 'flue-execute',
+            tenantId: ctx.tenantId,
+            runId,
+            reason: err instanceof Error ? err.message : 'unknown',
+        });
+    }
+
     // The message is computed ONCE and reused: it is dispatched, and it is also
     // what every decision row's `sanitizedInput` digest is taken over — the run
     // input inside it included. Two calls to `runMessage` are two chances for
     // the digest to stop naming the prompt the model actually saw.
-    const message = runMessage(def, fromSeq, declared.input);
+    //
+    // The peer replies go in HERE for that reason: the digest must cover them,
+    // because they are part of the prompt the model saw.
+    const message = runMessage(def, fromSeq, declared.input, peerReplies);
 
     // The SETTLED terms — membership, key scopes, policy card, autonomy
     // ceiling — resolved once, here, exactly as the static driver does.
