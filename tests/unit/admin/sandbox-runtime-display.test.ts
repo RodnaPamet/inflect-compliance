@@ -30,7 +30,7 @@ const declaration = (over: Partial<SandboxRuntimeDeclaration> = {}): SandboxRunt
     configured: true,
     configDigest: `sha256:${'a'.repeat(64)}`,
     appliedAt: new Date('2026-10-24T20:00:00.000Z'),
-    reachableVersion: '0.1.5',
+    reachableVersion: '0.1.6',
     channels: {
         'anonymous-telemetry': false,
         'otlp-traces': false,

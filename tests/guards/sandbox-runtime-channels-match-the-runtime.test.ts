@@ -35,14 +35,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 /**
- * Every reporting-related `OPENSHELL_*` variable the v0.1.5 gateway defines.
+ * Every reporting-related `OPENSHELL_*` variable the v0.1.6 gateway defines.
  *
- * Read from `openshell-gateway` 0.1.5 (commit bdb956f2) by extracting
+ * Re-read from `openshell-gateway` 0.1.6 (commit ac7f615c) by extracting
  * `OPENSHELL_[A-Z0-9_]+` and splitting on the prefix, because the binary's
  * string table runs adjacent names together — an unsplit scan reports
  * concatenations as if they were variables.
  *
- * SEVEN, not eight. A naive scan also yields
+ * SEVEN, not eight, and unchanged from 0.1.5 — the 0.1.6 re-read found the
+ * same seven and the same artifact. A naive scan also yields
  * `OPENSHELL_TELEMETRY_ENABLEDI`, which is `OPENSHELL_TELEMETRY_ENABLED`
  * followed by the first character of the next string. It is recorded here
  * because the artifact is reproducible, and a future re-read that counts eight
@@ -146,7 +147,7 @@ describe('the reporting channels match the runtime that has them', () => {
  * re-measures and re-records — which is precisely the "re-verify the phase 0.1
  * facts" bullet, enforced instead of requested.
  */
-const PINNED_RELEASE = '0.1.5';
+const PINNED_RELEASE = '0.1.6';
 
 /** `0.1.5` -> [0,1,5], so releases compare as numbers and not as strings. */
 const semver = (v: string): number[] => v.replace(/^v/, '').split('.').map((n) => Number(n));
@@ -193,59 +194,53 @@ const KNOWN_NEWER_RELEASES: ReadonlyArray<{
     readonly seen: string;
     readonly reason: string;
 }> = [
-    {
-        version: '0.1.6',
-        seen: '2026-10-29',
-        reason:
-            'Released 2026-10-27, found while answering 0.1f (#3931). Not adopted: ' +
-            "taking it runs 5.3's checklist in full — re-measure every phase 0.1 " +
-            'fact against it, re-resolve the driver digests, re-pin the vendored ' +
-            'skills — and that is its own piece of work, not a side effect of a ' +
-            'spike answer.',
-    },
+    // EMPTY: the pin caught up. The 0.1.6 entry recorded here while the
+    // decision was pending was deleted in the diff that moved the pin, which is
+    // what the register's own shape test requires — an entry the pin has
+    // reached is not a pending upgrade, it is a stale line that reads like one.
 ] as const;
 
 const VERIFIED_FACTS = [
     {
         id: '0.1a',
         issue: 3926,
-        verifiedAgainst: '0.1.5',
-        fact: 'policy schema version 2; filesystem_policy/landlock/process are static, network_policies is dynamic',
+        verifiedAgainst: '0.1.6',
+        fact: 'policy schema version 2; filesystem_policy/landlock/process are static, network_policies is dynamic. 0.1.6 additionally REFUSES TO START without OIDC, mTLS user/operator auth or gateway JWTs configured',
     },
     {
         id: '0.1b',
         issue: 3927,
-        verifiedAgainst: '0.1.5',
+        verifiedAgainst: '0.1.6',
         fact: 'enforcement unset runs in AUDIT mode — UNSPECIFIED is zero on the wire and logs-and-allows',
     },
     {
         id: '0.1d',
         issue: 3929,
-        verifiedAgainst: '0.1.5',
+        verifiedAgainst: '0.1.6',
         fact: 'the dropped-tool MCP rule defect is NOT established as fixed: upstream #4679 is open, and the release exposes no proposal flow and no policy-body read to observe it',
     },
     {
         id: '0.1e',
         issue: 3930,
-        verifiedAgainst: '0.1.5',
+        verifiedAgainst: '0.1.6',
         fact: 'telemetry is ON by default and event-driven; OPENSHELL_TELEMETRY_ENABLED=false turns it off completely (3013 bytes vs 0, reproduced, same activity)',
     },
     {
         id: '0.1g',
         issue: 3932,
-        verifiedAgainst: '0.1.5',
-        fact: 'the OCSF log records no sandbox lifecycle decision — created, policy changed, network denied and deleted all produce zero records; deletion is recoverable from neither the log nor the API afterwards',
+        verifiedAgainst: '0.1.6',
+        fact: 'the OCSF log records no sandbox lifecycle decision — created, policy changed, network denied and deleted all produce zero records; deletion is recoverable from neither the log nor the API afterwards. 0.1.6 WIDENED the auth-adjacent coverage (denials, accepted credentials, SSH session tokens, sandbox token checks) and now logs successful logons, but none of the five decision kinds',
     },
     {
         id: '0.1f',
         issue: 3931,
-        verifiedAgainst: '0.1.5',
+        verifiedAgainst: '0.1.6',
         fact: 'there is no NVIDIA-published JS SDK; the official SDK is Python (requires_python >=3.11), so no flue-style isolation applies',
     },
     {
         id: '0.1c',
         issue: 3928,
-        verifiedAgainst: '0.1.5',
+        verifiedAgainst: '0.1.6',
         fact: 'landlock best_effort is the default; hard_requirement refuses to start rather than skipping paths',
     },
 ] as const;
@@ -270,6 +265,28 @@ const OPEN_QUESTIONS: ReadonlyArray<{
     // upgrade can reopen a question — moving an entry back here is how that is
     // recorded.
 ] as const;
+
+
+/**
+ * Lines in a gateway TOML that ACTIVELY disable inbound authentication.
+ *
+ * Returns the offending lines rather than a boolean, so a failure names what it
+ * found instead of asserting `false === true`.
+ */
+const activeUnauthenticatedSwitches = (text: string): readonly string[] => {
+    const out: string[] = [];
+    for (const raw of text.split('\n')) {
+        // A TOML comment runs to end of line. `#` is not legal in a bare key
+        // and `true`/`false` carry no quotes, so cutting at the first `#` is
+        // exact for the shape being hunted — see the detector proof.
+        const line = raw.split('#')[0];
+        const m = /^\s*allow_unauthenticated_users\s*=\s*(\S+)/.exec(line);
+        if (!m) continue;
+        if (m[1] === 'false') continue;
+        out.push(raw.trim());
+    }
+    return out;
+};
 
 describe('an upgrade fails a test rather than an audit (#3973)', () => {
     it('every established fact was verified against the release that is pinned', () => {
@@ -437,5 +454,100 @@ describe('an upgrade fails a test rather than an audit (#3973)', () => {
             }
         }
         expect(endpoints).toBeGreaterThanOrEqual(6);
+    });
+
+    it('the deployed gateway config never turns 0.1.6 authentication back off', () => {
+        /*
+            A NEW RULE THE UPGRADE CREATED, which is the shape #3973 asks for.
+
+            v0.1.5 started with no inbound authentication configured and only
+            WARNED. v0.1.6 refuses to start — verified on the lab VM against
+            this release. That refusal is the strongest control this deployment
+            has, because the gateway's compute driver talks to a Docker socket
+            that is root-equivalent on its host.
+
+            It has exactly one documented off switch,
+            `allow_unauthenticated_users`, which upstream marks "trusted local
+            development only". Setting it would restore the 0.1.5 behaviour
+            silently: the gateway would start, the warning would scroll past
+            once, and nothing in this repository would be red. So the upgrade's
+            own hardening gets a detector, rather than resting on nobody
+            thinking to add one line to a TOML file.
+
+            `= false` is deliberately ALLOWED. Writing the switch off explicitly
+            is a reasonable thing for a config to document, and a guard that
+            fails the safe spelling of its own rule is a guard people delete.
+        */
+        const rel = 'deploy/openshell/gateway.toml';
+        const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+
+        // THE DENOMINATOR, and it is not decorative here: every assertion
+        // below is satisfied by an empty file, a renamed file read as '', or a
+        // path typo. This says the scan read the real config.
+        //
+        // Asserted as COUNTS of parsed structure rather than as
+        // `expect(text).toContain(…)`, which is a whole-file assertion and
+        // lands in `assertion-needle-uniqueness`'s un-analysable census — a
+        // ratchet with a ceiling this file should not be spending.
+        const lines = text.split('\n').map((l) => l.trim());
+        expect(text.length).toBeGreaterThan(2000);
+        expect(lines.filter((l) => /^\[openshell/.test(l)).length).toBeGreaterThanOrEqual(4);
+
+        expect(activeUnauthenticatedSwitches(text)).toEqual([]);
+
+        // AND the file still EXPLAINS the hatch, in a COMMENT. Without this the
+        // rule's reason lives only in a test, where the person editing the TOML
+        // will not see it. Counting comment lines rather than matching the
+        // whole file also makes the claim exact: the key must appear ONLY in
+        // prose, which is the same fact the detector proof relies on.
+        const explained = lines.filter(
+            (l) => l.startsWith('#') && l.includes('allow_unauthenticated_users'),
+        );
+        expect(explained.length).toBeGreaterThanOrEqual(1);
+    });
+
+    describe('detector proof — the bait in the real file is why this is not a grep', () => {
+        /*
+            `gateway.toml` NAMES `allow_unauthenticated_users = true` inside a
+            comment, as part of explaining why it must never be set. A plain
+            `grep -q` for the key, or even for the whole assignment, fails on
+            the very file it is meant to clear — the scar, not the wound. So the
+            detector strips comments, and these cases prove it strips them
+            without going blind to the real thing.
+        */
+        it('finds an ACTIVE assignment, however it is spelled', () => {
+            expect(activeUnauthenticatedSwitches('allow_unauthenticated_users = true')).toHaveLength(1);
+            expect(activeUnauthenticatedSwitches('  allow_unauthenticated_users=true')).toHaveLength(1);
+            expect(
+                activeUnauthenticatedSwitches('allow_unauthenticated_users = true # just for today'),
+            ).toHaveLength(1);
+            // A value that is neither boolean is still not `false`, and a
+            // detector that only knew the string `true` would pass it.
+            expect(activeUnauthenticatedSwitches('allow_unauthenticated_users = 1')).toHaveLength(1);
+        });
+
+        it('is not fooled by the real file\'s commented explanation', () => {
+            expect(
+                activeUnauthenticatedSwitches('# `allow_unauthenticated_users = true` is forbidden'),
+            ).toEqual([]);
+            expect(
+                activeUnauthenticatedSwitches('   #   allow_unauthenticated_users = true'),
+            ).toEqual([]);
+        });
+
+        it('allows the switch written explicitly OFF', () => {
+            expect(activeUnauthenticatedSwitches('allow_unauthenticated_users = false')).toEqual([]);
+        });
+
+        it('does not fire on a different key that merely contains the name', () => {
+            // `#` is not legal in a bare TOML key, so cutting the line at the
+            // first `#` cannot truncate the assignment being hunted: the only
+            // thing a `#` can hide is a quoted string, and this key's value is
+            // a bare boolean. Stated here because it is the assumption the
+            // comment-stripping rests on.
+            expect(
+                activeUnauthenticatedSwitches('deny_allow_unauthenticated_users_audit = true'),
+            ).toEqual([]);
+        });
     });
 });

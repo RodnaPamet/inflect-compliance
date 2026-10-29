@@ -76,7 +76,7 @@ That is already this repository's posture for agent-authored rules.
 ## Finding 3 — every documentation link points at `latest`, not at the pin
 
 All ~30 `docs.nvidia.com` URLs in the vendored text use `/latest/`. The text is
-pinned at `v0.1.5`; the documentation it sends you to is not. The spike note
+pinned at `v0.1.6`; the documentation it sends you to is not. The spike note
 records that docs versioning (`v0.0.116`) and release versioning (`0.1.x`) are
 two different spaces, so a `latest` link can describe a release these skills
 were never written against.

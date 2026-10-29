@@ -3,7 +3,7 @@
  * the pinned commit — and the manifest must cover all of them.
  *
  * `.claude/skills/` holds four skills copied from NVIDIA/OpenShell at commit
- * `bdb956f2…` (tag v0.1.5). They are developer tooling: the product runtime
+ * `bdb956f2…` (tag v0.1.6). They are developer tooling: the product runtime
  * never loads them. But once merged they are INSTRUCTIONS TO EVERY CLAUDE CODE
  * SESSION working on this repository, which makes them an injection surface for
  * the tools we develop with — the same concern the product's AI guard exists
@@ -130,8 +130,8 @@ describe('the vendored OpenShell skills match their manifest', () => {
 
     it('records the pinned commit in its own row, and the local notes sit beside it', () => {
         const md = fs.readFileSync(MANIFEST, 'utf8');
-        expect(field(md, 'Commit')).toBe('`bdb956f2cd65a635f1294fccf1d138d263bf650f`');
-        expect(field(md, 'Tag')).toContain('v0.1.5');
+        expect(field(md, 'Commit')).toBe('`ac7f615cd12d5cc49cb16eb1f5f10ffeb1e90f47`');
+        expect(field(md, 'Tag')).toContain('v0.1.6');
         expect(field(md, 'Licence')).toContain('Apache License 2.0');
         expect(fs.existsSync(path.join(SKILLS, 'LICENSE-Apache-2.0.txt'))).toBe(true);
         // The read #3968 requires is evidenced by the notes, not by this guard.
@@ -153,7 +153,7 @@ describe('the vendored OpenShell skills match their manifest', () => {
         const block = parts[titleAt + 1];
         expect(block).toBeDefined();
         const lines = (block ?? '').split('\n').map((l) => l.trim());
-        expect(lines).toContain('Commit: bdb956f2cd65a635f1294fccf1d138d263bf650f (tag v0.1.5, 2026-10-20)');
+        expect(lines).toContain('Commit: ac7f615cd12d5cc49cb16eb1f5f10ffeb1e90f47 (tag v0.1.6, 2026-10-27)');
         expect(lines.some((l) => l.includes('REDISTRIBUTED COPIES'))).toBe(true);
         expect(lines.some((l) => l.includes('no pipelock code'))).toBe(false);
     });
