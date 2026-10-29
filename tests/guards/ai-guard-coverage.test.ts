@@ -286,7 +286,15 @@ describe('AI guard — coverage (structural completeness)', () => {
         // above.
         const unenforced = Object.keys(AI_GUARD_COVERAGE).filter((rel) => {
             const symbol = AI_GUARD_ENFORCEMENT[rel]?.symbol ?? 'assertGuardAllowed';
-            return !readFile(rel).includes(symbol);
+            // CALLED, not merely PRESENT. `includes(symbol)` is satisfied by the
+            // import line on its own, and that is not hypothetical: swapping
+            // `guardQuarantines(outcome)` for a weaker `outcome.blocked` while
+            // the import stayed left this test green on all 40 cases (measured
+            // on #3744). Requiring the open paren is the whole fix — an import
+            // or a re-export is followed by `}` or `,`, never by `(` — and it
+            // is the same called-not-imported distinction the coverage test
+            // above already draws for `guardUntrustedInput`.
+            return !new RegExp(String.raw`\b${symbol}\s*\(`).test(readFile(rel));
         });
         expect(unenforced).toEqual([]);
     });
