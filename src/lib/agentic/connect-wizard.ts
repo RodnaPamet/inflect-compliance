@@ -92,6 +92,7 @@ const quoted = (values: readonly string[], indent: string): string =>
 /** The TypeScript options for `query()` from `@anthropic-ai/claude-agent-sdk`. */
 export function agentSdkTypeScript(input: { origin: string; grantedTools: readonly string[] }): string {
     return [
+        `import { env, stdout } from "node:process";`,
         `import { query } from "@anthropic-ai/claude-agent-sdk";`,
         ``,
         `const options = {`,
@@ -99,7 +100,7 @@ export function agentSdkTypeScript(input: { origin: string; grantedTools: readon
         `    ${INFLECT_MCP_SERVER_NAME}: {`,
         `      type: "http",`,
         `      url: ${JSON.stringify(mcpEndpointFor(input.origin))},`,
-        `      headers: { Authorization: "Bearer " + process.env.${INFLECT_KEY_ENV} },`,
+        `      headers: { Authorization: "Bearer " + env.${INFLECT_KEY_ENV} },`,
         `    },`,
         `  },`,
         `  allowedTools: ${quoted(sdkAllowedTools(input.grantedTools), '  ')},`,
@@ -110,7 +111,7 @@ export function agentSdkTypeScript(input: { origin: string; grantedTools: readon
         `};`,
         ``,
         `for await (const message of query({ prompt: "Summarise our open risks.", options })) {`,
-        `  if (message.type === "result") process.stdout.write(JSON.stringify(message) + "\\n");`,
+        `  if (message.type === "result") stdout.write(JSON.stringify(message) + "\\n");`,
         `}`,
         ``,
     ].join('\n');
