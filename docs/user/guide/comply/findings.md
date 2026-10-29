@@ -11,9 +11,9 @@ The {{ui:findings.title}} lists every finding in the workspace: the nonconformit
 The register has no entry in the sidebar. Open it from any of these:
 
 - **{{ui:nav.audits}}** under **{{ui:nav.comply}}** in the sidebar opens the {{ui:audits.title}} page. In its header, beside **{{ui:audits.hub.related}}**, click **{{ui:audits.findingsTab}}**. On the same page, step 5 of **{{ui:audits.hub.startTitle}}**, **{{ui:audits.hub.step5Title}}**, opens it too.
-- On the dashboard, the arrow in the top-right corner of the **{{ui:dashboard.openFindings}}** card.
+- On the dashboard, the arrow in the top-right corner of the **{{ui:dashboard.openFindings}}** card. The register opens filtered to findings that are not closed.
 - On a task raised by a finding, the finding's title under **{{ui:tasks.source.heading}}**.
-- On {{ui:nav.calendar}}, a finding's due date.
+- On {{ui:nav.calendar}}, a finding's due date. The register opens with that finding's panel open.
 
 The breadcrumb reads **{{ui:findings.list.crumbDashboard}}** › **{{ui:findings.title}}**. When you arrive from another page, a back link to it sits above the breadcrumb.
 
@@ -22,10 +22,12 @@ The breadcrumb reads **{{ui:findings.list.crumbDashboard}}** › **{{ui:findings
 | Action | Roles |
 | --- | --- |
 | View the register | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
+| Open a finding's panel and read every field | Every role |
 | Create a finding | Owner, Admin, Editor |
+| Edit a finding | Owner, Admin, Editor |
 | Move a finding to its next status | Owner, Admin, Editor |
 
-The **{{ui:findings.newFinding}}** button and the status buttons are shown to every role. For a Reader, an Auditor or an AI admin, creating a finding fails with the message **[object Object]**, and a status change flips back without a message.
+Readers, Auditors and AI admins see no **{{ui:findings.newFinding}}** button, no {{ui:common.actions}} column and no **{{ui:findings.detail.edit}}** button.
 
 If your workspace uses custom roles, creating and changing findings follows the built-in role your custom role is based on, not the custom role's own permissions.
 
@@ -37,7 +39,9 @@ Use the register to follow every finding to closure, whichever audit raised it: 
 
 **The header.** The title, its description and the **{{ui:findings.newFinding}}** button with a plus sign.
 
-**The table.** Newest findings first. **{{ui:common.table.toggleColumns}}** above the table chooses which columns are shown, and your browser remembers the choice. The table has no search, filters or sorting, and a long list loads more rows as you scroll.
+**The filter.** **{{ui:common.ui.filter}}** above the table filters the register by {{ui:findings.status}}; you can pick more than one. The filter is kept in the page's address, so a link to a filtered register opens filtered.
+
+**The table.** Newest findings first. **{{ui:common.table.toggleColumns}}** above the table chooses which columns are shown, and your browser remembers the choice. The table has no search or sorting, and a long list loads more rows as you scroll.
 
 | Column | What it shows |
 | --- | --- |
@@ -48,9 +52,9 @@ Use the register to follow every finding to closure, whichever audit raised it: 
 | {{ui:findings.colHeaders.source}} | Where the finding came from: the audit cycle, which opens the cycle; the audit, which opens it on the {{ui:audits.title}} page; or **{{ui:findings.adHoc}}** for a finding raised on this page with no audit |
 | {{ui:findings.owner}} | The member it is assigned to. An older finding may show a name typed in by hand. A dash means nobody |
 | {{ui:findings.status}} | {{ui:findings.open}}, {{ui:findings.inProgress}}, {{ui:findings.readyForVerification}} or {{ui:findings.closed}} |
-| {{ui:common.actions}} | The button that moves the finding to its next status |
+| {{ui:common.actions}} | The button that moves the finding to its next status. Shown only to roles that can change findings |
 
-Clicking a row ticks it, but the register has no action for ticked rows. A finding has no page of its own, so its description, due date, compensating control, risks and analysis are not shown anywhere in the register.
+**The finding's panel.** Click a row to open the finding in a panel at the side, over the register. The page's address then names the finding, so you can share a link to it. The panel shows the finding's severity and status, then its {{ui:findings.create.labelType}}, {{ui:findings.create.labelAssignee}}, {{ui:findings.create.labelDueDate}}, {{ui:findings.create.labelOriginatingAudit}}, {{ui:findings.create.labelDescription}}, {{ui:findings.create.labelLinkedControl}}, {{ui:findings.create.labelCompensatingControl}}, {{ui:findings.detail.labelRisks}} and {{ui:findings.create.labelAnalysis}}. Close the panel to return to the register as you left it.
 
 ## What you can do
 
@@ -64,6 +68,10 @@ Click **{{ui:findings.newFinding}}**. The **{{ui:findings.create.title}}** dialo
 
 Click **{{ui:findings.create.submit}}**. It stays greyed out until the title and description are filled in. The finding is added at the top of the table as {{ui:findings.open}}.
 
+### Edit a finding
+
+Open the finding's panel and click **{{ui:findings.detail.edit}}**. The **{{ui:findings.detail.editTitle}}** form has the same fields as the create dialog, apart from the originating audit, which is shown but cannot be changed. You can clear the due date and the analysis. Click **{{ui:findings.detail.save}}**; **{{ui:findings.detail.saved}}** confirms it and the panel shows the finding as saved. Only the fields you changed are sent. The status is changed from the register, not here, and a finding cannot be deleted.
+
 ### Move a finding towards closure
 
 Each finding that is not closed has one button in the {{ui:common.actions}} column, naming the next status:
@@ -72,11 +80,11 @@ Each finding that is not closed has one button in the {{ui:common.actions}} colu
 2. An {{ui:findings.inProgress}} finding shows **{{ui:findings.readyForVerification}}**.
 3. A finding that is {{ui:findings.readyForVerification}} shows **{{ui:findings.closed}}**.
 
-Click it, and the status changes at once. If the change is refused, the status flips back. The register cannot move a finding back a step or reopen a closed one.
+Click it, and the status changes at once. If the change is refused, the status flips back and a message gives the reason. The register cannot move a finding back a step or reopen a closed one.
 
 ## What happens next
 
-- Creating a finding and every status change are recorded in the workspace's audit log, naming who made them. Closing a finding also records who closed it and when.
+- Creating a finding, every edit and every status change are recorded in the workspace's audit log, naming who made them. Closing a finding also records who closed it and when.
 - A finding counts under **{{ui:dashboard.openFindings}}** on the dashboard until it is closed. Closed findings stay in the register.
 - While open, a finding raised on a fieldwork audit that belongs to an audit cycle lowers that cycle's readiness score.
 - A finding raised by a failed checklist item, or from an auditor's message on a shared audit pack, comes with a remediation task. Resolving or closing that task closes the finding. A finding created on this page comes with no task.
@@ -86,11 +94,13 @@ Click it, and the status changes at once. If the change is refused, the status f
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:findings.noFindings}}** | The workspace has no findings | Click **{{ui:findings.newFinding}}**, if your role can create findings |
-| The dialog shows an error that does not say why | The finding was refused. The page cannot show the reason: your role may not create findings, or the assignee, a control or a risk is no longer valid | Check your role and your choices, then try again |
-| **Failed to create finding** followed by a number in brackets | Inflect answered with an error and gave no reason | Try again |
-| A status that flips back after you click | The change was refused, or did not go through | Reload the page and try again. If it keeps flipping back, ask an Owner, Admin or Editor |
+| **{{ui:findings.list.emptyMatchTitle}}** | No finding has the status you filtered on | Pick another status, or click **{{ui:findings.list.clearFilters}}** |
+| An error in the create dialog or the edit form | The finding was refused, for example because the assignee, a control or a risk is no longer valid. The message gives the reason | Correct your choice and try again |
+| **Failed to create finding** or **Failed to save finding** followed by a number in brackets | Inflect answered with an error and gave no reason | Try again |
+| A status that flips back after you click, with a message | The change was refused or did not go through; the message gives the reason, or reads **{{ui:findings.statusUpdateFailed}}** | Try again, or act on the reason |
+| **{{ui:findings.detail.errorTitle}}** in the panel | The finding could not be loaded, for example because it no longer exists or the link is wrong | Close the panel and open the finding from the register |
 | **{{ui:findings.create.risksToLinkEmpty}}** in the dialog | The workspace has no risks, or none matches the search | Clear the search, or create the finding without risks |
-| A banner saying only the first 5,000 results are shown | The workspace has more than 5,000 findings | Only the newest 5,000 can be seen; the register has no filters to narrow it |
+| A banner saying only the first 5,000 results are shown | More than 5,000 findings match | Filter by status to narrow the list |
 
 ## Related
 
