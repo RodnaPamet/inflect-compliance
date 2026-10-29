@@ -70,6 +70,18 @@ import type { McpReadTool } from './types';
  */
 export const EXTERNAL_TOOL_PERMISSION = 'admin.agent_external_tools';
 
+/**
+ * The key scope an external tool requires: `admin:external_tools`, the one
+ * scope that also carries `EXTERNAL_TOOL_PERMISSION` (#4485).
+ *
+ * It was `external_tools:read`, a resource the api-keys route has never minted,
+ * so the funnel's scope check and its permission check asked for different
+ * scopes and only a `*` key satisfied both: a least-privilege key was refused
+ * every external tool. `*` and `admin:*` still reach it, deliberately — see the
+ * `external_tools` note in `SCOPE_ACTION_MAP`.
+ */
+export const EXTERNAL_TOOL_RESOURCE_SCOPE = { resource: 'admin', action: 'external_tools' } as const;
+
 /** Upper bound on tools considered per connection, mirroring the catalogue's. */
 const MAX_TOOLS_PER_CONNECTION = 250;
 
@@ -410,7 +422,7 @@ function adapterFor(
                   })
                   .strict() as unknown as typeof EXTERNAL_ARGS_SCHEMA)
             : EXTERNAL_ARGS_SCHEMA,
-        resourceScope: { resource: 'external_tools', action: 'read' },
+        resourceScope: EXTERNAL_TOOL_RESOURCE_SCOPE,
         authorize: {
             keys: [EXTERNAL_TOOL_PERMISSION],
             basis: 'effective',

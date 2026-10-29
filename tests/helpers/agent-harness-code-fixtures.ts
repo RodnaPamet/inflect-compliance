@@ -24,6 +24,10 @@
  * Plus the ones that must not produce a clean read: an unresolvable definition,
  * a file that does not parse, and literal credentials (assembled at run time
  * from fragments, so no credential pattern sits in this file).
+ *
+ * And the Claude Agent SDK's (#4156): `AGENT_SDK_TS`, `AGENT_SDK_PY`, the
+ * shapes the reader cannot resolve (`AGENT_SDK_UNRESOLVED`), and functions
+ * called `query` that are not the SDK's (`NOT_AGENT_SDK`).
  */
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -202,6 +206,183 @@ def create_react_agent(model, tools):
 lookalike = create_react_agent("openai:gpt-4o", [])
 `,
 };
+
+// ─── The Claude Agent SDK (#4156) ──────────────────────────────────────────
+
+/**
+ * Agent SDK agents in TypeScript: one hardened the way the connect wizard's
+ * snippet hardens it, which the scanner reports with no option verdict, and one
+ * left at the SDK's permissive defaults.
+ */
+export const AGENT_SDK_TS: Readonly<Record<string, string>> = {
+    'support-bot/agent.ts': `import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+
+const notes = createSdkMcpServer({
+  name: "notes",
+  version: "1.0.0",
+  tools: [tool("save_note", "Save a note.", { text: z.string() }, async ({ text }) => ({ content: [{ type: "text", text }] }))],
+});
+
+const options = {
+  model: "claude-sonnet-5-5",
+  tools: [],
+  allowedTools: ["mcp__inflect__list_risks", "mcp__inflect__list_controls", "mcp__notes__save_note"],
+  mcpServers: {
+    inflect: {
+      type: "http",
+      url: "https://inflect.acme.example/api/mcp",
+      headers: { Authorization: "Bearer " + process.env.INFLECT_API_KEY },
+    },
+    notes,
+  },
+  permissionMode: "dontAsk",
+  settingSources: [],
+  strictMcpConfig: true,
+  hooks: { PreToolUse: [{ hooks: [async () => ({})] }] },
+};
+
+export async function run(prompt: string) {
+  for await (const message of query({ prompt, options })) {
+    if (message.type === "result") return message;
+  }
+}
+`,
+    'ops-bot/agent.ts': `import { query } from "@anthropic-ai/claude-agent-sdk";
+
+export const opsRun = query({
+  prompt: "Restart the failing service.",
+  options: {
+    allowedTools: ["Bash", "mcp__ops__*"],
+    mcpServers: { ops: { command: "npx", args: ["ops-mcp"], env: { OPS_TOKEN: process.env.OPS_TOKEN } } },
+    permissionMode: "bypassPermissions",
+  },
+});
+`,
+};
+
+/**
+ * Agent SDK agents in Python: a `ClaudeSDKClient` with settings off and no
+ * hook, a `query` that names setting sources and approves everything, and a
+ * `ClaudeAgentOptions` no call in its file consumes.
+ */
+export const AGENT_SDK_PY: Readonly<Record<string, string>> = {
+    'triage/agent.py': `import os
+
+from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, ClaudeSDKClient
+
+options = ClaudeAgentOptions(
+    model="claude-opus-5-5",
+    tools=["Read", "Grep"],
+    disallowed_tools=["WebFetch"],
+    allowed_tools=["mcp__inflect__list_findings"],
+    mcp_servers={
+        "inflect": {
+            "type": "http",
+            "url": "https://inflect.acme.example/api/mcp",
+            "headers": {"Authorization": "Bearer " + os.environ["INFLECT_API_KEY"]},
+        }
+    },
+    permission_mode="dontAsk",
+    setting_sources=[],
+    agents={"reviewer": AgentDefinition(description="Reviews a finding.", prompt="Review it.", tools=["Read"])},
+)
+
+
+async def triage(prompt: str) -> None:
+    async with ClaudeSDKClient(options=options) as client:
+        await client.query(prompt)
+`,
+    'digest/agent.py': `from claude_agent_sdk import ClaudeAgentOptions, query
+
+
+async def digest():
+    async for message in query(
+        prompt="Summarise the week.",
+        options=ClaudeAgentOptions(allowed_tools=["*"], permission_mode="bypassPermissions", setting_sources=["project"]),
+    ):
+        print(message)
+`,
+    'shared/options.py': `from claude_agent_sdk import ClaudeAgentOptions
+
+support_options = ClaudeAgentOptions(tools=[], setting_sources=[], hooks={"PreToolUse": []})
+`,
+};
+
+/** Agent SDK definitions with a part the reader cannot see, one shape per file. */
+export const AGENT_SDK_UNRESOLVED: Readonly<Record<string, string>> = {
+    'passed-in/agent.ts': `import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+
+export function start(options: Options) {
+  return query({ prompt: "Go.", options });
+}
+`,
+    'computed/agent.py': `from claude_agent_sdk import ClaudeAgentOptions
+
+from acme.tools import pick_tools
+
+computed_options = ClaudeAgentOptions(tools=pick_tools(), setting_sources=[])
+`,
+    'json-servers/agent.py': `from claude_agent_sdk import ClaudeAgentOptions
+
+json_options = ClaudeAgentOptions(tools=[], mcp_servers="/etc/acme/mcp.json", allowed_tools=["mcp__crm__update_deal"])
+`,
+    'spread/agent.py': `from claude_agent_sdk import ClaudeAgentOptions
+
+from acme.config import BASE
+
+spread_options = ClaudeAgentOptions(**BASE, model="claude-sonnet-5-5")
+`,
+};
+
+/**
+ * Nothing called `query` is the SDK's unless it is imported from the SDK. Each
+ * file imports something else from the SDK, so it is read rather than passed
+ * over, and calls a `query` of its own.
+ */
+export const NOT_AGENT_SDK: Readonly<Record<string, string>> = {
+    'lookalike/query.py': `from acme.db import query as db_query
+from claude_agent_sdk import AgentDefinition
+
+
+def query(prompt, options=None):
+    return prompt
+
+
+reviewer = AgentDefinition(description="Reviews a finding.", prompt="Review it.")
+local_result = query(prompt="hi", options={"allowed_tools": ["*"]})
+rows = db_query("select 1")
+`,
+    'lookalike/query.ts': `import type { Options } from "@anthropic-ai/claude-agent-sdk";
+import { query as dbQuery } from "./db";
+
+function query(args: { prompt: string; options?: Options }) {
+  return args.prompt;
+}
+
+export const notAnAgent = query({ prompt: "hi", options: { allowedTools: ["*"] } });
+export const rows = dbQuery("select 1");
+`,
+};
+
+/** An Anthropic-shaped key, built at run time. Never a real credential. */
+export function fakeAnthropicKey(): string {
+    return ['s', 'k-', 'ant-', 'api03-', 'Q'.repeat(48)].join('');
+}
+
+/** An Agent SDK agent with its key written into the code, in both languages. */
+export function agentSdkLiteralCredentials(): Record<string, string> {
+    return {
+        'hardcoded-sdk/agent.ts': `import { query } from "@anthropic-ai/claude-agent-sdk";
+
+export const hardcodedSdkTs = query({ prompt: "x", options: { tools: [], settingSources: [], env: { ANTHROPIC_API_KEY: "${fakeAnthropicKey()}" } } }); // pragma: allowlist secret — a fragment-built fake, written to a temp dir
+`,
+        'hardcoded-sdk/agent.py': `from claude_agent_sdk import ClaudeAgentOptions
+
+hardcoded_sdk_py = ClaudeAgentOptions(tools=[], setting_sources=[], env={"ANTHROPIC_API_KEY": "${PLAIN_LITERAL_KEY}"})  # pragma: allowlist secret — a fake, written to a temp dir
+`,
+    };
+}
 
 /** The marker the side-effect fixtures would write if anything ever loaded them. */
 export const SIDE_EFFECT_ENV = 'HARNESS_SIDE_EFFECT_MARKER';
