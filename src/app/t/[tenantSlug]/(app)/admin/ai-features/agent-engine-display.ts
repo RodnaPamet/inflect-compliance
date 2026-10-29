@@ -15,6 +15,14 @@
  * the rendered test iterates the record to check that each sentence exists in
  * both catalogues and differs from the others.
  *
+ * ═══ TWO REASONING ENGINES, EACH WITH ITS OWN WORDS (Step 2c) ═══
+ *
+ * Flue and the Tool Runner each have their own operator switch and build flag,
+ * so a reason such as "not turned on for this deployment" is a sentence about
+ * one engine. `engineOf` picks the engine the workspace chose, and the reason,
+ * the checklist and the stored-choice note name that engine. A workspace on the
+ * built-in engine reads Flue's, as it did before the Tool Runner existed.
+ *
  * @module admin/ai-features/agent-engine-display
  */
 import {
@@ -29,12 +37,39 @@ export interface AgentDriverSettingPayload {
     /** Any stored value, a READ_ONLY one included; only AGENT_DRIVER_MODES can be chosen. */
     mode: StoredDriverMode;
     effective: { driver: string; reason: string | null };
+    /** Flue's operator switch and build flag. */
     envEnabled: boolean;
     implemented: boolean;
+    /** The Tool Runner's own switch and build flag (Step 2c). */
+    toolRunner: { envEnabled: boolean; implemented: boolean };
 }
 
-/** The six-term checklist of `GET /api/t/{slug}/admin/flue-wiring` (OWNER-only). */
-export type EngineTermKey = 'ENV' | 'TENANT' | 'BUILD' | 'WORKFLOW' | 'REGISTERED_AGENT' | 'BOUND_KEY';
+/** A reasoning engine a workspace can choose. */
+export type ReasoningEngineMode = 'FLUE' | 'TOOL_RUNNER';
+
+/**
+ * The engine the reason sentences and the checklist talk about: the Tool Runner
+ * for a workspace that chose it, Flue otherwise.
+ */
+export function engineOf(setting: Pick<AgentDriverSettingPayload, 'mode'>): ReasoningEngineMode {
+    return setting.mode === 'TOOL_RUNNER' ? 'TOOL_RUNNER' : 'FLUE';
+}
+
+/** Is this engine's operator switch on? */
+function engineEnvEnabled(setting: AgentDriverSettingPayload, engine: ReasoningEngineMode): boolean {
+    return engine === 'TOOL_RUNNER' ? setting.toolRunner.envEnabled : setting.envEnabled;
+}
+
+/** The checklist of `GET /api/t/{slug}/admin/flue-wiring` (OWNER-only), for the chosen engine. */
+export type EngineTermKey =
+    | 'ENV'
+    | 'TENANT'
+    | 'BUILD'
+    | 'WORKFLOW'
+    | 'REGISTERED_AGENT'
+    | 'BOUND_KEY'
+    | 'PROFILES'
+    | 'MODEL_KEY';
 
 export interface EngineTerm {
     key: EngineTermKey;
@@ -44,6 +79,8 @@ export interface EngineTerm {
 }
 
 export interface FlueWiringPayload {
+    /** Which engine's checklist the terms are. */
+    engine: ReasoningEngineMode;
     terms: EngineTerm[];
     ready: boolean;
     blockedOn: EngineTermKey | null;
@@ -61,8 +98,28 @@ export const REASON_MESSAGE = {
     NO_WORKFLOW_REQUESTS_IT: 'reason.NO_WORKFLOW_REQUESTS_IT',
 } as const satisfies Record<StaticDriverReason, string>;
 
+/**
+ * The same sentences for a workspace that chose the Tool Runner engine. Three
+ * reasons are about the engine itself and name it. The other two arise only for
+ * a stored value other than this engine's, so they share Flue's sentences.
+ */
+export const TOOL_RUNNER_REASON_MESSAGE = {
+    ENV_DISABLED: 'reasonToolRunner.ENV_DISABLED',
+    TENANT_NOT_OPTED_IN: 'reason.TENANT_NOT_OPTED_IN',
+    UNRECOGNISED_SETTING: 'reason.UNRECOGNISED_SETTING',
+    DRIVER_NOT_IMPLEMENTED: 'reasonToolRunner.DRIVER_NOT_IMPLEMENTED',
+    NO_WORKFLOW_REQUESTS_IT: 'reasonToolRunner.NO_WORKFLOW_REQUESTS_IT',
+} as const satisfies Record<StaticDriverReason, string>;
+
 function isStaticDriverReason(value: string): value is StaticDriverReason {
     return Object.prototype.hasOwnProperty.call(REASON_MESSAGE, value);
+}
+
+/** The badge: the engine a run would use today, as a key under `admin.agentEngines`. */
+export function effectiveEngineNameFor(setting: AgentDriverSettingPayload): string {
+    if (setting.effective.driver === 'flue') return 'engine.FLUE.name';
+    if (setting.effective.driver === 'tool-runner') return 'engine.TOOL_RUNNER.name';
+    return 'engine.STATIC.name';
 }
 
 /**
@@ -82,10 +139,14 @@ function isStaticDriverReason(value: string): value is StaticDriverReason {
 export function headlineFor(setting: AgentDriverSettingPayload, wiring?: FlueWiringPayload): string {
     const { reason, driver } = setting.effective;
     if (reason === null) {
-        if (driver !== 'flue') return 'reason.UNKNOWN';
-        return wiring && !wiring.ready ? 'runsOnFlueNotReady' : 'runsOnFlue';
+        if (driver === 'flue') return wiring && !wiring.ready ? 'runsOnFlueNotReady' : 'runsOnFlue';
+        if (driver === 'tool-runner') {
+            return wiring && !wiring.ready ? 'runsOnToolRunnerNotReady' : 'runsOnToolRunner';
+        }
+        return 'reason.UNKNOWN';
     }
-    return isStaticDriverReason(reason) ? REASON_MESSAGE[reason] : 'reason.UNKNOWN';
+    if (!isStaticDriverReason(reason)) return 'reason.UNKNOWN';
+    return engineOf(setting) === 'TOOL_RUNNER' ? TOOL_RUNNER_REASON_MESSAGE[reason] : REASON_MESSAGE[reason];
 }
 
 export type HeadlineTone = 'success' | 'warning' | 'info';
@@ -96,7 +157,8 @@ export type HeadlineTone = 'success' | 'warning' | 'info';
  * capability the runtime refuses.
  */
 export function headlineToneFor(setting: AgentDriverSettingPayload, wiring?: FlueWiringPayload): HeadlineTone {
-    if (setting.effective.driver !== 'flue') return 'info';
+    const driver = setting.effective.driver;
+    if (driver !== 'flue' && driver !== 'tool-runner') return 'info';
     return wiring && !wiring.ready ? 'warning' : 'success';
 }
 
@@ -107,12 +169,14 @@ export function headlineToneFor(setting: AgentDriverSettingPayload, wiring?: Flu
  *   `admin.tenant_lifecycle`). They still see everything, plus one sentence
  *   naming who can change it. Hiding the section would make a gate nobody can
  *   read look the same as one that is not there.
- * - `deployment-off`: an owner, on a deployment whose switch is off. Choosing
- *   Flue is disabled: the API would accept the write, but it changes no run
- *   until the operator turns the switch on, and a control whose success
- *   changes nothing is the trap this page exists to avoid (#3909). Returning
- *   to the built-in engine stays available (`choiceEnabled`).
- * - `editable`: an owner, on a deployment that allows the engine.
+ * - `deployment-off`: an owner, on a deployment where neither reasoning engine's
+ *   switch is on. Choosing one is disabled: the API would accept the write,
+ *   but it changes no run until the operator turns the switch on, and a
+ *   control whose success changes nothing is the trap this page exists to
+ *   avoid (#3909). Returning to the built-in engine stays available
+ *   (`choiceEnabled`).
+ * - `editable`: an owner, on a deployment that allows at least one reasoning
+ *   engine. Each engine is still offered only while its own switch is on.
  *
  * Read-only is decided first. An admin on a switched-off deployment has
  * nothing to press either way, and the reason sentence already says the
@@ -122,7 +186,7 @@ export type EngineControl = 'read-only' | 'deployment-off' | 'editable';
 
 export function engineControlFor(setting: AgentDriverSettingPayload, canChange: boolean): EngineControl {
     if (!canChange) return 'read-only';
-    if (!setting.envEnabled) return 'deployment-off';
+    if (!setting.envEnabled && !setting.toolRunner.envEnabled) return 'deployment-off';
     return 'editable';
 }
 
@@ -136,6 +200,13 @@ export function engineControlFor(setting: AgentDriverSettingPayload, canChange: 
  * serve both.
  */
 export function gateTermsFor(setting: AgentDriverSettingPayload): EngineTerm[] {
+    if (engineOf(setting) === 'TOOL_RUNNER') {
+        return [
+            { key: 'ENV', satisfied: setting.toolRunner.envEnabled, actor: 'operator' },
+            { key: 'TENANT', satisfied: true, actor: 'tenant' },
+            { key: 'BUILD', satisfied: setting.toolRunner.implemented, actor: 'operator' },
+        ];
+    }
     return [
         { key: 'ENV', satisfied: setting.envEnabled, actor: 'operator' },
         { key: 'TENANT', satisfied: setting.mode === 'FLUE', actor: 'tenant' },
@@ -155,9 +226,18 @@ export const OFFERED_ENGINES: readonly AgentDriverMode[] = AGENT_DRIVER_MODES;
  * operator turns the switch back on. So narrowing is the one move that must
  * never wait on another key, which is what `setAgentDriverSetting` says of it
  * too ("the narrow is the one that has to be instant").
+ *
+ * Each reasoning engine is offered only while its OWN switch is on: with Flue
+ * on and the Tool Runner off, choosing the Tool Runner would be the same trap
+ * `deployment-off` exists for, one engine over.
  */
-export function choiceEnabled(control: EngineControl, option: AgentDriverMode): boolean {
-    if (control === 'editable') return true;
-    if (control === 'deployment-off') return option === 'STATIC';
-    return false;
+export function choiceEnabled(
+    control: EngineControl,
+    option: AgentDriverMode,
+    setting: AgentDriverSettingPayload,
+): boolean {
+    if (control === 'read-only') return false;
+    if (option === 'STATIC') return true;
+    if (control === 'deployment-off') return false;
+    return engineEnvEnabled(setting, option);
 }

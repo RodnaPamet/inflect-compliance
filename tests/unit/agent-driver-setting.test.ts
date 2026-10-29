@@ -48,8 +48,8 @@ jest.mock('@/lib/db-context', () => ({
 const logEvent = jest.fn(async () => undefined);
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...a: unknown[]) => logEvent(...(a as [])) }));
 
-const envBag: { AGENT_DRIVER_FLUE?: string } = {};
-jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[k as 'AGENT_DRIVER_FLUE'] }) }));
+const envBag: Record<string, string | undefined> = {};
+jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[k] }) }));
 
 jest.mock('@/lib/observability', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -92,7 +92,7 @@ const ctx = makeRequestContext('OWNER');
 beforeEach(() => {
     jest.clearAllMocks();
     row = { agentDriver: 'STATIC' };
-    delete envBag.AGENT_DRIVER_FLUE;
+    for (const k of Object.keys(envBag)) delete envBag[k];
     mockDefinitions = [];
 });
 
@@ -260,6 +260,60 @@ describe('the decision leaves a trail an access review can read', () => {
             expect.objectContaining({
                 detailsJson: expect.objectContaining({ operation: 'revoke' }),
             }),
+        );
+    });
+});
+
+describe('the Tool Runner engine (Step 2c)', () => {
+    it('is written, and recorded as a grant with its own switch beside Flue\'s', async () => {
+        envBag.AGENT_DRIVER_TOOL_RUNNER = '1';
+        row = { agentDriver: 'STATIC' };
+        await setAgentDriverSetting(ctx, 'TOOL_RUNNER');
+        expect(upsert).toHaveBeenCalledWith(
+            expect.objectContaining({ update: { agentDriver: 'TOOL_RUNNER' } }),
+        );
+        expect(logEvent).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.objectContaining({
+                detailsJson: expect.objectContaining({ operation: 'grant' }),
+                metadata: expect.objectContaining({
+                    to: 'TOOL_RUNNER',
+                    toolRunnerEnvEnabled: true,
+                    toolRunnerImplemented: DRIVER_IMPLEMENTED['tool-runner'],
+                }),
+            }),
+        );
+    });
+
+    it('reports its own switch and build flag, separate from Flue\'s', async () => {
+        envBag.AGENT_DRIVER_TOOL_RUNNER = '1';
+        const view = await getAgentDriverSetting(ctx);
+        expect(view.envEnabled).toBe(false);
+        expect(view.toolRunner).toEqual({ envEnabled: true, implemented: DRIVER_IMPLEMENTED['tool-runner'] });
+    });
+
+    it('reads static, naming why, when the profile surface is off for the workspace', async () => {
+        envBag.AGENT_DRIVER_TOOL_RUNNER = '1';
+        row = { agentDriver: 'TOOL_RUNNER' };
+        const view = await getAgentDriverSetting(ctx);
+        // With the build flag still off this is DRIVER_NOT_IMPLEMENTED; once it
+        // is on, nothing in a workspace without profiles asks for the engine.
+        expect(view.effective).toEqual({
+            driver: 'static',
+            reason: DRIVER_IMPLEMENTED['tool-runner'] ? 'NO_WORKFLOW_REQUESTS_IT' : 'DRIVER_NOT_IMPLEMENTED',
+        });
+    });
+
+    it('is in force where the profile surface is on for the workspace', async () => {
+        envBag.AGENT_DRIVER_TOOL_RUNNER = '1';
+        envBag.AGENT_PROFILES_TENANTS = ctx.tenantSlug ?? '';
+        row = { agentDriver: 'TOOL_RUNNER' };
+        const view = await getAgentDriverSetting(ctx);
+        expect(view.effective).toEqual(
+            DRIVER_IMPLEMENTED['tool-runner']
+                ? { driver: 'tool-runner', reason: null }
+                : { driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' },
         );
     });
 });

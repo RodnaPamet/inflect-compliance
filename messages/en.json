@@ -5090,14 +5090,15 @@
         "driverLabel": "Run engine",
         "driverValue": {
           "static": "Static",
-          "flue": "Flue"
+          "flue": "Flue",
+          "tool-runner": "Tool Runner"
         },
         "driverReason": {
-          "ENV_DISABLED": "Flue is off for this deployment",
+          "ENV_DISABLED": "the chosen engine is off for this deployment",
           "TENANT_NOT_OPTED_IN": "this workspace has not opted in",
-          "NO_WORKFLOW_REQUESTS_IT": "no workflow asks for it yet",
+          "NO_WORKFLOW_REQUESTS_IT": "nothing in this workspace asks for it yet",
           "UNRECOGNISED_SETTING": "the stored setting was not recognised",
-          "DRIVER_NOT_IMPLEMENTED": "this build has no Flue driver"
+          "DRIVER_NOT_IMPLEMENTED": "this build does not include the chosen engine"
         }
       },
       "risk": {
@@ -6843,19 +6844,19 @@
       "loadFailed": "Couldn't load the agent engine setting.",
       "saveFailed": "Couldn't change the engine for this workspace.",
       "refreshFailed": "Couldn't refresh the agent engine setting. What is shown may be out of date. Reload the page to try again.",
-      "wiringLoadFailed": "Couldn't load the checklist for a Flue run, so only the terms that decide the engine are shown.",
+      "wiringLoadFailed": "Couldn't load the checklist for this engine, so only the terms that decide the engine are shown.",
       "runsOnFlue": "In this workspace, workflows that ask for the Flue engine run on it when an active registered agent starts them.",
       "runsOnFlueNotReady": "This workspace has chosen the Flue engine, but no Flue run can start yet. The checklist below shows what is missing.",
       "reason": {
         "ENV_DISABLED": "Runs use the built-in engine because the Flue engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
-        "TENANT_NOT_OPTED_IN": "Runs use the built-in engine because this workspace has not chosen the Flue engine.",
+        "TENANT_NOT_OPTED_IN": "Runs use the built-in engine because this workspace has not chosen a reasoning engine.",
         "UNRECOGNISED_SETTING": "Runs use the built-in engine because this version does not recognise the stored choice. A newer version probably wrote it during an upgrade. Choose an engine again to replace it.",
         "DRIVER_NOT_IMPLEMENTED": "Runs use the built-in engine because this version of Inflect does not include the Flue engine, even though both the deployment and this workspace ask for it.",
         "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because no workflow in this version asks for the Flue engine, even though both the deployment and this workspace allow it.",
         "UNKNOWN": "Runs use the built-in engine, but the reason could not be shown. Reload the page to try again."
       },
       "deploymentOffHeading": "Agent engines are not turned on for this deployment",
-      "deploymentOffBody": "Choosing the Flue engine is disabled until the deployment's Flue switch is on, and only the deployment's operator can turn it on. You can always return this workspace to the built-in engine.",
+      "deploymentOffBody": "Choosing a reasoning engine is disabled until the deployment turns one on, and only the deployment's operator can do that. You can always return this workspace to the built-in engine.",
       "deploymentOffStoredFlue": "This workspace has chosen the Flue engine, so its runs move to Flue as soon as the switch is turned on.",
       "chosen": "This workspace's engine: {engine}.",
       "ownerOnly": "Only a workspace owner can change the engine.",
@@ -6871,18 +6872,20 @@
         },
         "TOOL_RUNNER": {
           "name": "Tool Runner engine",
-          "description": "A model chooses which of the agent's tools to call, through Anthropic's API. This version reads the choice but cannot run the engine yet."
+          "description": "A model chooses which of the agent's tools to call, following the instructions on the agent's Behaviour tab. Every call still goes through the agent's grants and controls. Powered by Claude."
         }
       },
       "gateHeading": "What decides the engine",
       "wiringHeading": "What a Flue run needs before it can start",
       "confirmTitle": {
         "STATIC": "Switch this workspace to the built-in engine?",
-        "FLUE": "Switch this workspace to the Flue engine?"
+        "FLUE": "Switch this workspace to the Flue engine?",
+        "TOOL_RUNNER": "Switch this workspace to the Tool Runner engine?"
       },
       "confirmBody": {
         "FLUE": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the Flue engine if its workflow asks for it and the conditions below are met. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time.",
-        "STATIC": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the built-in engine. You can switch back at any time."
+        "STATIC": "Runs already in progress stay on the engine they started on. A paused run that is resumed, and every new run, will use the built-in engine. You can switch back at any time.",
+        "TOOL_RUNNER": "Runs already in progress stay on the engine they started on. Every new profile run will use the Tool Runner engine, which sends the agent's instructions and the results of its tool calls to Anthropic. Workflows that ask for the Flue engine run on the built-in engine instead. Every call still goes through the agent's grants, policy card, autonomy ceiling and kill switch. You can switch back at any time."
       },
       "confirmLabel": "Switch engine",
       "term": {
@@ -6896,7 +6899,25 @@
       "count": "{count} available",
       "operatorTerm": "Set on the deployment",
       "fix": "Set up →",
-      "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand."
+      "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand.",
+      "runsOnToolRunner": "In this workspace, agent profiles run on the Tool Runner engine when a Test run starts them.",
+      "runsOnToolRunnerNotReady": "This workspace has chosen the Tool Runner engine, but no Tool Runner run can start yet. The checklist below shows what is missing.",
+      "reasonToolRunner": {
+        "ENV_DISABLED": "Runs use the built-in engine because the Tool Runner engine is not turned on for this deployment. Only the deployment's operator can turn it on.",
+        "DRIVER_NOT_IMPLEMENTED": "Runs use the built-in engine because this version of Inflect does not include the Tool Runner engine, even though both the deployment and this workspace ask for it.",
+        "NO_WORKFLOW_REQUESTS_IT": "Runs use the built-in engine because agent profiles are not turned on for this workspace, and they are what ask for the Tool Runner engine."
+      },
+      "deploymentOffStoredToolRunner": "This workspace has chosen the Tool Runner engine, so its profile runs move to it as soon as the switch is turned on.",
+      "wiringHeadingToolRunner": "What a Tool Runner run needs before it can start",
+      "toolRunnerTerm": {
+        "ENV": "The deployment allows the Tool Runner engine",
+        "TENANT": "This workspace has chosen it",
+        "BUILD": "This build ships the Tool Runner engine",
+        "PROFILES": "Agent profiles are turned on for this workspace",
+        "MODEL_KEY": "The deployment has an Anthropic API key",
+        "REGISTERED_AGENT": "An active, risk-assessed agent is registered"
+      },
+      "toolRunnerStartNote": "A Tool Runner run starts from an agent's Behaviour tab, as a Test run of one of its profile versions. It runs read-only and as that agent, under the agent's own grants and controls."
     },
     "modules": {
       "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",

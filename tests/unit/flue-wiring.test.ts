@@ -36,8 +36,8 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
 }));
 
-const envBag: { AGENT_DRIVER_FLUE?: string } = {};
-jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[k as 'AGENT_DRIVER_FLUE'] }) }));
+const envBag: Record<string, string | undefined> = {};
+jest.mock('@/env', () => ({ env: new Proxy({}, { get: (_t, k: string) => envBag[k] }) }));
 
 jest.mock('@/lib/observability', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -53,7 +53,7 @@ jest.mock('@/lib/agentic/workflow-registry', () => ({
     listWorkflowDefinitions: () => mockDefinitions,
 }));
 
-import { getFlueWiringState, FLUE_WIRING_TERMS } from '@/app-layer/usecases/flue-wiring';
+import { getFlueWiringState, FLUE_WIRING_TERMS, TOOL_RUNNER_WIRING_TERMS } from '@/app-layer/usecases/flue-wiring';
 import { DRIVER_IMPLEMENTED } from '@/lib/agentic/agent-driver';
 
 import { makeRequestContext } from '../helpers/make-context';
@@ -64,6 +64,7 @@ const ctx = makeRequestContext('OWNER');
 beforeEach(() => {
     jest.clearAllMocks();
     row = { agentDriver: 'FLUE' };
+    for (const k of Object.keys(envBag)) delete envBag[k];
     envBag.AGENT_DRIVER_FLUE = '1';
     agentCount = 1;
     keyCount = 1;
@@ -185,5 +186,59 @@ describe('every term, and the one that blocks', () => {
 
         expect((await satisfiedOf()).WORKFLOW).toBe(false);
         expect(state.effective).toEqual({ driver: 'static', reason: 'NO_WORKFLOW_REQUESTS_IT' });
+    });
+});
+
+describe('a workspace that chose the Tool Runner gets that engine\'s checklist (Step 2c)', () => {
+    const MODEL_KEY_VALUE = 'sk-ant-wiring-test-value'; // pragma: allowlist secret -- a placeholder the test asserts never leaves the server
+    beforeEach(() => {
+        row = { agentDriver: 'TOOL_RUNNER' };
+        envBag.AGENT_DRIVER_TOOL_RUNNER = '1';
+        envBag.AGENT_PROFILES = '1';
+        envBag.ANTHROPIC_API_KEY = MODEL_KEY_VALUE;
+    });
+
+    it('lists its own six terms, in order, with no bound-key term', async () => {
+        const state = await getFlueWiringState(ctx);
+        expect(state.engine).toBe('TOOL_RUNNER');
+        expect(state.terms.map((t) => t.key)).toEqual([...TOOL_RUNNER_WIRING_TERMS]);
+        expect(state.terms.map((t) => t.key)).not.toContain('BOUND_KEY');
+    });
+
+    it('is ready exactly when the build ships the engine and every term holds', async () => {
+        const state = await getFlueWiringState(ctx);
+        expect(await satisfiedOf()).toEqual({
+            ENV: true,
+            TENANT: true,
+            BUILD: DRIVER_IMPLEMENTED['tool-runner'],
+            PROFILES: true,
+            MODEL_KEY: true,
+            REGISTERED_AGENT: true,
+        });
+        expect(state.ready).toBe(DRIVER_IMPLEMENTED['tool-runner']);
+    });
+
+    it('names the missing switch, profile surface and model key, each as the operator\'s', async () => {
+        delete envBag.AGENT_DRIVER_TOOL_RUNNER;
+        delete envBag.AGENT_PROFILES;
+        delete envBag.ANTHROPIC_API_KEY;
+        const state = await getFlueWiringState(ctx);
+        const satisfied = Object.fromEntries(state.terms.map((t) => [t.key, t.satisfied]));
+        expect(satisfied).toMatchObject({ ENV: false, PROFILES: false, MODEL_KEY: false });
+        expect(state.blockedOn).toBe('ENV');
+        const actors = Object.fromEntries(state.terms.map((t) => [t.key, t.actor]));
+        expect(actors).toMatchObject({ ENV: 'operator', PROFILES: 'operator', MODEL_KEY: 'operator', REGISTERED_AGENT: 'tenant' });
+    });
+
+    it('reports the model key by presence only: its value is in no part of the answer', async () => {
+        const state = await getFlueWiringState(ctx);
+        expect(JSON.stringify(state)).not.toContain(MODEL_KEY_VALUE);
+    });
+
+    it('the Flue checklist is unchanged for a workspace that did not choose the Tool Runner (positive control)', async () => {
+        row = { agentDriver: 'FLUE' };
+        const state = await getFlueWiringState(ctx);
+        expect(state.engine).toBe('FLUE');
+        expect(state.terms.map((t) => t.key)).toEqual([...FLUE_WIRING_TERMS]);
     });
 });

@@ -58,12 +58,12 @@ describe('the operator switch is opt-in, not opt-out', () => {
 
 describe('the stored tenant value is coerced at the read boundary', () => {
     it('passes through the values this build knows', () => {
-        expect(AGENT_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE']);
+        expect(AGENT_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER']);
     });
 
-    it('reads a READ_ONLY value as itself, although no writer accepts it (Step 2b)', () => {
+    it('every stored value is writable once TOOL_RUNNER made its second deploy (Step 2c)', () => {
         expect(STORED_DRIVER_MODES.map(coerceStoredDriverMode)).toEqual(['STATIC', 'FLUE', 'TOOL_RUNNER']);
-        expect(isAgentDriverMode('TOOL_RUNNER')).toBe(false);
+        expect(isAgentDriverMode('TOOL_RUNNER')).toBe(true);
     });
 
     it.each([

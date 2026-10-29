@@ -46,7 +46,9 @@ import type { AgentDriverMode } from '@/lib/agentic/agent-driver';
 import {
     OFFERED_ENGINES,
     choiceEnabled,
+    effectiveEngineNameFor,
     engineControlFor,
+    engineOf,
     gateTermsFor,
     headlineFor,
     headlineToneFor,
@@ -127,12 +129,17 @@ export function AgentEnginesSection() {
     if (!state) return null;
 
     const control = engineControlFor(state, canChange);
-    const runsOnFlue = state.effective.driver === 'flue';
+    // The engine the checklist and its sentences are about (Step 2c): the Tool
+    // Runner for a workspace that chose it, Flue otherwise.
+    const engine = engineOf(state);
     // The owner's six terms only when they have arrived. While the checklist
     // is loading, or if it failed, the three terms the gate reports are shown
     // under the gate's own heading, never as "what a Flue run needs".
     const wiringData = canChange ? wiring.data : undefined;
     const terms: EngineTerm[] = wiringData ? wiringData.terms : gateTermsFor(state);
+    // Term sentences per engine: `term.*` for Flue, `toolRunnerTerm.*` for the
+    // Tool Runner, whose terms are about its own switch, build and needs.
+    const termNamespace = engine === 'TOOL_RUNNER' ? 'toolRunnerTerm' : 'term';
     const tone = headlineToneFor(state, wiringData);
 
     /** Where a tenant-owned wiring term is fixed. Operator terms have no link. */
@@ -151,7 +158,7 @@ export function AgentEnginesSection() {
                         <p className="max-w-3xl text-sm text-content-muted">{t('description')}</p>
                     </div>
                     <StatusBadge variant={tone === 'info' ? 'neutral' : tone}>
-                        {runsOnFlue ? t('engine.FLUE.name') : t('engine.STATIC.name')}
+                        {t(effectiveEngineNameFor(state))}
                     </StatusBadge>
                 </div>
 
@@ -181,6 +188,11 @@ export function AgentEnginesSection() {
                                 {t('deploymentOffStoredFlue')}
                             </span>
                         )}
+                        {state.mode === 'TOOL_RUNNER' && (
+                            <span data-testid="agent-engines-deployment-off-stored-tool-runner" className="mt-1 block">
+                                {t('deploymentOffStoredToolRunner')}
+                            </span>
+                        )}
                     </InlineNotice>
                 )}
 
@@ -205,7 +217,7 @@ export function AgentEnginesSection() {
                         {OFFERED_ENGINES.map((mode) => {
                             const id = `agent-engine-${mode}`;
                             const checked = state.mode === mode;
-                            const enabled = choiceEnabled(control, mode);
+                            const enabled = choiceEnabled(control, mode, state);
                             return (
                                 <label
                                     key={mode}
@@ -243,7 +255,9 @@ export function AgentEnginesSection() {
                         </InlineNotice>
                     )}
                     <p className="text-sm font-medium text-content-emphasis">
-                        {wiringData ? t('wiringHeading') : t('gateHeading')}
+                        {wiringData
+                            ? t(engine === 'TOOL_RUNNER' ? 'wiringHeadingToolRunner' : 'wiringHeading')
+                            : t('gateHeading')}
                     </p>
                     <ul className="space-y-tight" data-testid="agent-engines-terms">
                         {terms.map((term) => {
@@ -263,7 +277,7 @@ export function AgentEnginesSection() {
                                         <CircleDotted className="h-4 w-4 text-content-muted" aria-hidden="true" />
                                     )}
                                     <span className={term.satisfied ? 'text-content-default' : 'text-content-muted'}>
-                                        {t(`term.${term.key}`)}
+                                        {t(`${termNamespace}.${term.key}`)}
                                     </span>
                                     {typeof term.count === 'number' && (
                                         <span className="text-xs text-content-muted tabular-nums">
@@ -288,7 +302,9 @@ export function AgentEnginesSection() {
                         no agentId, so nobody can start a Flue run by hand. Shown
                         to every viewer: it is the one condition the three-term
                         gate cannot report. */}
-                    <p className="text-xs text-content-muted">{t('boundKeyNote')}</p>
+                    <p className="text-xs text-content-muted">
+                        {t(engine === 'TOOL_RUNNER' ? 'toolRunnerStartNote' : 'boundKeyNote')}
+                    </p>
                 </div>
             </Card>
 
@@ -305,7 +321,7 @@ export function AgentEnginesSection() {
                     // `warning` for the widen, `info` for the narrow. Neither is
                     // `danger`, which this repo keeps for the irreversible, and
                     // both directions are always one more choice away.
-                    tone={pending === 'FLUE' ? 'warning' : 'info'}
+                    tone={pending === 'STATIC' ? 'info' : 'warning'}
                     title={t(`confirmTitle.${pending}`)}
                     description={
                         <>
