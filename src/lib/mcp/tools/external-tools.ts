@@ -58,7 +58,9 @@ import { openAutomaticExternalWrite } from '@/app-layer/usecases/external-write-
 import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
 import { dispatchA2aSend, resolveGrantedA2aSendTools } from '@/app-layer/usecases/a2a-outbound';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
-import { clampForInboundA2a, type ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
+import { clampForInboundA2a, type ExternalWriteMode,
+    refusesEveryWrite,
+} from '@/lib/integrations/external-write-ladder';
 
 import type { McpReadTool } from './types';
 
@@ -422,6 +424,25 @@ function adapterFor(
                   })
                   .strict() as unknown as typeof EXTERNAL_ARGS_SCHEMA)
             : EXTERNAL_ARGS_SCHEMA,
+        // ── WHAT THE OFFER NEEDS, READ ONCE, HERE (#3872) ───────────────────
+        //
+        // The same two terms the dispatch below branches on, taken at
+        // invocation-build time so the offered set and the funnel cannot
+        // disagree. `offerToolSet` withholds a write-classified tool whose
+        // connection refuses every write and records `CONNECTION_READ_ONLY`,
+        // for the reason the AUTONOMY omission beside it already states:
+        // advertising a tool and then watching the funnel refuse every call to
+        // it is the mismatch both probes exist to prevent.
+        externalWrite: {
+            connectionId: connection.id,
+            connectionName: connection.name,
+            // An A2A send is ALWAYS a write, exactly as the dispatch's own A2A
+            // branch sits above its read/write split: asking another
+            // organisation's agent to act is a write whatever its definition
+            // says. Reading `declaresWrite` for it would ask the wrong question.
+            declaresWrite: send.kind === 'a2a' ? true : declaresWrite(def.annotations),
+            connectionRefusesWrites: refusesEveryWrite(connection.mode),
+        },
         resourceScope: EXTERNAL_TOOL_RESOURCE_SCOPE,
         authorize: {
             keys: [EXTERNAL_TOOL_PERMISSION],

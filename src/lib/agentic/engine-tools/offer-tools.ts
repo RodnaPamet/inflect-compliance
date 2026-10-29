@@ -61,13 +61,17 @@ export function asToolArgs(data: unknown): Record<string, unknown> {
  * declares `readOnly` (#3749). `PROFILE_TOOL_NOT_GRANTED` is a tool an agent
  * profile names that the agent's current grants no longer reach, typically a
  * grant revoked after the profile version was approved (#4143).
+ * `CONNECTION_READ_ONLY` is an EXTERNAL write-classified tool whose connection
+ * sits at the ladder's `DISABLED` rung, where the dispatch would refuse it with
+ * nothing sent (#3872).
  */
 export type ToolOmissionReason =
     | 'SCOPE'
     | 'AUTONOMY'
     | 'UNCONVERTIBLE_SCHEMA'
     | 'READ_ONLY_WORKFLOW'
-    | 'PROFILE_TOOL_NOT_GRANTED';
+    | 'PROFILE_TOOL_NOT_GRANTED'
+    | 'CONNECTION_READ_ONLY';
 
 /**
  * One tool that survived the narrowing, handed to the engine to put in its own
@@ -158,7 +162,7 @@ export type OriginResolver = (toolCallId: string) => { runId: string; stepSeq: n
 
 export type OfferableTool = Pick<
     McpReadTool<unknown>,
-    'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize'
+    'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize' | 'externalWrite'
 >;
 
 
@@ -198,6 +202,26 @@ function offerTools<T>(
         const required = requiredAutonomyFor(capability, tool.authorize.autonomy);
         if (!withinCeiling(required, inv.autonomyCeiling)) {
             omitted.push({ name: tool.name, reason: 'AUTONOMY' });
+            continue;
+        }
+
+        // ── READ-ONLY STAYS READ-ONLY (#3872) ───────────────────────────────
+        //
+        // The same argument as the AUTONOMY probe directly above, one axis
+        // over: there, a tool whose required rung exceeds the AGENT's ceiling;
+        // here, a write-classified tool whose CONNECTION sits at the ladder's
+        // `DISABLED` rung. `dispatchWrite` handles `DRY_RUN`, `PROPOSE_ONLY`
+        // and `AUTOMATIC` and falls through to a refusal that sends nothing, so
+        // offering it advertises a tool every call to which is refused.
+        //
+        // Both terms were read at invocation-build time from the same values
+        // the dispatch branches on (`external-tools.ts::adapterFor`), so the
+        // offer cannot form a different opinion about whether a tool is a write
+        // or whether its connection takes one. Internal tools carry no
+        // `externalWrite` at all, which is why absence skips this entirely
+        // rather than defaulting either way.
+        if (tool.externalWrite?.declaresWrite && tool.externalWrite.connectionRefusesWrites) {
+            omitted.push({ name: tool.name, reason: 'CONNECTION_READ_ONLY' });
             continue;
         }
 
