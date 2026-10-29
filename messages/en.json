@@ -9335,7 +9335,9 @@
       "emptyDesc": "Nothing is waiting for review. When an agent or a workflow run proposes a risk, control, policy or finding, or a write to a connected system — or internal audit's dissent raises a finding — it lands here instead of being written directly, and stays here until a person approves or rejects it. You can approve from this queue.",
       "emptyDescReader": "Nothing is waiting for review. When an agent or a workflow run proposes a risk, control, policy or finding, or a write to a connected system — or internal audit's dissent raises a finding — it lands here instead of being written directly, and stays here until a person approves or rejects it. Approving needs write access to this workspace, which you do not have.",
       "proposedAt": "proposed {date}",
+      "decideBy": " · decide by {date}",
       "keySuffix": " · key {key}",
+      "keySuffixUnresolved": " · through an API key",
       "reject": "Reject",
       "bulk": {
         "selected": "{count} selected",
@@ -9345,7 +9347,14 @@
         "undo": "Undo",
         "rejectedToast": "{count} proposals rejected",
         "failed": "Failed to reject the selected proposals",
-        "rejectedReconciled": "{rejected} rejected, {skipped} left in the queue — somebody else had already decided them, or their review window had closed."
+        "rejectedReconciled": "{rejected} rejected; {skipped} could not be.",
+        "skipped": {
+          "decided": "Some had already been decided, or are no longer in the queue.",
+          "expired": "Some had passed their review window, which closes them to every decision.",
+          "quarantined": "Some were quarantined by the output guard, which no reviewer can reject.",
+          "ownDissent": "Some were raised by your own dissent from a workpaper review; somebody else decides those.",
+          "unknownDissent": "Some name a workpaper review this workspace does not hold, so nobody can decide them."
+        }
       },
       "approve": "Approve",
       "rationale": "Rationale: ",
@@ -9370,6 +9379,12 @@
       },
       "signatureRecorded": "{recorded} of {required} approvals recorded — a second reviewer must sign",
       "awaitingSecond": "Awaiting a second approver",
+      "signedByYou": "You have approved this proposal. A second approval has to come from a different person.",
+      "window": {
+        "closed": "Review window closed",
+        "closedNotice": "This proposal's review window closed on {date}, so it can no longer be approved or rejected. It leaves this queue when the overnight clean-up marks it expired, and is kept as the record that nobody decided it in time."
+      },
+      "truncated": "Showing the {shown} most recent pending proposals. More are waiting and are not listed here; the oldest appear as these are decided.",
       "kind": {
         "RISK": "Risk",
         "CONTROL": "Control",
