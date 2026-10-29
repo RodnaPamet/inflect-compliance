@@ -20,8 +20,13 @@ import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import { toApiSearchParams } from '@/lib/filters/url-sync';
+import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 import { CreateFindingModal } from './CreateFindingModal';
 import { FindingDetailSheet } from './FindingDetailSheet';
+import { buildFindingFilters, FINDING_FILTER_KEYS, FINDING_STATUSES } from './filter-defs';
 
 /**
  * The register's address for one finding: `?finding=<id>` opens its panel.
@@ -58,6 +63,8 @@ interface FindingRow {
 interface FindingsClientProps {
 
     initialFindings: FindingRow[];
+    /** The status facet the server rendered `initialFindings` with. */
+    initialFilters?: Record<string, string>;
     tenantSlug: string;
     /**
      * The coarse write tier. `createFinding` and `updateFinding` both
@@ -97,24 +104,82 @@ interface FindingsClientProps {
 }
 
 /**
- * Client island for findings — handles create form and status updates.
- * Data is pre-fetched server-side and passed via props.
+ * Client island for findings — handles the status filter, the create form,
+ * status updates and the detail panel. Data is pre-fetched server-side and
+ * passed via props.
  */
-export function FindingsClient({ initialFindings, tenantSlug, canWrite, translations: t }: FindingsClientProps) {
+export function FindingsClient(props: FindingsClientProps) {
+    const tx = useTranslations('findings');
+    const tGroup = useTranslations('common.filterGroups');
+    const filters = useMemo(
+        () =>
+            buildFindingFilters(
+                (k, v) => tx(k as Parameters<typeof tx>[0], v as Parameters<typeof tx>[1]),
+                (k) => tGroup(k as Parameters<typeof tGroup>[0]),
+            ),
+        [tx, tGroup],
+    );
+    const filterCtx = useFilterContext(filters, [...FINDING_FILTER_KEYS], {
+        serverFilters: props.initialFilters,
+    });
+    return (
+        <FilterProvider value={filterCtx}>
+            <FindingsPageInner {...props} filterDefs={filters} />
+        </FilterProvider>
+    );
+}
+
+function FindingsPageInner({
+    initialFindings,
+    initialFilters,
+    tenantSlug,
+    canWrite,
+    translations: t,
+    filterDefs,
+}: FindingsClientProps & { filterDefs: ReturnType<typeof buildFindingFilters> }) {
     const tx = useTranslations('findings');
     const toast = useToast();
     const [showForm, setShowForm] = useState(false);
 
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
 
-    // PR-5 — API returns `{ rows, truncated }`; SSR initial wraps
-    // with `truncated: false` (SSR cap < backfill cap).
-    // `/findings` is fetched whole and filtered client-side, so the key is
-    // static — the SSR payload always matches and seeds the cache directly.
-    const findingsQuery = useTenantSWR<CappedList<FindingRow>>(
-        CACHE_KEYS.findings.list(),
-        { fallbackData: { rows: initialFindings, truncated: false } },
+    // ─── Status filter (server-side) ───
+    // The facet goes to the API rather than over the loaded rows, so that it
+    // narrows past the backfill cap. Only real statuses are sent: a value
+    // carried over from another list's URL (`?status=ACTIVE`) is ignored here
+    // rather than turning the whole register into a 400.
+    const { state, hasActive } = useFilters();
+    const fetchParams = useMemo(
+        () =>
+            toApiSearchParams({
+                status: (state.status ?? []).filter((v) =>
+                    (FINDING_STATUSES as readonly string[]).includes(v),
+                ),
+            }),
+        [state.status],
     );
+    const queryKeyFilters = useMemo(() => {
+        const obj: Record<string, string> = {};
+        for (const [k, v] of fetchParams) obj[k] = v;
+        return obj;
+    }, [fetchParams]);
+    const filtersMatchInitial = useSsrFallback({
+        queryKeyFilters,
+        initialFilters,
+        serverHadFilters: initialFilters && Object.keys(initialFilters).length > 0,
+        hasActive,
+    });
+    const findingsKey = useMemo(() => {
+        const qs = fetchParams.toString();
+        return qs ? `${CACHE_KEYS.findings.list()}?${qs}` : CACHE_KEYS.findings.list();
+    }, [fetchParams]);
+
+    // PR-5 — API returns `{ rows, truncated }`; SSR initial wraps
+    // with `truncated: false` (SSR cap < backfill cap). The SSR rows seed the
+    // cache only while the filter still describes the query they answered.
+    const findingsQuery = useTenantSWR<CappedList<FindingRow>>(findingsKey, {
+        fallbackData: filtersMatchInitial ? { rows: initialFindings, truncated: false } : undefined,
+    });
     const findings = findingsQuery.data?.rows ?? [];
     // Render a window, not the whole backfill-capped set. Without this the
     // page mounts every row it fetched and never virtualizes — the default
@@ -164,7 +229,7 @@ export function FindingsClient({ initialFindings, tenantSlug, canWrite, translat
         );
     }, [swrMutate, tenantSlug]);
 
-    // Optimistic status flip on the static findings list key: the hook
+    // Optimistic status flip on the current findings list key: the hook
     // applies `optimisticUpdate` synchronously, runs the PUT, then
     // revalidates (background GET) to reconcile — rolling back the row on
     // error. Replaces the hand-rolled cancel/getQueryData/setQueryData dance.
@@ -173,7 +238,7 @@ export function FindingsClient({ initialFindings, tenantSlug, canWrite, translat
         { id: string; status: string },
         FindingRow
     >({
-        key: CACHE_KEYS.findings.list(),
+        key: findingsKey,
         optimisticUpdate: (current, { id, status }) => {
             // `current` is always populated in practice (the status button
             // only shows on a loaded row). The fallback used to synthesise an
@@ -395,11 +460,12 @@ export function FindingsClient({ initialFindings, tenantSlug, canWrite, translat
                 />
             )}
 
+            <ListPageShell.Filters>
+                <FilterToolbar filters={filterDefs} actions={columnsDropdown} />
+            </ListPageShell.Filters>
+
             <ListPageShell.Body>
                 <TruncationBanner truncated={truncated} />
-                <div className="flex justify-end mb-tight">
-                    {columnsDropdown}
-                </div>
                 <DataTable
                     fillBody
                     data={visibleFindings}
@@ -414,12 +480,21 @@ export function FindingsClient({ initialFindings, tenantSlug, canWrite, translat
                     selectionEnabled={false}
                     onRowClick={handleFindingRowClick}
                     emptyState={
-                        <EmptyState
-                            size="sm"
-                            variant="no-records"
-                            title={t.noFindings}
-                            description={tx('list.emptyDesc')}
-                        />
+                        hasActive ? (
+                            <EmptyState
+                                size="sm"
+                                variant="no-results"
+                                title={tx('list.emptyMatchTitle')}
+                                description={tx('list.emptyMatchDesc')}
+                            />
+                        ) : (
+                            <EmptyState
+                                size="sm"
+                                variant="no-records"
+                                title={t.noFindings}
+                                description={tx('list.emptyDesc')}
+                            />
+                        )
                     }
                     resourceName={(p) => p ? 'findings' : 'finding'}
                     data-testid="findings-table"

@@ -841,7 +841,7 @@ function InteractiveKpiGrid({
                     selected={isSelected('policies')}
                 />
             </KpiTile>
-            <KpiTile drillHref={href('/findings')} drillLabel={t('openList', { label: t('openFindings') })}>
+            <KpiTile drillHref={href('/findings?status=OPEN,IN_PROGRESS,READY_FOR_VERIFICATION')} drillLabel={t('openList', { label: t('openFindings') })}>
                 <KpiCard
                     id="kpi-findings"
                     className="h-full"

@@ -363,3 +363,83 @@ describe('a role that can write edits the finding in its panel', () => {
         expect(mockToast.success).not.toHaveBeenCalled();
     });
 });
+
+// ─── The status filter ────────────────────────────────────────────────
+// The register had no filter: the dashboard's "Open Findings" arrow landed on
+// a list that also held closed findings, and the truncation banner told the
+// reader to refine filters that did not exist. The facet is sent to the API,
+// so it narrows past the backfill cap rather than over the loaded rows.
+
+describe('the register filters by status', () => {
+    const CLOSED_ROW: Row = { ...ROW, id: 'finding-2', title: 'Closed out last quarter', status: 'CLOSED' };
+    // The API answers a status-filtered read with only what matches.
+    const byStatus: FetchHandler = (url) => {
+        if (!/\/findings(\?|$)/.test(url)) return undefined;
+        const status = new URL(url, 'http://localhost').searchParams.get('status');
+        const rows = [ROW, CLOSED_ROW].filter((r) => !status || status.split(',').includes(r.status));
+        return { status: 200, body: { rows, truncated: false } };
+    };
+    const openStatuses = 'OPEN,IN_PROGRESS,READY_FOR_VERIFICATION';
+
+    afterEach(() => window.history.replaceState({}, '', '/'));
+
+    it('offers a Filter control', async () => {
+        handler = byStatus;
+        mount('READER', [ROW, CLOSED_ROW]);
+        await screen.findByText(ROW.title);
+        expect(screen.getByRole('button', { name: en.common.ui.filter })).toBeInTheDocument();
+    });
+
+    it("the dashboard's link fetches the open statuses from the API and shows no closed finding", async () => {
+        handler = byStatus;
+        window.history.replaceState({}, '', `/t/acme/findings?status=${openStatuses}`);
+        mount('READER', [ROW, CLOSED_ROW]);
+        await waitFor(() =>
+            expect(
+                calls.some(
+                    (c) =>
+                        c.method === 'GET' &&
+                        new URL(c.url, 'http://localhost').searchParams.get('status') === openStatuses,
+                ),
+            ).toBe(true),
+        );
+        await screen.findByText(ROW.title);
+        await waitFor(() => expect(screen.queryByText(CLOSED_ROW.title)).toBeNull());
+    });
+
+    it('server-rendered rows for the same filter are used as they are', async () => {
+        handler = byStatus;
+        window.history.replaceState({}, '', '/t/acme/findings?status=CLOSED');
+        render(
+            <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 60_000, shouldRetryOnError: false, revalidateOnMount: false }}>
+                <TooltipProvider>
+                    <FindingsClient
+                        initialFindings={[CLOSED_ROW]}
+                        initialFilters={{ status: 'CLOSED' }}
+                        tenantSlug="acme"
+                        canWrite={false}
+                        translations={TRANSLATIONS}
+                    />
+                </TooltipProvider>
+            </SWRConfig>,
+        );
+        expect(screen.getByText(CLOSED_ROW.title)).toBeInTheDocument();
+    });
+
+    it('a status nobody holds says the filter matched nothing', async () => {
+        handler = (url) =>
+            /\/findings(\?|$)/.test(url) ? { status: 200, body: { rows: [], truncated: false } } : undefined;
+        window.history.replaceState({}, '', '/t/acme/findings?status=READY_FOR_VERIFICATION');
+        mount('READER', []);
+        expect(await screen.findByText(F.list.emptyMatchTitle)).toBeInTheDocument();
+    });
+
+    it('a status from another list is not sent to the API', async () => {
+        handler = byStatus;
+        window.history.replaceState({}, '', '/t/acme/findings?status=ACTIVE');
+        mount('READER', [ROW, CLOSED_ROW]);
+        await screen.findByText(ROW.title);
+        await waitFor(() => expect(calls.some((c) => c.method === 'GET' && /\/findings(\?|$)/.test(c.url))).toBe(true));
+        expect(calls.some((c) => /status=/.test(c.url))).toBe(false);
+    });
+});

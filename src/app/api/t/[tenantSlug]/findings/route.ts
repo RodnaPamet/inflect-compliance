@@ -11,8 +11,11 @@ import { recordListPageRowCount } from '@/lib/observability/list-page-metrics';
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
+    // The register's status facet (`?status=OPEN,IN_PROGRESS`), applied here
+    // rather than over the loaded rows so it narrows past the backfill cap.
+    const status = req.nextUrl.searchParams.get('status') || undefined;
     // PR-5 — backfill cap.
-    const findings = await listFindings(ctx, { take: LIST_BACKFILL_CAP + 1 });
+    const findings = await listFindings(ctx, { take: LIST_BACKFILL_CAP + 1, status });
     const result = applyBackfillCap(findings);
     // PR-6 — row-count observability.
     recordListPageRowCount({

@@ -3,6 +3,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listFindings } from '@/app-layer/usecases/finding';
 import { FindingsClient } from './FindingsClient';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { FINDING_STATUSES } from './filter-defs';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,10 +20,26 @@ const SSR_PAGE_LIMIT = 100;
  */
 export default async function FindingsPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ tenantSlug: string }>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
     const { tenantSlug } = await params;
+    const sp = await searchParams;
+    // The status facet, for the server-rendered first page. Members that are
+    // not a finding status (a `?status=ACTIVE` carried over from another list)
+    // are dropped here rather than failing the whole render; the client's own
+    // fetch sends what the URL says and gets the API's 400 for a bad value.
+    const rawStatus = typeof sp.status === 'string' ? sp.status : '';
+    const status = rawStatus
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v): v is (typeof FINDING_STATUSES)[number] =>
+            (FINDING_STATUSES as readonly string[]).includes(v),
+        )
+        .join(',');
+    const initialFilters: Record<string, string> = status ? { status } : {};
 
     // Translations and tenant context are independent — fetch in parallel
     const [t, tc, ctx] = await Promise.all([
@@ -30,13 +47,14 @@ export default async function FindingsPage({
         getTranslations('common'),
         getTenantCtx({ tenantSlug }),
     ]);
-    const findings = await listFindings(ctx, { take: SSR_PAGE_LIMIT });
+    const findings = await listFindings(ctx, { take: SSR_PAGE_LIMIT, status: status || undefined });
 
     return (
         <div className="space-y-section animate-fadeIn">
             <BackAffordance noFallback />
             <FindingsClient
                 initialFindings={JSON.parse(JSON.stringify(findings))}
+                initialFilters={initialFilters}
                 tenantSlug={tenantSlug}
                 // `createFinding` / `updateFinding` assert the coarse write
                 // tier only, so the UI offers writes on exactly that.

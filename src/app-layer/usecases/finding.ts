@@ -83,7 +83,7 @@ function sanitizeOptional(v: string | null | undefined): string | null | undefin
 
 export async function listFindings(
     ctx: RequestContext,
-    options: { take?: number } = {},
+    options: { take?: number; status?: string } = {},
 ) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
