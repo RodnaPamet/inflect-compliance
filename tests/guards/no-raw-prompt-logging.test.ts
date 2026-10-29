@@ -219,6 +219,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/lib/agentic/subagent-fanout-policy.ts — identifier bound elsewhere',
     'src/lib/agentic/open-run-streams.ts — identifier bound elsewhere',
     'src/lib/agentic/openshell/executor.ts — identifier bound elsewhere',
+    'src/lib/agentic/openshell/kill-drill.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     // RELOCATION, not a new hole. `haltRunAtCap` was extracted from the static
     // driver into the shared settlement module when a second engine arrived —
@@ -783,7 +784,26 @@ const SINK_FLOOR = 30;
 // loosening carries its reason. Two sinks at two holes each is just above the
 // existing average, and the alternative was to log nothing when a sandbox may
 // have leaked.
-const MEASURED_HOLES = 206;
+// 206 -> 209: THE KILL-SWITCH DRILL'S SANDBOX ARM (5.4, #3974). ONE sink, in
+// `openshell/kill-drill.ts`, carrying three values the rule cannot open:
+// `sandboxId` (a local assigned from the create call), `reportedOutcome` (a
+// local holding the deletion enum) and an error-message expression. The field
+// NAMES are all written at the sink; this is the ORDINARY kind the docblock
+// distinguishes from a SPREAD or a HELPER, and it is the same shape as the
+// `executor.ts` entry directly above it in the list.
+//
+// None is prompt-derived: a sandbox id and a deletion outcome are not model
+// input. The sink exists for the one case worth logging loudly — a gateway that
+// reported a deletion while the sandbox stayed present, which is the failure the
+// whole arm exists to catch, and a drill that found it and said nothing would be
+// the defect it is testing for.
+//
+// This LOOSENS `HOLES_PER_SINK_CEILING`: (206+6)/113 = 1.8761 becomes
+// (209+6)/114 = 1.8860. Stated plainly because this file's convention is that a
+// loosening carries its reason. Three holes on one sink is above the running
+// average, and the alternative was to log nothing when a sandbox may have
+// leaked — the same trade the entry above records.
+const MEASURED_HOLES = 209;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -834,7 +854,7 @@ const MEASURED_HOLES = 206;
 // long note under `MEASURED_HOLES` says why that was accepted rather than
 // worked around, and that draining an existing sink is what would actually
 // move it.
-const MEASURED_SINKS = 113;
+const MEASURED_SINKS = 114;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

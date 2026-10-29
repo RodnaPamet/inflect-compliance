@@ -333,6 +333,9 @@ describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediato
     const OPENSHELL_MODULES = [
         'src/lib/agentic/openshell/collector-policy.ts',
         'src/lib/agentic/openshell/executor.ts',
+        // Added by 5.4 (#3974). The third module this enumeration has caught
+        // rather than review — see the note below.
+        'src/lib/agentic/openshell/kill-drill.ts',
         // Added by 5.2 (#4403) while this PR was open, and caught by the
         // completeness test below rather than by review. That is the test
         // earning its place: each PR was green alone, and the fourth module
@@ -378,6 +381,7 @@ describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediato
         await import('@/lib/agentic/openshell/executor');
         await import('@/lib/agentic/openshell/collector-policy');
         await import('@/lib/agentic/openshell/policy-drift');
+        await import('@/lib/agentic/openshell/kill-drill');
 
         const loaded = Object.keys(require.cache);
         // Non-vacuous: the modules themselves must be in there, or an empty
