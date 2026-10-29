@@ -26,9 +26,9 @@ export default async function AgentProposalsPage({
     //
     // `admin.view`, which the move to /agents/proposals (#2437) kept, OR —
     // since #3710 — the read-only inventory view key (`mayReadAgentActivity`),
-    // which AI_ADMIN and AUDITOR hold. The API behind this page is gated only by
-    // the usecase's `assertCanRead`, so THIS check is the whole narrowing; the
-    // view key widens it to read the queue and to nothing else. Approving or
+    // which AI_ADMIN and AUDITOR hold. The API routes behind this page take the
+    // same two keys as `requirePermission`, so the API refuses whom the page
+    // refuses; the view key widens it to read the queue and to nothing else. Approving or
     // rejecting still asserts the role-tier write (`canOperate` below, and
     // `approveAgentProposal`'s own `assertCanWrite`), which neither role holds:
     // approval commits a write to the domain the proposal changes.
