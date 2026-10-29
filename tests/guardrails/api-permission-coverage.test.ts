@@ -329,6 +329,33 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/processes/[id]/snapshots/[version]/restore',
         why: 'Rolling a process map back to an earlier snapshot — processes.edit, mirroring the assertCanWrite in restoreProcessMapSnapshot. Narrow leaf root: the snapshots list + by-version siblings are reads, and processes/[id] itself stays unregistered because its GET carries no matching key.',
     },
+    // ── Agent runs and agent proposals (#3710) ──────────────────────
+    // Outside `/admin/`, so until these roots no layer-1 check walked them,
+    // and the run reads, the run writes and the proposal routes went out with
+    // only their usecase's coarse `assertCanRead` / `assertCanWrite` while the
+    // pages behind them refused EDITOR and READER. `agent-runs` is taken WHOLE:
+    // every route in it now gates on `admin.view` OR `admin.agent_registry_view`,
+    // so the next one added there fails until somebody triages it. The proposal
+    // writes are LEAF roots, because `agent-proposals/` also holds `compose/` and
+    // `sample-audits/`, which were not triaged here; its collection GET cannot be
+    // a leaf root for the same reason, and is pinned by
+    // tests/unit/agent-runs-proposals-route-gates.test.ts instead.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/agent-runs',
+        why: 'Agentic workflow runs — list, start, one run with its steps, the step feed, resume, abort, the live tail and the checkpoint read. Every one gates on the runs pages\' admin.view OR admin.agent_registry_view (mayReadAgentActivity); the writes add the role-tier write the usecases assert, which is what the page enables its buttons on.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/[id]/approve',
+        why: 'Approving an agent proposal runs the real create-usecase — the proposals page\'s admin.view OR admin.agent_registry_view, plus the assertCanWrite the usecase holds.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/[id]/reject',
+        why: 'Rejecting an agent proposal — gated as its approve sibling.',
+    },
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/agent-proposals/bulk/reject',
+        why: 'Rejecting a batch of agent proposals — gated exactly as the single reject, so the two paths agree about who may reject.',
+    },
     // ── The employee manager field (#2492) ──────────────────────────
     // NARROW LEAF ROOT, and the narrowness is the whole reason it can be
     // here at all. `personnel` as a directory is NOT privileged — its

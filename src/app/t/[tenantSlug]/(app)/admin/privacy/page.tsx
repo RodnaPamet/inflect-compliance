@@ -9,7 +9,6 @@ import {
     UserFocus,
 } from '@inflect/ui/components/ui/icons/nucleo';
 
-import { getTenantCtx } from '@/app-layer/context';
 import { getPrivacyPosture } from '@/app-layer/usecases/privacy-posture';
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -17,6 +16,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { gateAdminPage } from '../_lib/admin-page-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,18 +40,23 @@ export const dynamic = 'force-dynamic';
  *     The model exists but both jobs throw and are unregistered — an intake
  *     form here would imply a working GDPR Art.15/17 pipeline. On a
  *     compliance product that is the one mistake worth engineering against.
+ *
+ * Gated here, before the read (`admin.view` + `canAdmin`, which
+ * `getPrivacyPosture` asserts), so a refused caller gets the forbidden page
+ * rather than the read's error. See `../_lib/admin-page-requirements.ts`.
  */
 export default async function AdminPrivacyPage({
     params,
 }: {
     params: Promise<{ tenantSlug: string }>;
 }) {
-    const resolved = await params;
-    const ctx = await getTenantCtx(resolved);
+    const gate = await gateAdminPage('/admin/privacy', params);
+    if (!gate.allowed) return gate.forbidden;
+    const { ctx, tenantSlug } = gate;
     const posture = await getPrivacyPosture(ctx);
     const t = await getTranslations('admin');
 
-    const tenantHref = (path: string) => `/t/${resolved.tenantSlug}${path}`;
+    const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const iconCls = 'w-4 h-4 text-content-muted';
     const yes = t('privacy.yes');
     const no = t('privacy.no');

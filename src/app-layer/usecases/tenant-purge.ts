@@ -130,6 +130,7 @@ export const TENANT_PURGE_RETAINED: ReadonlySet<string> = new Set([
     'HostConsumerMessage',
     'PeerAgentKillSwitch',
     'PeerAgentMessage',
+    'PeerAgentReplyDelivery',
     'ReadinessSnapshot',
     'TenantCalendarConsent',
 

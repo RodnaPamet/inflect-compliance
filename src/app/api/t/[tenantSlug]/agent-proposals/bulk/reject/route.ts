@@ -1,20 +1,22 @@
 import { NextRequest } from 'next/server';
 
-import { getTenantCtx } from '@/app-layer/context';
 import { bulkRejectAgentProposals } from '@/app-layer/usecases/agent-proposals';
 import { parseJsonBody } from '@/lib/validation/route';
 import { BulkAgentProposalRejectSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { requirePermission } from '@/lib/security/permission-middleware';
 
 /**
  * POST /api/t/:tenantSlug/agent-proposals/bulk/reject — reject a batch of
- * pending proposals in one transaction. Nothing is created. Write-gated by the
- * usecase (`assertCanWrite`), the same gate its single-proposal sibling at
- * `../[id]/reject` uses; this route is deliberately not a route-level
- * `requirePermission` surface, because moving one of the pair and not the
- * other would let the bulk path and the single path disagree about who may
- * reject.
+ * pending proposals in one transaction. Nothing is created.
+ *
+ * Gated exactly as its single-proposal sibling at `../[id]/reject`: the
+ * proposals page's `admin.view` OR `admin.agent_registry_view`
+ * (`mayReadAgentActivity`, #3710) here, as the middleware so a refusal writes
+ * `AUTHZ_DENIED`, and the role-tier write the usecase asserts
+ * (`assertCanWrite`). The two routes moved together, so the bulk path and the
+ * single path still agree about who may reject.
  *
  * THE RESPONSE NAMES BOTH HALVES: `{ rejected: string[], skipped: [{ id,
  * reason }] }`. A batch whose rows are all stale returns 200 with an empty
@@ -23,13 +25,13 @@ import { jsonResponse } from '@/lib/api-response';
  * cannot reconcile. See `bulkRejectAgentProposals` for the atomicity decision
  * this shape follows from.
  */
-export const POST = withApiErrorHandling(async (
-    req: NextRequest,
-    { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
-) => {
-    const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
-    const body = await parseJsonBody(req, BulkAgentProposalRejectSchema);
-    const result = await bulkRejectAgentProposals(ctx, body.proposalIds);
-    return jsonResponse(result);
-});
+export const POST = withApiErrorHandling(
+    requirePermission<{ tenantSlug: string }>(
+        { keys: ['admin.view', 'admin.agent_registry_view'], mode: 'any' },
+        async (req: NextRequest, _routeArgs, ctx) => {
+            const body = await parseJsonBody(req, BulkAgentProposalRejectSchema);
+            const result = await bulkRejectAgentProposals(ctx, body.proposalIds);
+            return jsonResponse(result);
+        },
+    ),
+);

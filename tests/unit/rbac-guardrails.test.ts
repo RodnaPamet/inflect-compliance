@@ -41,9 +41,13 @@ describe('RBAC Guardrail Scans', () => {
             expect(content).toMatch(/<ForbiddenPage/);
         });
 
-        test('admin/rbac page does NOT have redundant per-page guard (uses layout)', () => {
+        test('admin/rbac page carries no client-side guard of its own', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/admin/rbac/page.tsx');
-            // Should NOT contain per-page guard — layout handles authorization
+            // The on-screen guard is the layout's. The page's SERVER gate is
+            // `gateAdminPage`, which is not redundant with it: the layout is a
+            // client component and cannot keep this page's member list out of
+            // the payload. `tests/guardrails/admin-layout-guard.test.ts`
+            // holds that gate.
             expect(content).not.toMatch(/ServerForbiddenPage/);
             expect(content).not.toMatch(/RequirePermission/);
         });

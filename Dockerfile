@@ -224,4 +224,12 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Which build this is (#4477). The publish workflow passes the commit the
+# image is built from, and the health probes report it as `version`, so a
+# deploy can be confirmed from outside the VM. Declared last so a new commit
+# invalidates no earlier layer. A build without the argument (CI's Docker
+# Build, a local build) reports `dev`.
+ARG BUILD_SHA
+ENV BUILD_SHA=$BUILD_SHA
+
 ENTRYPOINT ["./scripts/entrypoint.sh"]

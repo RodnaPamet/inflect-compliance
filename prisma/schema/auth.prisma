@@ -212,6 +212,7 @@ model Tenant {
   agentProfileVersions              AgentProfileVersion[]
   peerAgentMessages                 PeerAgentMessage[]
   peerAgentKillSwitches             PeerAgentKillSwitch[]
+  peerAgentReplyDeliveries          PeerAgentReplyDelivery[]
   peerAgentInboundCredentials       PeerAgentInboundCredential[]
   hostConsumers                     HostConsumer[]
   hostConsumerMessages              HostConsumerMessage[]
