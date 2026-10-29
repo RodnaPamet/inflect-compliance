@@ -444,6 +444,12 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // on both ladder pages — left its sight. The ceiling follows the measurement
 // down rather than leaving a slot that was never paid for: the next primary
 // still pays with a demotion.
+//
+// 2026-10-29 — #4461 findings panel: 174 stays, PAID FOR. The panel's edit
+// form saves from its `Sheet.Actions`, whose LAST button `modal-action-order`
+// requires to be primary, and it is bought by the Statement of Applicability's
+// per-row "map control" button, a row action that R7-PR1's demotion of row
+// actions had missed. The panel's Edit trigger is secondary. Net change: zero.
 const MAX_PRIMARY_COUNT = 174;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

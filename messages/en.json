@@ -4290,7 +4290,23 @@
       "control": "Control",
       "source": "Source"
     },
-    "adHoc": "Ad-hoc"
+    "adHoc": "Ad-hoc",
+    "detail": {
+      "sheetTitle": "Finding",
+      "loadingTitle": "Loading finding…",
+      "loadingBody": "Loading…",
+      "errorTitle": "Finding unavailable",
+      "loadFailed": "This finding could not be loaded.",
+      "labelRisks": "Implicated risks",
+      "noRisks": "No risks linked.",
+      "edit": "Edit",
+      "editTitle": "Edit finding",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "saved": "Finding saved.",
+      "saveFailed": "Failed to save finding ({status})",
+      "saveFailedGeneric": "Failed to save finding"
+    }
   },
   "mapping": {
     "title": "Framework Mapping",

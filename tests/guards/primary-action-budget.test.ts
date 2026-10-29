@@ -193,7 +193,11 @@ const PRIMARY_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx": 2,
     // 2026-10-04 census 2 -> 3. Two ternary `variant={…?…:…}` sites; the census
     // counts every branch a ternary can render, the old lazy regex counted none.
-    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx": 3,
+    // 3 -> 2 (#4461): the per-row "map control" button was demoted to
+    // secondary — a row action, which R7-PR1 already moved off primary
+    // everywhere else. It paid for the findings panel's Save under the
+    // product-wide ceiling in primary-secondary-ratio.
+    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx": 2,
     // 2026-10-04 census 2 -> 1, lowered to the measurement. The old
     // lazy counter could not see this file's real count, so the gap was never

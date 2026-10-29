@@ -1,6 +1,8 @@
 'use client';
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useThresholdLoadMore, useToast } from '@/components/ui/hooks';
@@ -19,6 +21,14 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { CreateFindingModal } from './CreateFindingModal';
+import { FindingDetailSheet } from './FindingDetailSheet';
+
+/**
+ * The register's address for one finding: `?finding=<id>` opens its panel.
+ * There is no `/findings/[id]` route, so other surfaces (the integration
+ * passport, the calendar) link here.
+ */
+export const FINDING_PARAM = 'finding';
 
 const SEV_BADGE: Record<string, StatusBadgeVariant> = { LOW: 'info', MEDIUM: 'warning', HIGH: 'error', CRITICAL: 'error' };
 const STATUS_BADGE: Record<string, StatusBadgeVariant> = { OPEN: 'error', IN_PROGRESS: 'info', READY_FOR_VERIFICATION: 'warning', CLOSED: 'success' };
@@ -118,6 +128,41 @@ export function FindingsClient({ initialFindings, tenantSlug, canWrite, translat
     } = useThresholdLoadMore(findings);
 
     const truncated = findingsQuery.data?.truncated ?? false;
+
+    // ─── Detail panel ───
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const [openFindingId, setOpenFindingId] = useState<string | null>(null);
+    const linkedFindingId = searchParams?.get(FINDING_PARAM) ?? null;
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (linkedFindingId) setOpenFindingId(linkedFindingId);
+    }, [linkedFindingId]);
+    const closeFinding = useCallback(() => {
+        setOpenFindingId(null);
+        // Drop the deep-link parameter so a reload or Back does not reopen
+        // the panel the user has just closed. Other parameters stay.
+        if (searchParams?.has(FINDING_PARAM)) {
+            const next = new URLSearchParams(searchParams.toString());
+            next.delete(FINDING_PARAM);
+            const qs = next.toString();
+            router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+        }
+    }, [pathname, router, searchParams]);
+    const handleFindingRowClick = useCallback(
+        (row: { original: FindingRow }) => setOpenFindingId(row.original.id),
+        [],
+    );
+    // A save changes what the register shows (title, severity, owner, the
+    // control column), so every cached variant of the list is refetched.
+    const { mutate: swrMutate } = useSWRConfig();
+    const revalidateFindingLists = useCallback(() => {
+        const base = `/api/t/${tenantSlug}${CACHE_KEYS.findings.list()}`;
+        void swrMutate(
+            (key: unknown) => typeof key === 'string' && (key === base || key.startsWith(`${base}?`)),
+        );
+    }, [swrMutate, tenantSlug]);
 
     // Optimistic status flip on the static findings list key: the hook
     // applies `optimisticUpdate` synchronously, runs the PUT, then
@@ -365,7 +410,9 @@ export function FindingsClient({ initialFindings, tenantSlug, canWrite, translat
                     onColumnVisibilityChange={setColumnVisibility}
                     // No bulk actions act on ticked rows, so the default-on
                     // select column only made a click tick a row (#4275).
+                    // With it off, one click opens the finding's panel.
                     selectionEnabled={false}
+                    onRowClick={handleFindingRowClick}
                     emptyState={
                         <EmptyState
                             size="sm"
@@ -378,6 +425,14 @@ export function FindingsClient({ initialFindings, tenantSlug, canWrite, translat
                     data-testid="findings-table"
                 />
             </ListPageShell.Body>
+
+            <FindingDetailSheet
+                findingId={openFindingId}
+                onClose={closeFinding}
+                canWrite={canWrite}
+                tenantSlug={tenantSlug}
+                onSaved={revalidateFindingLists}
+            />
         </ListPageShell>
     );
 }

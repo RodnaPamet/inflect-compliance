@@ -50,18 +50,20 @@ jest.mock('next-intl', () => {
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
 
-const mockNav = { searchParams: new URLSearchParams() };
-jest.mock('next/navigation', () => {
-    const router = {
+const mockNav = {
+    searchParams: new URLSearchParams(),
+    router: {
         push: jest.fn(),
         replace: jest.fn(),
         refresh: jest.fn(),
         back: jest.fn(),
         forward: jest.fn(),
         prefetch: jest.fn(),
-    };
+    },
+};
+jest.mock('next/navigation', () => {
     return {
-        useRouter: () => router,
+        useRouter: () => mockNav.router,
         usePathname: () => '/t/acme/findings',
         useSearchParams: () => mockNav.searchParams,
         useParams: () => ({ tenantSlug: 'acme' }),
@@ -133,6 +135,7 @@ beforeEach(() => {
     calls.length = 0;
     handler = () => undefined;
     mockNav.searchParams = new URLSearchParams();
+    Object.values(mockNav.router).forEach((fn) => fn.mockReset());
     Object.values(mockToast).forEach((fn) => fn.mockReset());
     global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
@@ -223,5 +226,140 @@ describe('the table has no select column', () => {
         mount(role);
         await screen.findByText(ROW.title);
         expect(within(table()).queryAllByRole('checkbox')).toHaveLength(0);
+    });
+});
+
+// ─── The finding's panel ──────────────────────────────────────────────
+// Everything the create dialog collects was never shown again: the register
+// has eight columns and rows had no click action.
+
+const DETAIL = {
+    id: 'finding-1',
+    title: ROW.title,
+    description: 'Q3 review evidence missing for two systems.',
+    severity: 'HIGH',
+    type: 'NONCONFORMITY',
+    status: 'OPEN',
+    analysis: 'Owner on leave during the window.',
+    owner: null,
+    dueDate: '2026-12-15T00:00:00.000Z',
+    assigneeUserId: 'user-a',
+    controlId: 'ctl-1',
+    compensatingControlId: 'ctl-2',
+    assignee: { id: 'user-a', name: 'Ana Petrova', email: 'ana@example.test' },
+    control: { id: 'ctl-1', code: 'A.5.18', name: 'Access rights' },
+    compensatingControl: { id: 'ctl-2', code: 'A.8.16', name: 'Monitoring activities' },
+    audit: { id: 'audit-1', title: 'ISO 27001 internal audit 2026' },
+    riskLinks: [{ risk: { id: 'risk-1', key: 'RSK-7', title: 'Unauthorised access' } }],
+    evidenceLinks: [],
+};
+
+const detailHandler = (extra?: FetchHandler): FetchHandler => (url, init) => {
+    const custom = extra?.(url, init);
+    if (custom) return custom;
+    if ((init?.method ?? 'GET') === 'GET' && url.endsWith('/findings/finding-1')) return { status: 200, body: DETAIL };
+    if (/\/(controls|risks|audits)(\?|$)/.test(url)) return { status: 200, body: { rows: [], truncated: false } };
+    return undefined;
+};
+
+const panel = () => screen.getByTestId('finding-sheet-detail');
+
+describe('a click on a finding opens its panel', () => {
+    it('shows every field the create dialog collects', async () => {
+        handler = detailHandler();
+        mount('READER');
+        fireEvent.click(await screen.findByText(ROW.title));
+        await screen.findByTestId('finding-sheet-detail');
+        const C = F.create;
+        const rowValue = (label: string) => within(panel()).getByText(label).nextElementSibling as HTMLElement;
+        expect(rowValue(C.labelType)).toHaveTextContent(F.typeOptions.NONCONFORMITY);
+        expect(rowValue(C.labelAssignee)).toHaveTextContent('Ana Petrova');
+        expect(rowValue(C.labelDueDate)).toHaveTextContent('15 Dec 2026');
+        expect(within(rowValue(C.labelOriginatingAudit)).getByRole('link')).toHaveAttribute('href', '/t/acme/audits?selected=audit-1');
+        expect(within(panel()).getByText(DETAIL.description)).toBeInTheDocument();
+        expect(within(rowValue(C.labelLinkedControl)).getByRole('link')).toHaveAttribute('href', '/t/acme/controls/ctl-1');
+        expect(within(rowValue(C.labelCompensatingControl)).getByRole('link')).toHaveAttribute('href', '/t/acme/controls/ctl-2');
+        expect(within(panel()).getByRole('link', { name: /Unauthorised access/ })).toHaveAttribute('href', '/t/acme/risks/risk-1');
+        expect(within(panel()).getByText(DETAIL.analysis)).toBeInTheDocument();
+        // Severity and status ride the header.
+        expect(document.getElementById('finding-sheet-severity')).toHaveTextContent(F.severityOptions.HIGH);
+        expect(document.getElementById('finding-sheet-status')).toHaveTextContent(F.open);
+    });
+
+    it('opens from ?finding=<id>, the address other pages link to', async () => {
+        handler = detailHandler();
+        mockNav.searchParams = new URLSearchParams('finding=finding-1');
+        mount('READER');
+        expect(await screen.findByTestId('finding-sheet-detail')).toBeInTheDocument();
+    });
+
+    it('closing it drops the parameter, keeping the others', async () => {
+        handler = detailHandler();
+        mockNav.searchParams = new URLSearchParams('status=OPEN&finding=finding-1');
+        mount('READER');
+        await screen.findByTestId('finding-sheet-detail');
+        fireEvent.click(screen.getByRole('button', { name: en.common.close }));
+        await waitFor(() =>
+            expect(mockNav.router.replace).toHaveBeenCalledWith('/t/acme/findings?status=OPEN', { scroll: false }),
+        );
+    });
+
+    it.each<Role>(['READER', 'AUDITOR', 'AI_ADMIN'])('%s gets no Edit', async (role) => {
+        handler = detailHandler();
+        mount(role);
+        fireEvent.click(await screen.findByText(ROW.title));
+        await screen.findByTestId('finding-sheet-detail');
+        expect(screen.queryByRole('button', { name: F.detail.edit })).toBeNull();
+    });
+});
+
+describe('a role that can write edits the finding in its panel', () => {
+    async function openEdit(role: Role = 'EDITOR') {
+        mount(role);
+        fireEvent.click(await screen.findByText(ROW.title));
+        fireEvent.click(await screen.findByRole('button', { name: F.detail.edit }));
+        return screen.findByTestId('finding-edit-form');
+    }
+
+    it.each<Role>(['OWNER', 'ADMIN', 'EDITOR'])('%s gets the form, seeded from the finding', async (role) => {
+        handler = detailHandler();
+        await openEdit(role);
+        expect(document.getElementById('finding-edit-title')).toHaveValue(DETAIL.title);
+        expect(document.getElementById('finding-edit-description')).toHaveValue(DETAIL.description);
+        expect(document.getElementById('finding-edit-analysis')).toHaveValue(DETAIL.analysis);
+    });
+
+    it('sends only what changed, and an emptied field as null', async () => {
+        handler = detailHandler((url, init) =>
+            init?.method === 'PUT' ? { status: 200, body: { success: true, finding: { id: 'finding-1' } } } : undefined,
+        );
+        await openEdit();
+        fireEvent.change(document.getElementById('finding-edit-title')!, { target: { value: 'Access reviews skipped in Q3' } });
+        fireEvent.change(document.getElementById('finding-edit-analysis')!, { target: { value: '   ' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: F.detail.save }));
+        });
+        await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith(F.detail.saved));
+        const put = calls.find((c) => c.method === 'PUT');
+        expect(put?.url).toBe('/api/t/acme/findings/finding-1');
+        expect(put?.body).toEqual({ title: 'Access reviews skipped in Q3', analysis: null });
+        // Back to the read view.
+        await screen.findByTestId('finding-sheet-detail');
+    });
+
+    it("shows the server's reason when the save is refused", async () => {
+        const REFUSAL = 'Assignee is not an active member of this tenant';
+        handler = detailHandler((_url, init) =>
+            init?.method === 'PUT'
+                ? { status: 400, body: { error: { code: 'INVALID_ASSIGNEE', message: REFUSAL } } }
+                : undefined,
+        );
+        await openEdit();
+        fireEvent.change(document.getElementById('finding-edit-title')!, { target: { value: 'Changed' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: F.detail.save }));
+        });
+        expect(await screen.findByTestId('finding-edit-error')).toHaveTextContent(REFUSAL);
+        expect(mockToast.success).not.toHaveBeenCalled();
     });
 });
