@@ -32,6 +32,7 @@ import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
 import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
+import { SkillLoadError } from './skills/index';
 import { skillPinDrift } from './skills/resolve';
 import { resolveRunSkillMount } from './skills/tenant-mount';
 import { bindRun, releaseRun } from './run-binding';
@@ -616,7 +617,20 @@ export async function executeFlueRun(
     // documents, never the ability to go and find documents. It adds this
     // tenant's OWN approved skills on the workflow (#3680), read under this
     // run's tenant context and gated exactly as at admission.
-    const { documents: skills, pins: currentPins } = await resolveRunSkillMount(ctx, def);
+    //
+    // A refusal SETTLES the run with its reason (Step 2d), as the Tool Runner
+    // engine's does, rather than escaping the segment as a throw: the
+    // conformance scenario "a refused skill never reaches the model" asks both
+    // engines for the same named outcome.
+    let mount: Awaited<ReturnType<typeof resolveRunSkillMount>>;
+    try {
+        mount = await resolveRunSkillMount(ctx, def);
+    } catch (err) {
+        if (!(err instanceof SkillLoadError)) throw err;
+        const status = await failRun(ctx, runId, `skill_not_mountable: ${err.message}`);
+        return { status, stepFailures: 0 };
+    }
+    const { documents: skills, pins: currentPins } = mount;
 
     // …AND THEY ARE THE ONES THIS RUN WAS PINNED TO (#3666). The row recorded
     // each skill's hash when the run was admitted; a deploy between segments

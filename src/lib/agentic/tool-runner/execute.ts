@@ -62,6 +62,10 @@ import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { stepVerdictOf, type StepGuardObservation } from '@/lib/agentic/engine-tools';
 import { EMPTY_TOOLSET_MESSAGE } from '@/lib/agentic/flue/empty-toolset-message';
 import { openDeclaredRunInput, runMessage } from '@/lib/agentic/flue/run-message';
+import { SkillLoadError } from '@/lib/agentic/flue/skills';
+import { parseMountedSkillPins } from '@/lib/agentic/flue/skills/mount-gate';
+import { skillPinDrift } from '@/lib/agentic/flue/skills/resolve';
+import { resolveRunSkillMount } from '@/lib/agentic/flue/skills/tenant-mount';
 import {
     KILL_SWITCH_DRILL_AGENT_ID,
     killRefusalMessage,
@@ -77,7 +81,8 @@ import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics'
 
 import { recordToolRunnerDecision } from './model-decision';
 import { lockedParams } from './params';
-import { toolRunnerToolsFor, type RunStop, type ToolRunBinding } from './tools';
+import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
+import { SerialQueue, toolRunnerToolsFor, type RunStop, type ToolRunBinding } from './tools';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -154,6 +159,30 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: 0 };
     }
     const message = runMessage(def, fromSeq, declared.input);
+
+    // ── The run's skills (Step 2d) ──────────────────────────────────────────
+    // Through the ONE resolver every reasoning engine uses, so the gate, the
+    // budget and the pins are Flue's: the definition's skills, or the ones a
+    // profile's version names, in this run's own tenant. And they must be the
+    // ones the row pinned at admission: a deploy, an approval or a retirement
+    // between segments would otherwise teach the run something its own row
+    // does not describe. Both refusals settle before anything is sent.
+    let skills: RunSkills;
+    try {
+        const mount = await resolveRunSkillMount(ctx, def);
+        const drift = skillPinDrift(initial.mountedSkills, mount.pins);
+        if (drift) {
+            const status = await failRun(ctx, runId, `skill_pin_drift: ${drift}`);
+            return { status, stepFailures: 0 };
+        }
+        // The row's pins when it has them, so an activation is checked against
+        // what admission recorded rather than against this segment's reading.
+        skills = { documents: mount.documents, pins: parseMountedSkillPins(initial.mountedSkills) ?? mount.pins };
+    } catch (err) {
+        if (!(err instanceof SkillLoadError)) throw err;
+        const status = await failRun(ctx, runId, `skill_not_mountable: ${err.message}`);
+        return { status, stepFailures: 0 };
+    }
 
     const invocation = await resolveMcpInvocation(ctx, { actionsAlready: fromSeq });
     const caps = resolveRunCaps(invocation.policyCard?.inForce.value ?? null);
@@ -268,10 +297,14 @@ export async function executeToolRunnerRun(
         },
     };
 
+    // ONE queue for every call of the run, the engine's own included, so the
+    // ledger's order is the order the calls were made.
+    const queue = new SerialQueue();
     const offered = toolRunnerToolsFor(invocation, binding, {
         readOnly: def.readOnly === true,
         ...(def.profile ? { profileTools: def.profile.toolNames } : {}),
         observe: noteVerdict,
+        queue,
     });
 
     // A RUN THAT COULD REACH NOTHING sends nothing. Flue makes one call against
@@ -288,7 +321,18 @@ export async function executeToolRunnerRun(
         return { status: 'EMPTY_CATALOGUE', stepFailures: 1 };
     }
 
-    const params = lockedParams({ def, tools: offered.tools, message, caps, fromSeq });
+    // The engine's own tool goes BESIDE the resolved set, after the empty check
+    // above: a run that can read its skills but reach no tenant data still has
+    // nothing to do with an answer.
+    const skillTool = activateSkillTool(binding, skills, queue);
+    const params = lockedParams({
+        def,
+        tools: skillTool ? [...offered.tools, skillTool] : offered.tools,
+        message,
+        caps,
+        fromSeq,
+        skillCatalogue: skillCatalogueText(skills.documents),
+    });
     logger.info('tool-runner: dispatching', {
         component: 'agentic',
         runId,
@@ -296,6 +340,7 @@ export async function executeToolRunnerRun(
         model: params.model,
         toolsOffered: offered.tools.length,
         toolsOmitted: offered.omitted.length,
+        skillsMounted: skills.documents.length,
     });
 
     lastActivityAt = Date.now();

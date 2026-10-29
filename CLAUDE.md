@@ -2930,6 +2930,38 @@ one careless edit from being undone:
   - **Its kill message says `tool_runner_run_agent_killed`.** `haltRunAtKill`
     takes the engine's prefix; Flue's default is unchanged.
 
+**Skills reach a Tool Runner run through Inflect's own `activate_skill`**
+(Step 2d, #4151; `tool-runner/skills.ts`). Rules that are each one careless edit
+from being undone:
+
+  - **One resolver for every engine and every kind of run.**
+    `resolveRunSkillMount` is the only read of what a run mounts, at admission
+    and at each segment. A profile's run mounts the skills its version names;
+    its tenant skills are read BY NAME in the run's own tenant, and a name with
+    no approved version refuses the run. Do not write a second resolver for an
+    engine.
+  - **A mount refusal SETTLES the run** `skill_not_mountable: …` before any
+    model call, on this engine and on Flue. The conformance scenario
+    `refused-skill-never-reaches-the-model` holds both; letting the refusal
+    escape as a throw fails it.
+  - **`activate_skill` serves the run's PINNED skills and nothing else.** It
+    holds the resolver's documents and the row's pins, reads no corpus and no
+    table, re-hashes the text it would return against the pin
+    (`SKILL_PIN_MISMATCH`), and answers any other name `SKILL_NOT_MOUNTED`
+    without echoing it. Do not give it a lookup of its own: that is how another
+    tenant's skill would reach a run.
+  - **It is offered BESIDE the resolved set**, after the empty-catalogue check,
+    so a run that can read skills but reach no tool still settles
+    `EMPTY_CATALOGUE`. An activation is a TOOL_CALL step charged to `STEPS`,
+    never to `TOOL_CALLS`, and never a funnel call.
+  - **The catalogue lines are what `catalogBytes` measures**, so the 2 KiB
+    per-run budget is a budget on what is sent. A change to the line format is
+    a change to both.
+  - **It is reported as engine-supplied** (`tool-runner/supplied-tools.ts`).
+    `engineSuppliedTools()` in `agent-tool-exposure.ts` merges both engines'
+    lists by name for the Tools tab. A tool the engine adds and the list omits
+    fails `tests/unit/agentic/tool-runner-skills.test.ts`.
+
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
 `GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and
@@ -2945,7 +2977,7 @@ until it does.
 
 **A new engine passes the driver conformance suite before it is switched on**
 (Step 0b, `tests/helpers/driver-conformance.ts`). Two engine-agnostic tables
-hold ten run scenarios and one admission scenario. An engine supplies an
+hold eleven run scenarios and one admission scenario. An engine supplies an
 adapter, which scripts the model's turns and reads back an observation. The
 scenarios assert only on that observation. The helper reads `adapter.engine`
 for two describe titles and nothing else, and

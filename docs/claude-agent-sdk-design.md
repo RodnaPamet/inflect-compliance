@@ -887,7 +887,8 @@ no prompt, and 0H checks it together with the rest of the phase.
 Delivered by #4220 (#4138). The work done:
 
 - `tests/helpers/driver-conformance.ts` holds two engine-agnostic tables. The
-  run table has ten scenarios. The admission table has one scenario, checked
+  run table had ten scenarios; Step 2d added an eleventh,
+  `refused-skill-never-reaches-the-model`. The admission table has one scenario, checked
   for three unvouched standings with a vouched positive control. An engine
   supplies an adapter, and the scenarios assert only on what the adapter
   observes.

@@ -52,6 +52,10 @@ const mockState = {
     funnelDelayMs: {} as Record<string, number>,
     settlement: null as MockSettlement | null,
     updates: [] as Array<Record<string, unknown>>,
+    /** What the run's mount is asked for (Step 2d), resolved by the real gate. */
+    skills: undefined as ConformanceRun['skills'],
+    /** The pins the run's row recorded at admission. */
+    pinnedSkills: [] as unknown[],
 };
 
 function recordedSettlement(): MockSettlement | null {
@@ -127,9 +131,18 @@ jest.mock('@/lib/agentic/drivers/run-store', () => ({
         costTokens: mockState.alreadyTokens,
         contextJson: null,
         contextHash: null,
-        mountedSkills: [],
+        mountedSkills: mockState.pinnedSkills,
     })),
     proposedItemsSoFar: jest.fn(async () => 0),
+}));
+
+// THE DATABASE READ of the skill mount, and nothing else (Step 2d): the run's
+// skills go through the real resolver and mount gate.
+jest.mock('@/lib/agentic/flue/skills/tenant-mount', () => ({
+    resolveRunSkillMount: jest.fn(async () => {
+        const { conformanceSkillMount } = jest.requireActual('../../helpers/driver-conformance-skills') as typeof import('../../helpers/driver-conformance-skills');
+        return conformanceSkillMount(mockState.skills);
+    }),
 }));
 
 jest.mock('@/lib/agentic/circuit-breaker-store', () => ({ latchOnGuardBlock: jest.fn(async () => null) }));
@@ -227,7 +240,14 @@ import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { runToolRunnerDriver, planToolRunnerRun, refusalMessage } from '@/lib/agentic/tool-runner/driver';
 import { KILL_UNREADABLE_MESSAGE } from '@/lib/agentic/tool-runner/execute';
-import { describeDriverConformance } from '../../helpers/driver-conformance';
+import { describeDriverConformance, MOUNTABLE_REPOSITORY_SKILL } from '../../helpers/driver-conformance';
+import { conformanceSkillMount } from '../../helpers/driver-conformance-skills';
+import { pinForRow } from '@/lib/agentic/flue/skills/mount-gate';
+import { toolRunnerSuppliedToolNamesFor } from '@/lib/agentic/tool-runner/supplied-tools';
+import { catalogBytes, loadSkill, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
+import { skillContentHash } from '@/lib/agentic/flue/skills/evaluation-record';
+import { TOOL_RUNNER_PREAMBLE } from '@/lib/agentic/tool-runner/params';
+import { SKILL_CATALOGUE_CLOSE, SKILL_CATALOGUE_OPEN } from '@/lib/agentic/tool-runner/skills';
 
 // ─── The wire ───────────────────────────────────────────────────────
 
@@ -302,7 +322,21 @@ function context(): RequestContext {
     } as unknown as RequestContext;
 }
 
-function reset(run: Pick<ConformanceRun, 'tools' | 'residency' | 'alreadySpent' | 'toolCallLimit' | 'killAfterModelCalls'>, turns: readonly FauxTurn[]): void {
+/** The pins admission would have recorded for this mount, or none when the gate refuses it. */
+function pinsAdmissionRecords(skills: ConformanceRun['skills']): unknown[] {
+    try {
+        return conformanceSkillMount(skills).pins.map(pinForRow);
+    } catch {
+        return [];
+    }
+}
+
+function reset(
+    run: Pick<ConformanceRun, 'tools' | 'residency' | 'alreadySpent' | 'toolCallLimit' | 'killAfterModelCalls' | 'skills'>,
+    turns: readonly FauxTurn[],
+): void {
+    mockState.skills = run.skills;
+    mockState.pinnedSkills = pinsAdmissionRecords(run.skills);
     mockState.tools = [...run.tools];
     mockState.residency = run.residency ?? 'EXTERNAL';
     mockState.alreadyTokens = run.alreadySpent?.tokens ?? 0;
@@ -360,8 +394,8 @@ async function runOnToolRunner(run: ConformanceRun): Promise<ConformanceObservat
         decisionRows: [...mockState.decisionRows],
         funnelCalls: [...mockState.funnelCalls],
         offeredTools: firstTools.map((t) => t.name).sort(),
-        // This engine supplies no tool of its own in Step 2b (skills arrive in 2d).
-        reportedEngineTools: [],
+        // The engine's own tools, as it reports them to the register (Step 2d).
+        reportedEngineTools: toolRunnerSuppliedToolNamesFor({ skillsMounted: (run.skills?.repository?.length ?? 0) + (run.skills?.tenant?.length ?? 0) > 0 }),
     };
 }
 
@@ -537,11 +571,8 @@ describe('planning a run refuses before anything is sent', () => {
         });
     });
 
-    it('refuses a run that mounts skills, which this engine does not serve until Step 2d', () => {
-        expect(planToolRunnerRun({ ...DEFINITION, skills: ['some-skill'] }, 0, EXTERNAL)).toEqual({
-            ok: false,
-            reason: 'SKILLS_NOT_SERVED',
-        });
+    it('plans a run that mounts skills, which this engine serves since Step 2d', () => {
+        expect(planToolRunnerRun({ ...DEFINITION, skills: ['some-skill'] }, 0, EXTERNAL)).toMatchObject({ ok: true });
     });
 
     it('refuses a LOCAL_ONLY tenant by name', () => {
@@ -555,7 +586,6 @@ describe('planning a run refuses before anything is sent', () => {
         const reasons = [
             'DEFINITION_ASKED_FOR_ANOTHER_DRIVER',
             'NO_STEPS_REMAIN',
-            'SKILLS_NOT_SERVED',
             'TOOL_RUNNER_LOCAL_ONLY_UNSERVED',
             'EXTERNAL_CREDENTIAL_NOT_CONFIGURED',
             'SDK_AMBIENT_HEADERS_SET',
@@ -563,5 +593,118 @@ describe('planning a run refuses before anything is sent', () => {
         const sentences = reasons.map(refusalMessage);
         expect(new Set(sentences).size).toBe(reasons.length);
         expect(sentences.filter((sentence) => !sentence.startsWith('tool_runner_'))).toEqual([]);
+    });
+});
+
+// ─── Step 2d: skills on the Tool Runner engine ──────────────────────
+
+interface ToolResultBlock {
+    type: 'tool_result';
+    tool_use_id: string;
+    content: unknown;
+    is_error?: boolean;
+}
+
+/** Every tool result one request carried, in order. */
+function toolResultsOf(body: Record<string, unknown> | undefined): ToolResultBlock[] {
+    const messages = (body?.messages ?? []) as Array<{ role: string; content: unknown }>;
+    return messages.flatMap((m) =>
+        Array.isArray(m.content) ? (m.content as Array<{ type?: string }>).filter((b): b is ToolResultBlock => b.type === 'tool_result') : [],
+    );
+}
+
+const systemTextOf = (body: Record<string, unknown> | undefined): string =>
+    ((body?.system ?? []) as Array<{ text: string }>).map((b) => b.text).join('\n');
+
+describe('Step 2d: skills on the Tool Runner engine', () => {
+    const SKILL = loadSkill(MOUNTABLE_REPOSITORY_SKILL);
+    const activate = (name: string): ScriptedTurn => ({ toolCalls: [{ name: 'activate_skill', args: { name } }] });
+
+    it('puts the catalogue after the preamble, offers activate_skill, and returns the pinned instructions', async () => {
+        const run: ConformanceRun = {
+            tools: [LIST_RISKS],
+            turns: [activate(SKILL.name), { text: 'done' }],
+            skills: { repository: [SKILL.name] },
+        };
+        const outcome = await drive(run);
+        expect(outcome.status).toBe('COMPLETED');
+        expect(wire.bodies).toHaveLength(2);
+
+        // The catalogue: one line per mounted skill, the line the budget measures,
+        // fenced, after the preamble.
+        const system = systemTextOf(wire.bodies[0]);
+        expect(system.startsWith(TOOL_RUNNER_PREAMBLE)).toBe(true);
+        expect(system).toContain(`${SKILL_CATALOGUE_OPEN}\n${SKILL.name}: ${SKILL.description}\n${SKILL_CATALOGUE_CLOSE}`);
+
+        // The tool: offered beside the resolved set, naming only mounted skills.
+        const tools = wire.bodies[0]?.tools as Array<{ name: string; input_schema: { properties: { name: { enum: string[] } } } }>;
+        expect(tools.map((t) => t.name)).toEqual(['list_risks', 'activate_skill']);
+        expect(tools[1].input_schema.properties.name.enum).toEqual([SKILL.name]);
+
+        // The answer: the instructions, labelled with the pin the row recorded.
+        const [result] = toolResultsOf(wire.bodies[1]);
+        expect(result.is_error).toBeUndefined();
+        expect(result.content).toBe(
+            `<skill name="${SKILL.name}" version="${SKILL.metadata.version}" content_hash="${skillContentHash(SKILL.instructions)}">\n${SKILL.instructions}\n</skill>`,
+        );
+
+        // In the ledger as a TOOL_CALL step naming the pin; never a funnel call.
+        const activation = mockState.ledger.find((s) => s.rec.toolCalled === 'activate_skill');
+        expect(activation).toMatchObject({
+            kind: 'TOOL_CALL',
+            rec: { status: 'DONE', input: { name: SKILL.name, contentHash: skillContentHash(SKILL.instructions) } },
+        });
+        expect(mockState.funnelCalls).toEqual([]);
+    });
+
+    it('answers a name this run did not mount with an error naming the reason, and returns no skill text', async () => {
+        const outcome = await drive({
+            tools: [LIST_RISKS],
+            // Another shipped skill, and a name nobody mounted: neither is in this run.
+            turns: [activate('soa-authoring'), activate('another-tenants-skill'), { text: 'done' }],
+            skills: { repository: [SKILL.name] },
+        });
+        expect(outcome.status).toBe('COMPLETED');
+        expect(wire.bodies).toHaveLength(3);
+        const results = [...toolResultsOf(wire.bodies[1]).slice(-1), ...toolResultsOf(wire.bodies[2]).slice(-1)];
+        expect(results.map((r) => ({ isError: r.is_error, content: String(r.content) }))).toEqual([
+            { isError: true, content: expect.stringContaining('skill_not_mounted') },
+            { isError: true, content: expect.stringContaining('skill_not_mounted') },
+        ]);
+        // Not the other shipped skill's text, not the name the model sent back.
+        const soa = loadSkill('soa-authoring');
+        expect(JSON.stringify(wire.bodies)).not.toContain(soa.instructions.slice(0, 80));
+        expect(mockState.ledger.filter((s) => s.rec.toolCalled === 'activate_skill').map((s) => s.rec.output)).toEqual([
+            { refused: 'SKILL_NOT_MOUNTED' },
+            { refused: 'SKILL_NOT_MOUNTED' },
+        ]);
+    });
+
+    it('a run that mounts no skill gets no catalogue and no activate_skill', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] });
+        expect(wire.bodies).toHaveLength(1);
+        expect(systemTextOf(wire.bodies[0])).not.toContain(SKILL_CATALOGUE_OPEN);
+        expect((wire.bodies[0]?.tools as Array<{ name: string }>).map((t) => t.name)).toEqual(['list_risks']);
+    });
+
+    it('a mount that no longer matches the pins the row recorded stops the run before any model call', async () => {
+        const run: ConformanceRun = { tools: [LIST_RISKS], turns: [{ text: 'done' }], skills: { repository: [SKILL.name] } };
+        reset(run, run.turns);
+        // Admission pinned a different text than this segment would mount.
+        mockState.pinnedSkills = [{ name: SKILL.name, version: SKILL.metadata.version, contentHash: `sha256:${'0'.repeat(64)}` }];
+        const outcome = await runToolRunnerDriver(context(), 'run-drift', DEFINITION, 0, Date.now());
+        expect(outcome.status).toBe('FAILED');
+        expect(recordedSettlement()?.reason).toMatch(/^skill_pin_drift: .*nhi-ownership-attribution/);
+        expect(wire.bodies).toHaveLength(0);
+    });
+
+    it('a mount whose catalogue is over the per-run budget stops the run before any model call', async () => {
+        // Every shipped skill together is over 2 KiB of catalogue.
+        const everySkill = loadSkillCorpus().skills.map((s) => s.name);
+        expect(catalogBytes(loadSkillCorpus().skills)).toBeGreaterThan(MAX_CATALOG_BYTES);
+        const outcome = await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }], skills: { repository: everySkill } });
+        expect(outcome.status).toBe('FAILED');
+        expect(recordedSettlement()?.reason).toMatch(/^skill_not_mountable: .*over the 2048 budget/);
+        expect(wire.bodies).toHaveLength(0);
     });
 });
