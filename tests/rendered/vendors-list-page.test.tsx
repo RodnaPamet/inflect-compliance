@@ -15,10 +15,13 @@
  *   3. the write surface per ROLE, derived from the real
  *      `getPermissionsForRole` — each bulk verb, the create button and the
  *      `?create=1` deep link follow the rule the server applies to them, for
- *      built-in and custom roles.
+ *      built-in and custom roles;
+ *   4. a refused bulk action shows the server's reason, and a selection over
+ *      the routes' 100-row cap is refused before the request, by name.
  */
 import * as React from 'react';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { SWRConfig } from 'swr';
 import type { Role } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
@@ -84,6 +87,35 @@ jest.mock('next/navigation', () => {
 
 jest.mock('@/components/layout/PageBreadcrumbs', () => ({ PageBreadcrumbs: () => null }));
 
+// `toast.error` is captured: no Toaster is mounted, and a bulk outcome is
+// reported only as a toast. Everything else in sonner stays real.
+const mockToastError = jest.fn();
+jest.mock('sonner', () => {
+    const actual = jest.requireActual('sonner');
+    return {
+        ...actual,
+        toast: Object.assign((...a: unknown[]) => actual.toast(...a), {
+            ...actual.toast,
+            error: (...a: unknown[]) => mockToastError(...a),
+        }),
+    };
+});
+
+// The list renders a 50-row window and grows it on scroll, which jsdom
+// cannot drive. The batch-cap test needs more than 100 rows on screen, so it
+// opens the window; every other test keeps the real hook.
+const mockRowWindow = { all: false };
+jest.mock('@/components/ui/hooks', () => {
+    const actual = jest.requireActual('@/components/ui/hooks');
+    return {
+        ...actual,
+        useThresholdLoadMore: (rows: unknown[], opts?: unknown) =>
+            mockRowWindow.all
+                ? { visibleRows: rows, totalCount: rows.length, hasMore: false, loadMore: () => {}, reset: () => {} }
+                : actual.useThresholdLoadMore(rows, opts),
+    };
+});
+
 const mockGetTenantCtx = jest.fn();
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...a: unknown[]) => mockGetTenantCtx(...a),
@@ -123,6 +155,8 @@ const ALPHA = row({ id: 'v-alpha', name: 'Alpha Cloud' });
 const BRAVO = row({ id: 'v-bravo', name: 'Bravo Payroll' });
 const ROWS = [ALPHA, BRAVO];
 const KPI = { total: 2, active: 0, critical: 0, reviewOverdue: 0 };
+/** What the list endpoint (and the SSR read) returns; tests may widen it. */
+let listRows: ReturnType<typeof row>[] = ROWS;
 
 /** Per test: the answer to a POST, or null for the default 200 `{}`. */
 let answerPost: (url: URL) => { status: number; body: unknown } | null = () => null;
@@ -140,7 +174,7 @@ function installFetch() {
             const answered = answerPost(url);
             if (answered) ({ status, body } = answered);
         } else if (url.pathname === '/api/t/acme/vendors') {
-            body = { rows: ROWS, truncated: false, kpiCounts: KPI };
+            body = { rows: listRows, truncated: false, kpiCounts: KPI };
         } else if (url.pathname.includes('/members')) {
             body = [];
         }
@@ -168,7 +202,7 @@ async function mount(ctx: RequestContext) {
             </TooltipProvider>
         </SWRConfig>,
     );
-    await screen.findByText(ALPHA.name);
+    await screen.findByText(listRows[0].name);
     return view;
 }
 
@@ -227,6 +261,9 @@ const createAlert = () =>
 beforeEach(() => {
     window.localStorage.clear();
     answerPost = () => null;
+    listRows = ROWS;
+    mockRowWindow.all = false;
+    mockToastError.mockReset();
     mockListVendors.mockReset();
     mockListVendors.mockResolvedValue(ROWS);
     const sp = jest.requireMock('next/navigation').__searchParams as URLSearchParams;
@@ -379,5 +416,56 @@ describe('Vendors list — `?create=1` opens the dialog only for a creator', () 
         setCreateParam();
         await mountAs('EDITOR');
         await waitFor(() => expect(document.getElementById('new-vendor-form')).not.toBeNull());
+    });
+});
+
+// ─── 4. Bulk refusals say why ───────────────────────────────────────
+
+/** Tick every visible row, pick Delete, apply, and confirm the dialog. */
+async function bulkDeleteEverything() {
+    const user = userEvent.setup();
+    await act(async () => {
+        fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    });
+    await user.click(document.getElementById('bulk-action-select') as HTMLElement);
+    await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: V.bulk.delete }));
+    await user.click(document.getElementById('bulk-apply-btn') as HTMLElement);
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: en.common.table.confirmVerbDelete }));
+}
+
+describe('Vendors list — a refused bulk action says why', () => {
+    it("shows the server's reason, not \"Bulk action failed.\"", async () => {
+        answerPost = (url) =>
+            url.pathname === '/api/t/acme/vendors/bulk/delete'
+                ? { status: 400, body: { error: { code: 'BAD_REQUEST', message: 'Vendor is referenced by an open audit' } } }
+                : null;
+        await mountAs('OWNER');
+        await bulkDeleteEverything();
+        await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+        expect(mockToastError.mock.calls[0][0]).toBe('Vendor is referenced by an open audit');
+    });
+
+    it('falls back to the page\'s sentence when the server sends none', async () => {
+        answerPost = (url) =>
+            url.pathname === '/api/t/acme/vendors/bulk/delete' ? { status: 502, body: {} } : null;
+        await mountAs('OWNER');
+        await bulkDeleteEverything();
+        await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+        expect(mockToastError.mock.calls[0][0]).toBe(V.bulk.failed);
+    });
+
+    it('a selection over the 100-row cap is refused by name, before any request', async () => {
+        mockRowWindow.all = true;
+        listRows = Array.from({ length: 101 }, (_, i) =>
+            row({ id: `v-${String(i).padStart(3, '0')}`, name: `Vendor ${String(i).padStart(3, '0')}` }),
+        );
+        mockListVendors.mockResolvedValue(listRows);
+        await mount(makeRequestContext('OWNER'));
+        await bulkDeleteEverything();
+        await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+        expect(mockToastError.mock.calls[0][0]).toBe(V.bulk.tooMany.replace('{max}', '100'));
+        // The route would have answered "Invalid request payload".
+        expect(posts.filter((p) => p.path.startsWith('/api/t/acme/vendors/bulk'))).toEqual([]);
     });
 });

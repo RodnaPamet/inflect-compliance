@@ -7313,6 +7313,7 @@
       "ownerPlaceholder": "Отговорник (празно = премахване)",
       "delete": "Изтрий",
       "failed": "Груповото действие е неуспешно.",
+      "tooMany": "Изберете най-много {max} доставчици наведнъж.",
       "appliedReconciled": "Приложено за {count, plural, one {# доставчик} other {# доставчика}} · {skipped, plural, one {# вече липсваше} other {# вече липсваха}}",
       "appliedBlocked": "Приложено за {count, plural, one {# доставчик} other {# доставчика}} · {blocked} пропуснати: {names}",
       "applied": "Приложено за {count} доставчика"

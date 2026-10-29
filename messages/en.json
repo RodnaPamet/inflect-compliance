@@ -7313,6 +7313,7 @@
       "ownerPlaceholder": "Owner (blank = unassign)",
       "delete": "Delete",
       "failed": "Bulk action failed.",
+      "tooMany": "Select at most {max} vendors at a time.",
       "appliedReconciled": "Applied to {count, plural, one {# vendor} other {# vendors}} · {skipped, plural, one {# was already gone} other {# were already gone}}",
       "appliedBlocked": "Applied to {count, plural, one {# vendor} other {# vendors}} · {blocked} skipped: {names}",
       "applied": "Applied to {count} vendors"

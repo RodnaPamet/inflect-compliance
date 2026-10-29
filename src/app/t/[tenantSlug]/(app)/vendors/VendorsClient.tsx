@@ -47,6 +47,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTranslations } from 'next-intl';
 import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
@@ -56,6 +57,14 @@ const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'>
 const CRIT_VARIANT: Record<string, 'neutral' | 'warning' | 'error'> = {
     LOW: 'neutral', MEDIUM: 'warning', HIGH: 'error', CRITICAL: 'error',
 };
+
+/**
+ * The batch cap every vendor bulk route's schema enforces
+ * (`BulkVendor{Status,Assign,Delete}Schema`: `.max(100)`). Checked before the
+ * request, so the refusal names the limit rather than "Invalid request
+ * payload".
+ */
+const VENDOR_BULK_MAX = 100;
 
 function isOverdue(d: string | null, now: Date | null) {
     if (!d || !now) return false;
@@ -273,6 +282,10 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     const handleBulkApply = async (action: string, value: string) => {
         const ids = Array.from(selected);
         if (!action || ids.length === 0) return;
+        if (ids.length > VENDOR_BULK_MAX) {
+            toast.error(t('bulk.tooMany', { max: VENDOR_BULK_MAX }));
+            return;
+        }
         setBulkApplying(true);
         try {
             const url = action === 'status'
@@ -297,7 +310,12 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
                 // 403 on a 40-vendor bulk delete produced an unhandled
                 // rejection and nothing but a stopped spinner. Also a
                 // hardcoded English string in an otherwise localised surface.
-                toast.error(t('bulk.failed'));
+                //
+                // The server's reason is shown when it sends one ("Owner must
+                // be an active member of this tenant", a refused permission);
+                // every refusal used to read the same (#4462).
+                const errBody = await res.json().catch(() => null);
+                toast.error(apiErrorMessage(errBody, t('bulk.failed')));
                 return;
             }
             // Report what the SERVER did, not what the user selected.
