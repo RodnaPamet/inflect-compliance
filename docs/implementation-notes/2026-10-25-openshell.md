@@ -385,6 +385,51 @@ treat advisor-approved MCP rules in a client estate as UNVERIFIED. That
 instruction was correct only if the defect is live, and this is the measurement
 that says it is — or more precisely, that nothing shows it is not.
 
+## 4.1 — the GCP allowlist is narrowed, and one inference origin is irreducible
+
+`*.googleapis.com` is gone. The GCP collector now names **38 explicit hosts**,
+derived rather than guessed: the steampipe GCP plugin builds every API client it
+will ever use in one file, `gcp/service.go`, so its services are enumerable from
+its imports — 35 under `google.golang.org/api/<service>/v*` plus `aiplatform`
+and `redis` under `cloud.google.com/go`, and `oauth2.googleapis.com` for token
+acquisition. A cross-check against the plugin's 123 `table_gcp_*.go` files found
+no service family outside that set.
+
+4.1 recorded that the per-service set "is not derivable from this repository".
+That stays true; it is derivable from the **plugin's** repository, which is a
+different claim and the one that closed this. No credentials were needed and
+nothing was read from any live estate.
+
+### What it closes
+
+4.4 (#4409) pinned two inference hosts reachable through wildcards. The GCP half
+is now closed: **`generativelanguage.googleapis.com` is no longer reachable.**
+
+### The half that cannot be closed by a host rule
+
+`aiplatform.googleapis.com` survives the narrowing, deliberately. The plugin has
+Vertex AI tables and audits its configuration, and Vertex AI serves
+configuration reads and `:predict` / `:generateContent` **on the same origin**.
+So no host-level allowlist can permit the audit and deny the inference — they
+are one host. It is now named explicitly with its reason beside it, which is
+strictly better than being admitted by a wildcard nobody reviewed.
+
+Closing the residual needs an L7 rule on method and path. The gateway supports
+one (`host:port:METHOD:path_glob`), and writing it safely needs a real run's
+paths, so it is recorded as the residual rather than guessed at.
+
+AWS is still `*.amazonaws.com`, and still admits `bedrock-runtime`. The same
+derivation is possible for the AWS plugin but is a larger job: AWS endpoints are
+regional, so a per-service list is region-parameterised, and the service count
+is far higher than GCP's.
+
+### If the derived list is wrong
+
+A service the plugin needs and the list omits makes that query fail, and the
+collector's existing semantics fail the collection **closed** — `ERROR`, never a
+quiet `PASSED`. So an incomplete list is observable rather than silent, which is
+what makes narrowing from a derived set an acceptable risk instead of a guess.
+
 ## Retention classification
 
 **No new model.** `prisma/schema.prisma` declares no sandbox- or
