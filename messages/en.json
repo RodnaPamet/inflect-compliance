@@ -11050,8 +11050,8 @@
     "colCvss": "CVSS",
     "colMatched": "Matched",
     "matchedViaLabels": {
-        "CPE": "Automatic",
-        "MANUAL": "Manual"
+      "CPE": "Automatic",
+      "MANUAL": "Manual"
     },
     "colStatus": "Status",
     "colOwner": "Owner",

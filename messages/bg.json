@@ -11050,8 +11050,8 @@
     "colCvss": "CVSS",
     "colMatched": "Съпоставено",
     "matchedViaLabels": {
-        "CPE": "Автоматично",
-        "MANUAL": "Ръчно"
+      "CPE": "Автоматично",
+      "MANUAL": "Ръчно"
     },
     "colStatus": "Статус",
     "colOwner": "Отговорник",
