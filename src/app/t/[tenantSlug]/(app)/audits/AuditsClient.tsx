@@ -626,7 +626,10 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                     <div key={f.id} className="p-3 border border-border-default/50 rounded-lg mb-2">
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-medium">{f.title}</span>
-                                            <StatusBadge variant={f.severity === 'CRITICAL' ? 'error' : f.severity === 'HIGH' ? 'warning' : 'info'}>{f.severity}</StatusBadge>
+                                            {/* The severity's label, not the stored enum value. */}
+                                            <StatusBadge variant={f.severity === 'CRITICAL' ? 'error' : f.severity === 'HIGH' ? 'warning' : 'info'}>
+                                                {tx.has(`findingModal.severityOptions.${f.severity}`) ? tx(`findingModal.severityOptions.${f.severity}`) : f.severity}
+                                            </StatusBadge>
                                         </div>
                                     </div>
                                 ))}

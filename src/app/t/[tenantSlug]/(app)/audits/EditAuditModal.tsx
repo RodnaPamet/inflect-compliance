@@ -130,13 +130,19 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
         open ? CACHE_KEYS.audits.cycles() : null,
     );
     const cycleRows = cyclesQuery.data;
+    // A cycle reads "<cycle> · <framework name>". The cycle carries only its
+    // framework's KEY ("ISO27001"), so the name comes from the framework
+    // catalogue read above; the key stands in only when that read failed or
+    // does not list the framework.
     const cycles = useMemo<ComboboxOption[]>(() => {
         if (!Array.isArray(cycleRows)) return [noCycle];
+        const nameOf = (key: string) =>
+            (Array.isArray(frameworkRows) ? frameworkRows.find((f) => f.key === key)?.name : undefined) ?? key;
         return [
             noCycle,
-            ...cycleRows.map((c) => ({ value: c.id, label: `${c.name} · ${c.frameworkKey}` })),
+            ...cycleRows.map((c) => ({ value: c.id, label: `${c.name} · ${nameOf(c.frameworkKey)}` })),
         ];
-    }, [cycleRows, noCycle]);
+    }, [cycleRows, frameworkRows, noCycle]);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();

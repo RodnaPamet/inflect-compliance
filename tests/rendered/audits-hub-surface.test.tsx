@@ -139,6 +139,8 @@ const fetchMock = jest.fn();
 let listResponse: { rows: unknown[]; truncated: boolean };
 /** The audit-cycle list — the page's only narrowing control is its picker. */
 let cyclesResponse: unknown[];
+/** The framework catalogue (`GET /frameworks`): key + display name. */
+let frameworksResponse: unknown[];
 /** Set by a test to make every PUT answer with this status and body. */
 let putRefusal: { status: number; body: unknown } | null;
 
@@ -148,6 +150,7 @@ beforeEach(() => {
     listResponse = { rows: [LIST_ROW], truncated: false };
     cyclesResponse = [];
     putRefusal = null;
+    frameworksResponse = [];
     (toast.error as jest.Mock).mockClear();
     fetchMock.mockReset();
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
@@ -161,7 +164,7 @@ beforeEach(() => {
         }
         if (/\/audits\/audit-1$/.test(u)) return Promise.resolve({ ok: true, json: async () => detail } as Response);
         if (u.includes('/audits/cycles')) return Promise.resolve({ ok: true, json: async () => cyclesResponse } as Response);
-        if (u.includes('/frameworks')) return Promise.resolve({ ok: true, json: async () => [] } as Response);
+        if (u.includes('/frameworks')) return Promise.resolve({ ok: true, json: async () => frameworksResponse } as Response);
         return Promise.resolve({ ok: true, json: async () => listResponse } as Response);
     });
     (global as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
@@ -346,5 +349,30 @@ describe('the auditors', () => {
 
         const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
         expect(JSON.parse(String(put![1].body)).auditors).toBe('Jane Auditor');
+    });
+});
+
+describe('labels, not stored codes', () => {
+    it('a finding\'s severity reads as its label in the pane', async () => {
+        await openAudit('READER');
+        const p = within(pane());
+        expect(p.getByText('High')).toBeTruthy();
+        expect(p.queryByText('HIGH')).toBeNull();
+    });
+
+    it('the new-audit form names a cycle\'s framework, not its key', async () => {
+        frameworksResponse = [{ key: 'ISO27001', name: 'ISO/IEC 27001' }];
+        cyclesResponse = [
+            { id: 'cyc-1', name: 'FY26 recert', frameworkKey: 'ISO27001', status: 'PLANNING' },
+            // Not in the catalogue — the key is all there is to show.
+            { id: 'cyc-2', name: 'Pilot', frameworkKey: 'CUSTOM-X', status: 'PLANNING' },
+        ];
+        currentSearch = new URLSearchParams('create=1');
+        await renderHub('EDITOR');
+        await flush();
+        await act(async () => { fireEvent.click(document.querySelector('#audit-cycle-select')!); });
+        expect(await screen.findByRole('option', { name: 'FY26 recert · ISO/IEC 27001' })).toBeTruthy();
+        expect(screen.queryByRole('option', { name: 'FY26 recert · ISO27001' })).toBeNull();
+        expect(screen.getByRole('option', { name: 'Pilot · CUSTOM-X' })).toBeTruthy();
     });
 });

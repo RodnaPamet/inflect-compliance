@@ -45,6 +45,12 @@ interface CycleOption {
     label: string;
 }
 
+interface CycleRow {
+    id: string;
+    name: string;
+    frameworkKey: string;
+}
+
 export function NewAuditFields({
     form,
     labels,
@@ -68,7 +74,19 @@ export function NewAuditFields({
         () => ({ value: '', label: tx('newModal.noCycle') }),
         [tx],
     );
-    const [cycles, setCycles] = useState<CycleOption[]>([noCycleOption]);
+    const [cycleRows, setCycleRows] = useState<CycleRow[]>([]);
+    // A cycle reads "<cycle> · <framework name>". The cycle carries only its
+    // framework's KEY ("ISO27001"), so the name comes from the framework
+    // catalogue loaded below; the key stands in only when that read failed
+    // or does not list the framework.
+    const cycles = useMemo<CycleOption[]>(() => {
+        const nameOf = (key: string) =>
+            frameworks.find((f) => f.value === key && f.value !== '')?.label ?? key;
+        return [
+            noCycleOption,
+            ...cycleRows.map((c) => ({ value: c.id, label: `${c.name} · ${nameOf(c.frameworkKey)}` })),
+        ];
+    }, [cycleRows, frameworks, noCycleOption]);
 
     // B8 — lazy-load the framework catalog on mount. The list is
     // small (≈5-10 rows today) and the create-audit modal is
@@ -108,16 +126,9 @@ export function NewAuditFields({
             try {
                 const res = await fetch(apiUrl('/audits/cycles'));
                 if (!res.ok) return;
-                const rows = (await res.json()) as Array<{
-                    id: string;
-                    name: string;
-                    frameworkKey: string;
-                }>;
+                const rows = (await res.json()) as CycleRow[];
                 if (cancelled) return;
-                setCycles([
-                    noCycleOption,
-                    ...rows.map((c) => ({ value: c.id, label: `${c.name} · ${c.frameworkKey}` })),
-                ]);
+                setCycleRows(Array.isArray(rows) ? rows : []);
             } catch {
                 /* fail-soft */
             }

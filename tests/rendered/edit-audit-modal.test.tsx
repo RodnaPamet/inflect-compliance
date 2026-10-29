@@ -18,7 +18,7 @@
  */
 
 import React from 'react';
-import { render, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, fireEvent, act, waitFor, screen } from '@testing-library/react';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme-corp' }),
@@ -284,6 +284,20 @@ describe('EditAuditModal — the auditors', () => {
         await submit();
 
         expect(save.mock.calls[0][0].auditors).toBeNull();
+    });
+});
+
+describe('EditAuditModal — the cycle picker', () => {
+    it('names each cycle\'s framework, not its key', async () => {
+        mount();
+        await waitFor(() =>
+            expect(requestedUrls.some((u) => u.endsWith('/frameworks'))).toBe(true),
+        );
+        await act(async () => {
+            fireEvent.click(document.querySelector('#edit-audit-cycle')!);
+        });
+        expect(await screen.findByRole('option', { name: 'Surveillance 2026 · ISO/IEC 27001' })).toBeTruthy();
+        expect(screen.queryByRole('option', { name: 'Surveillance 2026 · ISO27001' })).toBeNull();
     });
 });
 
