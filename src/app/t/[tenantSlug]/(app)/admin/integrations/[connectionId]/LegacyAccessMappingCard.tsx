@@ -32,7 +32,7 @@
  * wrong people rather than an error.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -47,7 +47,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Input } from '@/components/ui/input';
 import { apiErrorMessage } from '@/lib/api-error';
 
-const LEGACY_PROVIDER = 'legacy-mcp';
+import { useIsLegacyConnection } from './useIsLegacyConnection';
 
 const CANONICAL_STATUSES = ['ACTIVE', 'DISABLED', 'LOCKED', 'EXPIRED', 'UNKNOWN'] as const;
 
@@ -111,7 +111,7 @@ export function LegacyAccessMappingCard({ connectionId }: { connectionId: string
     const t = useTranslations('admin.integrations.legacyMapping');
     const apiUrl = useTenantApiUrl();
 
-    const [applies, setApplies] = useState<boolean | null>(null);
+    const applies = useIsLegacyConnection(connectionId);
     const [profile, setProfile] = useState<WireProfileResult | null>(null);
     const [reading, setReading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -125,31 +125,6 @@ export function LegacyAccessMappingCard({ connectionId }: { connectionId: string
     const [layoutColumns, setLayoutColumns] = useState<string[]>([]);
     const [layoutColumn, setLayoutColumn] = useState('');
     const [delimiter, setDelimiter] = useState(',');
-
-    // Whether this card applies at all. Decided from the connection's PROVIDER
-    // rather than from whether it happens to carry an endpoint, so an `entra-id`
-    // connection shows nothing instead of an error about a missing credential.
-    useEffect(() => {
-        let alive = true;
-        (async () => {
-            try {
-                const res = await fetch(apiUrl('/admin/integrations'));
-                if (!res.ok) throw new Error('load');
-                const body: unknown = await res.json();
-                const list = Array.isArray(body)
-                    ? body
-                    : ((body as { connections?: unknown[] }).connections ?? []);
-                const mine = (list as { id?: string; provider?: string }[])
-                    .find((c) => c.id === connectionId);
-                if (alive) setApplies(mine?.provider === LEGACY_PROVIDER);
-            } catch {
-                // Unknown rather than false: rendering nothing because a list call
-                // failed would hide the whole feature behind an unrelated error.
-                if (alive) setApplies(null);
-            }
-        })();
-        return () => { alive = false; };
-    }, [apiUrl, connectionId]);
 
     const readColumns = useCallback(async () => {
         setReading(true);
