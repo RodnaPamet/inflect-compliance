@@ -80,7 +80,7 @@ flowchart LR
 
   subgraph L2["LAYER 2 · Orchestration and workflow"]
     direction TB
-    LF["Agent-flow canvas<br/>in-product, Langflow not adopted"]:::todo
+    LF["Agent-flow canvas<br/>view every agent, draw flows;<br/>Langflow not adopted"]:::todo
     FL["Flue<br/>phases 1-3 shipped"]:::done
     CV["Canvas, rule builder,<br/>agent profiles (ours)"]:::done
   end
@@ -161,9 +161,10 @@ request touching Flue re-checks them.
   frozen by trigger, tools only narrow, no engine runs one yet (owner
   decision 2026-10-26), behind `AGENT_PROFILES` + `AGENT_PROFILES_TENANTS`.
 - Missing: a canvas on which to draw what an agent does. The process canvas
-  can invoke an agent (an `agent` node owns an `INVOKE_AGENT` rule) and the
-  Behaviour tab defines one through a form, but nothing composes an agent's
-  flow visually. [`langflow.md`](./ai-architecture/langflow.md) plans it in the
+  can invoke an agent (an `agent` node owns an `INVOKE_AGENT` rule), and agents
+  are created through two forms (registration, and the Behaviour tab's profile),
+  but no agent can be seen on a canvas and nothing composes an agent's flow
+  visually. [`langflow.md`](./ai-architecture/langflow.md) plans it in the
   product as a second editor for the agent profile (D-L2-1, decided
   2026-10-29); Langflow itself is not adopted.
 
@@ -392,7 +393,7 @@ The living part. One row per framework; the child roadmap owns the phases.
 | NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | missing (F5 residual closes in its Phase 0) | — | D-L1-2 |
 | Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 | missing; CPU detector first | — | D-L1-3 |
 | NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | substrate present (OpenShell); stack to be declined | — | D-L1-4 |
-| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (author, preview) / 3 (run) | missing; in-product canvas decided, Langflow not adopted | 0 (decided) | D-L2-2 |
+| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | missing; in-product canvas decided, Langflow not adopted | 0 (decided) | D-L2-2 |
 | Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3) | 3 | F3 decision to record |
 | Nemotron workers + role axis | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (hosted) | missing | — | D-L3-1, D-L3-2 |
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner built, off; Agent SDK designed | 2b | Step 2c (gated on Inspect record) |
@@ -437,7 +438,7 @@ timeline
                                        : Retriever 3, the GPU arm
                                        : Inspect 0-2, governed-run records
                                        : Langfuse 0-2 and ARES 0-2
-                                       : Agent-flow canvas 1-3, author and preview
+                                       : Agent-flow canvas 1-4, view every agent, author, preview
   section Guards
     Wave 3 · Layer 1 : Presidio 0-2, PII redaction
                      : NeMo Guardrails 1-2
@@ -445,7 +446,7 @@ timeline
                      : Garak 2-3, blocking
                      : Morpheus 0-1, CPU detector
                      : NemoClaw 0, decision
-                     : Agent-flow canvas 4, run and replay
+                     : Agent-flow canvas 5, run and replay
   section Conditional
     Wave 4 : cuOpt, Triton and SWE-bench decisions
            : Morpheus 2, cuOpt 2, Triton 1 only if triggered
@@ -471,8 +472,8 @@ flowchart LR
   RT3["W2 · Retriever 3<br/>GPU arm"]:::todo
   IS2["W2 · Inspect 0-2"]:::todo
   TR2C["Tool Runner 2c<br/>Claude engines plan"]:::ext
-  AF1["W2 · Agent-flow canvas 1-3<br/>author and preview"]:::todo
-  AF4["W3 · Agent-flow canvas 4<br/>run and replay"]:::todo
+  AF1["W2 · Agent-flow canvas 1-4<br/>view, author, preview"]:::todo
+  AF4["W3 · Agent-flow canvas 5<br/>run and replay"]:::todo
   LU2["W2 · Langfuse 0-2"]:::todo
   PR2["W3 · Presidio 0-2"]:::todo
   NG2["W3 · NeMo 1-2"]:::todo
