@@ -3471,7 +3471,7 @@
     "editModal": {
       "trigger": "Edit",
       "title": "Edit audit",
-      "description": "Update the audit's scope, schedule, framework and cycle. Checklist results and findings are unaffected.",
+      "description": "Update the audit's scope, schedule, auditors, framework and cycle. Checklist results and findings are unaffected.",
       "labelTitle": "Title",
       "labelSchedule": "Scheduled date",
       "schedulePlaceholder": "Not scheduled",

@@ -33,6 +33,7 @@ export interface EditableAudit {
     id: string;
     title: string;
     auditScope: string | null;
+    auditors?: string | null;
     criteria?: string | null;
     schedule?: string | null;
     departments?: string | null;
@@ -75,6 +76,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
     const [scope, setScope] = useState(audit.auditScope ?? '');
     const [criteria, setCriteria] = useState(audit.criteria ?? '');
     const [departments, setDepartments] = useState(audit.departments ?? '');
+    const [auditors, setAuditors] = useState(audit.auditors ?? '');
     const [schedule, setSchedule] = useState<Date | null>(
         audit.schedule ? new Date(audit.schedule) : null,
     );
@@ -89,6 +91,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
         setScope(audit.auditScope ?? '');
         setCriteria(audit.criteria ?? '');
         setDepartments(audit.departments ?? '');
+        setAuditors(audit.auditors ?? '');
         setSchedule(audit.schedule ? new Date(audit.schedule) : null);
         setFrameworkKey(audit.frameworkKey ?? '');
         setAuditCycleId(audit.auditCycleId ?? '');
@@ -145,6 +148,7 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
                 scope,
                 criteria: criteria.trim() || null,
                 departments: departments.trim() || null,
+                auditors: auditors.trim() || null,
                 // `null` clears the column; a date sends the `YYYY-MM-DD`
                 // wire format the schema accepts.
                 schedule: schedule ? toYMD(schedule) : null,
@@ -223,14 +227,23 @@ export function EditAuditModal({ open, setOpen, audit, save, onSaved }: EditAudi
                             </FormField>
                         </div>
 
-                        <FormField label={tx('editModal.labelDepartments')}>
-                            <Input
-                                id="edit-audit-departments"
-                                value={departments}
-                                onChange={(e) => setDepartments(e.target.value)}
-                                placeholder={tx('editModal.departmentsPlaceholder')}
-                            />
-                        </FormField>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-default">
+                            <FormField label={tx('auditors')}>
+                                <Input
+                                    id="edit-audit-auditors"
+                                    value={auditors}
+                                    onChange={(e) => setAuditors(e.target.value)}
+                                />
+                            </FormField>
+                            <FormField label={tx('editModal.labelDepartments')}>
+                                <Input
+                                    id="edit-audit-departments"
+                                    value={departments}
+                                    onChange={(e) => setDepartments(e.target.value)}
+                                    placeholder={tx('editModal.departmentsPlaceholder')}
+                                />
+                            </FormField>
+                        </div>
 
                         <FormField label={tx('editModal.labelScope')}>
                             <Textarea

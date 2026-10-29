@@ -315,3 +315,36 @@ describe('a refused write says why', () => {
         expect(errorToasts()).toEqual(['Failed to update audit status.']);
     });
 });
+
+describe('the auditors', () => {
+    it('the pane shows the audit\'s auditors', async () => {
+        await openAudit('READER');
+        const list = document.querySelector('#audit-auditors') as HTMLElement;
+        expect(list).not.toBeNull();
+        expect(within(list).getByText('Auditors')).toBeTruthy();
+        expect(within(list).getByText('Jane Auditor, Raj Reviewer')).toBeTruthy();
+    });
+
+    it('an audit with no auditors shows no empty Auditors line', async () => {
+        detail.auditors = null;
+        await openAudit('READER');
+        expect(document.querySelector('#audit-auditors')).toBeNull();
+    });
+
+    it('the edit dialog opens on the pane\'s auditors and saves a change to them', async () => {
+        await openAudit('EDITOR');
+        await act(async () => { fireEvent.click(document.querySelector('#edit-audit-btn')!); });
+        await flush();
+        const input = document.querySelector('#edit-audit-auditors') as HTMLInputElement;
+        expect(input.value).toBe('Jane Auditor, Raj Reviewer');
+
+        await act(async () => { fireEvent.change(input, { target: { value: 'Jane Auditor' } }); });
+        await act(async () => {
+            fireEvent.submit(document.querySelector('#edit-audit-form') as HTMLFormElement);
+        });
+        await flush();
+
+        const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+        expect(JSON.parse(String(put![1].body)).auditors).toBe('Jane Auditor');
+    });
+});

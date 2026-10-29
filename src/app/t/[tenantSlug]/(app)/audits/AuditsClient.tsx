@@ -111,6 +111,8 @@ interface AuditDetail {
     title: string;
     status: string;
     auditScope: string | null;
+    /** Free text collected at creation; shown in the pane and editable. */
+    auditors?: string | null;
     // Editable metadata — carried so `<EditAuditModal>` can seed from the
     // audit already on screen instead of re-fetching it.
     criteria?: string | null;
@@ -568,6 +570,12 @@ export function AuditsClient({ initialAudits, tenantSlug, cycleId, hasNis2, canW
                                 </div>
                             </div>
                             {selected.auditScope && <p className="text-sm text-content-muted">{selected.auditScope}</p>}
+                            {selected.auditors && (
+                                <dl className="flex flex-wrap gap-x-compact text-sm" id="audit-auditors">
+                                    <dt className="text-content-muted">{t.auditors}</dt>
+                                    <dd className="text-content-default">{selected.auditors}</dd>
+                                </dl>
+                            )}
 
                             <div>
                                 <CardHeader title={`${t.checklist} (${selected.checklist?.length || 0})`} className="mb-3" />
