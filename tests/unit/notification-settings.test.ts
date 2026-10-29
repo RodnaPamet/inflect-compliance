@@ -12,6 +12,10 @@
 import { buildDedupeKey } from '@/app-layer/notifications/enqueue';
 import { hashForLookup } from '@/lib/security/encryption';
 
+// The real `updateTenantNotificationSettings` (reached below through
+// `jest.requireActual`) audits a change (#4469); its row must not reach a DB.
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
+
 // Mock the settings module
 jest.mock('@/app-layer/notifications/settings', () => ({
     isNotificationsEnabled: jest.fn(),
@@ -108,6 +112,8 @@ describe('in-app mute list (#2564)', () => {
         let updateArg: Record<string, unknown> | undefined;
         const db = {
             tenantNotificationSettings: {
+                // The pre-write read the audit row's "before" comes from.
+                findUnique: async () => null,
                 upsert: async (args: any) => {
                     updateArg = args.update;
                     return {

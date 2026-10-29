@@ -101,7 +101,38 @@ export async function getTenantNotificationSettings(
 }
 
 /**
+ * The settings fields the audit row records WITH their values, before and after.
+ *
+ * Every field this row carries today is configuration and none is a secret:
+ * the switch, the sender, the BCC address and the mute list. The values are the
+ * point — "since when has every outbox email been copied to this address" is
+ * the question the row has to answer. A credential added to this row later
+ * (an SMTP password, a signing secret) must NOT join this list: record such a
+ * field by NAME only, as `SECURITY_SETTINGS_UPDATED` does for its secrets.
+ */
+const VALUE_AUDITED_FIELDS = [
+    'enabled',
+    'defaultFromName',
+    'defaultFromEmail',
+    'complianceMailbox',
+    'mutedInAppTypes',
+] as const satisfies readonly (keyof TenantNotificationSettingsData)[];
+
+function sameValue(a: unknown, b: unknown): boolean {
+    // The mute list is a SET: re-ordering it changes nothing a reader sees.
+    if (Array.isArray(a) && Array.isArray(b)) {
+        return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+    }
+    return a === b;
+}
+
+/**
  * Upsert tenant notification settings (admin-only).
+ *
+ * Audited (#4469): a change writes one NOTIFICATION_SETTINGS_UPDATED row with
+ * the changed fields and their before/after values. Switching email off, or
+ * pointing the compliance BCC at a new address, left no trace before. A save
+ * that changes nothing writes no row.
  */
 export async function updateTenantNotificationSettings(
     db: PrismaTx,
@@ -110,6 +141,10 @@ export async function updateTenantNotificationSettings(
 ): Promise<TenantNotificationSettingsData> {
 
     const supplied = definedOnly(data);
+    // Read in the caller's transaction, before the write, so the row can say
+    // what each value changed FROM. No settings row reads as the defaults,
+    // which is what the workspace was sending under.
+    const before = await getTenantNotificationSettings(db, ctx.tenantId);
     const row = await db.tenantNotificationSettings.upsert({
         where: { tenantId: ctx.tenantId },
         create: {
@@ -119,13 +154,41 @@ export async function updateTenantNotificationSettings(
         },
         update: supplied,
     });
-    return {
+    const after: TenantNotificationSettingsData = {
         enabled: row.enabled,
         defaultFromName: row.defaultFromName,
         defaultFromEmail: row.defaultFromEmail,
         complianceMailbox: row.complianceMailbox,
         mutedInAppTypes: row.mutedInAppTypes ?? [],
     };
+
+    const changed = VALUE_AUDITED_FIELDS.filter((f) => !sameValue(before[f], after[f]));
+    if (changed.length > 0) {
+        // Imported HERE, not at the top. This module is reached by the bell
+        // emitters (`agentic.ts` → `isInAppTypeEnabled`), the outbox and the
+        // settings route, and at module scope it imports nothing at runtime —
+        // see `@/lib/email/sender-identity`. A static import of the audit
+        // writer would pull the Prisma client, the encryption extension and
+        // the BullMQ queue into every one of those graphs for the sake of the
+        // one function that writes.
+        const { logEvent } = await import('../events/audit');
+        await logEvent(db, ctx, {
+            action: 'NOTIFICATION_SETTINGS_UPDATED',
+            entityType: 'TenantNotificationSettings',
+            entityId: ctx.tenantId,
+            details: `Updated notification settings: ${changed.join(', ')}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'TenantNotificationSettings',
+                operation: 'updated',
+                changedFields: [...changed],
+                before: Object.fromEntries(changed.map((f) => [f, before[f]])),
+                after: Object.fromEntries(changed.map((f) => [f, after[f]])),
+            },
+        });
+    }
+
+    return after;
 }
 
 /**
@@ -134,7 +197,9 @@ export async function updateTenantNotificationSettings(
  * The bell-side twin of `isNotificationsEnabled` above, and deliberately a
  * SEPARATE question rather than an extra clause inside it. `enabled` is read
  * only by email paths (`enqueue`, `digest-dispatcher`,
- * `retention-notifications`, `policyReviewReminder`, `action-executor`), and
+ * `retention-notifications`, `policyReviewReminder`, `action-executor`,
+ * `processOutbox`, and the compliance digest and scheduled report delivery
+ * through `resolveTenantEmailEnvelope`), and
  * folding the bell into it would make one switch mean two things — a tenant
  * that wanted to stop one noisy bell would also stop every email.
  *

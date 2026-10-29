@@ -19,6 +19,10 @@
  * so that is what is asserted, plus the negative that a configured deployment
  * never emits the hardcoded product domain.
  */
+// `updateTenantNotificationSettings` audits a change (#4469); its row must not
+// reach a DB in this file, which is about the sender it resolves.
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
+
 import { getTenantNotificationSettings, updateTenantNotificationSettings } from '@/app-layer/notifications/settings';
 import { UpdateNotificationSettingsSchema } from '@/app-layer/schemas/notification-settings.schemas';
 import { makeRequestContext } from '../helpers/make-context';
@@ -210,6 +214,8 @@ describe('a partial update cannot un-resolve the sender', () => {
         const calls: { create: Record<string, unknown>; update: Record<string, unknown> }[] = [];
         const db = {
             tenantNotificationSettings: {
+                // The pre-write read the audit row's "before" comes from (#4469).
+                findUnique: async () => null,
                 upsert: async (args: { create: Record<string, unknown>; update: Record<string, unknown> }) => {
                     calls.push(args);
                     return {
