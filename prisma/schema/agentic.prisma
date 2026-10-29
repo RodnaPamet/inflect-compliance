@@ -3276,6 +3276,58 @@ model PeerAgentMessage {
   @@index([tenantId, journalId])
 }
 
+/// ONE DELIVERY DECISION PER PEER REPLY (#3744).
+///
+/// A peer's reply to a task Inflect sent is kept as a receipted
+/// `PeerAgentMessage`. This records whether that reply was handed to the
+/// sending run as input, or refused, and why.
+///
+/// A SIBLING TABLE RATHER THAN A COLUMN, and not by preference.
+/// `PeerAgentMessage` carries `peer_agent_message_is_immutable` and
+/// `app_user` holds no UPDATE or DELETE on it, so a mutable `deliveredAt`
+/// there is unrepresentable. `PeerAgentKillSwitch` is a sibling for the same
+/// reason.
+///
+/// `messageId` and `runId` are PLAIN IDS WITH NO FK, exactly as the kill
+/// switch keys its peer. The tenant purge retains `PeerAgentMessage`, so an FK
+/// from a row the purge does not retain would make the pair a delete cycle —
+/// and a reply's delivery record outliving its run is correct: the question
+/// "was this answered" stays answerable after the run is gone.
+///
+/// The unique on `(tenantId, messageId)` is the whole point: it is the database
+/// refusing to deliver one reply twice, rather than a read-then-write hoping
+/// nothing raced it.
+model PeerAgentReplyDelivery {
+  id        String @id @default(cuid())
+  tenantId  String
+  /// `PeerAgentMessage.id` of the INBOUND reply this decision is about.
+  messageId String
+  /// `WorkflowRun.id` the reply was sent from, copied from the message.
+  runId     String
+  /// Copied so a refusal can be read without joining the message.
+  peerId    String
+
+  /// `DELIVERED` or `REFUSED`, pinned by a CHECK rather than an enum: an enum
+  /// value cannot be added without the two-deploy dance a Prisma client that
+  /// predates it forces (see the `PROPOSE` rung and `AI_ADMIN`).
+  outcome String
+  /// Named reason, required when REFUSED and absent when DELIVERED (CHECK).
+  reason  String?
+
+  /// When the input actually reached a step. NULL for a refusal.
+  deliveredAt DateTime?
+  decidedAt   DateTime  @default(now())
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, messageId])
+  @@index([tenantId, runId, outcome])
+  @@index([tenantId, decidedAt])
+}
+
+
 /// A KILL FOR ONE A2A PEER (#3679): while one is in force, every message to or
 /// from that peer is refused at the next message, in both directions.
 ///

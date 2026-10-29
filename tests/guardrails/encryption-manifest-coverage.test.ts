@@ -71,6 +71,16 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'PeerAgentReplyDelivery.reason':
+        'A CODE from a closed vocabulary, not prose (#3744). The column is ' +
+        'pinned by the CHECK `PeerAgentReplyDelivery_reason_known` to five ' +
+        'values — RUN_ENDED, RUN_NOT_FOUND, RUN_MISMATCH, PEER_MISMATCH, ' +
+        'GUARD_REFUSED — so it can hold nothing about a person or a peer\'s ' +
+        'content, and a value outside that set is refused by the database. It ' +
+        'has to be readable in plaintext to be queried at all: the question ' +
+        'this table answers is "why was this reply not acted on", and an ' +
+        'encrypted column could not be filtered or grouped by reason. The ' +
+        'reply BODY it is about stays encrypted on PeerAgentMessage.',
     'HostConsumerMessage.bodyDigest':
         'A SHA-256 of the request body, and the body itself IS encrypted ' +
         '(#3861). A digest discloses nothing about its preimage, and it has to ' +
