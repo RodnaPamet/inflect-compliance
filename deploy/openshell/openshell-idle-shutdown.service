@@ -1,0 +1,21 @@
+#
+# Companion to openshell-idle-shutdown.timer. #3924.
+#
+#   install -m 0755 openshell-idle-shutdown /usr/local/sbin/
+#   install -m 0644 openshell-idle-shutdown.service /etc/systemd/system/
+#   install -m 0644 openshell-idle-shutdown.timer   /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now openshell-idle-shutdown.timer
+#
+[Unit]
+Description=Shut the OpenShell gateway VM down when idle (holds the 5 USD/month cap, #3924)
+After=openshell-gateway.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openshell-idle-shutdown
+
+# The script logs each decision with `logger` AND echoes it, so that a manual
+# run prints something. Under systemd both reach the journal and every decision
+# appeared TWICE, which makes a strike sequence look like it is advancing at
+# double rate when read back. Discard stdout here; the logger line is the record.
+StandardOutput=null

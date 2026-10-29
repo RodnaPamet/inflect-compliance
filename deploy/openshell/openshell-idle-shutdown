@@ -1,0 +1,95 @@
+#!/bin/bash
+#
+# Shut the gateway VM down when it is doing nothing. #3924.
+#
+# WHY THIS EXISTS, AND WHY IT IS THE ACTUAL COST CONTROL
+#
+# The owner's constraint is a hard 5 USD/month. The arithmetic that satisfies it
+# is not a machine shape, it is a RUNTIME BUDGET: the only always-on charge is
+# the 20 GB balanced boot disk at 2.00 USD/month, which leaves about 38 hours of
+# e2-standard-2 runtime inside the cap. A nightly 30-minute scan uses 15 hours
+# of that. A VM left running for a month uses 730 and costs about 54 USD.
+#
+# So the estimate rests entirely on the VM not being left running, and an
+# estimate that rests on somebody remembering is not a control. The daily
+# instance schedule is the backstop; this is the mechanism. Expected runtime
+# becomes "as long as there is work, plus the idle window", not "until someone
+# notices".
+#
+# WHAT COUNTS AS IDLE, AND WHY IT IS TWO SIGNALS
+#
+#   openshell_server_supervisor_sessions   a gauge: live sandbox supervisors
+#   openshell_server_grpc_requests_total   a counter: calls served
+#
+# The gauge alone would be wrong. It reads zero in the gap between one sandbox
+# being deleted and the next being created, so a multi-benchmark scan would be
+# shot in the back halfway through. Requiring the counter to be UNCHANGED as
+# well means "no sandboxes AND nobody talking to us", which is the actual
+# condition. [[watchers-need-a-baseline]]
+#
+# A FAILED SCRAPE IS NOT IDLE. If the metrics endpoint cannot be read the state
+# is unknown, and treating unknown as idle would shut the VM down exactly when
+# something is wrong. The strike counter is RESET on a scrape failure, which
+# errs towards staying up and being visible in the budget.
+#
+set -uo pipefail
+
+# THE ENDPOINT IS DERIVED, NOT ASSUMED.
+#
+# The first version hardcoded 127.0.0.1, and the gateway binds the PRIVATE
+# address — so every scrape failed. A failed scrape prints the same line as a
+# genuine outage, which meant the first positive control for this script
+# ("break the endpoint, check it reports UNKNOWN") passed while the normal case
+# was already broken: both arms produced identical output and the probe had no
+# discriminating power at all. Read both values from the file that decides them.
+BIND=$(awk -F= '/^OPENSHELL_BIND_ADDRESS=/{print $2}' /etc/openshell/env 2>/dev/null)
+MPORT=$(awk -F= '/^OPENSHELL_METRICS_PORT=/{print $2}' /etc/openshell/env 2>/dev/null)
+METRICS="http://${BIND:-127.0.0.1}:${MPORT:-9091}/metrics"
+STATE=/var/lib/openshell-idle
+STRIKES_NEEDED=4          # x 5-minute timer = 20 minutes of idle
+BOOT_GRACE_SECONDS=600    # never shut down within 10 minutes of boot
+
+mkdir -p "$STATE"
+log() { logger -t openshell-idle-shutdown "$*"; echo "$*"; }
+
+UPTIME=$(cut -d. -f1 /proc/uptime)
+if [ "$UPTIME" -lt "$BOOT_GRACE_SECONDS" ]; then
+    log "uptime ${UPTIME}s < boot grace ${BOOT_GRACE_SECONDS}s — holding"
+    exit 0
+fi
+
+SCRAPE=$(curl -s -m 10 "$METRICS" 2>/dev/null)
+if [ -z "$SCRAPE" ]; then
+    # Unknown, not idle. Reset rather than accumulate.
+    echo 0 > "$STATE/strikes"
+    log "metrics unreadable — state UNKNOWN, strikes reset (not treated as idle)"
+    exit 0
+fi
+
+sessions=$(echo "$SCRAPE" | awk '/^openshell_server_supervisor_sessions/ {print $2; exit}')
+grpc=$(echo "$SCRAPE" | awk '/^openshell_server_grpc_requests_total/ {s+=$2} END {printf "%.0f", s+0}')
+[ -z "$sessions" ] && sessions=0
+[ -z "$grpc" ] && grpc=0
+
+prev_grpc=$(cat "$STATE/last_grpc" 2>/dev/null || echo -1)
+echo "$grpc" > "$STATE/last_grpc"
+
+strikes=$(cat "$STATE/strikes" 2>/dev/null || echo 0)
+
+# Compare numerically; awk keeps this safe for float-formatted gauges.
+idle=$(awk -v s="$sessions" -v g="$grpc" -v p="$prev_grpc" \
+    'BEGIN { print (s+0 == 0 && p >= 0 && g+0 == p+0) ? 1 : 0 }')
+
+if [ "$idle" = "1" ]; then
+    strikes=$((strikes + 1))
+    echo "$strikes" > "$STATE/strikes"
+    log "idle: sessions=$sessions grpc=$grpc (unchanged) strike ${strikes}/${STRIKES_NEEDED}"
+    if [ "$strikes" -ge "$STRIKES_NEEDED" ]; then
+        log "idle for $((STRIKES_NEEDED * 5)) minutes — shutting down to hold the 5 USD/month cap"
+        echo 0 > "$STATE/strikes"
+        /sbin/shutdown -h now "openshell gateway idle"
+    fi
+else
+    echo 0 > "$STATE/strikes"
+    log "busy: sessions=$sessions grpc=$grpc (prev=$prev_grpc) — strikes reset"
+fi

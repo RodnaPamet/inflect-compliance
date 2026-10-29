@@ -157,11 +157,36 @@ That warning disappearing is how you know the configuration took effect. Set in
 `/etc/openshell/env`, which is not in this repository:
 
 ```
-OPENSHELL_OIDC_ISSUER=<issuer URL>          # validates `authorization: Bearer`
-OPENSHELL_OIDC_AUDIENCE=<our client id>     # NOT the default `openshell-cli`
-OPENSHELL_OIDC_JWKS_TTL=3600                # the renewal interval
 OPENSHELL_BIND_ADDRESS=<private address>    # default 127.0.0.1
+OPENSHELL_SERVER_PORT=17670
+OPENSHELL_HEALTH_PORT=8081
+OPENSHELL_METRICS_PORT=9091
+OPENSHELL_TLS_CERT=/etc/openshell/pki/server/tls.crt
+OPENSHELL_TLS_KEY=/etc/openshell/pki/server/tls.key
+OPENSHELL_TLS_CLIENT_CA=/etc/openshell/pki/ca.crt
+OPENSHELL_OIDC_JWKS_TTL=3600                # the renewal interval
+# OPENSHELL_OIDC_ISSUER=<issuer URL>        # validates `authorization: Bearer`
+# OPENSHELL_OIDC_AUDIENCE=<our client id>   # NOT the default `openshell-cli`
 ```
+
+**This list was four variables until the VM existed, and three of the missing
+ones are fatal.** Without them the 0.1.6 gateway exits immediately:
+
+```
+× --tls-cert is required when TLS is enabled (use --disable-tls to skip)
+```
+
+`--disable-tls` is the wrong way out: nothing terminates TLS in front of this
+VM, so plaintext would put a root-equivalent Docker socket behind an
+unauthenticated VPC port.
+
+**The OIDC pair is commented out, and that is deliberate.** It needs an
+identity-provider client (client-credentials grant) that does not exist yet.
+What satisfies 0.1.6's refusal to start unauthenticated is mTLS instead:
+`--enable-mtls-auth` is documented to default ON "when client certificate
+verification is configured and no OIDC issuer is present", which is exactly
+this host. Writing an invented issuer here would produce a gateway that starts
+and validates nothing.
 
 The worker obtains a token by the OAuth2 **client-credentials** grant and sends
 it as a bearer token; the gateway validates it against the issuer's JWKS and
@@ -182,27 +207,163 @@ absent from both VMs and is presented out of band by a person.
 [ ] openshell-gateway 0.1.6 at /usr/local/bin, checksum chain checked.
 [ ] /etc/openshell/pki/jwt/signing.pem exists, root-owned, mode 0400.
     The unit ASSERTS this and FAILS without it — it does not skip.
-[ ] /etc/openshell/env written with the four variables above.
+[ ] /etc/openshell/env written with the eight variables above.
+[ ] /etc/openshell/pki/server/tls.{crt,key} and ca.crt exist; the gateway
+    REFUSES to start without --tls-cert and --tls-key.
 [ ] Egress policy denies events.telemetry.data.nvidia.com.
 [ ] `openshell-gateway --version` prints 0.1.6 on the VM.
+[ ] openshell-idle-shutdown.timer enabled — it is the cost control, not a
+    convenience. See the cost section below.
 ```
 
-## The VM is not provisioned, and that is an owner decision
+## The VM, and the 5 USD/month cap it runs under
 
-This is the one precondition that is not a task. The GCP project has **one**
-commitment, `agrent-inflect-e2-3yr` (36-month, GENERAL\_PURPOSE\_E2,
-europe-west1, `VCPU;MEMORY = 4;32768`, active to 2029-09-21), and a commitment
-is **regional and aggregated across every instance in the family** — not
-per-VM. Both existing VMs are E2 in europe-west1 and together they consume it
-exactly.
+Provisioned 2026-10-29 on the owner's instruction, with a hard **5 USD/month**
+cap. It is an owner cost decision, and the cap is the binding constraint on
+every shape choice below.
 
-So a third VM is **not covered** and bills entirely on-demand. The last time
-one of these VMs was resized beyond the commitment it billed about EUR 64 per
-month and was reverted the same day.
+```
+openshell-gateway   europe-west1-b   e2-standard-2 (2 vCPU / 8 GiB)
+                    20 GB pd-balanced boot disk
+                    10.132.0.28 internal, ephemeral external IP
+                    no service account, no scopes
+                    Shielded VM: secure boot + vTPM + integrity monitoring
+```
 
-Provisioning is therefore a cost decision, not a deployment step, and nothing
-in this directory provisions anything. Everything here is ready for a host that
-somebody has decided to pay for.
+### Why this shape
+
+The project has **one** commitment, `agrent-inflect-e2-3yr` (36-month,
+GENERAL\_PURPOSE\_E2, europe-west1, `VCPU;MEMORY = 4;32768`, active to
+2029-09-21), and a commitment is **regional and aggregated across the family**,
+not per-VM. `agrent` and `inflect-compliance` are both `e2-highmem-2` in
+europe-west1 and together consume it **exactly**, so this third VM bills
+entirely on-demand. The last time one of these VMs was resized beyond the
+commitment it billed about EUR 64 per month and was reverted the same day.
+
+RAM and CPU come from a measurement, not a guess. On the lab VM a 0.1.6 gateway
+with **six containers** — three sandboxes and three supervisors — used **946 MiB
+of RAM and 3.5 GB of disk**, with both driver images totalling 316 MB. 8 GiB
+therefore leaves roughly 8x headroom for a Powerpipe collector running inside a
+sandbox, and 20 GB leaves room for the steampipe plugins.
+
+`pd-balanced` rather than `pd-standard` costs 1.20 USD/month more and is still
+the right call: `pd-standard` scales IOPS with size, so a 20 GB standard disk
+gets about **15 read IOPS**, which would make booting and pulling images
+painfully slow on a VM whose whole purpose is to be started for half an hour.
+
+### The cap is a RUNTIME BUDGET, and that is the useful way to state it
+
+Rates are the real europe-west1 on-demand SKUs, read from the Cloud Billing
+Catalog API rather than remembered. The USD figures were cross-checked against
+three independently fetched USD SKUs, which agreed with the EUR set on a single
+ratio to nine decimal places.
+
+| | rate | billed | per month |
+|---|---|---|---|
+| 2 x E2 vCPU | $0.023993370 /vCPU-h | while running | |
+| 8 x E2 RAM | $0.003216090 /GiB-h | while running | |
+| ⇒ e2-standard-2 | **$0.07371546 /h** | while running | $1.11 at 30 min/day |
+| 20 GB pd-balanced | $0.100 /GiB-month | **always** | **$2.00** |
+| ephemeral external IP | $0.005 /h | while running | $0.08 |
+| internet egress | ~$0.12 /GiB | per scan | ~$0.02 |
+| **projected** | | | **≈ $3.21** |
+
+The disk is the only always-on charge, so:
+
+```
+  $5.00 cap - $2.00 disk - $0.02 egress = $2.98 for runtime
+  $2.98 / ($0.07371546 + $0.005) per hour  =  about 38 HOURS PER MONTH
+```
+
+**38 hours a month, i.e. 1.25 h/day.** A 30-minute nightly scan uses 39% of it.
+A VM left running for a whole month would use 730 hours and cost about 54 USD —
+**17x the cap** — which is the number that decides everything else here.
+
+### Three controls, because an estimate is not a control
+
+The projection above rests entirely on the VM not being left running, and
+"somebody remembers to stop it" is not a mechanism.
+
+1. **`openshell-idle-shutdown.timer`** — in this directory, and it is the real
+   control. Every five minutes it asks whether
+   `openshell_server_supervisor_sessions` is zero **and**
+   `openshell_server_grpc_requests_total` is unchanged; four consecutive idle
+   checks shut the VM down. Two signals, not one: the gauge reads zero in the
+   gap between one sandbox being deleted and the next created, so the gauge
+   alone would shoot a multi-benchmark scan in the back. A **failed scrape is
+   not idle** — unknown state resets the counter, so a broken metrics endpoint
+   errs towards staying up and being visible in the budget rather than shutting
+   down exactly when something is wrong.
+2. **A daily stop schedule** — resource policy `openshell-gateway-nightly-stop`,
+   05:00 Europe/Sofia. Deliberately **stop-only, with no start schedule**: the
+   VM costs nothing on a day with no scan, and starting it is the caller's act.
+   This is the backstop for the case where the idle timer itself is broken.
+3. **A budget** — `OpenShell gateway VM - 5 USD cap (#3924)`, 5 USD/month with
+   alerts at 50/80/100/120%, scoped to the label `component=openshell-gateway`.
+   **The boot disk had to be labelled separately**: a disk does not inherit its
+   instance's labels, so the budget would have silently excluded the single
+   largest always-on charge in the table above.
+
+### The network posture, and why it opts out of the project defaults
+
+The project's own defaults are too broad for this host. `default-allow-internal`
+opens every TCP and UDP port to `10.128.0.0/9`, and `default-allow-ssh` opens
+22 to the whole internet. This VM holds a Docker socket that is root-equivalent,
+so it opts out of both with a deny-first rule:
+
+```
+ 90  ALLOW  35.235.240.0/20  tcp:22                      (IAP TCP forwarding only)
+ 90  ALLOW  10.132.0.3/32    tcp:17670,8081,9091         (the app VM only)
+100  DENY   0.0.0.0/0        all
+```
+
+Verified from GCP's own `get-effective-firewalls` view rather than from the rule
+list, and then probed: 22, 17670 and 8081 are all unreachable from the internet
+while IAP SSH and outbound egress still work.
+
+### The external IP is EPHEMERAL, and that is a constraint on egress allowlisting
+
+It changed from `34.156.44.196` to `35.241.231.207` across a single
+stop/start — measured, not assumed. Two consequences:
+
+- **Nothing may allowlist this VM by its outbound IP.** A posture API, a
+  partner firewall or an upstream allowlist keyed on it breaks on the next
+  start, and the schedule above means there is a start most days. A static IP
+  would cost $0.0088/h *unattached*, which on a VM that is stopped 97% of the
+  time is more than the compute.
+- **The app must address the gateway by its INTERNAL IP**, `10.132.0.28`, which
+  is stable across stop/start. That is what the firewall rule and the bind
+  address both use.
+
+### What is verified on this host, and what is not
+
+Verified: the gateway comes up **from a cold boot with no intervention** —
+`systemctl is-active` reports active and `readyz` answers 200 within about 45
+seconds of `instances start`, which is what proves the StateDirectory/HOME pair
+works at boot and not merely on a hand-driven `systemctl restart`. Then: the
+idle timer took the VM down by itself end to end — fourth strike at 17:33:42,
+`STOPPING` at 17:35:50, `TERMINATED` at 17:36:32, at which point compute, RAM
+and the external IP all stop billing and only the disk continues. Also the
+checksum chain end to end (the installed binary digests
+`6451533e…` and `962d7d3a…` match the published sums, re-checked **on the VM**
+after transfer); `openshell-gateway 0.1.6`; the service active with its
+listeners bound to the private address; the Docker driver connected;
+`readyz`/`healthz` 200; plaintext to 17670 refused; an **unauthenticated gRPC
+call refused** (`whoami` → "missing authorization header"); the telemetry
+endpoint sinkholed and unreachable; and `no_new_privs` working under apt Docker
+where it fails under snap.
+
+**Not yet verified on this host: that an authenticated caller is accepted.**
+Stated plainly because the first probe for it had no discriminating power — a
+bare `GET /` returned 404 with *and* without a client certificate, since 404 is
+only "that is not a gRPC path". The CLI cannot close the gap either:
+`openshell gateway add --local` reports that "mTLS certificates … were not
+found. Expected them under the default gateway config directory. Start the
+gateway package first so it provisions client TLS material" — that package is
+the container distribution this deployment deliberately does not use, because
+no gateway image exists for the pinned release. The caller that matters is the
+app's own gRPC transport, so the positive control belongs with that wiring and
+not with provisioning.
 
 ## Upgrades
 

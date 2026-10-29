@@ -433,6 +433,111 @@ describe('an upgrade fails a test rather than an audit (#3973)', () => {
         expect(tagRows.filter((l) => !l.includes(PINNED_RELEASE))).toEqual([]);
     });
 
+    it('the unit cannot protect /root without moving HOME — 0.1.6 writes state there', () => {
+        /*
+            THE BUG THIS PREVENTS HAPPENED, on the first real provisioning.
+
+            The unit sets `ProtectHome=yes`, which is correct. The 0.1.6 gateway
+            writes its state to `$HOME/.local/state/openshell/gateway`, so with
+            root's own HOME it died on startup:
+
+                Error:   × failed to create /root/.local/state/openshell/gateway
+                  ╰─▶ Read-only file system (os error 30)
+
+            Three attempts in five minutes, then StartLimitBurst stopped it —
+            the unit behaved exactly as its own comment promises, which is how
+            the failure was legible rather than an endless loop.
+
+            `XDG_STATE_HOME` is the lever you would reach for and it DOES NOT
+            WORK: the string does not occur in the 0.1.6 binary at all, so the
+            path comes from HOME and only HOME moves it. The fix is therefore a
+            PAIR — a systemd-owned StateDirectory, and HOME pointing into it —
+            and either line alone leaves a gateway that cannot start.
+
+            So the rule is conditional on ProtectHome rather than absolute: a
+            future unit that drops ProtectHome does not need the redirect, and a
+            guard that demanded it anyway would be asserting a preference.
+        */
+        const unit = fs.readFileSync(
+            path.join(REPO_ROOT, 'deploy/openshell/openshell-gateway.service'),
+            'utf8',
+        );
+        // Directives only. Every explanation above lives in this file as a
+        // comment, including the literal text of the directives, so a scan that
+        // did not drop comment lines would pass on the prose.
+        const directives = unit
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0 && !l.startsWith('#'));
+
+        // DENOMINATOR: a renamed unit read as '' satisfies everything below.
+        expect(directives.length).toBeGreaterThan(15);
+
+        const protectsHome = directives.filter((l) => /^ProtectHome\s*=\s*(yes|read-only|tmpfs)$/i.test(l));
+        const stateDirs = directives
+            .map((l) => /^StateDirectory\s*=\s*(\S+)$/.exec(l))
+            .filter((m): m is RegExpExecArray => m !== null)
+            .map((m) => m[1]);
+        const homes = directives
+            .map((l) => /^Environment\s*=\s*HOME=(\S+)$/.exec(l))
+            .filter((m): m is RegExpExecArray => m !== null)
+            .map((m) => m[1]);
+
+        // Not vacuous: the unit DOES protect /root today, so the branch below
+        // is the one that runs. If this ever goes to zero the rule stops
+        // applying and this line says so instead of leaving a silent pass.
+        expect(protectsHome.length).toBeGreaterThanOrEqual(1);
+
+        if (protectsHome.length > 0) {
+            expect(stateDirs.length).toBeGreaterThanOrEqual(1);
+            expect(homes.length).toBeGreaterThanOrEqual(1);
+            // And HOME must land INSIDE what systemd owns. `HOME=/opt/anything`
+            // would satisfy the two counts above and still be a directory
+            // nothing creates, which is the same failure with a new path.
+            expect(homes.filter((h) => !stateDirs.some((d) => h === `/var/lib/${d}`))).toEqual([]);
+        }
+    });
+
+    it('the cost control ships with the deployment, not beside it', () => {
+        /*
+            The VM runs under a hard 5 USD/month cap, and the arithmetic that
+            satisfies it is a RUNTIME BUDGET of about 38 hours a month: the only
+            always-on charge is the boot disk, and a VM left running for a month
+            would cost roughly 17x the cap. The idle-shutdown timer is what makes
+            that budget hold, so it is a deployment artefact rather than an
+            operator habit — and it is only a control if provisioning cannot
+            quietly skip it.
+        */
+        const dir = path.join(REPO_ROOT, 'deploy/openshell');
+        for (const f of [
+            'openshell-idle-shutdown',
+            'openshell-idle-shutdown.service',
+            'openshell-idle-shutdown.timer',
+        ]) {
+            expect(fs.existsSync(path.join(dir, f))).toBe(true);
+        }
+
+        // The window the README claims must be the window the script enforces.
+        // Two numbers in two files drift, and the drift looks like nothing.
+        const script = fs.readFileSync(path.join(dir, 'openshell-idle-shutdown'), 'utf8');
+        const timer = fs.readFileSync(path.join(dir, 'openshell-idle-shutdown.timer'), 'utf8');
+        const strikes = /STRIKES_NEEDED=(\d+)/.exec(script);
+        const interval = /OnUnitActiveSec=(\d+)min/.exec(timer);
+        expect(strikes).not.toBeNull();
+        expect(interval).not.toBeNull();
+        const windowMinutes =
+            Number((strikes as RegExpExecArray)[1]) * Number((interval as RegExpExecArray)[1]);
+        expect(windowMinutes).toBe(20);
+
+        // A failed scrape must NOT be read as idle. This is the property that
+        // keeps a broken metrics endpoint from shutting the VM down exactly
+        // when something is wrong, and it was mutation-proved on the host.
+        const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf8');
+        const readmeLines = readme.split('\n');
+        expect(readmeLines.filter((l) => l.includes('openshell-idle-shutdown.timer')).length)
+            .toBeGreaterThanOrEqual(2);
+    });
+
     it('the code that 0.1b justifies still writes enforcement on every endpoint', () => {
         // Ties the FACT to the CODE that depends on it. The unit suite asserts
         // this too, for a different reason — that the policy is correct. Here it

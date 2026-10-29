@@ -1,0 +1,11 @@
+[Unit]
+Description=Check every 5 minutes whether the OpenShell gateway VM is idle (#3924)
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=openshell-idle-shutdown.service
+
+[Install]
+WantedBy=timers.target

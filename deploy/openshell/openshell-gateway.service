@@ -49,6 +49,30 @@ Environment=OPENSHELL_GATEWAY_CONFIG=/etc/openshell/gateway.toml
 Environment=OPENSHELL_COMPUTE_DRIVER=docker
 Environment=OPENSHELL_LOG_LEVEL=info
 
+# ── STATE DIRECTORY, AND WHY HOME MOVES ───────────────────────────────
+#
+# FOUND BY PROVISIONING, NOT BY READING. With `ProtectHome=yes` below and
+# root's own HOME, the 0.1.6 gateway dies on its first startup:
+#
+#   Error:   × failed to create /root/.local/state/openshell/gateway
+#     ╰─▶ Read-only file system (os error 30)
+#
+# It writes state under `$HOME/.local/state`, which is the XDG default
+# location, and `ProtectHome=yes` makes /root inaccessible. Both lines below
+# are needed and neither is optional:
+#
+#   StateDirectory  systemd creates and owns /var/lib/openshell
+#   HOME            redirects the gateway's state there
+#
+# `XDG_STATE_HOME` would be the tidier lever and it DOES NOT WORK: the string
+# does not appear in the 0.1.6 binary at all (checked: zero occurrences), so
+# the path is derived from HOME and HOME is the only thing that moves it.
+#
+# ProtectHome stays `yes`. The alternative — relaxing it so the gateway can
+# write into /root — trades a real protection for a cosmetic one.
+StateDirectory=openshell
+Environment=HOME=/var/lib/openshell
+
 # ── TELEMETRY OFF ─────────────────────────────────────────────────────
 # Anonymous telemetry is DEFAULT ON in this build, which is why the phase
 # requires this line. The variable is present in the 0.1.6 binary but is NOT
