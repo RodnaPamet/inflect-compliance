@@ -332,9 +332,10 @@ export async function reviewAssessment(
  * reporting null because the second step failed — would leave a real Risk in
  * the register that nobody was told about.
  */
-// PR-S — matches vendor-reassessment-reminder's DEFAULT_CADENCE_DAYS (annual
-// review cycle; ISO 27001). Duplicated as a small well-known constant to avoid
-// coupling the review path to the reminder-job module.
+// PR-S — the annual review cycle (ISO 27001). Since #4462 this writeback is
+// the only AUTOMATIC writer of a vendor's next review date: the nightly
+// reassessment reminder no longer pushes an overdue date forward, so a vendor
+// stays overdue until a review completes here (or a person edits the date).
 const REASSESSMENT_CADENCE_DAYS = 365;
 
 async function applyAssessmentRiskWriteback(
