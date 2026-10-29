@@ -1384,6 +1384,26 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'UNBOUND credentials that the tool boundary would begin refusing. ' +
             'Read-only; the write goes through the sibling PUT.',
     },
+    // The business-data transfer acknowledgement (M5, #3872). Listed above the
+    // general sibling for the same READER reason the pre-flight above gives —
+    // the sibling is `$`-anchored and would not match this path anyway.
+    //
+    // `admin.manage` is the ROUTE gate, matching both siblings: this accepts the
+    // consequence of the `aiResidency` choice the sibling PUT writes, so it
+    // would be incoherent for it to take a different key. The usecase ALSO
+    // requires a PERSON — a credential, an agent or a job cannot accept a data
+    // transfer on a company's behalf, and `*`-scoped API keys exist. That check
+    // lives in the usecase, not here, so no other path to the same columns can
+    // bypass it.
+    {
+        path: new RegExp(`^${T}\\/admin\\/security-settings\\/external-ai-acknowledgement$`),
+        permission: 'admin.manage',
+        note:
+            'Recording or withdrawing the tenant acknowledgement that data read ' +
+            'over a connection marked as reaching a business system may be sent ' +
+            'to an external model provider. Without it, an EXTERNAL-residency ' +
+            'agent run over such a connection refuses (#3872).',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/security-settings$`),
         permission: 'admin.manage',
